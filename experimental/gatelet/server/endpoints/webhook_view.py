@@ -167,16 +167,20 @@ async def list_all_payloads(
     db_session: AsyncSession = Depends(get_db_session),
 ):
     """List all webhook integrations and payloads."""
-    # TODO: Once we have human login, it should also show disabled integrations
-
     # Get webhook integrations
-    integrations_query = select(WebhookIntegration).where(WebhookIntegration.is_enabled)
+    if auth.auth_type == "admin":
+        integrations_query = select(WebhookIntegration)
+    else:
+        integrations_query = select(WebhookIntegration).where(
+            WebhookIntegration.is_enabled
+        )
     integrations_result = await db_session.execute(integrations_query)
     integrations = [
         {
             "id": integration.id,
             "name": integration.name,
             "description": integration.description,
+            "is_enabled": integration.is_enabled,
         }
         for integration in integrations_result.scalars().all()
     ]

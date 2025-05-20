@@ -1,5 +1,6 @@
 """Tests for webhook viewing endpoints."""
 
+import re
 from http import HTTPStatus
 
 import pytest
@@ -9,6 +10,24 @@ from server.models import WebhookIntegration, WebhookPayload
 from server.shared import templates
 from server.tests.utils import persist
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _extract_csrf(page_text: str) -> str:
+    m = re.search(r'name="csrf_token" value="([^"]+)"', page_text)
+    assert m
+    return m.group(1)
+
+
+async def _admin_login(client: AsyncClient) -> str:
+    home = await client.get("/")
+    token = _extract_csrf(home.text)
+    response = await client.post(
+        "/admin/login",
+        data={"password": "gatelet", "csrf_token": token},
+    )
+    assert response.status_code == HTTPStatus.FOUND
+    return response.cookies["admin_session"]
+
 
 templates.env.globals.update({"max": max, "min": min})
 
@@ -167,3 +186,25 @@ async def test_disabled_payloads_hidden(
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/")
     assert response.status_code == HTTPStatus.OK
     assert_that(response.text, is_not(contains_string(integration.name)))
+
+
+@pytest.mark.asyncio
+async def test_disabled_payloads_visible_admin(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Disabled integrations should be visible to admins."""
+    integration = WebhookIntegration(
+        name="disabled-admin",
+        description="Disabled integration",
+        auth_type="none",
+        auth_config={"type": "none"},
+        is_enabled=False,
+    )
+    await persist(db_session, integration)
+
+    session_cookie = await _admin_login(client)
+    response = await client.get(
+        "/admin/webhooks/", cookies={"session_token": session_cookie}
+    )
+    assert response.status_code == HTTPStatus.OK
+    assert integration.name in response.text
