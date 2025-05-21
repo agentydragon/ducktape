@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import (
 
 os.environ.setdefault(
     "GATELET_CONFIG",
-    str(Path(__file__).resolve().parent.parent / "gatelet.toml"),
+    str(Path(__file__).resolve().parent.parent.parent / "gatelet.toml"),
 )
 # pylint: disable=wrong-import-position
 
