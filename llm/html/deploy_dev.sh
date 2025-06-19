@@ -30,6 +30,10 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
+# Copy coding instructions to current directory for Docker build
+echo "📋 Copying coding instructions..."
+cp ../../dotfiles/codex/instructions.md coding.md
+
 # Create a tarball of the current working directory
 echo "📦 Creating archive of current working tree..."
 # Include all necessary files (tracked, staged, and untracked)
@@ -39,6 +43,9 @@ tar -czf /tmp/llm-html-dev.tar.gz \
     --exclude=*.pyc \
     --exclude=.git \
     *.py *.md *.html *.css *.txt *.sh Dockerfile requirements.txt
+
+# Clean up temporary file
+rm -f coding.md
 
 # Copy the tarball to VPS
 echo "📤 Copying files to VPS..."
@@ -66,9 +73,45 @@ mkdir -p /tmp/llm-html-build
 cd /tmp/llm-html-build
 tar -xzf ../llm-html-build.tar.gz
 
+# Create a temporary Dockerfile for dev deployment
+cat > Dockerfile.dev << 'DOCKERFILE_EOF'
+FROM python:3.11-slim AS runtime
+
+# Avoid buffering Python stdout/stderr
+ENV PYTHONUNBUFFERED=1
+
+# Install curl for health-check ping
+RUN apt-get update -qq \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Only copy dependency manifests first to leverage Docker layer cache
+COPY pyproject.toml requirements.txt ./
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code from the build context
+COPY llm_html/ ./llm_html/
+COPY index.md style.css base.html verify.html stats.html tana.md coding.md ./
+
+EXPOSE 9000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+  CMD curl --fail http://127.0.0.1:9000/ || exit 1
+
+CMD ["python", "-m", "llm_html.server"]
+DOCKERFILE_EOF
+
 # Build Docker image
 echo "🐳 Building Docker image..."
-docker build -t llm-html:dev .
+docker build -t llm-html:dev -f Dockerfile.dev .
+
+# Clean up temporary Dockerfile
+rm -f Dockerfile.dev
 
 # Stop and remove existing container
 echo "🛑 Stopping existing production container..."
@@ -98,5 +141,4 @@ echo "
 Your current working tree is now live at: http://llm.agentydragon.com
 
 To check logs: ssh vps 'docker logs -f ${CONTAINER_NAME}'
-To rollback to git version: cd ../../ansible && ansible-playbook vps.yaml --tags llm-html
 "

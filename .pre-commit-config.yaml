@@ -48,6 +48,8 @@ repos:
           - types-Markdown
           - types-PyYAML
           - types-requests
+          - types-tabulate
+          - types-toml
 
   # Buildifier for Bazel files
   - repo: https://github.com/keith/pre-commit-buildifier

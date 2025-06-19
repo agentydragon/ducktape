@@ -3,7 +3,7 @@ Habitify MCP Server implementation.
 """
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -49,7 +49,7 @@ def create_habitify_mcp_server(
             server.set_metadata({"api_key": api_key_value})
 
     @server.tool()
-    async def get_habits(include_archived: bool = False) -> Dict[str, Any]:
+    async def get_habits(include_archived: bool = False) -> dict[str, Any]:
         """
         Get a list of habits.
 
@@ -62,7 +62,9 @@ def create_habitify_mcp_server(
         return await tools.get_habits(include_archived=include_archived)
 
     @server.tool()
-    async def get_habit(id: Optional[str] = None, name: Optional[str] = None) -> Dict[str, Any]:
+    async def get_habit(
+        id: Optional[str] = None, name: Optional[str] = None
+    ) -> dict[str, Any]:
         """
         Get details of a specific habit by ID or name.
 
@@ -83,7 +85,7 @@ def create_habitify_mcp_server(
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         days: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get the status of a habit for one or more dates.
 
@@ -126,7 +128,7 @@ def create_habitify_mcp_server(
         date: Optional[str] = None,
         note: Optional[str] = None,
         value: Optional[float] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Set a habit's status for a specific date.
 

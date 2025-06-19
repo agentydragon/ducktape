@@ -8,8 +8,7 @@ import asyncio
 import datetime
 import logging
 import os
-from typing import Any, List, Literal, Optional, Union
-
+from typing import Any, Literal, Optional
 import httpx
 from dotenv import load_dotenv
 
@@ -129,7 +128,7 @@ class HabitifyClient:
     # Documented API endpoints based on API reference YAML files
     #
 
-    async def get_habits(self) -> List[Habit]:
+    async def get_habits(self) -> list[Habit]:
         """
         Get all habits.
 
@@ -166,7 +165,7 @@ class HabitifyClient:
         except Exception as e:
             raise self._handle_error(e)
 
-    async def get_areas(self) -> List[Area]:
+    async def get_areas(self) -> list[Area]:
         """
         Get all habit areas/categories.
 
@@ -189,7 +188,7 @@ class HabitifyClient:
         status: Optional[str] = None,
         time_of_day: Optional[str] = None,
         area_id: Optional[str] = None,
-    ) -> List[Habit]:
+    ) -> list[Habit]:
         """
         Get filtered habits for a specific date.
 
@@ -232,7 +231,7 @@ class HabitifyClient:
     # All methods are async-only now
 
     async def check_habit_status(
-        self, habit_id: str, date: Optional[Union[str, datetime.date]] = None
+        self, habit_id: str, date: Optional[str | datetime.date] = None
     ) -> HabitStatusResponse:
         """
         Check a habit's status for a date.
@@ -262,7 +261,9 @@ class HabitifyClient:
             # If API didn't return a date, add the request date to the API model
             if not api_result.date:
                 api_result.date = (
-                    format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()
+                    format_date_yyyy_mm_dd(date)
+                    if date
+                    else datetime.date.today().isoformat()
                 )
 
             # Convert the API model to a client response model with Python date object
@@ -273,10 +274,10 @@ class HabitifyClient:
     async def check_habit_status_range(
         self,
         habit_id: str,
-        start_date: Optional[Union[str, datetime.date]] = None,
-        end_date: Optional[Union[str, datetime.date]] = None,
+        start_date: Optional[str | datetime.date] = None,
+        end_date: Optional[str | datetime.date] = None,
         days: Optional[int] = None,
-    ) -> List[HabitStatusResponse]:
+    ) -> list[HabitStatusResponse]:
         """
         Check a habit's status for a range of dates.
 
@@ -333,7 +334,7 @@ class HabitifyClient:
         self,
         habit_id: str,
         status: Literal["completed", "skipped", "failed", "none"],
-        date: Optional[Union[str, datetime.date]] = None,
+        date: Optional[str | datetime.date] = None,
         note: Optional[str] = None,
         value: Optional[float] = None,
     ) -> HabitStatusResponse:
@@ -378,7 +379,11 @@ class HabitifyClient:
             # Create API result model with the input data since the API returns null for success
             api_result = HabitStatus(
                 status=status,
-                date=(format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()),
+                date=(
+                    format_date_yyyy_mm_dd(date)
+                    if date
+                    else datetime.date.today().isoformat()
+                ),
                 note=note,
                 value=value,
             )
@@ -424,7 +429,9 @@ class HabitifyClient:
                 )
             elif status == 500 and data and "message" in data:
                 if "habit does not exist" in data["message"].lower():
-                    return HabitifyError(f"Habit ID not found: {data['message']}", status)
+                    return HabitifyError(
+                        f"Habit ID not found: {data['message']}", status
+                    )
                 elif "target_date" in data["message"].lower():
                     return HabitifyError(
                         "Invalid date format. The API requires ISO 8601 format (YYYY-MM-DDThh:mm:ss±hh:mm).",

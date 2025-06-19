@@ -4,7 +4,7 @@ Utility functions for the Habitify MCP server.
 
 import functools
 import os
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union, cast
+from typing import Any, Callable, Optional, TypeVar, cast
 
 from .date_utils import (
     create_date_range,
@@ -99,7 +99,9 @@ def get_server_api_key() -> Optional[str]:
         return None
 
 
-def validate_required_params(*param_names: str, **params: Any) -> Optional[Dict[str, Any]]:
+def validate_required_params(
+    *param_names: str, **params: Any
+) -> Optional[dict[str, Any]]:
     """
     Validate that at least one of the specified parameters is not None.
 
@@ -112,7 +114,9 @@ def validate_required_params(*param_names: str, **params: Any) -> Optional[Dict[
     """
     # Filter to only include the specified parameters
     if param_names:
-        filtered_params = {name: params.get(name) for name in param_names if name in params}
+        filtered_params = {
+            name: params.get(name) for name in param_names if name in params
+        }
     else:
         filtered_params = params
 
@@ -175,8 +179,6 @@ def with_client(func: F) -> F:
             # Get API key
             api_key = get_server_api_key()
             if not api_key:
-                from ..habitify_client import HabitifyError
-
                 return create_auth_error(
                     "API key is required. Set HABITIFY_API_KEY environment variable or configure server metadata."
                 )

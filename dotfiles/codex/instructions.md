@@ -44,10 +44,21 @@ title: Code Agent Instructions
    - WHEN you tested (especially for time-sensitive claims)
    - WHY you concluded what you did (and what else it might be)
 
-2. **NEVER swallow exceptions** - Always handle specific exceptions or crash loudly
-3. **NEVER use string concatenation for structured data** (URLs, SQL, HTML, JSON)
-4. **NEVER use `getattr`/`setattr`** unless literally no alternative exists
-5. **ALWAYS fail fast** - Crash immediately on unexpected state
+2. **NEVER hide fixable errors** - Always fix the root cause instead of suppressing warnings
+   - **Wrong**: `# type: ignore`, `# noqa`, `# pylint: disable`, `@ts-ignore`
+   - **Right**: Install missing type stubs, fix the actual issue, update configs
+   - **Before hiding ANY error, ask**: "Can I fix this properly instead?"
+   - Examples of fixable "errors":
+     - Missing type stubs → Add to pre-commit dependencies
+     - Import order issues → Fix the imports
+     - Line too long → Refactor the code
+     - Unused variable → Remove it or use it
+   - Only suppress if truly unfixable (e.g., third-party bug)
+
+3. **NEVER swallow exceptions** - Always handle specific exceptions or crash loudly
+4. **NEVER use string concatenation for structured data** (URLs, SQL, HTML, JSON)
+5. **NEVER use `getattr`/`setattr`** unless literally no alternative exists
+6. **ALWAYS fail fast** - Crash immediately on unexpected state
 
 ## Repository Instructions
 

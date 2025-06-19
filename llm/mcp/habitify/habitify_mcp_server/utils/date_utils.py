@@ -4,7 +4,7 @@ Provides consistent date handling across CLI and API components.
 """
 
 import datetime
-from typing import Callable, List, Optional, Tuple, TypeVar, Union
+from typing import Callable, Optional, Tuple, TypeVar
 
 T = TypeVar("T")
 
@@ -29,11 +29,13 @@ def parse_date(date_string: Optional[str] = None) -> datetime.datetime:
             # Try to parse as YYYY-MM-DD
             return datetime.datetime.strptime(date_string, "%Y-%m-%d")
         except ValueError:
-            raise ValueError(f"Invalid date format: {date_string}. Please use YYYY-MM-DD.")
+            raise ValueError(
+                f"Invalid date format: {date_string}. Please use YYYY-MM-DD."
+            )
 
 
 def _normalize_date(
-    date: Optional[Union[str, datetime.date, datetime.datetime]] = None,
+    date: Optional[str | datetime.date | datetime.datetime] = None,
 ) -> datetime.datetime:
     """
     Convert various date formats to a datetime object.
@@ -58,7 +60,7 @@ def _normalize_date(
 
 
 def _format_with_template(
-    date: Optional[Union[str, datetime.date, datetime.datetime]],
+    date: Optional[str | datetime.date | datetime.datetime],
     formatter: Callable[[datetime.datetime], T],
 ) -> T:
     """
@@ -76,7 +78,7 @@ def _format_with_template(
 
 
 def format_date_yyyy_mm_dd(
-    date: Optional[Union[str, datetime.date, datetime.datetime]] = None,
+    date: Optional[str | datetime.date | datetime.datetime] = None,
 ) -> str:
     """
     Format a date as YYYY-MM-DD.
@@ -90,7 +92,9 @@ def format_date_yyyy_mm_dd(
     return _format_with_template(date, lambda d: d.strftime("%Y-%m-%d"))
 
 
-def format_date_for_api(date: Optional[Union[str, datetime.date, datetime.datetime]] = None) -> str:
+def format_date_for_api(
+    date: Optional[str | datetime.date | datetime.datetime] = None,
+) -> str:
     """
     Format a date for the Habitify API (ISO format with timezone).
 
@@ -120,7 +124,9 @@ def format_date_for_api(date: Optional[Union[str, datetime.date, datetime.dateti
     return _format_with_template(date, lambda d: d.strftime("%Y-%m-%dT%H:%M:%S+00:00"))
 
 
-def format_date_human(date: Optional[Union[str, datetime.date, datetime.datetime]] = None) -> str:
+def format_date_human(
+    date: Optional[str | datetime.date | datetime.datetime] = None,
+) -> str:
     """
     Get a human-readable date format.
 
@@ -151,10 +157,10 @@ def validate_date_format(date_str: str) -> bool:
 
 
 def create_date_range(
-    start_date: Optional[Union[str, datetime.date, datetime.datetime]] = None,
-    end_date: Optional[Union[str, datetime.date, datetime.datetime]] = None,
+    start_date: Optional[str | datetime.date | datetime.datetime] = None,
+    end_date: Optional[str | datetime.date | datetime.datetime] = None,
     days: Optional[int] = None,
-) -> Tuple[datetime.datetime, datetime.datetime, List[datetime.datetime]]:
+) -> Tuple[datetime.datetime, datetime.datetime, list[datetime.datetime]]:
     """
     Create a date range with flexible parameter combinations.
 
@@ -175,7 +181,9 @@ def create_date_range(
     Returns:
         Tuple of (start_date, end_date, date_list) where date_list is a list of datetime objects
     """
-    today_dt = datetime.datetime.combine(datetime.date.today(), datetime.datetime.min.time())
+    today_dt = datetime.datetime.combine(
+        datetime.date.today(), datetime.datetime.min.time()
+    )
 
     # Parse dates if provided as strings
     start = _normalize_date(start_date) if start_date else None

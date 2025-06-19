@@ -6,7 +6,6 @@ import hashlib
 import inspect
 import uuid
 from datetime import datetime
-from typing import List
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse

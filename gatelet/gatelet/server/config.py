@@ -5,7 +5,7 @@ import os
 import re
 from datetime import timedelta
 from pathlib import Path
-from typing import BinaryIO, Dict, List, Literal, TextIO, Union, cast
+from typing import Literal
 
 from pydantic import BaseModel, Field, validator
 
@@ -31,7 +31,7 @@ class BearerAuth(BaseModel):
         return v
 
 
-WebhookAuthConfig = Union[NoAuth, BearerAuth]
+WebhookAuthConfig = NoAuth | BearerAuth
 
 
 class DatabaseSettings(BaseModel):
@@ -97,7 +97,7 @@ class AuthSettings(BaseModel):
 class HomeAssistantSettings(BaseModel):
     api_url: str = Field(...)  # Required field
     api_token: str = Field(...)  # Required field
-    entities: List[str] = Field(default_factory=list)
+    entities: list[str] = Field(default_factory=list)
 
 
 class ActivityWatchSettings(BaseModel):
@@ -117,7 +117,7 @@ MAX_PAGE_SIZE = 100
 
 
 class WebhookSettings(BaseModel):
-    integrations: Dict[str, WebhookIntegrationSettings] = Field(default_factory=dict)
+    integrations: dict[str, WebhookIntegrationSettings] = Field(default_factory=dict)
     default_page_size: int = Field(default=10)
 
     @validator("integrations")
@@ -167,18 +167,10 @@ class Settings(BaseModel):
     def from_file(cls, path: Path):
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
-        try:
-            import tomllib as toml
+        import toml
 
-            # tomllib expects binary mode for file objects
-            with open(path, "rb") as f:
-                config_dict = toml.load(cast(BinaryIO, f))
-        except ModuleNotFoundError:  # pragma: no cover - fallback for older Python
-            import toml  # type: ignore
-
-            # toml library (not Python builtin - used in case of Python < 3.11) reads strings
-            with open(path) as f:
-                config_dict = toml.load(cast(TextIO, f))  # type: ignore[arg-type]
+        with open(path) as f:
+            config_dict = toml.load(f)
         return cls.parse_obj(config_dict)
 
 

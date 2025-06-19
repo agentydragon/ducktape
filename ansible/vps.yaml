@@ -166,16 +166,6 @@
         webhook_inbox_host_port: 4473
       tags: webhook-inbox
 
-    - name: LLM HTML service
-      ansible.builtin.include_role:
-        name: llm_html
-        apply:
-          tags: llm-html
-      vars:
-        llm_html_domain: llm.agentydragon.com
-        llm_html_host_port: 9000
-      tags: llm-html
-
     - name: ActivityWatch server
       ansible.builtin.include_role:
         name: activitywatch_server

@@ -17,9 +17,10 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code from the build context
+# Check if we're building from repo root (build_and_run.sh) or from llm/html (deploy_dev.sh)
+# First, try the repo root context
 COPY llm/html/llm_html/ ./llm_html/
 COPY llm/html/index.md llm/html/style.css llm/html/base.html llm/html/verify.html llm/html/stats.html llm/html/tana.md ./
-# Copy coding instructions from dotfiles
 COPY dotfiles/codex/instructions.md ./coding.md
 
 EXPOSE 9000

@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from tabulate import tabulate  # type: ignore[import-untyped]
+from tabulate import tabulate
 
 from ai_teams.message_validator import validate_message_sequence
 from ai_teams.team_paths import MESSAGE_TYPES, ChannelMessage, Team

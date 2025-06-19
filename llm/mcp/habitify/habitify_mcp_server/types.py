@@ -7,8 +7,7 @@ as documented in the reference YAML files.
 
 import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
-
+from typing import Any, Optional
 from pydantic import BaseModel
 
 
@@ -84,9 +83,7 @@ class HabitStatus(BaseModel):
     note: Optional[str] = None
 
     # Model config to handle extra fields
-    model_config = {
-        "extra": "ignore",
-    }
+    model_config = {"extra": "ignore"}
 
 
 class HabitStatusResponse(BaseModel):
@@ -99,7 +96,7 @@ class HabitStatusResponse(BaseModel):
 
     @classmethod
     def from_api_model(
-        cls, api_model: HabitStatus, date: Optional[Union[str, datetime.date]] = None
+        cls, api_model: HabitStatus, date: Optional[str | datetime.date] = None
     ) -> "HabitStatusResponse":
         """Convert API model to client response model with Python date object."""
         # If we already have a date object, use it directly
@@ -130,12 +127,12 @@ class Habit(BaseModel):
     name: str
     is_archived: bool
     start_date: str
-    time_of_day: List[str]
+    time_of_day: list[str]
     goal: Optional[Goal] = None
-    goal_history_items: List[Goal] = []
+    goal_history_items: list[Goal] = []
     log_method: str = ""
     recurrence: str
-    remind: List[str] = []
+    remind: list[str] = []
     area: Optional[Area] = None
     created_date: str
     priority: float
@@ -146,9 +143,7 @@ class Habit(BaseModel):
     progress: Optional[Progress] = None
 
     # Model config to handle extra fields
-    model_config = {
-        "extra": "ignore",
-    }
+    model_config = {"extra": "ignore"}
 
     @property
     def archived(self) -> bool:
@@ -193,14 +188,14 @@ class ErrorResponse(BaseModel):
     category: Optional[str] = (
         None  # Error category (auth, not_found, validation, api, network, unknown)
     )
-    matches: Optional[List[Dict[str, str]]] = None
+    matches: Optional[list[dict[str, str]]] = None
     total_matches: Optional[int] = None
 
 
 class HabitsResult(BaseModel):
     """Result for getHabits tool."""
 
-    habits: List[Habit]
+    habits: list[Habit]
     count: int
 
 
@@ -231,7 +226,7 @@ class DateRangeStatusItem(BaseModel):
 class DateRangeStatusResult(BaseModel):
     """Result for getHabitStatus tool with date range."""
 
-    statuses: List[DateRangeStatusItem]
+    statuses: list[DateRangeStatusItem]
     start_date: str
     end_date: str
     date_count: int
@@ -251,7 +246,7 @@ class UpdateResult(BaseModel):
     """Result for updateHabit tool."""
 
     habit: Habit
-    changes: Dict[str, Any]
+    changes: dict[str, Any]
 
 
 class DeleteResult(BaseModel):
@@ -261,13 +256,13 @@ class DeleteResult(BaseModel):
 
 
 # Union type for all possible result types
-ResultType = Union[
-    HabitsResult,
-    HabitResult,
-    StatusResult,
-    DateRangeStatusResult,
-    LogResult,
-    UpdateResult,
-    DeleteResult,
-    ErrorResponse,
-]
+ResultType = (
+    HabitsResult
+    | HabitResult
+    | StatusResult
+    | DateRangeStatusResult
+    | LogResult
+    | UpdateResult
+    | DeleteResult
+    | ErrorResponse
+)

@@ -12,7 +12,7 @@ import os
 import sys
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import httpx
 import yaml
@@ -36,29 +36,19 @@ class ApiReferenceCollector:
     base_url: str = "https://api.habitify.me"
 
     @property
-    def headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": self.api_key,
-            "Content-Type": "application/json",
-        }
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": self.api_key, "Content-Type": "application/json"}
 
     @property
-    def masked_headers(self) -> Dict[str, str]:
+    def masked_headers(self) -> dict[str, str]:
         """Return headers with API key properly masked."""
-        return {
-            "Authorization": "API_KEY_MASKED",
-            "Content-Type": "application/json",
-        }
+        return {"Authorization": "API_KEY_MASKED", "Content-Type": "application/json"}
 
     @cached_property
     def client(self) -> httpx.Client:
-        return httpx.Client(
-            base_url=self.base_url,
-            headers=self.headers,
-            timeout=10.0,
-        )
+        return httpx.Client(base_url=self.base_url, headers=self.headers, timeout=10.0)
 
-    def _filter_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
+    def _filter_headers(self, headers: dict[str, str]) -> dict[str, str]:
         """
         Filter HTTP headers to only keep useful ones.
 
@@ -90,7 +80,9 @@ class ApiReferenceCollector:
             "x-timer",
         ]
         return {
-            name: value for name, value in headers.items() if name.lower() not in headers_to_exclude
+            name: value
+            for name, value in headers.items()
+            if name.lower() not in headers_to_exclude
         }
 
     def _mask_name(self, name: str) -> str:
@@ -106,7 +98,7 @@ class ApiReferenceCollector:
         if not name or len(name) <= 2:
             return name
 
-        # Keep first character and replace rest with asterisks,
+        # Keep first character and replace rest with asterisks
         # but keep the last character if the string is long enough
         if len(name) <= 4:
             return name[0] + "*" * (len(name) - 1)
@@ -154,9 +146,9 @@ class ApiReferenceCollector:
         method: str,
         endpoint: str,
         expected_status: int,
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        params: Optional[dict[str, Any]] = None,
+        json_data: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """
         Make a request to the API, validate response, and save as reference.
 
@@ -177,15 +169,14 @@ class ApiReferenceCollector:
         logger.info(f"Making request: {name} ({method} {endpoint})")
 
         response = self.client.request(
-            method=method,
-            url=endpoint,
-            params=params,
-            json=json_data,
+            method=method, url=endpoint, params=params, json=json_data
         )
 
         # If expected status is provided, validate it
         if response.status_code != expected_status:
-            logger.error(f"Expected status {expected_status} but got {response.status_code}")
+            logger.error(
+                f"Expected status {expected_status} but got {response.status_code}"
+            )
             sys.exit(1)
 
         # Create reference data structure
