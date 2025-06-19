@@ -1,0 +1,24 @@
+---
+# Install comby - structural code search and replace tool
+# https://comby.dev/
+
+- name: Install comby dependencies
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - libev4  # Required shared library for comby
+      - libpcre3  # Pattern matching library that comby may need
+    state: present
+  when: ansible_architecture == "x86_64"
+  tags: [comby, dev-tools]
+
+- name: Install comby structural search and replace tool
+  github_release_install:
+    release_spec:
+      repo: "comby-tools/comby"
+      version: "latest"
+      asset_pattern: "comby-.*-x86_64-linux$"  # Match the plain binary, not tar.gz
+    method:
+      name: binary
+      dest_path: "/home/{{ my_user | default(ansible_user_id) }}/.local/bin/comby"
+  when: ansible_architecture == "x86_64"
