@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*"
+exclude: ".*/testdata/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$"  # Cronomix overwrites these JSON files
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
