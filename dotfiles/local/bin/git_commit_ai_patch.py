@@ -3,6 +3,7 @@
 git_commit_ai_patch: launch an interactive Claude Code session using a custom slash command
 to generate, review, and apply a git commit based on staged changes.
 """
+
 import argparse
 import os
 import shutil
