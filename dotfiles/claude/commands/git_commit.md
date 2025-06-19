@@ -14,6 +14,9 @@ Instructions:
 2. Draft 1–5 candidate commits, each with:
    - A concise commit message.
    - A diffstat-style file list as shown above.
+   - IMPORTANT: Each commit must have a single, clear purpose. Never mix unrelated files.
+   - Group related changes (e.g., feature + its tests) but split unrelated items.
+   - Skip temporary/test files (e.g., foo, test.txt, .tmp).
 3. Do NOT modify the index while proposing; only inspect the diff.
 4. Present all proposals in the above compact format.
 5. Await user selection.
