@@ -21,6 +21,7 @@
         - ruff
         - pre-commit
         - ansible  # Get newer version than Ubuntu 22.04's ancient one
+        - libcst  # Python concrete syntax tree library for refactoring
 
     - name: Install Node.js CLI tools globally (user-level)
       community.general.npm:
