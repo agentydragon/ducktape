@@ -2319,12 +2319,12 @@ class Builder {
   withTag(tagId) {
     // ... actual implementation
   }
-  
+
   // This adds NOTHING:
   tag(tagId) {
     return this.withTag(tagId);
   }
-  
+
   // This is misleading - supertags aren't different:
   supertag(tagId) {
     return this.withTag(tagId);

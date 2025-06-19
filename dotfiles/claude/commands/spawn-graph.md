@@ -191,9 +191,9 @@ phase01-analysis
 ├── task02-pattern-study       → phase02-compute/task04
 └── task03-optimization-plan   → phase02-compute/task04
 
-phase02-compute  
+phase02-compute
 ├── task01-fizzbuzz-1-33      → phase03-merge/task01
-├── task02-fizzbuzz-34-66     → phase03-merge/task01  
+├── task02-fizzbuzz-34-66     → phase03-merge/task01
 ├── task03-fizzbuzz-67-100    → phase03-merge/task01
 └── task04-optimized-algo      → phase03-merge/task02
 
