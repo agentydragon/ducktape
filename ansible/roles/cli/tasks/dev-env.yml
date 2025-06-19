@@ -45,4 +45,4 @@
 - include_tasks: dev-env-heavy.yml
 
 # Include user-level development tools
-- include_tasks: dev-env-user.yml
+- import_tasks: dev-env-user.yml

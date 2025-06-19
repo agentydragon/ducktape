@@ -112,7 +112,7 @@
 # Deploy dotfiles before dev-env to ensure npmrc is in place
 - import_tasks: tasks/dotfiles.yml
 
-- include_tasks: tasks/dev-env.yml
+- import_tasks: tasks/dev-env.yml
 
 - name: Check Neovim is >= 0.11 (for DEC mode 2031 for auto color scheme switching)
   block:

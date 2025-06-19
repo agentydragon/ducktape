@@ -31,3 +31,7 @@
         - '@anthropic-ai/claude-code'
         - '@bazel/bazelisk'
         - '@ast-grep/cli'  # For semantic code queries across multiple languages
+
+# Install comby for structural code search and replace
+- import_tasks: comby.yml
+  tags: [comby, dev-tools]
