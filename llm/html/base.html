@@ -12,6 +12,7 @@
         {% for page in markdown_pages %}
         <a href="/{{ page }}"{% if active_page == page %} class="active"{% endif %}>{{ page_titles.get(page, page|capitalize) }}</a>
         {% endfor %}
+        <a href="/stats"{% if active_page == "stats" %} class="active"{% endif %}>Stats</a>
     </nav>
     <main class="content">
         {{ content|safe }}
