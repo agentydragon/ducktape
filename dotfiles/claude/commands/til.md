@@ -26,7 +26,7 @@ When invoked, capture important discoveries, patterns, or insights that would he
 # [Brief Title]
 
 **Date**: YYYY-MM-DD
-**Agent**: [Your agent name from generate-agent-name]
+**Agent**: [Your agent name - run generate-agent-name at start of session]
 **Context**: [What you were trying to do]
 
 ## Key Learning

@@ -18,6 +18,7 @@ title: Code Agent Instructions
    - "FIXED: Updated the code" → Next developer assumes it works, ships to production, causes outage
    - "This approach won't work" → Team abandons correct solution, wastes weeks on inferior alternatives
    - `assert x >= y  # Known to work` → Future agent writes 3.7MB of insane code trying to make 100 >= 1000 true
+   - "STATUS: FIXED" (in code without verification) → User assumes it works, wastes hours debugging when it actually fails silently
 
    **GOOD examples with evidence**:
    - "Command failed with exit code 1. Full output in ./logs/2025-01-18-command.log. Error was 'permission denied' - haven't tried with sudo yet"
@@ -383,9 +384,31 @@ For temporary/experimental scripts, make their throwaway nature obvious:
 **Wrong:** `test_api.py` in repo root
 **Right:** `throwaway/2024-01-15/test_api.py` with header `# THROWAWAY SCRIPT - DO NOT REUSE`
 
+# Creating New Repositories
+
+**When creating new repositories, start from the template:**
+
+```bash
+# Clone template repository
+cp -r ~/code/ducktape/llm/repo-template/ new-project-name/
+cd new-project-name/
+
+# Initialize as new repository
+rm -rf .git
+git init
+git add .
+git commit -m "Initial commit from repo-template"
+```
+
+The template provides standard structure including:
+- Pre-commit configuration
+- Basic project layout
+- Common .gitignore patterns
+- Development tooling setup
+
 # Agent Naming
 
-Every agent should start by generating a friendly, human-readable name for itself:
+**For standalone agents** (not part of a multi-agent team), generate a friendly, human-readable name:
 
 ```bash
 # Run this command to get your agent name:
@@ -397,11 +420,56 @@ generate-agent-name scientist
 
 This generates Docker-style names like `clever_fox` or `brave_curie`.
 
-**Usage in agents:**
+**Usage in standalone agents:**
 - Run the command at the start of your task
 - Refer to yourself by this name in comments, commit messages, and documentation
 - Example: `# clever_fox: Updated the checksum documentation`
 - This helps track which agent made which changes, especially if confusion occurs
+
+**IMPORTANT for team agents:**
+- If you're spawned via `/agent-boot TEAM_ID AGENT_NAME`, do NOT generate your own name
+- Run `ai-teams agent-config TEAM_ID AGENT_NAME` to get your assigned identity
+- Use the "Your identity" value as your name (e.g., "swift-lion-20240319-1030-monitor")
+- NEVER run `generate-agent-name` when part of a team
+
+## Team Agent Initialization
+
+**CRITICAL**: If you find references to a team (e.g., branches like `ai-team/xyz/*`, directories like `.ai-teams/xyz`) but weren't spawned via `/agent-boot`:
+- **STOP IMMEDIATELY**
+- Do NOT explore team directories
+- Do NOT checkout team branches
+- Do NOT try to join the team
+- You are NOT part of that team
+- Exit with message: "Found team infrastructure but not initialized as team member"
+
+Only proceed with team work if ALL of these are true:
+1. You received `/agent-boot TEAM_ID AGENT_NAME` command at the start
+2. You ran `ai-teams agent-config` and got your identity
+3. You're sending regular STATUS messages to the team channel
+
+**If you're unsure**: Check your conversation start. If there's no `/agent-boot` command, you're NOT a team agent.
+
+## Complex Parallelizable Tasks
+
+**When to use /spawn for multi-agent teams:**
+
+✅ **Use /spawn for ANY parallelizable task:**
+- "Research X, design Y, implement Z, and document everything"
+- "Fix all pre-commit failures across the codebase" (when there are many)
+- "Analyze this system and write comprehensive documentation"
+- "Refactor these 5 modules to use the new API"
+- "Create test suites for all these components"
+- Any task with multiple independent parts
+
+❌ **Not suitable for /spawn:**
+- "Check out this interface" (single atomic task)
+- "Fix this one bug" (too small)
+- "Run this command" (trivial)
+- "Explain this code" (single analysis)
+
+**If your task has multiple independent parts that could be done in parallel:**
+→ Use `/spawn` to create a multi-agent team
+→ See `~/.claude/commands/spawn.md` for the full protocol
 
 # CLI Output Preferences
 
@@ -726,9 +794,9 @@ except (ValueError, KeyError) as e:  # Specific exceptions
 
 Only catch `Exception` at the very outer boundary (e.g., request handlers) and ALWAYS log it.
 
-## Early bail-out
+## Early bail-out and Minimize Nesting
 
-Use early bail-out pattern. Including making functions to enable using it when it makes things nicer.
+Use early bail-out pattern aggressively. Combine with walrus operators and comprehensions to eliminate deep nesting.
 
 **Wrong:**
 ```python
@@ -789,6 +857,66 @@ async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> 
 
 This just saved us an indentation level.
 This can be especially nice in helper functions.
+
+**Deeply nested code is ALWAYS wrong:**
+```python
+# Wrong - deeply nested file reading:
+teams = []
+for team_dir in teams_base.iterdir():
+    channel_path = team_dir / "channel.jsonl"
+    if team_dir.is_dir() and channel_path.exists():
+        # Read first message to get initialization data
+        with channel_path.open() as f:
+            first_line = f.readline()
+            if first_line:
+                first_msg = json.loads(first_line)
+                teams.append({
+                    "id": team_dir.name,
+                    "created": first_msg.get("timestamp", "Unknown"),
+                    "task": first_msg.get("data", {}).get("task", "No task")[:50] + "..."
+                })
+
+# Right - use comprehensions, walrus, early bailout:
+teams = [
+    {
+        "id": team_dir.name,
+        "created": msg.get("timestamp", "Unknown"),
+        "task": msg.get("data", {}).get("task", "No task")[:50] + "..."
+    }
+    for team_dir in teams_base.iterdir()
+    if team_dir.is_dir() and (channel_path := team_dir / "channel.jsonl").exists()
+    if (first_line := channel_path.read_text().partition('\n')[0])
+    if (msg := json.loads(first_line))
+]
+
+# Or with generator for memory efficiency:
+def get_team_info(team_dir):
+    channel_path = team_dir / "channel.jsonl"
+    if not (team_dir.is_dir() and channel_path.exists()):
+        return None
+    if not (first_line := channel_path.read_text().partition('\n')[0]):
+        return None
+    try:
+        msg = json.loads(first_line)
+        return {
+            "id": team_dir.name,
+            "created": msg.get("timestamp", "Unknown"),
+            "task": msg.get("data", {}).get("task", "No task")[:50] + "..."
+        }
+    except json.JSONDecodeError:
+        return None
+
+teams = [info for team_dir in teams_base.iterdir()
+         if (info := get_team_info(team_dir))]
+```
+
+**Key techniques to minimize nesting:**
+- List/dict comprehensions with filters
+- Walrus operator in conditions
+- Early return/continue
+- Helper functions that return None on failure
+- Chained method calls
+- Using `partition` instead of checking then splitting
 
 ## Document Current State Only
 
@@ -864,9 +992,51 @@ data = json.dumps({"name": name, "value": value})
 
 This applies to *ANY* structured format. If it has special characters or escaping rules, use a library.
 
+## Use Refactoring Tools for Systematic Changes
+
+When you need to rename constants, variables, or make similar systematic changes across multiple files, use refactoring tools instead of manual editing.
+
+### Example: Renaming Constants
+
+**BAD - Manual editing (error-prone, slow):**
+```bash
+# Manually editing each file one by one
+# Easy to miss occurrences, typos, inconsistent changes
+```
+
+**GOOD - Using refactoring tools:**
+```bash
+# Using comby for structural search and replace
+comby 'CHANGE_TYPE.CREATE_NODE' 'CHANGE_TYPE.PROPS_SET' src/**/*.ts -in-place
+
+# Find files that need changes first
+rg "CHANGE_TYPE\.CREATE_NODE" --type ts
+
+# Use comby for precise structural replacements
+comby 'changeType: 3' 'changeType: CHANGE_TYPE.DOC_CREATED' .ts -in-place
+
+# For TypeScript: ts-morph for programmatic refactoring
+# For JavaScript: jscodeshift for codemods
+# For simple patterns: sed with careful escaping
+```
+
+**Benefits:**
+- Consistent changes across all files
+- Much faster than manual editing
+- Less error-prone
+- Can handle complex patterns
+- Preview changes before applying
+
+**When to use refactoring tools:**
+- Renaming variables/constants across multiple files
+- Changing function signatures
+- Converting patterns (e.g., callbacks to async/await)
+- Updating import paths
+- Any systematic change affecting multiple locations
+
 ## CLI and Shell Tools
 
-Examples of tools you can use without asking: `rg`, `jq`, `tree`, `ag`, `generate-agent-name`, `ast-grep`. Feel free to use any standard development tools.
+Examples of tools you can use without asking: `rg`, `jq`, `tree`, `ag`, `generate-agent-name`, `ast-grep`, `comby`. Feel free to use any standard development tools.
 
 ### ast-grep - Semantic Code Queries
 
@@ -891,6 +1061,178 @@ ast-grep --pattern '$VAR = $VALUE' --json
 ast-grep --pattern 'class $NAME { $$$BODY }' --lang python
 ```
 
+### comby - Structural Search and Replace
+
+`comby` is available for structural code transformations across any language. Use it for:
+- Large-scale refactoring with structural patterns (not regex)
+- Language-agnostic code transformations
+- Precise code modifications that preserve formatting
+- Complex pattern matching with holes and metavariables
+
+Examples:
+```bash
+# Replace all console.log with logger.debug
+comby 'console.log(:[args])' 'logger.debug(:[args])' .js
+
+# Transform promise chains to async/await
+comby 'fetch(:[url]).then(:[fn])' 'await fetch(:[url])' --in-place
+
+# Swap argument order
+comby 'assertEquals(:[expected], :[actual])' 'assertEquals(:[actual], :[expected])' .java
+
+# Multi-line transformations
+comby 'if (:[condition]) { return true; } else { return false; }' 'return :[condition];' .ts
+```
+
+### LibCST - Python Concrete Syntax Tree
+
+`libcst` is available for Python-specific refactoring that preserves formatting and comments. Use it for:
+- Complex Python transformations that need semantic understanding
+- Building custom codemods for Python codebases
+- Automated migrations that preserve code style
+- Type-aware refactoring
+
+Examples:
+```python
+# Simple LibCST usage from CLI (via Python script)
+# rename_function.py:
+import libcst as cst
+
+class RenameFunction(cst.CSTTransformer):
+    def leave_FunctionDef(self, node, updated_node):
+        if node.name.value == "old_name":
+            return updated_node.with_changes(name=cst.Name("new_name"))
+        return updated_node
+
+# Run: python rename_function.py < input.py > output.py
+
+# Common patterns:
+# - Rename variables/functions/classes
+# - Add/remove decorators
+# - Update import statements
+# - Transform old patterns to new ones
+# - Add type annotations
+```
+
+**When to use LibCST vs Comby:**
+- Use **comby** for simple pattern replacements across any language
+- Use **LibCST** when you need Python-specific understanding (imports, types, decorators)
+
+### Example: Removing a Property from Object Definitions
+
+**Using Comby (works for any language):**
+```bash
+# Remove 'deprecated' field from all objects in JavaScript/TypeScript
+comby '{:[before]deprecated: :[value],:[after]}' '{:[before]:[after]}' .js .ts -in-place
+
+# Remove with proper comma handling (if last property)
+comby '{:[before], deprecated: :[value]}' '{:[before]}' .js -in-place
+
+# Python dict example - remove 'temp' key
+comby '{:[before]"temp": :[value],:[after]}' '{:[before]:[after]}' .py -in-place
+
+# More complex - remove property with trailing comma awareness
+comby 'deprecated: :[value],:[newline]' '' .js -in-place
+```
+
+**Using LibCST for Python (more robust):**
+```python
+# remove_property.py - Remove 'deprecated' key from all dicts
+import libcst as cst
+from typing import Union
+
+class RemoveDictKey(cst.CSTTransformer):
+    def leave_DictElement(self, original_node, updated_node):
+        # Check if this is a key-value pair with key "deprecated"
+        if isinstance(updated_node.key, cst.SimpleString):
+            if updated_node.key.value in ['"deprecated"', "'deprecated'"]:
+                # Remove this element by returning RemovalSentinel
+                return cst.RemovalSentinel.REMOVE
+        return updated_node
+
+# Usage: python remove_property.py < input.py > output.py
+
+# More sophisticated example - remove from specific classes only
+class RemoveFromConfig(cst.CSTTransformer):
+    def __init__(self):
+        self.in_config_class = False
+
+    def visit_ClassDef(self, node):
+        if node.name.value == "Config":
+            self.in_config_class = True
+
+    def leave_ClassDef(self, original_node, updated_node):
+        if updated_node.name.value == "Config":
+            self.in_config_class = False
+        return updated_node
+
+    def leave_SimpleStatementLine(self, original_node, updated_node):
+        if self.in_config_class:
+            # Remove assignments to 'deprecated' attribute
+            for stmt in updated_node.body:
+                if isinstance(stmt, cst.Assign):
+                    for target in stmt.targets:
+                        if isinstance(target.target, cst.Name) and target.target.value == "deprecated":
+                            return cst.RemovalSentinel.REMOVE
+        return updated_node
+```
+
+**Real-world examples:**
+```bash
+# Remove all console.log statements (JavaScript)
+comby 'console.log(:[args]);' '' .js -in-place
+
+# Remove debug attributes from React components
+comby '<:[tag] :[before]debug={:[value]}:[after]>' '<:[tag] :[before]:[after]>' .jsx -in-place
+
+# Remove test-only properties from TypeScript interfaces
+comby 'interface :[name] {:[before]testId?: :[type];:[after]}' 'interface :[name] {:[before]:[after]}' .ts -in-place
+
+# Python: Remove all deprecated decorator usage
+comby '@deprecated:[newline]:[rest]' ':[rest]' .py -in-place
+```
+
+## Breaking Changes Workflow
+
+**When making breaking changes** (removing attributes, deleting classes, changing types):
+
+1. **Make the breaking change first**
+2. **Immediately run pre-commit** to get a full list of violations:
+   ```bash
+   pre-commit run --all-files
+   # or for specific checks:
+   npm run lint
+   npm run type-check
+   pytest  # if it affects tests
+   ```
+
+3. **Use the error list to guide systematic fixes** with refactoring tools:
+   ```bash
+   # Example: After removing 'user.fullName' property, TypeScript shows 50 errors
+   # Fix all usages systematically:
+   comby 'user.fullName' 'user.firstName + " " + user.lastName' .ts -in-place
+
+   # Example: After changing function signature from foo(a, b) to foo({a, b})
+   comby 'foo(:[a], :[b])' 'foo({a: :[a], b: :[b]})' .js -in-place
+
+   # For Python type changes, use LibCST for more complex transforms
+   ```
+
+**Why this workflow:**
+- Pre-commit/linters give you a complete list of what needs fixing
+- Refactoring tools let you fix all instances at once
+- Avoids missing hidden usages
+- Much faster than manual fixes
+- Ensures consistency across the codebase
+
+**Examples of breaking changes that benefit from this approach:**
+- Removing a method/attribute from a class
+- Changing function signatures
+- Renaming types or interfaces
+- Removing deprecated APIs
+- Changing data structures
+- Modifying import paths
+
 ## Avoid One-off Variables
 
 Don't create variables used only once:
@@ -904,6 +1246,172 @@ await self._post_webhook({
     "type": "update",
     "data": [update.dict() for update in updates]
 })
+```
+
+## Avoid Duplicated Path Expressions
+
+When using the same path expression multiple times, store it in a variable to follow DRY:
+```python
+# Wrong - duplicated path expression:
+if team_dir.is_dir() and (team_dir / "dashboard.json").exists():
+    dashboard = json.loads((team_dir / "dashboard.json").read_text())
+
+# Right - DRY:
+dashboard_path = team_dir / "dashboard.json"
+if team_dir.is_dir() and dashboard_path.exists():
+    dashboard = json.loads(dashboard_path.read_text())
+
+# Also applies to more complex paths:
+# Wrong:
+config = (Path.home() / ".config" / "myapp" / "settings.json").read_text()
+backup = (Path.home() / ".config" / "myapp" / "settings.json").with_suffix(".bak")
+
+# Right:
+config_path = Path.home() / ".config" / "myapp" / "settings.json"
+config = config_path.read_text()
+backup = config_path.with_suffix(".bak")
+```
+
+## Use Tabulate for Table Formatting
+
+Don't manually format tables with string formatting. Use `tabulate` or similar libraries:
+
+```python
+# Wrong - manual table formatting:
+print(f"{'Team ID':<40} {'Created':<20} {'Status':<12}")
+print("-" * 72)
+for team in teams:
+    created = team["created"][:19].replace('T', ' ')
+    print(f"{team['id']:<40} {created:<20} {team['status']:<12}")
+
+# Right - use tabulate:
+from tabulate import tabulate
+table_data = [
+    [team['id'], team['created'][:19].replace('T', ' '), team['status']]
+    for team in teams
+]
+print(tabulate(table_data, headers=['Team ID', 'Created', 'Status'], tablefmt='simple'))
+
+# For simple cases, rich.table is also good:
+from rich.console import Console
+from rich.table import Table
+
+table = Table(title="Teams")
+table.add_column("Team ID", style="cyan")
+table.add_column("Created", style="magenta")
+table.add_column("Status", style="green")
+
+for team in teams:
+    table.add_row(team['id'], team['created'][:19], team['status'])
+
+Console().print(table)
+```
+
+This applies to any tabular output - use proper libraries instead of manual formatting.
+
+## Extract Common Validation/Check Logic
+
+Don't duplicate validation or check logic across functions. Extract it into helper methods:
+
+```python
+# Wrong - duplicated validation logic:
+def cmd_send(args):
+    team = Team(args.team_id)
+    if not team.channel_path.exists():
+        error_exit(f"Team channel not found: {team.channel_path}")
+    # ... rest of function
+
+def cmd_channel(args):
+    team = Team(args.team_id)
+    if not team.channel_path.exists():
+        error_exit(f"Team channel not found: {team.channel_path}")
+    # ... rest of function
+
+def cmd_agent_config(args):
+    team = Team(args.team_id)
+    if not team.base_dir.exists():
+        error_exit(f"Team {args.team_id} not found at {team.base_dir}")
+    # ... rest of function
+
+# Right - extract common logic:
+def get_team_or_exit(team_id: str) -> Team:
+    """Get team and verify it exists, or exit with error."""
+    team = Team(team_id)
+    if not team.base_dir.exists():
+        error_exit(f"Team {team_id} not found at {team.base_dir}")
+    return team
+
+def get_team_with_channel_or_exit(team_id: str) -> Team:
+    """Get team and verify channel exists, or exit with error."""
+    team = get_team_or_exit(team_id)
+    if not team.channel_path.exists():
+        error_exit(f"Team channel not found: {team.channel_path}")
+    return team
+
+# Then use:
+def cmd_send(args):
+    team = get_team_with_channel_or_exit(args.team_id)
+    # ... rest of function
+
+def cmd_channel(args):
+    team = get_team_with_channel_or_exit(args.team_id)
+    # ... rest of function
+```
+
+This applies to any repeated validation, initialization, or check logic.
+
+**Especially avoid aliasing properties when used only 1-2 times**:
+```python
+# Wrong - aliases used only once each:
+def create_team_infrastructure(team_id):
+    team = Team(team_id)
+    team_dir = team.base_dir
+    worktree_base = team.worktree_base
+    team_branch = team.team_branch
+
+    team_dir.mkdir(parents=True)
+    run_command(f"git branch {team_branch}")
+    print(f"Created worktrees at {worktree_base}")
+
+# Right - just use properties directly:
+def create_team_infrastructure(team_id):
+    team = Team(team_id)
+
+    team.base_dir.mkdir(parents=True)
+    run_command(f"git branch {team.team_branch}")
+    print(f"Created worktrees at {team.worktree_base}")
+
+# Wrong - creating object just to pass it:
+msg = ChannelMessage(
+    timestamp=datetime.utcnow().isoformat() + "Z",
+    agent=f"{team_id}-{agent_name}",
+    type=msg_type,
+    message=message
+)
+team.send_message(msg)
+
+# Right - construct at call site:
+team.send_message(ChannelMessage(
+    timestamp=datetime.utcnow().isoformat() + "Z",
+    agent=f"{team_id}-{agent_name}",
+    type=msg_type,
+    message=message
+))
+
+# OK - if used many times, aliasing can improve readability:
+def complex_team_operation(team_id):
+    team = Team(team_id)
+    channel_path = team.channel_path  # Used 8+ times below
+
+    if channel_path.exists():
+        with open(channel_path, 'r') as f:
+            messages = [json.loads(line) for line in f]
+
+        backup_path = channel_path.with_suffix('.backup')
+        shutil.copy(channel_path, backup_path)
+
+        with open(channel_path, 'a') as f:
+            # ... many more uses of channel_path
 ```
 
 ## Self-describing Variable Names
@@ -922,7 +1430,72 @@ device_macs: list[str]
 timeout: datetime.timedelta
 ```
 
+## Use pathlib Methods
+
+When working with Path objects, use their built-in methods instead of `open()`:
+
+```python
+# Wrong - using open() with Path objects:
+path = Path("config.json")
+with open(path, 'w') as f:
+    f.write(content)
+
+with open(path, 'r') as f:
+    data = f.read()
+
+# Right - use Path methods:
+path = Path("config.json")
+path.write_text(content)
+data = path.read_text()
+
+# If you need a file object (e.g., for streaming operations like json.dump):
+with path.open('w') as f:
+    json.dump(data, f, indent=2)
+```
+
 # Python
+
+## Create Pydantic Models for Known Structures
+
+When working with dictionaries of known structure, create Pydantic models:
+
+```python
+# Wrong - raw dicts with no validation:
+log_entry = {
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+    "agent": team_id,
+    "type": "STATUS",
+    "message": f"Team {team_id} initialized",
+    "data": {"branch": branch}
+}
+with open(channel_path, 'a') as f:
+    f.write(json.dumps(log_entry) + "\n")
+
+# Right - Pydantic model with validation:
+from pydantic import BaseModel
+
+class ChannelMessage(BaseModel):
+    timestamp: str
+    agent: str
+    type: Literal["STATUS", "PROGRESS", "COMPLETE", "BLOCKER", "HANDOFF"]
+    message: str
+    data: dict[str, Any] | None = None
+
+    def append_to_channel(self, channel_path: Path) -> None:
+        """Append this message to a channel file."""
+        with channel_path.open('a') as f:
+            f.write(self.model_dump_json() + "\n")
+
+# Usage:
+msg = ChannelMessage(
+    timestamp=datetime.utcnow().isoformat() + "Z",
+    agent=team_id,
+    type="STATUS",
+    message=f"Team {team_id} initialized",
+    data={"branch": branch}
+)
+msg.append_to_channel(team.channel_path)
+```
 
 ## Code Style Philosophy
 **Optimize for brevity and minimal cognitive load.** Fewer lines, fewer characters, less to hold in working memory.
@@ -1406,6 +1979,187 @@ Assistant: I'll create a custom bundle analyzer using regex...
 # Final Rule
 
 **When in doubt, CRASH.** Better to fail loudly than silently corrupt state.
+
+## NO Mixing Unrelated Files in Single Commits
+
+**NEVER create commits that mix unrelated files or features.** Each commit should have a single, clear purpose.
+
+**Bad pattern**: Catch-all commits mixing different concerns
+```
+# WRONG - Mixing unrelated changes
+"chore: add miscellaneous config files"
+- dotfiles/basic-memory/config.json (memory tool config)
+- nonrcm-dotfiles/config/cronomix/foo (random test file?)
+- openreview-graph.ipynb (data analysis notebook)
+[These have nothing to do with each other!]
+```
+
+**Why it's harmful**:
+- Makes git history harder to understand
+- Can't revert individual features cleanly
+- Code review becomes confusing
+- Bisecting bugs is more difficult
+- Shows lack of thoughtful organization
+
+**Good pattern**: Separate commits by purpose
+```
+# RIGHT - Each commit has clear purpose
+Commit 1: "feat(dotfiles): add basic-memory configuration"
+- dotfiles/basic-memory/config.json
+
+Commit 2: "docs: add OpenReview graph analysis notebook"
+- openreview-graph.ipynb
+
+# Skip temporary/test files entirely
+```
+
+**Guidelines**:
+- One feature/fix per commit
+- Related files go together (e.g., code + its tests)
+- Skip temporary files (foo, test.txt, etc.)
+- If files seem unrelated, they probably are
+- When in doubt, make separate commits
+
+## Git Path Syntax
+
+When the user writes ":/foo/bar", this is Git syntax where:
+- `:` means the repository root (not filesystem root)
+- Example: `:/docs/README.md` means `{git_repo_root}/docs/README.md`
+- To find git root: `git rev-parse --show-toplevel`
+
+## Unicode and Visual Elements Usage
+
+### Good Eye Candy (Use When Appropriate)
+
+**Status/Progress:**
+- ✅ Success/completed - for significant achievements
+- ❌ Failed/error - to draw attention to problems
+- ⏳ Processing/waiting - for time-consuming operations
+- ⚡ Fast/connected - for instant operations or successful connections
+- ⚠️ Warning - for important cautions
+- ℹ️ Info - for helpful information
+- 🔍 Searching - when performing searches
+- 🎯 Target achieved - sparingly, for major milestones
+
+**Structural/Navigation:**
+- → ← ↑ ↓ Arrows - for flow, navigation, direction
+- ├── └── │ Tree drawing - excellent for file structures
+- ▶ ▼ Expand/collapse indicators
+- • ■ ◆ Bullets - but use standard asterisk (*) in markdown
+
+**Math/Logic (Very Useful):**
+- ∀ ∃ - "for all", "exists" (even in prose: "apply lint ∀ added python file")
+- ∈ ∉ - set membership (great for programming: "if x ∈ allowed_values")
+- ⊆ ∩ ∪ - subset, intersection, union
+- ≥ ≤ ≠ - comparisons (useful in errors: "actual n ≠ expected 5")
+- ∧ ∨ ⇔ - logical and, or, iff
+- ∞ ∑ ∏ √ ∂ - mathematical operations
+- ∵ ∴ - because, therefore (useful in explanations)
+
+**Units/Science:**
+- °C °F - temperature
+- Ω μ - ohm, micro
+- π λ Δ - pi, lambda (wavelength), delta (change)
+- Use ^2 ^3 instead of ² ³ (better CLI readability)
+
+**Special Purpose:**
+- 🤖 LLM/assistant representation (good abbreviation)
+- Project-specific emoji when highly relevant (🎭 for "actorlib")
+- 🎉 ✨ 🔥 - Judiciously for major successes ("server running ok 🎉")
+
+### Bad Eye Candy (Avoid)
+
+- 🔄 🐌 🚀 💀 📊 - Unrecognizable or silly in professional context
+- 🎊 🦄 💖 🍕 🎨 - Decorative without purpose
+- ¬ ⇒ - Too small/unreadable in terminal
+- ° ² ³ - Use ^2 ^3 instead
+- Box drawing (╔═══╗) - Wastes vertical space in standard CLI output
+- 💩 👾 🦖 🎮 🎰 🎪 🗿 - Absolutely not (unless project-specific)
+- Fancy dashes/bullets in code or markdown - Use standard ASCII
+
+### Vertical Space Guidelines
+
+**Minimize vertical space in terminal:**
+- Stack output lines without empty lines between
+- Single empty line OK for major transitions:
+  - Before "Server booted successfully ✅"
+  - Before "FATAL ERROR ❌"
+  - Between major logical sections
+- No decorative spacing
+- No box drawing for standard output
+
+**Good example:**
+```
+Scanning files...
+Found 42 Python files
+Running lint ∀ file
+src/main.py: ✅ passed
+src/utils.py: ⚠️ warning: unused import
+src/broken.py: ❌ error: syntax error line 15
+
+Summary: 40 passed, 1 warning, 1 error
+```
+
+**Bad example:**
+```
+╔════════════════════════╗
+║   Scanning files...    ║
+╚════════════════════════╝
+
+Found 42 Python files 🐍
+
+🚀 Running lint...
+
+src/main.py: ✅ passed
+src/utils.py: ⚠️ warning
+src/broken.py: ❌ error
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Summary: 40/42 passed
+━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Core Principle
+Visual elements should:
+- Act as abbreviations (🤖 vs "Assistant:")
+- Enhance understanding (∀ clearer than "for all")
+- Draw necessary attention (❌ for errors)
+- NOT decorate for decoration's sake
+
+## NO Making Claims Without Reading/Verifying
+
+**NEVER describe or summarize file contents without actually reading them.** This is a critical antipattern.
+
+**Bad pattern**: Making authoritative claims about what files contain
+```
+# WRONG - Making claims without evidence
+"Commands include:
+- bad.md - Identify and fix bad coding patterns
+- course.md - Course/tutorial creation assistance
+- explore.md - Codebase exploration utilities"
+[User points out these descriptions are completely wrong]
+```
+
+**Why it's harmful**:
+- Spreads misinformation that other agents might trust
+- Wastes time when assumptions are wrong
+- Violates the core principle of evidence-based claims
+- Damages trust when caught making things up
+
+**Good pattern**: Read files before describing them
+```
+# RIGHT - Read first, then describe accurately
+[Reads bad.md]
+"bad.md - Handle and systematically prevent bad patterns observed in work"
+[Reads course.md]
+"course.md - Course correct when assumptions are unverified or false"
+```
+
+**Always**:
+- Read files before describing their contents
+- If you can't read something, say "I haven't read this file"
+- Never guess or infer from filenames alone
+- Admit when you don't know something
 
 ## NO Speculative Fallback Logic
 

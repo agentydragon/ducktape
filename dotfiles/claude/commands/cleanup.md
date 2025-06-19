@@ -32,33 +32,59 @@ Sweep through the current working directory to identify and clean up unused file
    - Commented-out large code blocks
    - Files not imported/required anywhere
 
+   **Unused code analysis:**
+   - Functions/classes never called or instantiated
+   - Exported members not imported anywhere
+   - Dead code after early returns
+   - Unreachable case/switch branches
+   - Variables assigned but never used
+   - Imports that are not used in the file
+
    **Outdated documentation:**
    - READMEs referencing non-existent files/directories
    - Documentation for removed features
    - Broken links in markdown files
    - Migration guides for completed migrations
 
+   **TODO Lists:**
+   - Check all TODO.md, TODO.txt files
+   - Scan for inline TODOs in code comments
+   - Mark completed items as done
+   - Remove irrelevant/obsolete TODOs
+   - Consolidate scattered TODO lists
+
    **Broken references:**
    - Import statements for deleted modules
    - Scripts referencing non-existent files
    - Configuration pointing to missing resources
 
-3. **Present findings organized by category**
+3. **For TODO lists specifically:**
+   - Read each TODO file and check items against current state
+   - Mark completed items with [x]
+   - Strike through or remove obsolete items
+   - Look for duplicate TODOs across files
+   - Check if mentioned files/features still exist
+   - Update priorities based on current project state
+
+4. **Present findings organized by category**
    - Group similar items together
    - Show file sizes for large items
    - Indicate if items are git-tracked or not
    - Suggest specific actions for each category
 
-4. **Get user confirmation before deleting**
+5. **Get user confirmation before deleting**
    - Never auto-delete without permission
    - Offer options: delete all, selective delete, or skip
    - For git-tracked files, suggest `git rm` instead of `rm`
 
-5. **Additional cleanup suggestions:**
+6. **Additional cleanup suggestions:**
    - Consolidate similar configuration files
    - Suggest moving experiments to an `experiments/` directory
    - Recommend adding patterns to `.gitignore`
    - Identify duplicate code/files
+   - Run linters to find unused variables/imports
+   - Use tools like `depcheck` for unused npm dependencies
+   - Check for circular dependencies
 
 ## Example Output Format
 
@@ -83,6 +109,11 @@ Old Experiments:
 Outdated Documentation:
 - docs/old-api.md (references removed endpoints)
 - README-deprecated.md (for old version)
+
+TODO Lists:
+- docs/TODO.md: 15 items completed, 8 obsolete, 45 remaining
+- Inline TODOs: Found 23, verified 12 are done
+- client/TODO.md: Contains duplicate items from main TODO
 
 Broken References:
 - src/index.ts imports './deleted-module'
