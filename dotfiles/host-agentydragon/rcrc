@@ -6,3 +6,7 @@ EXCLUDE="
     .config/OrcaSlicer/**
 "
 HOSTNAME=agentydragon
+# Symlink these as directories instead of individual files
+SYMLINK_DIRS="
+    claude/commands
+"
