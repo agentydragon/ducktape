@@ -60,6 +60,31 @@ title: Code Agent Instructions
 5. **NEVER use `getattr`/`setattr`** unless literally no alternative exists
 6. **ALWAYS fail fast** - Crash immediately on unexpected state
 
+## Writing Instructions and Documentation
+
+When adding rules, requirements, or instructions to CLAUDE.md or other documentation, **write them as general principles that apply broadly, not narrowly scoped to specific cases**.
+
+**BAD - Too narrow**:
+- "Use AST parsing for JavaScript extraction" ❌
+- "Never use regex to extract Python functions" ❌
+- "When working with minified JS bundles, use @babel/parser" ❌
+
+**GOOD - General principle**:
+- "Use proper parsers for ALL code extraction, never regex" ✅
+- "When analyzing code structure in ANY language, use that language's AST parser" ✅
+- "Code extraction requires semantic understanding - use appropriate parsing tools" ✅
+
+**Why this matters**:
+- Narrow rules get forgotten in similar but slightly different contexts
+- General principles guide correct behavior across all scenarios
+- Reduces documentation bloat and contradiction
+- Makes instructions more memorable and applicable
+
+**Examples of good general principles**:
+- "Structured data requires structured parsing" (applies to code, HTML, JSON, SQL, etc.)
+- "Use the right tool for semantic analysis" (AST for code, DOM for HTML, etc.)
+- "Never use pattern matching for nested structures" (general rule covering many cases)
+
 ## Repository Instructions
 
 If the repository has a `README.md`, read it and refer to it.
@@ -2282,6 +2307,56 @@ console.log('⏳ Sleeping 3s to allow time for final events (not tracking them).
 - Progress indicator suggesting work is happening during a simple sleep
 
 **Rule**: If the implementation is simple/naive, the messaging should reflect that. Don't oversell what the code does.
+
+## NO Pointless Wrapper Methods
+
+**NEVER create wrapper methods that add no value.** This is pure code bloat.
+
+**Bad pattern**: Methods that just call another method with the same parameters
+```javascript
+// WRONG - These are pointless wrappers:
+class Builder {
+  withTag(tagId) {
+    // ... actual implementation
+  }
+  
+  // This adds NOTHING:
+  tag(tagId) {
+    return this.withTag(tagId);
+  }
+  
+  // This is misleading - supertags aren't different:
+  supertag(tagId) {
+    return this.withTag(tagId);
+  }
+}
+```
+
+**Why it's harmful**:
+- Increases API surface area without benefit
+- Confuses users - which method should they use?
+- Makes codebase larger for no reason
+- Misleading names (like `supertag`) imply different behavior when there is none
+- Violates DRY principle at the API level
+
+**Good pattern**: One method per distinct behavior
+```javascript
+// RIGHT - Only one way to add tags:
+class Builder {
+  withTag(tagId, attributes) {
+    // Actual implementation
+  }
+  // No pointless aliases!
+}
+```
+
+**When wrapper methods ARE acceptable**:
+- They transform parameters: `setUser(name) { return this.setField('user', lookupUserId(name)); }`
+- They add validation: `setPositiveNumber(n) { if (n <= 0) throw Error(); return this.setValue(n); }`
+- They provide meaningful defaults: `highlight() { return this.setColor('yellow'); }`
+- They combine multiple operations: `reset() { this.clear(); this.init(); return this; }`
+
+**Rule**: If `methodA()` just calls `methodB()` with the exact same parameters and no other logic, delete `methodA()`.
 
 ## XDG Specification for Configurations
 

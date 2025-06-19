@@ -5,10 +5,28 @@ Execute a complex task by breaking it into a dependency graph and spawning paral
 ## Usage
 
 ```
-/spawn-graph
+/spawn-graph [--workflow=naive|worktree]
 ```
 
-Use this command when you have a complex task that can be broken into subtasks with dependencies between them.
+Or conversationally anywhere in your prompt:
+```
+"analyze this monorepo, find if I can delete service X /spawn-graph oh and make it thorough"
+"refactor the auth system /spawn-graph using the worktree workflow please"
+```
+
+Use this command when you have a complex task that can be broken into subtasks with dependencies between them. The command can appear at the start, middle, or end of your message.
+
+## Workflow Modes
+
+### 1. Naive Workflow (Default)
+All tasks work in the same repository. Simple and direct, suitable for smaller dependency graphs or when git isolation isn't needed.
+
+### 2. Worktree Workflow
+Each task gets its own git worktree for complete isolation. Better for complex graphs, concurrent development, and when you need clean merging of parallel work.
+
+Choose based on your needs:
+- **Naive**: Quick, simple tasks without complex merge requirements
+- **Worktree**: Complex tasks, need isolation, want clean git history per task
 
 ## What It Does
 
@@ -61,6 +79,335 @@ while (incomplete tasks exist):
 2. Resolve any conflicts
 3. Integrate results into final deliverable
 4. Generate summary report
+
+## Worktree Workflow Details
+
+When using `--workflow=worktree` (or requesting worktree workflow conversationally), the system creates an isolated git environment for maximum parallelism and clean merging.
+
+### Key Definitions
+
+- **Graph Instance Directory**: `./spawn-graph/{timestamp}-{description}/` - The root directory for a specific spawn-graph execution (e.g., `./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/`)
+- **Phase Directory**: `{graph-instance-dir}/phase{N}-{phasename}/` - Groups all tasks for a specific execution phase (e.g., `phase01-analysis/`, `phase02-compute/`)
+- **Task Directory**: `{phase-dir}/task{M}-{taskname}/` - The git worktree where a task agent operates (e.g., `task01-fizzbuzz-1-33/`)
+- **Task Output Dir**: `{task-dir}/spawn-graph/{timestamp}-{description}/phase{N}-{phasename}/task{M}-{taskname}/` - Subdirectory within the task directory for progress notes and final output. The path components after spawn-graph/ are duplicated to prevent merge conflicts.
+
+### Scaffolding Structure
+
+```
+./spawn-graph/
+├── README.md                                    # Explains this is for coordinating spawn-graph tasks
+└── 2025-01-02-1234-improve-security-protocol/  # {graph-instance-dir}
+    ├── TASK.md                                 # Full description of overall task
+    ├── PLAN.md                                 # Dependency graph and execution phases
+    ├── phase01-foundation/                     # {phase-dir} for Phase 1 (holds task worktrees)
+    │   ├── task01-define-interfaces/           # {task-dir} for Phase 1 Task 1 (git worktree, checked out to branch spawn-graph/2025-01-02-1234-improve-security-protocol/phase01-foundation/task01-define-interfaces)
+    │   │   ├── .git/                          # Git metadata (worktree link)
+    │   │   ├── [project files]                # Actual code being worked on
+    │   │   └── spawn-graph/                   # {task-output-dir} begins here
+    │   │       └── 2025-01-02-1234-improve-security-protocol/
+    │   │           └── phase01-foundation/
+    │   │               └── task01-define-interfaces/
+    │   │                   ├── PROGRESS.md    # Running notes
+    │   │                   └── OUTPUT.md      # Final result
+    │   ├── task02-security-audit/
+    │   └── task03-threat-model/
+    └── phase02-implementation/                 # {phase-dir} for Phase 2 (holds task worktrees)
+        ├── task01-auth-module/
+        └── task02-encryption-layer/
+```
+
+**KEY INSIGHT**: The task output dir is intentionally duplicated! When branches merge, each task's output lands in a unique location, preventing conflicts.
+
+### Workflow Process
+
+1. **Initialization**
+   - Create `./spawn-graph/` directory with README explaining its purpose
+   - Create graph instance directory: `./spawn-graph/{timestamp}-{task-description}/`
+   - Write `TASK.md` with full task description
+   - Analyze dependencies and create `PLAN.md` with:
+     - List of all subtasks
+     - Dependency edges (DAG)
+     - Optimized phases for minimal serial execution
+     - Each task named like `phase01-foundation/task03-check-dependencies` (format: phase{N}-{phasename}/task{M}-{taskname})
+
+2. **Worktree Setup per Task**
+   - Create worktree at `./spawn-graph/{instance}/phase{N}-{phasename}/task{M}-{taskname}/`
+   - Create branch: `spawn-graph/{instance}/phase{N}-{phasename}/task{M}-{taskname}`
+   - If current directory is dirty, apply same uncommitted changes to each worktree
+   - Task output dir will be created by agent at: `./spawn-graph/{instance}/phase{N}-{phasename}/task{M}-{taskname}/spawn-graph/{instance}/phase{N}-{phasename}/task{M}-{taskname}/`
+
+3. **Phase Execution**
+   For each phase:
+   - Launch N parallel agents (one per task in phase)
+   - Each agent receives:
+     ```
+     Read TASK.md and PLAN.md from ./spawn-graph/{instance}/
+     Execute task phase{X}-{phasename}/task{Y}-{taskname}
+     Work exclusively in worktree ./spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/
+     Create task output dir at: ./spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/
+     Make logical commits on branch spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}
+     Write final OUTPUT.md in task output dir when done/blocked
+     ```
+
+4. **Agent Work Pattern**
+   - Read overall task and plan
+   - Work only in assigned worktree
+   - Create task output directory (with full path duplication)
+   - Keep current state in task output directory
+   - Make incremental commits including task output
+   - Document observations, side outputs, blockers
+   - Final output goes to task output directory's `OUTPUT.md` with status:
+     - SUCCESS: Task completed
+     - FAILED: Task cannot be completed
+     - BLOCKED: Waiting on dependency or external factor
+     - PARTIAL: Some progress made but incomplete
+
+5. **Phase Completion**
+   - Read each task's `OUTPUT.md` from branch tip
+   - Merge successful task branches into main branch
+   - Handle conflicts intelligently (worst case: drop unmergeable work)
+   - Update `PLAN.md` if needed (add retries, conflict resolution tasks)
+   - Clean up worktrees with `git worktree remove`
+   - Proceed to next phase
+
+### Example: Parallel FizzBuzz Computation
+
+**Graph Instance**: `./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/`
+
+**TASK.md**:
+```markdown
+# Parallel FizzBuzz Analysis
+Generate FizzBuzz for numbers 1-100 with parallel computation and analysis
+```
+
+**PLAN.md**:
+```markdown
+# Execution Plan
+
+## Dependency Graph
+```
+phase01-analysis
+├── task01-range-partition    → phase02-compute/task01, task02, task03
+├── task02-pattern-study       → phase02-compute/task04
+└── task03-optimization-plan   → phase02-compute/task04
+
+phase02-compute  
+├── task01-fizzbuzz-1-33      → phase03-merge/task01
+├── task02-fizzbuzz-34-66     → phase03-merge/task01  
+├── task03-fizzbuzz-67-100    → phase03-merge/task01
+└── task04-optimized-algo      → phase03-merge/task02
+
+phase03-merge
+├── task01-combine-results     → phase04-analysis/task01
+└── task02-benchmark           → phase04-analysis/task01
+
+phase04-analysis
+└── task01-final-report
+```
+
+## Phases
+- Phase 1: Analysis and planning (3 parallel tasks)
+- Phase 2: Computation (4 parallel tasks)
+- Phase 3: Merging and benchmarking (2 parallel tasks)
+- Phase 4: Final analysis (1 task)
+```
+
+**Parallel Execution Visualization**:
+```
+Time →
+T0: [Analysis Task 1] [Analysis Task 2] [Analysis Task 3]
+T1: [Compute 1-33] [Compute 34-66] [Compute 67-100] [Optimized Algo]
+T2: [Merge Results] [Benchmark]
+T3: [Final Report]
+```
+
+**Agent Work Example (Phase 2, Task 1)**:
+```bash
+# Assume we start in /home/user/myproject
+cd ./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
+
+# We are now in {task-dir} for Phase 2, Task 1
+# pwd is /home/user/myproject/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
+
+# Create {task-output-dir} for this task (note the path duplication!)
+mkdir -p spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
+
+# The full path of {task-output-dir} is:
+# /home/user/myproject/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
+
+# Write progress (append to track history)
+cat >> spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/PROGRESS.md << EOF
+## Progress update - commit $(git rev-parse --short HEAD) @ $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+- Starting FizzBuzz computation for range 1-33
+- Implementing standard algorithm
+- Added unit tests
+- Performance optimizations applied
+
+EOF
+
+# Do the actual work
+cat > src/fizzbuzz_1_33.py << 'EOF'
+def fizzbuzz_range_1_33():
+    results = []
+    for i in range(1, 34):
+        if i % 15 == 0:
+            results.append("FizzBuzz")
+        elif i % 3 == 0:
+            results.append("Fizz")
+        elif i % 5 == 0:
+            results.append("Buzz")
+        else:
+            results.append(str(i))
+    return results
+EOF
+
+# Commit work
+git add -A
+git commit -m "feat: implement fizzbuzz for range 1-33"
+
+# Write tests
+cat > tests/test_fizzbuzz_1_33.py << 'EOF'
+# ... test implementation ...
+EOF
+
+git add -A
+git commit -m "test: add comprehensive test coverage"
+
+# Final output goes in task output directory
+# We're still in {task-dir}, so we write to the relative path:
+cat > spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/OUTPUT.md << 'EOF'
+STATUS: SUCCESS
+
+Generated FizzBuzz for numbers 1-33
+- Implementation: src/fizzbuzz_1_33.py
+- Tests: tests/test_fizzbuzz_1_33.py
+- Test coverage: 100%
+- Performance: 0.002s for range
+
+Results preview:
+1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz...
+EOF
+
+# The full path of OUTPUT.md is:
+# /home/user/myproject/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/OUTPUT.md
+
+git add -A
+git commit -m "docs: add final output and results"
+```
+
+### Phase Completion: Reviewing and Merging Results
+
+**Example: After Phase 2 completes, before starting Phase 3**:
+```bash
+# Starting from project root (/home/user/myproject)
+cd spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/
+
+# Review all task outputs
+for task in task*/; do
+    echo "=== Output from $task ==="
+    cat "$task/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/$task/OUTPUT.md"
+    echo
+done
+
+# Example output:
+# === Output from task01-fizzbuzz-1-33/ ===
+# STATUS: SUCCESS
+# Generated FizzBuzz for numbers 1-33
+# ...
+# === Output from task02-fizzbuzz-34-66/ ===
+# STATUS: SUCCESS
+# Generated FizzBuzz for numbers 34-66
+# ...
+# === Output from task03-fizzbuzz-67-100/ ===
+# STATUS: BLOCKED
+# Could not complete due to missing dependency X
+# ...
+# === Output from task04-optimized-algo/ ===
+# STATUS: SUCCESS
+# Implemented optimized algorithm with 3x speedup
+# ...
+
+# Make planning decisions based on outputs
+# - task01, task02, task04: SUCCESS → merge their branches
+# - task03: BLOCKED → add retry task to Phase 3
+
+# Merge successful task branches
+cd ../../.. # Back to project root
+git checkout main
+
+# Merge each successful task
+for task in phase02-compute/task01-fizzbuzz-1-33 \
+           phase02-compute/task02-fizzbuzz-34-66 \
+           phase02-compute/task04-optimized-algo; do
+    branch="spawn-graph/2025-01-02-1430-parallel-fizzbuzz/$task"
+    echo "Merging $branch..."
+    git merge --no-ff "$branch" -m "Merge $task from spawn-graph"
+done
+
+# Update PLAN.md for Phase 3 to include retry of blocked task
+cat >> spawn-graph/2025-01-02-1430-parallel-fizzbuzz/PLAN.md << 'EOF'
+
+## Phase 3 Adjustments
+- Added task03-retry-fizzbuzz-67-100 to handle blocked task from Phase 2
+EOF
+
+# Clean up completed worktrees
+for task in phase02-compute/task*/; do
+    git worktree remove "spawn-graph/2025-01-02-1430-parallel-fizzbuzz/$task"
+done
+```
+
+**After Merging All Successful Tasks**:
+```
+[main branch after merge]
+├── src/
+│   ├── fizzbuzz_1_33.py
+│   ├── fizzbuzz_34_66.py
+│   ├── fizzbuzz_67_100.py         # Missing due to blocked task
+│   └── fizzbuzz_optimized.py
+├── tests/
+│   └── [test files]
+└── spawn-graph/2025-01-02-1430-parallel-fizzbuzz/
+    └── phase02-compute/
+        ├── task01-fizzbuzz-1-33/
+        │   ├── PROGRESS.md
+        │   └── OUTPUT.md
+        ├── task02-fizzbuzz-34-66/
+        │   ├── PROGRESS.md
+        │   └── OUTPUT.md
+        ├── task03-fizzbuzz-67-100/
+        │   ├── PROGRESS.md
+        │   └── OUTPUT.md          # Shows BLOCKED status
+        └── task04-optimized-algo/
+            ├── PROGRESS.md
+            └── OUTPUT.md
+```
+
+### Benefits of Path Duplication
+
+1. **Conflict-Free Merges**: Each task's output has a unique path
+2. **Complete History**: All task outputs preserved in final merge
+3. **Easy Navigation**: Can review any task's work in isolation
+4. **Debugging**: Full paper trail of what each agent did
+5. **Reusability**: Can cherry-pick specific task implementations
+
+### When to Use Worktree vs Naive
+
+**Use Worktree Workflow when**:
+- Complex refactoring across many files
+- High risk of merge conflicts
+- Need clean git history per subtask
+- Want ability to cherry-pick specific task results
+- Running many tasks in parallel (>5)
+- Need full audit trail of parallel work
+
+**Use Naive Workflow when**:
+- Simple task decomposition
+- Low conflict risk
+- Quick experiments
+- Tasks mostly read-only or in different areas
+- Don't need isolated git history
 
 ## Example Execution
 

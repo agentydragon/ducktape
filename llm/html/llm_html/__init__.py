@@ -5,4 +5,4 @@ __version__ = "0.1.0"
 from .server import app
 from .token_scheme import TokenScheme
 
-__all__ = ["app", "TokenScheme"]
+__all__ = ["TokenScheme", "app"]
