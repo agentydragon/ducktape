@@ -1,0 +1,2 @@
+---
+- include_tasks: "{{ authentik_enabled | ternary('enabled.yml', 'disabled.yml') }}"

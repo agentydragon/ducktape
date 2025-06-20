@@ -1,0 +1,11 @@
+---
+- name: restart authentik
+  docker_compose:
+    project_src: "{{ authentik_data_dir }}"
+    project_name: "{{ authentik_compose_project_name }}"
+    restarted: true
+
+- name: reload nginx
+  service:
+    name: nginx
+    state: reloaded

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TaskerData sr="" dvi="1" tv="6.2.10">
+  <Project name="BT-HA-Reporter" si="1">
+    <!-- PROFILES (all trigger → Task “BT_Report”) -->
+    <Profile uuid="prof1">
+      <Event>
+        <Type>BTConnected *</Type>
+      </Event>
+      <Task>BT_Report</Task>
+    </Profile>
+    <Profile uuid="prof2">
+      <Event>
+        <Type>BTDisconnected *</Type>
+      </Event>
+      <Task>BT_Report</Task>
+    </Profile>
+    <Profile uuid="prof3">
+      <Event>
+        <Type>BTStatus Off→On / On→Off</Type>
+      </Event>
+      <Task>BT_Report</Task>
+    </Profile>
+    <Profile uuid="prof4">
+      <Time>
+        <Every>00:15</Every>
+      </Time>
+      <Task>BT_Report</Task>
+    </Profile>
+
+    <Task name="BT_Report">
+      <!-- constants -->
+      <Action type="Variable Set" var="%HA_URL" val="https://home.e621.co.uk"/>
+      <Action type="Variable Set" var="%HA_TOKEN" val="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI2MzVhNzE0MGQ4ZTQ0ZDllOGEzNTBmYmE0MGYwYTJmNiIsImlhdCI6MTc0ODc3NDgxNCwiZXhwIjoyMDY0MTM0ODE0fQ.AXWfvo9-ioJSpwO64z6VTErx2Ag7lCxmdjYAf8jCCvg"/>
+      <Action type="Variable Set" var="%EVENT" val="tasker_sensor_test"/>
+      <Action type="Variable Set" var="%MAC_LIST" val="A8:F5:E1:77:2C:59,78:2B:64:A1:0E:1E"/>
+
+      <!-- phone BT status -->
+      <If cond="%BLUE ~ on">
+        <Action type="Variable Set" var="%BT_ENABLED" val="true"/>
+      <Else/>
+        <Action type="Variable Set" var="%BT_ENABLED" val="false"/>
+      <EndIf/>
+
+      <!-- split MAC list to array %MAC() -->
+      <Action type="Variable Split" var="%MAC_LIST" splitter=","/>
+
+      <!-- build JSON -->
+      <Action type="Variable Set" var="%JSON" val="{&quot;bt_on&quot;:%BT_ENABLED,&quot;devices&quot;:["/>
+
+      <Loop type="For" var="%idx" from="1" to="%MAC(#)">
+        <!-- AutoTools → Bluetooth Info (Address=%MAC(%idx)) -->
+        <Action type="Plugin" plugin="AutoTools">
+          <Config>
+            <bluetoothinfo_address>%MAC(%idx)</bluetoothinfo_address>
+          </Config>
+        </Action>
+        <!-- AutoTools returns: %ataddress %atconnected %atvisible %atbattery -->
+        <Action type="Variable Join" var="%JSON"
+                val="{&quot;address&quot;:&quot;%MAC(%idx)&quot;,&quot;visible&quot;:%atvisible,&quot;connected&quot;:%atconnected,&quot;battery&quot;:%atbattery}"/>
+        <If cond="%idx < %MAC(#)">
+          <Action type="Variable Join" var="%JSON" val=","/>
+        <EndIf/>
+      </Loop>
+      <Action type="Variable Join" var="%JSON" val="]}"/>
+
+      <!-- POST to Home Assistant -->
+      <Action type="HTTP Request">
+        <Method>POST</Method>
+        <Url>%HA_URL/api/events/%EVENT</Url>
+        <Header>Authorization: Bearer %HA_TOKEN
+Content-Type: application/json</Header>
+        <Body>%JSON</Body>
+        <Trust AnyCert="true"/>
+      </Action>
+    </Task>
+  </Project>
+</TaskerData>
+

@@ -1,0 +1,68 @@
+server {
+    listen 80;
+    server_name {{ authentik_domain }};
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name {{ authentik_domain }};
+
+    ssl_certificate /etc/letsencrypt/live/{{ authentik_domain }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ authentik_domain }}/privkey.pem;
+
+    # Security headers
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+    add_header X-Robots-Tag none;
+    add_header X-Download-Options noopen;
+    add_header X-Permitted-Cross-Domain-Policies none;
+    add_header Referrer-Policy strict-origin-when-cross-origin;
+
+    # Proxy to authentik
+    location / {
+        proxy_pass https://{{ wg_address.split('/')[0] }}:{{ authentik_https_port }};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        
+        # Timeouts
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 1200s;
+        proxy_read_timeout 1200s;
+        
+        # Allow large uploads
+        client_max_body_size 50M;
+        
+        # Buffering off for streaming
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    # Forward authentication endpoint
+    location /outpost.goauthentik.io {
+        proxy_pass https://{{ wg_address.split('/')[0] }}:{{ authentik_https_port }}/outpost.goauthentik.io;
+        proxy_set_header Host $host;
+        proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
+        proxy_set_header X-Original-Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        
+        # Cache authentication
+        proxy_cache_valid 200 202 10m;
+        proxy_cache_valid 401 1m;
+        
+        # Pass Set-Cookie headers
+        proxy_pass_header Set-Cookie;
+        
+        # This is required for the authentik API
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+}

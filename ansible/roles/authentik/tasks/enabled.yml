@@ -1,0 +1,39 @@
+---
+- name: Create authentik directory
+  file:
+    path: "{{ authentik_data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ authentik_data_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart authentik
+
+- name: Start authentik services
+  docker_compose:
+    project_src: "{{ authentik_data_dir }}"
+    project_name: "{{ authentik_compose_project_name }}"
+    state: present
+
+- name: Deploy nginx site configuration
+  template:
+    src: authentik.nginx.j2
+    dest: /etc/nginx/sites-available/{{ authentik_domain }}
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Enable authentik nginx site
+  file:
+    src: /etc/nginx/sites-available/{{ authentik_domain }}
+    dest: /etc/nginx/sites-enabled/{{ authentik_domain }}
+    state: link
+  notify: reload nginx

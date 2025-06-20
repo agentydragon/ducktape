@@ -1,0 +1,264 @@
+# Certbot renewal is done via the nginx *authenticator*.
+# See https://eff-certbot.readthedocs.io/en/latest/using.html#getting-certificates-and-choosing-plugins.
+# Looks like the authenticator does this via /.well-known/acme-challenge:
+#   https://github.com/certbot/certbot/blob/619654f3175687fc02dbbf34754e43c067303c3b/certbot-nginx/certbot_nginx/_internal/http_01.py#L237C9-L237C9
+#
+# TODO: check if the configurator does a good job too.
+#
+# Certbot comes with a built-in systemd timer: systemctl show certbot.timer.
+# That runs `certbot renew`. I can check in journalctl that it does the right
+# thing. It runs ~2x/day by default.
+
+---
+- hosts: vps
+  remote_user: root
+
+
+  vars:
+    # Misc host-specific variables
+    rcup_computer: vps
+    # Disable heavy dev packages on VPS
+    include_heavy_dev_packages: false
+
+  roles:
+    #- cli    # <- TODO:  needs ducktape, etc
+    - role: wireguard
+      tags: [wireguard]
+
+  tasks:
+    # Needs to run before Docker, which tries to install gnupg2
+    - name: Update everything
+      become: true
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+
+    - name: Install nginx
+      become: true
+      ansible.builtin.apt:
+        name: nginx
+        state: latest
+
+    - name: Enable Fail2Ban role
+      ansible.builtin.include_role:
+        name: nbigot.ansible-fail2ban
+      tags: [fail2ban]
+
+    - name: Create user
+      ansible.builtin.user:
+        name: agentydragon
+        createhome: true
+        # NOTE: still need to ssh-copy-id over to the user manually.
+
+    - name: "Let’s Encrypt | agentydragon.com"
+      ansible.builtin.import_role:
+        name: letsencrypt
+      vars:
+        letsencrypt_cert_name: agentydragon.com
+        letsencrypt_domains:
+          - "agentydragon.com"
+          - "www.agentydragon.com"
+
+    - name: "Let’s Encrypt | adgn.link"
+      ansible.builtin.import_role:
+        name: letsencrypt
+      vars:
+        letsencrypt_cert_name: "adgn.link"
+        letsencrypt_domains:
+          - "adgn.link"
+          - "www.adgn.link"
+
+    - name: nginx.conf
+      ansible.builtin.copy:
+        src: nginx.conf
+        dest: /etc/nginx/nginx.conf
+
+    - name: nginx website configs
+      tags: [nginx]
+      block:
+      - name: "Create static nginx configuration"
+        ansible.builtin.copy:
+          src: nginx-sites/{{ item }}
+          dest: /etc/nginx/sites-available/{{ item }}
+        loop:
+          - agentydragon.com
+          - adgn.link
+        notify:
+          - Reload nginx
+
+      # nginx default website takes priority over http://agentydragon.com
+      # redirect, so disable it.
+      - name: Disable nginx default website
+        ansible.builtin.file:
+          state: absent
+          dest: /etc/nginx/sites-enabled/default
+        notify:
+          - Reload nginx
+
+      - name: Enable nginx websites
+        ansible.builtin.file:
+          state: link
+          src: /etc/nginx/sites-available/{{ item }}
+          dest: /etc/nginx/sites-enabled/{{ item }}
+        loop:
+          - agentydragon.com
+          - adgn.link
+        notify:
+          - Reload nginx
+
+    - name: Grocy
+      ansible.builtin.include_role:
+        name: grocy
+        apply:
+          tags: grocy
+      vars:
+        grocy_state: absent # disabled
+      tags: [grocy]
+
+    - name: InvenTree
+      ansible.builtin.include_role:
+        name: inventree
+        apply:
+          tags: inventree
+      vars:
+        inventree_state: present
+      tags: [inventree]
+
+    - name: Trilium server
+      ansible.builtin.include_role:
+        name: trilium_server
+        apply:
+          tags: trilium
+      vars:
+        trilium_state: absent
+      tags: [trilium]
+
+    - name: Bazel remote cache
+      ansible.builtin.include_role:
+        name: bazel_cache
+        apply:
+          tags: bazel-remote-cache
+      vars:
+        bazel_cache_state: absent
+      tags: [bazel-remote-cache]
+
+    - name: Start and enable nginx
+      service:
+        name: nginx
+        state: started
+        enabled: true
+      tags: [nginx]
+
+    - name: Syncthing server
+      ansible.builtin.include_role:
+        name: syncthing-server
+        apply:
+          tags: syncthing
+      tags: syncthing
+
+    - name: Webhook inbox service
+      ansible.builtin.include_role:
+        name: webhook_inbox
+        apply:
+          tags: webhook-inbox
+      vars:
+        webhook_inbox_domain: webhook.agentydragon.com
+        webhook_inbox_host_port: 4473
+      tags: webhook-inbox
+
+    - name: LLM HTML service
+      ansible.builtin.include_role:
+        name: llm_html
+        apply:
+          tags: llm-html
+      vars:
+        llm_html_domain: llm.agentydragon.com
+        llm_html_host_port: 9000
+      tags: llm-html
+
+    - name: ActivityWatch server
+      ansible.builtin.include_role:
+        name: activitywatch_server
+        apply:
+          tags: activitywatch
+      tags: activitywatch
+      vars:
+        # Listens on localhost; uploading data works via SSH tunnel.
+        activitywatch_state: present
+
+    # Setup agentydragon user with CLI tools and dotfiles
+    - name: Setup agentydragon user environment
+      tags: [user-setup]
+      vars:
+        my_user: agentydragon
+        ducktape_path: "/home/agentydragon/code/ducktape"
+      block:
+        - name: Check if SSH key exists for agentydragon user
+          ansible.builtin.stat:
+            path: /home/agentydragon/.ssh/authorized_keys
+          register: ssh_key_check
+
+        - name: Assert SSH key is set up
+          ansible.builtin.assert:
+            that:
+              - ssh_key_check.stat.exists
+              - ssh_key_check.stat.size > 0
+            fail_msg: |
+              SSH key must be set up for agentydragon user. Please:
+              1. Run 'ssh-copy-id agentydragon@{{ inventory_hostname }}' to set up SSH access
+              2. SSH into the server as agentydragon and set up GitHub access:
+                 - Generate SSH key: ssh-keygen -t ed25519 -C "your_email@example.com"
+                 - Add the key to GitHub: https://github.com/settings/keys
+                 - Or use GitHub CLI: gh auth login
+            success_msg: "SSH key is set up for agentydragon user"
+
+        - name: Create code directory
+          become: true
+          become_user: agentydragon
+          ansible.builtin.file:
+            path: "/home/agentydragon/code"
+            state: directory
+            mode: '0755'
+
+        - name: Clone ducktape repository
+          become: true
+          become_user: agentydragon
+          ansible.builtin.git:
+            repo: git@github.com:agentydragon/ducktape.git
+            dest: "{{ ducktape_path }}"
+            version: devel
+            accept_hostkey: true
+            depth: 1  # Shallow clone for speed
+
+<<<<<<< HEAD
+        - name: Apply CLI role
+          ansible.builtin.import_role:
+            name: cli
+          # CLI role tasks that need root will handle their own become
+=======
+    # Apply CLI role (outside the block so tags work independently)
+    - name: Apply CLI role
+      ansible.builtin.import_role:
+        name: cli
+      vars:
+        my_user: agentydragon
+        ducktape_path: "/home/agentydragon/code/ducktape"
+      tags: [dotfiles]
+      # CLI role tasks that need root will handle their own become
+>>>>>>> a30aa1e (Fix VPS user handling and rcup timeout)
+
+    # TODO: configure - plus for remote desktop
+    # - name: Configure Authentik
+    #   ansible.builtin.include_role:
+    #     name: authentik
+    #   tags: [authentik]
+
+  handlers:
+    # Only triggers if nginx config files changed.
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+        daemon_reload: true
+        enabled: true
+      tags: [nginx]

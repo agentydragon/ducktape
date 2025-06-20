@@ -1,0 +1,16 @@
+---
+authentik_enabled: true
+authentik_domain: auth.agentydragon.com
+authentik_version: 2024.10
+authentik_data_dir: /opt/authentik
+authentik_db_password: "{{ vault_authentik_db_password }}"
+authentik_secret_key: "{{ vault_authentik_secret_key }}"
+
+# Docker compose settings
+authentik_compose_project_name: authentik
+authentik_db_name: authentik
+authentik_db_user: authentik
+
+# Port configuration (only accessible via WireGuard)
+authentik_http_port: 9000
+authentik_https_port: 9443

@@ -1,0 +1,70 @@
+version: '3.9'
+
+services:
+  postgresql:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ authentik_db_user }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: {{ authentik_db_password }}
+      POSTGRES_USER: {{ authentik_db_user }}
+      POSTGRES_DB: {{ authentik_db_name }}
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+  server:
+    image: ghcr.io/goauthentik/server:{{ authentik_version }}
+    restart: unless-stopped
+    command: server
+    environment: &authentik-env
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: {{ authentik_db_user }}
+      AUTHENTIK_POSTGRESQL__NAME: {{ authentik_db_name }}
+      AUTHENTIK_POSTGRESQL__PASSWORD: {{ authentik_db_password }}
+      AUTHENTIK_SECRET_KEY: {{ authentik_secret_key }}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: false
+      # Disable email
+      AUTHENTIK_EMAIL__HOST: ""
+    volumes:
+      - media:/media
+      - custom-templates:/templates
+    ports:
+      - "{{ wg_address.split('/')[0] }}:{{ authentik_http_port }}:9000"
+      - "{{ wg_address.split('/')[0] }}:{{ authentik_https_port }}:9443"
+    depends_on:
+      - postgresql
+      - redis
+
+  worker:
+    image: ghcr.io/goauthentik/server:{{ authentik_version }}
+    restart: unless-stopped
+    command: worker
+    environment: *authentik-env
+    volumes:
+      - media:/media
+      - custom-templates:/templates
+    depends_on:
+      - postgresql
+      - redis
+
+volumes:
+  postgres_data:
+  redis_data:
+  media:
+  custom-templates:

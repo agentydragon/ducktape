@@ -1,0 +1,13 @@
+---
+- name: Stop authentik services
+  docker_compose:
+    project_src: "{{ authentik_data_dir }}"
+    project_name: "{{ authentik_compose_project_name }}"
+    state: absent
+  ignore_errors: true
+
+- name: Disable authentik nginx site
+  file:
+    path: /etc/nginx/sites-enabled/{{ authentik_domain }}
+    state: absent
+  notify: reload nginx
