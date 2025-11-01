@@ -170,7 +170,7 @@
       ansible.builtin.import_role:
         name: cli
       tags: [cli]
-    # cli_nix_migrated excluded - atlas now uses Nix/home-manager for migrated packages
+    # legacy_without_home_manager/cli excluded - atlas uses Nix/home-manager for these tools
 
     - name: Apply Nix role
       ansible.builtin.import_role:

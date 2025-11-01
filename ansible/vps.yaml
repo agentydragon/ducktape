@@ -387,6 +387,13 @@
       tags: [dotfiles]
       # CLI role tasks that need root will handle their own become
 
+    - name: Apply CLI nix migrated role
+      ansible.builtin.import_role:
+        name: legacy_without_home_manager/cli
+      vars:
+        my_user: agentydragon
+      tags: [dotfiles]
+
     # Apply Claude MCP role for agentydragon user
     - name: Apply Claude MCP role
       ansible.builtin.import_role:
