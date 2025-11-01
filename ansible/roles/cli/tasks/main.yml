@@ -1,4 +1,8 @@
 ---
+# Include system inspection sudo permissions for all systems
+- import_role:
+    name: system-inspection-nopasswd
+  tags: [sudo, system]
 
 - name: System-wide apt lock acquire timeout (3 min)
   become: true
@@ -95,7 +99,7 @@
     - Public
     - Templates
     - Videos
-  register: dir_contents
+  register: dir_stats
   become: true
   become_user: "{{ cli_user | default(ansible_user_id) }}"
   failed_when: false  # Don't fail if directory doesn't exist
@@ -104,8 +108,14 @@
   ansible.builtin.file:
     path: "/home/{{ cli_user | default(ansible_user_id) }}/{{ item.item }}"
     state: absent
-  when: item.matched == 0  # Directory exists but is empty
-  loop: "{{ dir_contents.results }}"
+  when:
+    - item.item.stat.exists
+    - item.item.stat.isdir
+    - item.matched is defined
+    - item.matched == 0
+  loop: "{{ dir_stats.results }}"
+  loop_control:
+    label: "{{ item.item.item | default('skipped') }}"
   become: true
   become_user: "{{ cli_user | default(ansible_user_id) }}"
   failed_when:
