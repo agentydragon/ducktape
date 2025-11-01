@@ -1,0 +1,30 @@
+---
+# Claude Code installation for non-Nix systems
+# On home-manager systems, Claude is configured but the binary installation is manual
+
+- name: Check if Claude binary exists and is executable
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.local/bin/claude"
+  register: claude_binary_check
+
+# Install Claude via official installation script
+# TODO: Not super fond of curl|bash pattern but eh ... *cringe and look away*
+# Note: Native official Claude avoids issues with built-in ripgrep.node breakage
+- name: Install Claude Code via official script
+  ansible.builtin.shell: |
+    curl -fsSL https://claude.ai/install.sh | bash -s latest
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+  when: not claude_binary_check.stat.exists or not claude_binary_check.stat.executable
+
+# Verify installation succeeded
+- name: Verify Claude installation
+  ansible.builtin.command: "{{ ansible_user_dir }}/.local/bin/claude --version"
+  register: claude_version_check
+  changed_when: false
+  failed_when: claude_version_check.rc != 0
+
+# Import claude-mcp after Claude Code is installed
+- import_role:
+    name: claude-mcp
+  tags: [claude, mcp]
