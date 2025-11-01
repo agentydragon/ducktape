@@ -170,7 +170,11 @@
       ansible.builtin.import_role:
         name: cli
       tags: [cli]
+<<<<<<< HEAD
     # legacy_without_home_manager/cli excluded - atlas uses Nix/home-manager for these tools
+=======
+    # cli_nix_migrated excluded - atlas now uses Nix/home-manager for migrated packages
+>>>>>>> 4a66ade6 (dirty state)
 
     - name: Apply Nix role
       ansible.builtin.import_role:
@@ -183,6 +187,10 @@
     # This avoids SSH authentication issues with existing VMs
     # To provision k3s: ansible-playbook k3s-provision.yaml
     # DNS for k3s is handled centrally via *.k3s.agentydragon.com (VPS)
+
+    - import_role:
+        name: gitea-mirrors
+      tags: [gitea-mirrors, storage]
 
     - import_role:
         name: gitea-mirrors
