@@ -68,7 +68,8 @@
       qm status {{ item.vmid }} | grep -q "running" && qm stop {{ item.vmid }} && sleep 5
 
       # Add virtiofs shared filesystem
-      qm set {{ item.vmid }} --args "-chardev socket,id=gitea-mirrors,path=/var/run/virtiofsd-gitea-mirrors.sock -device vhost-user-fs-pci,queue-size=1024,chardev=gitea-mirrors,tag=gitea-mirrors"
+      qm set {{ item.vmid }} --args "-chardev socket,id=gitea-mirrors,path=/var/run/virtiofsd-gitea-mirrors.sock \
+        -device vhost-user-fs-pci,queue-size=1024,chardev=gitea-mirrors,tag=gitea-mirrors"
 
       # Start VM
       qm start {{ item.vmid }}
