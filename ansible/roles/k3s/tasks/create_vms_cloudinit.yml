@@ -1,0 +1,83 @@
+---
+# Create k3s VMs with cloud-init configuration
+# This approach eliminates the need for SSH from atlas
+
+- name: Create cloud-init user data for master
+  ansible.builtin.template:
+    src: cloud-init-master.yaml.j2
+    dest: /tmp/cloud-init-master-{{ item.name }}.yaml
+  loop: "{{ k3s_vms | selectattr('role', 'equalto', 'master') | list }}"
+  tags: [k3s, vm-create]
+
+- name: Create cloud-init user data for workers
+  ansible.builtin.template:
+    src: cloud-init-worker.yaml.j2
+    dest: /tmp/cloud-init-worker-{{ item.name }}.yaml
+  loop: "{{ k3s_vms | selectattr('role', 'equalto', 'worker') | list }}"
+  tags: [k3s, vm-create]
+
+- name: Clone VMs from template
+  ansible.builtin.shell: |
+    qm clone {{ k3s_vm_template | default(9000) }} {{ item.vmid }} --name {{ item.name }} --full
+  loop: "{{ k3s_vms }}"
+  register: clone_result
+  failed_when:
+    - clone_result.rc != 0
+    - "'already exists' not in clone_result.stderr"
+  changed_when: clone_result.rc == 0
+  tags: [k3s, vm-clone]
+
+- name: Configure VM resources
+  ansible.builtin.shell: |
+    qm set {{ item.vmid }} --cores {{ item.cores }} --memory {{ item.memory }}
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-config]
+
+- name: Resize VM disks
+  ansible.builtin.shell: |
+    qm resize {{ item.vmid }} scsi0 {{ item.disk_size }}
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-config]
+
+- name: Configure cloud-init with user data for each VM
+  ansible.builtin.shell: |
+    # Set network config
+    qm set {{ item.vmid }} \
+      --ipconfig0 ip={{ item.ip }}/{{ k3s_network_cidr }},gw={{ k3s_network_gateway }} \
+      --nameserver {{ k3s_nameserver }}
+
+    # Set the cloud-init user data
+    # Note: Proxmox requires the user-data to be provided via cicustom parameter
+    # This would need the cloud-init file to be on a storage accessible to Proxmox
+    # For now, using SSH keys directly
+    qm set {{ item.vmid }} \
+      --sshkeys "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}" \
+      --ciuser {{ k3s_ssh_user }}
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-config]
+
+- name: Start VMs
+  ansible.builtin.shell: |
+    qm start {{ item.vmid }}
+  loop: "{{ k3s_vms }}"
+  register: start_result
+  failed_when:
+    - start_result.rc != 0
+    - "'already running' not in start_result.stderr"
+  changed_when: start_result.rc == 0
+  tags: [k3s, vm-start]
+
+- name: Wait for cloud-init to complete
+  ansible.builtin.pause:
+    seconds: 180
+  tags: [k3s, vm-start]
+
+# Note: With full cloud-init approach, k3s would be installed automatically
+# No SSH from atlas needed!
+#
+# Challenges:
+# 1. Worker nodes need the token from master - could use:
+#    - Shared storage (NFS/Ceph)
+#    - Proxmox API to read from master and write to workers
+#    - A simple HTTP endpoint on master
+# 2. Proxmox's cloud-init support is limited compared to real cloud providers

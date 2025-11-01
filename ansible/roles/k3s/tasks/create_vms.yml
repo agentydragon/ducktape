@@ -26,15 +26,26 @@
   changed_when: true
   tags: [k3s, vm-config]
 
+- name: Read atlas provisioning key and add marker
+  ansible.builtin.shell: |
+    echo "$(cat /root/.ssh/id_ed25519.pub) # TEMPORARY-ANSIBLE-PROVISIONING-KEY" > /tmp/provisioning-key.pub
+  tags: [k3s, vm-config]
+
 - name: Configure cloud-init settings
   ansible.builtin.shell: |
     qm set {{ item.vmid }} \
       --ipconfig0 ip={{ item.ip }}/{{ k3s_network_cidr }},gw={{ k3s_network_gateway }} \
       --nameserver {{ k3s_nameserver }} \
-      --sshkeys /root/.ssh/id_rsa.pub \
+      --sshkeys /tmp/provisioning-key.pub \
       --ciuser {{ k3s_ssh_user }}
   loop: "{{ k3s_vms }}"
   changed_when: true
+  tags: [k3s, vm-config]
+
+- name: Clean up temporary key file
+  ansible.builtin.file:
+    path: /tmp/provisioning-key.pub
+    state: absent
   tags: [k3s, vm-config]
 
 - name: Start VMs

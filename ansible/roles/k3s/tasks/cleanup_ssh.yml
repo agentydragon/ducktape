@@ -1,0 +1,32 @@
+---
+# Remove atlas SSH access after k3s setup is complete
+# This makes the SSH access temporary - only during provisioning
+
+- name: Remove atlas provisioning SSH key from k3s VMs
+  delegate_to: "{{ item.name }}"
+  ansible.builtin.lineinfile:
+    path: /home/{{ k3s_ssh_user }}/.ssh/authorized_keys
+    regexp: '.*# TEMPORARY-ANSIBLE-PROVISIONING-KEY$'
+    state: absent
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, security, cleanup]
+
+- name: Remove atlas provisioning SSH key from root user if present
+  delegate_to: "{{ item.name }}"
+  ansible.builtin.lineinfile:
+    path: /root/.ssh/authorized_keys
+    regexp: '.*# TEMPORARY-ANSIBLE-PROVISIONING-KEY$'
+    state: absent
+  loop: "{{ k3s_vms }}"
+  ignore_errors: yes  # Root might not have .ssh/authorized_keys
+  tags: [k3s, security, cleanup]
+
+# Optional: Also remove the SSH host keys from atlas's known_hosts
+- name: Remove k3s VMs from atlas known_hosts
+  ansible.builtin.known_hosts:
+    name: "{{ item.ip }}"
+    state: absent
+  loop: "{{ k3s_vms }}"
+  delegate_to: localhost
+  run_once: true
+  tags: [k3s, security, cleanup]

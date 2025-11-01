@@ -1,0 +1,41 @@
+#cloud-config
+hostname: {{ item.name }}
+manage_etc_hosts: true
+
+users:
+  - name: {{ k3s_ssh_user }}
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - {{ lookup('file', '~/.ssh/id_ed25519.pub') }}
+
+write_files:
+  - path: /etc/rancher/k3s/registries.yaml
+    content: |
+      mirrors:
+        "registry.registry.svc.cluster.local:5000":
+          endpoint:
+            - "http://registry.registry.svc.cluster.local:5000"
+    owner: root:root
+    permissions: '0644'
+  - path: /tmp/wait-for-master.sh
+    content: |
+      #!/bin/bash
+      # Wait for master to be ready and have node token
+      while ! curl -s -o /dev/null -w "%{http_code}" http://{{ k3s_master_ip }}:6443; do
+        echo "Waiting for k3s master API..."
+        sleep 10
+      done
+      # Get token from master (would need a way to share this)
+      # For now, this would need manual intervention or a shared storage
+    permissions: '0755'
+
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - ca-certificates
+
+runcmd:
+  # Note: Worker installation needs the node token from master
+  # This would need to be handled via shared storage or manual step
+  # - curl -sfL https://get.k3s.io | K3S_URL=https://{{ k3s_master_ip }}:6443 K3S_TOKEN=${NODE_TOKEN} INSTALL_K3S_VERSION="{{ k3s_version }}" sh -

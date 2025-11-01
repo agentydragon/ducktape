@@ -60,7 +60,7 @@
     ansible_host: "{{ item.ip }}"
     ansible_user: "{{ k3s_ssh_user }}"
     ansible_ssh_common_args: >-
-      -o ProxyCommand='ssh -W %h:%p root@{{ ansible_host }}'
+      -o ProxyCommand='ssh -W %h:%p root@atlas'
     k3s_role: "{{ item.role }}"
   loop: "{{ k3s_vms }}"
   tags: [k3s, inventory]
@@ -77,3 +77,9 @@
 - name: Configure insecure registry for k3s nodes
   ansible.builtin.include_tasks: configure_registry.yml
   tags: [k3s, registry]
+
+# Clean up SSH access - atlas root key is only needed during provisioning
+- name: Remove temporary SSH access from atlas
+  include_tasks: cleanup_ssh.yml
+  tags: [k3s, security, cleanup]
+  when: k3s_cleanup_ssh | default(true)

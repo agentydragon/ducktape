@@ -179,15 +179,10 @@
       vars:
         nix_trusted_users: "root {{ my_user }}"
 
-    - name: Apply k3s role
-      ansible.builtin.import_role:
-        name: k3s
-      tags: [k3s]
-
-    - name: Apply dnsmasq k3s role
-      ansible.builtin.import_role:
-        name: dnsmasq_k3s
-      tags: [dnsmasq, dns]
+    # k3s cluster provisioning moved to separate playbook: k3s-provision.yaml
+    # This avoids SSH authentication issues with existing VMs
+    # To provision k3s: ansible-playbook k3s-provision.yaml
+    # DNS for k3s is handled centrally via *.k3s.agentydragon.com (VPS)
 
     - import_role:
         name: gitea-mirrors

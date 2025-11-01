@@ -53,9 +53,9 @@
     name: "ZFS snapshot for gitea-public-mirrors"
     minute: "0"
     hour: "2"
-    job: |
-      /sbin/zfs snapshot tank/gitea-public-mirrors@$(date +\%Y\%m\%d-\%H\%M\%S) && \
-      /sbin/zfs list -t snapshot -o name -s creation tank/gitea-public-mirrors | \
+    job: >-
+      /sbin/zfs snapshot tank/gitea-public-mirrors@$(date +\%Y\%m\%d-\%H\%M\%S) &&
+      /sbin/zfs list -t snapshot -o name -s creation tank/gitea-public-mirrors |
       head -n -30 | xargs -n1 /sbin/zfs destroy 2>/dev/null
     user: root
   become: true

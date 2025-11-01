@@ -1,0 +1,33 @@
+#cloud-config
+hostname: {{ item.name }}
+manage_etc_hosts: true
+
+users:
+  - name: {{ k3s_ssh_user }}
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - {{ lookup('file', '~/.ssh/id_ed25519.pub') }}
+
+write_files:
+  - path: /etc/rancher/k3s/registries.yaml
+    content: |
+      mirrors:
+        "registry.registry.svc.cluster.local:5000":
+          endpoint:
+            - "http://registry.registry.svc.cluster.local:5000"
+    owner: root:root
+    permissions: '0644'
+
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - ca-certificates
+
+runcmd:
+  # Install k3s master
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - --cluster-cidr={{ k3s_cluster_cidr }} --service-cidr={{ k3s_service_cidr }} --cluster-dns={{ k3s_cluster_dns }} --disable traefik --write-kubeconfig-mode 644
+  # Save node token for worker nodes
+  - mkdir -p /home/keys
+  - cp /var/lib/rancher/k3s/server/node-token /home/keys/node-token
+  - chmod 644 /home/keys/node-token

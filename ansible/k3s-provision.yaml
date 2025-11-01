@@ -1,0 +1,41 @@
+---
+# Separate playbook for k3s cluster provisioning
+# This is split from atlas.yaml since k3s node setup requires SSH access
+# that may not work with existing VMs
+
+- name: Provision k3s cluster on atlas
+  hosts: atlas
+  vars_files:
+    - vars/common_vars.yml
+  remote_user: root
+
+  tasks:
+    - name: Notice about existing cluster
+      ansible.builtin.debug:
+        msg: |
+          This playbook provisions NEW k3s VMs.
+          If k3s VMs already exist, this will fail unless they're destroyed first.
+          Current k3s cluster (if any) can be managed via kubectl.
+
+    - name: Check if k3s VMs already exist
+      ansible.builtin.shell: |
+        qm list | grep -E 'k3s-master|k3s-worker' || echo "No k3s VMs found"
+      register: existing_vms
+      changed_when: false
+
+    - name: Display existing VMs
+      ansible.builtin.debug:
+        var: existing_vms.stdout_lines
+      when: existing_vms.stdout != "No k3s VMs found"
+
+    - name: Provision k3s cluster
+      import_role:
+        name: k3s
+      tags: [k3s]
+
+    - name: Post-provisioning notice
+      ansible.builtin.debug:
+        msg: |
+          k3s cluster provisioning complete!
+          Note: Atlas root SSH keys have been removed from nodes for security.
+          Future management should be done via kubectl.
