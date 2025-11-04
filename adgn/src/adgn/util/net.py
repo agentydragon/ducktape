@@ -1,31 +1,45 @@
 from __future__ import annotations
 
 import socket
-import time
+
+from tenacity import retry, stop_after_delay, wait_fixed
+
+
+@retry(stop=stop_after_delay(10), wait=wait_fixed(0.25), reraise=True)
+def _try_connect(host: str, port: int) -> None:
+    """Single connection attempt that raises OSError on failure."""
+    with socket.create_connection((host, int(port)), 0.5):
+        pass
 
 
 def wait_for_port(host: str, port: int, *, timeout_secs: float = 10.0, interval_secs: float = 0.25) -> None:
     """Block until host:port accepts TCP connections or timeout.
 
-    Uses monotonic time; raises TimeoutError on expiry.
+    Uses tenacity for robust retrying with configurable timeout and interval.
     """
-    deadline = time.monotonic() + float(timeout_secs)
-    while time.monotonic() < deadline:
-        try:
-            with socket.create_connection((host, int(port)), 0.5):
-                return
-        except OSError:
-            time.sleep(interval_secs)
-    raise TimeoutError(f"port did not become ready: {host}:{port}")
+
+    @retry(stop=stop_after_delay(timeout_secs), wait=wait_fixed(interval_secs), reraise=True)
+    def _attempt():
+        with socket.create_connection((host, int(port)), 0.5):
+            pass
+
+    try:
+        _attempt()
+    except OSError as e:
+        raise TimeoutError(f"port did not become ready: {host}:{port}") from e
 
 
-def pick_free_port(host: str = "127.0.0.1") -> int:
-    """Return an available TCP port on host by briefly binding a socket.
+async def await_tcp_ready(host: str, port: int, *, timeout_secs: float = 2.5, interval_secs: float = 0.05) -> None:
+    """Await until a TCP connect to (host, port) succeeds.
 
-    Best-effort and race-tolerant for test usage.
+    Uses tenacity for robust async retrying with configurable timeout and interval.
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((host, 0))
-        _, port = s.getsockname()
-        return int(port)
+    import anyio
+    from tenacity import AsyncRetrying
+
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(timeout_secs), wait=wait_fixed(interval_secs), reraise=True
+    ):
+        with attempt:
+            stream = await anyio.connect_tcp(host, port)
+            await stream.aclose()
