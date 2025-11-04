@@ -43,12 +43,14 @@ resource "proxmox_virtual_environment_vm" "k3s_master" {
   agent {
     enabled = true
     timeout = "15m"
+    type    = "virtio"
   }
   
   # Preserve existing CPU configuration
   cpu {
     cores   = 2
     sockets = 1
+    units   = 1024  # Keep current value
   }
   
   # Preserve existing memory
@@ -63,6 +65,14 @@ resource "proxmox_virtual_environment_vm" "k3s_master" {
   
   # Boot settings
   on_boot = true  # Start on host boot
+  
+  # Keyboard layout (default)
+  keyboard_layout = "en-us"
+  
+  # Operating system info
+  operating_system {
+    type = "l26"  # Linux 2.6/3.x/4.x/5.x kernel
+  }
   
   # Gradually allowing Terraform to manage safe attributes
   lifecycle {
@@ -99,12 +109,14 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   agent {
     enabled = true
     timeout = "15m"
+    type    = "virtio"
   }
   
   # Preserve existing CPU configuration
   cpu {
     cores   = 2
     sockets = 1
+    units   = 1024  # Keep current value
   }
   
   # Preserve existing memory
@@ -119,6 +131,14 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   
   # Boot settings
   on_boot = true  # Start on host boot
+  
+  # Keyboard layout (default)
+  keyboard_layout = "en-us"
+  
+  # Operating system info
+  operating_system {
+    type = "l26"  # Linux 2.6/3.x/4.x/5.x kernel
+  }
   
   lifecycle {
     ignore_changes = [
