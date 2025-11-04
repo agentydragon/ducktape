@@ -1,0 +1,107 @@
+---
+# Simplest approach: Use Proxmox VNC/Serial console for initial setup
+# No SSH from atlas needed - use Proxmox API and console access
+
+- name: Clone VMs from template
+  ansible.builtin.shell: |
+    qm clone {{ k3s_vm_template | default(9000) }} {{ item.vmid }} --name {{ item.name }} --full
+  loop: "{{ k3s_vms }}"
+  register: clone_result
+  failed_when:
+    - clone_result.rc != 0
+    - "'already exists' not in clone_result.stderr"
+  changed_when: clone_result.rc == 0
+  tags: [k3s, vm-clone]
+
+- name: Configure VM resources and network
+  ansible.builtin.shell: |
+    qm set {{ item.vmid }} \
+      --cores {{ item.cores }} \
+      --memory {{ item.memory }} \
+      --ipconfig0 ip={{ item.ip }}/{{ k3s_network_cidr }},gw={{ k3s_network_gateway }} \
+      --nameserver {{ k3s_nameserver }}
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-config]
+
+- name: Resize VM disks
+  ansible.builtin.shell: |
+    qm resize {{ item.vmid }} scsi0 {{ item.disk_size }}
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-config]
+
+- name: Create setup script for master
+  ansible.builtin.copy:
+    content: |
+      #!/bin/bash
+      # This script is run via Proxmox console or qemu-guest-agent
+      
+      # Add SSH key for management (from your laptop, not atlas)
+      mkdir -p /home/ubuntu/.ssh
+      echo "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}" >> /home/ubuntu/.ssh/authorized_keys
+      chmod 600 /home/ubuntu/.ssh/authorized_keys
+      chmod 700 /home/ubuntu/.ssh
+      chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+      
+      # Install k3s
+      curl -sfL https://get.k3s.io | \
+        INSTALL_K3S_VERSION="{{ k3s_version }}" \
+        sh -s - \
+        --cluster-cidr={{ k3s_cluster_cidr }} \
+        --service-cidr={{ k3s_service_cidr }} \
+        --cluster-dns={{ k3s_cluster_dns }} \
+        --disable traefik \
+        --write-kubeconfig-mode 644
+      
+      # Save token for worker
+      cat /var/lib/rancher/k3s/server/node-token > /tmp/k3s-node-token
+    dest: /tmp/setup-k3s-master.sh
+    mode: '0755'
+  delegate_to: localhost
+  tags: [k3s, setup-scripts]
+
+- name: Start VMs
+  ansible.builtin.shell: |
+    qm start {{ item.vmid }}
+  loop: "{{ k3s_vms }}"
+  register: start_result
+  failed_when:
+    - start_result.rc != 0
+    - "'already running' not in start_result.stderr"
+  changed_when: start_result.rc == 0
+  tags: [k3s, vm-start]
+
+- name: Install qemu-guest-agent via cloud-init or console
+  ansible.builtin.debug:
+    msg: |
+      Manual step required for each VM:
+      1. Access VM console: qm terminal {{ item.vmid }}
+      2. Login with cloud-init credentials
+      3. Run: sudo apt-get update && sudo apt-get install -y qemu-guest-agent
+      4. Run: sudo systemctl start qemu-guest-agent
+      
+      Or use Proxmox web UI Console.
+      
+      Once guest agent is running, we can use qm guest exec for automation.
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, manual-setup]
+
+# Alternative: Use expect to automate console interaction
+- name: Setup k3s via console automation (if expect is installed)
+  ansible.builtin.shell: |
+    cat > /tmp/setup-{{ item.name }}.expect << 'EOF'
+    #!/usr/bin/expect
+    spawn qm terminal {{ item.vmid }}
+    expect "login:"
+    send "ubuntu\r"
+    expect "Password:"
+    send "{{ default_cloud_init_password }}\r"
+    expect "$"
+    send "curl -sfL https://get.k3s.io | sudo sh -\r"
+    expect "$"
+    send "exit\r"
+    EOF
+    chmod +x /tmp/setup-{{ item.name }}.expect
+    # /tmp/setup-{{ item.name }}.expect
+  loop: "{{ k3s_vms }}"
+  when: false  # Disabled by default, needs expect installed
+  tags: [k3s, console-automation]

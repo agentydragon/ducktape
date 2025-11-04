@@ -1,0 +1,199 @@
+---
+# Proper k3s VM provisioning using Proxmox cloud-init snippets
+# This approach uses cloud-init for ALL configuration - no SSH from atlas needed
+
+- name: Ensure snippets directory exists
+  ansible.builtin.file:
+    path: /var/lib/vz/snippets
+    state: directory
+    mode: '0755'
+  tags: [k3s, vm-create]
+
+- name: Create cloud-init user-data for master node
+  ansible.builtin.copy:
+    content: |
+      #cloud-config
+      hostname: k3s-master
+      manage_etc_hosts: true
+      
+      users:
+        - name: {{ k3s_ssh_user }}
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          ssh_authorized_keys:
+            # Add your laptop's SSH key for direct management if needed
+            - {{ lookup('file', '~/.ssh/id_ed25519.pub') }}
+      
+      package_update: true
+      package_upgrade: true
+      packages:
+        - curl
+        - ca-certificates
+      
+      write_files:
+        - path: /etc/rancher/k3s/registries.yaml
+          content: |
+            mirrors:
+              "registry.registry.svc.cluster.local:5000":
+                endpoint:
+                  - "http://registry.registry.svc.cluster.local:5000"
+          owner: root:root
+          permissions: '0644'
+        
+        - path: /usr/local/bin/install-k3s-master.sh
+          content: |
+            #!/bin/bash
+            set -e
+            curl -sfL https://get.k3s.io | \
+              INSTALL_K3S_VERSION="{{ k3s_version }}" \
+              sh -s - \
+              --cluster-cidr={{ k3s_cluster_cidr }} \
+              --service-cidr={{ k3s_service_cidr }} \
+              --cluster-dns={{ k3s_cluster_dns }} \
+              --disable traefik \
+              --write-kubeconfig-mode 644
+            
+            # Wait for k3s to be ready
+            until kubectl get nodes 2>/dev/null; do
+              echo "Waiting for k3s to start..."
+              sleep 5
+            done
+            
+            # Save token for workers (accessible via HTTP for simplicity)
+            mkdir -p /var/www/html
+            cp /var/lib/rancher/k3s/server/node-token /var/www/html/node-token
+            python3 -m http.server 8888 --directory /var/www/html &
+          permissions: '0755'
+      
+      runcmd:
+        - /usr/local/bin/install-k3s-master.sh
+    dest: /var/lib/vz/snippets/k3s-master-cloud-init.yml
+  tags: [k3s, vm-create]
+
+- name: Create cloud-init user-data for worker node
+  ansible.builtin.copy:
+    content: |
+      #cloud-config
+      hostname: k3s-worker
+      manage_etc_hosts: true
+      
+      users:
+        - name: {{ k3s_ssh_user }}
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          ssh_authorized_keys:
+            - {{ lookup('file', '~/.ssh/id_ed25519.pub') }}
+      
+      package_update: true
+      package_upgrade: true
+      packages:
+        - curl
+        - ca-certificates
+      
+      write_files:
+        - path: /etc/rancher/k3s/registries.yaml
+          content: |
+            mirrors:
+              "registry.registry.svc.cluster.local:5000":
+                endpoint:
+                  - "http://registry.registry.svc.cluster.local:5000"
+          owner: root:root
+          permissions: '0644'
+        
+        - path: /usr/local/bin/install-k3s-worker.sh
+          content: |
+            #!/bin/bash
+            set -e
+            
+            # Wait for master to be ready and fetch token
+            MASTER_IP="{{ (k3s_vms | selectattr('role', 'equalto', 'master') | first).ip }}"
+            echo "Waiting for master at $MASTER_IP to be ready..."
+            
+            until curl -sf http://$MASTER_IP:8888/node-token > /tmp/node-token 2>/dev/null; do
+              echo "Waiting for node token from master..."
+              sleep 10
+            done
+            
+            NODE_TOKEN=$(cat /tmp/node-token)
+            
+            # Install k3s agent
+            curl -sfL https://get.k3s.io | \
+              K3S_URL=https://$MASTER_IP:6443 \
+              K3S_TOKEN=$NODE_TOKEN \
+              INSTALL_K3S_VERSION="{{ k3s_version }}" \
+              sh -
+          permissions: '0755'
+      
+      runcmd:
+        # Delay worker start to ensure master is ready
+        - sleep 60
+        - /usr/local/bin/install-k3s-worker.sh
+    dest: /var/lib/vz/snippets/k3s-worker-cloud-init.yml
+  tags: [k3s, vm-create]
+
+- name: Clone VMs from template
+  ansible.builtin.shell: |
+    qm clone {{ k3s_vm_template | default(9000) }} {{ item.vmid }} --name {{ item.name }} --full
+  loop: "{{ k3s_vms }}"
+  register: clone_result
+  failed_when:
+    - clone_result.rc != 0
+    - "'already exists' not in clone_result.stderr"
+  changed_when: clone_result.rc == 0
+  tags: [k3s, vm-clone]
+
+- name: Configure VM resources
+  ansible.builtin.shell: |
+    qm set {{ item.vmid }} --cores {{ item.cores }} --memory {{ item.memory }}
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-config]
+
+- name: Resize VM disks
+  ansible.builtin.shell: |
+    qm resize {{ item.vmid }} scsi0 {{ item.disk_size }}
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-config]
+
+- name: Configure cloud-init with custom user-data
+  ansible.builtin.shell: |
+    # Set network configuration
+    qm set {{ item.vmid }} \
+      --ipconfig0 ip={{ item.ip }}/{{ k3s_network_cidr }},gw={{ k3s_network_gateway }} \
+      --nameserver {{ k3s_nameserver }}
+    
+    # Set custom cloud-init user-data via snippet
+    qm set {{ item.vmid }} \
+      --cicustom "user=local:snippets/{{ item.name }}-cloud-init.yml"
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-config]
+
+- name: Start VMs
+  ansible.builtin.shell: |
+    qm start {{ item.vmid }}
+  loop: "{{ k3s_vms }}"
+  register: start_result
+  failed_when:
+    - start_result.rc != 0
+    - "'already running' not in start_result.stderr"
+  changed_when: start_result.rc == 0
+  tags: [k3s, vm-start]
+
+- name: Wait for k3s cluster to be ready
+  ansible.builtin.uri:
+    url: "https://{{ (k3s_vms | selectattr('role', 'equalto', 'master') | first).ip }}:6443/healthz"
+    validate_certs: no
+    status_code: 200
+  register: k3s_health
+  until: k3s_health.status == 200
+  retries: 60
+  delay: 10
+  tags: [k3s, vm-start]
+
+- name: Fetch kubeconfig from master
+  ansible.builtin.shell: |
+    # Use qm guest exec if qemu-guest-agent is installed
+    # Or use Proxmox API to read file
+    # For now, this would need manual retrieval
+    echo "Kubeconfig available at k3s-master:/etc/rancher/k3s/k3s.yaml"
+    echo "Update server: https://{{ (k3s_vms | selectattr('role', 'equalto', 'master') | first).ip }}:6443"
+  tags: [k3s, kubeconfig]
