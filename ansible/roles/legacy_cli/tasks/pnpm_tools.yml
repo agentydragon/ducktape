@@ -1,24 +1,6 @@
 ---
 # These Node.js tools are now installed via home.nix but kept here for non-Nix systems
 
-# Check for legacy npm-global directory that should be removed
-- name: Check if npm-global directory exists
-  ansible.builtin.stat:
-    path: "{{ ansible_user_dir }}/.npm-global"
-  register: npm_global_dir
-  changed_when: false
-  tags: [npm-cleanup]
-
-- name: Fail if npm-global directory exists
-  ansible.builtin.fail:
-    msg: |
-      ERROR: npm-global directory exists at ~/.npm-global
-      We use pnpm now, not npm!
-      Remove it with: rm -rf ~/.npm-global ~/.npm
-      Then re-run this playbook.
-  when: npm_global_dir.stat.exists and npm_global_dir.stat.isdir
-  tags: [npm-cleanup]
-
 - name: Install Node.js CLI tools globally with pnpm
   community.general.pnpm:
     name: "{{ item }}"
