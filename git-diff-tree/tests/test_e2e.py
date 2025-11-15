@@ -67,27 +67,10 @@ def test_e2e_complete_workflow(temp_git_repo: Path, run_git):
     # Get diff output
     result = run_git("diff", "--numstat")
 
-    # Parse the output manually (since parse_git_diff runs git internally)
-    from git_diff_tree.parser import FileChange
+    # Parse the output
+    from git_diff_tree.parser import parse_numstat_output
 
-    changes = []
-    for line in result.stdout.strip().split("\n"):
-        if not line:
-            continue
-        parts = line.split("\t")
-        if len(parts) == 3:
-            add_str, del_str, path = parts
-            try:
-                additions = int(add_str)
-            except ValueError:
-                additions = 0
-            try:
-                deletions = int(del_str)
-            except ValueError:
-                deletions = 0
-            changes.append(
-                FileChange(path=path, additions=additions, deletions=deletions)
-            )
+    changes = parse_numstat_output(result.stdout)
 
     # Build tree
     root = build_tree(changes)
