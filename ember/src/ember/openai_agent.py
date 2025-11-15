@@ -6,9 +6,7 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall, ResponseInputItemParam
 from openai.types.responses.easy_input_message import EasyInputMessage
-from openai.types.responses.response_input_item import (
-    FunctionCallOutput as ResponseFunctionCallOutput,
-)
+from openai.types.responses.response_input_item import FunctionCallOutput as ResponseFunctionCallOutput
 from openai.types.responses.response_input_text import ResponseInputText
 from pydantic import BaseModel, TypeAdapter
 
@@ -58,9 +56,7 @@ class OpenAIAgent:
         self._history.append_input(
             _parse_input_item(
                 EasyInputMessage(
-                    type="message",
-                    role="user",
-                    content=[ResponseInputText(type="input_text", text=content)],
+                    type="message", role="user", content=[ResponseInputText(type="input_text", text=content)]
                 )
             )
         )
@@ -86,11 +82,7 @@ class OpenAIAgent:
             )
             self._history.append_response(response)
 
-            for tool_call in (
-                output
-                for output in response.output
-                if isinstance(output, ResponseFunctionToolCall)
-            ):
+            for tool_call in (output for output in response.output if isinstance(output, ResponseFunctionToolCall)):
                 await self._execute_tool(tool_call)
 
             if self._wait_for_matrix:
@@ -102,11 +94,7 @@ class OpenAIAgent:
         output = result.model_dump_json() if isinstance(result, BaseModel) else result
         self._history.append_input(
             _parse_input_item(
-                ResponseFunctionCallOutput(
-                    type="function_call_output",
-                    call_id=tool_call.call_id,
-                    output=output,
-                )
+                ResponseFunctionCallOutput(type="function_call_output", call_id=tool_call.call_id, output=output)
             )
         )
 
@@ -118,11 +106,7 @@ class OpenAIAgent:
 
 
 def _parse_input_item(model: BaseModel) -> ResponseInputItemParam:
-    return _INPUT_ITEM_ADAPTER.validate_python(
-        model.model_dump(mode="python", exclude_none=True)
-    )
+    return _INPUT_ITEM_ADAPTER.validate_python(model.model_dump(mode="python", exclude_none=True))
 
 
-_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(
-    ResponseInputItemParam
-)
+_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(ResponseInputItemParam)

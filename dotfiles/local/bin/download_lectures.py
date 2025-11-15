@@ -38,17 +38,9 @@ def main(_):
         d = Path(FLAGS.path) / f"{code}-{name}"
         d.mkdir(exist_ok=True)
         url_pattern = (
-            f"https://is.mff.cuni.cz/prednasky/play/{FLAGS.secret}/"
-            f"{code}_{year}_{semester}_[01-{n + 1:02d}].webm"
+            f"https://is.mff.cuni.cz/prednasky/play/{FLAGS.secret}/{code}_{year}_{semester}_[01-{n + 1:02d}].webm"
         )
-        args = [
-            "curl",
-            url_pattern,
-            "--output",
-            "#1.webm",
-            "--continue-at",
-            "-",
-        ]
+        args = ["curl", url_pattern, "--output", "#1.webm", "--continue-at", "-"]
         logging.info("running: %s", " ".join(args))
         subprocess.Popen(args, cwd=d).wait()
 

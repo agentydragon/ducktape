@@ -20,23 +20,17 @@ class PRFixtureEntry(BaseModel):
     deletions: int = 0
 
 
-def write_pr_fixtures_file(
-    config: Configuration,
-    fixtures: Mapping[str, PRFixtureEntry | dict],
-) -> Path:
+def write_pr_fixtures_file(config: Configuration, fixtures: Mapping[str, PRFixtureEntry | dict]) -> Path:
     """Validate and write PR fixtures to $WT_DIR/pr_fixtures.json.
 
     Tests can call this directly or via a pytest fixture wrapper.
     """
     validated: dict[str, PRFixtureEntry] = {
-        k: (v if isinstance(v, PRFixtureEntry) else PRFixtureEntry.model_validate(v))
-        for k, v in fixtures.items()
+        k: (v if isinstance(v, PRFixtureEntry) else PRFixtureEntry.model_validate(v)) for k, v in fixtures.items()
     }
     path = Path(config.wt_dir) / "pr_fixtures.json"
     # Serialize via Pydantic TypeAdapter for stable ordering/shape under tests
-    content_bytes = TypeAdapter(dict[str, PRFixtureEntry]).dump_json(
-        validated, by_alias=False
-    )
+    content_bytes = TypeAdapter(dict[str, PRFixtureEntry]).dump_json(validated, by_alias=False)
     path.write_bytes(content_bytes)
     return path
 

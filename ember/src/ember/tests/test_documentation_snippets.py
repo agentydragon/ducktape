@@ -23,9 +23,7 @@ def _embedded_text(relative: str) -> str:
 
 
 def test_python_session_demo_scripts_are_embedded_and_work(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     prompt = load_system_prompt()
     demo_relative = "examples/python-session/demo.sh"
@@ -55,9 +53,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
         async def __aexit__(self, exc_type, exc, tb) -> None:
             fake_session_state["closed"].append("yes")
 
-        async def send_text_message(
-            self, room_id: str, body: str, *, msgtype: str = "m.notice"
-        ) -> None:
+        async def send_text_message(self, room_id: str, body: str, *, msgtype: str = "m.notice") -> None:
             fake_session_state["sent"].append(f"{room_id}:{body}:{msgtype}")
 
         async def get_events(self, timeout: float = 60.0):
@@ -72,19 +68,14 @@ def test_python_session_demo_scripts_are_embedded_and_work(
 
     monkeypatch.setenv("EMBER_MATRIX_ROOM_ID", "!room:example.org")
     monkeypatch.setattr(
-        "ember.matrix_client.MatrixClient.from_projected_secrets",
-        lambda options=None: FakeMatrixClient(),
+        "ember.matrix_client.MatrixClient.from_projected_secrets", lambda options=None: FakeMatrixClient()
     )
 
-    quickstart_path = resources.files(ember).joinpath(
-        "resources/examples/matrix-client/quickstart.py"
-    )
+    quickstart_path = resources.files(ember).joinpath("resources/examples/matrix-client/quickstart.py")
     runpy.run_path(str(quickstart_path), run_name="__main__")
 
     out = capsys.readouterr().out
     assert "Sent message to !room:example.org" in out
     assert "@demo:example.org: hello world" in out
-    assert fake_session_state["sent"] == [
-        "!room:example.org:Hello from Ember's matrix-client quickstart!:m.notice"
-    ]
+    assert fake_session_state["sent"] == ["!room:example.org:Hello from Ember's matrix-client quickstart!:m.notice"]
     assert fake_session_state["closed"] == ["yes"]

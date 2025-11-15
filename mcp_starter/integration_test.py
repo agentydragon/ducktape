@@ -17,10 +17,7 @@ async def test_list_tools_includes_expected(mcp_client: Client) -> None:
 
 async def test_content_chunks_via_client(mcp_client: Client) -> None:
     """Test content chunking via the public MCP interface."""
-    result = await mcp_client.call_tool(
-        name="get_text_chunks",
-        arguments={"text": "Hello World", "chunk_size": 5},
-    )
+    result = await mcp_client.call_tool(name="get_text_chunks", arguments={"text": "Hello World", "chunk_size": 5})
     assert not result.is_error
     # The server returns structured content as {"result": [ContentChunk, ...]}
     sc = result.structured_content

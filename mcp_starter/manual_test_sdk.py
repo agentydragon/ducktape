@@ -42,9 +42,7 @@ from rich.logging import RichHandler
 original_build_command = subprocess_cli.SubprocessCLITransport._build_command
 
 
-def _build_command_with_strict_mcp(
-    self: subprocess_cli.SubprocessCLITransport,
-) -> list[str]:
+def _build_command_with_strict_mcp(self: subprocess_cli.SubprocessCLITransport) -> list[str]:
     """Build CLI command with --strict-mcp-config option."""
     cmd = original_build_command(self)
     # Add strict MCP config if we have MCP servers configured
@@ -142,9 +140,7 @@ def find_unused_port(start_port: int = SSE_PORT_START, max_attempts: int = 100) 
             logger.error(f"[red]Unexpected error trying port {port}: {e}[/red]")
             raise
 
-    raise RuntimeError(
-        f"Could not find unused port in range {start_port}-{start_port + max_attempts}",
-    )
+    raise RuntimeError(f"Could not find unused port in range {start_port}-{start_port + max_attempts}")
 
 
 @asynccontextmanager
@@ -157,9 +153,7 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
     # Set up logging
     sse_log_file = Path(tempfile.gettempdir()) / "mcp_starter_sse_server.log"
 
-    logger.info(
-        f"[blue]Starting SSE server on port {sse_port}. Logs: {sse_log_file}[/blue]",
-    )
+    logger.info(f"[blue]Starting SSE server on port {sse_port}. Logs: {sse_log_file}[/blue]")
 
     # Set up clean isolated environment
     server_env = {}
@@ -173,7 +167,7 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
             "PYTHONUNBUFFERED": "1",
             "CLAUDE_CONFIG_PATH": "/nonexistent",
             "CLAUDE_CODE_CONFIG_PATH": "/nonexistent",
-        },
+        }
     )
 
     server_process = None
@@ -235,10 +229,7 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
         logger.info(f"[blue]SSE server log file for inspection: {sse_log_file}[/blue]")
 
 
-async def run_test_suite(
-    mcp_server_config: McpStdioServerConfig | McpSSEServerConfig,
-    mode_name: str,
-) -> None:
+async def run_test_suite(mcp_server_config: McpStdioServerConfig | McpSSEServerConfig, mode_name: str) -> None:
     """Run the complete test suite using the provided MCP server config"""
     # Create options with strict MCP isolation
     temp_dir = tempfile.mkdtemp()
@@ -285,9 +276,7 @@ async def run_test_suite(
                 logger.error(f"[red]✗ Test {i} ({test_case['name']}): FAILED[/red]")
                 failed_tests += 1
             else:
-                logger.error(
-                    f"[red]✗ Test {i} ({test_case['name']}): INVALID (no PASS/FAIL found)[/red]",
-                )
+                logger.error(f"[red]✗ Test {i} ({test_case['name']}): INVALID (no PASS/FAIL found)[/red]")
                 failed_tests += 1
 
             console.print()  # Add spacing between tests
@@ -299,26 +288,17 @@ async def run_test_suite(
         console.print(f"[blue]Total: {passed_tests + failed_tests}[/blue]")
 
         if failed_tests == 0:
-            logger.info(
-                f"[green]✓ All {mode_name} mode tests completed successfully[/green]",
-            )
+            logger.info(f"[green]✓ All {mode_name} mode tests completed successfully[/green]")
         else:
-            logger.error(
-                f"[red]✗ {failed_tests} out of {passed_tests + failed_tests} {mode_name} tests failed[/red]",
-            )
+            logger.error(f"[red]✗ {failed_tests} out of {passed_tests + failed_tests} {mode_name} tests failed[/red]")
 
 
 async def main() -> None:
     """Main test function"""
-    logger.info(
-        "[blue]Starting MCP Starter Template tests with Claude Code SDK...[/blue]",
-    )
+    logger.info("[blue]Starting MCP Starter Template tests with Claude Code SDK...[/blue]")
 
     logger.info("[blue]Testing STDIO mode with Claude Code SDK...[/blue]")
-    await run_test_suite(
-        McpStdioServerConfig(command="adgn-mcp-starter", args=["--debug"]),
-        "STDIO SDK",
-    )
+    await run_test_suite(McpStdioServerConfig(command="adgn-mcp-starter", args=["--debug"]), "STDIO SDK")
 
     logger.info("[blue]Testing SSE mode with Claude Code SDK...[/blue]")
     async with sse_server_manager() as mcp_server_config:

@@ -113,16 +113,11 @@ class GitStatusdResponse:
 
     @property
     def has_changes(self) -> bool:
-        return bool(
-            self.is_git_repository
-            and (self.staged_changes or self.unstaged_changes or self.untracked_files),
-        )
+        return bool(self.is_git_repository and (self.staged_changes or self.unstaged_changes or self.untracked_files))
 
     @property
     def has_dirty_files(self) -> bool:
-        return bool(
-            self.is_git_repository and (self.staged_changes or self.unstaged_changes),
-        )
+        return bool(self.is_git_repository and (self.staged_changes or self.unstaged_changes))
 
     @property
     def has_untracked_files(self) -> bool:
@@ -148,11 +143,7 @@ class GitstatusdCountLimits:
     conflicted: int
     untracked: int
 
-    def limit_hit(
-        self,
-        value: int | None,
-        kind: Literal["staged", "unstaged", "conflicted", "untracked"],
-    ) -> bool:
+    def limit_hit(self, value: int | None, kind: Literal["staged", "unstaged", "conflicted", "untracked"]) -> bool:
         limits = {
             "staged": self.staged,
             "unstaged": self.unstaged,
@@ -242,9 +233,7 @@ class GitStatusdProtocol:
 
             # Validate minimum field count
             if len(fields) < 2:
-                raise GitStatusdParseError(
-                    f"Invalid response: expected at least 2 fields, got {len(fields)}",
-                )
+                raise GitStatusdParseError(f"Invalid response: expected at least 2 fields, got {len(fields)}")
 
             # Parse core fields
             request_id = fields[0]
@@ -252,26 +241,18 @@ class GitStatusdProtocol:
             try:
                 is_git_repository = int(fields[1]) == 1
             except (ValueError, IndexError) as e:
-                raise GitStatusdValidationError(
-                    f"Invalid git repository flag: {e}"
-                ) from e
+                raise GitStatusdValidationError(f"Invalid git repository flag: {e}") from e
 
             # If not a git repository, return minimal response
             if not is_git_repository:
-                logger.debug(
-                    "Directory is not a git repository (request_id=%s)",
-                    request_id,
-                )
-                return GitStatusdResponse(
-                    request_id=request_id,
-                    is_git_repository=False,
-                )
+                logger.debug("Directory is not a git repository (request_id=%s)", request_id)
+                return GitStatusdResponse(request_id=request_id, is_git_repository=False)
 
             # For git repositories, validate we have enough fields
             if len(fields) < GitStatusdProtocol.MIN_GIT_REPO_FIELDS:
                 raise GitStatusdParseError(
                     f"Incomplete git repository response: expected {GitStatusdProtocol.MIN_GIT_REPO_FIELDS} fields, "
-                    f"got {len(fields)}",
+                    f"got {len(fields)}"
                 )
 
             # Invariant: after this point, `fields` has at least MIN_GIT_REPO_FIELDS entries.
@@ -289,10 +270,7 @@ class GitStatusdProtocol:
                 upstream_branch=GitStatusdProtocol._safe_get_optional_string(fields, 5),
                 remote_name=GitStatusdProtocol._safe_get_optional_string(fields, 6),
                 remote_url=GitStatusdProtocol._safe_get_optional_string(fields, 7),
-                repository_state=GitStatusdProtocol._safe_get_repository_state(
-                    fields,
-                    8,
-                ),
+                repository_state=GitStatusdProtocol._safe_get_repository_state(fields, 8),
                 index_file_count=GitStatusdProtocol._safe_get_int(fields, 9),
                 staged_changes=GitStatusdProtocol._safe_get_int(fields, 10),
                 unstaged_changes=GitStatusdProtocol._safe_get_int(fields, 11),
@@ -305,34 +283,20 @@ class GitStatusdProtocol:
                 unstaged_deleted_files=GitStatusdProtocol._safe_get_int(fields, 18),
                 staged_new_files=GitStatusdProtocol._safe_get_int(fields, 19),
                 staged_deleted_files=GitStatusdProtocol._safe_get_int(fields, 20),
-                push_remote_name=GitStatusdProtocol._safe_get_optional_string(
-                    fields,
-                    21,
-                ),
-                push_remote_url=GitStatusdProtocol._safe_get_optional_string(
-                    fields,
-                    22,
-                ),
+                push_remote_name=GitStatusdProtocol._safe_get_optional_string(fields, 21),
+                push_remote_url=GitStatusdProtocol._safe_get_optional_string(fields, 22),
                 commits_ahead_push_remote=GitStatusdProtocol._safe_get_int(fields, 23),
                 commits_behind_push_remote=GitStatusdProtocol._safe_get_int(fields, 24),
                 skip_worktree_files=GitStatusdProtocol._safe_get_int(fields, 25),
                 assume_unchanged_files=GitStatusdProtocol._safe_get_int(fields, 26),
-                commit_message_encoding=GitStatusdProtocol._safe_get_optional_string(
-                    fields,
-                    27,
-                ),
-                commit_message_summary=GitStatusdProtocol._safe_get_optional_string(
-                    fields,
-                    28,
-                ),
+                commit_message_encoding=GitStatusdProtocol._safe_get_optional_string(fields, 27),
+                commit_message_summary=GitStatusdProtocol._safe_get_optional_string(fields, 28),
             )
 
         except (GitStatusdParseError, GitStatusdValidationError):
             raise
         except Exception as e:
-            raise GitStatusdParseError(
-                f"Unexpected error parsing gitstatusd response: {e}",
-            ) from e
+            raise GitStatusdParseError(f"Unexpected error parsing gitstatusd response: {e}") from e
 
     @staticmethod
     def _safe_get_string(fields: list[str], index: int) -> str:
@@ -360,9 +324,7 @@ class GitStatusdProtocol:
         try:
             return int(value)
         except ValueError as e:
-            raise GitStatusdValidationError(
-                f"Invalid integer in field {index}: {e}"
-            ) from e
+            raise GitStatusdValidationError(f"Invalid integer in field {index}: {e}") from e
 
     @staticmethod
     def _safe_get_commit_hash(fields: list[str], index: int) -> str | None:
@@ -372,18 +334,13 @@ class GitStatusdProtocol:
             return None
 
         # Validate commit hash format (40 hex characters)
-        if len(value) != SHA_HEX_LEN or not all(
-            c in "0123456789abcdef" for c in value.lower()
-        ):
+        if len(value) != SHA_HEX_LEN or not all(c in "0123456789abcdef" for c in value.lower()):
             raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
 
         return value
 
     @staticmethod
-    def _safe_get_repository_state(
-        fields: list[str],
-        index: int,
-    ) -> RepositoryState:
+    def _safe_get_repository_state(fields: list[str], index: int) -> RepositoryState:
         """Get repository state enum with validation (do not mask errors)."""
         try:
             value = fields[index]
@@ -411,34 +368,20 @@ def find_gitstatusd(config) -> tuple[str | None, str | None]:
     if config.gitstatusd_path:
         gitstatusd_path = str(config.gitstatusd_path)
         try:
-            result = subprocess.run(
-                [gitstatusd_path, "--version"],
-                check=False,
-                capture_output=True,
-                timeout=2,
-            )
+            result = subprocess.run([gitstatusd_path, "--version"], check=False, capture_output=True, timeout=2)
             if result.returncode == 0:
                 return gitstatusd_path, None
-            return None, (
-                f"Configured gitstatusd path not working: {gitstatusd_path} (exit code {result.returncode})"
-            )
+            return None, (f"Configured gitstatusd path not working: {gitstatusd_path} (exit code {result.returncode})")
         except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
             return None, f"Configured gitstatusd path failed: {gitstatusd_path} ({e})"
 
     gitstatusd_cmd = "gitstatusd"
     if shutil.which(gitstatusd_cmd):
         try:
-            result = subprocess.run(
-                [gitstatusd_cmd, "--version"],
-                check=False,
-                capture_output=True,
-                timeout=2,
-            )
+            result = subprocess.run([gitstatusd_cmd, "--version"], check=False, capture_output=True, timeout=2)
             if result.returncode == 0:
                 return gitstatusd_cmd, None
-            return None, (
-                f"gitstatusd found on PATH but not working (exit code {result.returncode})"
-            )
+            return None, (f"gitstatusd found on PATH but not working (exit code {result.returncode})")
         except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
             return None, f"gitstatusd found on PATH but failed to execute: {e}"
 
@@ -450,24 +393,13 @@ def find_gitstatusd(config) -> tuple[str | None, str | None]:
 
 
 class GitstatusdListener:
-    def __init__(
-        self,
-        worktree_info,
-        config,
-        git_manager,
-        error_callback=None,
-    ):
+    def __init__(self, worktree_info, config, git_manager, error_callback=None):
         self.worktree_info = worktree_info
         self.config = config
         self.git_manager = git_manager
         self.error_callback = error_callback
         self.process: asyncio.subprocess.Process | None = None
-        self._count_limits = GitstatusdCountLimits(
-            staged=-1,
-            unstaged=-1,
-            conflicted=-1,
-            untracked=-1,
-        )
+        self._count_limits = GitstatusdCountLimits(staged=-1, unstaged=-1, conflicted=-1, untracked=-1)
         self._status_summary: GitstatusWorkingSummary = GitstatusWorkingSummary.empty()
         self._status_updating: bool = False
         self.last_error: str | None = None
@@ -526,9 +458,7 @@ class GitstatusdListener:
         try:
             request_id = str(uuid.uuid4())[:8]
             gitstatusd_request = GitStatusdRequest(
-                request_id=request_id,
-                directory_path=str(self.worktree_info.path),
-                disable_index_computation=False,
+                request_id=request_id, directory_path=str(self.worktree_info.path), disable_index_computation=False
             )
             request_data = gitstatusd_request.to_wire_format()
             if not (self.process and self.process.stdin and self.process.stdout):
@@ -542,10 +472,7 @@ class GitstatusdListener:
             self._status_summary = summary
             self.last_error = None
         except Exception:
-            logger.exception(
-                "gitstatusd update failed for %s",
-                self.worktree_info.name,
-            )
+            logger.exception("gitstatusd update failed for %s", self.worktree_info.name)
             # Notify supervisor if provided
             if self.error_callback:
                 with contextlib.suppress(Exception):
@@ -574,17 +501,9 @@ class GitstatusdListener:
             )
 
         staged = response.staged_changes if response.staged_changes is not None else 0
-        unstaged = (
-            response.unstaged_changes if response.unstaged_changes is not None else 0
-        )
-        conflicted = (
-            response.conflicted_changes
-            if response.conflicted_changes is not None
-            else 0
-        )
-        untracked = (
-            response.untracked_files if response.untracked_files is not None else 0
-        )
+        unstaged = response.unstaged_changes if response.unstaged_changes is not None else 0
+        conflicted = response.conflicted_changes if response.conflicted_changes is not None else 0
+        untracked = response.untracked_files if response.untracked_files is not None else 0
 
         staged_limit_hit = self._count_limits.limit_hit(staged, "staged")
         unstaged_limit_hit = self._count_limits.limit_hit(unstaged, "unstaged")

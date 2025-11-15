@@ -40,17 +40,10 @@ def validate_worktree_name(name: str) -> None:
     if name in RESERVED_NAMES:
         raise WorktreeManagerError(f"Cannot use reserved name: {name}")
     if "/" in name or "\\" in name:
-        raise WorktreeManagerError(
-            f"Worktree name cannot contain path separators: {name}",
-        )
+        raise WorktreeManagerError(f"Worktree name cannot contain path separators: {name}")
 
 
-def log_operation_error(
-    operation: str,
-    worktree_name: str,
-    error: Exception,
-    **context: Any,
-) -> None:
+def log_operation_error(operation: str, worktree_name: str, error: Exception, **context: Any) -> None:
     logger.error(
         "Operation %s failed for worktree %s: %s",
         operation,

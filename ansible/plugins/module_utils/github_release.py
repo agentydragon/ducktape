@@ -52,10 +52,7 @@ class ReleaseSpec:
         try:
             req = urllib.request.Request(
                 self.get_api_url(),
-                headers={
-                    "Accept": "application/json",
-                    "User-Agent": "Ansible GitHub Release Handler",
-                },
+                headers={"Accept": "application/json", "User-Agent": "Ansible GitHub Release Handler"},
             )
             with urllib.request.urlopen(req) as response:
                 release_data = json.loads(response.read().decode("utf-8"))
@@ -103,10 +100,7 @@ class ReleaseSpec:
         if self.acknowledged_version:
             latest_version = release_data["tag_name"]
             if not latest_version:
-                return _fail(
-                    result,
-                    "Failed to extract version information of latest release.",
-                )
+                return _fail(result, "Failed to extract version information of latest release.")
             result["latest_version"] = latest_version
 
             if self.acknowledged_version != latest_version:
@@ -127,21 +121,12 @@ class ReleaseSpec:
             return _fail(result, "No assets found in release data.")
         if not self.asset_pattern:
             return _fail(result, "No asset pattern provided.")
-        matches = [
-            asset for asset in assets if re.search(self.asset_pattern, asset["name"])
-        ]
+        matches = [asset for asset in assets if re.search(self.asset_pattern, asset["name"])]
         if len(matches) > 1:
-            return _fail(
-                result,
-                f"{len(matches)} assets match {self.asset_pattern}. "
-                "Use a more specific pattern.",
-            )
+            return _fail(result, f"{len(matches)} assets match {self.asset_pattern}. Use a more specific pattern.")
         if not matches:
             available = ", ".join(asset["name"] for asset in assets)
-            return _fail(
-                result,
-                f"No assets match {self.asset_pattern}. Available: {available}",
-            )
+            return _fail(result, f"No assets match {self.asset_pattern}. Available: {available}")
         if not (url := matches[0].get("browser_download_url")):
             return _fail(result, "No download URL found for the asset.")
         return {"asset_url": url}
@@ -230,18 +215,10 @@ class ArchiveInstall(GitHubInstaller):
         """Return arguments for extracting and installing the archive."""
         if self.extract_file:
             # For single file extraction, we'll handle this in the action plugin
-            return {
-                "asset_url": asset_url,
-                "extract_file": self.extract_file,
-                "dest_path": self.dest_path,
-            }
+            return {"asset_url": asset_url, "extract_file": self.extract_file, "dest_path": self.dest_path}
 
         # Normal full archive extraction
-        args = {
-            "src": asset_url,
-            "dest": self.dest_path,
-            "remote_src": True,
-        }
+        args = {"src": asset_url, "dest": self.dest_path, "remote_src": True}
         if self.creates_file:
             args["creates"] = self.creates_file
         return args

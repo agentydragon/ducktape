@@ -80,17 +80,9 @@ class TestData:
 class ConfigPresets:
     """Configuration presets for different test scenarios."""
 
-    MINIMAL: ClassVar[dict] = {
-        "github_enabled": False,
-        "log_operations": False,
-        "cow_method": "copy",
-    }
+    MINIMAL: ClassVar[dict] = {"github_enabled": False, "log_operations": False, "cow_method": "copy"}
 
-    INTEGRATION: ClassVar[dict] = {
-        "github_enabled": True,
-        "log_operations": True,
-        "cow_method": "copy",
-    }
+    INTEGRATION: ClassVar[dict] = {"github_enabled": True, "log_operations": True, "cow_method": "copy"}
 
     E2E: ClassVar[dict] = {
         "github_enabled": False,
@@ -99,10 +91,7 @@ class ConfigPresets:
         "cache_refresh_age": 300,
     }
 
-    GITHUB_ENABLED: ClassVar[dict] = {
-        "github_enabled": True,
-        "github_repo": "test-user/test-repo",
-    }
+    GITHUB_ENABLED: ClassVar[dict] = {"github_enabled": True, "github_repo": "test-user/test-repo"}
 
 
 class MockBehaviors:
@@ -126,7 +115,7 @@ class MockBehaviors:
                     "state": "open",
                     "title": f"PR for {branch_name}",
                     "mergeable": True,
-                },
+                }
             ]
 
         @staticmethod

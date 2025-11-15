@@ -42,10 +42,7 @@ class TestPreToolApprove:
         }
 
     def test_approve_with_all_options(self):
-        assert PreToolApprove(
-            message_to_user="All good",
-            hide_from_transcript=True,
-        ).to_protocol() == {
+        assert PreToolApprove(message_to_user="All good", hide_from_transcript=True).to_protocol() == {
             "decision": "approve",
             "reason": "All good",
             "suppressOutput": True,
@@ -60,10 +57,7 @@ class TestPreToolBlock:
         }
 
     def test_block_with_hide_from_transcript(self):
-        assert PreToolBlock(
-            feedback_to_claude="Blocked",
-            hide_from_transcript=True,
-        ).to_protocol() == {
+        assert PreToolBlock(feedback_to_claude="Blocked", hide_from_transcript=True).to_protocol() == {
             "decision": "block",
             "reason": "Blocked",
             "suppressOutput": True,
@@ -72,10 +66,7 @@ class TestPreToolBlock:
 
 class TestPreToolStop:
     def test_stop_minimal(self):
-        assert PreToolStop(
-            feedback_to_claude="Critical error",
-            message_to_user="System halted",
-        ).to_protocol() == {
+        assert PreToolStop(feedback_to_claude="Critical error", message_to_user="System halted").to_protocol() == {
             "decision": "block",
             "reason": "Critical error",
             "continue": False,
@@ -84,9 +75,7 @@ class TestPreToolStop:
 
     def test_stop_with_hide_from_transcript(self):
         assert PreToolStop(
-            feedback_to_claude="Error",
-            message_to_user="Stopped",
-            hide_from_transcript=True,
+            feedback_to_claude="Error", message_to_user="Stopped", hide_from_transcript=True
         ).to_protocol() == {
             "decision": "block",
             "reason": "Error",
@@ -108,22 +97,15 @@ class TestPostToolContinue:
 
 class TestPostToolFeedbackToClaude:
     def test_feedback_to_claude_minimal(self):
-        assert PostToolFeedbackToClaude(
-            feedback_to_claude="Fix this issue",
-        ).to_protocol() == {
+        assert PostToolFeedbackToClaude(feedback_to_claude="Fix this issue").to_protocol() == {
             "decision": "block",
             "reason": "Fix this issue",
         }
 
     def test_feedback_to_claude_with_hide_from_transcript(self):
         assert PostToolFeedbackToClaude(
-            feedback_to_claude="Error detected",
-            hide_from_transcript=True,
-        ).to_protocol() == {
-            "decision": "block",
-            "reason": "Error detected",
-            "suppressOutput": True,
-        }
+            feedback_to_claude="Error detected", hide_from_transcript=True
+        ).to_protocol() == {"decision": "block", "reason": "Error detected", "suppressOutput": True}
 
 
 class TestPostToolStop:
@@ -134,10 +116,7 @@ class TestPostToolStop:
         }
 
     def test_stop_with_hide_from_transcript(self):
-        assert PostToolStop(
-            message_to_user="Processing stopped",
-            hide_from_transcript=True,
-        ).to_protocol() == {
+        assert PostToolStop(message_to_user="Processing stopped", hide_from_transcript=True).to_protocol() == {
             "continue": False,
             "stopReason": "Processing stopped",
             "suppressOutput": True,
@@ -151,18 +130,13 @@ class TestUserPromptSubmitAllow:
 
 class TestUserPromptSubmitBlock:
     def test_block_minimal(self):
-        assert UserPromptSubmitBlock(
-            message_to_user="Invalid request",
-        ).to_protocol() == {
+        assert UserPromptSubmitBlock(message_to_user="Invalid request").to_protocol() == {
             "decision": "block",
             "reason": "Invalid request",
         }
 
     def test_block_with_hide_from_transcript(self):
-        assert UserPromptSubmitBlock(
-            message_to_user="Blocked prompt",
-            hide_from_transcript=True,
-        ).to_protocol() == {
+        assert UserPromptSubmitBlock(message_to_user="Blocked prompt", hide_from_transcript=True).to_protocol() == {
             "decision": "block",
             "reason": "Blocked prompt",
             "suppressOutput": True,
@@ -176,22 +150,15 @@ class TestStopAllow:
 
 class TestStopForceContinue:
     def test_force_continue_minimal(self):
-        assert StopForceContinue(
-            instructions_to_claude="Fix remaining issues",
-        ).to_protocol() == {
+        assert StopForceContinue(instructions_to_claude="Fix remaining issues").to_protocol() == {
             "decision": "block",
             "reason": "Fix remaining issues",
         }
 
     def test_force_continue_with_hide_from_transcript(self):
         assert StopForceContinue(
-            instructions_to_claude="Continue processing",
-            hide_from_transcript=True,
-        ).to_protocol() == {
-            "decision": "block",
-            "reason": "Continue processing",
-            "suppressOutput": True,
-        }
+            instructions_to_claude="Continue processing", hide_from_transcript=True
+        ).to_protocol() == {"decision": "block", "reason": "Continue processing", "suppressOutput": True}
 
 
 class TestSubagentStopAllow:
@@ -201,19 +168,15 @@ class TestSubagentStopAllow:
 
 class TestSubagentStopForceContinue:
     def test_force_continue_minimal(self):
-        assert SubagentStopForceContinue(
-            instructions_to_subagent="Complete the analysis",
-        ).to_protocol() == {"decision": "block", "reason": "Complete the analysis"}
+        assert SubagentStopForceContinue(instructions_to_subagent="Complete the analysis").to_protocol() == {
+            "decision": "block",
+            "reason": "Complete the analysis",
+        }
 
     def test_force_continue_with_hide_from_transcript(self):
         assert SubagentStopForceContinue(
-            instructions_to_subagent="Finish the task",
-            hide_from_transcript=True,
-        ).to_protocol() == {
-            "decision": "block",
-            "reason": "Finish the task",
-            "suppressOutput": True,
-        }
+            instructions_to_subagent="Finish the task", hide_from_transcript=True
+        ).to_protocol() == {"decision": "block", "reason": "Finish the task", "suppressOutput": True}
 
 
 class TestNotificationAck:
@@ -221,9 +184,7 @@ class TestNotificationAck:
         assert NotificationAck().to_protocol() == {}
 
     def test_ack_with_hide_from_transcript(self):
-        assert NotificationAck(hide_from_transcript=True).to_protocol() == {
-            "suppressOutput": True,
-        }
+        assert NotificationAck(hide_from_transcript=True).to_protocol() == {"suppressOutput": True}
 
 
 class TestPreCompactHandle:
@@ -231,6 +192,4 @@ class TestPreCompactHandle:
         assert PreCompactHandle().to_protocol() == {}
 
     def test_handle_with_hide_from_transcript(self):
-        assert PreCompactHandle(hide_from_transcript=True).to_protocol() == {
-            "suppressOutput": True,
-        }
+        assert PreCompactHandle(hide_from_transcript=True).to_protocol() == {"suppressOutput": True}

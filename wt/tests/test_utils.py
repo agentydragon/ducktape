@@ -12,13 +12,7 @@ def add_project_root_to_env(env: dict) -> None:
     return
 
 
-def run_cli_command(
-    args,
-    cwd=None,
-    env=None,
-    timeout: timedelta = timedelta(seconds=60.0),
-    stdin=None,
-):
+def run_cli_command(args, cwd=None, env=None, timeout: timedelta = timedelta(seconds=60.0), stdin=None):
     """Run the actual CLI command as subprocess."""
     cmd = ["python3", "-m", "wt.cli", *args]
     if env is None:
@@ -26,14 +20,7 @@ def run_cli_command(
     add_project_root_to_env(env)
     seconds = timeout.total_seconds()
     return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        cwd=cwd,
-        env=env,
-        timeout=seconds,
-        check=False,
-        stdin=stdin,
+        cmd, capture_output=True, text=True, cwd=cwd, env=env, timeout=seconds, check=False, stdin=stdin
     )
 
 
@@ -42,12 +29,7 @@ def run_cli_sh_command(args, env, timeout: timedelta = timedelta(seconds=60.0)):
     return run_cli_command(list(args), env=env, timeout=timeout)
 
 
-def wait_until(
-    predicate: Callable[[], bool],
-    *,
-    timeout_seconds: float = 5.0,
-    interval_seconds: float = 0.1,
-) -> bool:
+def wait_until(predicate: Callable[[], bool], *, timeout_seconds: float = 5.0, interval_seconds: float = 0.1) -> bool:
     """Poll `predicate` until it returns True or timeout elapses.
 
     Returns True if the condition became true within the timeout; False otherwise.

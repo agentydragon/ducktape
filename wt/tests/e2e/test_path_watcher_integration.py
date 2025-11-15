@@ -21,65 +21,40 @@ def _status(wt_cli) -> str:
     return r.stdout
 
 
-def wait_for_status_contains(
-    wt_cli,
-    needle: str,
-    timeout: float = WATCHER_DEBOUNCE_SECS * 8,
-) -> None:
+def wait_for_status_contains(wt_cli, needle: str, timeout: float = WATCHER_DEBOUNCE_SECS * 8) -> None:
     last = {"out": ""}
     ok = wait_until(
-        lambda: (
-            last.update({"out": _status(wt_cli)}),
-            needle in last["out"],
-        )[-1],
+        lambda: (last.update({"out": _status(wt_cli)}), needle in last["out"])[-1],
         timeout_seconds=timeout,
         interval_seconds=WATCHER_DEBOUNCE_SECS,
     )
     if not ok:
-        pytest.fail(
-            f"Timed out waiting for status to contain '{needle}'. Last output:\n{last['out']}",
-        )
+        pytest.fail(f"Timed out waiting for status to contain '{needle}'. Last output:\n{last['out']}")
 
 
-def wait_for_status_contains_all(
-    wt_cli,
-    needles: list[str],
-    timeout: float = WATCHER_DEBOUNCE_SECS * 8,
-) -> None:
+def wait_for_status_contains_all(wt_cli, needles: list[str], timeout: float = WATCHER_DEBOUNCE_SECS * 8) -> None:
     last = {"out": ""}
     ok = wait_until(
-        lambda: (
-            last.update({"out": _status(wt_cli)}),
-            all(n in last["out"] for n in needles),
-        )[-1],
+        lambda: (last.update({"out": _status(wt_cli)}), all(n in last["out"] for n in needles))[-1],
         timeout_seconds=timeout,
         interval_seconds=WATCHER_DEBOUNCE_SECS,
     )
     if not ok:
         missing = [n for n in needles if n not in last["out"]]
         pytest.fail(
-            f"Timed out waiting for status to contain all {needles}. Missing: {missing}. Last output:\n{last['out']}",
+            f"Timed out waiting for status to contain all {needles}. Missing: {missing}. Last output:\n{last['out']}"
         )
 
 
-def wait_for_status_not_contains(
-    wt_cli,
-    needle: str,
-    timeout: float = WATCHER_DEBOUNCE_SECS * 8,
-) -> None:
+def wait_for_status_not_contains(wt_cli, needle: str, timeout: float = WATCHER_DEBOUNCE_SECS * 8) -> None:
     last = {"out": ""}
     ok = wait_until(
-        lambda: (
-            last.update({"out": _status(wt_cli)}),
-            needle not in last["out"],
-        )[-1],
+        lambda: (last.update({"out": _status(wt_cli)}), needle not in last["out"])[-1],
         timeout_seconds=timeout,
         interval_seconds=WATCHER_DEBOUNCE_SECS,
     )
     if not ok:
-        pytest.fail(
-            f"Timed out waiting for status to drop '{needle}'. Last output:\n{last['out']}",
-        )
+        pytest.fail(f"Timed out waiting for status to drop '{needle}'. Last output:\n{last['out']}")
 
 
 @pytest.mark.timeout(30)
@@ -124,14 +99,10 @@ def test_path_watcher_full_lifecycle(wt_cli):
     assert result.returncode == 0, f"Remove command failed: {result.stderr}"
     # Ensure git no longer lists the worktree (verifies git worktree remove succeeded)
     git_list = git_run(["worktree", "list"], cwd=repo_path)
-    assert str(worktree_path) not in git_list.stdout.decode(), (
-        "Worktree still listed in main repo after removal"
-    )
+    assert str(worktree_path) not in git_list.stdout.decode(), "Worktree still listed in main repo after removal"
 
     # Verify worktree was removed from filesystem
-    assert not worktree_path.exists(), (
-        f"Worktree still exists after removal: {worktree_path}"
-    )
+    assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
 
     # Wait for watcher to drop the worktree from status
     wait_for_status_not_contains(wt_cli, "feature-test")
@@ -188,15 +159,9 @@ def test_path_watcher_multiple_worktrees(wt_cli):
             last["out"] = result.stdout
             return missing_name not in result.stdout
 
-        ok = wait_until(
-            _is_removed,
-            timeout_seconds=timeout,
-            interval_seconds=WATCHER_DEBOUNCE_SECS,
-        )
+        ok = wait_until(_is_removed, timeout_seconds=timeout, interval_seconds=WATCHER_DEBOUNCE_SECS)
         if not ok:
-            print(
-                f"DEBUG last status while waiting removal of {missing_name}:\n{last['out']}"
-            )
+            print(f"DEBUG last status while waiting removal of {missing_name}:\n{last['out']}")
         return ok
 
     for name in worktree_names:
@@ -205,12 +170,8 @@ def test_path_watcher_multiple_worktrees(wt_cli):
         # Verify git no longer lists the worktree entry
         wt_path = Path(config.worktrees_dir) / name
         git_list = git_run(["worktree", "list"], cwd=repo_path)
-        assert str(wt_path) not in git_list.stdout.decode(), (
-            f"Worktree {name} still listed in main repo after removal"
-        )
+        assert str(wt_path) not in git_list.stdout.decode(), f"Worktree {name} still listed in main repo after removal"
         remaining.remove(name)
 
-        assert _wait_until_removed(wt_cli, name), (
-            f"Worktree {name} still present in status after removal"
-        )
+        assert _wait_until_removed(wt_cli, name), f"Worktree {name} still present in status after removal"
         print(f"After removing {name}, remaining should be: {remaining}")

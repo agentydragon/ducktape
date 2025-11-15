@@ -11,10 +11,7 @@ class TestFileTruncation:
 
     def test_files_under_limit_unchanged(self, test_config):
         """Small files should pass through unchanged."""
-        files = [
-            {"path": "small.py", "content": "print('hello')"},
-            {"path": "tiny.txt", "content": "small file"},
-        ]
+        files = [{"path": "small.py", "content": "print('hello')"}, {"path": "tiny.txt", "content": "small file"}]
         manager = TruncationManager(test_config)
         result = manager.truncate_files_by_tokens(files, 150_000)
         assert result == files
@@ -38,13 +35,7 @@ class TestFileTruncation:
         """When multiple files exceed limit, some should be skipped."""
         files = []
         for i in range(50):
-            content = (
-                f"# File {i}\n"
-                + "def function_"
-                + str(i)
-                + "():\n    "
-                + "print('test')\n" * 1000
-            )
+            content = f"# File {i}\n" + "def function_" + str(i) + "():\n    " + "print('test')\n" * 1000
             files.append({"path": f"file_{i}.py", "content": content})
         manager = TruncationManager(test_config)
         result = manager.truncate_files_by_tokens(files, 150_000)
@@ -63,9 +54,7 @@ class TestFileTruncation:
         files_json = json.dumps(result, indent=2)
         final_tokens = len(encoding.encode(files_json))
         max_files_tokens = 150_000
-        assert final_tokens <= max_files_tokens, (
-            f"Result exceeds limit: {final_tokens} > {max_files_tokens}"
-        )
+        assert final_tokens <= max_files_tokens, f"Result exceeds limit: {final_tokens} > {max_files_tokens}"
 
     def test_largest_files_truncated_first(self, test_config):
         """Largest files should be truncated before smaller ones."""

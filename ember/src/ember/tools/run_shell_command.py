@@ -37,9 +37,7 @@ def build_spec() -> ToolSpec:
 async def _run_command(command: str) -> ShellCommandResult:
     logger.info("Executing command: %s", command)
     proc = await asyncio.create_subprocess_shell(
-        command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
@@ -49,19 +47,12 @@ async def _run_command(command: str) -> ShellCommandResult:
         stdout = stdout or b""
         stderr = stderr or b""
         return ShellCommandResult(
-            exit_code=124,
-            stdout=_decode_stream(stdout),
-            stderr=_decode_stream(stderr),
-            timed_out=True,
+            exit_code=124, stdout=_decode_stream(stdout), stderr=_decode_stream(stderr), timed_out=True
         )
 
     stdout_text = _decode_stream(stdout)
     stderr_text = _decode_stream(stderr)
-    return ShellCommandResult(
-        exit_code=proc.returncode or 0,
-        stdout=stdout_text,
-        stderr=stderr_text,
-    )
+    return ShellCommandResult(exit_code=proc.returncode or 0, stdout=stdout_text, stderr=stderr_text)
 
 
 def _decode_stream(payload: bytes, limit: int = 4000) -> str:

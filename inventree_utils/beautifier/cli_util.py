@@ -10,12 +10,7 @@ def build_table(rows, header=None):
     column_count = unwrap_singleton({len(row) for row in rows})
     column_widths = [max(len(row[i]) for row in rows) for i in range(column_count)]
 
-    lines = [
-        " ".join(
-            cell.ljust(width) for cell, width in zip(row, column_widths, strict=False)
-        )
-        for row in rows
-    ]
+    lines = [" ".join(cell.ljust(width) for cell, width in zip(row, column_widths, strict=False)) for row in rows]
     if header:
         lines.insert(1, "-" * max(len(line) for line in lines))
     return lines

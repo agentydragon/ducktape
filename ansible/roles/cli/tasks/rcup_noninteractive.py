@@ -21,9 +21,7 @@ except subprocess.TimeoutExpired:
     output, errors = proc.communicate()
 
     if re.search(r"overwrite .+\? \[ynaq\]", output + errors):
-        print(
-            "rcup interactively asked whether to overwrite, you should run it manually:",
-        )
+        print("rcup interactively asked whether to overwrite, you should run it manually:")
     else:
         print("rcup appears to be waiting for input (timed out)")
     print("    " + shlex.join(args))

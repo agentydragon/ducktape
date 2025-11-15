@@ -46,8 +46,8 @@ def main():
               fix-lcsc-links      - Interactively rewrite old-format LCSC links
               assign-jellybean    - Bulk assign 'Jellybean P/N' to parts missing it
               upload-lcsc-images  - Upload images from LCSC for parts lacking images
-                """,
-            ),
+                """
+            )
         )
         sys.exit(1)
 

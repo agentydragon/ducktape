@@ -10,15 +10,8 @@ prompt += "\n\n".join(
         f"### {p.relative_to(root)}\n\n" + textwrap.indent(p.read_text(), "  ")
         for p in sorted(root.iterdir())
         if p.name
-        not in (
-            "inventree_config.yaml",
-            ".git",
-            "make_prompt.py",
-            "labels",
-            "__pycache__",
-            "samplebooks_import",
-        )
-    ],
+        not in ("inventree_config.yaml", ".git", "make_prompt.py", "labels", "__pycache__", "samplebooks_import")
+    ]
 )
 prompt += textwrap.dedent(
     """
@@ -40,7 +33,7 @@ prompt += textwrap.dedent(
 
         ### Task
 
-        """,
+        """
 )
 
 print(prompt)

@@ -74,13 +74,7 @@ plugins_dir = str(Path(__file__).parent.parent)
 if plugins_dir not in sys.path:
     sys.path.insert(0, plugins_dir)
 
-from module_utils.github_release import (  # noqa: E402
-    INSTALL_METHODS,
-    ActionError,
-    GitHubInstaller,
-    ReleaseSpec,
-    _fail,
-)
+from module_utils.github_release import INSTALL_METHODS, ActionError, GitHubInstaller, ReleaseSpec, _fail  # noqa: E402
 
 # Constants
 ENSURE_ABSENT = "absent"
@@ -90,12 +84,7 @@ ENSURE_PRESENT = "present"
 class ActionModule(ActionBase):
     """GitHub Release Install action plugin."""
 
-    def _handle_archive_extract_file(
-        self,
-        args: dict[str, Any],
-        task_vars: dict,
-        tmp: Any,
-    ) -> dict[str, Any]:
+    def _handle_archive_extract_file(self, args: dict[str, Any], task_vars: dict, tmp: Any) -> dict[str, Any]:
         """Handle extraction of a specific file from an archive.
 
         This performs a multi-step process:
@@ -120,11 +109,7 @@ class ActionModule(ActionBase):
         # Step 1: Download archive
         download_result = self._execute_module(
             module_name="ansible.builtin.get_url",
-            module_args={
-                "url": asset_url,
-                "dest": temp_archive,
-                "mode": "0644",
-            },
+            module_args={"url": asset_url, "dest": temp_archive, "mode": "0644"},
             task_vars=task_vars,
             tmp=tmp,
         )
@@ -134,11 +119,7 @@ class ActionModule(ActionBase):
         # Step 2: Create temp directory and extract archive
         mkdir_result = self._execute_module(
             module_name="ansible.builtin.file",
-            module_args={
-                "path": temp_extract_dir,
-                "state": "directory",
-                "mode": "0755",
-            },
+            module_args={"path": temp_extract_dir, "state": "directory", "mode": "0755"},
             task_vars=task_vars,
             tmp=tmp,
         )
@@ -154,11 +135,7 @@ class ActionModule(ActionBase):
 
         extract_result = self._execute_module(
             module_name="ansible.builtin.unarchive",
-            module_args={
-                "src": temp_archive,
-                "dest": temp_extract_dir,
-                "remote_src": True,
-            },
+            module_args={"src": temp_archive, "dest": temp_extract_dir, "remote_src": True},
             task_vars=task_vars,
             tmp=tmp,
         )
@@ -176,12 +153,7 @@ class ActionModule(ActionBase):
         source_file = str(Path(temp_extract_dir) / extract_file)
         copy_result = self._execute_module(
             module_name="ansible.builtin.copy",
-            module_args={
-                "src": source_file,
-                "dest": dest_path,
-                "mode": "0755",
-                "remote_src": True,
-            },
+            module_args={"src": source_file, "dest": dest_path, "mode": "0755", "remote_src": True},
             task_vars=task_vars,
             tmp=tmp,
         )
@@ -198,7 +170,7 @@ class ActionModule(ActionBase):
                 download_result.get("changed", False),
                 extract_result.get("changed", False),
                 copy_result.get("changed", False),
-            ],
+            ]
         )
 
         return result
@@ -223,10 +195,7 @@ class ActionModule(ActionBase):
             raise ActionError(f"Invalid {type(method) = }.")
         assert isinstance(method_name, str)
         if not (klass := INSTALL_METHODS.get(method_name)):
-            raise ActionError(
-                f"Invalid {method = }. Expected one of: "
-                f"{', '.join(INSTALL_METHODS.keys())}",
-            )
+            raise ActionError(f"Invalid {method = }. Expected one of: {', '.join(INSTALL_METHODS.keys())}")
         installer = klass(**method_args)
         installer.validate()
         return installer
@@ -245,10 +214,7 @@ class ActionModule(ActionBase):
         if "release_data" not in args:
             # todo dedupe
             if "release_spec" not in args:
-                return _fail(
-                    result,
-                    "Missing required parameter: release_data xor release_spec",
-                )
+                return _fail(result, "Missing required parameter: release_data xor release_spec")
             release_data = ReleaseSpec(**args["release_spec"]).resolve()
             if release_data.get("failed"):
                 # For version acknowledgment failures, return a clean result
@@ -257,19 +223,14 @@ class ActionModule(ActionBase):
                         "failed": True,
                         "msg": release_data["msg"],
                         "latest_version": release_data.get("latest_version"),
-                        "acknowledged_version": release_data.get(
-                            "acknowledged_version",
-                        ),
+                        "acknowledged_version": release_data.get("acknowledged_version"),
                         "repo": release_data.get("repo"),
                     }
                 return _fail(result, release_data["msg"])
             result["release_data"] = release_data
         # todo dedupe
         elif not (release_data := args.get("release_data")):
-            return _fail(
-                result,
-                "Missing required parameter: release_data xor release_spec",
-            )
+            return _fail(result, "Missing required parameter: release_data xor release_spec")
         if not (asset_url := release_data.get("asset_url")):
             return _fail(result, "No asset URL in release info")
 
@@ -281,11 +242,7 @@ class ActionModule(ActionBase):
 
         # Handle special case for archive extraction with specific file
         if installer.module_name == "_multi_step_archive_extract":
-            install_result = self._handle_archive_extract_file(
-                installer.install_module_args(asset_url),
-                task_vars,
-                tmp,
-            )
+            install_result = self._handle_archive_extract_file(installer.install_module_args(asset_url), task_vars, tmp)
         else:
             install_result = self._execute_module(
                 module_name=installer.module_name,

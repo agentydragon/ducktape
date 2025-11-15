@@ -151,9 +151,7 @@ def coerce_prdata(src: Any) -> PRData:
 
 
 @runtime_checkable
-class HasBasicPR(
-    Protocol
-):  # minimal protocol for PyGithub-like PR (read-only properties OK)
+class HasBasicPR(Protocol):  # minimal protocol for PyGithub-like PR (read-only properties OK)
     @property
     def number(self) -> int: ...
 
@@ -172,8 +170,4 @@ class PRInfo:
     gh_error: str | None = None
 
     def to_repr(self) -> PRInfoRepr:
-        return PRInfoRepr(
-            branch=self.branch,
-            pr_data=self.pr_data,
-            gh_error=self.gh_error,
-        )
+        return PRInfoRepr(branch=self.branch, pr_data=self.pr_data, gh_error=self.gh_error)

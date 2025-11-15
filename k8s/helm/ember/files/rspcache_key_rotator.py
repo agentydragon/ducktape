@@ -13,9 +13,7 @@ import httpx
 from kubernetes import client, config
 from kubernetes.client import ApiException
 
-ADMIN_URL = os.environ.get(
-    "ADMIN_URL", "http://rspcache-admin.rspcache.svc.cluster.local:8100"
-)
+ADMIN_URL = os.environ.get("ADMIN_URL", "http://rspcache-admin.rspcache.svc.cluster.local:8100")
 NAMESPACE = os.environ.get("NAMESPACE", "ember")
 SECRET_NAME = os.environ.get("SECRET_NAME", "ember-rspcache-client")
 UPSTREAM_ALIAS = os.environ.get("UPSTREAM_ALIAS", "default")
@@ -56,20 +54,11 @@ def rotate() -> None:
             raise
         existing_secret = None
 
-    old_key_id = decode_b64_optional(
-        existing_secret.data if existing_secret else None, "key_id"
-    )
+    old_key_id = decode_b64_optional(existing_secret.data if existing_secret else None, "key_id")
 
     key_name = f"ember-{int(time.time())}"
     print(f"Minting new client key {key_name}")
-    created = admin_request(
-        "POST",
-        "/api/keys",
-        {
-            "name": key_name,
-            "alias": UPSTREAM_ALIAS,
-        },
-    )
+    created = admin_request("POST", "/api/keys", {"name": key_name, "alias": UPSTREAM_ALIAS})
     token_value = created.get("token")
     record = created.get("record", {})
     new_key_id = record.get("id")
@@ -83,10 +72,7 @@ def rotate() -> None:
             print(f"Revoking previous key {old_key_id}")
             admin_request("POST", f"/api/keys/{old_key_id}/revoke")
         except Exception as exc:  # pragma: no cover - warn and continue
-            print(
-                f"WARNING: failed to revoke old key {old_key_id}: {exc}",
-                file=sys.stderr,
-            )
+            print(f"WARNING: failed to revoke old key {old_key_id}: {exc}", file=sys.stderr)
 
     created_ts = datetime.now(timezone.utc).isoformat()
     data = {
@@ -106,20 +92,8 @@ def rotate() -> None:
         core.create_namespaced_secret(NAMESPACE, secret)
         print("Created new secret")
 
-    patch = {
-        "spec": {
-            "template": {
-                "metadata": {
-                    "annotations": {
-                        "rspcache/key-rotated-at": created_ts,
-                    }
-                }
-            }
-        }
-    }
-    apps.patch_namespaced_deployment(
-        name=DEPLOYMENT_NAME, namespace=NAMESPACE, body=patch
-    )
+    patch = {"spec": {"template": {"metadata": {"annotations": {"rspcache/key-rotated-at": created_ts}}}}}
+    apps.patch_namespaced_deployment(name=DEPLOYMENT_NAME, namespace=NAMESPACE, body=patch)
     print("Patched ember deployment to trigger rollout")
 
 

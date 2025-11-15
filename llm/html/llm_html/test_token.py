@@ -21,10 +21,7 @@ class TokenTestCase(BaseModel):
 
     secret: bytes = Field(default=SECRET, description="Secret key for token generation")
     document: str = Field(default="test document", description="Document content")
-    timestamp: datetime | None = Field(
-        default=None,
-        description="Token generation timestamp",
-    )
+    timestamp: datetime | None = Field(default=None, description="Token generation timestamp")
 
 
 class TamperedTokenCase(BaseModel):
@@ -74,10 +71,7 @@ def test_doc_hash_mismatch_is_reported(token_scheme, fresh_valid_token):
     assert any(tampered_case.expected_error in issue for issue in err.value.issues)
 
 
-def test_incomplete_token_is_reported_but_does_not_crash(
-    token_scheme,
-    fresh_valid_token,
-):
+def test_incomplete_token_is_reported_but_does_not_crash(token_scheme, fresh_valid_token):
     # Strip the private hash so only doc+pub remain.
     incomplete_token = fresh_valid_token[: -token_scheme._AUTH_LEN]
 
@@ -89,9 +83,7 @@ def test_incomplete_token_is_reported_but_does_not_crash(
 
 def test_tokens_from_past_still_verify():
     """Ensure tokens issued at different times in the past are still valid."""
-    past_case = TokenTestCase(
-        timestamp=datetime(2000, 1, 1, 12, 0, 0, tzinfo=TIMEZONE),
-    )
+    past_case = TokenTestCase(timestamp=datetime(2000, 1, 1, 12, 0, 0, tzinfo=TIMEZONE))
 
     token_scheme = TokenScheme(past_case.secret, past_case.document)
     prefix, bits = token_scheme.make_token(past_case.timestamp)

@@ -26,11 +26,7 @@ class ConfigFactory:
         self.temp_base_dir = temp_base_dir or repo_path.parent
 
     def create(
-        self,
-        preset: str | Mapping[str, Any] = "MINIMAL",
-        *,
-        wt_dir: Path | None = None,
-        **config_overrides,
+        self, preset: str | Mapping[str, Any] = "MINIMAL", *, wt_dir: Path | None = None, **config_overrides
     ) -> Configuration:
         """Create a configuration with specified preset and overrides.
 
@@ -48,17 +44,11 @@ class ConfigFactory:
         elif hasattr(ConfigPresets, preset):
             base_config = getattr(ConfigPresets, preset)
         else:
-            raise ValueError(
-                f"Unknown preset: {preset}. Available: {self._available_presets()}",
-            )
+            raise ValueError(f"Unknown preset: {preset}. Available: {self._available_presets()}")
 
         # Set up WT_DIR
         if wt_dir is None:
-            wt_dir = (
-                self.temp_base_dir
-                / TestData.Paths.TEST_WT_DIR_PARENT
-                / TestData.Paths.WT_DIR_NAME
-            )
+            wt_dir = self.temp_base_dir / TestData.Paths.TEST_WT_DIR_PARENT / TestData.Paths.WT_DIR_NAME
 
         # Create default configuration
         default_config = {
@@ -133,8 +123,7 @@ class ConfigFactory:
         return [
             name
             for name in dir(ConfigPresets)
-            if not name.startswith("_")
-            and isinstance(getattr(ConfigPresets, name), dict)
+            if not name.startswith("_") and isinstance(getattr(ConfigPresets, name), dict)
         ]
 
 
@@ -154,12 +143,7 @@ class ConfigBuilder:
 
     def with_github(self, repo: str = "test-user/test-repo", enabled: bool = True):
         """Configure GitHub integration."""
-        self._overrides.update(
-            {
-                "github_enabled": enabled,
-                "github_repo": repo,
-            },
-        )
+        self._overrides.update({"github_enabled": enabled, "github_repo": repo})
         return self
 
     def with_worktrees_dir(self, path: str | Path):

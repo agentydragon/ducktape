@@ -81,10 +81,7 @@ class TokenScheme:
 
     def _public_auth(self, date: str) -> str:
         size = _digest_size(self._PUB_LEN)
-        return bytes_b58(
-            blake2b(date.encode(), digest_size=size).digest(),
-            self._PUB_LEN,
-        )
+        return bytes_b58(blake2b(date.encode(), digest_size=size).digest(), self._PUB_LEN)
 
     def _private_auth(self, date: str) -> str:
         size = _digest_size(self._AUTH_LEN)
@@ -96,16 +93,12 @@ class TokenScheme:
         issues: list[str] = []
 
         if ":" not in token:
-            raise VerificationError(
-                ["Token is missing ':' separator"],
-            )
+            raise VerificationError(["Token is missing ':' separator"])
 
         version_str, payload = token.split(":", 1)
 
         if version_str != self._VERSION:
-            issues.append(
-                f"Version mismatch (expected={self._VERSION}, got={version_str or '<empty>'})",
-            )
+            issues.append(f"Version mismatch (expected={self._VERSION}, got={version_str or '<empty>'})")
 
         parts = payload.split("-", 2)
         if len(parts) < 2:
@@ -120,11 +113,7 @@ class TokenScheme:
             issues.append(f"Invalid MMDD component: '{mmdd}'")
             date_valid = False
 
-        if (
-            len(hhmm) != 5
-            or hhmm[2] != ":"
-            or not (hhmm[:2].isdigit() and hhmm[3:].isdigit())
-        ):
+        if len(hhmm) != 5 or hhmm[2] != ":" or not (hhmm[:2].isdigit() and hhmm[3:].isdigit()):
             issues.append(f"Invalid HH:MM component: '{hhmm}'")
             date_valid = False
 
@@ -135,41 +124,29 @@ class TokenScheme:
         priv_act = digest[self._DOC_LEN + self._PUB_LEN :]
 
         if len(doc_act) != self._DOC_LEN:
-            issues.append(
-                f"Document hash incomplete ({len(doc_act)}/{self._DOC_LEN} characters provided)",
-            )
+            issues.append(f"Document hash incomplete ({len(doc_act)}/{self._DOC_LEN} characters provided)")
         else:
             doc_exp = self._doc_hash()
             if doc_act != doc_exp:
-                issues.append(
-                    f"Document hash mismatch (expected={doc_exp}, got={doc_act})",
-                )
+                issues.append(f"Document hash mismatch (expected={doc_exp}, got={doc_act})")
 
         if len(pub_act) != self._PUB_LEN:
-            issues.append(
-                f"Public hash incomplete ({len(pub_act)}/{self._PUB_LEN} characters provided)",
-            )
+            issues.append(f"Public hash incomplete ({len(pub_act)}/{self._PUB_LEN} characters provided)")
         elif date is None:
             issues.append("Cannot verify public hash due to invalid date")
         else:
             pub_exp = self._public_auth(date)
             if pub_act != pub_exp:
-                issues.append(
-                    f"Public hash mismatch (expected={pub_exp}, got={pub_act})",
-                )
+                issues.append(f"Public hash mismatch (expected={pub_exp}, got={pub_act})")
 
         if len(priv_act) != self._AUTH_LEN:
-            issues.append(
-                f"Private hash incomplete ({len(priv_act)}/{self._AUTH_LEN} characters provided)",
-            )
+            issues.append(f"Private hash incomplete ({len(priv_act)}/{self._AUTH_LEN} characters provided)")
         elif date is None:
             issues.append("Cannot verify private hash due to invalid date")
         else:
             priv_exp = self._private_auth(date)
             if not hmac.compare_digest(priv_act, priv_exp):
-                issues.append(
-                    f"Private hash mismatch (expected={priv_exp}, got={priv_act})",
-                )
+                issues.append(f"Private hash mismatch (expected={priv_exp}, got={priv_act})")
 
         if issues:
             raise VerificationError(issues)

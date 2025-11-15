@@ -47,10 +47,7 @@ print("py post-create: hello from stderr", file=sys.stderr)
 
     # Configure environment (WT_DIR) with this post-creation script
     factory = config_factory(real_temp_repo)
-    config = factory.integration(
-        github_enabled=False,
-        post_creation_script=str(script),
-    )
+    config = factory.integration(github_enabled=False, post_creation_script=str(script))
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
 
@@ -63,17 +60,13 @@ print("py post-create: hello from stderr", file=sys.stderr)
 
 
 @pytest.mark.parametrize("stdin_mode", ["open", "closed"])
-def test_post_creation_python_script_runs(
-    real_env_with_python_post_script, stdin_mode, wtcli
-):
+def test_post_creation_python_script_runs(real_env_with_python_post_script, stdin_mode, wtcli):
     env, repo = real_env_with_python_post_script
     name = "py-hooked"
 
     # Run CLI in "sh -c <name>" mode which triggers creation and post-create hook
     # Choose stdin behavior: open (default) vs closed (simulate bad fd 0 for daemon)
-    stdin = (
-        None if stdin_mode == "open" else subprocess.DEVNULL
-    )  # parent CLI stdin is /dev/null; daemon inherits this
+    stdin = None if stdin_mode == "open" else subprocess.DEVNULL  # parent CLI stdin is /dev/null; daemon inherits this
 
     cli = wtcli(env)
     result = cli.sh_c(name, timeout=timedelta(seconds=30.0), stdin=stdin)

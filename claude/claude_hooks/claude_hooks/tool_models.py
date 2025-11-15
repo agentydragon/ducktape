@@ -17,10 +17,7 @@ class EditInput(BaseModel):
     file_path: Path
     old_string: str
     new_string: str
-    replace_all: bool = Field(
-        default=False,
-        description="Replace all occurrences of old_string",
-    )
+    replace_all: bool = Field(default=False, description="Replace all occurrences of old_string")
 
 
 class MultiEditInput(BaseModel):
@@ -36,19 +33,12 @@ class WriteInput(BaseModel):
 class ReadInput(BaseModel):
     file_path: Path
     limit: int | None = Field(default=None, ge=1, description="Number of lines to read")
-    offset: int | None = Field(
-        default=None,
-        ge=0,
-        description="Line number to start reading from",
-    )
+    offset: int | None = Field(default=None, ge=0, description="Line number to start reading from")
 
 
 class BashInput(BaseModel):
     command: str
-    description: str | None = Field(
-        default=None,
-        description="Description of the command",
-    )
+    description: str | None = Field(default=None, description="Description of the command")
     timeout: int | None = Field(default=None, ge=1, description="Timeout in seconds")
 
 
@@ -71,10 +61,7 @@ class TaskInput(BaseModel):
 
 class LSInput(BaseModel):
     path: Path
-    ignore: list[str] | None = Field(
-        default=None,
-        description="List of glob patterns to ignore",
-    )
+    ignore: list[str] | None = Field(default=None, description="List of glob patterns to ignore")
 
 
 # Simple union of all possible tool inputs

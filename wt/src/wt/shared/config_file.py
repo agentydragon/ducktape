@@ -63,6 +63,4 @@ class ConfigFile(BaseModel):
     post_creation_timeout: float = 60.0  # seconds to wait for post-creation script
 
     # Filesystem watcher settings
-    git_watcher_debounce_delay: float = (
-        0.5  # seconds to debounce .git changes for status refresh
-    )
+    git_watcher_debounce_delay: float = 0.5  # seconds to debounce .git changes for status refresh

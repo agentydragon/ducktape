@@ -75,18 +75,11 @@ class MatrixClient:
     ) -> MatrixClient:
         resolved_base_url = base_url or os.environ.get("MATRIX_BASE_URL")
         if not resolved_base_url:
-            raise RuntimeError(
-                "MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)"
-            )
+            raise RuntimeError("MATRIX_BASE_URL must be set (e.g. https://matrix.example.org)")
 
-        secret = access_token_secret or ProjectedSecret(
-            name="matrix_access_token",
-            env_var="MATRIX_ACCESS_TOKEN",
-        )
+        secret = access_token_secret or ProjectedSecret(name="matrix_access_token", env_var="MATRIX_ACCESS_TOKEN")
 
-        state_path = Path(
-            state_store or "/var/lib/ember/matrix_state.json"
-        ).expanduser()
+        state_path = Path(state_store or "/var/lib/ember/matrix_state.json").expanduser()
         store_path = Path(store_dir or "/var/lib/ember/matrix_store").expanduser()
         settings = MatrixSettings(
             base_url=resolved_base_url,
@@ -126,9 +119,7 @@ class MatrixClient:
         )
 
         self._stop_event.clear()
-        self._sync_task = asyncio.create_task(
-            self._sync_loop(), name="matrix-sync-loop"
-        )
+        self._sync_task = asyncio.create_task(self._sync_loop(), name="matrix-sync-loop")
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -247,13 +238,7 @@ class MatrixClient:
                     body = event.body
                     if not isinstance(body, str):
                         body = str(body)
-                    logger.info(
-                        "[matrix] room=%s sender=%s event=%s: %s",
-                        room_id,
-                        event.sender,
-                        event.event_id,
-                        body,
-                    )
+                    logger.info("[matrix] room=%s sender=%s event=%s: %s", room_id, event.sender, event.event_id, body)
                     await self._record_message_event(room_id, event)
                 elif isinstance(event, MegolmEvent):
                     try:
@@ -261,22 +246,14 @@ class MatrixClient:
                     except AttributeError:
                         sender = "unknown"
                     logger.debug(
-                        "Matrix room %s awaiting room keys for event %s from %s",
-                        room_id,
-                        event.event_id,
-                        sender,
+                        "Matrix room %s awaiting room keys for event %s from %s", room_id, event.event_id, sender
                     )
                 else:
                     try:
                         sender = event.sender
                     except AttributeError:
                         sender = "unknown"
-                    logger.debug(
-                        "Matrix room %s ignoring event type=%s from %s",
-                        room_id,
-                        type(event).__name__,
-                        sender,
-                    )
+                    logger.debug("Matrix room %s ignoring event type=%s from %s", room_id, type(event).__name__, sender)
 
             if last_event_id is not None:
                 await self._mark_read(room_id, last_event_id)
@@ -295,8 +272,7 @@ class MatrixClient:
                     status.last_user_message_at for status in self._room_status.values()
                 ),
                 last_agent_message_at=_latest_timestamp(
-                    status.last_agent_message_at
-                    for status in self._room_status.values()
+                    status.last_agent_message_at for status in self._room_status.values()
                 ),
             )
 
@@ -313,9 +289,7 @@ class MatrixClient:
         async with self._status_lock:
             return self._aggregate_status.model_copy()
 
-    async def set_typing(
-        self, room_ids: Iterable[str], typing: bool, timeout_ms: int = 30000
-    ) -> None:
+    async def set_typing(self, room_ids: Iterable[str], typing: bool, timeout_ms: int = 30000) -> None:
         """Send typing notifications for the given rooms."""
 
         if self._client is None:
@@ -323,21 +297,10 @@ class MatrixClient:
 
         for room_id in room_ids:
             try:
-                await self._client.room_typing(
-                    room_id,
-                    typing_state=typing,
-                    timeout=timeout_ms if typing else 0,
-                )
-                logger.debug(
-                    "Sent typing=%s notification for room %s (timeout=%sms)",
-                    typing,
-                    room_id,
-                    timeout_ms,
-                )
+                await self._client.room_typing(room_id, typing_state=typing, timeout=timeout_ms if typing else 0)
+                logger.debug("Sent typing=%s notification for room %s (timeout=%sms)", typing, room_id, timeout_ms)
             except Exception as exc:
-                logger.warning(
-                    "Failed to send typing notification for %s: %s", room_id, exc
-                )
+                logger.warning("Failed to send typing notification for %s: %s", room_id, exc)
 
     async def _should_accept_invite(self, room_id: str, invite: InviteInfo) -> bool:
         admin_user = self._settings.admin_user_id
@@ -381,15 +344,9 @@ class MatrixClient:
         if self._client is None:
             return
         try:
-            await self._client.room_read_markers(
-                room_id,
-                fully_read_event=event_id,
-                read_event=event_id,
-            )
+            await self._client.room_read_markers(room_id, fully_read_event=event_id, read_event=event_id)
         except Exception as exc:
-            logger.warning(
-                "Failed to update Matrix read marker for %s: %s", room_id, exc
-            )
+            logger.warning("Failed to update Matrix read marker for %s: %s", room_id, exc)
 
     async def _create_client(self) -> AsyncClient:
         base_url = self._settings.base_url
@@ -461,9 +418,7 @@ class MatrixClient:
         except FileNotFoundError:
             return None
         except OSError as exc:
-            logger.warning(
-                "Failed to read Matrix state store %s: %s", self._state_store, exc
-            )
+            logger.warning("Failed to read Matrix state store %s: %s", self._state_store, exc)
             return None
 
         token = data.strip() or None
@@ -476,16 +431,10 @@ class MatrixClient:
             self._state_store.parent.mkdir(parents=True, exist_ok=True)
             self._state_store.write_text(token, encoding="utf-8")
         except OSError as exc:
-            logger.warning(
-                "Failed to persist Matrix sync token to %s: %s", self._state_store, exc
-            )
+            logger.warning("Failed to persist Matrix sync token to %s: %s", self._state_store, exc)
 
     def _client_config(self) -> AsyncClientConfig:
-        return AsyncClientConfig(
-            encryption_enabled=True,
-            pickle_key=self._pickle_key,
-            store_sync_tokens=True,
-        )
+        return AsyncClientConfig(encryption_enabled=True, pickle_key=self._pickle_key, store_sync_tokens=True)
 
     async def _bootstrap_crypto(self, client: AsyncClient) -> None:
         if not client.config.encryption_enabled:
@@ -533,17 +482,13 @@ class MatrixSession:
             raise RuntimeError("Matrix client not initialised")
         return self._manager._client
 
-    async def send_text_message(
-        self, room_id: str, body: str, *, msgtype: str = "m.notice"
-    ) -> None:
+    async def send_text_message(self, room_id: str, body: str, *, msgtype: str = "m.notice") -> None:
         client = self._manager._client
         if client is None:  # pragma: no cover - defensive
             raise RuntimeError("Matrix client is not running; call session() first")
 
         await client.room_send(
-            room_id=room_id,
-            message_type="m.room.message",
-            content={"msgtype": msgtype, "body": body},
+            room_id=room_id, message_type="m.room.message", content={"msgtype": msgtype, "body": body}
         )
         logger.info("Sent Matrix message to %s", room_id)
 

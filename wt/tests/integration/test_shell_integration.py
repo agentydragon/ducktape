@@ -32,10 +32,7 @@ class TestShellIntegration:
     def test_help_command_basic(self, test_config, shell_runner):
         """Test that help command works through shell integration."""
         # Test basic help command - should not require real git repo setup
-        result = shell_runner.run_wt(
-            main_repo=test_config.main_repo,
-            wt_args=["--help"],
-        )
+        result = shell_runner.run_wt(main_repo=test_config.main_repo, wt_args=["--help"])
 
         # Should succeed and show help output
         assert result.returncode == 0, f"Help command failed: {result.stderr}"
@@ -55,12 +52,7 @@ echo "Shell function loaded successfully"
         assert result.returncode == 0, f"Shell setup failed: {result.stderr}"
         assert "Shell function loaded successfully" in result.stdout
 
-    def test_successful_teleport_with_pwd_verification(
-        self,
-        real_temp_repo,
-        real_env,
-        shell_runner,
-    ):
+    def test_successful_teleport_with_pwd_verification(self, real_temp_repo, real_env, shell_runner):
         """Test that wt teleport actually changes directory using pwd verification."""
 
         # Cleaned by real_env fixture
@@ -74,9 +66,7 @@ echo "Shell function loaded successfully"
             parts = output_line.split(":", 3)
 
             if len(parts) != 4:
-                pytest.fail(
-                    f"Expected 4 parts in output, got {len(parts)}. Output: {output_line}",
-                )
+                pytest.fail(f"Expected 4 parts in output, got {len(parts)}. Output: {output_line}")
 
             return {
                 "create_exit": int(parts[0]),
@@ -104,17 +94,11 @@ pwd_after=$(pwd)
 echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
 """
 
-        result = shell_runner.run_script(
-            shell_script,
-            cwd=real_temp_repo,
-            env=real_env,
-        )
+        result = shell_runner.run_script(shell_script, cwd=real_temp_repo, env=real_env)
 
         data = parse_teleport_output(result)
 
-        assert data["create_exit"] == 0, (
-            f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
-        )
+        assert data["create_exit"] == 0, f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
         assert data["nav_exit"] == 0, f"Navigate failed: {result.stderr}"
 
         expected_dir = str(real_temp_repo / "worktrees" / "teleport-test")
@@ -153,11 +137,7 @@ pwd_after=$(pwd)
 echo "$create_exit:$to_wt_exit:$to_main_exit:$pwd_before:$pwd_after"
 """
 
-        result = shell_runner.run_script(
-            shell_script,
-            cwd=real_temp_repo,
-            env=real_env,
-        )
+        result = shell_runner.run_script(shell_script, cwd=real_temp_repo, env=real_env)
         c, e1, e2, before, after = parse_output(result)
         assert c == 0, f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
         assert e1 == 0, f"Navigate to worktree failed: {result.stderr}"

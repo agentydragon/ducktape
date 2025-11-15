@@ -36,19 +36,11 @@ def count_messages_tokens(messages: list[dict[str, str]]) -> int:
     return total
 
 
-def generate_continuation(
-    messages: list[dict[str, str]],
-    available_tokens: int,
-) -> tuple[str, int]:
+def generate_continuation(messages: list[dict[str, str]], available_tokens: int) -> tuple[str, int]:
     """Generate a continuation with up to available_tokens"""
     max_tokens = min(available_tokens, MAX_OUTPUT_PER_CALL)
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=0.7,
-    )
+    response = client.chat.completions.create(model=MODEL, messages=messages, max_tokens=max_tokens, temperature=0.7)
 
     content = response.choices[0].message.content
     tokens_used = response.usage.completion_tokens
@@ -126,10 +118,7 @@ Feel free to think out loud and explore tangential but relevant ideas."""
                 },
             ]
 
-            response_part, tokens_used = generate_continuation(
-                continuation_messages,
-                available_tokens,
-            )
+            response_part, tokens_used = generate_continuation(continuation_messages, available_tokens)
 
             if response_part:
                 full_response += "\n\n" + response_part
@@ -146,19 +135,13 @@ Feel free to think out loud and explore tangential but relevant ideas."""
         else:
             messages.append({"role": "assistant", "content": full_response})
 
-        print(
-            f"\n\n✅ Generated {total_generated} tokens across {continuation_count + 1} continuations",
-        )
+        print(f"\n\n✅ Generated {total_generated} tokens across {continuation_count + 1} continuations")
 
         # Check if we're near context limit
         current_tokens = count_messages_tokens(messages)
         if current_tokens > MAX_CONTEXT - 5000:
-            print(
-                f"\n⚠️  Warning: Approaching context limit ({current_tokens}/{MAX_CONTEXT} tokens)",
-            )
-            print(
-                "Consider starting a new conversation or summarizing previous context.",
-            )
+            print(f"\n⚠️  Warning: Approaching context limit ({current_tokens}/{MAX_CONTEXT} tokens)")
+            print("Consider starting a new conversation or summarizing previous context.")
 
 
 if __name__ == "__main__":

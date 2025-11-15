@@ -13,13 +13,7 @@ from typing_extensions import TypedDict
 
 HookOutput = TypedDict(
     "HookOutput",
-    {
-        "decision": str,
-        "reason": str,
-        "suppressOutput": bool,
-        "stopReason": str,
-        "continue": bool,
-    },
+    {"decision": str, "reason": str, "suppressOutput": bool, "stopReason": str, "continue": bool},
     total=False,
 )
 
@@ -223,10 +217,7 @@ class StopForceContinue(HookAction):
     hide_from_transcript: bool = False
 
     def to_protocol(self) -> HookOutput:
-        result: HookOutput = {
-            "decision": "block",
-            "reason": self.instructions_to_claude,
-        }
+        result: HookOutput = {"decision": "block", "reason": self.instructions_to_claude}
         if self.hide_from_transcript:
             result["suppressOutput"] = True
         return result
@@ -258,10 +249,7 @@ class SubagentStopForceContinue(HookAction):
     hide_from_transcript: bool = False
 
     def to_protocol(self) -> HookOutput:
-        result: HookOutput = {
-            "decision": "block",
-            "reason": self.instructions_to_subagent,
-        }
+        result: HookOutput = {"decision": "block", "reason": self.instructions_to_subagent}
         if self.hide_from_transcript:
             result["suppressOutput"] = True
         return result

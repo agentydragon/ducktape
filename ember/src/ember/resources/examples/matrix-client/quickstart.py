@@ -16,16 +16,11 @@ ROOM_ID_ENV: Final[str] = "EMBER_MATRIX_ROOM_ID"
 async def main() -> None:
     room_id = os.environ.get(ROOM_ID_ENV)
     if not room_id:
-        raise SystemExit(
-            f"Set {ROOM_ID_ENV} to the Matrix room (e.g. !abc123:example.org)"
-        )
+        raise SystemExit(f"Set {ROOM_ID_ENV} to the Matrix room (e.g. !abc123:example.org)")
 
     client = MatrixClient.from_projected_secrets()
     async with client.session() as matrix:
-        await matrix.send_text_message(
-            room_id,
-            "Hello from Ember's matrix-client quickstart!",
-        )
+        await matrix.send_text_message(room_id, "Hello from Ember's matrix-client quickstart!")
         print(f"Sent message to {room_id}")
 
         events = await matrix.get_events(timeout=5.0)

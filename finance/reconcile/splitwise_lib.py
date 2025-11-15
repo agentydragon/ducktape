@@ -44,11 +44,7 @@ def assign_token(client, cache_dir):
         url, secret = client.getAuthorizeURL()
         print(f"Please go to {url}.")
         params = retrieve_get_params(port=port)
-        access_token = client.getAccessToken(
-            params["oauth_token"][0],
-            secret,
-            params["oauth_verifier"][0],
-        )
+        access_token = client.getAccessToken(params["oauth_token"][0], secret, params["oauth_verifier"][0])
         logging.info("got access token")
 
         token_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,9 +74,7 @@ def retrieve_get_params(port):
     return get_params
 
 
-def load_splitwise_expenses(
-    splitwise_group_id,
-) -> dict[str, external_system.ExternalExpense]:
+def load_splitwise_expenses(splitwise_group_id) -> dict[str, external_system.ExternalExpense]:
     config_dir = xdg.xdg_config_home() / "gnucash_splitwise_reconciler"
     cache_dir = xdg.xdg_cache_home() / "gnucash_splitwise_reconciler"
     splitwise_credentials_path = config_dir / "splitwise_credentials.json"
@@ -97,11 +91,7 @@ def load_splitwise_expenses(
 
     while True:
         logging.info("fetching batch of %d items at offset %d", limit, offset)
-        batch = client.getExpenses(
-            offset=offset,
-            limit=limit,
-            group_id=splitwise_group_id,
-        )
+        batch = client.getExpenses(offset=offset, limit=limit, group_id=splitwise_group_id)
         # exp.repayments[*].fromUser, .toUser
         # can have: exp.deletedAt
         for expense in batch:
@@ -112,10 +102,7 @@ def load_splitwise_expenses(
                 # We are not involved.
                 continue
 
-            dt = datetime.datetime.strptime(
-                expense.date,
-                "%Y-%m-%dT%H:%M:%SZ",
-            ).date()
+            dt = datetime.datetime.strptime(expense.date, "%Y-%m-%dT%H:%M:%SZ").date()
             expenses[str(expense.id)] = external_system.ExternalExpense(
                 id=str(expense.id),
                 description=((expense.description or "") + (expense.notes or "")),

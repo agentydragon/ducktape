@@ -19,9 +19,7 @@ import pytest
 
 from ember.history import ConversationHistory
 
-_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(
-    ResponseInputItemParam
-)
+_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(ResponseInputItemParam)
 
 
 @pytest.fixture
@@ -31,18 +29,12 @@ def history(tmp_path: Path) -> ConversationHistory:
 
 def test_history_persists_and_builds_input_items(history: ConversationHistory) -> None:
     user_item = _INPUT_ITEM_ADAPTER.validate_python(
-        {
-            "type": "message",
-            "role": "user",
-            "content": [{"type": "input_text", "text": "hi there"}],
-        }
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi there"}]}
     )
     history.append_input(user_item)
 
     response = _response_with_tool_call(
-        call_id="call-1",
-        tool_name="run_shell_command",
-        arguments='{"command": "echo hi"}',
+        call_id="call-1", tool_name="run_shell_command", arguments='{"command": "echo hi"}'
     )
     history.append_response(response)
 
@@ -55,10 +47,7 @@ def test_history_persists_and_builds_input_items(history: ConversationHistory) -
     )
     history.append_input(function_output)
 
-    items = [
-        cast(Mapping[str, object], item)
-        for item in history.build_input_items("system prompt")
-    ]
+    items = [cast(Mapping[str, object], item) for item in history.build_input_items("system prompt")]
 
     assert items[0]["role"] == "system"
     reasoning_items = [item for item in items if item.get("type") == "reasoning"]
@@ -67,9 +56,7 @@ def test_history_persists_and_builds_input_items(history: ConversationHistory) -
     assert reasoning_model.encrypted_content == "ciphertext"
     assert reasoning_model.content in (None, [])
 
-    function_outputs = [
-        item for item in items if item.get("type") == "function_call_output"
-    ]
+    function_outputs = [item for item in items if item.get("type") == "function_call_output"]
     assert function_outputs, "No function call outputs recorded"
     assert function_outputs[0]["call_id"] == "call-1"
 
@@ -79,14 +66,9 @@ def test_history_persists_and_builds_input_items(history: ConversationHistory) -
     assert any(record["response"] is not None for record in records)
 
     reloaded = ConversationHistory(history.path)
-    reloaded_items = [
-        cast(Mapping[str, object], entry)
-        for entry in reloaded.build_input_items("system prompt")
-    ]
+    reloaded_items = [cast(Mapping[str, object], entry) for entry in reloaded.build_input_items("system prompt")]
     assert len(reloaded_items) == len(items)
-    assert [item.get("type") for item in reloaded_items] == [
-        item.get("type") for item in items
-    ]
+    assert [item.get("type") for item in reloaded_items] == [item.get("type") for item in items]
 
 
 def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Response:
@@ -98,12 +80,7 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
         encrypted_content="ciphertext",
     )
 
-    function_call = ResponseFunctionToolCall(
-        call_id=call_id,
-        name=tool_name,
-        arguments=arguments,
-        type="function_call",
-    )
+    function_call = ResponseFunctionToolCall(call_id=call_id, name=tool_name, arguments=arguments, type="function_call")
 
     tools = cast(
         list[Tool],
@@ -111,11 +88,7 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
             FunctionTool(
                 name="run_shell_command",
                 description="Execute shell command.",
-                parameters={
-                    "type": "object",
-                    "properties": {"command": {"type": "string"}},
-                    "required": ["command"],
-                },
+                parameters={"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
                 strict=False,
                 type="function",
             ),

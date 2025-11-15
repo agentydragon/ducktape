@@ -50,17 +50,9 @@ class SettingsWrapper:
 class Profile(SettingsWrapper):
     def __init__(self, uuid_: str):
         self.uuid = uuid_
-        super().__init__(
-            "org.gnome.Terminal.Legacy.Profile",
-            f"{PROFILE_BASE}:{uuid_}/",
-        )
+        super().__init__("org.gnome.Terminal.Legacy.Profile", f"{PROFILE_BASE}:{uuid_}/")
 
-    def apply_color_scheme(
-        self,
-        name: str,
-        color_dir: Path,
-        font: str | None = None,
-    ) -> None:
+    def apply_color_scheme(self, name: str, color_dir: Path, font: str | None = None) -> None:
         self["visible-name"] = name
         self["background-color"] = (color_dir / "bg_color").read_text().strip()
         self["foreground-color"] = (color_dir / "fg_color").read_text().strip()
@@ -94,9 +86,7 @@ class ProfileList(SettingsWrapper):
         profiles = [Profile(u) for u in self["list"]]
         matches = [p for p in profiles if p["visible-name"] == name]
         if len(matches) > 1:
-            raise RuntimeError(
-                f"Multiple '{name}' profiles: {', '.join(p.uuid for p in matches)}",
-            )
+            raise RuntimeError(f"Multiple '{name}' profiles: {', '.join(p.uuid for p in matches)}")
         return matches[0] if matches else None
 
     def create_profile(self) -> Profile:
@@ -137,11 +127,7 @@ def cmd_set_default(name: str):
 def main():
     # Define a parent parser with global options
     global_opts = argparse.ArgumentParser(add_help=False)
-    global_opts.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging",
-    )
+    global_opts.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -159,11 +145,7 @@ def main():
     args = parser.parse_args()
 
     if args.debug:
-        logging.basicConfig(
-            level=logging.DEBUG,
-            stream=sys.stderr,
-            format="%(message)s",
-        )
+        logging.basicConfig(level=logging.DEBUG, stream=sys.stderr, format="%(message)s")
 
     if args.mode == "apply":
         output = cmd_apply(args.name, args.color_dir, font=args.font)

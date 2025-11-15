@@ -94,12 +94,7 @@ class Github:
 
 def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
     """Minimal JSON-RPC 2.0 call helper for tests over UNIX socket."""
-    req = {
-        "jsonrpc": "2.0",
-        "method": method,
-        "params": params,
-        "id": str(uuid.uuid4()),
-    }
+    req = {"jsonrpc": "2.0", "method": method, "params": params, "id": str(uuid.uuid4())}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.connect(str(sock_path))
         with s.makefile("rwb") as f:
@@ -122,11 +117,7 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
         ("none", []),
     ],
 )
-def test_github_pr_variants(
-    variant,
-    expects,
-    github_pr_env: "GithubPrEnv",
-):
+def test_github_pr_variants(variant, expects, github_pr_env: "GithubPrEnv"):
     env = github_pr_env
     factory = env.config_factory(env.repo_path)
     config = factory.integration(github_enabled=True, github_repo="test/test")
@@ -181,11 +172,7 @@ def test_github_pr_variants(
     assert r2.returncode == 0
 
     # Lookup wtid and force a PR refresh synchronously via RPC to avoid polling
-    wt_by_name = _rpc_json(
-        config.daemon_socket_path,
-        "worktree_get_by_name",
-        {"name": "feature-x"},
-    )
+    wt_by_name = _rpc_json(config.daemon_socket_path, "worktree_get_by_name", {"name": "feature-x"})
     wtid = wt_by_name["result"]["wtid"]
     assert wtid, "Server did not return wtid for created worktree"
     refresh_res = _rpc_json(config.daemon_socket_path, "pr_refresh_now", {"wtid": wtid})
@@ -214,13 +201,7 @@ class GithubPrEnv:
 
 
 @pytest.fixture
-def github_pr_env(
-    real_temp_repo,
-    config_factory,
-    tmp_path,
-    write_pr_fixtures,
-    wt_cli,
-) -> GithubPrEnv:
+def github_pr_env(real_temp_repo, config_factory, tmp_path, write_pr_fixtures, wt_cli) -> GithubPrEnv:
     return GithubPrEnv(
         repo_path=real_temp_repo,
         config_factory=config_factory,

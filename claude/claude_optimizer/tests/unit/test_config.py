@@ -20,11 +20,7 @@ def test_config_from_file():
             "max_context_tokens": 5000,
             "max_files_tokens": 2000,
         },
-        "truncation": {
-            "max_file_size_grading": 1000,
-            "max_file_size_pattern_analysis": 1000,
-            "log_message_length": 50,
-        },
+        "truncation": {"max_file_size_grading": 1000, "max_file_size_pattern_analysis": 1000, "log_message_length": 50},
         "exclude_patterns": ["*.log", "*.tmp"],
     }
 

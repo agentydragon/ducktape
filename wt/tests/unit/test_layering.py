@@ -33,11 +33,7 @@ def _resolve_from_import(module_name: str, node: ast.ImportFrom) -> str:
     if node.level and node.level > 0:
         pkg = module_name.rsplit(".", 1)[0]
         parts = pkg.split(".")
-        pkg_base = (
-            ".".join(parts[: len(parts) - node.level])
-            if node.level <= len(parts)
-            else "wt"
-        )
+        pkg_base = ".".join(parts[: len(parts) - node.level]) if node.level <= len(parts) else "wt"
         return pkg_base + ("." + base_module if base_module else "")
     return base_module
 

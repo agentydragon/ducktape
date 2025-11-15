@@ -72,7 +72,7 @@ def sample_graders_yaml(tmp_path):
                 "description": "Test code quality and clarity",
                 "evaluation_criteria": "Evaluate code readability and modern practices.",
             },
-        ],
+        ]
     }
 
     graders_file = tmp_path / "graders.yaml"
@@ -126,9 +126,7 @@ class TestYamlDatabaseSync:
         assert "type_safety_test" in names
         assert "code_quality_test" in names
 
-        type_safety = (
-            session.query(GradingCriteria).filter_by(name="type_safety_test").first()
-        )
+        type_safety = session.query(GradingCriteria).filter_by(name="type_safety_test").first()
         assert "type annotations" in type_safety.evaluation_criteria
         assert type_safety.is_active is True
 
@@ -187,10 +185,7 @@ class TestDatabaseModels:
         with temp_db.get_session() as session:
             # Create run first
             run = OptimizationRun(
-                start_time=datetime.utcnow(),
-                base_output_dir="/tmp/test",
-                total_iterations=1,
-                status="running",
+                start_time=datetime.utcnow(), base_output_dir="/tmp/test", total_iterations=1, status="running"
             )
             session.add(run)
             session.flush()  # Get the ID
@@ -198,10 +193,7 @@ class TestDatabaseModels:
             # Create system prompt
             content = "# CLAUDE.md\nThis is a test system prompt."
             prompt = SystemPrompt(
-                run_id=run.id,
-                iteration=0,
-                content=content,
-                content_hash=SystemPrompt.compute_content_hash(content),
+                run_id=run.id, iteration=0, content=content, content_hash=SystemPrompt.compute_content_hash(content)
             )
             session.add(prompt)
             session.commit()
@@ -220,11 +212,7 @@ class TestDatabaseModels:
         test_file.write_text(test_content)
 
         session = temp_db
-        run = OptimizationRun(
-            start_time=datetime.utcnow(),
-            base_output_dir="/tmp",
-            status="running",
-        )
+        run = OptimizationRun(start_time=datetime.utcnow(), base_output_dir="/tmp", status="running")
         session.add(run)
         session.flush()
 
@@ -240,12 +228,7 @@ class TestDatabaseModels:
         session.add(task)
         session.flush()
 
-        prompt = SystemPrompt(
-            run_id=run.id,
-            iteration=0,
-            content="Test content",
-            content_hash="dummy_hash",
-        )
+        prompt = SystemPrompt(run_id=run.id, iteration=0, content="Test content", content_hash="dummy_hash")
         session.add(prompt)
         session.flush()
 
@@ -295,19 +278,16 @@ class TestEndToEndWorkflow:
                             "overall_score": 7.5,
                             "overall_rationale": "Good implementation with minor issues.",
                             "facet_scores": {
-                                "type_safety_test": {
-                                    "score": 8.0,
-                                    "rationale": "Good type annotations.",
-                                },
+                                "type_safety_test": {"score": 8.0, "rationale": "Good type annotations."},
                                 "code_quality_test": {
                                     "score": 7.0,
                                     "rationale": "Code is readable but could be more concise.",
                                 },
                             },
-                        },
-                    ),
+                        }
+                    )
                 ),
-            ),
+            )
         ]
         return response
 
@@ -320,13 +300,7 @@ class TestEndToEndWorkflow:
             Mock(role="tool_result", content="Files created successfully"),
         ]
 
-    def test_database_integration_workflow(
-        self,
-        temp_db,
-        sample_seeds_yaml,
-        sample_graders_yaml,
-        tmp_path,
-    ):
+    def test_database_integration_workflow(self, temp_db, sample_seeds_yaml, sample_graders_yaml, tmp_path):
         """Test that the basic database workflow works."""
         # Load YAML files
         yaml_loader = YamlLoader(sample_seeds_yaml, sample_graders_yaml)
@@ -339,10 +313,7 @@ class TestEndToEndWorkflow:
         # Create optimization run
         with temp_db.get_session() as session:
             run = OptimizationRun(
-                start_time=datetime.utcnow(),
-                base_output_dir=str(tmp_path),
-                total_iterations=1,
-                status="running",
+                start_time=datetime.utcnow(), base_output_dir=str(tmp_path), total_iterations=1, status="running"
             )
             session.add(run)
             session.commit()
@@ -363,16 +334,12 @@ class TestEndToEndWorkflow:
             assert len(criteria) == 2
 
             # Verify full text content is searchable
-            rest_tasks = (
-                session.query(SeedTask).filter(SeedTask.prompt.like("%REST API%")).all()
-            )
+            rest_tasks = session.query(SeedTask).filter(SeedTask.prompt.like("%REST API%")).all()
             assert len(rest_tasks) == 1
 
             type_criteria = (
                 session.query(GradingCriteria)
-                .filter(
-                    GradingCriteria.evaluation_criteria.like("%type annotations%"),
-                )
+                .filter(GradingCriteria.evaluation_criteria.like("%type annotations%"))
                 .all()
             )
             assert len(type_criteria) == 1

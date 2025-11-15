@@ -47,9 +47,7 @@ def load_ubs_csv(path) -> dict[str, external_system.ExternalExpense]:
     with path.open(encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter=";")
         for line in reader:
-            assert set(line.keys()) == _EXPECTED_CSV_COLUMNS, (
-                f"unexpected keys: {line.keys()}"
-            )
+            assert set(line.keys()) == _EXPECTED_CSV_COLUMNS, f"unexpected keys: {line.keys()}"
             # Lines that don't have 'Debit' or 'Credit' seem to be just
             # transaction details.
             if not (line["Debit"] or line["Credit"]):
@@ -57,27 +55,16 @@ def load_ubs_csv(path) -> dict[str, external_system.ExternalExpense]:
 
             transaction_id = str(line["Transaction no."])
             assert transaction_id not in result
-            assert (line["Credit"] and not line["Debit"]) or (
-                line["Debit"] and not line["Credit"]
+            assert (line["Credit"] and not line["Debit"]) or (line["Debit"] and not line["Credit"])
+            amount = decimal.Decimal((line["Credit"] or "0").replace("'", "")) - decimal.Decimal(
+                (line["Debit"] or "0").replace("'", "")
             )
-            amount = decimal.Decimal(
-                (line["Credit"] or "0").replace("'", ""),
-            ) - decimal.Decimal((line["Debit"] or "0").replace("'", ""))
-            trade_date = datetime.datetime.strptime(
-                line["Trade date"],
-                "%d.%m.%Y",
-            ).date()
+            trade_date = datetime.datetime.strptime(line["Trade date"], "%d.%m.%Y").date()
             result[transaction_id] = external_system.ExternalExpense(
                 amount=amount,
                 id=transaction_id,
                 # TODO: not sure which date to use...
                 trade_date=trade_date,
-                description=" ".join(
-                    [
-                        line["Description 1"],
-                        line["Description 2"],
-                        line["Description 3"],
-                    ],
-                ),
+                description=" ".join([line["Description 1"], line["Description 2"], line["Description 3"]]),
             )
     return result

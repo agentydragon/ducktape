@@ -55,18 +55,10 @@ def load_settings() -> Settings:
     )
 
 
-def run_git(
-    command: str, *, capture_output: bool = False, check: bool = True
-) -> subprocess.CompletedProcess[str]:
+def run_git(command: str, *, capture_output: bool = False, check: bool = True) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["HOME"] = "/data/git"
-    return subprocess.run(
-        ["su", "git", "-c", command],
-        env=env,
-        capture_output=capture_output,
-        text=True,
-        check=check,
-    )
+    return subprocess.run(["su", "git", "-c", command], env=env, capture_output=capture_output, text=True, check=check)
 
 
 def wait_for_gitea(base_url: str, timeout_seconds: int = 300) -> None:
@@ -76,14 +68,9 @@ def wait_for_gitea(base_url: str, timeout_seconds: int = 300) -> None:
         try:
             response = requests.get(url, timeout=5)
             if response.status_code in (200, 401, 403):
-                print(
-                    f"Gitea API reachable (status {response.status_code})", flush=True
-                )
+                print(f"Gitea API reachable (status {response.status_code})", flush=True)
                 return
-            print(
-                f"Gitea not ready yet (status {response.status_code}); retrying",
-                flush=True,
-            )
+            print(f"Gitea not ready yet (status {response.status_code}); retrying", flush=True)
         except requests.RequestException as exc:
             print(f"Error contacting Gitea API: {exc}; retrying", flush=True)
         time.sleep(5)
@@ -91,9 +78,7 @@ def wait_for_gitea(base_url: str, timeout_seconds: int = 300) -> None:
 
 
 def ensure_user(settings: Settings) -> None:
-    result = run_git(
-        "HOME=/data/git /app/gitea/gitea admin user list", capture_output=True
-    )
+    result = run_git("HOME=/data/git /app/gitea/gitea admin user list", capture_output=True)
     for line in result.stdout.splitlines()[1:]:
         parts = line.split()
         if len(parts) >= 2 and parts[1] == settings.username:
@@ -130,11 +115,7 @@ def create_token(settings: Settings) -> tuple[str, str]:
     lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     token = lines[-1] if lines else ""
     if result.returncode != 0 or not token:
-        message = (
-            result.stderr.strip()
-            if result.stderr
-            else result.stdout.strip() or "unknown error"
-        )
+        message = result.stderr.strip() if result.stderr else result.stdout.strip() or "unknown error"
         raise RuntimeError(f"Failed to generate access token: {message}")
     print("Minted Gitea personal access token", flush=True)
     return token_name, token
@@ -143,9 +124,7 @@ def create_token(settings: Settings) -> tuple[str, str]:
 def upsert_secret(settings: Settings, token_name: str, token: str) -> None:
     host = _env("KUBERNETES_SERVICE_HOST")
     port = _env("KUBERNETES_SERVICE_PORT", "443")
-    sa_token = (
-        Path("/var/run/secrets/kubernetes.io/serviceaccount/token").read_text().strip()
-    )
+    sa_token = Path("/var/run/secrets/kubernetes.io/serviceaccount/token").read_text().strip()
     ca_cert = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
     api_server = f"https://{host}:{port}"
 
@@ -155,27 +134,15 @@ def upsert_secret(settings: Settings, token_name: str, token: str) -> None:
         "metadata": {
             "name": settings.secret_name,
             "namespace": settings.namespace,
-            "labels": {
-                "app.kubernetes.io/name": "ember",
-                "app.kubernetes.io/component": "credentials",
-            },
+            "labels": {"app.kubernetes.io/name": "ember", "app.kubernetes.io/component": "credentials"},
         },
-        "stringData": {
-            "username": settings.username,
-            "token": token,
-            "token_name": token_name,
-        },
+        "stringData": {"username": settings.username, "token": token, "token_name": token_name},
         "type": "Opaque",
     }
 
     session = requests.Session()
     session.verify = ca_cert
-    session.headers.update(
-        {
-            "Authorization": f"Bearer {sa_token}",
-            "Content-Type": "application/json",
-        }
-    )
+    session.headers.update({"Authorization": f"Bearer {sa_token}", "Content-Type": "application/json"})
 
     put_url = f"{api_server}/api/v1/namespaces/{settings.namespace}/secrets/{settings.secret_name}"
     resp = session.put(put_url, json=payload)
@@ -183,9 +150,7 @@ def upsert_secret(settings: Settings, token_name: str, token: str) -> None:
         post_url = f"{api_server}/api/v1/namespaces/{settings.namespace}/secrets"
         resp = session.post(post_url, json=payload)
         if resp.status_code not in (200, 201):
-            raise RuntimeError(
-                f"Failed to create secret: {resp.status_code} {resp.text}"
-            )
+            raise RuntimeError(f"Failed to create secret: {resp.status_code} {resp.text}")
         print("Secret created", flush=True)
     elif resp.status_code in (200, 201):
         print("Secret updated", flush=True)

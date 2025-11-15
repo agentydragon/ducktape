@@ -86,9 +86,7 @@ class TestCLIIntegration:
 
         # Verify branch was created using pygit2
         repo = pygit2.Repository(str(real_temp_repo))
-        branch_names = [
-            name for name in repo.references if name.startswith("refs/heads/test/")
-        ]
+        branch_names = [name for name in repo.references if name.startswith("refs/heads/test/")]
         assert "refs/heads/test/new-feature" in branch_names
 
     def test_list_worktrees_with_existing(self, real_temp_repo, real_env, wt_cli):
@@ -188,9 +186,7 @@ class TestRealGitOperations:
 
         # Check that branch exists using pygit2
         repo = pygit2.Repository(str(real_temp_repo))
-        branch_names = [
-            name for name in repo.references if name.startswith("refs/heads/test/")
-        ]
+        branch_names = [name for name in repo.references if name.startswith("refs/heads/test/")]
         assert "refs/heads/test/test-branch" in branch_names
 
         # Check worktree is on correct branch
@@ -217,14 +213,7 @@ class TestRealGitOperations:
         signature = pygit2.Signature("Test User", "test@example.com")
         tree = worktree_repo.index.write_tree()
         parent = worktree_repo.head.target
-        commit_id = worktree_repo.create_commit(
-            "HEAD",
-            signature,
-            signature,
-            "Test commit",
-            tree,
-            [parent],
-        )
+        commit_id = worktree_repo.create_commit("HEAD", signature, signature, "Test commit", tree, [parent])
 
         # Verify commit exists
         commit = worktree_repo.get(commit_id)
@@ -287,9 +276,7 @@ class TestRealGitOperations:
 
         git_run(["sparse-checkout", "init", "--no-cone"], cwd=wt_path)
         git_run(
-            ["sparse-checkout", "set", "--no-cone", "--stdin"],
-            cwd=wt_path,
-            options=GitRunOptions(input_data=b"foo\n"),
+            ["sparse-checkout", "set", "--no-cone", "--stdin"], cwd=wt_path, options=GitRunOptions(input_data=b"foo\n")
         )
         git_run(["checkout", "-f"], cwd=wt_path)
         assert (wt_path / "foo" / "bar" / "baz.txt").exists()

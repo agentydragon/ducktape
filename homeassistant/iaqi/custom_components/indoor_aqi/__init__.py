@@ -28,9 +28,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     current_entries = hass.config_entries.async_entries(DOMAIN)
     for entry in current_entries:
         if entry.source == config_entries.SOURCE_IMPORT:
-            _LOGGER.debug(
-                "IndoorAQI: already have an import entry; not creating another.",
-            )
+            _LOGGER.debug("IndoorAQI: already have an import entry; not creating another.")
             return True
 
     # Otherwise, create a new import-based config entry (which triggers config_flow.py)
@@ -39,7 +37,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             DOMAIN,
             context={"source": config_entries.SOURCE_IMPORT},
             data=config[DOMAIN],  # pass the entire YAML as data if you want
-        ),
+        )
     )
     return True
 

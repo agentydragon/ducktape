@@ -16,11 +16,7 @@ import requests
 from tqdm.auto import tqdm
 from xdg import xdg_cache_home
 
-_ETAPI_ROOT_URL = flags.DEFINE_string(
-    "etapi_root_url",
-    "http://localhost:37840",
-    "ETAPI root URL",
-)
+_ETAPI_ROOT_URL = flags.DEFINE_string("etapi_root_url", "http://localhost:37840", "ETAPI root URL")
 _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")
 _PURGE = flags.DEFINE_bool("purge", False, "Purge RM side?")
 SYNCED_DIR_PATH = xdg_cache_home() / "papers_trilium_to_remarkable" / "synced_dir"
@@ -46,10 +42,7 @@ class PaperInTrilium:
 
 def get_result_priority(result):
     try:
-        priority = find_attribute_value_in_result(
-            result,
-            attribute_name="readingPriority",
-        )
+        priority = find_attribute_value_in_result(result, attribute_name="readingPriority")
     except KeyError:
         return None  # unprioritized go last
 
@@ -68,11 +61,7 @@ def get_trilium_papers():
     token = _TOKEN.value
     root = _ETAPI_ROOT_URL.value
     headers = {"Authorization": token}
-    response = requests.get(
-        f"{root}/etapi/notes",
-        params={"search": "~type.title = Paper"},
-        headers=headers,
-    )
+    response = requests.get(f"{root}/etapi/notes", params={"search": "~type.title = Paper"}, headers=headers)
     results = response.json()["results"]
     for result in tqdm(results):
         priority = get_result_priority(result)
@@ -85,12 +74,7 @@ def get_trilium_papers():
 
         children = result["childNoteIds"]
         for child_id in children:
-            response = requests.get(
-                f"{root}/etapi/notes/{child_id}",
-                headers={
-                    "Authorization": token,
-                },
-            )
+            response = requests.get(f"{root}/etapi/notes/{child_id}", headers={"Authorization": token})
             child_note = response.json()
             if child_note["type"] == "file" and child_note["mime"] == "application/pdf":
                 pdf_note_id = child_id
@@ -100,18 +84,12 @@ def get_trilium_papers():
             continue
 
         try:
-            arxiv_id = find_attribute_value_in_result(
-                result,
-                attribute_name="arxivId",
-            )
+            arxiv_id = find_attribute_value_in_result(result, attribute_name="arxivId")
         except KeyError:
             arxiv_id = None
 
         try:
-            finished_reading = find_attribute_value_in_result(
-                result,
-                attribute_name="finishedReading",
-            )
+            finished_reading = find_attribute_value_in_result(result, attribute_name="finishedReading")
             if finished_reading == "true":
                 finished_reading = True
             elif finished_reading == "false":
@@ -156,9 +134,7 @@ def purge_remarkable_synced_dir():
 
 def get_existing_filenames():
     """Yields filenames uploaded in shared folder sans .pdf extension."""
-    existing = subprocess.check_output(make_args("ls", REMARKABLE_SIDE_PATH)).decode(
-        "utf-8",
-    )
+    existing = subprocess.check_output(make_args("ls", REMARKABLE_SIDE_PATH)).decode("utf-8")
     for line in existing.splitlines():
         FILE_PREFIX = "[f]\t"
         assert line.startswith(FILE_PREFIX)
@@ -171,9 +147,7 @@ def build_filename(paper):
         filename += f"{paper.arxiv_id} "
     filename += paper.title
     filename = filename.replace(":", "_")
-    return (
-        filename.replace("/", "-").replace("?", "-").replace("(", "_").replace(")", "_")
-    )
+    return filename.replace("/", "-").replace("?", "-").replace("(", "_").replace(")", "_")
     # filename = filename.replace(' ', '_')
 
 
@@ -239,10 +213,7 @@ def sync():
     new_arxiv_ids = set(should_exist.keys()) - set(existing_arxiv_id_to_filename.keys())
     # Sort by priority.
     new_arxiv_ids = sorted(
-        new_arxiv_ids,
-        key=lambda id: (
-            should_exist[id].priority if should_exist[id].priority is not None else 200
-        ),
+        new_arxiv_ids, key=lambda id: (should_exist[id].priority if should_exist[id].priority is not None else 200)
     )
     # TODO: WTF why is it adding new ones?
     for arxiv_id in (t := tqdm(new_arxiv_ids)):
@@ -251,19 +222,12 @@ def sync():
         filename = build_filename(paper)
         path = SYNCED_DIR_PATH / (filename + ".pdf")
         headers = {"Authorization": token}
-        response = requests.get(
-            f"{root}/etapi/notes/{paper.pdf_note_id}/content",
-            headers=headers,
-        )
+        response = requests.get(f"{root}/etapi/notes/{paper.pdf_note_id}/content", headers=headers)
         assert response.status_code == 200
         with open(path, "wb") as f:
             f.write(response.content)
 
-        args = make_args(
-            "put",
-            f"/home/app/synced_dir/{filename}.pdf",
-            REMARKABLE_SIDE_PATH,
-        )
+        args = make_args("put", f"/home/app/synced_dir/{filename}.pdf", REMARKABLE_SIDE_PATH)
         # this seems to work:
         # docker run -v /home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/ -v /home/agentydragon/.cache/papers_trilium_to_remarkable/synced_dir:/home/app/synced_dir/ rmapi put /home/app/synced_dir/2205.12910_NaturalProver:_Grounded_Mathematical_Proof_Generation_with_Language_Models.pdf /papers_trilium_to_remarkable
         sp = subprocess.run(args, capture_output=True, check=False)

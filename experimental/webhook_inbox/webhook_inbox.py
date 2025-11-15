@@ -25,10 +25,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import URL
 
-WEBHOOK_INBOX_KEY: str = os.getenv(
-    "WEBHOOK_INBOX_KEY",
-    "",
-)  # 44-char url-safe b64, or unset → no crypto
+WEBHOOK_INBOX_KEY: str = os.getenv("WEBHOOK_INBOX_KEY", "")  # 44-char url-safe b64, or unset → no crypto
 
 MAX_PAYLOAD = int(os.getenv("MAX_PAYLOAD", "16384"))
 PAGE_SIZE = int(os.getenv("PAGE_SIZE", "50"))
@@ -41,9 +38,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 # Configure logging (avoid double config when uvicorn already set it up)
 if not logging.getLogger().handlers:
     logging.basicConfig(
-        level=LOG_LEVEL,
-        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S%z",
+        level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s - %(message)s", datefmt="%Y-%m-%dT%H:%M:%S%z"
     )
 
 logger = logging.getLogger("webhook_inbox")
@@ -116,21 +111,12 @@ class EncryptedEncoder:
     def plain_encode(self, events):
         # return json.dumps(events, separators=(',', ':')).encode()  # Compact JSON
         # return json.dumps(events, indent=2)  # pretty JSON
-        return Formatter(
-            indent_spaces=2,
-            max_inline_length=70,
-            max_inline_complexity=10,
-        ).serialize(events)
+        return Formatter(indent_spaces=2, max_inline_length=70, max_inline_complexity=10).serialize(events)
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def encode(
-        self,
-        events,
-        *,
-        provided_key: str | None = None,
-    ):
+    def encode(self, events, *, provided_key: str | None = None):
         """Return a *dict* with encoded representation of *events*.
 
         Return type is a mapping for unpacking into Jinja context.
@@ -175,9 +161,7 @@ class EncryptedEncoder:
         width = 60
         chunks = [ciphertext[i : i + width] for i in range(0, len(ciphertext), width)]
         total = len(chunks)
-        body = "\n".join(
-            f"  {chunk!r}  # line {i + 1}/{total}" for i, chunk in enumerate(chunks)
-        )
+        body = "\n".join(f"  {chunk!r}  # line {i + 1}/{total}" for i, chunk in enumerate(chunks))
 
         return out | {
             "ciphertext_body": "(\n" + body + "\n)",
@@ -221,7 +205,7 @@ def configure_db(path: str | os.PathLike):
         """CREATE TABLE IF NOT EXISTS events(
                id      INTEGER PRIMARY KEY,
                ts      INTEGER,
-               payload TEXT)""",
+               payload TEXT)"""
     )
     CONN.execute(
         """CREATE TABLE IF NOT EXISTS access_log(
@@ -232,7 +216,7 @@ def configure_db(path: str | os.PathLike):
                query   TEXT,
                payload TEXT,
                headers TEXT,
-               status  INTEGER)""",
+               status  INTEGER)"""
     )
     return CONN
 
@@ -253,10 +237,7 @@ def _print_startup_banner() -> None:
 
     index_url = "http://127.0.0.1:8000/"
 
-    lines: list[str] = [
-        "📬  Webhook Inbox ready",
-        f"  UI → {index_url}",
-    ]
+    lines: list[str] = ["📬  Webhook Inbox ready", f"  UI → {index_url}"]
     # Expose plaintext link only when stdout is attached to a TTY.
     # In typical production stdout is captured by supervisor (systemd, docker,
     # kubernetes, …) or redirected into a log file and ``isatty()`` will be
@@ -266,13 +247,7 @@ def _print_startup_banner() -> None:
         lines.append("  Unencrypted UI →")
         lines.append(f"    {index_url}?key={WEBHOOK_INBOX_KEY}")
         lines.append(f"    {index_url}k/{quote(WEBHOOK_INBOX_KEY)}")
-    lines.extend(
-        [
-            "",
-            "Send a test webhook:",
-            f"""   curl -X POST {index_url} -d '{json.dumps({"hello": "world"})}'""",
-        ],
-    )
+    lines.extend(["", "Send a test webhook:", f"""   curl -X POST {index_url} -d '{json.dumps({"hello": "world"})}'"""])
 
     print("\n".join(lines))
 
@@ -303,17 +278,8 @@ async def log_all(req: Request, call_next):
 
     # Store in DB for UI.
     CONN.execute(
-        "INSERT INTO access_log(ts,path,method,query,payload,headers,status)"
-        " VALUES(?,?,?,?,?,?,?)",
-        (
-            ts,
-            req.url.path,
-            req.method,
-            req.url.query,
-            body,
-            json.dumps(dict(req.headers.items())),
-            resp.status_code,
-        ),
+        "INSERT INTO access_log(ts,path,method,query,payload,headers,status) VALUES(?,?,?,?,?,?,?)",
+        (ts, req.url.path, req.method, req.url.query, body, json.dumps(dict(req.headers.items())), resp.status_code),
     )
     CONN.commit()
 
@@ -346,10 +312,7 @@ async def ingest(req: Request):
         payload = raw.decode()
     except UnicodeDecodeError:
         raise HTTPException(400, "Payload must be valid UTF-8")
-    CONN.execute(
-        "INSERT INTO events(ts,payload) VALUES(?,?)",
-        (int(time.time()), payload),
-    )
+    CONN.execute("INSERT INTO events(ts,payload) VALUES(?,?)", (int(time.time()), payload))
     CONN.commit()
     return {"status": "ok"}
 
@@ -394,9 +357,7 @@ def _render_events_page(
         redirect_target = str(URL(base_path).include_query_params(**params))
         # Also propagate *query-style* key if that's how it was supplied.
         if key_style == "query" and key_value:
-            redirect_target = str(
-                URL(redirect_target).include_query_params(key=key_value),
-            )
+            redirect_target = str(URL(redirect_target).include_query_params(key=key_value))
 
         return RedirectResponse(url=redirect_target, status_code=302)
 
@@ -406,10 +367,7 @@ def _render_events_page(
     try:
         before_ts = int(params["before"])
     except ValueError:
-        raise HTTPException(
-            400,
-            "Invalid 'before' parameter - must be integer timestamp",
-        )
+        raise HTTPException(400, "Invalid 'before' parameter - must be integer timestamp")
 
     try:
         count = int(params["count"])
@@ -420,8 +378,7 @@ def _render_events_page(
         raise HTTPException(400, f"'count' must be between 1 and {PAGE_SIZE}")
 
     rows = CONN.execute(
-        "SELECT id,ts,payload FROM events WHERE ts < ? ORDER BY ts DESC LIMIT ?",
-        (before_ts, count),
+        "SELECT id,ts,payload FROM events WHERE ts < ? ORDER BY ts DESC LIMIT ?", (before_ts, count)
     ).fetchall()
 
     def _payload_entry(payload):
@@ -445,13 +402,8 @@ def _render_events_page(
     older_link: str | None = None
     if rows:
         oldest_ts = rows[-1][1]
-        if CONN.execute(
-            "SELECT 1 FROM events WHERE ts < ? LIMIT 1",
-            (oldest_ts,),
-        ).fetchone():
-            older_link = str(
-                URL(base_path).include_query_params(before=oldest_ts, count=count),
-            )
+        if CONN.execute("SELECT 1 FROM events WHERE ts < ? LIMIT 1", (oldest_ts,)).fetchone():
+            older_link = str(URL(base_path).include_query_params(before=oldest_ts, count=count))
 
     # Propagate *query-style* key only when the correct key was provided and the
     # user is indeed using the query scheme.
@@ -496,11 +448,7 @@ def _render_events_page(
 
 @app.get("/")
 def list_events(req: Request):
-    return _render_events_page(
-        req,
-        key_value=req.query_params.get("key"),
-        key_style="query",
-    )
+    return _render_events_page(req, key_value=req.query_params.get("key"), key_style="query")
 
 
 # ── GET /k/{key}/  → paged listing with key embedded in path  ─────────────

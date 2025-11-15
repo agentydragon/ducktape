@@ -73,7 +73,7 @@ class CodeGrader(GraderScoresheet):
                 prompt=f"Evaluate code compliance with: {self.requirement.description}",
                 description=self.requirement.evaluation_criteria,
                 expected_behavior=self.requirement.description,
-            ),
+            )
         ]
 
     async def grade_agent_rollout(self, rollout: AgentRollout) -> GradeResult:
@@ -92,25 +92,12 @@ class CodeGrader(GraderScoresheet):
             code_files = []
 
             for file_path in rollout.generated_files:
-                if file_path.suffix in {
-                    ".py",
-                    ".js",
-                    ".ts",
-                    ".java",
-                    ".cpp",
-                    ".c",
-                    ".go",
-                    ".rs",
-                }:
+                if file_path.suffix in {".py", ".js", ".ts", ".java", ".cpp", ".c", ".go", ".rs"}:
                     try:
                         code_content = file_path.read_text()
                         all_code += f"\n\n# File: {file_path.name}\n{code_content}"
                         code_files.append(file_path)
-                    except (
-                        FileNotFoundError,
-                        PermissionError,
-                        UnicodeDecodeError,
-                    ) as e:
+                    except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
                         # Log but continue with other files
                         all_code += f"\n\n# File: {file_path.name} (Error reading: {e})"
 
@@ -140,7 +127,7 @@ class CodeGrader(GraderScoresheet):
                         requirement_description=self.requirement.description,
                         evaluation_criteria=self.requirement.evaluation_criteria,
                     ),
-                },
+                }
             ]
 
             openai_response = self.openai_client.responses.create(
@@ -151,21 +138,15 @@ class CodeGrader(GraderScoresheet):
                         "type": "function",
                         "name": self.requirement.function_schema["name"],
                         **self.requirement.function_schema,
-                    },
+                    }
                 ],
-                tool_choice={
-                    "type": "function",
-                    "name": self.requirement.function_schema["name"],
-                },
+                tool_choice={"type": "function", "name": self.requirement.function_schema["name"]},
             )
 
             # Extract analysis results from function call
             analysis_data = None
             for output_item in openai_response.output:
-                if (
-                    output_item.type == "function_call"
-                    and output_item.name == self.requirement.function_schema["name"]
-                ):
+                if output_item.type == "function_call" and output_item.name == self.requirement.function_schema["name"]:
                     analysis_data = json.loads(output_item.arguments)
                     break
 
@@ -183,24 +164,15 @@ class CodeGrader(GraderScoresheet):
             self._log_interaction(
                 test_case_name=self.requirement.name,
                 request_type="code_analysis",
-                claude_request={
-                    "messages": analysis_messages,
-                    "tools": [self.requirement.function_schema],
-                },
+                claude_request={"messages": analysis_messages, "tools": [self.requirement.function_schema]},
                 claude_response={"function_call": analysis_data},
                 success=True,
             )
 
             # Extract standardized fields from analysis_data
             # Different requirements may have different field names, so we use common patterns
-            has_problems = analysis_data.get(
-                "has_problems",
-                analysis_data.get("has_violations", True),
-            )
-            problems = analysis_data.get(
-                "problems",
-                analysis_data.get("violations", []),
-            )
+            has_problems = analysis_data.get("has_problems", analysis_data.get("has_violations", True))
+            problems = analysis_data.get("problems", analysis_data.get("violations", []))
             assessment = analysis_data.get("assessment", "Analysis completed")
             score = analysis_data.get("score", 0.0)
 
@@ -217,14 +189,8 @@ class CodeGrader(GraderScoresheet):
                     for i, problem in enumerate(problems[:3], 1):  # Limit to 3 problems
                         # Handle different problem formats
                         if isinstance(problem, dict):
-                            pattern = problem.get(
-                                "pattern",
-                                problem.get("issue", "Unknown"),
-                            )
-                            reason = problem.get(
-                                "reason",
-                                problem.get("description", "No reason"),
-                            )
+                            pattern = problem.get("pattern", problem.get("issue", "Unknown"))
+                            reason = problem.get("reason", problem.get("description", "No reason"))
                             feedback += f"{i}. {pattern}: {reason}\n"
                         else:
                             feedback += f"{i}. {problem}\n"
@@ -297,7 +263,7 @@ class ActionSequenceGrader(GraderScoresheet):
                 prompt=f"Evaluate action sequence compliance with: {self.requirement.description}",
                 description=self.requirement.evaluation_criteria,
                 expected_behavior=self.requirement.description,
-            ),
+            )
         ]
 
     async def grade_agent_rollout(self, rollout: AgentRollout) -> GradeResult:
@@ -314,9 +280,7 @@ class ActionSequenceGrader(GraderScoresheet):
         action_summary = ""
         for i, action in enumerate(rollout.action_sequence, 1):
             action_type = action.get("tool", action.get("type", "unknown"))
-            action_summary += (
-                f"{i}. {action_type}: {action.get('description', str(action)[:100])}\n"
-            )
+            action_summary += f"{i}. {action_type}: {action.get('description', str(action)[:100])}\n"
 
         if not action_summary.strip():
             return GradeResult(
@@ -326,10 +290,7 @@ class ActionSequenceGrader(GraderScoresheet):
                 score=0.0,
                 feedback="No action sequence found",
                 generated_code=None,
-                analysis_details={
-                    "error": "no_action_sequence",
-                    "agent_dir": str(rollout.agent_dir),
-                },
+                analysis_details={"error": "no_action_sequence", "agent_dir": str(rollout.agent_dir)},
             )
 
         # Use OpenAI function calling to analyze the action sequence
@@ -344,7 +305,7 @@ class ActionSequenceGrader(GraderScoresheet):
                     requirement_description=self.requirement.description,
                     evaluation_criteria=self.requirement.evaluation_criteria,
                 ),
-            },
+            }
         ]
 
         openai_response = self.openai_client.responses.create(
@@ -355,21 +316,15 @@ class ActionSequenceGrader(GraderScoresheet):
                     "type": "function",
                     "name": self.requirement.function_schema["name"],
                     **self.requirement.function_schema,
-                },
+                }
             ],
-            tool_choice={
-                "type": "function",
-                "name": self.requirement.function_schema["name"],
-            },
+            tool_choice={"type": "function", "name": self.requirement.function_schema["name"]},
         )
 
         # Extract and process analysis results (similar to CodeGrader)
         analysis_data = None
         for output_item in openai_response.output:
-            if (
-                output_item.type == "function_call"
-                and output_item.name == self.requirement.function_schema["name"]
-            ):
+            if output_item.type == "function_call" and output_item.name == self.requirement.function_schema["name"]:
                 analysis_data = json.loads(output_item.arguments)
                 break
 
@@ -379,19 +334,13 @@ class ActionSequenceGrader(GraderScoresheet):
         self._log_interaction(
             test_case_name=self.requirement.name,
             request_type="action_analysis",
-            claude_request={
-                "messages": analysis_messages,
-                "tools": [self.requirement.function_schema],
-            },
+            claude_request={"messages": analysis_messages, "tools": [self.requirement.function_schema]},
             claude_response={"function_call": analysis_data},
             success=True,
         )
 
         # Process results (same logic as CodeGrader)
-        has_problems = analysis_data.get(
-            "has_problems",
-            analysis_data.get("has_violations", True),
-        )
+        has_problems = analysis_data.get("has_problems", analysis_data.get("has_violations", True))
         problems = analysis_data.get("problems", analysis_data.get("violations", []))
         assessment = analysis_data.get("assessment", "Analysis completed")
         score = analysis_data.get("score", 0.0)
@@ -408,10 +357,7 @@ class ActionSequenceGrader(GraderScoresheet):
                 for i, problem in enumerate(problems[:3], 1):
                     if isinstance(problem, dict):
                         issue = problem.get("action", problem.get("issue", "Unknown"))
-                        reason = problem.get(
-                            "reason",
-                            problem.get("description", "No reason"),
-                        )
+                        reason = problem.get("reason", problem.get("description", "No reason"))
                         feedback += f"{i}. {issue}: {reason}\n"
                     else:
                         feedback += f"{i}. {problem}\n"

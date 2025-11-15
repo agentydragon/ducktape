@@ -71,9 +71,7 @@ class HookBase(ABC, Generic[InputT, OutputT]):
     def _load_config(self) -> dict[str, Any]:
         """Load configuration from XDG config directory."""
         config_file = Path(user_config_dir("adgn-claude-hooks")) / "settings.yaml"
-        if config_file.exists() and (
-            config_data := yaml.safe_load(config_file.read_text())
-        ):
+        if config_file.exists() and (config_data := yaml.safe_load(config_file.read_text())):
             return config_data.get(self.hook_name, {})
         return {}
 
@@ -113,11 +111,7 @@ class HookBase(ABC, Generic[InputT, OutputT]):
             )
 
             # Set logging context for automatic injection into all log messages
-            set_hook_context(
-                invocation_id=context.invocation_id,
-                name=self.hook_name,
-                session_id=context.session_id,
-            )
+            set_hook_context(invocation_id=context.invocation_id, name=self.hook_name, session_id=context.session_id)
 
             action = self.execute(hook_input, context)
             self.logger.info(f"Hook executed: {action}")

@@ -20,11 +20,7 @@ class ServiceManager:
             raise RuntimeError("service already running")
         script = Path(__file__).with_name("dbus_service.py")
         # Using asyncio.create_subprocess_exec for async subprocess
-        self.proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            str(script),
-            self.bus_address,
-        )
+        self.proc = await asyncio.create_subprocess_exec(sys.executable, str(script), self.bus_address)
         await self._wait_until_running()
 
     async def _wait_until_running(self) -> None:
@@ -50,15 +46,8 @@ class ServiceManager:
 
     async def emit(self, msg: str) -> None:
         bus = await MessageBus(bus_address=self.bus_address).connect()
-        introspection = await bus.introspect(
-            "org.example.TestService",
-            "/org/example/TestObject",
-        )
-        obj = bus.get_proxy_object(
-            "org.example.TestService",
-            "/org/example/TestObject",
-            introspection,
-        )
+        introspection = await bus.introspect("org.example.TestService", "/org/example/TestObject")
+        obj = bus.get_proxy_object("org.example.TestService", "/org/example/TestObject", introspection)
         interface = obj.get_interface("org.example.TestInterface")  # type: ignore[attr-defined]
         await interface.call_emit_signal(msg)  # type: ignore[attr-defined]
         bus.disconnect()
@@ -67,15 +56,8 @@ class ServiceManager:
         if not self.proc:
             return
         bus = await MessageBus(bus_address=self.bus_address).connect()
-        introspection = await bus.introspect(
-            "org.example.TestService",
-            "/org/example/TestObject",
-        )
-        obj = bus.get_proxy_object(
-            "org.example.TestService",
-            "/org/example/TestObject",
-            introspection,
-        )
+        introspection = await bus.introspect("org.example.TestService", "/org/example/TestObject")
+        obj = bus.get_proxy_object("org.example.TestService", "/org/example/TestObject", introspection)
         interface = obj.get_interface("org.example.TestInterface")  # type: ignore[attr-defined]
         await interface.call_quit()  # type: ignore[attr-defined]
         bus.disconnect()

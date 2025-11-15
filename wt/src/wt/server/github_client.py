@@ -13,21 +13,12 @@ from github.Repository import Repository
 
 from ..shared.env import is_test_mode
 from ..shared.error_handling import GitHubUnavailableError, handle_github_errors
-from ..shared.github_models import (
-    GitHubPRResponse,
-    HasBasicPR,
-    PRState,
-    PullRequestList,
-)
+from ..shared.github_models import GitHubPRResponse, HasBasicPR, PRState, PullRequestList
 
 logger = logging.getLogger(__name__)
 
 
-def get_github_token(
-    token_arg: str | None = None,
-    *,
-    timeout_secs: float = 10.0,
-) -> str | None:
+def get_github_token(token_arg: str | None = None, *, timeout_secs: float = 10.0) -> str | None:
     """Obtain a GitHub token from explicit arg, env, or gh CLI.
 
     Separated for easy mocking in tests: patch wt.server.github_client.get_github_token.
@@ -40,20 +31,10 @@ def get_github_token(
     if is_test_mode():
         return None
     try:
-        cp = subprocess.run(
-            ["gh", "auth", "token"],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=timeout_secs,
-        )
+        cp = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True, timeout=timeout_secs)
         tok = (cp.stdout or "").strip()
         return tok or None
-    except (
-        FileNotFoundError,
-        subprocess.CalledProcessError,
-        subprocess.TimeoutExpired,
-    ):
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
     except (OSError, PermissionError) as e:
         # Unexpected system errors should be visible to operator
@@ -76,9 +57,7 @@ class GitHubInterface:
             except Exception as e:
                 # Boundary: wrap provider/library errors; log for diagnostics.
                 logger.exception("Failed to access GitHub repo %s", self.github_repo)
-                raise GitHubUnavailableError(
-                    f"Cannot access GitHub repo {self.github_repo}",
-                ) from e
+                raise GitHubUnavailableError(f"Cannot access GitHub repo {self.github_repo}") from e
         return self._repo
 
     @handle_github_errors

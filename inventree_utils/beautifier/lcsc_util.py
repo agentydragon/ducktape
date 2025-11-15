@@ -1,8 +1,6 @@
 import re
 
-LCSC_PRODUCT_URL_RE = re.compile(
-    r"https?://www\.lcsc\.com/product-detail/(?:[^/]*_)?(?P<id>C\d+)\.html(?:\?.*)?",
-)
+LCSC_PRODUCT_URL_RE = re.compile(r"https?://www\.lcsc\.com/product-detail/(?:[^/]*_)?(?P<id>C\d+)\.html(?:\?.*)?")
 
 
 def parse_url_for_lcsc_id(url: str) -> str | None:

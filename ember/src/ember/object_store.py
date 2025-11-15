@@ -20,22 +20,12 @@ logger = logging.getLogger(__name__)
 class ImageHandle(BaseModel):
     mime_type: str = Field(..., description="MIME type of the uploaded image.")
     size_bytes: int = Field(..., description="Size of the stored object in bytes.")
-    storage_url: HttpUrl = Field(
-        ..., description="Signed URL the model can fetch to retrieve the image."
-    )
-    expires_at: datetime = Field(
-        ..., description="UTC timestamp indicating when the signed URL expires."
-    )
+    storage_url: HttpUrl = Field(..., description="Signed URL the model can fetch to retrieve the image.")
+    expires_at: datetime = Field(..., description="UTC timestamp indicating when the signed URL expires.")
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    def to_responses_part(
-        self, detail: Literal["auto", "low", "high"] = "auto"
-    ) -> ResponseInputImageParam:
-        return ResponseInputImageParam(
-            type="input_image",
-            image_url=str(self.storage_url),
-            detail=detail,
-        )
+    def to_responses_part(self, detail: Literal["auto", "low", "high"] = "auto") -> ResponseInputImageParam:
+        return ResponseInputImageParam(type="input_image", image_url=str(self.storage_url), detail=detail)
 
 
 class ObjectStoreClient:
@@ -54,49 +44,27 @@ class ObjectStoreClient:
             stat = file_path.stat()
             with file_path.open("rb") as handle:
                 client.put_object(
-                    self._settings.bucket,
-                    object_name,
-                    handle,
-                    length=stat.st_size,
-                    content_type=mime_type,
+                    self._settings.bucket, object_name, handle, length=stat.st_size, content_type=mime_type
                 )
         except S3Error as exc:
-            raise RuntimeError(
-                f"Failed to upload {file_path.name} to object store: {exc}"
-            ) from exc
+            raise RuntimeError(f"Failed to upload {file_path.name} to object store: {exc}") from exc
 
         expiry = timedelta(seconds=self._expiry)
         expires_at = datetime.now(timezone.utc) + expiry
         try:
-            url = client.presigned_get_object(
-                self._settings.bucket, object_name, expires=expiry
-            )
+            url = client.presigned_get_object(self._settings.bucket, object_name, expires=expiry)
         except S3Error as exc:
-            raise RuntimeError(
-                f"Failed to create presigned URL for {file_path.name}: {exc}"
-            ) from exc
+            raise RuntimeError(f"Failed to create presigned URL for {file_path.name}: {exc}") from exc
 
-        return ImageHandle(
-            mime_type=mime_type,
-            size_bytes=stat.st_size,
-            storage_url=url,
-            expires_at=expires_at,
-        )
+        return ImageHandle(mime_type=mime_type, size_bytes=stat.st_size, storage_url=url, expires_at=expires_at)
 
     def _build_client(self, access_key: str, secret_key: str) -> Minio:
         parsed = urlparse(self._settings.endpoint)
         host = parsed.netloc or parsed.path
         if not host:
-            raise RuntimeError(
-                f"Invalid object store endpoint: {self._settings.endpoint}"
-            )
+            raise RuntimeError(f"Invalid object store endpoint: {self._settings.endpoint}")
         secure = bool(self._settings.secure)
-        return Minio(
-            host,
-            access_key=access_key,
-            secret_key=secret_key,
-            secure=secure,
-        )
+        return Minio(host, access_key=access_key, secret_key=secret_key, secure=secure)
 
     def _object_name(self, file_path: Path) -> str:
         suffix = file_path.suffix.lower()

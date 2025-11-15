@@ -10,19 +10,12 @@ logger = logging.getLogger(__name__)
 
 
 class DebouncedGitstatusRefresh:
-    def __init__(
-        self,
-        worktree_path: Path,
-        refresh_callback,
-        debounce_delay: float = 0.5,
-    ):
+    def __init__(self, worktree_path: Path, refresh_callback, debounce_delay: float = 0.5):
         self.worktree_path = worktree_path
         self.refresh_callback = refresh_callback
         self.debounce_delay = debounce_delay
         self._pending: asyncio.Task | None = None
-        self._loop: asyncio.AbstractEventLoop | None = (
-            None  # Main loop captured on start()
-        )
+        self._loop: asyncio.AbstractEventLoop | None = None  # Main loop captured on start()
 
         self.observer: Any | None = None
         self.handler = _GitHandler(self)
@@ -80,10 +73,7 @@ class DebouncedGitstatusRefresh:
         call_soon_threadsafe. No per-thread get_event_loop fallbacks.
         """
         if not self._loop:
-            logger.warning(
-                "No event loop available to schedule gitstatus refresh; dropping '%s'",
-                reason,
-            )
+            logger.warning("No event loop available to schedule gitstatus refresh; dropping '%s'", reason)
             return
 
         def _schedule() -> None:

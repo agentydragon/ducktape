@@ -96,27 +96,12 @@ def memory_handler():
         ("1000", "51", 60.0, "CO₂: 1000.0 ppm, PM2.5: 51.0 μg/m³"),
     ],
 )
-async def test_sensor_update(
-    hass,
-    co2_value,
-    pm25_value,
-    expected_iaqi,
-    expected_bottleneck,
-    now,
-):
+async def test_sensor_update(hass, co2_value, pm25_value, expected_iaqi, expected_bottleneck, now):
     """Test sensor updates with different pollutant values."""
     # Create actual sensor entities with constant values
-    hass.states.async_set(
-        "sensor.co2",
-        co2_value,
-        {"unit_of_measurement": "ppm", "last_updated": now},
-    )
+    hass.states.async_set("sensor.co2", co2_value, {"unit_of_measurement": "ppm", "last_updated": now})
 
-    hass.states.async_set(
-        "sensor.pm25",
-        pm25_value,
-        {"unit_of_measurement": "μg/m³", "last_updated": now},
-    )
+    hass.states.async_set("sensor.pm25", pm25_value, {"unit_of_measurement": "μg/m³", "last_updated": now})
 
     # Create our sensor using the real hass instance
     sensor = IndoorAQISensor(
@@ -148,18 +133,10 @@ async def test_sensor_update(
 async def test_sensor_error_handling(hass, now):
     """Test sensor behavior with invalid or missing data."""
     # Normal sensor
-    hass.states.async_set(
-        "sensor.co2",
-        "800",
-        {"unit_of_measurement": "ppm", "last_updated": now},
-    )
+    hass.states.async_set("sensor.co2", "800", {"unit_of_measurement": "ppm", "last_updated": now})
 
     # Unavailable sensor
-    hass.states.async_set(
-        "sensor.unavailable",
-        STATE_UNAVAILABLE,
-        {"last_updated": now},
-    )
+    hass.states.async_set("sensor.unavailable", STATE_UNAVAILABLE, {"last_updated": now})
 
     # Stale sensor
     hass.states.async_set(
@@ -173,11 +150,7 @@ async def test_sensor_error_handling(hass, now):
     hass.states.async_set("sensor.non_numeric", "not a number", {"last_updated": now})
 
     # Unknown pollutant type sensor
-    hass.states.async_set(
-        "sensor.unknown_type",
-        "50",
-        {"unit_of_measurement": "unknown", "last_updated": now},
-    )
+    hass.states.async_set("sensor.unknown_type", "50", {"unit_of_measurement": "unknown", "last_updated": now})
 
     # Create our sensor
     sensor = IndoorAQISensor(
@@ -202,35 +175,18 @@ async def test_sensor_error_handling(hass, now):
 
     assert_that(
         sensor.extra_state_attributes["sensor_errors"],
-        contains_inanyorder(
-            "pm25: no state object",
-            "voc: unavailable",
-            "o3: not numeric",
-            "unknown: bracket unknown",
-        ),
+        contains_inanyorder("pm25: no state object", "voc: unavailable", "o3: not numeric", "unknown: bracket unknown"),
     )
 
 
 async def test_partial_data_log_on_change(hass, memory_handler, now):
     """Test that partial data is logged when the set of sensors with errors changes."""
     # First update - CO2 and PM25 are working, VOC is unavailable
-    hass.states.async_set(
-        "sensor.co2",
-        "800",
-        {"unit_of_measurement": "ppm", "last_updated": now},
-    )
+    hass.states.async_set("sensor.co2", "800", {"unit_of_measurement": "ppm", "last_updated": now})
 
-    hass.states.async_set(
-        "sensor.pm25",
-        "30",
-        {"unit_of_measurement": "μg/m³", "last_updated": now},
-    )
+    hass.states.async_set("sensor.pm25", "30", {"unit_of_measurement": "μg/m³", "last_updated": now})
 
-    hass.states.async_set(
-        "sensor.voc",
-        STATE_UNAVAILABLE,
-        {"last_updated": now},
-    )
+    hass.states.async_set("sensor.voc", STATE_UNAVAILABLE, {"last_updated": now})
 
     # Create our sensor
     sensor = IndoorAQISensor(
@@ -253,21 +209,13 @@ async def test_partial_data_log_on_change(hass, memory_handler, now):
     assert_that(buffer, empty_log())
 
     # Third update - PM25 becomes unavailable
-    hass.states.async_set(
-        "sensor.pm25",
-        STATE_UNAVAILABLE,
-        {"last_updated": now},
-    )
+    hass.states.async_set("sensor.pm25", STATE_UNAVAILABLE, {"last_updated": now})
     sensor.update()
     assert_that(buffer, log_containing("Newly unavailable: pm25"))
     buffer.clear()
 
     # Fourth update - PM25 back to normal, VOC still unavailable
-    hass.states.async_set(
-        "sensor.pm25",
-        "30",
-        {"unit_of_measurement": "μg/m³", "last_updated": now},
-    )
+    hass.states.async_set("sensor.pm25", "30", {"unit_of_measurement": "μg/m³", "last_updated": now})
     sensor.update()
     assert_that(buffer, log_containing("Newly available: pm25"))
     buffer.clear()
@@ -276,17 +224,9 @@ async def test_partial_data_log_on_change(hass, memory_handler, now):
 async def test_log_after_hour_unchanged(hass, memory_handler, now):
     """Test that partial data is logged again after an hour even if unchanged."""
     # Setup - CO2 working, VOC unavailable
-    hass.states.async_set(
-        "sensor.co2",
-        "800",
-        {"unit_of_measurement": "ppm", "last_updated": now},
-    )
+    hass.states.async_set("sensor.co2", "800", {"unit_of_measurement": "ppm", "last_updated": now})
 
-    hass.states.async_set(
-        "sensor.voc",
-        STATE_UNAVAILABLE,
-        {"last_updated": now},
-    )
+    hass.states.async_set("sensor.voc", STATE_UNAVAILABLE, {"last_updated": now})
 
     # Create our sensor
     sensor = IndoorAQISensor(

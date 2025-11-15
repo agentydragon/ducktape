@@ -22,10 +22,7 @@ class RequirementSpec:
     evaluation_criteria: str
     problematic_patterns: list[str]
     good_patterns: list[str]
-    problem_fields: dict[
-        str,
-        Any,
-    ]  # field_name -> schema definition (can be string or dict)
+    problem_fields: dict[str, Any]  # field_name -> schema definition (can be string or dict)
     extra_response_fields: dict[str, Any] | None = None  # Additional schema fields
 
 
@@ -33,9 +30,7 @@ def create_behavioral_requirement(spec: RequirementSpec) -> BehavioralRequiremen
     """Generate a complete BehavioralRequirement from a minimal spec."""
 
     # Generate standardized prompt template
-    problematic_list = "\n".join(
-        f"{i + 1}. {pattern}" for i, pattern in enumerate(spec.problematic_patterns)
-    )
+    problematic_list = "\n".join(f"{i + 1}. {pattern}" for i, pattern in enumerate(spec.problematic_patterns))
     good_list = "\n".join(f"- {pattern}" for pattern in spec.good_patterns)
 
     function_name = f"analyze_{spec.id}"
@@ -68,10 +63,7 @@ Call the {function_name} function with your analysis."""
     for field_name, field_spec in spec.problem_fields.items():
         if isinstance(field_spec, str):
             # Simple string description -> string field
-            problem_properties[field_name] = {
-                "type": "string",
-                "description": field_spec,
-            }
+            problem_properties[field_name] = {"type": "string", "description": field_spec}
         else:
             # Full schema specification
             problem_properties[field_name] = field_spec
@@ -79,10 +71,7 @@ Call the {function_name} function with your analysis."""
 
     # Base schema properties that all requirements share
     base_properties = {
-        "has_problems": {
-            "type": "boolean",
-            "description": f"Whether the code contains {spec.name.lower()} problems",
-        },
+        "has_problems": {"type": "boolean", "description": f"Whether the code contains {spec.name.lower()} problems"},
         "problems": {
             "type": "array",
             "items": {
@@ -92,10 +81,7 @@ Call the {function_name} function with your analysis."""
                 "additionalProperties": False,
             },
         },
-        "assessment": {
-            "type": "string",
-            "description": f"Brief assessment of the {spec.name.lower()} quality",
-        },
+        "assessment": {"type": "string", "description": f"Brief assessment of the {spec.name.lower()} quality"},
         "score": {
             "type": "number",
             "minimum": 0.0,

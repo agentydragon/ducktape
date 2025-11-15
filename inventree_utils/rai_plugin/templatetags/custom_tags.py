@@ -108,9 +108,7 @@ class ParametersProcessor:
                 return SafeString(out) if out is not None else None
 
             frame = inspect.currentframe().f_back  # Get the caller frame (class body)
-            frame.f_locals["_displayers"].append(
-                (attrs, wrapped),
-            )  # Get class-local variables
+            frame.f_locals["_displayers"].append((attrs, wrapped))  # Get class-local variables
             return wrapped
 
         return decorator

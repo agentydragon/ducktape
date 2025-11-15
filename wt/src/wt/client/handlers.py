@@ -48,10 +48,7 @@ async def handle_status(daemon_client, formatter) -> None:
             return (0, "main")  # main worktree always first
         return (1, name)  # others alphabetically
 
-    sorted_items = sorted(
-        all_status.items.items(),
-        key=lambda x: sort_key((x[1].status.name, x[1].status)),
-    )
+    sorted_items = sorted(all_status.items.items(), key=lambda x: sort_key((x[1].status.name, x[1].status)))
     display_items = [(item.status.name, item.status) for wtid, item in sorted_items]
 
     formatter.render_top_status_bar(all_status)
@@ -60,11 +57,7 @@ async def handle_status(daemon_client, formatter) -> None:
     components = all_status.components
     if components:
         msgs = []
-        if (
-            components.github
-            and components.github.state
-            and components.github.state.value != "ok"
-        ):
+        if components.github and components.github.state and components.github.state.value != "ok":
             last_err = components.github.last_error or ""
             msgs.append(f"github: {last_err}".strip())
         if components.gitstatusd and components.gitstatusd.metrics:
@@ -80,9 +73,7 @@ async def handle_list_worktrees(daemon_client, formatter) -> None:
     """Handle the ls command to list all worktrees (excluding main)."""
     # Use dedicated RPC for listing
     listing = await daemon_client.list_worktrees()
-    formatter.render_worktree_list(
-        [(wt.name, wt.absolute_path, wt.exists) for wt in listing.worktrees],
-    )
+    formatter.render_worktree_list([(wt.name, wt.absolute_path, wt.exists) for wt in listing.worktrees])
 
 
 async def handle_status_single(daemon_client, formatter, worktree_name: str) -> None:
@@ -101,11 +92,7 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
     formatter.render_worktree_status_single(status.name, status, status.pr_info)
 
 
-async def handle_create_worktree(
-    config,
-    name: str,
-    options: CreateWorktreeOptions | None = None,
-) -> None:
+async def handle_create_worktree(config, name: str, options: CreateWorktreeOptions | None = None) -> None:
     """Handle worktree creation."""
     opts = options or CreateWorktreeOptions()
     from_default = opts.from_default
@@ -139,26 +126,17 @@ async def handle_create_worktree(
     if confirm:
         worktree_path = config.worktrees_dir / name
         if from_worktree:
-            msg = (
-                f"Create worktree '{name}' hydrated from existing worktree '{from_worktree}'\n"
-                f"→ path: {worktree_path}"
-            )
+            msg = f"Create worktree '{name}' hydrated from existing worktree '{from_worktree}'\n→ path: {worktree_path}"
         else:
             base = from_branch or config.upstream_branch
-            msg = (
-                f"Create branch '{config.branch_prefix}{name}' from base '{base}'\n"
-                f"→ path: {worktree_path}"
-            )
+            msg = f"Create branch '{config.branch_prefix}{name}' from base '{base}'\n→ path: {worktree_path}"
         click.echo(msg)
         if not click.confirm("Proceed?", default=True):
             click.echo("Cancelled.")
             return
 
     new_path = await daemon_client.create_worktree_convenience(
-        name,
-        source_name=from_worktree,
-        from_default=from_default and not bool(from_worktree),
-        from_branch=from_branch,
+        name, source_name=from_worktree, from_default=from_default and not bool(from_worktree), from_branch=from_branch
     )
     emit_cd_command(new_path, main_repo=config.main_repo)
 
@@ -170,9 +148,7 @@ async def handle_remove_worktree(config, name: str, force: bool = False) -> None
     # Ask for confirmation unless forced
     if not force:
         worktree_path = config.worktrees_dir / name
-        click.echo(
-            f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}",
-        )
+        click.echo(f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}")
         if not click.confirm("Are you sure you want to continue?", default=False):
             click.echo("Removal cancelled.")
             return
@@ -194,11 +170,7 @@ async def handle_copy_worktree(config, source: str, dest: str | None = None) -> 
             click.echo("Error: Not in a worktree")
             sys.exit(1)
         from_name = current_wt_path.name
-        new_path = await daemon_client.create_worktree_convenience(
-            new_name,
-            source_name=from_name,
-            from_default=False,
-        )
+        new_path = await daemon_client.create_worktree_convenience(new_name, source_name=from_name, from_default=False)
         emit_cd_command(new_path, main_repo=config.main_repo)
     else:
         # wt cp <x> <y> - copy worktree x to new worktree y
@@ -207,18 +179,12 @@ async def handle_copy_worktree(config, source: str, dest: str | None = None) -> 
         daemon_client = WtClient(config)
         _ = await daemon_client.require_worktree_exists(source_name)
         new_path = await daemon_client.create_worktree_convenience(
-            target_name,
-            source_name=source_name,
-            from_default=False,
+            target_name, source_name=source_name, from_default=False
         )
         emit_cd_command(new_path, main_repo=config.main_repo)
 
 
-async def handle_path_command(
-    config,
-    worktree_name: str | None = None,
-    subpath: str | None = None,
-) -> None:
+async def handle_path_command(config, worktree_name: str | None = None, subpath: str | None = None) -> None:
     client = WtClient(config)
     if worktree_name is None and subpath is None:
         p = await client.resolve_path_simple(None, "/")
@@ -257,11 +223,7 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
 
     # Test-mode auto-create (Option B): avoid prompts in tests
     if is_test_mode():
-        await handle_create_worktree(
-            config,
-            worktree_name,
-            CreateWorktreeOptions(from_default=True, confirm=False),
-        )
+        await handle_create_worktree(config, worktree_name, CreateWorktreeOptions(from_default=True, confirm=False))
         return
 
     if click.confirm(
@@ -269,11 +231,7 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         default=False,
     ):
         # Delegate to shared create handler to reuse progress/hook streaming
-        await handle_create_worktree(
-            config,
-            worktree_name,
-            CreateWorktreeOptions(from_default=True),
-        )
+        await handle_create_worktree(config, worktree_name, CreateWorktreeOptions(from_default=True))
         return
     click.echo("Cancelled.")
 

@@ -14,11 +14,7 @@ class DebouncedGitHubRefresh:
     """Handles debounced GitHub refresh triggered by .git directory changes + periodic updates."""
 
     def __init__(
-        self,
-        worktree_path: Path,
-        refresh_callback,
-        debounce_delay: float = 5.0,
-        periodic_interval: float = 60.0,
+        self, worktree_path: Path, refresh_callback, debounce_delay: float = 5.0, periodic_interval: float = 60.0
     ):
         """Initialize DebouncedGitHubRefresh.
 
@@ -150,10 +146,6 @@ class GitFileHandler(FileSystemEventHandler):
         path_str = str(file_path)
         for pattern in self.watched_patterns:
             if pattern in path_str:
-                logger.debug(
-                    "Git file change detected: %s (pattern: %s)",
-                    path_str,
-                    pattern,
-                )
+                logger.debug("Git file change detected: %s (pattern: %s)", path_str, pattern)
                 return True
         return False

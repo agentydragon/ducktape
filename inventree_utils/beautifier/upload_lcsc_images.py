@@ -52,9 +52,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
 
     # Skip parts that have an image.
     candidate_parts = [
-        p
-        for p in all_parts
-        if p.thumbnail == "/static/img/blank_image.thumbnail.png" or not p.thumbnail
+        p for p in all_parts if p.thumbnail == "/static/img/blank_image.thumbnail.png" or not p.thumbnail
     ]
 
     for p in candidate_parts:
@@ -63,11 +61,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
         lcsc_from_link = parse_url_for_lcsc_id(p.link)
 
         # Gather LCSC from single supplier
-        sp_lcsc = [
-            sp
-            for sp in all_supplier_parts
-            if sp.part == p.pk and sp.supplier == lcsc.pk
-        ]
+        sp_lcsc = [sp for sp in all_supplier_parts if sp.part == p.pk and sp.supplier == lcsc.pk]
         if len(sp_lcsc) != 1:
             log.info(f"Skip, {len(sp_lcsc)} LCSC SupplierParts.")
             continue
@@ -77,10 +71,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
         if lcsc_from_link and lcsc_from_supplier:
             # If both are present, assert they match
             if lcsc_from_link != lcsc_from_supplier:
-                raise ValueError(
-                    f"Conflicting LCSC IDs: {lcsc_from_link=} != {lcsc_from_supplier=}",
-                    log._context,
-                )
+                raise ValueError(f"Conflicting LCSC IDs: {lcsc_from_link=} != {lcsc_from_supplier=}", log._context)
             # Both match => use either one
             lcsc_id = lcsc_from_link
         elif lcsc_from_link or lcsc_from_supplier:

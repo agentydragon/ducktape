@@ -67,9 +67,7 @@ class WorktreeService:
             return False
 
         # Filter out hidden worktrees using configurable patterns
-        return not any(
-            path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns
-        )
+        return not any(path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns)
 
     def _require_post_creation_script_valid(self, config: Configuration) -> None:
         if config.post_creation_script:
@@ -81,11 +79,7 @@ class WorktreeService:
         return wtid_to_path(config, wtid)
 
     def create_worktree(
-        self,
-        config: Configuration,
-        name: str,
-        source_worktree: Path | None = None,
-        source_branch: str | None = None,
+        self, config: Configuration, name: str, source_worktree: Path | None = None, source_branch: str | None = None
     ) -> Path:
         """Create a new worktree."""
         validate_worktree_name(name)
@@ -102,10 +96,7 @@ class WorktreeService:
             branch_name = f"{config.branch_prefix}{name}"
 
             # Use provided source_branch if given; otherwise configured upstream
-            self.git_manager.create_branch(
-                branch_name,
-                source_branch or config.upstream_branch,
-            )
+            self.git_manager.create_branch(branch_name, source_branch or config.upstream_branch)
 
             # Create worktree
             self.git_manager.worktree_add(worktree_path, branch_name)
@@ -113,18 +104,12 @@ class WorktreeService:
             # Hydrate with dirty state if source provided
             if config.hydrate_worktrees:
                 if source_worktree:
-                    logger.info(
-                        f"Hydrating new worktree in {worktree_path} from {source_worktree}.",
-                    )
+                    logger.info(f"Hydrating new worktree in {worktree_path} from {source_worktree}.")
                     if not source_worktree.exists():
-                        raise RuntimeError(
-                            f"Source worktree does not exist: {source_worktree}",
-                        )
+                        raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
                     self._hydrate_worktree(config, source_worktree, worktree_path)
                 else:
-                    logger.info(
-                        f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.",
-                    )
+                    logger.info(f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.")
                     repo: Any = pygit2.Repository(str(worktree_path))
                     repo.set_head(f"refs/heads/{branch_name}")
                     repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)
@@ -136,12 +121,7 @@ class WorktreeService:
         """Get path for a worktree by name."""
         return config.worktrees_dir / name
 
-    async def remove_worktree(
-        self,
-        config: Configuration,
-        name: str,
-        force: bool = False,
-    ) -> None:
+    async def remove_worktree(self, config: Configuration, name: str, force: bool = False) -> None:
         """Remove a worktree by name and clean up its directory."""
         validate_worktree_name(name)
         worktree_path = self.get_worktree_path(config, name)
@@ -166,9 +146,7 @@ class WorktreeService:
     async def run_post_creation_script(
         script_path: str,
         worktree_path: Path,
-        sink: (
-            Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None
-        ) = None,
+        sink: (Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None) = None,
         deadline: float = 60.0,
     ) -> dict:
         script = Path(script_path).expanduser().resolve()
@@ -194,10 +172,7 @@ class WorktreeService:
 
         if sink is None:
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=deadline,
-                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=deadline)
                 return {
                     "ran": True,
                     "exit_code": proc.returncode,
@@ -221,10 +196,7 @@ class WorktreeService:
         stdout_buf: list[str] = []
         stderr_buf: list[str] = []
 
-        async def _forward(
-            stream,
-            name,
-        ):  # Streams stdout/stderr; expensive O(stream size)
+        async def _forward(stream, name):  # Streams stdout/stderr; expensive O(stream size)
             chunk_size_bytes = 4096
             while True:
                 data = await stream.read(chunk_size_bytes)
@@ -242,16 +214,8 @@ class WorktreeService:
                 except Exception:
                     logger.debug("hook sink failed", exc_info=True)
 
-        t1 = (
-            asyncio.create_task(_forward(proc.stdout, "stdout"))
-            if proc.stdout
-            else None
-        )
-        t2 = (
-            asyncio.create_task(_forward(proc.stderr, "stderr"))
-            if proc.stderr
-            else None
-        )
+        t1 = asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
+        t2 = asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
         try:
             await asyncio.wait_for(proc.wait(), timeout=deadline)
         except TimeoutError:
@@ -274,12 +238,8 @@ class WorktreeService:
         preview_max = 8192
         out_text = "".join(stdout_buf)
         err_text = "".join(stderr_buf)
-        out_preview = (
-            out_text[-preview_max:] if len(out_text) > preview_max else out_text
-        )
-        err_preview = (
-            err_text[-preview_max:] if len(err_text) > preview_max else err_text
-        )
+        out_preview = out_text[-preview_max:] if len(out_text) > preview_max else out_text
+        err_preview = err_text[-preview_max:] if len(err_text) > preview_max else err_text
         return {
             "ran": True,
             "exit_code": proc.returncode,
@@ -299,9 +259,7 @@ class WorktreeService:
             try:
                 cwd = proc.info.get("cwd")
                 if cwd and Path(cwd).is_relative_to(directory):
-                    procs.append(
-                        ProcessInfo(pid=proc.pid, name=proc.name()),
-                    )
+                    procs.append(ProcessInfo(pid=proc.pid, name=proc.name()))
                     continue
                 for fl in proc.open_files():
                     if fl.path and Path(fl.path).is_relative_to(directory):

@@ -24,12 +24,7 @@ from wt.server.worktree_service import WorktreeService
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
 from wt.shared.fixtures import write_pr_fixtures_file
-from wt.shared.protocol import (
-    DaemonHealth,
-    DaemonHealthStatus,
-    StatusItem,
-    StatusResponse,
-)
+from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusItem, StatusResponse
 from wt.shell import install
 
 from .config_factory import ConfigFactory
@@ -184,15 +179,10 @@ def build_status_response():
 
     def _build(results_dict: dict | None = None) -> StatusResponse:
         results_dict = results_dict or {}
-        items = {
-            k: StatusItem(status=v, processing_time_ms=v.processing_time_ms)
-            for k, v in results_dict.items()
-        }
+        items = {k: StatusItem(status=v, processing_time_ms=v.processing_time_ms) for k, v in results_dict.items()}
         return StatusResponse(
             items=items,
-            total_processing_time_ms=(
-                sum(it.processing_time_ms for it in items.values()) if items else 0.0
-            ),
+            total_processing_time_ms=(sum(it.processing_time_ms for it in items.values()) if items else 0.0),
             daemon_health=DaemonHealth(status=DaemonHealthStatus.OK),
         )
 
@@ -211,9 +201,7 @@ def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = No
     if expected_branch:
         repo = pygit2.Repository(str(worktree_path))
         head_ref = repo.head.shorthand
-        assert head_ref == expected_branch, (
-            f"Expected branch {expected_branch}, got {head_ref}"
-        )
+        assert head_ref == expected_branch, f"Expected branch {expected_branch}, got {head_ref}"
 
 
 def assert_worktree_not_exists(worktree_path: Path):
@@ -259,9 +247,7 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
 
     # Wait up to ~1s for files to be removed by daemon shutdown
     removed = wait_until(
-        lambda: (not pid_file.exists()) and (not sock_file.exists()),
-        timeout_seconds=1.0,
-        interval_seconds=0.05,
+        lambda: (not pid_file.exists()) and (not sock_file.exists()), timeout_seconds=1.0, interval_seconds=0.05
     )
     if removed:
         return
@@ -270,7 +256,7 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
     details = (result.stdout or "") + ("\n" + (result.stderr or ""))
     raise AssertionError(
         f"Daemon did not shut down cleanly for {wt_dir}. Leftovers: "
-        f"pid_exists={pid_file.exists()} sock_exists={sock_file.exists()}\n{details}",
+        f"pid_exists={pid_file.exists()} sock_exists={sock_file.exists()}\n{details}"
     )
 
 
@@ -345,37 +331,13 @@ class WtCLI:
     def __init__(self, env: dict[str, str]):
         self.env: dict[str, str] = env
 
-    def sh(
-        self,
-        *args: str,
-        timeout: timedelta = timedelta(seconds=30),
-        cwd: Path | None = None,
-        stdin=None,
-    ):
-        return run_cli_command(
-            ["sh", *args], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin
-        )
+    def sh(self, *args: str, timeout: timedelta = timedelta(seconds=30), cwd: Path | None = None, stdin=None):
+        return run_cli_command(["sh", *args], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin)
 
-    def sh_c(
-        self,
-        cmd: str,
-        timeout: timedelta = timedelta(seconds=30),
-        cwd: Path | None = None,
-        stdin=None,
-    ):
-        return run_cli_command(
-            ["create", "--yes", cmd],
-            env=self.env,
-            timeout=timeout,
-            cwd=cwd,
-            stdin=stdin,
-        )
+    def sh_c(self, cmd: str, timeout: timedelta = timedelta(seconds=30), cwd: Path | None = None, stdin=None):
+        return run_cli_command(["create", "--yes", cmd], env=self.env, timeout=timeout, cwd=cwd, stdin=stdin)
 
-    def status(
-        self,
-        timeout: timedelta = timedelta(seconds=30),
-        cwd: Path | None = None,
-    ):
+    def status(self, timeout: timedelta = timedelta(seconds=30), cwd: Path | None = None):
         return run_cli_command([], env=self.env, timeout=timeout, cwd=cwd)
 
     def kill(self, timeout: timedelta = timedelta(seconds=30)):
@@ -387,24 +349,14 @@ class WtCLI:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(str(sock_path))
             with s.makefile("rwb") as f:
-                req = {
-                    "jsonrpc": "2.0",
-                    "method": method,
-                    "params": params,
-                    "id": str(uuid.uuid4()),
-                }
+                req = {"jsonrpc": "2.0", "method": method, "params": params, "id": str(uuid.uuid4())}
                 f.write((json.dumps(req) + "\n").encode())
                 f.flush()
                 if line := f.readline():
                     return json.loads(line.decode())
                 return {"error": "no response"}
 
-    def wait_for(
-        self,
-        predicate,
-        timeout: timedelta = timedelta(seconds=5),
-        interval: float = 0.1,
-    ) -> bool:
+    def wait_for(self, predicate, timeout: timedelta = timedelta(seconds=5), interval: float = 0.1) -> bool:
         """Poll a predicate until it returns True or timeout elapses."""
         deadline = time.monotonic() + timeout.total_seconds()
         while time.monotonic() < deadline:
@@ -473,11 +425,7 @@ def test_config(repo_factory, config_factory) -> Configuration:
     return factory.minimal(upstream_branch="main")
 
 
-def build_test_configuration(
-    repo_path: Path,
-    wt_dir: Path | None = None,
-    **config_overrides,
-) -> Configuration:
+def build_test_configuration(repo_path: Path, wt_dir: Path | None = None, **config_overrides) -> Configuration:
     """Centralized helper to build test configurations with the standard pattern.
 
     This eliminates duplication of the ConfigFile → YAML → Configuration.resolve workflow.
@@ -529,17 +477,9 @@ def shell_runner(tmp_path: Path):
     """Factory for running shell commands via the installed wt shell function."""
 
     class ShellRunner:
-        def run_script(
-            self,
-            script_content: str,
-            *,
-            cwd: Path,
-            env: dict[str, str] | None = None,
-        ):
+        def run_script(self, script_content: str, *, cwd: Path, env: dict[str, str] | None = None):
             # Ensure wt is importable (package installed) before attempting shell integration
-            assert importlib.util.find_spec(
-                "wt",
-            ), "wt package not installed - required for shell integration tests"
+            assert importlib.util.find_spec("wt"), "wt package not installed - required for shell integration tests"
             # Ensure env is a copy
             env = os.environ.copy() if env is None else env.copy()
 
@@ -559,30 +499,13 @@ def shell_runner(tmp_path: Path):
             script_path.write_text(full_script, encoding="utf-8")
             script_path.chmod(0o755)
             return subprocess.run(
-                ["/bin/bash", str(script_path)],
-                capture_output=True,
-                text=True,
-                cwd=str(cwd),
-                env=env,
-                check=False,
+                ["/bin/bash", str(script_path)], capture_output=True, text=True, cwd=str(cwd), env=env, check=False
             )
 
-        def run_argv(
-            self,
-            *,
-            cwd: Path,
-            argv: list[str],
-            env: dict[str, str] | None = None,
-        ):
+        def run_argv(self, *, cwd: Path, argv: list[str], env: dict[str, str] | None = None):
             return self.run_script(shlex.join(argv), cwd=cwd, env=env)
 
-        def run_wt(
-            self,
-            *,
-            main_repo: Path,
-            wt_args: list[str],
-            env: dict[str, str] | None = None,
-        ):
+        def run_wt(self, *, main_repo: Path, wt_args: list[str], env: dict[str, str] | None = None):
             return self.run_argv(cwd=main_repo, argv=["wt", *wt_args], env=env)
 
     return ShellRunner()

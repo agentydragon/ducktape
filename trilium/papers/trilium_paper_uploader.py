@@ -29,11 +29,7 @@ def get_arxiv_pdf_bytes(arxiv_id):
 def search_for_arxiv_id(title) -> str | None:
     # TODO: do not repeat search if we tried to look it up before and it failed
     response = requests.get(
-        "https://export.arxiv.org/api/query",
-        params={
-            "search_query": title.lower(),
-            "max_results": 10,
-        },
+        "https://export.arxiv.org/api/query", params={"search_query": title.lower(), "max_results": 10}
     )
     assert response.status_code == 200
     # print(response.text)
@@ -59,11 +55,7 @@ def main(_):
     token = _TOKEN.value
     root = _ROOT.value
     headers = {"Authorization": token}
-    response = requests.get(
-        f"{root}/etapi/notes",
-        params={"search": "~type.title = Paper"},
-        headers=headers,
-    )
+    response = requests.get(f"{root}/etapi/notes", params={"search": "~type.title = Paper"}, headers=headers)
     results = response.json()
 
     # Sort results by ascending priority.
@@ -100,12 +92,7 @@ def main(_):
         if arxiv_id is None:
             found_arxiv_id = search_for_arxiv_id(title)
             if not found_arxiv_id:
-                print(
-                    priority,
-                    note_id,
-                    title,
-                    "no arxiv id and not found on arxiv, skip...",
-                )
+                print(priority, note_id, title, "no arxiv id and not found on arxiv, skip...")
                 continue
 
             url = f"{root}/etapi/attributes"
@@ -118,10 +105,7 @@ def main(_):
                     "value": found_arxiv_id,
                     "isInheritable": False,
                 },
-                headers=headers
-                | {
-                    "content-type": "application/json",
-                },
+                headers=headers | {"content-type": "application/json"},
             )
             assert response.status_code == 201
             print(f"{priority} {note_id} {title} interlinked to {found_arxiv_id}...")
@@ -133,12 +117,7 @@ def main(_):
 
         paper_found = False
         for child_id in children:
-            response = requests.get(
-                f"{root}/etapi/notes/{child_id}",
-                headers={
-                    "Authorization": token,
-                },
-            )
+            response = requests.get(f"{root}/etapi/notes/{child_id}", headers={"Authorization": token})
             child_note = response.json()
             if child_note["type"] == "file" and child_note["mime"] == "application/pdf":
                 paper_found = True
@@ -148,13 +127,7 @@ def main(_):
             #      'skipping, PDF already in Trilium')
             continue
 
-        print(
-            priority,
-            result["noteId"],
-            result["title"],
-            arxiv_id,
-            "-> upload the PDF to Trilium",
-        )
+        print(priority, result["noteId"], result["title"], arxiv_id, "-> upload the PDF to Trilium")
 
         # const ARXIV_ENDPOINT = 'https://export.arxiv.org/api/query';
         filename = f"{arxiv_id}.pdf"
@@ -169,10 +142,7 @@ def main(_):
                 "mime": "application/pdf",
                 "content": "image",
             },
-            headers=headers
-            | {
-                "content-type": "application/json",
-            },
+            headers=headers | {"content-type": "application/json"},
         )
         new_note_id = response.json()["note"]["noteId"]
         # TODO: 'summary' element contains the abstract
@@ -180,11 +150,7 @@ def main(_):
         response = requests.put(
             f"{root}/etapi/notes/{new_note_id}/content",
             data=pdf_bytes,
-            headers=headers
-            | {
-                "content-type": "application/octet-stream",
-                "Content-Transfer-Encoding": "binary",
-            },
+            headers=headers | {"content-type": "application/octet-stream", "Content-Transfer-Encoding": "binary"},
         )
         assert response.status_code == 204
 

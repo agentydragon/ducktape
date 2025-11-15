@@ -67,9 +67,7 @@ class EmberRuntime:
             while not self._stop_event.is_set():
                 if not (events := await self._matrix_client.get_events(timeout=60.0)):
                     continue
-                message_text = "\n".join(
-                    f"{event.sender}: {event.body}" for event in events
-                )
+                message_text = "\n".join(f"{event.sender}: {event.body}" for event in events)
                 logger.info("Received Matrix batch:\n%s", message_text)
                 room_ids = {event.room_id for event in events if event.room_id}
 

@@ -24,9 +24,7 @@ def ensure_kernel() -> Path | None:
     try:
         SESSION_DIR.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        logger.warning(
-            "Failed to create python session directory %s: %s", SESSION_DIR, exc
-        )
+        logger.warning("Failed to create python session directory %s: %s", SESSION_DIR, exc)
         return None
 
     if CONNECTION_FILE.exists() and _kernel_alive():
@@ -91,42 +89,24 @@ def run_code(code: str) -> str:
             if msg["parent_header"].get("msg_id") != msg_id:
                 continue
             msg_type = msg.get("msg_type")
-            if (
-                msg_type == "status"
-                and msg.get("content", {}).get("execution_state") == "idle"
-            ):
+            if msg_type == "status" and msg.get("content", {}).get("execution_state") == "idle":
                 break
             if msg_type == "stream":
                 output_parts.append(msg["content"].get("text", ""))
             elif msg_type == "error":
-                output_parts.append(
-                    "\n".join(msg.get("content", {}).get("traceback", []))
-                )
+                output_parts.append("\n".join(msg.get("content", {}).get("traceback", [])))
         return "".join(output_parts)
     finally:
         client.stop_channels()
 
 
 def cli_main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Interact with Ember's persistent Python session"
-    )
-    parser.add_argument(
-        "-c", dest="command", help="Python code to execute (default: read stdin)"
-    )
-    parser.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="suppress output from the executed code",
-    )
+    parser = argparse.ArgumentParser(description="Interact with Ember's persistent Python session")
+    parser.add_argument("-c", dest="command", help="Python code to execute (default: read stdin)")
+    parser.add_argument("-q", "--quiet", action="store_true", help="suppress output from the executed code")
     parser.add_argument("--stop", action="store_true", help="Stop the kernel and exit")
-    parser.add_argument(
-        "--restart", action="store_true", help="Restart the kernel before running code"
-    )
-    parser.add_argument(
-        "--status", action="store_true", help="Print kernel status and exit"
-    )
+    parser.add_argument("--restart", action="store_true", help="Restart the kernel before running code")
+    parser.add_argument("--status", action="store_true", help="Print kernel status and exit")
     args = parser.parse_args(argv)
 
     if args.status:
@@ -179,9 +159,7 @@ def _kernel_pid() -> int | None:
 
 def _print_status() -> None:
     if _kernel_alive():
-        conn = (
-            CONNECTION_FILE if CONNECTION_FILE.exists() else "(missing connection file)"
-        )
+        conn = CONNECTION_FILE if CONNECTION_FILE.exists() else "(missing connection file)"
         pid = _kernel_pid()
         print(f"Kernel running (pid={pid}) connection={conn}")
     else:
@@ -199,13 +177,7 @@ def _cleanup_stale_files() -> None:
 
 
 def _launch_kernel() -> Path | None:
-    cmd = [
-        sys.executable,
-        "-m",
-        "ipykernel_launcher",
-        "-f",
-        str(CONNECTION_FILE),
-    ]
+    cmd = [sys.executable, "-m", "ipykernel_launcher", "-f", str(CONNECTION_FILE)]
     try:
         env = os.environ.copy()
         workspace = env.get("EMBER_WORKSPACE_DIR")
@@ -217,16 +189,9 @@ def _launch_kernel() -> Path | None:
                 parts.append(pythonpath)
             env["PYTHONPATH"] = ":".join(parts)
 
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
-        )
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
     except FileNotFoundError:
-        logger.warning(
-            "ipykernel is not installed; persistent Python session unavailable."
-        )
+        logger.warning("ipykernel is not installed; persistent Python session unavailable.")
         return None
     except Exception as exc:  # pragma: no cover - subprocess env errors
         logger.warning("Failed to start IPython kernel: %s", exc)
@@ -236,11 +201,7 @@ def _launch_kernel() -> Path | None:
 
     for _ in range(50):
         if CONNECTION_FILE.exists():
-            logger.info(
-                "Started persistent IPython kernel pid=%s connection=%s",
-                proc.pid,
-                CONNECTION_FILE,
-            )
+            logger.info("Started persistent IPython kernel pid=%s connection=%s", proc.pid, CONNECTION_FILE)
             _initialize_kernel_environment(workspace)
             return CONNECTION_FILE
         time.sleep(0.1)
@@ -269,10 +230,7 @@ def _initialize_kernel_environment(workspace: str | None) -> None:
             msg = client.get_iopub_msg(timeout=10)
             if msg["parent_header"].get("msg_id") != msg_id:
                 continue
-            if (
-                msg.get("msg_type") == "status"
-                and msg.get("content", {}).get("execution_state") == "idle"
-            ):
+            if msg.get("msg_type") == "status" and msg.get("content", {}).get("execution_state") == "idle":
                 break
     finally:
         client.stop_channels()

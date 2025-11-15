@@ -49,16 +49,11 @@ class ViewFormatter:
         self.daemon_log_path = daemon_log_path
 
     def make_hyperlink(self, url: str, text: str) -> str:
-        if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv(
-            "COLORTERM",
-        ):
+        if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv("COLORTERM"):
             return f"\033]8;;{url}\007{text}\033]8;;\007"
         return text
 
-    def _mergeability_label(
-        self,
-        mergeable: bool | None,
-    ) -> Literal["mergeable", "conflicting", "unknown"]:
+    def _mergeability_label(self, mergeable: bool | None) -> Literal["mergeable", "conflicting", "unknown"]:
         if mergeable is None:
             return "unknown"
         return "mergeable" if mergeable else "conflicting"
@@ -85,13 +80,7 @@ class ViewFormatter:
             return PRStatus.OPEN_CONFLICTING.display_text
         return str(pr_state.value).lower()
 
-    def format_status_row(
-        self,
-        name: str,
-        status: StatusResult,
-        pr_info: PRInfo | None,
-        name_width: int = 22,
-    ) -> str:
+    def format_status_row(self, name: str, status: StatusResult, pr_info: PRInfo | None, name_width: int = 22) -> str:
         """Format a status row with nice alignment."""
         # Commit hash - vertically aligned column
         commit_short = status.commit_info.short_hash if status.commit_info else "ERROR"
@@ -120,10 +109,7 @@ class ViewFormatter:
                 lines_info = f" +{d.additions}/-{d.deletions}"
 
             pr_status_text = self.get_pr_status_text(
-                pr_state,
-                self._mergeability_label(d.mergeable),
-                d.draft,
-                d.merged_at,
+                pr_state, self._mergeability_label(d.mergeable), d.draft, d.merged_at
             )
 
             pr_status = f"{clickable_link} {pr_status_text}{lines_info}"
@@ -173,12 +159,7 @@ class ViewFormatter:
         if not isinstance(status.pr_info, PRInfoOk):
             return ""
         d = status.pr_info.pr_data
-        return self.get_pr_status_text(
-            d.pr_state,
-            self._mergeability_label(d.mergeable),
-            d.draft,
-            d.merged_at,
-        )
+        return self.get_pr_status_text(d.pr_state, self._mergeability_label(d.mergeable), d.draft, d.merged_at)
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
         """Get PR changes (+lines/-lines) column."""
@@ -200,18 +181,10 @@ class ViewFormatter:
             github_state = components.github.state.value
         elif summary:
             github_state = summary.github.value
-        x_of_y = (
-            f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
-        )
-        click.echo(
-            f"{discovery} discovery | gitstatusd {x_of_y} | github {github_state}",
-        )
+        x_of_y = f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
+        click.echo(f"{discovery} discovery | gitstatusd {x_of_y} | github {github_state}")
 
-    def render_worktree_status_all(
-        self,
-        sorted_items: list[tuple[str, StatusResult]],
-        status_response=None,
-    ) -> None:
+    def render_worktree_status_all(self, sorted_items: list[tuple[str, StatusResult]], status_response=None) -> None:
         if not sorted_items:
             click.echo("🤷 No worktrees found")
             return
@@ -246,7 +219,7 @@ class ViewFormatter:
                     self._work_status_text(status),
                     state,
                     pr_info,
-                ],
+                ]
             )
 
         # Render table with no headers, no grid lines, just clean aligned columns
@@ -278,25 +251,16 @@ class ViewFormatter:
             click.echo(f"  - status: {dh.status}")
             if dh.last_error:
                 click.echo(f"  - last_error: {dh.last_error}")
-            click.echo(
-                f"  - counters: github_errors={dh.github_errors}, gitstatusd_errors={dh.gitstatusd_errors}",
-            )
+            click.echo(f"  - counters: github_errors={dh.github_errors}, gitstatusd_errors={dh.gitstatusd_errors}")
 
-    def render_worktree_status_single(
-        self,
-        worktree_name: str,
-        status: StatusResult,
-        pr_info: PRInfo | None,
-    ) -> None:
+    def render_worktree_status_single(self, worktree_name: str, status: StatusResult, pr_info: PRInfo | None) -> None:
         click.echo(f"📊 Status for worktree: {worktree_name}")
         click.echo(f"🔄 {self.format_status_row(worktree_name, status, pr_info)}")
 
         # Show recent commit details
         if status.commit_info:
             click.echo(f"💬 Last commit: {status.commit_info.message}")
-            click.echo(
-                f"👤 Author: {status.commit_info.author} ({status.commit_info.date})",
-            )
+            click.echo(f"👤 Author: {status.commit_info.author} ({status.commit_info.date})")
         else:
             click.echo("💬 Last commit: (unknown)")
             click.echo("👤 Author: (unknown)")
@@ -315,30 +279,19 @@ class ViewFormatter:
 
             # Create clickable link for detailed view
             click.echo(
-                f"🔗 PR #{pr_number} ({self.make_hyperlink(f'http://go/pull/{pr_number}', f'go/pull/{pr_number}')})",
+                f"🔗 PR #{pr_number} ({self.make_hyperlink(f'http://go/pull/{pr_number}', f'go/pull/{pr_number}')})"
             )
 
             # Format detailed PR status
-            status_text = self.get_pr_status_text(
-                pr_state,
-                self._mergeability_label(d.mergeable),
-                d.draft,
-                d.merged_at,
-            )
+            status_text = self.get_pr_status_text(pr_state, self._mergeability_label(d.mergeable), d.draft, d.merged_at)
             if status_text in PR_STATUS_DISPLAY_MAP:
                 icon, message = PR_STATUS_DISPLAY_MAP[status_text]
                 click.echo(f"{icon} Status: This PR {message}")
             else:
                 click.echo(f"Status: {status_text}")
 
-    def render_worktree_removal_confirmation(
-        self,
-        name: str,
-        worktree_path: Path,
-    ) -> None:
-        click.echo(
-            f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}",
-        )
+    def render_worktree_removal_confirmation(self, name: str, worktree_path: Path) -> None:
+        click.echo(f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}")
 
     def render_worktree_removal_success(self, name: str) -> None:
         click.echo(f"✅ Successfully removed worktree '{name}'")

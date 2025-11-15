@@ -54,112 +54,33 @@ class PollutantInfo:
 
 POLLUTANTS: dict[str, PollutantInfo] = {
     "co2": PollutantInfo(
-        name="CO₂",
-        unit="ppm",
-        breakpoints=[
-            (400, 100),
-            (600, 80),
-            (1000, 60),
-            (1500, 40),
-            (2500, 20),
-            (4000, 0),
-        ],
+        name="CO₂", unit="ppm", breakpoints=[(400, 100), (600, 80), (1000, 60), (1500, 40), (2500, 20), (4000, 0)]
     ),
     "voc": PollutantInfo(
-        name="VOCs",
-        unit="ppb",
-        breakpoints=[
-            (1, 100),
-            (200, 80),
-            (250, 60),
-            (350, 40),
-            (400, 20),
-            (500, 0),
-        ],
+        name="VOCs", unit="ppb", breakpoints=[(1, 100), (200, 80), (250, 60), (350, 40), (400, 20), (500, 0)]
     ),
     "nox": PollutantInfo(
-        name="NOₓ",
-        unit="ppb",
-        breakpoints=[
-            (1, 100),
-            (50, 80),
-            (100, 60),
-            (300, 40),
-            (350, 20),
-            (500, 0),
-        ],
+        name="NOₓ", unit="ppb", breakpoints=[(1, 100), (50, 80), (100, 60), (300, 40), (350, 20), (500, 0)]
     ),
     "ch2o": PollutantInfo(
         name="Formaldehyde",
         unit="mg/m³",
-        breakpoints=[
-            (0, 100),
-            (0.06, 80),
-            (0.11, 60),
-            (0.31, 40),
-            (0.76, 20),
-            (1.0, 0),
-        ],
+        breakpoints=[(0, 100), (0.06, 80), (0.11, 60), (0.31, 40), (0.76, 20), (1.0, 0)],
     ),
     "pm1": PollutantInfo(
-        name="PM1",
-        unit="μg/m³",
-        breakpoints=[
-            (0, 100),
-            (15, 80),
-            (35, 60),
-            (62, 40),
-            (96, 20),
-            (150, 0),
-        ],
+        name="PM1", unit="μg/m³", breakpoints=[(0, 100), (15, 80), (35, 60), (62, 40), (96, 20), (150, 0)]
     ),
     "pm25": PollutantInfo(
-        name="PM2.5",
-        unit="μg/m³",
-        breakpoints=[
-            (0, 100),
-            (21, 80),
-            (51, 60),
-            (91, 40),
-            (141, 20),
-            (200, 0),
-        ],
+        name="PM2.5", unit="μg/m³", breakpoints=[(0, 100), (21, 80), (51, 60), (91, 40), (141, 20), (200, 0)]
     ),
     "pm10": PollutantInfo(
-        name="PM10",
-        unit="μg/m³",
-        breakpoints=[
-            (0, 100),
-            (31, 80),
-            (76, 60),
-            (126, 40),
-            (201, 20),
-            (300, 0),
-        ],
+        name="PM10", unit="μg/m³", breakpoints=[(0, 100), (31, 80), (76, 60), (126, 40), (201, 20), (300, 0)]
     ),
     "co": PollutantInfo(
-        name="CO",
-        unit="ppm",
-        breakpoints=[
-            (0, 100),
-            (1.8, 80),
-            (8.8, 60),
-            (10.1, 40),
-            (15.1, 20),
-            (30, 0),
-        ],
+        name="CO", unit="ppm", breakpoints=[(0, 100), (1.8, 80), (8.8, 60), (10.1, 40), (15.1, 20), (30, 0)]
     ),
     "o3": PollutantInfo(
-        name="O₃",
-        unit="ppm",
-        breakpoints=[
-            (0, 100),
-            (0.026, 80),
-            (0.061, 60),
-            (0.076, 40),
-            (0.101, 20),
-            (0.3, 0),
-        ],
+        name="O₃", unit="ppm", breakpoints=[(0, 100), (0.026, 80), (0.061, 60), (0.076, 40), (0.101, 20), (0.3, 0)]
     ),
 }
 
@@ -217,11 +138,7 @@ def parse_timedelta(value) -> timedelta:
     raise ValueError(f"Invalid stale_time: {value}")
 
 
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities,
-):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """
     Called after __init__.py's async_setup_entry. We'll read the config from
     hass.data[DOMAIN]["yaml_config"], build one or more sensors, and add them.
@@ -254,19 +171,11 @@ async def async_setup_entry(
         stale_time = parse_timedelta(stale_str)
 
         entities.append(
-            IndoorAQISensor(
-                hass=hass,
-                name=name,
-                unique_id=unique_id,
-                sensor_map=sensor_map,
-                stale_time=stale_time,
-            ),
+            IndoorAQISensor(hass=hass, name=name, unique_id=unique_id, sensor_map=sensor_map, stale_time=stale_time)
         )
 
     if not entities:
-        _LOGGER.warning(
-            "No monitors found in YAML config, no IndoorAQI sensors created.",
-        )
+        _LOGGER.warning("No monitors found in YAML config, no IndoorAQI sensors created.")
 
     async_add_entities(entities, update_before_add=True)
 
@@ -389,7 +298,7 @@ class IndoorAQISensor(SensorEntity):
                     # Create human-readable detail with pollutant name, value and unit
                     if pollutant_info := POLLUTANTS.get(pollutant):
                         bottleneck_details.append(
-                            f"{pollutant_info.name}: {raw_values[pollutant]} {pollutant_info.unit}",
+                            f"{pollutant_info.name}: {raw_values[pollutant]} {pollutant_info.unit}"
                         )
 
             # Create a human-readable bottleneck string
@@ -416,10 +325,7 @@ class IndoorAQISensor(SensorEntity):
         self._icon = f"mdi:{icon}"
         # Transform the *dict* into a *list[str]* for attributes - keep the
         # original mapping around for later use.
-        sensor_errors_list = [
-            f"{pollutant}: {error_type}"
-            for pollutant, error_type in sensor_errors.items()
-        ]
+        sensor_errors_list = [f"{pollutant}: {error_type}" for pollutant, error_type in sensor_errors.items()]
 
         self._attrs = {
             "level": label,
@@ -427,10 +333,7 @@ class IndoorAQISensor(SensorEntity):
             "sensor_errors": sensor_errors_list,
             "subindex_count": len(subindices),
             # Add component IAQIs with iaqi_ prefix for each pollutant
-            **{
-                f"iaqi_{pollutant}": value
-                for pollutant, value in iaqi_components.items()
-            },
+            **{f"iaqi_{pollutant}": value for pollutant, value in iaqi_components.items()},
             # Add raw values with raw_ prefix for each pollutant
             **{f"raw_{pollutant}": value for pollutant, value in raw_values.items()},
             # Human-readable bottleneck string with pollutant names, values and units
@@ -443,10 +346,7 @@ class IndoorAQISensor(SensorEntity):
             current_error_sensors = set(sensor_errors.keys())
 
             # Calculate what's changed since last time
-            new_errors = [
-                f"{p} ({sensor_errors[p]})"
-                for p in current_error_sensors - self._previous_error_sensors
-            ]
+            new_errors = [f"{p} ({sensor_errors[p]})" for p in current_error_sensors - self._previous_error_sensors]
             new_ok = self._previous_error_sensors - current_error_sensors
 
             # Get current time for checking the hour threshold

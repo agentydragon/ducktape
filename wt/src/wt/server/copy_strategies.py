@@ -53,12 +53,7 @@ class ClonefileCopyStrategy(CopyStrategy):
         entries = _get_copyable_entries(src)
         if entries:
             # Prefer clonefile (-c) when available; fall back to plain recursive copy otherwise.
-            args = [
-                "cp",
-                "-R",
-                *map(str, entries),
-                str(dst),
-            ]
+            args = ["cp", "-R", *map(str, entries), str(dst)]
             if _supports_cp_clone():
                 args = ["cp", "-c", "-R", *map(str, entries), str(dst)]
             subprocess.run(args, check=True)
@@ -76,10 +71,7 @@ class ReflinkCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         entries = _get_copyable_entries(src)
         if entries:
-            subprocess.run(
-                ["cp", "--archive", "--reflink=auto", *entries, dst],
-                check=True,
-            )
+            subprocess.run(["cp", "--archive", "--reflink=auto", *entries, dst], check=True)
 
     @property
     def method_name(self) -> str:
@@ -93,10 +85,7 @@ class ReflinkCopyStrategy(CopyStrategy):
 class RsyncCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         exclude_args = [f"--exclude={name}/" for name in EXCLUDE_NAMES]
-        subprocess.run(
-            ["rsync", "-a", "--delete", *exclude_args, f"{src}/", f"{dst}/"],
-            check=True,
-        )
+        subprocess.run(["rsync", "-a", "--delete", *exclude_args, f"{src}/", f"{dst}/"], check=True)
 
     @property
     def method_name(self) -> str:
@@ -121,12 +110,7 @@ def _test_reflink_support() -> bool:
 
         # Try to copy with reflink
         try:
-            subprocess.run(
-                ["cp", "--reflink=auto", test_file, test_copy],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            subprocess.run(["cp", "--reflink=auto", test_file, test_copy], check=True, capture_output=True, text=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
@@ -142,12 +126,7 @@ def _supports_cp_clone() -> bool:
         test_copy = tmpdir_path / "clone_dst.txt"
         test_file.write_text("x")
         try:
-            subprocess.run(
-                ["cp", "-c", test_file, test_copy],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            subprocess.run(["cp", "-c", test_file, test_copy], check=True, capture_output=True, text=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False

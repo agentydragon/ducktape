@@ -15,14 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from claude_hooks.tool_models import (
-    BashInput,
-    GlobInput,
-    GrepInput,
-    GrepOutputMode,
-    LSInput,
-    TaskInput,
-)
+from claude_hooks.tool_models import BashInput, GlobInput, GrepInput, GrepOutputMode, LSInput, TaskInput
 
 from .test_helpers import assert_tool_input_parsing, load_test_json
 
@@ -30,104 +23,36 @@ from .test_helpers import assert_tool_input_parsing, load_test_json
 @pytest.mark.parametrize(
     ("tool_name", "scenario", "expected_tool_input"),
     [
-        (
-            "Bash",
-            "command_only",
-            BashInput(command="pwd", description=None, timeout=None),
-        ),
-        (
-            "Bash",
-            "with_timeout_and_description",
-            BashInput(
-                command="sleep 5",
-                timeout=10000,
-                description="Test sleep",
-            ),
-        ),
-        (
-            "Bash",
-            "with_timeout_no_description",
-            BashInput(command="sleep 2", timeout=5000, description=None),
-        ),
-        (
-            "Task",
-            "basic",
-            TaskInput(
-                description="Test task",
-                prompt="Return 42",
-            ),
-        ),
+        ("Bash", "command_only", BashInput(command="pwd", description=None, timeout=None)),
+        ("Bash", "with_timeout_and_description", BashInput(command="sleep 5", timeout=10000, description="Test sleep")),
+        ("Bash", "with_timeout_no_description", BashInput(command="sleep 2", timeout=5000, description=None)),
+        ("Task", "basic", TaskInput(description="Test task", prompt="Return 42")),
         (
             "TodoWrite",
             "basic",
             {
                 "todos": [
-                    {
-                        "content": "Task A",
-                        "status": "completed",
-                        "priority": "low",
-                        "id": "todo3",
-                    },
-                    {
-                        "content": "Task B",
-                        "status": "in_progress",
-                        "priority": "medium",
-                        "id": "todo2",
-                    },
-                    {
-                        "content": "Task C",
-                        "status": "pending",
-                        "priority": "high",
-                        "id": "todo1",
-                    },
-                ],
+                    {"content": "Task A", "status": "completed", "priority": "low", "id": "todo3"},
+                    {"content": "Task B", "status": "in_progress", "priority": "medium", "id": "todo2"},
+                    {"content": "Task C", "status": "pending", "priority": "high", "id": "todo1"},
+                ]
             },
         ),
         ("Glob", "pattern_only", GlobInput(pattern="*.md", path=None)),
-        (
-            "Glob",
-            "with_path",
-            GlobInput(pattern="*.toml", path=Path("/Users/user/test/personal")),
-        ),
+        ("Glob", "with_path", GlobInput(pattern="*.toml", path=Path("/Users/user/test/personal"))),
         (
             "Grep",
             "pattern_only",
-            GrepInput(
-                pattern="hello\\.py",
-                path=None,
-                glob=None,
-                output_mode=GrepOutputMode.FILES_WITH_MATCHES,
-            ),
+            GrepInput(pattern="hello\\.py", path=None, glob=None, output_mode=GrepOutputMode.FILES_WITH_MATCHES),
         ),
-        (
-            "WebFetch",
-            "basic",
-            {
-                "url": "https://httpbin.org/json",
-                "prompt": "Parse JSON",
-            },
-        ),
-        (
-            "LS",
-            "with_ignore_array",
-            LSInput(
-                path=Path("/Users/user/test"),
-                ignore=["*.md", "node_modules", "target"],
-            ),
-        ),
-        (
-            "LS",
-            "detailed_response",
-            LSInput(path=Path("/Users/user/test/docs"), ignore=["*.tmp", "*.cache"]),
-        ),
+        ("WebFetch", "basic", {"url": "https://httpbin.org/json", "prompt": "Parse JSON"}),
+        ("LS", "with_ignore_array", LSInput(path=Path("/Users/user/test"), ignore=["*.md", "node_modules", "target"])),
+        ("LS", "detailed_response", LSInput(path=Path("/Users/user/test/docs"), ignore=["*.tmp", "*.cache"])),
         ("exit_plan_mode", "basic", {"plan": "Demo complete"}),
         (
             "mcp_multiedit_lookalike",
             "basic",
-            {
-                "file_path": "/path/to/file.txt",
-                "edits": [{"old_string": "old", "new_string": "new"}],
-            },
+            {"file_path": "/path/to/file.txt", "edits": [{"old_string": "old", "new_string": "new"}]},
         ),
     ],
 )

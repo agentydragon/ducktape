@@ -54,20 +54,13 @@ queue: list[dict] = []  # buffered events
 # - helpers ----------------------------------------------------------------------
 def _make_body(events: list[dict]) -> bytes:
     """Return JSON body bytes for *events* batch."""
-    return json.dumps(
-        {"host": socket.gethostname(), "events": events},
-        separators=(",", ":"),
-    ).encode()
+    return json.dumps({"host": socket.gethostname(), "events": events}, separators=(",", ":")).encode()
 
 
 def _post(body: bytes) -> bool:
     """Send *body* to the endpoint.  Return True on success."""
     try:
-        urllib.request.urlopen(
-            ENDPOINT,
-            data=body,
-            timeout=TIMEOUT.total_seconds(),
-        ).read()
+        urllib.request.urlopen(ENDPOINT, data=body, timeout=TIMEOUT.total_seconds()).read()
         return True
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
         log.warning("send failed; will retry", exc_info=True)
@@ -104,12 +97,7 @@ def _flush() -> bool:
             # Single event is too large even on its own -> drop it.
             oversized = queue.pop(0)
             size = len(_make_body([oversized]))
-            log.error(
-                "dropping oversized event %s (%d bytes > %d)",
-                oversized.get("event", "?"),
-                size,
-                MAX_PAYLOAD,
-            )
+            log.error("dropping oversized event %s (%d bytes > %d)", oversized.get("event", "?"), size, MAX_PAYLOAD)
             continue  # try with remaining events
 
         body = _make_body(batch)
@@ -130,10 +118,7 @@ def _flush() -> bool:
         log.info(
             "sent %d event(s) (%s), %.1f KiB",
             len(batch),
-            " ".join(
-                f"{v}x{k}"
-                for k, v in Counter(ev["event"] for ev in batch).most_common()
-            ),
+            " ".join(f"{v}x{k}" for k, v in Counter(ev["event"] for ev in batch).most_common()),
             len(body) / 1024,
         )
 

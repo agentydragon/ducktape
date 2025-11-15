@@ -19,9 +19,7 @@ JELLYBEAN_PARAM_NAME = "Jellybean P/N"
 
 def get_parts_without_parameter(api: InvenTreeAPI, template):
     """Return parts missing the given parameter."""
-    part_pks_with_param = {
-        param.part for param in Parameter.list(api, template=template.pk)
-    }
+    part_pks_with_param = {param.part for param in Parameter.list(api, template=template.pk)}
     return [p for p in Part.list(api) if p.pk not in part_pks_with_param]
 
 
@@ -33,10 +31,7 @@ def build_editor_file(api, edited_parts):
         proposed = part.name.split()[0][:20].strip(",")
         return proposed if proposed else "JELLYBEAN"
 
-    rows = [
-        (part_url(api, part), _propose_jellybean(part), part.name)
-        for part in edited_parts
-    ]
+    rows = [(part_url(api, part), _propose_jellybean(part), part.name) for part in edited_parts]
     table = build_table(rows)
     return (
         dedent(
@@ -48,7 +43,7 @@ def build_editor_file(api, edited_parts):
         # Do not change part links or names - the script will fail.
         # Lines starting with '#' will be ignored.
         # -------------------------------------------------------------
-        """,
+        """
         )
         + "\n"
         + "\n".join("# " + r for r in table)
@@ -151,9 +146,7 @@ def assign_jellybean(api: InvenTreeAPI):
     Implementation for the "assign-jellybean" command.
     """
     # Find the parameter template.
-    param_template = unwrap_singleton(
-        ParameterTemplate.list(api, name=JELLYBEAN_PARAM_NAME),
-    )
+    param_template = unwrap_singleton(ParameterTemplate.list(api, name=JELLYBEAN_PARAM_NAME))
     edited_parts = get_parts_without_parameter(api, param_template)
     if not edited_parts:
         print(f"All parts already have {param_template.name}.")
@@ -175,10 +168,7 @@ def assign_jellybean(api: InvenTreeAPI):
 
     # commit changes
     for part, jellybean_pn in (t := tqdm(assignments)):
-        Parameter.create(
-            api,
-            data={"part": part.pk, "template": param_template.pk, "data": jellybean_pn},
-        )
+        Parameter.create(api, data={"part": part.pk, "template": param_template.pk, "data": jellybean_pn})
         t.set_description(f"{part.name} ← {jellybean_pn}")
 
     print("Done.")

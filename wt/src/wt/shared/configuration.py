@@ -108,9 +108,7 @@ class Configuration:
             raise ConfigError(f"Config file not found: {config_path}")
 
         try:
-            config_file = ConfigFile.model_validate(
-                yaml.safe_load(config_path.read_text()),
-            )
+            config_file = ConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
         except ValidationError as e:
             raise ConfigError("Configuration validation errors") from e
 
@@ -130,9 +128,7 @@ class Configuration:
 
         post_creation_script = None
         if config_file.post_creation_script:
-            post_creation_script = (
-                Path(config_file.post_creation_script).expanduser().resolve()
-            )
+            post_creation_script = Path(config_file.post_creation_script).expanduser().resolve()
 
         cfg = cls(
             wt_dir=wt_dir,
@@ -150,14 +146,10 @@ class Configuration:
             cache_refresh_age=timedelta(seconds=config_file.cache_refresh_age),
             hidden_worktree_patterns=config_file.hidden_worktree_patterns.copy(),
             github_debounce_delay=timedelta(seconds=config_file.github_debounce_delay),
-            github_periodic_interval=timedelta(
-                seconds=config_file.github_periodic_interval,
-            ),
+            github_periodic_interval=timedelta(seconds=config_file.github_periodic_interval),
             startup_timeout=timedelta(seconds=config_file.startup_timeout),
             post_creation_timeout=timedelta(seconds=config_file.post_creation_timeout),
-            git_watcher_debounce_delay=timedelta(
-                seconds=config_file.git_watcher_debounce_delay,
-            ),
+            git_watcher_debounce_delay=timedelta(seconds=config_file.git_watcher_debounce_delay),
             hydrate_worktrees=config_file.hydrate_worktrees,
         )
 
@@ -167,15 +159,11 @@ class Configuration:
             def _under_tmp(p: Path) -> bool:
                 return p.resolve().is_relative_to(temp_root)
 
-            if not (
-                _under_tmp(cfg.wt_dir)
-                and _under_tmp(cfg.main_repo)
-                and _under_tmp(cfg.worktrees_dir)
-            ):
+            if not (_under_tmp(cfg.wt_dir) and _under_tmp(cfg.main_repo) and _under_tmp(cfg.worktrees_dir)):
                 raise ConfigError(
                     "WT_TEST_MODE is set, but WT_DIR/main_repo/worktrees_dir are not under the system temp directory.\n"
                     f"  WT_DIR={cfg.wt_dir}\n  main_repo={cfg.main_repo}\n  worktrees_dir={cfg.worktrees_dir}\n"
-                    "Refusing to run tests against a non-isolated real environment.",
+                    "Refusing to run tests against a non-isolated real environment."
                 )
         return cfg
 

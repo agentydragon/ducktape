@@ -201,9 +201,7 @@ def part_matches_in_db(
     def diff(label: str, actual: str | int, expected: str | int | None):
         """Helper: if expected is nonempty and differs from actual, record mismatch."""
         if expected and str(actual) != str(expected):
-            differences.append(
-                f"{label} differs: InvenTree='{actual}' vs Script='{expected}'",
-            )
+            differences.append(f"{label} differs: InvenTree='{actual}' vs Script='{expected}'")
 
     # 1) Check top-level fields
     script_name = build_part_name(p)
@@ -256,10 +254,7 @@ def part_matches_in_db(
     return False
 
 
-def create_part_in_inventree(
-    p: BasePart,
-    param_templates: dict[str, ParameterTemplate],
-) -> InvPart:
+def create_part_in_inventree(p: BasePart, param_templates: dict[str, ParameterTemplate]) -> InvPart:
     """
     Actually create the part if not found or mismatch.
     Return the newly created InvenTree Part object.
@@ -353,9 +348,7 @@ def main():
     # Check that each needed template is present
     for nt in needed_templates:
         if nt not in tmpl_map:
-            raise RuntimeError(
-                f"Missing ParameterTemplate '{nt}' in InvenTree. Please create it first.",
-            )
+            raise RuntimeError(f"Missing ParameterTemplate '{nt}' in InvenTree. Please create it first.")
 
     # 2) Retrieve all existing "autogen" parts to check what we already have
     #    We'll search by "keywords={ANCHOR}" for quick filtering
@@ -374,9 +367,7 @@ def main():
     params_by_part = defaultdict(list)
     for param in all_params:
         params_by_part[param.part].append(param)
-    print(
-        f"Loaded {len(all_params)} parameters for {len(existing_autogen_parts)} parts",
-    )
+    print(f"Loaded {len(all_params)} parameters for {len(existing_autogen_parts)} parts")
 
     # 4) Precompute quantity checks
     #    (Your request: "make sure all rules i said above are satisfied" => crash if mismatch)
@@ -393,7 +384,7 @@ def main():
             invp = existing_map[name]
             if not part_matches_in_db(invp, p, tmpl_map, params_by_part[invp.pk]):
                 print(
-                    f"WARNING: Part '{name}' already exists but differs from the script's data! {SERVER_ADDRESS}/part/{invp.pk}/",
+                    f"WARNING: Part '{name}' already exists but differs from the script's data! {SERVER_ADDRESS}/part/{invp.pk}/"
                 )
             # else it is fine => skip
         else:
@@ -419,9 +410,7 @@ def main():
     for mp in tqdm(missing_parts):
         newp = create_part_in_inventree(mp, tmpl_map)
         si = create_stock_for_part(newp, mp)
-        print(
-            f"{newp.name} (N={int(si.quantity)}) created: {SERVER_ADDRESS}/part/{newp.pk}/",
-        )
+        print(f"{newp.name} (N={int(si.quantity)}) created: {SERVER_ADDRESS}/part/{newp.pk}/")
         if add_one:
             print("Stopped after adding one part (debug mode).")
             break

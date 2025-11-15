@@ -95,12 +95,7 @@ def write_startup_handshake(
         except (ValueError, TypeError):
             handshake_fd = None
 
-    handshake_data = {
-        "success": success,
-        "pid": os.getpid(),
-        "timestamp": time.time(),
-        **extra_data,
-    }
+    handshake_data = {"success": success, "pid": os.getpid(), "timestamp": time.time(), **extra_data}
 
     if not success and error_message:
         handshake_data["error"] = error_message
@@ -114,11 +109,7 @@ def write_startup_handshake(
     if redirect_after:
         try:
             daemon_log = daemon_log_path or (load_config().wt_dir / "daemon.log")
-            log_fd = os.open(
-                daemon_log,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND,
-                0o644,
-            )
+            log_fd = os.open(daemon_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             os.dup2(log_fd, 1)
             os.close(log_fd)
         except OSError:
@@ -143,35 +134,21 @@ class WtDaemon:
             self.config.github_debounce_delay.total_seconds(),
             self.config.github_periodic_interval.total_seconds(),
         )
-        logger.info(
-            "Post-creation script configuration: %s",
-            self.config.post_creation_script or "None",
-        )
+        logger.info("Post-creation script configuration: %s", self.config.post_creation_script or "None")
 
         # Initialize GitHub interface
         self.github_interface = None
         if self.config.github_enabled and self.config.github_repo:
             try:
                 self.github_interface = GitHubInterface(self.config.github_repo)
-                logger.info(
-                    "GitHub interface initialized for repo: %s",
-                    self.config.github_repo,
-                )
+                logger.info("GitHub interface initialized for repo: %s", self.config.github_repo)
             except Exception as e:
-                logger.warning(
-                    "Failed to initialize GitHub interface for %s: %s",
-                    self.config.github_repo,
-                    e,
-                )
+                logger.warning("Failed to initialize GitHub interface for %s: %s", self.config.github_repo, e)
 
         # Track daemon health state using proper protocol types
 
         self.daemon_health = DaemonHealth(
-            status=DaemonHealthStatus.OK,
-            last_error=None,
-            last_error_time=None,
-            github_errors=0,
-            gitstatusd_errors=0,
+            status=DaemonHealthStatus.OK, last_error=None, last_error_time=None, github_errors=0, gitstatusd_errors=0
         )
         # use self.config.wt_dir directly
         self.socket_path = self.config.daemon_socket_path
@@ -208,9 +185,7 @@ class WtDaemon:
             ),
             iter_client_paths=lambda: list(self.known_worktrees.keys()),
             ensure_watcher_for_path=lambda p: (
-                self._ensure_git_watcher(get_known_worktree(p))
-                if get_known_worktree(p)
-                else asyncio.sleep(0)
+                self._ensure_git_watcher(get_known_worktree(p)) if get_known_worktree(p) else asyncio.sleep(0)
             ),
             list_watchers=lambda: list(self.git_watchers.values()),
             clear_watchers=lambda: self.git_watchers.clear(),
@@ -224,8 +199,7 @@ class WtDaemon:
         )
         self.health_service = HealthService(lambda: self.daemon_health)
         self.coordinator = WorktreeCoordinator(
-            register_fn=self._register_worktree,
-            unregister_fn=self._unregister_worktree,
+            register_fn=self._register_worktree, unregister_fn=self._unregister_worktree
         )
 
         # Server state
@@ -274,8 +248,7 @@ class WtDaemon:
         if (
             self.daemon_health.status == DaemonHealthStatus.ERROR
             and self.daemon_health.last_error_time
-            and (datetime.now() - self.daemon_health.last_error_time)
-            > timedelta(seconds=60)
+            and (datetime.now() - self.daemon_health.last_error_time) > timedelta(seconds=60)
         ):
             self.daemon_health.status = DaemonHealthStatus.OK
             self.daemon_health.last_error = None
@@ -295,12 +268,7 @@ class WtDaemon:
             # Prefer explicit configuration; do not fall back to PATH when set
             path = self.config.gitstatusd_path
             try:
-                result = subprocess.run(
-                    [path, "--version"],
-                    check=False,
-                    capture_output=True,
-                    timeout=2,
-                )
+                result = subprocess.run([path, "--version"], check=False, capture_output=True, timeout=2)
                 if result.returncode == 0:
                     logger.info("Using configured gitstatusd at: %s", path)
                     gitstatusd_path = str(path)
@@ -313,22 +281,13 @@ class WtDaemon:
             cmd = "gitstatusd"
             if shutil.which(cmd):
                 try:
-                    result = subprocess.run(
-                        [cmd, "--version"],
-                        check=False,
-                        capture_output=True,
-                        timeout=2,
-                    )
+                    result = subprocess.run([cmd, "--version"], check=False, capture_output=True, timeout=2)
                     if result.returncode == 0:
                         logger.info("Found gitstatusd on PATH: %s", cmd)
                         gitstatusd_path = cmd
                     else:
                         error = f"gitstatusd found on PATH but not working (exit code {result.returncode})"
-                except (
-                    subprocess.TimeoutExpired,
-                    FileNotFoundError,
-                    PermissionError,
-                ) as e:
+                except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
                     error = f"gitstatusd found on PATH but failed to execute: {e}"
             else:
                 error = (
@@ -355,31 +314,23 @@ class WtDaemon:
 
         # Check required paths exist
         if not self.config.main_repo.exists() or not self.config.main_repo.is_dir():
-            errors.append(
-                f"Main repository is not a directory: {self.config.main_repo}",
-            )
+            errors.append(f"Main repository is not a directory: {self.config.main_repo}")
 
         # Check if main repo is actually a git repository
         git_dir = self.config.main_repo / ".git"
         if not git_dir.exists():
-            errors.append(
-                f"Main repository is not a git repository (no .git directory): {self.config.main_repo}",
-            )
+            errors.append(f"Main repository is not a git repository (no .git directory): {self.config.main_repo}")
 
         # Check worktrees directory can be created
         worktrees_dir = self.config.worktrees_dir
         if worktrees_dir.exists() and not worktrees_dir.is_dir():
-            errors.append(
-                f"Worktrees directory path exists but is not a directory: {worktrees_dir}",
-            )
+            errors.append(f"Worktrees directory path exists but is not a directory: {worktrees_dir}")
 
         # Check daemon directory permissions
         try:
             self.config.wt_dir.mkdir(exist_ok=True)
         except PermissionError:
-            errors.append(
-                f"Cannot create daemon directory (permission denied): {self.config.wt_dir}",
-            )
+            errors.append(f"Cannot create daemon directory (permission denied): {self.config.wt_dir}")
         except OSError as e:
             errors.append(f"Cannot create daemon directory: {self.config.wt_dir} ({e})")
 
@@ -388,23 +339,15 @@ class WtDaemon:
             errors.append("GitHub is enabled but github_repo is not configured")
 
         if errors:
-            return "Configuration validation failed:\n" + "\n".join(
-                f"  - {error}" for error in errors
-            )
+            return "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
 
         return None
 
-    async def _start_gitstatusd_for_worktree(
-        self,
-        worktree_info: DiscoveredWorktree,
-    ) -> None:
+    async def _start_gitstatusd_for_worktree(self, worktree_info: DiscoveredWorktree) -> None:
         """Start gitstatusd for a worktree."""
         gitstatusd_path = self._find_gitstatusd()
         if not gitstatusd_path:
-            logger.error(
-                "gitstatusd binary not found, cannot start process for %s",
-                worktree_info.name,
-            )
+            logger.error("gitstatusd binary not found, cannot start process for %s", worktree_info.name)
             return
 
         if worktree_info.wtid in self.gitstatusd_clients:
@@ -413,23 +356,13 @@ class WtDaemon:
                 await self._ensure_git_watcher(worktree_info)
             return
         gs_client = GitstatusdListener(
-            worktree_info,
-            self.config,
-            self.git_manager,
-            error_callback=self._record_gitstatusd_error,
+            worktree_info, self.config, self.git_manager, error_callback=self._record_gitstatusd_error
         )
         await gs_client.start()
         # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
-        self._initial_status_task = asyncio.create_task(
-            gs_client.update_working_status(),
-        )
+        self._initial_status_task = asyncio.create_task(gs_client.update_working_status())
         self.gitstatusd_clients[worktree_info.wtid] = gs_client
-        prsvc = PRService(
-            self.github_interface,
-            self.config,
-            worktree_info,
-            self.git_manager,
-        )
+        prsvc = PRService(self.github_interface, self.config, worktree_info, self.git_manager)
         await prsvc.start()
         self.pr_services[worktree_info.wtid] = prsvc
 
@@ -442,10 +375,7 @@ class WtDaemon:
             "enabled" if self.github_interface else "disabled",
         )
 
-    async def _stop_gitstatusd_for_worktree(
-        self,
-        worktree_info: DiscoveredWorktree,
-    ) -> None:
+    async def _stop_gitstatusd_for_worktree(self, worktree_info: DiscoveredWorktree) -> None:
         """Stop gitstatusd for a worktree."""
         gs_client = self.gitstatusd_clients.get(worktree_info.wtid)
         if gs_client:
@@ -468,10 +398,7 @@ class WtDaemon:
             changes = self.registry.apply(current)
             async with self._state_lock:
                 self.known_worktrees = dict(self.registry.known)
-                self.worktree_index = WorktreeIndex.build(
-                    self.known_worktrees.values(),
-                    self.config.main_repo,
-                )
+                self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
         finally:
             self.discovery_scanning = False
         for wt in changes.added:
@@ -499,11 +426,7 @@ class WtDaemon:
         if self.discovery_task:
             self.discovery_task.cancel()
 
-    async def handle_client_request(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> None:
+    async def handle_client_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a client request using JSON-RPC 2.0 protocol."""
         start_time = datetime.now()
 
@@ -523,28 +446,16 @@ class WtDaemon:
                 self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
             # Handle request via RPC registry only
-            response = await self._method_handlers.dispatch(
-                request,
-                self,
-                writer,
-                start_time,
-            )  # type: ignore[attr-defined]
+            response = await self._method_handlers.dispatch(request, self, writer, start_time)  # type: ignore[attr-defined]
             await self._send_response(writer, response)
             return
 
         except Exception:
             logger.exception("Error handling client request")
-            rid = (
-                request.id if ("request" in locals() and request) else uuid.UUID(int=0)
-            )
+            rid = request.id if ("request" in locals() and request) else uuid.UUID(int=0)
             with contextlib.suppress(Exception):
                 await self._send_response(
-                    writer,
-                    create_error_response(
-                        ErrorCodes.INTERNAL_ERROR,
-                        "Internal server error",
-                        rid,
-                    ),
+                    writer, create_error_response(ErrorCodes.INTERNAL_ERROR, "Internal server error", rid)
                 )
         finally:
             writer.close()
@@ -554,35 +465,21 @@ class WtDaemon:
         """Create a successful JSON-RPC response."""
         return Response(result=result, id=request_id)
 
-    async def _send_response(
-        self,
-        writer: asyncio.StreamWriter,
-        response: Response | ErrorResponse,
-    ) -> None:
+    async def _send_response(self, writer: asyncio.StreamWriter, response: Response | ErrorResponse) -> None:
         """Send a JSON-RPC response to the client."""
         response_data = response.model_dump_json().encode()
         writer.write(response_data)
         writer.write(b"\n")
         await writer.drain()
 
-    async def _handle_ping_request(
-        self,
-        request: Request,
-        start_time: datetime,
-    ) -> Response:
+    async def _handle_ping_request(self, request: Request, start_time: datetime) -> Response:
         """Handle ping JSON-RPC method."""
         result = PingResult(
-            daemon_pid=os.getpid(),
-            started_at=start_time,
-            discovered_worktrees=list(self.known_worktrees.keys()),
+            daemon_pid=os.getpid(), started_at=start_time, discovered_worktrees=list(self.known_worktrees.keys())
         )
         return self._create_success_response(result, request.id)
 
-    async def _handle_shutdown_request(
-        self,
-        request: Request,
-        start_time: datetime | None = None,
-    ) -> Response:
+    async def _handle_shutdown_request(self, request: Request, start_time: datetime | None = None) -> Response:
         """Handle shutdown JSON-RPC method."""
         logger.info("Received shutdown request")
         self._shutdown_task = asyncio.create_task(self.stop())
@@ -611,13 +508,7 @@ class WtDaemon:
         logger.info("Starting wt daemon for %s", self.config.main_repo)
 
         # Emit initial progress handshake to ensure the client always sees at least one line
-        write_startup_handshake(
-            success=True,
-            protocol_version=1,
-            ready=False,
-            phase="starting",
-            redirect_after=False,
-        )
+        write_startup_handshake(success=True, protocol_version=1, ready=False, phase="starting", redirect_after=False)
 
         startup_errors = []
 
@@ -649,10 +540,7 @@ class WtDaemon:
         try:
             if self.socket_path.exists():
                 self.socket_path.unlink()
-            self.server = await asyncio.start_unix_server(
-                self.handle_client_request,
-                self.socket_path,
-            )
+            self.server = await asyncio.start_unix_server(self.handle_client_request, self.socket_path)
             # Write PID file in thread to avoid blocking the event loop
             await asyncio.to_thread(self.pid_file.write_text, str(os.getpid()))
             self.running = True
@@ -722,10 +610,7 @@ class WtDaemon:
 
     async def rebuild_index(self) -> None:
         async with self._state_lock:
-            self.worktree_index = WorktreeIndex.build(
-                self.known_worktrees.values(),
-                self.config.main_repo,
-            )
+            self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
 
     async def _register_worktree(self, info: DiscoveredWorktree) -> None:
         async with self._state_lock:
@@ -778,7 +663,7 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
-            logging.FileHandler(log_file, mode="a"),
+            logging.FileHandler(log_file, mode="a")
             # No StreamHandler - daemon should not output to console
         ],
     )

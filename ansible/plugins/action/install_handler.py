@@ -172,13 +172,7 @@ class FlatpakInstall:
         return args | {"state": "absent"}
 
 
-METHODS = {
-    "apt": AptInstall,
-    "snap": SnapInstall,
-    "pip": PipInstall,
-    "pipx": PipxInstall,
-    "flatpak": FlatpakInstall,
-}
+METHODS = {"apt": AptInstall, "snap": SnapInstall, "pip": PipInstall, "pipx": PipxInstall, "flatpak": FlatpakInstall}
 
 
 class ActionModule(ActionBase):
@@ -198,9 +192,7 @@ class ActionModule(ActionBase):
             if arg == "use":
                 continue
             if arg not in METHODS:
-                raise AnsibleError(
-                    f"Unknown argument: {arg}. Expected: {list(METHODS.keys())}",
-                )
+                raise AnsibleError(f"Unknown argument: {arg}. Expected: {list(METHODS.keys())}")
 
             assert arg not in parsed
             try:
@@ -211,18 +203,12 @@ class ActionModule(ActionBase):
                 result[f"{arg}_parsed"] = parsed[arg].__dict__
 
         if use not in parsed and use != "none":
-            raise AnsibleError(
-                f"Invalid use value: {use}. Expected one of "
-                f"{list(parsed.keys())} or 'none'",
-            )
+            raise AnsibleError(f"Invalid use value: {use}. Expected one of {list(parsed.keys())} or 'none'")
 
         # run selected install method
         for method, impl in parsed.items():
             r = self._execute_module(
-                module_name=impl.module_name,
-                module_args=impl.module_args(method == use),
-                task_vars=task_vars,
-                tmp=tmp,
+                module_name=impl.module_name, module_args=impl.module_args(method == use), task_vars=task_vars, tmp=tmp
             )
             changed |= r.get("changed", False)
 

@@ -13,10 +13,7 @@ class RepoStatus:
         self.git_manager = git_manager
         self.config = config
 
-    def summarize_status(
-        self,
-        worktree_path: Path,
-    ) -> tuple[CommitInfo | None, tuple[int, int], str]:
+    def summarize_status(self, worktree_path: Path) -> tuple[CommitInfo | None, tuple[int, int], str]:
         try:
             repo = self.git_manager.get_repo(worktree_path)
         except (pygit2.GitError, OSError, ValueError):
@@ -62,14 +59,10 @@ class RepoStatus:
 
                 # Resolve upstream tip OID: prefer worktree repo; fall back to main repo
                 try:
-                    upstream_ref = repo.lookup_reference(
-                        f"refs/heads/{self.config.upstream_branch}",
-                    )
+                    upstream_ref = repo.lookup_reference(f"refs/heads/{self.config.upstream_branch}")
                     upstream_id = upstream_ref.target
                 except KeyError:
-                    upstream_ref = main_repo.lookup_reference(
-                        f"refs/heads/{self.config.upstream_branch}",
-                    )
+                    upstream_ref = main_repo.lookup_reference(f"refs/heads/{self.config.upstream_branch}")
                     upstream_id = upstream_ref.target
 
                 ahead, behind = main_repo.ahead_behind(local_id, upstream_id)

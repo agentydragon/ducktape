@@ -79,12 +79,7 @@ class EarlyBailoutVisitor(ast.NodeVisitor):
         else_size = self._estimate_block_size(node.orelse)
 
         # If the else block is significantly smaller and we can bail out
-        if (
-            else_size < if_size
-            and else_size <= 3
-            and if_size >= 5
-            and self._can_use_early_exit(node.orelse)
-        ):
+        if else_size < if_size and else_size <= 3 and if_size >= 5 and self._can_use_early_exit(node.orelse):
             bailout_type = self._get_bailout_type()
             self.errors.append(
                 (
@@ -93,7 +88,7 @@ class EarlyBailoutVisitor(ast.NodeVisitor):
                     f"EB100 Consider early bailout pattern - invert condition and {bailout_type} early. "
                     f"Main path ({if_size} lines) is in 'if', short path ({else_size} lines) is in 'else'.",
                     type(self),
-                ),
+                )
             )
 
     def _check_nested_if_pattern(self, node: ast.If) -> None:
@@ -110,7 +105,7 @@ class EarlyBailoutVisitor(ast.NodeVisitor):
                     node.col_offset,
                     f"EB101 Nested if statements increase indentation - consider {bailout_type} early to flatten the code.",
                     type(self),
-                ),
+                )
             )
 
     def _estimate_block_size(self, block: list[ast.stmt]) -> int:
@@ -124,15 +119,7 @@ class EarlyBailoutVisitor(ast.NodeVisitor):
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
                 # Single constants/strings are usually 1 line
                 count += 1
-            elif isinstance(
-                stmt,
-                ast.Return
-                | ast.Pass
-                | ast.Break
-                | ast.Continue
-                | ast.Raise
-                | ast.Assign,
-            ):
+            elif isinstance(stmt, ast.Return | ast.Pass | ast.Break | ast.Continue | ast.Raise | ast.Assign):
                 count += 1
             elif isinstance(stmt, ast.If | ast.For | ast.While | ast.With | ast.Try):
                 # Complex statements are at least 3 lines

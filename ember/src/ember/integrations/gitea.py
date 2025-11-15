@@ -9,14 +9,7 @@ import requests
 
 from ..secrets import ProjectedSecret
 
-__all__ = [
-    "GiteaBranchInfo",
-    "GiteaClient",
-    "GiteaComment",
-    "GiteaError",
-    "GiteaRepository",
-    "GiteaUser",
-]
+__all__ = ["GiteaBranchInfo", "GiteaClient", "GiteaComment", "GiteaError", "GiteaRepository", "GiteaUser"]
 
 
 class GiteaError(RuntimeError):
@@ -72,31 +65,16 @@ class GiteaBranchInfo(BaseModel):
 
 
 class GiteaClient:
-    def __init__(
-        self,
-        *,
-        base_url: str,
-        token: str,
-        default_repo: GiteaRepository | None = None,
-    ) -> None:
+    def __init__(self, *, base_url: str, token: str, default_repo: GiteaRepository | None = None) -> None:
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._default_repo = default_repo
         self._session = requests.Session()
-        self._session.headers.update(
-            {
-                "Authorization": f"token {token}",
-                "Accept": "application/json",
-            }
-        )
+        self._session.headers.update({"Authorization": f"token {token}", "Accept": "application/json"})
 
     @classmethod
     def from_projected_secret(
-        cls,
-        *,
-        base_url: str,
-        repo: str | GiteaRepository | None,
-        secret: ProjectedSecret,
+        cls, *, base_url: str, repo: str | GiteaRepository | None, secret: ProjectedSecret
     ) -> GiteaClient:
         token = secret.value(required=True)
         repository = GiteaRepository.parse(repo) if repo else None
@@ -104,43 +82,25 @@ class GiteaClient:
 
     def with_repo(self, repo: str | GiteaRepository | None) -> GiteaClient:
         repository = GiteaRepository.parse(repo) if repo else self._default_repo
-        return GiteaClient(
-            base_url=self._base_url, token=self._token, default_repo=repository
-        )
+        return GiteaClient(base_url=self._base_url, token=self._token, default_repo=repository)
 
-    def issue_comments(
-        self, issue: int, repo: str | GiteaRepository | None = None
-    ) -> list[GiteaComment]:
+    def issue_comments(self, issue: int, repo: str | GiteaRepository | None = None) -> list[GiteaComment]:
         repository = self._resolve_repo(repo)
-        url = self._build_url(
-            f"/api/v1/repos/{repository.api_path}/issues/{issue}/comments"
-        )
+        url = self._build_url(f"/api/v1/repos/{repository.api_path}/issues/{issue}/comments")
         data = self._request_json("GET", url)
         return [GiteaComment.model_validate(item) for item in data]
 
-    def branch_info(
-        self, branch: str, repo: str | GiteaRepository | None = None
-    ) -> GiteaBranchInfo:
+    def branch_info(self, branch: str, repo: str | GiteaRepository | None = None) -> GiteaBranchInfo:
         repository = self._resolve_repo(repo)
         encoded_branch = requests.utils.quote(branch, safe="")
-        url = self._build_url(
-            f"/api/v1/repos/{repository.api_path}/branches/{encoded_branch}",
-        )
+        url = self._build_url(f"/api/v1/repos/{repository.api_path}/branches/{encoded_branch}")
         data = self._request_json("GET", url)
         return GiteaBranchInfo.model_validate(data)
 
-    def file_contents(
-        self,
-        path: str,
-        ref: str,
-        repo: str | GiteaRepository | None = None,
-    ) -> str:
+    def file_contents(self, path: str, ref: str, repo: str | GiteaRepository | None = None) -> str:
         repository = self._resolve_repo(repo)
         encoded_path = requests.utils.quote(path.lstrip("/"), safe="/")
-        url = self._build_url(
-            f"/api/v1/repos/{repository.api_path}/contents/{encoded_path}",
-            query={"ref": ref},
-        )
+        url = self._build_url(f"/api/v1/repos/{repository.api_path}/contents/{encoded_path}", query={"ref": ref})
         data = self._request_json("GET", url)
         content = data.get("content")
         encoding = data.get("encoding", "")
@@ -166,9 +126,7 @@ class GiteaClient:
     def _request_json(self, method: str, url: str) -> Any:
         response = self._session.request(method, url, timeout=30)
         if response.status_code >= 400:
-            raise GiteaError(
-                f"Gitea API {method} {url} failed: {response.status_code} {response.text}"
-            )
+            raise GiteaError(f"Gitea API {method} {url} failed: {response.status_code} {response.text}")
         try:
             return response.json()
         except json.JSONDecodeError as exc:

@@ -9,14 +9,7 @@ from weakref import WeakSet
 
 import pygit2
 
-from ..shared.protocol import (
-    DaemonHealth,
-    PRInfo,
-    PRInfoDisabled,
-    PRInfoError,
-    PRInfoOk,
-    WorktreeID,
-)
+from ..shared.protocol import DaemonHealth, PRInfo, PRInfoDisabled, PRInfoError, PRInfoOk, WorktreeID
 from .git_manager import GitManager, WorktreeInfo as GMWorktreeInfo
 from .gitstatus_refresh import DebouncedGitstatusRefresh
 from .gitstatusd_listener import GitstatusdListener, GitstatusWorkingSummary
@@ -112,10 +105,7 @@ class GitstatusdService:
         # Squash trivial wrapper: expose provided callable directly
         self.get_client = get_client  # type: ignore[assignment]
 
-    def get_cached_status(
-        self,
-        path: Path,
-    ) -> GitstatusWorkingSummary:
+    def get_cached_status(self, path: Path) -> GitstatusWorkingSummary:
         client = self._get_client(path)
         if not client:
             return GitstatusWorkingSummary.empty()
@@ -179,10 +169,7 @@ class PRServiceProvider:
         key = (wtid, branch)
         now = time.monotonic()
         # Skip if already running or completed very recently
-        if (
-            key in self._inflight
-            or (now - self._recent.get(key, 0.0)) < self._recent_ttl_s
-        ):
+        if key in self._inflight or (now - self._recent.get(key, 0.0)) < self._recent_ttl_s:
             return
 
         async def _run() -> None:
@@ -194,9 +181,7 @@ class PRServiceProvider:
                 self._recent[key] = time.monotonic()
                 if len(self._recent) > 1024:
                     cutoff = time.monotonic() - self._recent_ttl_s
-                    self._recent = {
-                        k: t for k, t in self._recent.items() if t >= cutoff
-                    }
+                    self._recent = {k: t for k, t in self._recent.items() if t >= cutoff}
 
         self._inflight.add(key)
         task = asyncio.create_task(_run())
@@ -268,9 +253,7 @@ async def scan_worktrees(worktrees_dir: Path) -> set[DiscoveredWorktree]:
         if not path.is_dir():
             continue
         if (path / ".git").exists():
-            current.add(
-                DiscoveredWorktree(path, path.name, make_worktree_id(path.name)),
-            )
+            current.add(DiscoveredWorktree(path, path.name, make_worktree_id(path.name)))
     return current
 
 

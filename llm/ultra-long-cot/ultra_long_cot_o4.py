@@ -81,9 +81,7 @@ def count_messages_tokens(messages: list[dict[str, str]]) -> int:
 
 
 def generate_reasoning_response(
-    messages: list[dict[str, str]],
-    available_tokens: int,
-    tracker: ConversationTracker,
+    messages: list[dict[str, str]], available_tokens: int, tracker: ConversationTracker
 ) -> tuple[str, int, dict]:
     """Generate response optimized for reasoning models"""
 
@@ -176,7 +174,7 @@ Remember: You're collaborating with 99 other agents. Don't try to do everything 
         terminal_width = os.get_terminal_size().columns
         print(f"\n{'─' * terminal_width}")
         print(
-            f"📊 Context: {current_tokens:,}/{MAX_CONTEXT:,} tokens used ({(current_tokens / MAX_CONTEXT) * 100:.1f}%)",
+            f"📊 Context: {current_tokens:,}/{MAX_CONTEXT:,} tokens used ({(current_tokens / MAX_CONTEXT) * 100:.1f}%)"
         )
         print("📝 Generating deep reasoning response...")
         print(f"{'─' * terminal_width}\n")
@@ -188,11 +186,7 @@ Remember: You're collaborating with 99 other agents. Don't try to do everything 
         usage_details = []
 
         # First response
-        response_part, tokens_used, usage = generate_reasoning_response(
-            messages,
-            available_tokens,
-            tracker,
-        )
+        response_part, tokens_used, usage = generate_reasoning_response(messages, available_tokens, tracker)
         full_response += response_part
         total_generated += tokens_used
         available_tokens -= tokens_used
@@ -251,15 +245,10 @@ Build on their work. Add new perspectives, deeper analysis, or explore suggested
 
 Note for Agent #{agent_num + 1}:"""
 
-            continuation_messages = [
-                *messages,
-                {"role": "user", "content": continuation_prompt},
-            ]
+            continuation_messages = [*messages, {"role": "user", "content": continuation_prompt}]
 
             response_part, tokens_used, usage = generate_reasoning_response(
-                continuation_messages,
-                available_tokens,
-                tracker,
+                continuation_messages, available_tokens, tracker
             )
             usage_details.append(usage)
 
@@ -294,12 +283,8 @@ Note for Agent #{agent_num + 1}:"""
         reset_color = "\033[0m"
 
         print(f"\n{color}{separator}{reset_color}")
-        print(
-            f"{color}🔥 Turn complete - Context {context_percentage:.1f}% consumed{reset_color}",
-        )
-        print(
-            f"✅ Generated {total_generated:,} output tokens across {continuation_count + 1} segments",
-        )
+        print(f"{color}🔥 Turn complete - Context {context_percentage:.1f}% consumed{reset_color}")
+        print(f"✅ Generated {total_generated:,} output tokens across {continuation_count + 1} segments")
 
         # Show token usage breakdown if available
         if usage_details and "reasoning_tokens" in usage_details[0]:
@@ -309,8 +294,7 @@ Note for Agent #{agent_num + 1}:"""
         # Log the conversation turn
         log_entry = {
             "timestamp": datetime.now().isoformat(),
-            "turn": len([m for m in messages if m["role"] == "user"])
-            - 1,  # -1 to exclude system
+            "turn": len([m for m in messages if m["role"] == "user"]) - 1,  # -1 to exclude system
             "user_input": user_input,
             "response_segments": continuation_count + 1,
             "total_output_tokens": total_generated,

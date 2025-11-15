@@ -16,11 +16,7 @@ class WorktreeIndex:
     main: DiscoveredWorktree | None
 
     @classmethod
-    def build(
-        cls,
-        worktrees: Iterable[DiscoveredWorktree],
-        main_repo: Path,
-    ) -> WorktreeIndex:
+    def build(cls, worktrees: Iterable[DiscoveredWorktree], main_repo: Path) -> WorktreeIndex:
         by_path: dict[Path, DiscoveredWorktree] = {}
         by_name: dict[str, DiscoveredWorktree] = {}
         main: DiscoveredWorktree | None = None
@@ -31,9 +27,7 @@ class WorktreeIndex:
                 main = wt
         if main is None:
             main = DiscoveredWorktree(
-                main_repo,
-                MAIN_WORKTREE_DISPLAY_NAME,
-                make_worktree_id(MAIN_WORKTREE_DISPLAY_NAME),
+                main_repo, MAIN_WORKTREE_DISPLAY_NAME, make_worktree_id(MAIN_WORKTREE_DISPLAY_NAME)
             )
             by_path.setdefault(main_repo, main)
             by_name.setdefault(MAIN_WORKTREE_DISPLAY_NAME, main)
@@ -45,11 +39,7 @@ class WorktreeIndex:
     def get_by_name(self, name: str) -> DiscoveredWorktree | None:
         return self.by_name.get(name)
 
-    def resolve_target(
-        self,
-        name: str | None,
-        current_path: Path,
-    ) -> tuple[DiscoveredWorktree, str | None] | None:
+    def resolve_target(self, name: str | None, current_path: Path) -> tuple[DiscoveredWorktree, str | None] | None:
         if name:
             if name == ".":
                 # Current worktree by path

@@ -54,14 +54,8 @@ def scan_file(filepath: Path) -> list[UnicodeIssue]:
             if ord(ch) > 127:
                 codepoint, name = get_char_info(ch)
                 suggestion = get_common_suggestion(ch)
-                preview = (
-                    line.strip()[:60] + "..."
-                    if len(line.strip()) > 60
-                    else line.strip()
-                )
-                issues.append(
-                    UnicodeIssue(ln, cp + 1, ch, codepoint, name, suggestion, preview),
-                )
+                preview = line.strip()[:60] + "..." if len(line.strip()) > 60 else line.strip()
+                issues.append(UnicodeIssue(ln, cp + 1, ch, codepoint, name, suggestion, preview))
     return issues
 
 
@@ -84,9 +78,7 @@ def apply_conversions(filepath: Path, conversions: list[tuple[str, str]]) -> int
             changes += count
             from_name = get_char_info(from_char)[1]
             to_name = get_char_info(to_char)[1] if to_char else "DELETION"
-            print(
-                f"Replaced {count} instances of {from_char} ({from_name}) with {to_char!r} ({to_name})",
-            )
+            print(f"Replaced {count} instances of {from_char} ({from_name}) with {to_char!r} ({to_name})")
     if changes:
         filepath.write_text(content, encoding="utf-8")
         print(f"\nTotal: {changes} characters replaced in {filepath}")
@@ -105,9 +97,7 @@ def parse_conversion(spec: str) -> tuple[str, str]:
 
 
 def cli(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Detect and fix problematic Unicode characters",
-    )
+    parser = argparse.ArgumentParser(description="Detect and fix problematic Unicode characters")
     parser.add_argument("files", nargs="+")
     parser.add_argument("--convert", action="append", metavar="FROM->TO")
     args = parser.parse_args(argv)
@@ -132,25 +122,16 @@ def cli(argv: list[str] | None = None) -> int:
                     if issue.line_num != current:
                         current = issue.line_num
                         print(f"\nLine {issue.line_num}: {issue.context}")
-                    print(
-                        f"  Column {issue.char_pos}: {issue.codepoint} ({issue.name})",
-                    )
+                    print(f"  Column {issue.char_pos}: {issue.codepoint} ({issue.name})")
                     if issue.suggestion:
                         sug_cp, _ = get_char_info(issue.suggestion)
                         print(
-                            f"    -> suggest: --convert {issue.codepoint}->{sug_cp}  # {issue.char} � {issue.suggestion}",
+                            f"    -> suggest: --convert {issue.codepoint}->{sug_cp}  # {issue.char} � {issue.suggestion}"
                         )
-                    elif any(
-                        cat in issue.name
-                        for cat in ["MATHEMATICAL", "ARROW", "SYMBOL", "LETTER"]
-                    ):
-                        print(
-                            f"    -> possibly intentional (category: {issue.name.split()[0]})",
-                        )
+                    elif any(cat in issue.name for cat in ["MATHEMATICAL", "ARROW", "SYMBOL", "LETTER"]):
+                        print(f"    -> possibly intentional (category: {issue.name.split()[0]})")
                     else:
-                        print(
-                            f"    -> no automatic suggestion, consider: --convert {issue.codepoint}->DELETE",
-                        )
+                        print(f"    -> no automatic suggestion, consider: --convert {issue.codepoint}->DELETE")
                 print(f"\nTotal: {len(issues)} non-ASCII characters found")
     return 0
 

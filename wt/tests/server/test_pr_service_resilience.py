@@ -46,19 +46,13 @@ def _make_real_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config
 
 # Use pytest-asyncio; cooperate with the worker loop via asyncio backend
 @pytest.mark.asyncio
-async def test_pr_service_handles_missing_worktree_without_crashing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+async def test_pr_service_handles_missing_worktree_without_crashing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     cfg = _make_real_config(tmp_path, monkeypatch)
 
     prsvc = PRService(
         github_interface=None,  # GitHub disabled is fine for this unit test
         config=cfg,
-        worktree_info=DiscoveredWorktree(
-            path=Path("/nonexistent/worktree"),
-            name="gone",
-            wtid="gone-wtid",
-        ),
+        worktree_info=DiscoveredWorktree(path=Path("/nonexistent/worktree"), name="gone", wtid="gone-wtid"),
         git_manager=DummyGitManager(),
     )
 

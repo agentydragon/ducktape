@@ -25,9 +25,7 @@ class GitRunOptions:
 
 
 def git_run(
-    args: Sequence[str | os.PathLike[str]],
-    cwd: Path | str,
-    options: GitRunOptions | None = None,
+    args: Sequence[str | os.PathLike[str]], cwd: Path | str, options: GitRunOptions | None = None
 ) -> subprocess.CompletedProcess:
     opts = options or GitRunOptions()
     cmd: list[str | os.PathLike[str]] = ["git", "-c", "core.hooksPath=", *args]

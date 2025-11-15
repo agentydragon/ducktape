@@ -41,10 +41,7 @@ def _log_task_done(t: asyncio.Task) -> None:
 
 
 @rpc.method("get_status", params=StatusParams)
-async def get_status(
-    deps: ServiceDependencies,
-    params: StatusParams,
-) -> StatusResponse:
+async def get_status(deps: ServiceDependencies, params: StatusParams) -> StatusResponse:
     status = deps.status
     gitstat = deps.gitstatusd
     prs = deps.prs
@@ -88,19 +85,13 @@ async def get_status(
             state = GitstatusdState.STOPPED
             dirty_count, untracked_count = 0, 0
             # Surface explicit error to avoid silent downgrade
-            commit_info_data, ahead_behind, branch_name, _ = _compute_status(
-                worktree_path
-            )
+            commit_info_data, ahead_behind, branch_name, _ = _compute_status(worktree_path)
             last_updated_at = datetime.now()
             pr_info = PRInfoDisabled()
             is_cached = False
             cache_age_ms = None
             is_stale = False
-            commit_info = (
-                CommitInfo.model_validate(commit_info_data)
-                if commit_info_data
-                else None
-            )
+            commit_info = CommitInfo.model_validate(commit_info_data) if commit_info_data else None
             wtid = make_worktree_id(worktree_path.name)
             return (
                 wtid,
@@ -133,18 +124,14 @@ async def get_status(
             dirty_count = summary.dirty_lower_bound or 0
             untracked_count = summary.untracked_lower_bound or 0
             cache_age_ms = (
-                (time.time() - summary.last_updated_at.timestamp()) * 1000
-                if summary.last_updated_at
-                else None
+                (time.time() - summary.last_updated_at.timestamp()) * 1000 if summary.last_updated_at else None
             )
             if not summary.has_cache:
                 task = asyncio.create_task(gs_client.update_working_status())
                 _bg_tasks.add(task)
                 task.add_done_callback(lambda t: _bg_tasks.discard(t))
             last_updated_at = summary.last_updated_at or datetime.now()
-            commit_info_data, ahead_behind, branch_name, worktree_last_error = (
-                _compute_status(worktree_path)
-            )
+            commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_status(worktree_path)
             # Prefer gitstatusd-reported last_error if present
             if summary.last_error:
                 worktree_last_error = summary.last_error
@@ -166,22 +153,13 @@ async def get_status(
                 pr_info = prs.get_pr_info_cached(wtid_cached)
             prs.schedule_pr_refresh(wtid_cached, branch_name)
             is_cached = summary.has_cache
-            is_stale = bool(
-                cache_age_ms
-                and timedelta(milliseconds=cache_age_ms) > config.cache_refresh_age,
-            )
-            state = (
-                GitstatusdState.RUNNING
-                if gs_client.is_running
-                else GitstatusdState.STOPPED
-            )
+            is_stale = bool(cache_age_ms and timedelta(milliseconds=cache_age_ms) > config.cache_refresh_age)
+            state = GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
         except TimeoutError:
             single_time = (time.perf_counter() - single_start) * 1000
             state = GitstatusdState.STARTING
             dirty_count, untracked_count = 0, 0
-            commit_info_data, ahead_behind, branch_name, _ = _compute_status(
-                worktree_path
-            )
+            commit_info_data, ahead_behind, branch_name, _ = _compute_status(worktree_path)
             last_updated_at = datetime.now()
             pr_info = PRInfoDisabled()
             is_cached = False
@@ -189,9 +167,7 @@ async def get_status(
             is_stale = False
             worktree_last_error = "gitstatusd timeout"
 
-        commit_info = (
-            CommitInfo.model_validate(commit_info_data) if commit_info_data else None
-        )
+        commit_info = CommitInfo.model_validate(commit_info_data) if commit_info_data else None
         wtid = make_worktree_id(worktree_path.name)
         single_time = (time.perf_counter() - single_start) * 1000
         return (
@@ -221,19 +197,13 @@ async def get_status(
             single_time,
         )
 
-    worktree_results = await asyncio.gather(
-        *[process_single_worktree(p) for p in worktree_paths],
-    )
+    worktree_results = await asyncio.gather(*[process_single_worktree(p) for p in worktree_paths])
     total_time = 0.0
     for wtid, status_result, proc_ms in worktree_results:
         items[wtid] = StatusItem(status=status_result, processing_time_ms=proc_ms)
         total_time += proc_ms
     total_wt = len(worktree_paths)
-    with_git = sum(
-        1
-        for p in (gitstat.get_client(pth) for pth in worktree_paths)
-        if p and p.is_running
-    )
+    with_git = sum(1 for p in (gitstat.get_client(pth) for pth in worktree_paths) if p and p.is_running)
     any_wt_error = any(item.status.last_error for item in items.values())
     github_state = ComponentState.DISABLED
     if config.github_enabled:
@@ -254,13 +224,7 @@ async def get_status(
     )
 
     components = ComponentsStatus(
-        discovery=ComponentStatus(
-            state=(
-                ComponentState.SCANNING
-                if discovery.is_scanning()
-                else ComponentState.OK
-            ),
-        ),
+        discovery=ComponentStatus(state=(ComponentState.SCANNING if discovery.is_scanning() else ComponentState.OK)),
         github=ComponentStatus(state=github_state),
         gitstatusd=ComponentStatus(
             state=(

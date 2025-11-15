@@ -44,12 +44,7 @@ def check_claude_cli() -> bool:
 def get_current_mcp_servers() -> list[str]:
     """Get list of currently configured MCP servers."""
     try:
-        result = subprocess.run(
-            ["claude", "mcp", "list"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = subprocess.run(["claude", "mcp", "list"], capture_output=True, text=True, check=True)
         # Parse output: "name: command args..."
         servers = []
         for line in result.stdout.strip().split("\n"):
@@ -82,11 +77,7 @@ def save_claude_config(config_path: Path, config: dict[str, Any]) -> None:
         json.dump(config, f, indent=2)
 
 
-def add_mcp_server(
-    config: dict[str, Any],
-    name: str,
-    server_config: dict[str, Any],
-) -> bool:
+def add_mcp_server(config: dict[str, Any], name: str, server_config: dict[str, Any]) -> bool:
     """Add MCP server to configuration."""
     if "mcpServers" not in config:
         config["mcpServers"] = {}
@@ -98,11 +89,7 @@ def add_mcp_server(
     return True
 
 
-def update_mcp_server(
-    config: dict[str, Any],
-    name: str,
-    server_config: dict[str, Any],
-) -> bool:
+def update_mcp_server(config: dict[str, Any], name: str, server_config: dict[str, Any]) -> bool:
     """Update MCP server configuration if it differs."""
     if "mcpServers" not in config:
         config["mcpServers"] = {}
@@ -124,29 +111,15 @@ def main():
     """Main function."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Apply Claude MCP server configuration",
-    )
+    parser = argparse.ArgumentParser(description="Apply Claude MCP server configuration")
     parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Check mode - exit 0 if no changes needed, 1 if changes needed",
+        "--check", action="store_true", help="Check mode - exit 0 if no changes needed, 1 if changes needed"
     )
-    parser.add_argument(
-        "--json-output",
-        action="store_true",
-        help="Output results as JSON for Ansible",
-    )
+    parser.add_argument("--json-output", action="store_true", help="Output results as JSON for Ansible")
     args = parser.parse_args()
 
     # For JSON output mode
-    result = {
-        "changed": False,
-        "servers_added": [],
-        "servers_updated": [],
-        "servers_unchanged": [],
-        "msg": "",
-    }
+    result = {"changed": False, "servers_added": [], "servers_updated": [], "servers_unchanged": [], "msg": ""}
 
     if not args.json_output:
         print("Claude MCP Server Configuration Script")
@@ -208,9 +181,7 @@ def main():
                     result["servers_updated"].append(name)
                 else:
                     if not args.json_output:
-                        print(
-                            f"🔄 Updating {name} server configuration (differs from defaults)...",
-                        )
+                        print(f"🔄 Updating {name} server configuration (differs from defaults)...")
                     update_mcp_server(config, name, server_config)
                     modified = True
                     result["servers_updated"].append(name)
@@ -256,9 +227,7 @@ def main():
 
         print("\n✨ MCP server configuration complete!")
         if modified:
-            print(
-                "\nNote: You may need to restart Claude Code for changes to take effect.",
-            )
+            print("\nNote: You may need to restart Claude Code for changes to take effect.")
 
     # Set result data
     result["changed"] = modified

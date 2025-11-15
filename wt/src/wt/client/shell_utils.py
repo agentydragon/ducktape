@@ -15,11 +15,7 @@ def emit_command(cmd: str) -> None:
         os.write(3, (cmd + "\n").encode())
     except OSError as e:
         # Ignore expected cases when fd 3 is unavailable in tests/non-shell envs
-        if e.errno in (
-            errno.EBADF,
-            errno.EINVAL,
-            errno.ENXIO,
-        ):  # not open/invalid/device
+        if e.errno in (errno.EBADF, errno.EINVAL, errno.ENXIO):  # not open/invalid/device
             return
         raise
 

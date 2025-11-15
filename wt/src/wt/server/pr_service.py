@@ -94,19 +94,13 @@ class PRService:
             branch_name = repo_obj.head.shorthand or ""
         except (pygit2.GitError, OSError, ValueError) as e:
             logger.warning(
-                "PRService: skipping refresh for missing/invalid worktree %s: %s",
-                self.worktree_info.path,
-                e,
+                "PRService: skipping refresh for missing/invalid worktree %s: %s", self.worktree_info.path, e
             )
             self.cached = PRCacheError(error=str(e), fetched_at=datetime.now())
             return
         await self.get_pr_info(branch_name, force_refresh=True)
 
-    async def get_pr_info(
-        self,
-        branch_name: str,
-        force_refresh: bool = False,
-    ) -> PRData | None:
+    async def get_pr_info(self, branch_name: str, force_refresh: bool = False) -> PRData | None:
         now = datetime.now()
         if (
             not force_refresh

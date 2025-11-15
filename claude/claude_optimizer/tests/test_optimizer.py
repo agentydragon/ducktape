@@ -8,10 +8,7 @@ from unittest.mock import Mock, patch
 
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
-from claude_optimizer.core.logging_openai_client import (
-    LoggingOpenAIClient,
-    LoggingOpenAIModel,
-)
+from claude_optimizer.core.logging_openai_client import LoggingOpenAIClient, LoggingOpenAIModel
 from claude_optimizer.core.message_formatter import (
     AssistantMessage,
     SystemMessage,
@@ -19,12 +16,7 @@ from claude_optimizer.core.message_formatter import (
     ToolUseBlock,
     log_message_summary,
 )
-from claude_optimizer.core.models import (
-    CodeResult,
-    Grade,
-    GradedCode,
-    ScoreWithRationale,
-)
+from claude_optimizer.core.models import CodeResult, Grade, GradedCode, ScoreWithRationale
 from claude_optimizer.core.optimizer import (
     ProcessingMode,
     ResponseFunctionToolCall,
@@ -78,26 +70,19 @@ class TestPatternSummarizer:
                 overall_score=7.5,
                 axes={
                     "type_safety": ScoreWithRationale(score=8, rationale="Good typing"),
-                    "robustness": ScoreWithRationale(
-                        score=6,
-                        rationale="Needs error handling",
-                    ),
+                    "robustness": ScoreWithRationale(score=6, rationale="Needs error handling"),
                 },
-            ),
+            )
         ]
 
         with patch("claude_optimizer.core.summarizer.OpenAI") as mock_openai:
             mock_client = Mock()
             mock_openai.return_value = mock_client
 
-            mock_response = create_mock_pattern_response(
-                "Common issues found: lack of error handling",
-            )
+            mock_response = create_mock_pattern_response("Common issues found: lack of error handling")
             mock_client.responses.create.return_value = mock_response
 
-            result = await summarizer.summarize_patterns(
-                mock_results,
-            )
+            result = await summarizer.summarize_patterns(mock_results)
 
             assert result == "Common issues found: lack of error handling"
             assert mock_client.responses.create.called
@@ -109,21 +94,9 @@ class TestPatternSummarizer:
         summarizer = PatternSummarizer(cfg, JSONLLogger(tmp_path / "log.jsonl"))
 
         mock_results = [
-            create_mock_graded_code(
-                "task1",
-                8.0,
-                {"type_safety": ScoreWithRationale(score=9, rationale="Excellent")},
-            ),
-            create_mock_graded_code(
-                "task2",
-                5.0,
-                {"type_safety": ScoreWithRationale(score=4, rationale="Poor")},
-            ),
-            create_mock_graded_code(
-                "task3",
-                6.5,
-                {"type_safety": ScoreWithRationale(score=7, rationale="Good")},
-            ),
+            create_mock_graded_code("task1", 8.0, {"type_safety": ScoreWithRationale(score=9, rationale="Excellent")}),
+            create_mock_graded_code("task2", 5.0, {"type_safety": ScoreWithRationale(score=4, rationale="Poor")}),
+            create_mock_graded_code("task3", 6.5, {"type_safety": ScoreWithRationale(score=7, rationale="Good")}),
         ]
 
         with patch("claude_optimizer.core.summarizer.OpenAI") as mock_openai:
@@ -150,27 +123,17 @@ class TestPromptEngineer:
     def test_initialization_full_rollouts(self):
         """Test PromptEngineer initialization with full rollouts mode."""
         cfg = TestPatternSummarizer().mock_test_config()
-        engineer = PromptEngineer(
-            cfg,
-            JSONLLogger(Path("/dev/null")),
-            ProcessingMode.FULL_ROLLOUTS,
-        )
+        engineer = PromptEngineer(cfg, JSONLLogger(Path("/dev/null")), ProcessingMode.FULL_ROLLOUTS)
 
         assert len(engineer._turns) == 0
         assert engineer._processing_mode == ProcessingMode.FULL_ROLLOUTS
         assert "prompt engineer" in engineer._system_message["content"]
-        assert (
-            "analyze rollouts from coding tasks" in engineer._system_message["content"]
-        )
+        assert "analyze rollouts from coding tasks" in engineer._system_message["content"]
 
     def test_initialization_summary_mode(self):
         """Test PromptEngineer initialization with summary mode."""
         cfg = TestPatternSummarizer().mock_test_config()
-        engineer = PromptEngineer(
-            cfg,
-            JSONLLogger(Path("/dev/null")),
-            ProcessingMode.SUMMARY,
-        )
+        engineer = PromptEngineer(cfg, JSONLLogger(Path("/dev/null")), ProcessingMode.SUMMARY)
 
         assert engineer._processing_mode == ProcessingMode.SUMMARY
         assert "pattern summaries and insights" in engineer._system_message["content"]
@@ -202,24 +165,10 @@ class TestPromptEngineer:
 
         mock_results = [
             create_mock_graded_code(
-                "implement API client",
-                7.0,
-                {
-                    "architecture": ScoreWithRationale(
-                        score=8,
-                        rationale="Clean separation",
-                    ),
-                },
+                "implement API client", 7.0, {"architecture": ScoreWithRationale(score=8, rationale="Clean separation")}
             ),
             create_mock_graded_code(
-                "build parser",
-                9.0,
-                {
-                    "correctness": ScoreWithRationale(
-                        score=10,
-                        rationale="Perfect implementation",
-                    ),
-                },
+                "build parser", 9.0, {"correctness": ScoreWithRationale(score=10, rationale="Perfect implementation")}
             ),
         ]
 
@@ -247,7 +196,7 @@ class TestPromptEngineer:
                 function_call_message=create_mock_function_call("initial"),
                 proposed_prompt="Initial prompt",
                 grades={"text": grades_message},
-            ),
+            )
         )
 
         with patch("claude_optimizer.core.prompt_engineer.OpenAI") as mock_openai:
@@ -259,10 +208,8 @@ class TestPromptEngineer:
                 role="assistant",
                 content=[
                     ResponseOutputText.model_construct(
-                        type="output_text",
-                        text="Analyzing the results...",
-                        annotations=[],
-                    ),
+                        type="output_text", text="Analyzing the results...", annotations=[]
+                    )
                 ],
                 id="msg_1",
                 status="completed",
@@ -333,10 +280,7 @@ class TestDockerManager:
 
     def test_docker_not_found(self):
         """Test error when Docker is not found."""
-        with (
-            patch("shutil.which", return_value=None),
-            pytest.raises(RuntimeError, match="Docker is required"),
-        ):
+        with patch("shutil.which", return_value=None), pytest.raises(RuntimeError, match="Docker is required"):
             DockerManager()
 
     def test_setup_wrapper(self, tmp_path):
@@ -387,15 +331,9 @@ class TestHelperFunctions:
 
     def test_logging_openai_model(self):
         """Test LoggingOpenAIModel wraps OpenAI client and logs."""
-        client = LoggingOpenAIClient(
-            openai_client=Mock(),
-            jsonl_logger=JSONLLogger(Path("/dev/null")),
-        )
+        client = LoggingOpenAIClient(openai_client=Mock(), jsonl_logger=JSONLLogger(Path("/dev/null")))
         model = LoggingOpenAIModel(
-            openai_client=client,
-            model="o3",
-            context_window_tokens=8192,
-            reasoning_effort="high",
+            openai_client=client, model="o3", context_window_tokens=8192, reasoning_effort="high"
         )
 
         # Ensure attributes are set correctly
@@ -449,19 +387,13 @@ class TestMessageLogging:
             log_message_summary(msg, logger=mock_logger, agent_id=1)
 
             # Verify logger was called correctly
-            mock_logger.bind.assert_called_with(
-                agent_id=1,
-                message_type="SystemMessage",
-            )
+            mock_logger.bind.assert_called_with(agent_id=1, message_type="SystemMessage")
 
     def test_log_assistant_message_with_tools(self, caplog):
         """Test logging of assistant messages with tool usage."""
 
         msg = AssistantMessage(
-            content=[
-                TextBlock(text="Using tool"),
-                ToolUseBlock(id="123", name="test_tool", input={"param": "value"}),
-            ],
+            content=[TextBlock(text="Using tool"), ToolUseBlock(id="123", name="test_tool", input={"param": "value"})]
         )
 
         with patch("claude_optimizer.core.optimizer.logger") as mock_logger:
@@ -475,11 +407,7 @@ class TestMessageLogging:
 
 
 # Helper functions for creating mock objects
-def create_mock_graded_code(
-    task: str,
-    overall_score: float,
-    axes: dict[str, ScoreWithRationale],
-) -> GradedCode:
+def create_mock_graded_code(task: str, overall_score: float, axes: dict[str, ScoreWithRationale]) -> GradedCode:
     """Create a mock GradedCode object for testing."""
     return GradedCode(
         code_result=CodeResult(
@@ -508,13 +436,7 @@ def create_mock_pattern_response(text: str):
     msg = ResponseOutputMessage.model_construct(
         type="message",
         role="assistant",
-        content=[
-            ResponseOutputText.model_construct(
-                type="output_text",
-                text=text,
-                annotations=[],
-            ),
-        ],
+        content=[ResponseOutputText.model_construct(type="output_text", text=text, annotations=[])],
         id="msg_1",
         status="completed",
     )
@@ -537,11 +459,7 @@ def create_mock_function_call(prompt: str):
     mock.name = "submit_prompt"
     mock.arguments = json.dumps({"prompt": prompt})
     mock.call_id = "call_123"
-    mock.model_dump.return_value = {
-        "name": "submit_prompt",
-        "arguments": mock.arguments,
-        "call_id": "call_123",
-    }
+    mock.model_dump.return_value = {"name": "submit_prompt", "arguments": mock.arguments, "call_id": "call_123"}
     return mock
 
 
@@ -566,8 +484,4 @@ def mock_openai_client():
 @pytest.fixture
 def mock_config():
     """Provide a test configuration."""
-    return OptimizerConfig(
-        max_parallel_rollouts=2,
-        bash_timeout_ms=5000,
-        truncation_length=50,
-    )
+    return OptimizerConfig(max_parallel_rollouts=2, bash_timeout_ms=5000, truncation_length=50)

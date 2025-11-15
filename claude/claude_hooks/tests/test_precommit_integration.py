@@ -121,14 +121,9 @@ def test_precommit_no_changes_continues(precommit_repo):
 
 
 @pytest.mark.skipif(
-    not pytest.importorskip("pre_commit", reason="pre-commit not available"),
-    reason="Requires pre-commit installation",
+    not pytest.importorskip("pre_commit", reason="pre-commit not available"), reason="Requires pre-commit installation"
 )
-def test_precommit_crash_shows_formatted_output(
-    precommit_repo,
-    hook_context,
-    configured_hook,
-):
+def test_precommit_crash_shows_formatted_output(precommit_repo, hook_context, configured_hook):
     """Test that unhandled exceptions show traceback."""
     test_file = precommit_repo / "test.py"
     content = "print('hello')"
@@ -143,10 +138,7 @@ def test_precommit_crash_shows_formatted_output(
 
     # Verify crash feedback with debugging guidance
     assert isinstance(result, PostToolFeedbackToClaude)
-    assert (
-        "Unhandled ZeroDivisionError from PreCommitAutoFixerHook: Simulated crash"
-        in result.feedback_to_claude
-    )
+    assert "Unhandled ZeroDivisionError from PreCommitAutoFixerHook: Simulated crash" in result.feedback_to_claude
     assert "Logs:" in result.feedback_to_claude
     assert "Look for invocation ID:" in result.feedback_to_claude
     assert "Traceback:" in result.feedback_to_claude

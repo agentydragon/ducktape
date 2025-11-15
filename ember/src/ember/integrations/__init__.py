@@ -2,7 +2,4 @@
 
 from .gitea import GiteaClient, GiteaRepository
 
-__all__ = [
-    "GiteaClient",
-    "GiteaRepository",
-]
+__all__ = ["GiteaClient", "GiteaRepository"]

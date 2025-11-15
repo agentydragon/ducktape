@@ -11,17 +11,10 @@ from absl import app, flags, logging
 import dbus
 from gi.repository import Gio
 
-_PROFILE = flags.DEFINE_string(
-    "profile",
-    None,
-    "Name or UUID of profile to set everywhere",
-)
+_PROFILE = flags.DEFINE_string("profile", None, "Name or UUID of profile to set everywhere")
 
 # Source profiles to copy colors from in auto mode
-THEME_SOURCE_PROFILES = {
-    "light": "Solarized Light",
-    "dark": "Solarized Dark",
-}
+THEME_SOURCE_PROFILES = {"light": "Solarized Light", "dark": "Solarized Dark"}
 
 AUTO_PROFILE_NAME = "Auto"
 GSETTINGS_PROFILES_LIST = Gio.Settings.new("org.gnome.Terminal.ProfilesList")
@@ -57,17 +50,11 @@ class ProfileDConf:
 
     def _path(self, property_name: str) -> str:
         """Construct the dconf path for the given property."""
-        return (
-            f"/org/gnome/terminal/legacy/profiles:/:{self.profile_uuid}/{property_name}"
-        )
+        return f"/org/gnome/terminal/legacy/profiles:/:{self.profile_uuid}/{property_name}"
 
     def read_property(self, property_name: str) -> str | bool:
         try:
-            out = (
-                subprocess.check_output(["dconf", "read", self._path(property_name)])
-                .decode("utf-8")
-                .strip()
-            )
+            out = subprocess.check_output(["dconf", "read", self._path(property_name)]).decode("utf-8").strip()
             if not out:
                 raise KeyError
             if out == "true":
@@ -79,9 +66,7 @@ class ProfileDConf:
                 return value
             raise ValueError(f"Unsupported dconf value type: {type(value)}")
         except subprocess.CalledProcessError as e:
-            raise KeyError(
-                f"Reading '{property_name}' from {self.profile_uuid} failed",
-            ) from e
+            raise KeyError(f"Reading '{property_name}' from {self.profile_uuid} failed") from e
 
     @property
     def visible_name(self) -> str:
@@ -106,9 +91,7 @@ class ProfileDConf:
         elif isinstance(value, list) and all(isinstance(x, str) for x in value):
             v = repr(value)
         else:
-            raise ValueError(
-                f"Unsupported value type: {type(value)}. Must be bool or str.",
-            )
+            raise ValueError(f"Unsupported value type: {type(value)}. Must be bool or str.")
         subprocess.check_call(["dconf", "write", self._path(property_name), v])
 
 
@@ -134,11 +117,7 @@ def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
         try:
             value = source_dconf.read_property(prop)
         except KeyError:
-            logging.warning(
-                "Property %s not found in source profile %s",
-                prop,
-                source_uuid,
-            )
+            logging.warning("Property %s not found in source profile %s", prop, source_uuid)
             continue
         logging.info(f"Copy {prop}={value}")
         target_dconf.write_property(prop, value)
@@ -155,9 +134,7 @@ def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
             logging.warning(f"Failed to get name for profile {profile_uuid}: {e}")
             continue
         if name in uuid_by_name:
-            logging.warning(
-                f"Duplicate profile name {name}: {uuid_by_name[name]} and {profile_uuid}",
-            )
+            logging.warning(f"Duplicate profile name {name}: {uuid_by_name[name]} and {profile_uuid}")
             continue
         uuid_by_name[name] = profile_uuid
 
@@ -197,10 +174,7 @@ def create_or_update_auto_profile(source_profile_name: str) -> UUID:
 
     logging.info(f"Copying colors from {source_profile_name} to Auto profile")
     copy_profile_colors(source_uuid, auto_uuid)
-    ProfileDConf(auto_uuid).write_property(
-        "visible-name",
-        f"{AUTO_PROFILE_NAME} ({source_profile_name})",
-    )
+    ProfileDConf(auto_uuid).write_property("visible-name", f"{AUTO_PROFILE_NAME} ({source_profile_name})")
 
     return auto_uuid
 
@@ -225,11 +199,7 @@ def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
         window_actions_iface = dbus.Interface(obj, "org.gtk.Actions")
         original_uuid = _get_window_profile_uuid(window_actions_iface)
         logging.info(f"talking to {obj}, starting profile uuid: {original_uuid}")
-        window_actions_iface.SetState(
-            "profile",
-            str(new_uuid),
-            [],
-        )
+        window_actions_iface.SetState("profile", str(new_uuid), [])
         uuid_after = _get_window_profile_uuid(window_actions_iface)
         logging.info(f"new uuid after action: {uuid_after}")
         assert uuid_after == new_uuid

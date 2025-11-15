@@ -10,10 +10,7 @@ from wt.shared.git_utils import git_run
 
 from ..test_utils import wait_until
 
-pytestmark = [
-    pytest.mark.timeout(10),
-    pytest.mark.xdist_group("wt-daemon-e2e"),
-]
+pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
 
 
 def test_real_program_workflow(real_temp_repo, wt_cli):
@@ -37,9 +34,7 @@ def test_real_program_workflow(real_temp_repo, wt_cli):
     # Status shows both (allow brief propagation)
     def _both_present() -> bool:
         r = wt_cli.status(timeout=timedelta(seconds=10.0))
-        return (
-            r.returncode == 0 and ("feature1" in r.stdout) and ("feature2" in r.stdout)
-        )
+        return r.returncode == 0 and ("feature1" in r.stdout) and ("feature2" in r.stdout)
 
     assert wt_cli.wait_for(_both_present, timeout=timedelta(seconds=5.0))
 
@@ -48,9 +43,7 @@ def test_real_program_workflow(real_temp_repo, wt_cli):
     assert result.returncode == 0
 
     # Remove feature2
-    result = wt_cli.sh(
-        "rm", "feature2", "--force", cwd=worktree1_path, timeout=timedelta(seconds=10.0)
-    )
+    result = wt_cli.sh("rm", "feature2", "--force", cwd=worktree1_path, timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
     def _removed() -> bool:
@@ -73,9 +66,7 @@ def test_real_daemon_startup_and_communication(real_temp_repo, wt_cli):
     assert daemon_dir.exists()
     pid_file = daemon_dir / "daemon.pid"
 
-    ok = wait_until(
-        lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05
-    )
+    ok = wait_until(lambda: pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
     assert ok, "daemon.pid not created in time"
     pid = int(pid_file.read_text().strip())
     try:
@@ -98,9 +89,5 @@ def test_real_git_operations(real_temp_repo, wt_cli):
     git_run(["commit", "-m", "Test commit"], cwd=worktree_path)
 
     # Verify branch name
-    result = git_run(
-        ["branch", "--show-current"],
-        cwd=worktree_path,
-        capture_output=True,
-    )
+    result = git_run(["branch", "--show-current"], cwd=worktree_path, capture_output=True)
     assert "test/git-test" in result.stdout.decode()

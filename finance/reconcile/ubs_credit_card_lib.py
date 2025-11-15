@@ -39,9 +39,7 @@ def load_ubs_credit_card_csv(path) -> dict[str, external_system.ExternalExpense]
         lines = f.readlines()
         assert lines[0] == "sep=;\n"
         for line in csv.DictReader(lines[1:], delimiter=";"):
-            assert set(line.keys()) == _EXPECTED_CSV_COLUMNS, (
-                f"unexpected keys: {line.keys()}"
-            )
+            assert set(line.keys()) == _EXPECTED_CSV_COLUMNS, f"unexpected keys: {line.keys()}"
 
             if line["Booking text"] == "Balance brought forward":
                 # TODO:
@@ -62,16 +60,11 @@ def load_ubs_credit_card_csv(path) -> dict[str, external_system.ExternalExpense]
                 # }
                 continue
 
-            assert line["Account number"] in {
-                "3342 5396 0770",
-                "3073 1430 6738",
-                "3943 8578 0710",
-            }, line["Account number"]
+            assert line["Account number"] in {"3342 5396 0770", "3073 1430 6738", "3943 8578 0710"}, line[
+                "Account number"
+            ]
             # logging.info("%s", line)
-            purchase_date = datetime.datetime.strptime(
-                line["Purchase date"],
-                "%d.%m.%Y",
-            ).date()
+            purchase_date = datetime.datetime.strptime(line["Purchase date"], "%d.%m.%Y").date()
             # Direct debit:
             # {
             #     'Card number': '',
@@ -96,12 +89,10 @@ def load_ubs_credit_card_csv(path) -> dict[str, external_system.ExternalExpense]
             amount = decimal.Decimal(credit or "0") - decimal.Decimal(debit or "0")
 
             booking_text = line["Booking text"]
-            transaction_hash_text = (
-                f"{purchase_date.isoformat()}/{amount}/{booking_text}"
-            )
+            transaction_hash_text = f"{purchase_date.isoformat()}/{amount}/{booking_text}"
             hash_version = "A"
             transaction_hash = hash_version + base64.b64encode(
-                hashlib.sha256(transaction_hash_text.encode("utf-8")).digest(),
+                hashlib.sha256(transaction_hash_text.encode("utf-8")).digest()
             )[:16].decode("ascii")
             # logging.info("hash=[%s] %s", transaction_hash_text,
             #              transaction_hash)

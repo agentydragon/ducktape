@@ -15,9 +15,7 @@ _MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 class ReadImageArgs(BaseModel):
-    path: Path = Field(
-        ..., description="Workspace-relative path to the image to upload."
-    )
+    path: Path = Field(..., description="Workspace-relative path to the image to upload.")
     model_config = ConfigDict(extra="forbid")
 
 
@@ -53,11 +51,7 @@ def build_spec(workspace_root: Path, client: ObjectStoreClient) -> ToolSpec:
 
 def _resolve_path(workspace_root: Path, candidate: Path) -> Path:
     base = workspace_root.resolve()
-    path = (
-        (base / candidate).resolve()
-        if not candidate.is_absolute()
-        else candidate.resolve()
-    )
+    path = (base / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
     if not path.exists():
         raise ValueError(f"Image path does not exist: {candidate}")
     if not path.is_file():
@@ -77,6 +71,4 @@ def _guess_mime_type(file_path: Path) -> str:
 def _enforce_limits(file_path: Path) -> None:
     size = file_path.stat().st_size
     if size > _MAX_IMAGE_BYTES:
-        raise ValueError(
-            f"Image {file_path.name} is {size} bytes; limit is {_MAX_IMAGE_BYTES} bytes"
-        )
+        raise ValueError(f"Image {file_path.name} is {size} bytes; limit is {_MAX_IMAGE_BYTES} bytes")

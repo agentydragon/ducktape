@@ -12,9 +12,7 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 logger = logging.getLogger(__name__)
 
-_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(
-    ResponseInputItemParam
-)
+_INPUT_ITEM_ADAPTER: TypeAdapter[ResponseInputItemParam] = TypeAdapter(ResponseInputItemParam)
 _INPUT_ADAPTER: TypeAdapter[ResponseInputParam] = TypeAdapter(ResponseInputParam)
 
 
@@ -51,15 +49,9 @@ class ConversationHistory:
     def build_input_items(self, system_prompt: str) -> ResponseInputParam:
         items: list[ResponseInputItemParam] = []
         system_message = EasyInputMessage(
-            type="message",
-            role="system",
-            content=[ResponseInputText(type="input_text", text=system_prompt)],
+            type="message", role="system", content=[ResponseInputText(type="input_text", text=system_prompt)]
         )
-        items.append(
-            _INPUT_ITEM_ADAPTER.validate_python(
-                system_message.model_dump(mode="python", exclude_none=True)
-            )
-        )
+        items.append(_INPUT_ITEM_ADAPTER.validate_python(system_message.model_dump(mode="python", exclude_none=True)))
 
         for record in self._records:
             if (input_item := record.input_item) is not None:
@@ -70,14 +62,10 @@ class ConversationHistory:
             for output in response.output:
                 try:
                     items.append(
-                        _INPUT_ITEM_ADAPTER.validate_python(
-                            output.model_dump(mode="python", exclude_none=True)
-                        )
+                        _INPUT_ITEM_ADAPTER.validate_python(output.model_dump(mode="python", exclude_none=True))
                     )
                 except ValidationError as exc:
-                    logger.warning(
-                        "Skipping response output due to validation error: %s", exc
-                    )
+                    logger.warning("Skipping response output due to validation error: %s", exc)
                     continue
 
         # TODO: handle out-of-context errors by compacting history via OpenAI summarisation.

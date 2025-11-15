@@ -20,12 +20,7 @@ def extract_status_rows(output: str) -> dict[str, str]:
     return rows
 
 
-def status_row_ok(
-    line: str,
-    *,
-    must_contain: list[str] | None = None,
-    commit_re: str = r"[0-9a-f]{8}\b",
-) -> bool:
+def status_row_ok(line: str, *, must_contain: list[str] | None = None, commit_re: str = r"[0-9a-f]{8}\b") -> bool:
     """Validate a status row has an 8-hex commit and required substrings."""
     must = must_contain or ["clean", " running"]
     # name, spaces, 8-hex commit, spaces, rest

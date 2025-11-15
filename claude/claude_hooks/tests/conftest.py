@@ -67,10 +67,10 @@ sys.exit(1 if changed else 0)
                         "entry": f"python3 {fixer_script}",
                         "language": "system",
                         "pass_filenames": True,
-                    },
+                    }
                 ],
-            },
-        ],
+            }
+        ]
     }
 
     config_file = git_repo / ".pre-commit-config.yaml"
@@ -115,15 +115,11 @@ precommit_autofix:
                 {
                     "matcher": "Edit|MultiEdit|Write",
                     "hooks": [
-                        {
-                            "type": "command",
-                            "command": "python -m claude_hooks.precommit_autofix",
-                            "timeout": 10,
-                        },
+                        {"type": "command", "command": "python -m claude_hooks.precommit_autofix", "timeout": 10}
                     ],
-                },
-            ],
-        },
+                }
+            ]
+        }
     }
     (claude_dir / "settings.json").write_text(json.dumps(claude_settings, indent=2))
 
@@ -152,10 +148,7 @@ def autofixer_hook():
     """Create configured PreCommitAutoFixerHook instance."""
     hook = PreCommitAutoFixerHook()
     hook.autofixer_config = AutofixerConfig(
-        enabled=True,
-        timeout_seconds=30,
-        tools=["Edit", "MultiEdit", "Write"],
-        dry_run=False,
+        enabled=True, timeout_seconds=30, tools=["Edit", "MultiEdit", "Write"], dry_run=False
     )
     return hook
 
@@ -261,41 +254,16 @@ def integration_env(precommit_repo, claude_config_dir, xdg_env, monkeypatch):
                 cwd=precommit_repo,
             )
 
-        def build_post_tool_write_input(
-            self,
-            file_path: str,
-            content: str,
-        ) -> PostToolInput:
+        def build_post_tool_write_input(self, file_path: str, content: str) -> PostToolInput:
             """Create a PostToolInput for Write operations."""
-            full_path = (
-                file_path
-                if Path(file_path).is_absolute()
-                else str(precommit_repo / file_path)
-            )
-            return self.create_hook_input(
-                "Write",
-                WriteInput(file_path=Path(full_path), content=content),
-            )
+            full_path = file_path if Path(file_path).is_absolute() else str(precommit_repo / file_path)
+            return self.create_hook_input("Write", WriteInput(file_path=Path(full_path), content=content))
 
-        def build_post_tool_edit_input(
-            self,
-            file_path: str,
-            old_string: str,
-            new_string: str,
-        ) -> PostToolInput:
+        def build_post_tool_edit_input(self, file_path: str, old_string: str, new_string: str) -> PostToolInput:
             """Create a PostToolInput for Edit operations."""
-            full_path = (
-                file_path
-                if Path(file_path).is_absolute()
-                else str(precommit_repo / file_path)
-            )
+            full_path = file_path if Path(file_path).is_absolute() else str(precommit_repo / file_path)
             return self.create_hook_input(
-                "Edit",
-                EditInput(
-                    file_path=Path(full_path),
-                    old_string=old_string,
-                    new_string=new_string,
-                ),
+                "Edit", EditInput(file_path=Path(full_path), old_string=old_string, new_string=new_string)
             )
 
     return IntegrationEnv()

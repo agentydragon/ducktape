@@ -12,22 +12,12 @@ from claude_hooks.tool_models import BashInput, EditInput, WriteInput
 
 
 def test_edit_input_valid():
-    data = {
-        "file_path": "/tmp/test.py",
-        "old_string": "old code",
-        "new_string": "new code",
-        "replace_all": False,
-    }
+    data = {"file_path": "/tmp/test.py", "old_string": "old code", "new_string": "new code", "replace_all": False}
 
     edit_input = EditInput.model_validate(data)
     assert_that(
         edit_input,
-        has_properties(
-            file_path=Path("/tmp/test.py"),
-            old_string="old code",
-            new_string="new code",
-            replace_all=False,
-        ),
+        has_properties(file_path=Path("/tmp/test.py"), old_string="old code", new_string="new code", replace_all=False),
     )
 
 
@@ -46,51 +36,35 @@ def test_write_input_valid():
     data = {"file_path": "/tmp/test.py", "content": "print('hello')"}
 
     write_input = WriteInput.model_validate(data)
-    assert_that(
-        write_input,
-        has_properties(file_path=Path("/tmp/test.py"), content="print('hello')"),
-    )
+    assert_that(write_input, has_properties(file_path=Path("/tmp/test.py"), content="print('hello')"))
 
 
 def test_bash_input_valid():
     data = {"command": "ls -la", "description": "List files", "timeout": 30}
 
     bash_input = BashInput.model_validate(data)
-    assert_that(
-        bash_input,
-        has_properties(command="ls -la", description="List files", timeout=30),
-    )
+    assert_that(bash_input, has_properties(command="ls -la", description="List files", timeout=30))
 
 
 def test_bash_input_minimal():
     data = {"command": "pwd"}
 
     bash_input = BashInput.model_validate(data)
-    assert_that(
-        bash_input,
-        has_properties(command="pwd", description=None, timeout=None),
-    )
+    assert_that(bash_input, has_properties(command="pwd", description=None, timeout=None))
 
 
 def test_pre_tool_use_input():
     session_id = uuid4()
     data = {
         "tool_name": "Edit",
-        "tool_input": {
-            "file_path": "/tmp/test.py",
-            "old_string": "old",
-            "new_string": "new",
-        },
+        "tool_input": {"file_path": "/tmp/test.py", "old_string": "old", "new_string": "new"},
         "session_id": str(session_id),
         "transcript_path": "/tmp/transcript.json",
         "cwd": "/tmp",
     }
 
     input_obj = PreToolInput.model_validate(data)
-    assert_that(
-        input_obj,
-        has_properties(tool_name="Edit", session_id=session_id, cwd=Path("/tmp")),
-    )
+    assert_that(input_obj, has_properties(tool_name="Edit", session_id=session_id, cwd=Path("/tmp")))
 
 
 def test_post_tool_use_input():
@@ -105,10 +79,7 @@ def test_post_tool_use_input():
     }
 
     input_obj = PostToolInput.model_validate(data)
-    assert_that(
-        input_obj,
-        has_properties(tool_name="Write", tool_response={"success": True}),
-    )
+    assert_that(input_obj, has_properties(tool_name="Write", tool_response={"success": True}))
 
 
 def test_user_prompt_submit_input():

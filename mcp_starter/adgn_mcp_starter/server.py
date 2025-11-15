@@ -37,9 +37,7 @@ def create_mcp_server(debug_mcp: bool = False) -> FastMCP[Any]:
 
         return [
             ContentChunk(
-                chunk_id=i // chunk_size,
-                content=text[i : i + chunk_size],
-                is_final=(i + chunk_size >= len(text)),
+                chunk_id=i // chunk_size, content=text[i : i + chunk_size], is_final=(i + chunk_size >= len(text))
             )
             for i in range(0, len(text), chunk_size)
         ]

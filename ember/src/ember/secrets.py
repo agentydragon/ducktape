@@ -12,13 +12,7 @@ SECRETS_ROOT = Path("/var/run/ember/secrets")
 class ProjectedSecret:
     """Helper for secrets mounted via projected volumes with optional env overrides."""
 
-    def __init__(
-        self,
-        *,
-        name: str,
-        env_var: str | None = None,
-        strip: bool = True,
-    ) -> None:
+    def __init__(self, *, name: str, env_var: str | None = None, strip: bool = True) -> None:
         if not name:
             raise ValueError("ProjectedSecret requires a name")
 
@@ -47,9 +41,7 @@ class ProjectedSecret:
         except FileNotFoundError:
             return None
         except OSError as exc:
-            logger.warning(
-                "Failed to stat secret %s at %s: %s", self._file_name, path, exc
-            )
+            logger.warning("Failed to stat secret %s at %s: %s", self._file_name, path, exc)
             return None
 
         return raw.strip() if self._strip else raw

@@ -22,16 +22,10 @@ class IndoorAQIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is None:
             user_input = {}
 
-        _LOGGER.debug(
-            "IndoorAQI: YAML import config flow triggered with: %s",
-            user_input,
-        )
+        _LOGGER.debug("IndoorAQI: YAML import config flow triggered with: %s", user_input)
 
         # We only want a single import-based entry. If one already exists, skip.
         await self.async_set_unique_id("indoor_aqi_yaml_import")
         self._abort_if_unique_id_configured()
 
-        return self.async_create_entry(
-            title="Indoor AQI (imported via YAML)",
-            data=user_input,
-        )
+        return self.async_create_entry(title="Indoor AQI (imported via YAML)", data=user_input)

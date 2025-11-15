@@ -12,13 +12,7 @@ from punq import Container
 from pydantic import BaseModel, ValidationError
 
 from ..shared.configuration import Configuration
-from ..shared.protocol import (
-    ErrorCodes,
-    ErrorResponse,
-    Request,
-    Response,
-    create_error_response,
-)
+from ..shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
 from .services import (
     DiscoveryService,
     GitService,
@@ -91,19 +85,11 @@ class InvocationContext:
 class RpcRegistry:
     def __init__(self) -> None:
         self._handlers: dict[
-            str,
-            Callable[
-                [Request, WtDaemon, Any, datetime], Awaitable[Response | ErrorResponse]
-            ],
+            str, Callable[[Request, WtDaemon, Any, datetime], Awaitable[Response | ErrorResponse]]
         ] = {}
         self._stream_methods: set[str] = set()
 
-    def _build_args(
-        self,
-        fn,
-        *,
-        context: InvocationContext,
-    ):
+    def _build_args(self, fn, *, context: InvocationContext):
         daemon = context.daemon
         params_obj = context.params_obj
         start_time = context.start_time
@@ -143,9 +129,7 @@ class RpcRegistry:
         type_hints = get_type_hints(fn)
         for p in sig.parameters.values():
             anno = type_hints.get(p.name, p.annotation)
-            if stream_obj is not None and (
-                anno is Stream or get_origin(anno) is Stream
-            ):
+            if stream_obj is not None and (anno is Stream or get_origin(anno) is Stream):
                 args.append(stream_obj)
             elif params_obj is not None and anno is type(params_obj):
                 args.append(params_obj)
@@ -154,61 +138,30 @@ class RpcRegistry:
                 args.append(c.resolve(anno))
         return args
 
-    def _wrap_method(
-        self,
-        method: str,
-        params_model: type[ParamsT] | None,
-        handler,
-    ) -> None:
-        async def _wrapped(
-            req: Request,
-            daemon: WtDaemon,
-            writer,
-            start_time: datetime,
-        ) -> Response | ErrorResponse:
+    def _wrap_method(self, method: str, params_model: type[ParamsT] | None, handler) -> None:
+        async def _wrapped(req: Request, daemon: WtDaemon, writer, start_time: datetime) -> Response | ErrorResponse:
             try:
-                params = (
-                    params_model.model_validate(req.params)
-                    if params_model is not None
-                    else None
-                )
+                params = params_model.model_validate(req.params) if params_model is not None else None
             except ValidationError as e:
                 return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
 
             try:
                 args = self._build_args(
                     handler,
-                    context=InvocationContext(
-                        daemon=daemon,
-                        params_obj=params,
-                        writer=writer,
-                        start_time=start_time,
-                    ),
+                    context=InvocationContext(daemon=daemon, params_obj=params, writer=writer, start_time=start_time),
                 )
                 result = await handler(*args)
                 return Response(result=result, id=req.id)
             except RpcError as e:
                 return create_error_response(e.code, str(e), req.id, e.data)
             except Exception as e:
-                logger.exception(
-                    "Unhandled error in method %s",
-                    method,
-                )
-                return create_error_response(
-                    ErrorCodes.INTERNAL_ERROR,
-                    f"Internal error: {e}",
-                    req.id,
-                )
+                logger.exception("Unhandled error in method %s", method)
+                return create_error_response(ErrorCodes.INTERNAL_ERROR, f"Internal error: {e}", req.id)
 
         self._handlers[method] = _wrapped
 
     def _wrap_stream(self, method: str, params_model: type[ParamsT], handler) -> None:
-        async def _wrapped(
-            req: Request,
-            daemon: WtDaemon,
-            writer,
-            start_time: datetime,
-        ) -> Response | ErrorResponse:
+        async def _wrapped(req: Request, daemon: WtDaemon, writer, start_time: datetime) -> Response | ErrorResponse:
             try:
                 params = params_model.model_validate(req.params)
             except ValidationError as e:
@@ -218,11 +171,7 @@ class RpcRegistry:
                 args = self._build_args(
                     handler,
                     context=InvocationContext(
-                        daemon=daemon,
-                        params_obj=params,
-                        writer=writer,
-                        start_time=start_time,
-                        stream_obj=stream,
+                        daemon=daemon, params_obj=params, writer=writer, start_time=start_time, stream_obj=stream
                     ),
                 )
                 result = await handler(*args)
@@ -230,15 +179,8 @@ class RpcRegistry:
             except RpcError as e:
                 return create_error_response(e.code, str(e), req.id, e.data)
             except Exception as e:
-                logger.exception(
-                    "Unhandled error in stream method %s",
-                    method,
-                )
-                return create_error_response(
-                    ErrorCodes.INTERNAL_ERROR,
-                    f"Internal error: {e}",
-                    req.id,
-                )
+                logger.exception("Unhandled error in stream method %s", method)
+                return create_error_response(ErrorCodes.INTERNAL_ERROR, f"Internal error: {e}", req.id)
 
         self._handlers[method] = _wrapped
         self._stream_methods.add(method)
@@ -263,20 +205,10 @@ class RpcRegistry:
     def list_methods(self) -> list[str]:
         return list(self._handlers.keys())
 
-    async def dispatch(
-        self,
-        req: Request,
-        daemon: WtDaemon,
-        writer,
-        start_time: datetime,
-    ) -> Response | ErrorResponse:
+    async def dispatch(self, req: Request, daemon: WtDaemon, writer, start_time: datetime) -> Response | ErrorResponse:
         wrapped = self._handlers.get(req.method)
         if not wrapped:
-            return create_error_response(
-                ErrorCodes.METHOD_NOT_FOUND,
-                f"Method '{req.method}' not found",
-                req.id,
-            )
+            return create_error_response(ErrorCodes.METHOD_NOT_FOUND, f"Method '{req.method}' not found", req.id)
         return await wrapped(req, daemon, writer, start_time)
 
 

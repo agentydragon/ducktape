@@ -13,9 +13,7 @@ from .service_manager import ServiceManager
 @pytest.fixture(scope="session")
 def bus_address() -> Iterator[str]:
     proc = subprocess.Popen(
-        ["dbus-daemon", "--session", "--nofork", "--print-address=1"],
-        stdout=subprocess.PIPE,
-        text=True,
+        ["dbus-daemon", "--session", "--nofork", "--print-address=1"], stdout=subprocess.PIPE, text=True
     )
     assert proc.stdout
     address = proc.stdout.readline().strip()

@@ -33,9 +33,7 @@ class ToolSpec:
         )
 
 
-def execute_tool(
-    tool_call: ResponseFunctionToolCall, specs: Mapping[str, ToolSpec]
-) -> Awaitable[ToolPayload]:
+def execute_tool(tool_call: ResponseFunctionToolCall, specs: Mapping[str, ToolSpec]) -> Awaitable[ToolPayload]:
     spec = specs.get(tool_call.name)
     if spec is None:
         raise RuntimeError(f"Unknown tool {tool_call.name}")
@@ -49,10 +47,7 @@ def tool_params(specs: Iterable[ToolSpec]) -> list[FunctionToolParam]:
 
 def _json_schema_from_model(model: type[BaseModel]) -> dict[str, Any]:
     schema = model.model_json_schema()
-    parameters: dict[str, Any] = {
-        "type": schema.get("type", "object"),
-        "properties": schema.get("properties", {}),
-    }
+    parameters: dict[str, Any] = {"type": schema.get("type", "object"), "properties": schema.get("properties", {})}
     required = schema.get("required")
     if required:
         parameters["required"] = required
@@ -68,12 +63,6 @@ def _first_handler_arg(handler: ToolHandler) -> type[BaseModel]:
     hints = get_type_hints(handler)
     first_param = params[0]
     annotation = hints.get(first_param.name, first_param.annotation)
-    if (
-        annotation is first_param.empty
-        or not isinstance(annotation, type)
-        or not issubclass(annotation, BaseModel)
-    ):
-        raise RuntimeError(
-            "Tool handler argument must be a Pydantic BaseModel subclass"
-        )
+    if annotation is first_param.empty or not isinstance(annotation, type) or not issubclass(annotation, BaseModel):
+        raise RuntimeError("Tool handler argument must be a Pydantic BaseModel subclass")
     return annotation

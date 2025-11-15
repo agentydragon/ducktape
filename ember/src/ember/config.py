@@ -7,14 +7,7 @@ from typing import Annotated, Any, Literal, cast
 
 from openai.types.responses import ResponseIncludable
 from openai.types.shared.reasoning_effort import ReasoningEffort
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    TypeAdapter,
-    ValidationError,
-    field_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 import tomllib
 
 from .secrets import ProjectedSecret
@@ -46,8 +39,7 @@ class EnforcedSleepUntilUserMessagePolicy(_SleepPolicyBase):
 
 
 SleepUntilUserMessagePolicy = Annotated[
-    LegacySleepUntilUserMessagePolicy | EnforcedSleepUntilUserMessagePolicy,
-    Field(discriminator="kind"),
+    LegacySleepUntilUserMessagePolicy | EnforcedSleepUntilUserMessagePolicy, Field(discriminator="kind")
 ]
 _SLEEP_POLICY_ADAPTER = TypeAdapter(SleepUntilUserMessagePolicy)
 
@@ -112,9 +104,7 @@ class EmberSettings(BaseModel):
 def load_settings() -> EmberSettings:
     """Load Ember settings from TOML configuration and mounted secrets."""
 
-    config_path = Path(
-        os.getenv("EMBER_CONFIG_FILE", "/etc/ember/ember.toml")
-    ).expanduser()
+    config_path = Path(os.getenv("EMBER_CONFIG_FILE", "/etc/ember/ember.toml")).expanduser()
     config_data: dict[str, Any] = {}
     if config_path.exists():
         try:
@@ -122,60 +112,28 @@ def load_settings() -> EmberSettings:
         except tomllib.TOMLDecodeError as exc:  # pragma: no cover
             raise RuntimeError(f"Invalid Ember config file: {exc}") from exc
 
-    matrix_cfg = (
-        config_data.get("matrix", {})
-        if isinstance(config_data.get("matrix"), dict)
-        else {}
-    )
-    state_cfg = (
-        config_data.get("state", {})
-        if isinstance(config_data.get("state"), dict)
-        else {}
-    )
-    openai_cfg = (
-        config_data.get("openai", {})
-        if isinstance(config_data.get("openai"), dict)
-        else {}
-    )
+    matrix_cfg = config_data.get("matrix", {}) if isinstance(config_data.get("matrix"), dict) else {}
+    state_cfg = config_data.get("state", {}) if isinstance(config_data.get("state"), dict) else {}
+    openai_cfg = config_data.get("openai", {}) if isinstance(config_data.get("openai"), dict) else {}
 
-    object_store_cfg = (
-        config_data.get("object_store", {})
-        if isinstance(config_data.get("object_store"), dict)
-        else {}
-    )
+    object_store_cfg = config_data.get("object_store", {}) if isinstance(config_data.get("object_store"), dict) else {}
 
-    sleep_tool_cfg = (
-        openai_cfg.get("sleep_tool", {})
-        if isinstance(openai_cfg.get("sleep_tool"), dict)
-        else {}
-    )
+    sleep_tool_cfg = openai_cfg.get("sleep_tool", {}) if isinstance(openai_cfg.get("sleep_tool"), dict) else {}
 
     if "kind" not in sleep_tool_cfg and "mode" in sleep_tool_cfg:
         sleep_tool_cfg = dict(sleep_tool_cfg)
         sleep_tool_cfg["kind"] = sleep_tool_cfg.pop("mode")
 
-    state_dir = Path(
-        os.getenv("EMBER_STATE_DIR") or state_cfg.get("dir", "/var/lib/ember")
-    ).expanduser()
+    state_dir = Path(os.getenv("EMBER_STATE_DIR") or state_cfg.get("dir", "/var/lib/ember")).expanduser()
     workspace_dir = os.getenv("EMBER_WORKSPACE_DIR") or state_cfg.get("workspace_dir")
-    workspace_path = (
-        Path(workspace_dir) if workspace_dir else state_dir / "workspace"
-    ).expanduser()
+    workspace_path = (Path(workspace_dir) if workspace_dir else state_dir / "workspace").expanduser()
     history_path = state_dir / "pilot_history.jsonl"
 
-    matrix_access_token = ProjectedSecret(
-        name="matrix_access_token",
-        env_var="MATRIX_ACCESS_TOKEN",
-    )
-    openai_api_key = ProjectedSecret(
-        name="openai_api_key",
-        env_var="OPENAI_API_KEY",
-    )
+    matrix_access_token = ProjectedSecret(name="matrix_access_token", env_var="MATRIX_ACCESS_TOKEN")
+    openai_api_key = ProjectedSecret(name="openai_api_key", env_var="OPENAI_API_KEY")
 
     sleep_policy = (
-        _SLEEP_POLICY_ADAPTER.validate_python(sleep_tool_cfg)
-        if sleep_tool_cfg
-        else LegacySleepUntilUserMessagePolicy()
+        _SLEEP_POLICY_ADAPTER.validate_python(sleep_tool_cfg) if sleep_tool_cfg else LegacySleepUntilUserMessagePolicy()
     )
 
     api_base = openai_cfg.get("api_base")
@@ -191,26 +149,16 @@ def load_settings() -> EmberSettings:
         if not endpoint or not bucket:
             raise RuntimeError("Object store configuration missing endpoint or bucket")
 
-        access_secret_name = object_store_cfg.get(
-            "access_key_secret", "object_store_access_key"
-        )
-        secret_secret_name = object_store_cfg.get(
-            "secret_key_secret", "object_store_secret_key"
-        )
+        access_secret_name = object_store_cfg.get("access_key_secret", "object_store_access_key")
+        secret_secret_name = object_store_cfg.get("secret_key_secret", "object_store_secret_key")
         object_store_settings = ObjectStoreSettings(
             endpoint=endpoint,
             bucket=bucket,
             access_key_secret=ProjectedSecret(
-                name=access_secret_name,
-                env_var=object_store_cfg.get(
-                    "access_key_env", "OBJECT_STORE_ACCESS_KEY"
-                ),
+                name=access_secret_name, env_var=object_store_cfg.get("access_key_env", "OBJECT_STORE_ACCESS_KEY")
             ),
             secret_key_secret=ProjectedSecret(
-                name=secret_secret_name,
-                env_var=object_store_cfg.get(
-                    "secret_key_env", "OBJECT_STORE_SECRET_KEY"
-                ),
+                name=secret_secret_name, env_var=object_store_cfg.get("secret_key_env", "OBJECT_STORE_SECRET_KEY")
             ),
             secure=bool(object_store_cfg.get("secure", True)),
             url_expiry_seconds=int(object_store_cfg.get("url_expiry_seconds", 120)),
@@ -221,8 +169,7 @@ def load_settings() -> EmberSettings:
             matrix=MatrixSettings(
                 base_url=os.getenv("MATRIX_BASE_URL") or matrix_cfg.get("base_url"),
                 access_token_secret=matrix_access_token,
-                admin_user_id=os.getenv("MATRIX_ADMIN_USER_ID")
-                or matrix_cfg.get("admin_user_id"),
+                admin_user_id=os.getenv("MATRIX_ADMIN_USER_ID") or matrix_cfg.get("admin_user_id"),
                 state_store=state_dir / "matrix_state.json",
                 store_dir=state_dir / "matrix_store",
                 device_id=matrix_cfg.get("device_id", "ember-device"),
@@ -230,14 +177,12 @@ def load_settings() -> EmberSettings:
             ),
             openai=OpenAISettings(
                 api_key_secret=openai_api_key,
-                model=os.getenv("OPENAI_MODEL")
-                or openai_cfg.get("model", "gpt-5-codex"),
+                model=os.getenv("OPENAI_MODEL") or openai_cfg.get("model", "gpt-5-codex"),
                 system_prompt=load_system_prompt(),
                 api_base=openai_cfg.get("api_base"),
                 reasoning_effort=cast(
                     ReasoningEffort,
-                    os.getenv("OPENAI_REASONING_EFFORT")
-                    or openai_cfg.get("reasoning_effort", "medium"),
+                    os.getenv("OPENAI_REASONING_EFFORT") or openai_cfg.get("reasoning_effort", "medium"),
                 ),
                 include_encrypted_reasoning=_env_flag(
                     "OPENAI_INCLUDE_ENCRYPTED_REASONING",
@@ -250,9 +195,7 @@ def load_settings() -> EmberSettings:
             workspace_path=workspace_path,
             object_store=object_store_settings,
         )
-    except (
-        ValidationError
-    ) as exc:  # pragma: no cover - configuration errors should surface loudly
+    except ValidationError as exc:  # pragma: no cover - configuration errors should surface loudly
         raise RuntimeError(f"Invalid pilot configuration: {exc}") from exc
 
 

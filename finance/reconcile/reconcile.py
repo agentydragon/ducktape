@@ -25,22 +25,12 @@ from ducktape.finance.reconcile import splitwise_lib, ubs_credit_card_lib, ubs_l
 # shell = code.InteractiveConsole(variables)
 # shell.interact()
 
-_ADD_TO_GNUCASH = flags.DEFINE_list(
-    "add_to_gnucash",
-    None,
-    "External IDs to add to GnuCash",
-)
+_ADD_TO_GNUCASH = flags.DEFINE_list("add_to_gnucash", None, "External IDs to add to GnuCash")
 
 
 def print_gnucash_split(split):
     transaction = split.parent
-    print(
-        "transaction:",
-        transaction.GetDate(),
-        transaction.GetDescription(),
-        "notes=",
-        transaction.GetNotes(),
-    )
+    print("transaction:", transaction.GetDate(), transaction.GetDescription(), "notes=", transaction.GetNotes())
     for s2 in transaction.GetSplitList():
         heading = " "
         if s2.GetGUID().to_string() == split.GetGUID().to_string():
@@ -105,17 +95,8 @@ def match_to_account(external_transaction):
     return None
 
 
-def add_external_to_gnucash(
-    external_transaction,
-    book,
-    account_of_interest,
-    external_id,
-):
-    logging.info(
-        "Creating transaction for txid %s in GnuCash account %s",
-        external_id,
-        account_of_interest.GetName(),
-    )
+def add_external_to_gnucash(external_transaction, book, account_of_interest, external_id):
+    logging.info("Creating transaction for txid %s in GnuCash account %s", external_id, account_of_interest.GetName())
 
     tx = gnucash.Transaction(book)
     tx.BeginEdit()
@@ -146,10 +127,7 @@ def add_external_to_gnucash(
         logging.warning("Description unmatched: [%s] - adding to Imbalance", desc)
         target_path = ["Imbalance-CHF"]
 
-    imbalance_acct = gnucash_util.account_from_path(
-        book.get_root_account(),
-        target_path,
-    )
+    imbalance_acct = gnucash_util.account_from_path(book.get_root_account(), target_path)
     s2 = gnucash.Split(book)
     s2.SetParent(tx)
     s2.SetAccount(imbalance_acct)
@@ -169,9 +147,7 @@ def main(_):
     with (config_dir / "config.yaml").open() as f:
         config = yaml.safe_load(f)
 
-    with gnucash_util.GnuCashSession(
-        config["reconcile"]["gnucash_book_path"],
-    ) as session:
+    with gnucash_util.GnuCashSession(config["reconcile"]["gnucash_book_path"]) as session:
         for reconcile_config in config["reconcile"]["mappings"]:
             if "gnucash_account_path" not in reconcile_config:
                 raise Exception("no gnucash_account_path")
@@ -179,19 +155,14 @@ def main(_):
             gnucash_account_path = reconcile_config["gnucash_account_path"]
             print("Reconciling", gnucash_account_path)
 
-            account_of_interest = gnucash_util.account_from_path(
-                session.book.get_root_account(),
-                gnucash_account_path,
-            )
+            account_of_interest = gnucash_util.account_from_path(session.book.get_root_account(), gnucash_account_path)
 
             if "ubs_iban" in reconcile_config:
                 # TODO: Make sure it is for the right IBAN.
 
                 external_transaction_by_external_id = {}
                 for csv_path in Path().glob(reconcile_config["csv_glob"]):
-                    external_transaction_by_external_id.update(
-                        ubs_lib.load_ubs_csv(csv_path),
-                    )
+                    external_transaction_by_external_id.update(ubs_lib.load_ubs_csv(csv_path))
                 # TODO: assert same transactions if keys overlap
 
                 prefix = "ubs_transaction_id"
@@ -200,17 +171,13 @@ def main(_):
                 external_transaction_by_external_id = {}
                 for csv_path in Path().glob(reconcile_config["csv_glob"]):
                     # TODO: assert disjoint keys
-                    external_transaction_by_external_id.update(
-                        ubs_credit_card_lib.load_ubs_credit_card_csv(csv_path),
-                    )
+                    external_transaction_by_external_id.update(ubs_credit_card_lib.load_ubs_credit_card_csv(csv_path))
 
                 prefix = "ubs_cc_hash"
                 id_regex = "([0-9a-zA-Z/+]+)"
             elif "splitwise_group_id" in reconcile_config:
-                external_transaction_by_external_id = (
-                    splitwise_lib.load_splitwise_expenses(
-                        reconcile_config["splitwise_group_id"],
-                    )
+                external_transaction_by_external_id = splitwise_lib.load_splitwise_expenses(
+                    reconcile_config["splitwise_group_id"]
                 )
 
                 prefix = "splitwise"
@@ -220,10 +187,7 @@ def main(_):
 
             # 'start_date' sets date at which mapping starts
             if "start_date" in reconcile_config:
-                start_date = datetime.datetime.strptime(
-                    reconcile_config["start_date"],
-                    "%Y-%m-%d",
-                ).date()
+                start_date = datetime.datetime.strptime(reconcile_config["start_date"], "%Y-%m-%d").date()
 
                 external_transaction_by_external_id = {
                     external_id: external_transaction
@@ -253,8 +217,7 @@ def main(_):
                     split_amount = gnucash_util.get_split_amount(split)
                     if split_amount != transaction.amount:
                         logging.error(
-                            "Error with transaction %s: GnuCash split is %s, "
-                            "external system says %s",
+                            "Error with transaction %s: GnuCash split is %s, external system says %s",
                             external_id,
                             split_amount,
                             transaction.amount,
@@ -262,16 +225,9 @@ def main(_):
                         errors += 1
 
                     # TODO: also match the dates
-                    days = int(
-                        (transaction_date - transaction.trade_date)
-                        / datetime.timedelta(days=1),
-                    )
+                    days = int((transaction_date - transaction.trade_date) / datetime.timedelta(days=1))
                     if abs(days) >= 2:
-                        logging.warning(
-                            "transaction %s has big delta (%s days)",
-                            external_id,
-                            days,
-                        )
+                        logging.warning("transaction %s has big delta (%s days)", external_id, days)
 
                     assert external_id not in matched_external_ids, (
                         f"{external_id} matched to 2 transactions in GnuCash"
@@ -289,17 +245,12 @@ def main(_):
             if errors > 0:
                 raise Exception(f"{errors} errors")
 
-            unmatched_ids = (
-                set(external_transaction_by_external_id.keys()) - matched_external_ids
-            )
+            unmatched_ids = set(external_transaction_by_external_id.keys()) - matched_external_ids
             print()
             print("Unmatched in external system:")
 
             # Sort by descending net
-            def get_abs_net(
-                expense_id,
-                external_transaction_by_external_id=external_transaction_by_external_id,
-            ):
+            def get_abs_net(expense_id, external_transaction_by_external_id=external_transaction_by_external_id):
                 return abs(external_transaction_by_external_id[expense_id].amount)
 
             for expense_id in sorted(unmatched_ids, key=get_abs_net, reverse=True):
@@ -309,10 +260,7 @@ def main(_):
                 automatch = match_to_account(expense)
                 marker = f" (-> {automatch})" if automatch else ""
 
-                print(
-                    f"{external_id} {expense.trade_date.isoformat()} "
-                    f"{expense.amount} {expense.description}{marker}",
-                )
+                print(f"{external_id} {expense.trade_date.isoformat()} {expense.amount} {expense.description}{marker}")
             print()
             print("Unmatched in GnuCash:")
 
@@ -320,11 +268,7 @@ def main(_):
             def get_abs_split_net(split):
                 return abs(gnucash_util.get_split_amount(split))
 
-            for split in sorted(
-                gnucash_unmatched_splits,
-                key=get_abs_split_net,
-                reverse=True,
-            ):
+            for split in sorted(gnucash_unmatched_splits, key=get_abs_split_net, reverse=True):
                 print_gnucash_split(split)
 
                 # add those:
@@ -336,9 +280,7 @@ def main(_):
                 # system
                 # TODO: warn on duplicates in _ADD_TO_GNUCASH
                 external_ids_for_this_system = {
-                    external_id
-                    for external_id in _ADD_TO_GNUCASH.value
-                    if external_id.startswith(prefix_with_equals)
+                    external_id for external_id in _ADD_TO_GNUCASH.value if external_id.startswith(prefix_with_equals)
                 }
                 # txids are 'system=...'
                 # TODO: warn - if txid not in unmatched_ids:
@@ -351,12 +293,7 @@ def main(_):
                         logging.warning("external system does not have %s", txid)
                         continue
                     external_transaction = external_transaction_by_external_id[txid]
-                    add_external_to_gnucash(
-                        external_transaction,
-                        session.book,
-                        account_of_interest,
-                        external_id,
-                    )
+                    add_external_to_gnucash(external_transaction, session.book, account_of_interest, external_id)
         logging.info("Saving the session.")
         session.save()
 

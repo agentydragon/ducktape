@@ -59,18 +59,12 @@ class GitManager:
     config: Configuration
 
     def __post_init__(self) -> None:
-        self._main_repo: pygit2.Repository = pygit2.Repository(
-            str(self.config.main_repo)
-        )
+        self._main_repo: pygit2.Repository = pygit2.Repository(str(self.config.main_repo))
 
     def branch_exists(self, branch_name: str) -> bool:
         return branch_name in self._main_repo.branches
 
-    def create_branch(
-        self,
-        branch_name: str,
-        source_branch: str = "HEAD",
-    ) -> None:
+    def create_branch(self, branch_name: str, source_branch: str = "HEAD") -> None:
         if not self.branch_exists(branch_name):
             target_obj = self._main_repo.revparse_single(source_branch)
             target_commit = target_obj.peel(pygit2.Commit)
@@ -84,9 +78,7 @@ class GitManager:
             untracked_files = []
 
             for file_path, flags in self._main_repo.status().items():
-                if flags & (
-                    pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED
-                ):
+                if flags & (pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED):
                     dirty_files.append(Path(self.config.main_repo) / file_path)
                 elif flags & pygit2.GIT_STATUS_WT_NEW:
                     untracked_files.append(Path(self.config.main_repo) / file_path)
@@ -119,10 +111,7 @@ class GitManager:
             short_hash=str(commit.id)[:8],
             message=message.strip(),
             author=commit.author.name,
-            date=datetime.fromtimestamp(
-                commit.commit_time,
-                UTC,
-            ).isoformat(),
+            date=datetime.fromtimestamp(commit.commit_time, UTC).isoformat(),
         )
 
     def verify_ref_exists(self, ref: str) -> str:
@@ -135,19 +124,10 @@ class GitManager:
     # Worktree operations
     def list_worktrees(self) -> list[WorktreeInfo]:
         """List all worktrees using pygit2 API."""
-        current_branch = (
-            self._main_repo.head.shorthand
-            if not self._main_repo.head_is_detached
-            else None
-        )
+        current_branch = self._main_repo.head.shorthand if not self._main_repo.head_is_detached else None
 
         worktree_infos = [
-            WorktreeInfo(
-                path=self.config.main_repo,
-                branch=current_branch or "",
-                exists=True,
-                is_main=True,
-            ),
+            WorktreeInfo(path=self.config.main_repo, branch=current_branch or "", exists=True, is_main=True)
         ]
 
         # Add all other worktrees; compute branch name only when repo is valid
@@ -163,14 +143,7 @@ class GitManager:
                 except (pygit2.GitError, OSError, ValueError, TypeError):
                     # Treat as non-existent/invalid repo; leave branch_name empty
                     exists = False
-            worktree_infos.append(
-                WorktreeInfo(
-                    path=wt_path,
-                    branch=branch_name,
-                    exists=exists,
-                    is_main=False,
-                ),
-            )
+            worktree_infos.append(WorktreeInfo(path=wt_path, branch=branch_name, exists=exists, is_main=False))
 
         return worktree_infos
 
@@ -187,9 +160,7 @@ class GitManager:
 
         # Check if branch name contains valid characters only
         if not re.match(r"^[a-zA-Z0-9._/-]+$", branch):
-            raise WorktreeCreateError(
-                f"Branch name '{branch}' contains invalid characters",
-            )
+            raise WorktreeCreateError(f"Branch name '{branch}' contains invalid characters")
 
         # Check if worktree already exists for this path
         if any(info.path == path_obj for info in self.list_worktrees()):
@@ -205,14 +176,9 @@ class GitManager:
         # Rationale: pygit2 lacks a no-checkout worktree-add equivalent with matching performance
         # for very large repos; consolidating via CLI here avoids heavy libgit operations.
         try:
-            git_run(
-                ["worktree", "add", "--no-checkout", path_obj, branch],
-                cwd=self.config.main_repo,
-            )
+            git_run(["worktree", "add", "--no-checkout", path_obj, branch], cwd=self.config.main_repo)
         except subprocess.CalledProcessError as e:
-            raise WorktreeCreateError(
-                f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}",
-            ) from e
+            raise WorktreeCreateError(f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}") from e
 
     def worktree_remove(self, path: Path, force: bool = False) -> None:
         path_obj = path
@@ -224,7 +190,7 @@ class GitManager:
             git_run(args, cwd=self.config.main_repo)
         except subprocess.CalledProcessError as e:
             raise WorktreeDeleteError(
-                f"Failed to remove worktree at {path}: {e.stderr.decode(errors='replace').strip()}",
+                f"Failed to remove worktree at {path}: {e.stderr.decode(errors='replace').strip()}"
             ) from e
 
     def verify_branch_exists(self, branch: str) -> str:

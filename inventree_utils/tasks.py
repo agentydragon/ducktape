@@ -20,14 +20,7 @@ def _run(c, cmd):
 
 def _ssh(c, cmd):
     """Run a remote shell command."""
-    _run(
-        c,
-        [
-            "ssh",
-            SERVER,
-            cmd,
-        ],
-    )
+    _run(c, ["ssh", SERVER, cmd])
 
 
 @task
@@ -48,14 +41,7 @@ def restart(c):
 @task
 def deploy_server_hook(c):
     """Deploy the post-receive hook to the remote repository."""
-    _run(
-        c,
-        [
-            "rsync",
-            "server-post-receive",
-            f"{SERVER}:/srv/git/inventree-utils.git/hooks/post-receive",
-        ],
-    )
+    _run(c, ["rsync", "server-post-receive", f"{SERVER}:/srv/git/inventree-utils.git/hooks/post-receive"])
 
 
 here = Path(__file__).parent
@@ -91,11 +77,7 @@ def all_part_ids(api):
     def stock_items_for_part(part_pk):
         return [si for si in stock_items if si.part == part_pk]
 
-    parts = [
-        part
-        for part in parts
-        if not all(si.location in (1, 2, 3, 4) for si in stock_items_for_part(part.pk))
-    ]
+    parts = [part for part in parts if not all(si.location in (1, 2, 3, 4) for si in stock_items_for_part(part.pk))]
     print(f"Found {len(parts)} parts not in SMD books")
     return [part.pk for part in parts]  # [:10]
 
@@ -126,12 +108,7 @@ def render_template(c, api, template_pk):
         ]
 
     response = api.post(
-        url="/label/print/",
-        data={
-            "plugin": "InvenTreeLabelSheet",
-            "template": template_pk,
-            "items": part_ids,
-        },
+        url="/label/print/", data={"plugin": "InvenTreeLabelSheet", "template": template_pk, "items": part_ids}
     )
     print(response)
 

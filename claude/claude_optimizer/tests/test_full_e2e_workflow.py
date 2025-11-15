@@ -87,7 +87,7 @@ Early returns and guard clauses (max 2-3 nesting levels).""",
 Let programming errors crash (expose bugs).
 Programs must signal failure appropriately.""",
             },
-        ],
+        ]
     }
 
     graders_file = tmp_path / "graders.yaml"
@@ -117,12 +117,7 @@ class TestFullEndToEndWorkflow:
     def mock_openai_grading_response(self):
         """Mock OpenAI response for grading with realistic scores."""
 
-        def create_response(
-            overall_score=7.2,
-            type_score=8.0,
-            quality_score=6.8,
-            robust_score=6.9,
-        ):
+        def create_response(overall_score=7.2, type_score=8.0, quality_score=6.8, robust_score=6.9):
             response = Mock()
             response.output = [
                 Mock(
@@ -146,10 +141,10 @@ class TestFullEndToEndWorkflow:
                                         "rationale": f"Decent error handling but catches some broad exceptions (score: {robust_score}). Should be more specific about exception types.",
                                     },
                                 },
-                            },
-                        ),
+                            }
+                        )
                     ),
-                ),
+                )
             ]
             return response
 
@@ -193,10 +188,10 @@ Write production-ready code that follows these principles:
 
 Always implement exactly what is requested - no more, no less.""",
                             "reasoning": "Based on the pattern analysis, the main issues were overly broad exception handling and some string literals used instead of proper types. The updated prompt emphasizes specific exception handling and type safety to address these patterns.",
-                        },
-                    ),
+                        }
+                    )
                 ),
-            ),
+            )
         ]
         return response
 
@@ -207,10 +202,7 @@ Always implement exactly what is requested - no more, no less.""",
         def create_messages(task_id="test_rest_api"):
             if "rest_api" in task_id:
                 return [
-                    {
-                        "role": "user",
-                        "content": "Create a REST API client that calls backends A and B in parallel...",
-                    },
+                    {"role": "user", "content": "Create a REST API client that calls backends A and B in parallel..."},
                     {
                         "role": "assistant",
                         "content": "I'll create a REST API client that calls multiple backends in parallel. Let me start by creating the main client module.",
@@ -272,13 +264,10 @@ class APIClient:
             return {\"status\": \"partial_success\", \"error\": str(e), \"data\": data}
 """,
                                 },
-                            },
+                            }
                         ],
                     },
-                    {
-                        "role": "tool_result",
-                        "content": "File created successfully at /tmp/api_client.py",
-                    },
+                    {"role": "tool_result", "content": "File created successfully at /tmp/api_client.py"},
                     {
                         "role": "assistant",
                         "content": "Now let me create a main module to demonstrate usage:",
@@ -312,13 +301,10 @@ if __name__ == \"__main__\":
     exit(exit_code)
 """,
                                 },
-                            },
+                            }
                         ],
                     },
-                    {
-                        "role": "tool_result",
-                        "content": "File created successfully at /tmp/main.py",
-                    },
+                    {"role": "tool_result", "content": "File created successfully at /tmp/main.py"},
                 ]
             # Config loader task
             return [
@@ -429,13 +415,10 @@ class ConfigLoader:
         return cli_config
 """,
                             },
-                        },
+                        }
                     ],
                 },
-                {
-                    "role": "tool_result",
-                    "content": "File created successfully at /tmp/config_loader.py",
-                },
+                {"role": "tool_result", "content": "File created successfully at /tmp/config_loader.py"},
             ]
 
         return create_messages
@@ -532,10 +515,7 @@ Use proper error handling and type annotations.
 
                 # Create mock output files
                 output_files = (
-                    [
-                        ("api_client.py", "# API client code"),
-                        ("main.py", "# Main module"),
-                    ]
+                    [("api_client.py", "# API client code"), ("main.py", "# Main module")]
                     if "rest" in task.task_id
                     else [("config_loader.py", "# Config loader code")]
                 )
@@ -577,13 +557,7 @@ Use proper error handling and type annotations.
                     )
                     session.add(facet_result)
 
-                rollout_data.append(
-                    {
-                        "rollout": rollout,
-                        "grader_run": grader_run,
-                        "files": output_files,
-                    },
-                )
+                rollout_data.append({"rollout": rollout, "grader_run": grader_run, "files": output_files})
 
             session.commit()
 
@@ -615,18 +589,14 @@ Strengths:
             # Link rollouts to pattern analysis
             for i, rollout in enumerate(rollouts):
                 pattern_rollout = PatternAnalysisRollout(
-                    pattern_analysis_id=pattern_analysis.id,
-                    rollout_id=rollout.id,
-                    rollout_order=i,
+                    pattern_analysis_id=pattern_analysis.id, rollout_id=rollout.id, rollout_order=i
                 )
                 session.add(pattern_rollout)
 
             session.commit()
 
         # Generate improved system prompt for iteration 1
-        improved_prompt_content = mock_openai_prompt_engineering_response.output[
-            0
-        ].function_call.arguments
+        improved_prompt_content = mock_openai_prompt_engineering_response.output[0].function_call.arguments
         improved_prompt_data = json.loads(improved_prompt_content)
 
         with temp_db.get_session() as session:
@@ -634,9 +604,7 @@ Strengths:
                 run_id=run_id,
                 iteration=1,
                 content=improved_prompt_data["updated_prompt"],
-                content_hash=SystemPrompt.compute_content_hash(
-                    improved_prompt_data["updated_prompt"],
-                ),
+                content_hash=SystemPrompt.compute_content_hash(improved_prompt_data["updated_prompt"]),
                 prompt_engineer_reasoning=improved_prompt_content,
             )
             session.add(improved_prompt)
@@ -726,17 +694,11 @@ Strengths:
             assert len(all_grades) == 4
 
             # Check that iter1 scores are higher (showing improvement)
-            iter0_scores = [
-                gr.overall_score for gr in all_grades if gr.rollout.iteration == 0
-            ]
-            iter1_scores = [
-                gr.overall_score for gr in all_grades if gr.rollout.iteration == 1
-            ]
+            iter0_scores = [gr.overall_score for gr in all_grades if gr.rollout.iteration == 0]
+            iter1_scores = [gr.overall_score for gr in all_grades if gr.rollout.iteration == 1]
 
             assert max(iter1_scores) > max(iter0_scores)  # Best score improved
-            assert sum(iter1_scores) / len(iter1_scores) > sum(iter0_scores) / len(
-                iter0_scores,
-            )  # Average improved
+            assert sum(iter1_scores) / len(iter1_scores) > sum(iter0_scores) / len(iter0_scores)  # Average improved
 
             # Check facet results
             facet_results = session.query(GraderFacetResult).all()
@@ -749,27 +711,19 @@ Strengths:
             assert analyses[0].input_rollout_count == 2
 
             # Test rich content queries
-            rest_tasks = (
-                session.query(SeedTask).filter(SeedTask.prompt.like("%REST API%")).all()
-            )
+            rest_tasks = session.query(SeedTask).filter(SeedTask.prompt.like("%REST API%")).all()
             assert len(rest_tasks) == 1
 
             type_criteria = (
                 session.query(GradingCriteria)
-                .filter(
-                    GradingCriteria.evaluation_criteria.like("%Type annotations%"),
-                )
+                .filter(GradingCriteria.evaluation_criteria.like("%Type annotations%"))
                 .all()
             )
             assert len(type_criteria) == 1
 
             # Test that we can query for score evolution
             score_evolution = (
-                session.query(
-                    Rollout.iteration,
-                    GraderRun.overall_score,
-                    SeedTask.task_id,
-                )
+                session.query(Rollout.iteration, GraderRun.overall_score, SeedTask.task_id)
                 .join(GraderRun, Rollout.id == GraderRun.rollout_id)
                 .join(SeedTask, Rollout.task_id == SeedTask.id)
                 .order_by(Rollout.iteration, SeedTask.task_id)
@@ -778,8 +732,6 @@ Strengths:
 
             assert len(score_evolution) == 4
             # Verify we can see the improvement trajectory
-            rest_api_scores = [
-                row[1] for row in score_evolution if "rest_api" in row[2]
-            ]
+            rest_api_scores = [row[1] for row in score_evolution if "rest_api" in row[2]]
             assert len(rest_api_scores) == 2
             assert rest_api_scores[1] > rest_api_scores[0]  # Iteration 1 > Iteration 0

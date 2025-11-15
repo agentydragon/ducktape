@@ -37,11 +37,7 @@ MARKDOWN_PAGES = ["tana", "coding"]
 PAGE_TITLES = {}
 
 # Cache for stats with TTL
-STATS_CACHE = {
-    "data": None,
-    "last_updated": None,
-    "ttl": timedelta(minutes=5),
-}
+STATS_CACHE = {"data": None, "last_updated": None, "ttl": timedelta(minutes=5)}
 
 # Common security headers for all responses
 HEADERS = {
@@ -77,9 +73,7 @@ def load_page_titles():
             if hasattr(md, "Meta") and "title" in md.Meta:
                 PAGE_TITLES[page] = md.Meta["title"][0]
             else:
-                raise ValueError(
-                    f"Missing required 'title' in frontmatter for {page}.md",
-                )
+                raise ValueError(f"Missing required 'title' in frontmatter for {page}.md")
         except Exception as e:
             logger.error(f"Error loading title for {page}.md: {e}")
             raise
@@ -110,11 +104,7 @@ def render_html_page(title: str, content: str, active_page: str = "index") -> st
     """Render HTML page with common structure and navigation menu."""
     template = env.get_template("base.html")
     return template.render(
-        title=title,
-        content=content,
-        active_page=active_page,
-        markdown_pages=MARKDOWN_PAGES,
-        page_titles=PAGE_TITLES,
+        title=title, content=content, active_page=active_page, markdown_pages=MARKDOWN_PAGES, page_titles=PAGE_TITLES
     )
 
 
@@ -160,9 +150,7 @@ for page_name in MARKDOWN_PAGES:
 
             # Get title from frontmatter (required)
             if not hasattr(md, "Meta") or "title" not in md.Meta:
-                raise ValueError(
-                    f"Missing required 'title' in frontmatter for {page}.md",
-                )
+                raise ValueError(f"Missing required 'title' in frontmatter for {page}.md")
             title = md.Meta["title"][0]
 
             # Render with menu
@@ -174,11 +162,7 @@ for page_name in MARKDOWN_PAGES:
 
 
 def analyze_page_tokens(
-    page_id: str,
-    markdown_path: Path,
-    title: str,
-    url: str,
-    is_index: bool = False,
+    page_id: str, markdown_path: Path, title: str, url: str, is_index: bool = False
 ) -> dict[str, Any] | None:
     """Analyze a single page's token counts by simulating the full rendering pipeline."""
     try:
@@ -230,13 +214,7 @@ async def stats_api():
     pages_stats = []
 
     # Analyze index page
-    if stats := analyze_page_tokens(
-        "index",
-        Path("index.md"),
-        "LLM Instructions",
-        "/",
-        is_index=True,
-    ):
+    if stats := analyze_page_tokens("index", Path("index.md"), "LLM Instructions", "/", is_index=True):
         pages_stats.append(stats)
 
     # Analyze other markdown pages
@@ -267,10 +245,7 @@ async def stats_page():
     # Render the stats template
     template = env.get_template("stats.html")
     html = template.render(
-        title="Server Statistics",
-        active_page="stats",
-        markdown_pages=MARKDOWN_PAGES,
-        page_titles=PAGE_TITLES,
+        title="Server Statistics", active_page="stats", markdown_pages=MARKDOWN_PAGES, page_titles=PAGE_TITLES
     )
     return HTMLResponse(content=html, headers=HEADERS)
 
@@ -282,11 +257,7 @@ async def style_css():
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="style.css not found")
 
-    return FileResponse(
-        file_path,
-        media_type="text/css",
-        headers={"Cache-Control": "public, max-age=3600"},
-    )
+    return FileResponse(file_path, media_type="text/css", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/verify/{token:path}", response_class=HTMLResponse)
@@ -305,10 +276,7 @@ async def verify_token(request: Request, token: str = ""):
             ts = TokenScheme(TOKEN_SECRET, text)
 
             ts.verify_token(token)
-            result = {
-                "status": "success",
-                "message": "Token is valid ✅",
-            }
+            result = {"status": "success", "message": "Token is valid ✅"}
             logger.info(f"Token verification succeeded for: {token[:20]}...")
         except VerificationError as exc:
             result = {"status": "failed", "errors": exc.issues}
@@ -319,19 +287,11 @@ async def verify_token(request: Request, token: str = ""):
             result = {"status": "failed", "errors": ["Source document not found"]}
         except Exception as e:
             logger.error(f"Unexpected error during token verification: {e}")
-            result = {
-                "status": "failed",
-                "errors": ["Internal error during verification"],
-            }
+            result = {"status": "failed", "errors": ["Internal error during verification"]}
 
     # Render the verification page
     template = env.get_template("verify.html")
-    html = template.render(
-        token=token,
-        result=result,
-        markdown_pages=MARKDOWN_PAGES,
-        site_url=SITE_URL,
-    )
+    html = template.render(token=token, result=result, markdown_pages=MARKDOWN_PAGES, site_url=SITE_URL)
     return HTMLResponse(content=html, headers=HEADERS)
 
 
@@ -341,12 +301,7 @@ def main():
     port = int(os.environ.get("PORT", "9000"))
 
     logger.info(f"Starting FastAPI server on http://{host}:{port}")
-    uvicorn.run(
-        app,
-        host=host,
-        port=port,
-        log_config=None,
-    )  # None to use our logging config
+    uvicorn.run(app, host=host, port=port, log_config=None)  # None to use our logging config
 
 
 if __name__ == "__main__":

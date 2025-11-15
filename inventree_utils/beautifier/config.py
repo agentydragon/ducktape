@@ -18,9 +18,7 @@ class InstanceConfig:
 
 
 def prompt_for_config() -> InstanceConfig:
-    server_url = input(
-        "InvenTree instance (e.g. https://inventree.mycompany.com): ",
-    ).strip()
+    server_url = input("InvenTree instance (e.g. https://inventree.mycompany.com): ").strip()
     if not server_url:
         raise ValueError("No server URL provided.")
 
@@ -61,9 +59,4 @@ def load_or_prompt_for_config() -> InstanceConfig:
 def api_from_config(config: InstanceConfig | None = None, **kwargs):
     if config is None:
         config = load_or_prompt_for_config()
-    return InvenTreeAPI(
-        config.server_url,
-        username=config.username,
-        password=config.password,
-        **kwargs,
-    )
+    return InvenTreeAPI(config.server_url, username=config.username, password=config.password, **kwargs)

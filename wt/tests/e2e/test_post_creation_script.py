@@ -18,7 +18,7 @@ def real_env_with_post_script(real_temp_repo, config_factory, tmp_path):
             'for a in "$@"; do case "$a" in --worktree_root=*) wt="${a#*=}";; esac; done\n'
             'if [[ -z "$wt" ]]; then echo "missing --worktree_root" >&2; exit 2; fi\n'
             'touch "$wt/.post_create_ran"\n'
-        ),
+        )
     )
     script.chmod(0o755)
     factory = config_factory(real_temp_repo)

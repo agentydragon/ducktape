@@ -5,32 +5,7 @@ from itertools import groupby
 
 import pint
 
-E24 = [
-    1,
-    1.1,
-    1.2,
-    1.3,
-    1.5,
-    1.6,
-    1.8,
-    2,
-    2.2,
-    2.4,
-    2.7,
-    3,
-    3.3,
-    3.6,
-    3.9,
-    4.3,
-    4.7,
-    5.1,
-    5.6,
-    6.2,
-    6.8,
-    7.5,
-    8.2,
-    9.1,
-]
+E24 = [1, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.7, 3, 3.3, 3.6, 3.9, 4.3, 4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1]
 assert len(E24) == 24
 
 
@@ -125,13 +100,7 @@ crunch(
 # C 0402
 crunch(
     _c,
-    {
-        "package": "0402",
-        "voltage_rating": 50,
-        "dielectric": "COG",
-        "tolerance": "0.1pF",
-        "description": None,
-    },
+    {"package": "0402", "voltage_rating": 50, "dielectric": "COG", "tolerance": "0.1pF", "description": None},
     0.5,
     {"tolerance": "0.25pF"},
     [0.7, 1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.5, 2.7, 3, 3.3, 3.6],
@@ -159,11 +128,7 @@ crunch(
     _r,
     {"package": "0603", "tolerance": "1%", "description": 'Labeled "YAGFJR-07"'},
     0,
-    [
-        i * 10**decade
-        for decade in [0, 1, 2, 3, 4, 5]
-        for i in [1, 1.2, 1.5, 2, 2.7, 3.3, 4.3, 5.1, 6.8, 8.2]
-    ],
+    [i * 10**decade for decade in [0, 1, 2, 3, 4, 5] for i in [1, 1.2, 1.5, 2, 2.7, 3.3, 4.3, 5.1, 6.8, 8.2]],
     [1e6, 2e6, 3.3e6, 4.7e6, 1e7],
 )
 
@@ -193,13 +158,7 @@ crunch(
 # C 0805
 crunch(
     _c,
-    {
-        "package": "0805",
-        "voltage_rating": 50,
-        "dielectric": "COG",
-        "tolerance": "0.25pF",
-        "description": None,
-    },
+    {"package": "0805", "voltage_rating": 50, "dielectric": "COG", "tolerance": "0.25pF", "description": None},
     [0.5, 0.75, 1, 1.1, 1.2, 1.3, 1.5, 1.8, 2, 2.2, 2.4, 2.5, 2.7, 3, 3.3],
     [3.6, 3.9, 4, 4.3, 4.7, 5],
     {"tolerance": "0.5pF"},
@@ -265,15 +224,9 @@ def eyeball_check():
         group = list(group_iter)  # Convert to list for multiple iterations
 
         # Determine available fields dynamically
-        has_tolerance = any(
-            hasattr(p, "tolerance") and p.tolerance is not None for p in group
-        )
-        has_voltage = any(
-            hasattr(p, "voltage_rating") and p.voltage_rating is not None for p in group
-        )
-        has_dielectric = any(
-            hasattr(p, "dielectric") and p.dielectric is not None for p in group
-        )
+        has_tolerance = any(hasattr(p, "tolerance") and p.tolerance is not None for p in group)
+        has_voltage = any(hasattr(p, "voltage_rating") and p.voltage_rating is not None for p in group)
+        has_dielectric = any(hasattr(p, "dielectric") and p.dielectric is not None for p in group)
 
         # Generate headers dynamically
         headers = ["Value"]
@@ -326,9 +279,7 @@ def eyeball_check():
             if has_tolerance:
                 row_data.append(part.tolerance or "-")
             if has_voltage:
-                row_data.append(
-                    str(part.voltage_rating) + "V" if part.voltage_rating else "-",
-                )
+                row_data.append(str(part.voltage_rating) + "V" if part.voltage_rating else "-")
             if has_dielectric:
                 row_data.append(part.dielectric or "-")
             row_data.append(" | ".join(changes) if changes else "")
@@ -396,32 +347,7 @@ def eyeball_check():
 #
 # param = Parameter.create(self.api, data={'part': p.pk, 'template': parametertemplate.pk, 'data': 10})
 
-E24 = [
-    1,
-    1.1,
-    1.2,
-    1.3,
-    1.5,
-    1.6,
-    1.8,
-    2,
-    2.2,
-    2.4,
-    2.7,
-    3,
-    3.3,
-    3.6,
-    3.9,
-    4.3,
-    4.7,
-    5.1,
-    5.6,
-    6.2,
-    6.8,
-    7.5,
-    8.2,
-    9.1,
-]
+E24 = [1, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.7, 3, 3.3, 3.6, 3.9, 4.3, 4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1]
 
 
 # Duplicate class definitions (Part/Resistor/Capacitor) removed; see top-level BasePart/Resistor/Capacitor
@@ -500,13 +426,7 @@ crunch(
 # C 0402
 crunch(
     _c,
-    {
-        "package": "0402",
-        "voltage_rating": 50,
-        "dielectric": "COG",
-        "tolerance": "0.1pF",
-        "description": None,
-    },
+    {"package": "0402", "voltage_rating": 50, "dielectric": "COG", "tolerance": "0.1pF", "description": None},
     0.5,
     {"tolerance": "0.25pF"},
     [0.7, 1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.5, 2.7, 3, 3.3, 3.6],
@@ -534,11 +454,7 @@ crunch(
     _r,
     {"package": "0603", "tolerance": "1%", "description": 'Labeled "YAGFJR-07"'},
     0,
-    [
-        i * 10**decade
-        for decade in [0, 1, 2, 3, 4, 5]
-        for i in [1, 1.2, 1.5, 2, 2.7, 3.3, 4.3, 5.1, 6.8, 8.2]
-    ],
+    [i * 10**decade for decade in [0, 1, 2, 3, 4, 5] for i in [1, 1.2, 1.5, 2, 2.7, 3.3, 4.3, 5.1, 6.8, 8.2]],
     [1e6, 2e6, 3.3e6, 4.7e6, 1e7],
 )
 
@@ -568,13 +484,7 @@ crunch(
 # C 0805
 crunch(
     _c,
-    {
-        "package": "0805",
-        "voltage_rating": 50,
-        "dielectric": "COG",
-        "tolerance": "0.25pF",
-        "description": None,
-    },
+    {"package": "0805", "voltage_rating": 50, "dielectric": "COG", "tolerance": "0.25pF", "description": None},
     [0.5, 0.75, 1, 1.1, 1.2, 1.3, 1.5, 1.8, 2, 2.2, 2.4, 2.5, 2.7, 3, 3.3],
     [3.6, 3.9, 4, 4.3, 4.7, 5],
     {"tolerance": "0.5pF"},

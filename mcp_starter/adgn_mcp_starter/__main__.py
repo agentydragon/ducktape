@@ -13,28 +13,12 @@ def main() -> None:
     """Main entry point with transport selection."""
     parser = argparse.ArgumentParser(description="MCP Starter Template Server")
     parser.add_argument(
-        "--transport",
-        choices=["stdio", "sse"],
-        default="stdio",
-        help="Transport mode (default: stdio)",
+        "--transport", choices=["stdio", "sse"], default="stdio", help="Transport mode (default: stdio)"
     )
-    parser.add_argument(
-        "--host",
-        default="localhost",
-        help="Host for SSE mode (default: localhost)",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Port for SSE mode (default: 8000)",
-    )
+    parser.add_argument("--host", default="localhost", help="Host for SSE mode (default: localhost)")
+    parser.add_argument("--port", type=int, default=8000, help="Port for SSE mode (default: 8000)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    parser.add_argument(
-        "--debug-mcp",
-        action="store_true",
-        help="Enable full MCP request/response logging",
-    )
+    parser.add_argument("--debug-mcp", action="store_true", help="Enable full MCP request/response logging")
 
     args = parser.parse_args()
 

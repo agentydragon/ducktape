@@ -5,11 +5,7 @@ from typing import Callable, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from ..config import (
-    EnforcedSleepUntilUserMessagePolicy,
-    LegacySleepUntilUserMessagePolicy,
-    SleepUntilUserMessagePolicy,
-)
+from ..config import EnforcedSleepUntilUserMessagePolicy, LegacySleepUntilUserMessagePolicy, SleepUntilUserMessagePolicy
 from ..matrix_client import ConversationStatus
 from ..tool_execution import ToolPayload, ToolSpec
 
@@ -29,9 +25,7 @@ class SleepUntilUserMessageResult(BaseModel):
 
 
 def build_spec(
-    on_sleep: Callable[[], None],
-    provider: ConversationStatusProvider,
-    policy: SleepUntilUserMessagePolicy,
+    on_sleep: Callable[[], None], provider: ConversationStatusProvider, policy: SleepUntilUserMessagePolicy
 ) -> ToolSpec:
     async def handler(_: SleepUntilUserMessageArgs) -> ToolPayload:
         if isinstance(policy, EnforcedSleepUntilUserMessagePolicy):
@@ -45,16 +39,10 @@ def build_spec(
 
     description = _build_description(policy)
 
-    return ToolSpec(
-        name="sleep_until_user_message",
-        description=description,
-        handler=handler,
-    )
+    return ToolSpec(name="sleep_until_user_message", description=description, handler=handler)
 
 
-def _evaluate_enforced_policy(
-    status: ConversationStatus, policy: EnforcedSleepUntilUserMessagePolicy
-) -> str | None:
+def _evaluate_enforced_policy(status: ConversationStatus, policy: EnforcedSleepUntilUserMessagePolicy) -> str | None:
     now = datetime.now(timezone.utc)
 
     user_ts = status.last_user_message_at
@@ -73,10 +61,7 @@ def _evaluate_enforced_policy(
 
 
 def _build_description(policy: SleepUntilUserMessagePolicy) -> str:
-    base = (
-        "Suspend yourself until a new user Matrix message arrives. Use this when all "
-        "tasks are complete or blocked."
-    )
+    base = "Suspend yourself until a new user Matrix message arrives. Use this when all tasks are complete or blocked."
     if isinstance(policy, LegacySleepUntilUserMessagePolicy):
         return base
 

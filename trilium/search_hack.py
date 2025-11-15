@@ -19,23 +19,13 @@ def fetch_openai_api_key():
     token, root = _TOKEN.value, _ROOT.value
     headers = {"Authorization": token}
 
-    response = requests.get(
-        f"{root}/etapi/notes",
-        params={"search": "#openaiApiKey"},
-        headers=headers,
-    )
+    response = requests.get(f"{root}/etapi/notes", params={"search": "#openaiApiKey"}, headers=headers)
     key_note_id = response.json()["results"][0]["noteId"]
-    return requests.get(
-        f"{root}/etapi/notes/{key_note_id}/content",
-        headers=headers,
-    ).text
+    return requests.get(f"{root}/etapi/notes/{key_note_id}/content", headers=headers).text
 
 
 def get_embedding(string):
-    response = openai.Embedding.create(
-        input=string,
-        model="text-embedding-ada-002",
-    )
+    response = openai.Embedding.create(input=string, model="text-embedding-ada-002")
     return response["data"][0]["embedding"]
 
 
@@ -63,18 +53,9 @@ def index():
         with open(EMBEDDINGS_FILE) as f:
             embeddings = json.load(f)
     else:
-        embeddings = {
-            "notes": {},
-            "strings": {},
-        }
+        embeddings = {"notes": {}, "strings": {}}
 
-    INDEXED_QUERIES = [
-        "#issue",
-        "#dateNote",
-        "~type.title = Paper",
-        "~type.title = Person",
-        "#hotlist",
-    ]
+    INDEXED_QUERIES = ["#issue", "#dateNote", "~type.title = Paper", "~type.title = Person", "#hotlist"]
     MAX = 100
 
     for _query in INDEXED_QUERIES:
@@ -103,10 +84,7 @@ def index():
             title = result["title"]
             note_id = result["noteId"]
 
-            response = requests.get(
-                f"{root}/etapi/notes/{note_id}/content",
-                headers=headers,
-            )
+            response = requests.get(f"{root}/etapi/notes/{note_id}/content", headers=headers)
             assert response.status_code == 200
             note_content = response.text
 
@@ -124,19 +102,14 @@ def index():
                 }:
                     continue
                 if attribute["type"] == "relation":
-                    tr = requests.get(
-                        f"{root}/etapi/notes/{attribute['value']}",
-                        headers=headers,
-                    )
+                    tr = requests.get(f"{root}/etapi/notes/{attribute['value']}", headers=headers)
                     value = tr.json()["title"]
                     content += f"{attribute['name']}: {value}\n"
                     continue
                     # attribute['noteId']
                 # TODO: also label
                 # iconClass, ~template, label: #relation:...
-                if attribute["type"] == "label" and attribute["name"].startswith(
-                    ("relation:", "label:"),
-                ):
+                if attribute["type"] == "label" and attribute["name"].startswith(("relation:", "label:")):
                     # relation/label definition
                     continue
 
@@ -159,11 +132,7 @@ def index():
                 }:
                     continue
 
-                if attribute["type"] == "label" and attribute["name"] in {
-                    "finishedReading",
-                    "arxivId",
-                    "hotlist",
-                }:
+                if attribute["type"] == "label" and attribute["name"] in {"finishedReading", "arxivId", "hotlist"}:
                     content += f"{attribute['name']}: {attribute['value']}\n"
                     continue
 
@@ -176,10 +145,7 @@ def index():
             print(content)
             print("----")
 
-            embeddings["notes"][note_id] = {
-                "string": content,
-                "datetime": datetime.datetime.now().isoformat(),
-            }
+            embeddings["notes"][note_id] = {"string": content, "datetime": datetime.datetime.now().isoformat()}
 
     strings = {note["string"] for note in embeddings["notes"].values()}
     not_embedded = strings - set(embeddings["strings"].keys())
@@ -216,21 +182,15 @@ def search(query):
 
     df = pd.DataFrame.from_records(
         [
-            {
-                "note_id": note_id,
-                "embedding": embeddings["strings"].get(note["string"]),
-                "string": note["string"],
-            }
+            {"note_id": note_id, "embedding": embeddings["strings"].get(note["string"]), "string": note["string"]}
             for note_id, note in embeddings["notes"].items()
-        ],
+        ]
     )
 
     # return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
     import numpy as np
 
-    df["similarities"] = df.embedding.apply(
-        lambda x: cosine_similarity(x or np.zeros_like(embedding), embedding),
-    )
+    df["similarities"] = df.embedding.apply(lambda x: cosine_similarity(x or np.zeros_like(embedding), embedding))
     df = df.drop(columns=["embedding"])
     res = df.sort_values("similarities", ascending=False).head(10)
     print(query)

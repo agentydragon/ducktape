@@ -41,10 +41,7 @@ class GitRepoFactory:
         repo_path.mkdir(exist_ok=True)
 
         # Initialize repository
-        repo = pygit2.init_repository(
-            str(repo_path),
-            initial_head=TestData.Branches.MAIN,
-        )
+        repo = pygit2.init_repository(str(repo_path), initial_head=TestData.Branches.MAIN)
 
         # Configure git user
         repo.config["user.name"] = TestData.Git.USER_NAME
@@ -60,24 +57,11 @@ class GitRepoFactory:
         repo.index.write()
         signature = TestData.Git.signature()
         tree = repo.index.write_tree()
-        _initial_commit = repo.create_commit(
-            "HEAD",
-            signature,
-            signature,
-            TestData.Commits.INITIAL,
-            tree,
-            [],
-        )
+        _initial_commit = repo.create_commit("HEAD", signature, signature, TestData.Commits.INITIAL, tree, [])
 
         # Create additional branches if requested
         if branches:
-            self._create_branches(
-                repo,
-                repo_path,
-                branches,
-                commits_per_branch,
-                signature,
-            )
+            self._create_branches(repo, repo_path, branches, commits_per_branch, signature)
 
         # Create worktrees if requested
         if with_worktrees:
@@ -101,10 +85,7 @@ class GitRepoFactory:
                 continue  # Skip main branch as it already exists
 
             # Create branch from main
-            branch_ref = repo.references.create(
-                f"refs/heads/{branch_name}",
-                main_commit,
-            )
+            branch_ref = repo.references.create(f"refs/heads/{branch_name}", main_commit)
             repo.checkout(branch_ref)
 
             # Make commits on this branch
@@ -121,31 +102,18 @@ class GitRepoFactory:
 
                 # Get parent commit
                 parent_commit = repo.head.target
-                repo.create_commit(
-                    "HEAD",
-                    signature,
-                    signature,
-                    commit_message,
-                    tree,
-                    [parent_commit],
-                )
+                repo.create_commit("HEAD", signature, signature, commit_message, tree, [parent_commit])
 
         # Switch back to main
         repo.checkout("refs/heads/main")
 
     def _create_worktrees(
-        self,
-        repo: pygit2.Repository,
-        repo_path: Path,
-        with_worktrees: bool | list[str],
-        branches: list[str] | None,
+        self, repo: pygit2.Repository, repo_path: Path, with_worktrees: bool | list[str], branches: list[str] | None
     ) -> None:
         """Create worktrees for branches."""
         if isinstance(with_worktrees, bool) and with_worktrees:
             # Create worktrees for all non-main branches
-            worktree_names = [
-                b for b in (branches or []) if b != TestData.Branches.MAIN
-            ]
+            worktree_names = [b for b in (branches or []) if b != TestData.Branches.MAIN]
         elif isinstance(with_worktrees, list):
             # Create worktrees with specified names (copy list to avoid aliasing param)
             worktree_names = list(with_worktrees)
@@ -164,13 +132,7 @@ class GitRepoFactory:
                 # Use git command to create worktree (pygit2 doesn't support worktrees well)
 
                 subprocess.run(
-                    [
-                        "git",
-                        "worktree",
-                        "add",
-                        worktree_path,
-                        branch_name,
-                    ],
+                    ["git", "worktree", "add", worktree_path, branch_name],
                     cwd=repo_path,
                     check=True,
                     capture_output=True,
@@ -178,14 +140,7 @@ class GitRepoFactory:
             except subprocess.CalledProcessError:
                 # If branch doesn't exist, create it first
                 subprocess.run(
-                    [
-                        "git",
-                        "worktree",
-                        "add",
-                        "-b",
-                        branch_name,
-                        worktree_path,
-                    ],
+                    ["git", "worktree", "add", "-b", branch_name, worktree_path],
                     cwd=repo_path,
                     check=True,
                     capture_output=True,
@@ -203,19 +158,12 @@ class RepoPresets:
     @staticmethod
     def with_branches():
         """Repo with multiple branches."""
-        return {
-            "branches": ["feature-1", "feature-2", "bugfix-1"],
-            "commits_per_branch": 2,
-        }
+        return {"branches": ["feature-1", "feature-2", "bugfix-1"], "commits_per_branch": 2}
 
     @staticmethod
     def with_worktrees():
         """Repo with branches and corresponding worktrees."""
-        return {
-            "branches": ["feature-1", "feature-2"],
-            "commits_per_branch": 1,
-            "with_worktrees": True,
-        }
+        return {"branches": ["feature-1", "feature-2"], "commits_per_branch": 1, "with_worktrees": True}
 
     @staticmethod
     def integration_test():

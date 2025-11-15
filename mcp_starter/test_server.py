@@ -17,10 +17,7 @@ async def test_greet_tool(mcp_client: FastMCPClient) -> None:
 
 @pytest.mark.asyncio
 async def test_get_text_chunks_tool(mcp_client: FastMCPClient) -> None:
-    result = await mcp_client.call_tool(
-        name="get_text_chunks",
-        arguments={"text": "Hello World", "chunk_size": 5},
-    )
+    result = await mcp_client.call_tool(name="get_text_chunks", arguments={"text": "Hello World", "chunk_size": 5})
     assert not getattr(result, "is_error", False)
     sc = result.structured_content
     assert isinstance(sc, dict)
@@ -33,9 +30,7 @@ async def test_get_text_chunks_tool(mcp_client: FastMCPClient) -> None:
 @pytest.mark.asyncio
 async def test_get_text_chunks_validation_bad(mcp_client: FastMCPClient) -> None:
     bad = await mcp_client.call_tool(
-        name="get_text_chunks",
-        arguments={"text": "x", "chunk_size": 0},
-        raise_on_error=False,
+        name="get_text_chunks", arguments={"text": "x", "chunk_size": 0}, raise_on_error=False
     )
     assert getattr(bad, "is_error", False)
 
@@ -43,9 +38,7 @@ async def test_get_text_chunks_validation_bad(mcp_client: FastMCPClient) -> None
 @pytest.mark.asyncio
 async def test_get_text_chunks_validation_big(mcp_client: FastMCPClient) -> None:
     big = await mcp_client.call_tool(
-        name="get_text_chunks",
-        arguments={"text": "x", "chunk_size": 20000},
-        raise_on_error=False,
+        name="get_text_chunks", arguments={"text": "x", "chunk_size": 20000}, raise_on_error=False
     )
     assert getattr(big, "is_error", False)
 

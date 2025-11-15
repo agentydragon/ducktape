@@ -45,10 +45,7 @@ def show_help() -> None:
     click.echo()
 
     # Flags with dynamic padding
-    flags = [
-        ("-h, --help", "Show this help"),
-        ("--verbose", "Show client progress and daemon startup info"),
-    ]
+    flags = [("-h, --help", "Show this help"), ("--verbose", "Show client progress and daemon startup info")]
     max_flag = max(len(name) for name, _ in flags)
     click.echo("FLAGS:")
     for name, desc in flags:
@@ -98,19 +95,14 @@ def show_help() -> None:
         click.echo(f"  {cmd:<{max_ex}}  # {desc}")
 
 
-app = typer.Typer(
-    add_completion=False,
-    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
-)
+app = typer.Typer(add_completion=False, context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 _CTX_OPTION = typer.Option(None, hidden=True)
 
 
 @app.callback(invoke_without_command=True)
 def _root(
     ctx: typer.Context,
-    verbose: bool = typer.Option(
-        False, "--verbose", help="Show client progress and daemon startup info"
-    ),
+    verbose: bool = typer.Option(False, "--verbose", help="Show client progress and daemon startup info"),
 ) -> None:
     """Root Typer entry point.
 
@@ -124,9 +116,7 @@ def _root(
     ctx.obj["verbose"] = effective_verbose
     if ctx.invoked_subcommand is None:
         if ctx.args:
-            config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
-                verbose=effective_verbose
-            )
+            config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=effective_verbose)
             anyio.run(
                 _async_sh_main,
                 ShellDispatchContext(
@@ -165,9 +155,7 @@ class ShellDispatchContext:
 
 async def _async_main(verbose: bool = False):
     """Async main function."""
-    _config, formatter, daemon_client, _plugin_manager = _create_cli_dependencies(
-        verbose=verbose,
-    )
+    _config, formatter, daemon_client, _plugin_manager = _create_cli_dependencies(verbose=verbose)
     await handle_status(daemon_client, formatter)
 
 
@@ -238,14 +226,7 @@ async def _cmd_create_sh(config, remaining_args, ctx, **_):
         ctx.exit(1)
     name = remaining_args[0]
     await handle_create_worktree(
-        config,
-        name,
-        CreateWorktreeOptions(
-            from_default=True,
-            from_branch=None,
-            from_worktree=None,
-            confirm=False,
-        ),
+        config, name, CreateWorktreeOptions(from_default=True, from_branch=None, from_worktree=None, confirm=False)
     )
 
 
@@ -253,10 +234,7 @@ async def _cmd_create_sh(config, remaining_args, ctx, **_):
 _COMMAND_DISPATCH["create"] = _cmd_create_sh
 
 
-async def _async_sh_main(
-    dispatch_ctx: ShellDispatchContext,
-    filtered_args,
-):
+async def _async_sh_main(dispatch_ctx: ShellDispatchContext, filtered_args):
     """Async version of sh command handler with low branching complexity."""
     daemon_client = dispatch_ctx.daemon_client
     formatter = dispatch_ctx.formatter
@@ -288,11 +266,7 @@ async def _async_sh_main(
     handler: Callable[..., Awaitable[None]] | None = _COMMAND_DISPATCH.get(cmd)
     if handler is not None:
         await handler(
-            daemon_client=daemon_client,
-            formatter=formatter,
-            config=config,
-            remaining_args=remaining_args,
-            ctx=ctx,
+            daemon_client=daemon_client, formatter=formatter, config=config, remaining_args=remaining_args, ctx=ctx
         )
         return
 
@@ -303,12 +277,8 @@ async def _async_sh_main(
 @app.command("create")
 def cmd_create(
     name: str = typer.Argument(..., help="New worktree name"),
-    from_branch: str | None = typer.Option(
-        None, "--from-branch", "-b", help="Base branch to create from"
-    ),
-    from_worktree: str | None = typer.Option(
-        None, "--from-worktree", "-w", help="Hydrate from existing worktree"
-    ),
+    from_branch: str | None = typer.Option(None, "--from-branch", "-b", help="Base branch to create from"),
+    from_worktree: str | None = typer.Option(None, "--from-worktree", "-w", help="Hydrate from existing worktree"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
     ctx: typer.Context = _CTX_OPTION,
 ):
@@ -319,9 +289,7 @@ def cmd_create(
       wt create foo -w dev
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, _daemon_client, _plugin_manager = _create_cli_dependencies(
-        verbose=verbose
-    )
+    config, formatter, _daemon_client, _plugin_manager = _create_cli_dependencies(verbose=verbose)
     asyncio.run(
         handle_create_worktree(
             config,
@@ -356,11 +324,7 @@ def cmd_status(ctx: typer.Context, name: str | None = typer.Argument(None)):
 
 
 @app.command("cp")
-def cmd_cp(
-    ctx: typer.Context,
-    source: str = typer.Argument(...),
-    dest: str | None = typer.Argument(None),
-):
+def cmd_cp(ctx: typer.Context, source: str = typer.Argument(...), dest: str | None = typer.Argument(None)):
     """Copy current or named worktree to a new worktree."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, *_ = _create_cli_dependencies(verbose=verbose)
@@ -371,9 +335,7 @@ def cmd_cp(
 def cmd_rm(
     ctx: typer.Context,
     name: str = typer.Argument(...),
-    force: bool = typer.Option(
-        False, "--force", help="Force removal without confirmation"
-    ),
+    force: bool = typer.Option(False, "--force", help="Force removal without confirmation"),
 ):
     """Remove a worktree."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
@@ -383,9 +345,7 @@ def cmd_rm(
 
 @app.command("path")
 def cmd_path(
-    ctx: typer.Context,
-    worktree: str | None = typer.Argument(None),
-    subpath: str | None = typer.Argument(None),
+    ctx: typer.Context, worktree: str | None = typer.Argument(None), subpath: str | None = typer.Argument(None)
 ):
     """Resolve a path under a worktree (or the current one)."""
     verbose = bool((ctx.obj or {}).get("verbose", False))
@@ -409,11 +369,7 @@ def cmd_help():
 
 @app.command(
     "sh",
-    context_settings={
-        "ignore_unknown_options": True,
-        "allow_extra_args": True,
-        "help_option_names": ["-h", "--help"],
-    },
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True, "help_option_names": ["-h", "--help"]},
 )
 def cmd_sh(ctx: typer.Context):
     """Compatibility dispatcher for shell function and legacy tests.
@@ -421,17 +377,11 @@ def cmd_sh(ctx: typer.Context):
     Interprets arbitrary arguments using the internal sh-style dispatcher.
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
-        verbose=verbose
-    )
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
     asyncio.run(
         _async_sh_main(
             ShellDispatchContext(
-                daemon_client=daemon_client,
-                formatter=formatter,
-                config=config,
-                plugin_manager=plugin_manager,
-                ctx=ctx,
+                daemon_client=daemon_client, formatter=formatter, config=config, plugin_manager=plugin_manager, ctx=ctx
             ),
             (list(ctx.args) if ctx.args is not None else []),
         )

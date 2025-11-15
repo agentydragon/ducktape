@@ -21,34 +21,16 @@ class TestWorktreeService:
             log_operations=True,
         )
 
-        service = (
-            service_builder(config)
-            .with_real_git()
-            .with_mock_github()
-            .build_worktree_service()
-        )
+        service = service_builder(config).with_real_git().with_mock_github().build_worktree_service()
         return service, config
 
-    def _make_service(
-        self,
-        repo_factory,
-        config_factory,
-        repo_path=None,
-        *,
-        service_builder,
-        **minimal_kwargs,
-    ):
+    def _make_service(self, repo_factory, config_factory, repo_path=None, *, service_builder, **minimal_kwargs):
         if repo_path is None:
             repo_path = repo_factory.create_repo()
         factory = config_factory(repo_path)
         config = factory.minimal(**minimal_kwargs)
 
-        service = (
-            service_builder(config)
-            .with_real_git()
-            .with_mock_github()
-            .build_worktree_service()
-        )
+        service = service_builder(config).with_real_git().with_mock_github().build_worktree_service()
         return service, config
 
     def test_list_worktrees_empty_repo(self, service):
@@ -127,13 +109,7 @@ class TestWorktreeService:
         assert worktree_service._is_managed_worktree(inside_path, config)
 
     @pytest.mark.asyncio
-    async def test_post_creation_script_execution(
-        self,
-        repo_factory,
-        config_factory,
-        mock_factory,
-        service_builder,
-    ):
+    async def test_post_creation_script_execution(self, repo_factory, config_factory, mock_factory, service_builder):
         """Test post-creation script runner executes and passes expected args."""
         repo_path = repo_factory.create_repo()
 
@@ -150,7 +126,7 @@ done
 if [[ -z "$worktree_root" ]]; then echo "missing --worktree_root" >&2; exit 2; fi
 echo "$@" > "$worktree_root/args.txt"
 echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
-""",
+"""
         )
         script_path.chmod(0o755)
 
@@ -164,9 +140,7 @@ echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
 
         worktree_path = service.create_worktree(config, "script-test")
 
-        result = await WorktreeService.run_post_creation_script(
-            str(script_path), worktree_path
-        )
+        result = await WorktreeService.run_post_creation_script(str(script_path), worktree_path)
         assert result["ran"] is True
         assert result["exit_code"] == 0
 
@@ -178,66 +152,34 @@ echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
         assert f"--worktree_root={worktree_path}" in args_record
         assert f"--worktree_name={worktree_path.name}" in args_record
 
-    def test_copy_hydrates_when_enabled(
-        self,
-        repo_factory,
-        config_factory,
-        service_builder,
-    ):
+    def test_copy_hydrates_when_enabled(self, repo_factory, config_factory, service_builder):
         service, config = self._make_service(
-            repo_factory,
-            config_factory,
-            service_builder=service_builder,
-            hydrate_worktrees=True,
+            repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=True
         )
         src = service.create_worktree(config, "src")
         (src / "untracked.txt").write_text("x")
         dst = service.create_worktree(config, "dst", source_worktree=src)
         assert (dst / "untracked.txt").exists()
 
-    def test_copy_skips_hydration_when_disabled(
-        self,
-        repo_factory,
-        config_factory,
-        service_builder,
-    ):
+    def test_copy_skips_hydration_when_disabled(self, repo_factory, config_factory, service_builder):
         service, config = self._make_service(
-            repo_factory,
-            config_factory,
-            service_builder=service_builder,
-            hydrate_worktrees=False,
+            repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=False
         )
         src = service.create_worktree(config, "src")
         (src / "untracked.txt").write_text("x")
         dst = service.create_worktree(config, "dst", source_worktree=src)
         assert not (dst / "untracked.txt").exists()
 
-    def test_create_hydrates_when_enabled(
-        self,
-        repo_factory,
-        config_factory,
-        service_builder,
-    ):
+    def test_create_hydrates_when_enabled(self, repo_factory, config_factory, service_builder):
         service, config = self._make_service(
-            repo_factory,
-            config_factory,
-            service_builder=service_builder,
-            hydrate_worktrees=True,
+            repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=True
         )
         dst = service.create_worktree(config, "dst")
         assert (dst / "README.md").exists()
 
-    def test_create_skips_hydration_when_disabled(
-        self,
-        repo_factory,
-        config_factory,
-        service_builder,
-    ):
+    def test_create_skips_hydration_when_disabled(self, repo_factory, config_factory, service_builder):
         service, config = self._make_service(
-            repo_factory,
-            config_factory,
-            service_builder=service_builder,
-            hydrate_worktrees=False,
+            repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=False
         )
         dst = service.create_worktree(config, "dst")
         entries = [p for p in dst.iterdir() if p.name != ".git"]

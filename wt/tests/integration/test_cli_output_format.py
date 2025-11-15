@@ -8,11 +8,7 @@ import pytest
 
 from tests.asserts import assert_output_contains
 from wt.cli import app
-from wt.shared.protocol import (
-    CommitInfo,
-    StatusResult,
-    WorktreeID,
-)
+from wt.shared.protocol import CommitInfo, StatusResult, WorktreeID
 
 
 @pytest.fixture
@@ -30,12 +26,7 @@ def cli_runner_with_env(cli_runner, wt_env):
 @pytest.mark.integration
 class TestCLIOutputFormat:
     @patch("wt.client.wt_client.WtClient.get_status")
-    def test_status_table_rendering(
-        self,
-        mock_get_status,
-        cli_runner_with_env,
-        build_status_response,
-    ):
+    def test_status_table_rendering(self, mock_get_status, cli_runner_with_env, build_status_response):
         """Test that the status table renders correctly with real formatting."""
         # Create status data
         commit_info = CommitInfo(
@@ -90,9 +81,7 @@ class TestCLIOutputFormat:
         assert_output_contains(output, "main", "feature-branch")
 
     @patch("wt.client.wt_client.WtClient.get_status")
-    def test_status_unknown_when_not_cached(
-        self, mock_get_status, cli_runner_with_env, build_status_response
-    ):
+    def test_status_unknown_when_not_cached(self, mock_get_status, cli_runner_with_env, build_status_response):
         """When status isn't cached yet, show 'unknown' instead of 'clean'."""
         commit_info = CommitInfo(
             hash="abcdef1234567890abcdef1234567890abcdef12",
@@ -117,7 +106,7 @@ class TestCLIOutputFormat:
                 is_main=False,
                 upstream_branch="master",
                 is_cached=False,
-            ),
+            )
         }
         status_response = build_status_response(results)
         result = cli_runner_with_env(status_response, [], mock_get_status)

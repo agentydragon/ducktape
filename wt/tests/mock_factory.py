@@ -29,12 +29,8 @@ class MockFactory:
         mock = Mock(spec=GitHubInterface)
 
         # Set default behaviors
-        mock.pr_list.return_value = (
-            pr_list_returns or MockBehaviors.GitHub.empty_pr_list()
-        )
-        mock.pr_search.return_value = (
-            pr_search_returns or MockBehaviors.GitHub.empty_pr_list()
-        )
+        mock.pr_list.return_value = pr_list_returns or MockBehaviors.GitHub.empty_pr_list()
+        mock.pr_search.return_value = pr_search_returns or MockBehaviors.GitHub.empty_pr_list()
         mock.pr_view.return_value = pr_view_returns
 
         # Allow override of any method via kwargs
@@ -56,13 +52,9 @@ class MockFactory:
         mock = Mock(spec=GitManager)
 
         # Set default behaviors
-        mock.list_branches.return_value = (
-            branches or MockBehaviors.Git.standard_branches()
-        )
+        mock.list_branches.return_value = branches or MockBehaviors.Git.standard_branches()
         mock.list_worktrees.return_value = worktrees or []
-        mock.get_working_directory_status.return_value = (
-            working_status or MockBehaviors.Git.clean_status()
-        )
+        mock.get_working_directory_status.return_value = working_status or MockBehaviors.Git.clean_status()
 
         # Common git operations
         mock.worktree_add.return_value = None
@@ -78,10 +70,7 @@ class MockFactory:
 
     @staticmethod
     def daemon_client(
-        *,
-        status_response: StatusResponse | None = None,
-        get_status_returns: StatusResponse | None = None,
-        **kwargs,
+        *, status_response: StatusResponse | None = None, get_status_returns: StatusResponse | None = None, **kwargs
     ) -> Mock:
         """Create a configured daemon client mock."""
         mock = Mock(spec=WtClient)
@@ -95,10 +84,7 @@ class MockFactory:
         )
 
         mock.get_status.return_value = get_status_returns or default_response
-        mock.create_worktree.return_value = Mock(
-            success=True,
-            absolute_path=Path("/test/path"),
-        )
+        mock.create_worktree.return_value = Mock(success=True, absolute_path=Path("/test/path"))
         mock.delete_worktree.return_value = Mock(success=True)
         mock.list_worktrees.return_value = Mock(worktrees=[])
 
@@ -125,10 +111,7 @@ class MockFactory:
         return mock
 
     @staticmethod
-    def process_info_list(
-        *,
-        running_processes: list[dict[str, Any]] | None = None,
-    ) -> list[Mock]:
+    def process_info_list(*, running_processes: list[dict[str, Any]] | None = None) -> list[Mock]:
         """Create a list of process info mocks."""
         if running_processes is None:
             return []
