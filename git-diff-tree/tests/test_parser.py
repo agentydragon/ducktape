@@ -1,7 +1,6 @@
 """Tests for git diff parser."""
 
 from pathlib import Path
-import subprocess
 
 from git_diff_tree.parser import FileChange, parse_git_diff
 
@@ -39,26 +38,19 @@ def test_parse_git_diff_with_changes(temp_git_repo: Path):
     assert isinstance(changes, list)
 
 
-def test_parse_git_diff_empty(temp_git_repo: Path):
+def test_parse_git_diff_empty(temp_git_repo: Path, run_git):
     """Test parsing git diff with no changes."""
     # Create initial commit
     create_file(temp_git_repo, "file1.py", "line1\n")
     git_add_commit(temp_git_repo, "Initial commit")
 
     # No changes, so diff should be empty
-    # Note: This test needs to run git diff from within the repo
-    result = subprocess.run(
-        ["git", "diff", "--numstat"],
-        cwd=temp_git_repo,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    result = run_git("diff", "--numstat")
 
     assert result.stdout.strip() == ""
 
 
-def test_file_change_with_binary(temp_git_repo: Path):
+def test_file_change_with_binary(temp_git_repo: Path, run_git):
     """Test handling binary files (shown as '-' in numstat)."""
     # PNG file header
     png_header = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
@@ -71,14 +63,8 @@ def test_file_change_with_binary(temp_git_repo: Path):
     # Modify the binary file
     binary_file.write_bytes(png_header + b"\xff" * 100)  # Different content
 
-    # Get the diff output manually to verify binary handling
-    result = subprocess.run(
-        ["git", "diff", "--numstat"],
-        cwd=temp_git_repo,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    # Get the diff output to verify binary handling
+    result = run_git("diff", "--numstat")
 
     # Binary files should show as "-\t-\tfilename"
     assert "-\t-\timage.png" in result.stdout

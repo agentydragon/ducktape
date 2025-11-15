@@ -1,13 +1,12 @@
 """Shared test fixtures for git-diff-tree tests."""
 
+from collections.abc import Generator
+from pathlib import Path
 import subprocess
 import tempfile
-from pathlib import Path
-from typing import Generator
-
-import pytest
 
 from git_diff_tree.parser import FileChange
+import pytest
 
 
 @pytest.fixture
@@ -98,3 +97,29 @@ def git_add_commit(repo_path: Path, message: str) -> None:
         check=True,
         capture_output=True,
     )
+
+
+@pytest.fixture
+def run_git(temp_git_repo: Path):
+    """
+    Fixture factory for running git commands in the test repository.
+
+    Returns:
+        Callable that runs git commands with the given arguments.
+
+    Example:
+        def test_foo(run_git):
+            result = run_git("diff", "--numstat")
+            assert "file.py" in result.stdout
+    """
+
+    def _run_git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", *args],
+            cwd=temp_git_repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+    return _run_git
