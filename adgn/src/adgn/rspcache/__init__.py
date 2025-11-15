@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -91,7 +91,7 @@ def _extract_client_token(
     if header_token:
         token = header_token.strip()
         if token:
-            return token
+            return cast(str, token)
     return None
 
 

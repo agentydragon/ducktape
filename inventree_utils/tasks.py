@@ -87,7 +87,7 @@ def render_template(c, api, template_pk):
     output_pdf = here / "all_parts_labels.pdf"
 
     all_parts = False
-    if all_parts:
+    if all_parts:  # noqa: SIM108  # Keep if-else for readability with commented part list
         part_ids = all_part_ids(api)
     else:
         part_ids = [

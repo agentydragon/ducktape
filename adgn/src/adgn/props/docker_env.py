@@ -35,7 +35,8 @@ class PropertiesDockerWiring:
 
     @property
     def server_name(self) -> str:
-        return DOCKER_SERVER_NAME
+        name: str = DOCKER_SERVER_NAME
+        return name
 
     def container_path_for_prop_rel(self, rel: str) -> Path:
         if not self.definitions_container_dir:
