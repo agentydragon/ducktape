@@ -123,7 +123,7 @@ def parse_response(value: OpenAIResponse | Mapping[str, object]) -> OpenAIRespon
 def dump_response(value: OpenAIResponse | None) -> dict[str, Any] | None:
     if value is None:
         return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))
+    return value.model_dump(mode="json")
 
 
 def parse_error(value: Any) -> ErrorPayload:
@@ -141,7 +141,7 @@ def parse_error(value: Any) -> ErrorPayload:
 def dump_error(value: ErrorPayload | None) -> dict[str, Any] | None:
     if value is None:
         return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))
+    return value.model_dump(mode="json")
 
 
 def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
@@ -153,4 +153,4 @@ def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
 def dump_usage(value: ResponseUsage | None) -> dict[str, Any] | None:
     if value is None:
         return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))
+    return value.model_dump(mode="json")
