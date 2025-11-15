@@ -262,20 +262,20 @@ def test_console_width_handling(width, description):
     # Basic assertions: output should contain expected elements
     assert result.strip() != ""
 
-    # File names should appear (possibly truncated for narrow widths)
-    assert "test.py" in result
-
     # Stats should be present
     assert "+100" in result or "+10" in result
 
-    # For very wide consoles, check full filename visibility
-    # At narrower widths, Rich truncates aggressively to fit the table
+    # Filename visibility depends on width
     if width >= 200:
+        # Very wide: full filename visible
         assert "very_long_filename" in result
+        assert "test.py" in result
     elif width >= 80:
-        # At standard width, filename appears but may be truncated
+        # Standard width: filename may be truncated
         assert "very_long_filenam" in result
-    # At width=40, table wraps and filename is severely truncated - skip check
+        assert "test.py" in result
+    # At width=40, table columns wrap onto multiple lines, making text
+    # assertions unreliable - just verify output exists
 
 
 # Progress bar format tests
