@@ -3,11 +3,12 @@
 from typing import Optional
 
 from rich.console import Console, ConsoleOptions, RenderResult
+from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
 from .config import Column, RenderConfig
-from .progress_bar import DualProgressBar
+from .progress_bar import ProgressBar
 from .tree import TreeNode
 
 
@@ -133,12 +134,12 @@ class DiffTree:
 
     def _make_node_label(
         self, node: TreeNode, max_changes: int, max_additions: int, max_deletions: int
-    ) -> Text:
+    ) -> Table:
         """
         Create the label for a tree node with stats and progress bars.
 
-        Bars are scaled independently so the breakpoint between additions (green)
-        and deletions (red) is at a consistent position across all files.
+        Uses a Rich Table grid to organize columns. Progress bars are separate
+        columns (green RTL additions, red LTR deletions) for proper alignment.
 
         Args:
             node: TreeNode to create label for.
@@ -147,45 +148,72 @@ class DiffTree:
             max_deletions: Maximum deletions across all nodes.
 
         Returns:
-            Rich Text object with formatted label.
+            Rich Table object with formatted label.
         """
-        label = Text()
+        # Create a grid table (no borders, minimal padding)
+        table = Table.grid(padding=0)
+        table.add_column(justify="left")  # Name
 
-        # Node name
+        # Build row content
+        row = []
+
+        # Column 1: Node name
         name_color = "bold blue" if not node.is_file else "white"
-        label.append(node.name, style=name_color)
+        row.append(Text(node.name, style=name_color))
 
-        # Add spacing before stats
-        label.append("  ")
-
-        # Column 2-3: +/- counts
+        # Column 2: Counts
         if Column.COUNTS in self.config.columns:
+            table.add_column(justify="right")  # Spacing + counts
+            counts = Text("  ")  # Spacing
             if node.additions > 0:
-                label.append(f"+{node.additions}", style="green")
-            label.append(" ")
+                counts.append(f"+{node.additions}", style="green")
+            counts.append(" ")
             if node.deletions > 0:
-                label.append(f"-{node.deletions}", style="red")
-            label.append("  ")
+                counts.append(f"-{node.deletions}", style="red")
+            row.append(counts)
 
-        # Column 4-5: Progress bars with consistent breakpoint
-        # Green bar grows RTL (right-to-left), red bar grows LTR (left-to-right)
+        # Columns 3-4: Progress bars (separate columns for RTL green and LTR red)
         if Column.BARS in self.config.columns:
-            dual_bar = DualProgressBar(
-                additions=node.additions,
-                deletions=node.deletions,
-                max_additions=max_additions,
-                max_deletions=max_deletions,
+            table.add_column(justify="right")  # Spacing + green bar (RTL)
+            table.add_column(justify="left")  # Red bar (LTR)
+
+            # Green bar (RTL - additions)
+            green_bar = ProgressBar(
+                value=node.additions,
+                max_value=max_additions,
                 width=self.config.bar_width,
+                align="right",
+                style="green",
             )
-            label.append_text(dual_bar.to_text())
-            label.append("  ")
 
-        # Column 6: Percentage
-        if Column.PERCENTAGES in self.config.columns and max_changes > 0:
-            percentage = (node.total_changes / max_changes) * 100
-            label.append(f"{percentage:5.1f}%", style="cyan")
+            # Red bar (LTR - deletions)
+            red_bar = ProgressBar(
+                value=node.deletions,
+                max_value=max_deletions,
+                width=self.config.bar_width,
+                align="left",
+                style="red",
+            )
 
-        return label
+            # Add spacing before green bar
+            green_cell = Text("  ")
+            green_cell.append_text(green_bar.to_text())
+            row.append(green_cell)
+            row.append(red_bar.to_text())
+
+        # Column 5: Percentage
+        if Column.PERCENTAGES in self.config.columns:
+            table.add_column(justify="right")
+            if max_changes > 0:
+                percentage = (node.total_changes / max_changes) * 100
+                pct_text = Text("  ")  # Spacing
+                pct_text.append(f"{percentage:5.1f}%", style="cyan")
+                row.append(pct_text)
+            else:
+                row.append(Text("  "))
+
+        table.add_row(*row)
+        return table
 
 
 # Backward compatibility alias (deprecated)
