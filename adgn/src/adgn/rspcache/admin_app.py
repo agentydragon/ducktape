@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from asyncpg import UniqueViolationError
@@ -70,21 +70,30 @@ class FrameRecordModel(BaseModel):
     ordinal: int
     frame_type: str | None = None
     event_id: str | None = None
-    created_ts: datetime
+    created_at: datetime
     frame: Any
 
 
 class ResponseRecordModel(BaseModel):
+    """API model for cached OpenAI API responses.
+
+    Attributes:
+        key: SHA256 hash of request body (used for cache lookups)
+        response_id: OpenAI's response ID (e.g., 'resp_abc123'), nullable
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     # Core Response fields
     key: str
     response_id: str | None = None
     model: str
-    status: str
+    status: (
+        Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"] | None
+    ) = None
     status_reason: str | None = None
-    created_ts: datetime
-    last_update_ts: datetime
+    created_at: datetime
+    updated_at: datetime
     latency_ms: int | None = None
 
     # TODO: Type this properly (OpenAI request model)
@@ -93,17 +102,6 @@ class ResponseRecordModel(BaseModel):
     # Nested relationships (typed)
     api_key: APIKeyModel | None = None
     snapshot: FinalResponseSnapshot | None = None
-
-    # Backward compatibility
-    @property
-    def api_key_id(self) -> UUID | None:
-        """Deprecated: use api_key.id instead."""
-        return self.api_key.id if self.api_key else None
-
-    @property
-    def api_key_name(self) -> str | None:
-        """Deprecated: use api_key.name instead."""
-        return self.api_key.name if self.api_key else None
 
 
 class ResponseListModel(BaseModel):
@@ -127,7 +125,7 @@ class APIKeyModel(BaseModel):
     name: str
     token_prefix: str
     upstream_alias: str
-    created_ts: datetime
+    created_at: datetime
     revoked_ts: datetime | None = None
 
 
@@ -173,8 +171,8 @@ def _to_response_model(record: Response) -> ResponseRecordModel:
         model=record.model,
         status=record.status,
         status_reason=record.status_reason,
-        created_ts=record.created_ts,
-        last_update_ts=record.last_update_ts,
+        created_at=record.created_ts,
+        updated_at=record.last_update_ts,
         latency_ms=record.latency_ms,
         request_body=record.request_body,
         api_key=_to_api_key_model(record.api_key) if record.api_key else None,
@@ -188,7 +186,7 @@ def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
         ordinal=frame.ordinal,
         frame_type=frame.frame_type or payload.type,
         event_id=frame.event_id or stream_event_event_id(payload),
-        created_ts=frame.created_ts,
+        created_at=frame.created_ts,
         frame=payload.model_dump(mode="json"),
     )
 
@@ -199,7 +197,7 @@ def _to_api_key_model(record: ClientAPIKey | APIKeyRecord) -> APIKeyModel:
         name=record.name,
         token_prefix=record.token_prefix,
         upstream_alias=record.upstream_alias,
-        created_ts=record.created_ts,
+        created_at=record.created_ts,
         revoked_ts=record.revoked_ts,
     )
 

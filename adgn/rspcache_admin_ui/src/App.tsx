@@ -334,13 +334,13 @@ const App = () => {
             style={{ cursor: 'pointer' }}
             bg={isActive ? 'blue.0' : undefined}
           >
-            <Table.Td>{formatDate(record.created_ts)}</Table.Td>
+            <Table.Td>{formatDate(record.created_at)}</Table.Td>
             <Table.Td>
               <Badge color={statusBadgeColor(record.status)}>{record.status}</Badge>
             </Table.Td>
             <Table.Td>{record.model}</Table.Td>
             <Table.Td>{record.latency_ms != null ? `${record.latency_ms} ms` : '—'}</Table.Td>
-            <Table.Td>{record.api_key_name || '—'}</Table.Td>
+            <Table.Td>{record.api_key?.name || '—'}</Table.Td>
           </Table.Tr>
         );
       }),
@@ -444,7 +444,7 @@ const App = () => {
               <Text fw={600} span>
                 API Key:
               </Text>{' '}
-              {selectedDetail.api_key_name || '—'}
+              {selectedDetail.api_key?.name || '—'}
             </Text>
             <Text>
               <Text fw={600} span>
@@ -456,7 +456,7 @@ const App = () => {
               <Text fw={600} span>
                 Last updated:
               </Text>{' '}
-              {formatDate(selectedDetail.last_update_ts)}
+              {formatDate(selectedDetail.updated_at)}
             </Text>
             <JsonBlock label="Request" value={selectedDetail.request_body ?? {}} />
             {selectedDetail.final_response && <JsonBlock label="Response" value={selectedDetail.final_response} />}
@@ -469,7 +469,7 @@ const App = () => {
                     {frames.map((frame) => (
                       <Card key={frame.ordinal} withBorder radius="md" padding="sm">
                         <Text fw={600} size="sm" mb="xs">
-                          #{frame.ordinal} · {frame.frame_type ?? 'frame'} · {formatDate(frame.created_ts)}
+                          #{frame.ordinal} · {frame.frame_type ?? 'frame'} · {formatDate(frame.created_at)}
                         </Text>
                         <JsonView value={frame.frame ?? {}} displayDataTypes={false} enableClipboard collapsed={2} />
                       </Card>
@@ -557,7 +557,7 @@ const App = () => {
                     <Table.Td>{key.upstream_alias}</Table.Td>
                     <Table.Td>{key.token_prefix}</Table.Td>
                     <Table.Td>{key.revoked_ts ? 'revoked' : 'active'}</Table.Td>
-                    <Table.Td>{formatDate(key.created_ts)}</Table.Td>
+                    <Table.Td>{formatDate(key.created_at)}</Table.Td>
                   </Table.Tr>
                 ))
               ) : (
