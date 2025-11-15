@@ -2,6 +2,7 @@
 
 from io import StringIO
 
+from git_diff_tree.config import RenderConfig
 from git_diff_tree.parser import FileChange
 from git_diff_tree.renderer import BLOCKS, DiffTreeRenderer
 from git_diff_tree.tree import build_tree
@@ -89,8 +90,10 @@ def test_render_with_max_depth(sample_changes):
     console = Console(file=output, force_terminal=True, width=120)
 
     root = build_tree(sample_changes)
-    renderer = DiffTreeRenderer(console=console)
-    renderer.render(root, max_depth=1)
+    config = RenderConfig.default()
+    config.max_depth = 1
+    renderer = DiffTreeRenderer(console=console, config=config)
+    renderer.render(root)
 
     result = output.getvalue()
 

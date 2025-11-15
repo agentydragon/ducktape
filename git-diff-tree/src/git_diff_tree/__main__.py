@@ -110,7 +110,7 @@ def main(
 
         # Render tree
         renderer = DiffTreeRenderer(config=config)
-        renderer.render(root, max_depth=max_depth)
+        renderer.render(root)
 
     except Exception as e:
         console = Console(stderr=True)

@@ -1,7 +1,5 @@
 """Tests for tree structure building."""
 
-import pytest
-
 from git_diff_tree.parser import FileChange
 from git_diff_tree.tree import build_tree, sort_tree
 

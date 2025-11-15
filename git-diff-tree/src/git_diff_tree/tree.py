@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from .parser import FileChange
 
@@ -15,7 +14,7 @@ class TreeNode:
     is_file: bool
     additions: int = 0
     deletions: int = 0
-    children: Dict[str, "TreeNode"] = field(default_factory=dict)
+    children: dict[str, "TreeNode"] = field(default_factory=dict)
     path: str = ""
 
     @property
@@ -32,7 +31,7 @@ class TreeNode:
             self.deletions += node.deletions
 
 
-def build_tree(changes: List[FileChange]) -> TreeNode:
+def build_tree(changes: list[FileChange]) -> TreeNode:
     """
     Build a tree structure from a list of file changes.
 

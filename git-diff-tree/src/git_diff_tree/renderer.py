@@ -31,13 +31,12 @@ class DiffTreeRenderer:
         self.console = console or Console()
         self.config = config or RenderConfig.default()
 
-    def render(self, root: TreeNode, max_depth: Optional[int] = None) -> None:
+    def render(self, root: TreeNode) -> None:
         """
         Render the tree to the console.
 
         Args:
             root: Root TreeNode to render.
-            max_depth: Maximum depth to render (None for unlimited).
         """
         # Find max additions and deletions separately for consistent bar breakpoints
         max_additions, max_deletions = self._find_max_additions_deletions(root)
@@ -47,7 +46,12 @@ class DiffTreeRenderer:
 
         # Build Rich Tree and render
         tree = self._build_rich_tree(
-            root, max_changes, max_additions, max_deletions, max_depth, depth=0
+            root,
+            max_changes,
+            max_additions,
+            max_deletions,
+            self.config.max_depth,
+            depth=0,
         )
         self.console.print(tree)
 
