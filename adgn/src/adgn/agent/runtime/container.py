@@ -219,8 +219,7 @@ class AgentContainer:
         if self._mcp_client is None:
             return {}
         meta = CompositorMetaClient(self._mcp_client)
-        entries = await meta.list_states()
-        return cast(dict[str, ServerEntry], entries)
+        return await meta.list_states()
 
     # ---- Actor dispatch -----------------------------------------------------
 

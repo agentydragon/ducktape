@@ -220,9 +220,7 @@ def extract_text_from_openai_response(response: ResponsesResult) -> str:
     """
     for item in response.output:
         if isinstance(item, AssistantMessageOut):
-            msg: AssistantMessageOut = item
-            text = msg.text
-            assert isinstance(text, str)
+            text = item.text
             if text:
                 return text
 

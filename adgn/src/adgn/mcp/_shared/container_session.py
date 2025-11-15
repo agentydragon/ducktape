@@ -416,7 +416,7 @@ def register_container(
             image_history=img_history,
             ephemeral=s.ephemeral,
         )
-        return cast(dict[str, Any], ci.model_dump(mode="json"))
+        return ci.model_dump(mode="json")
 
     # Ensure the context annotation is preserved after future-annotations rewriting so
     # FastMCP treats this as a static resource rather than a template.

@@ -25,8 +25,7 @@ def extract_single_text_content(res: mcp_types.ReadResourceResult) -> str:
     text = text_parts[0].text
     if text is None:
         raise RuntimeError("text content part missing text payload")
-    text_str: str = text
-    return text_str
+    return text
 
 
 async def read_text_json(session: ClientSession, uri: str) -> Any:
@@ -38,8 +37,7 @@ async def read_text_json(session: ClientSession, uri: str) -> Any:
     rr = await session.read_resource(parse_any_url(uri))
     s = extract_single_text_content(rr)
     # Parse as JSON into a generic Python structure
-    adapter = TypeAdapter(dict[str, Any])
-    return cast(dict[str, Any], adapter.validate_json(s))
+    return TypeAdapter(dict[str, Any]).validate_json(s)
 
 
 # Internal helpers; import explicitly where needed
@@ -55,5 +53,4 @@ async def read_text_json_typed(session: ClientSession, uri: str, model: type[T])
     """
     rr = await session.read_resource(parse_any_url(uri))
     s = extract_single_text_content(rr)
-    adapter = TypeAdapter(model)
-    return cast(T, adapter.validate_json(s))
+    return TypeAdapter(model).validate_json(s)
