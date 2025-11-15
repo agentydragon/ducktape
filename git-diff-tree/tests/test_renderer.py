@@ -271,10 +271,9 @@ def test_console_width_handling(width, description):
 # Progress bar format tests
 
 
-def _extract_progress_bars(line: str) -> str:
+def _extract_progress_bars(line: Text) -> str:
     """Extract just the progress bar characters from a line (after filename and counts)."""
-    # Strip ANSI codes first
-    plain = Text.from_ansi(line).plain
+    plain = line.plain
 
     # Find the progress bar part - it's the block characters between counts and percentage
     # Block characters are: " ▏▎▍▌▋▊▉█"
@@ -311,8 +310,8 @@ def test_progress_bar_format_pattern():
     result = output.getvalue()
 
     # Extract the line with file.py
-    lines = result.split("\n")
-    file_line = next(line for line in lines if "file.py" in line)
+    lines = [Text.from_ansi(line) for line in result.split("\n")]
+    file_line = next(line for line in lines if "file.py" in line.plain)
 
     # Extract just the progress bar part
     bars = _extract_progress_bars(file_line)
@@ -372,9 +371,9 @@ def test_progress_bar_format_various_sizes(additions, deletions):
     renderer.render(root)
 
     result = output.getvalue()
-    lines = result.split("\n")
+    lines = [Text.from_ansi(line) for line in result.split("\n")]
     file_line = next(
-        line for line in lines if f"file_{additions}_{deletions}.py" in line
+        line for line in lines if f"file_{additions}_{deletions}.py" in line.plain
     )
 
     bars = _extract_progress_bars(file_line)
@@ -423,27 +422,27 @@ def test_progress_bars_align_consistently():
     renderer.render(root)
 
     result = output.getvalue()
-    lines = [Text.from_ansi(line).plain for line in result.split("\n")]
+    lines = [Text.from_ansi(line) for line in result.split("\n")]
 
     # Extract lines for each file
     file_lines = {
-        "aaaa.py": next(line for line in lines if "aaaa.py" in line),
-        "bbbbbbbbbb.py": next(line for line in lines if "bbbbbbbbbb.py" in line),
-        "c.py": next(line for line in lines if "c.py" in line),
+        "aaaa.py": next(line for line in lines if "aaaa.py" in line.plain),
+        "bbbbbbbbbb.py": next(line for line in lines if "bbbbbbbbbb.py" in line.plain),
+        "c.py": next(line for line in lines if "c.py" in line.plain),
     }
 
     # Find the character range where progress bars appear in each line
     # Progress bars are the consecutive block characters
     block_chars = set(" ▏▎▍▌▋▊▉█")
 
-    def find_bar_range(line: str) -> tuple[int, int]:
+    def find_bar_range(line: Text) -> tuple[int, int]:
         """Find start and end index of progress bar section."""
         start = None
         end = None
         in_blocks = False
         consecutive_blocks = 0
 
-        for i, char in enumerate(line):
+        for i, char in enumerate(line.plain):
             if char in block_chars:
                 if not in_blocks:
                     # Count consecutive block chars to distinguish from single spaces
