@@ -9,7 +9,6 @@ from rich.tree import Tree
 from .config import RenderConfig
 from .tree import TreeNode
 
-
 # Unicode block characters for progress bars (from empty to full)
 BLOCKS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
 
@@ -73,16 +72,19 @@ class DiffTreeRenderer:
         tree = Tree(label)
 
         # Add children if within depth limit
-        if max_depth is None or depth < max_depth:
-            if not node.is_file and node.children:
-                for child in node.children.values():
-                    child_tree = self._build_rich_tree(
-                        child,
-                        max_changes,
-                        max_depth,
-                        depth + 1,
-                    )
-                    tree.add(child_tree)
+        if (
+            (max_depth is None or depth < max_depth)
+            and not node.is_file
+            and node.children
+        ):
+            for child in node.children.values():
+                child_tree = self._build_rich_tree(
+                    child,
+                    max_changes,
+                    max_depth,
+                    depth + 1,
+                )
+                tree.add(child_tree)
 
         return tree
 
@@ -163,10 +165,7 @@ class DiffTreeRenderer:
         Returns:
             Rich Text object with the progress bar.
         """
-        if max_value == 0:
-            ratio = 0
-        else:
-            ratio = min(value / max_value, 1.0)
+        ratio = 0 if max_value == 0 else min(value / max_value, 1.0)
 
         # Calculate how many characters to fill
         filled_width = ratio * width

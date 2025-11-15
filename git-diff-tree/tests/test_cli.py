@@ -1,13 +1,13 @@
 """Tests for CLI functionality."""
 
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
-
 from git_diff_tree.__main__ import main
+import pytest
+
 from .conftest import create_file, git_add_commit
 
 
@@ -58,9 +58,7 @@ def test_cli_columns_flag_all(runner, git_repo_with_changes):
 
 def test_cli_columns_flag_minimal(runner, git_repo_with_changes):
     """Test --columns flag with only tree column."""
-    result = runner.invoke(
-        main, ["--columns", "tree"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(main, ["--columns", "tree"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     # Should show tree structure
@@ -120,9 +118,7 @@ def test_cli_columns_flag_with_spaces(runner, git_repo_with_changes):
 
 def test_cli_sort_alpha(runner, git_repo_with_changes):
     """Test --sort alpha option."""
-    result = runner.invoke(
-        main, ["--sort", "alpha"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(main, ["--sort", "alpha"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     assert result.output.strip() != ""
@@ -130,9 +126,7 @@ def test_cli_sort_alpha(runner, git_repo_with_changes):
 
 def test_cli_sort_size(runner, git_repo_with_changes):
     """Test --sort size option (default)."""
-    result = runner.invoke(
-        main, ["--sort", "size"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(main, ["--sort", "size"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     assert result.output.strip() != ""
@@ -140,9 +134,7 @@ def test_cli_sort_size(runner, git_repo_with_changes):
 
 def test_cli_max_depth(runner, git_repo_with_changes):
     """Test --max-depth option."""
-    result = runner.invoke(
-        main, ["--max-depth", "1"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(main, ["--max-depth", "1"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     assert result.output.strip() != ""
@@ -150,9 +142,7 @@ def test_cli_max_depth(runner, git_repo_with_changes):
 
 def test_cli_bar_width(runner, git_repo_with_changes):
     """Test --bar-width option."""
-    result = runner.invoke(
-        main, ["--bar-width", "30"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(main, ["--bar-width", "30"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     assert result.output.strip() != ""
@@ -170,6 +160,7 @@ def test_cli_no_changes(temp_git_repo):
         cwd=temp_git_repo,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     # Should exit successfully but with "No changes" message

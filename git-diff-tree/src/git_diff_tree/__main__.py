@@ -83,14 +83,14 @@ def main(
 
         # Parse column configuration
         column_list = []
-        for col_name in columns.split(","):
-            col_name = col_name.strip().upper()
+        for col in columns.split(","):
+            col_upper = col.strip().upper()
             try:
-                column_list.append(Column[col_name])
+                column_list.append(Column[col_upper])
             except KeyError:
                 console = Console(stderr=True)
                 console.print(
-                    f"Error: Unknown column '{col_name}'. "
+                    f"Error: Unknown column '{col}'. "
                     f"Valid options: {', '.join(c.value for c in Column)}",
                     style="bold red",
                 )

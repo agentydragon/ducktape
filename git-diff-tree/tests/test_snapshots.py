@@ -3,13 +3,12 @@
 from io import StringIO
 from typing import Optional
 
-import pytest
-from rich.console import Console
-
 from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.parser import FileChange
 from git_diff_tree.renderer import DiffTreeRenderer
 from git_diff_tree.tree import build_tree, sort_tree
+import pytest
+from rich.console import Console
 
 
 @pytest.fixture

@@ -2,12 +2,11 @@
 
 from io import StringIO
 
-import pytest
-from rich.console import Console
-
 from git_diff_tree.parser import FileChange
 from git_diff_tree.renderer import BLOCKS, DiffTreeRenderer
 from git_diff_tree.tree import build_tree
+import pytest
+from rich.console import Console
 
 
 def test_blocks_constant():
@@ -133,7 +132,9 @@ def test_make_progress_bar_alignment():
     bar_right = renderer._make_progress_bar(30, 100, 10, "right", "green")
     plain = bar_right.plain
     # Should be right-aligned (padding on left)
-    assert plain.endswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
+    assert (
+        plain.endswith(("█", "▉", "▊", "▋", "▌", "▍", "▎", "▏")) or plain.strip() == ""
+    )
 
     # Left-aligned bar
     bar_left = renderer._make_progress_bar(30, 100, 10, "left", "green")
@@ -143,7 +144,7 @@ def test_make_progress_bar_alignment():
 
 
 @pytest.mark.parametrize(
-    "value,max_value,expected_has_sliver",
+    ("value", "max_value", "expected_has_sliver"),
     [
         (1, 10000, True),  # Very small ratio
         (1, 1000000, True),  # Extremely small ratio
