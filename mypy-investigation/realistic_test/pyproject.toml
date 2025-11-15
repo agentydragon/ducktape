@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adgn-test"
+version = "0.0.0"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_return_any = true
+# Test WITHOUT disable_expression_cache
+# disable_expression_cache = true
+# Run from within realistic_test/ directory: mypy --config-file pyproject.toml src/adgn
+# Source root for the adgn package is "src" from realistic_test/ directory
+mypy_path = ["src"]
+packages = ["adgn"]
+namespace_packages = true
+explicit_package_bases = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true

@@ -1,0 +1,8 @@
+src/adgn/mcp/_shared/uris.py:24: error: Name "uri" is not defined  [name-defined]
+src/adgn/mcp/_shared/uris.py:30: error: Name "uri" is not defined  [name-defined]
+src/adgn/mcp/_shared/uris.py:43: error: Name "uri" is not defined  [name-defined]
+src/adgn/mcp/_shared/uris.py:49: error: Name "uri" is not defined  [name-defined]
+src/adgn/mcp/_shared/uris.py:54: error: Name "uri" is not defined  [name-defined]
+src/adgn/mcp/_shared/uris.py:59: error: Name "uri" is not defined  [name-defined]
+src/adgn/mcp/_shared/uris.py:88: error: Name "uri" is not defined  [name-defined]
+Found 7 errors in 1 file (checked 7 source files)
