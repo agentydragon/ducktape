@@ -8,6 +8,17 @@
 
 - [ ] Format large numbers more compactly (e.g., "+123456" as "+123k")
 
+- [ ] Adaptive tree indentation
+  - Balance compact display with information density
+  - Dynamically adjust indent size (1-4 spaces) based on terminal width
+  - Maintain preferred minimum progress bar size
+  - Ensure progress bars remain useful and visible
+
+- [ ] Minimum visible progress bar sliver
+  - Any change >0 should render at least a minimal visible sliver (e.g., ▏)
+  - Ensures small changes are always visible
+  - Add test case for very small ratios
+
 ## Features
 
 - [ ] Support for binary files visualization
