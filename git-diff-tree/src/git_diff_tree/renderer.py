@@ -1,10 +1,12 @@
 """Render tree structure with rich formatting and progress bars."""
 
-from typing import List, Optional
+from typing import Optional
 
 from rich.console import Console
 from rich.text import Text
+from rich.tree import Tree
 
+from .config import RenderConfig
 from .tree import TreeNode
 
 
@@ -17,27 +19,46 @@ class DiffTreeRenderer:
 
     def __init__(
         self,
+        config: Optional[RenderConfig] = None,
         console: Optional[Console] = None,
-        show_counts: bool = True,
-        show_bars: bool = True,
-        show_percentages: bool = True,
-        bar_width: int = 20,
+        # Deprecated: kept for backward compatibility
+        show_counts: Optional[bool] = None,
+        show_bars: Optional[bool] = None,
+        show_percentages: Optional[bool] = None,
+        bar_width: Optional[int] = None,
     ):
         """
         Initialize the renderer.
 
         Args:
+            config: RenderConfig object (preferred).
             console: Rich Console instance (creates one if None).
-            show_counts: Show +/- count columns.
-            show_bars: Show progress bar columns.
-            show_percentages: Show percentage column.
-            bar_width: Width of each progress bar in characters.
+            show_counts: DEPRECATED - use config instead.
+            show_bars: DEPRECATED - use config instead.
+            show_percentages: DEPRECATED - use config instead.
+            bar_width: DEPRECATED - use config instead.
         """
         self.console = console or Console()
-        self.show_counts = show_counts
-        self.show_bars = show_bars
-        self.show_percentages = show_percentages
-        self.bar_width = bar_width
+
+        # Handle backward compatibility
+        if config is None:
+            from .config import Column
+
+            columns = []
+            columns.append(Column.TREE)  # Always include tree
+            if show_counts is not False:
+                columns.append(Column.COUNTS)
+            if show_bars is not False:
+                columns.append(Column.BARS)
+            if show_percentages is not False:
+                columns.append(Column.PERCENTAGES)
+
+            config = RenderConfig(
+                columns=columns,
+                bar_width=bar_width or 20,
+            )
+
+        self.config = config
 
     def render(self, root: TreeNode, max_depth: Optional[int] = None) -> None:
         """
@@ -50,108 +71,104 @@ class DiffTreeRenderer:
         # Calculate max values for scaling progress bars
         max_changes = root.total_changes if root.total_changes > 0 else 1
 
-        # Render tree recursively
-        lines: List[Text] = []
-        self._render_node(
-            root,
-            lines=lines,
-            prefix="",
-            is_last=True,
-            depth=0,
-            max_depth=max_depth,
-            max_changes=max_changes,
-        )
+        # Build Rich Tree and render
+        tree = self._build_rich_tree(root, max_changes, max_depth, depth=0)
+        self.console.print(tree)
 
-        # Print all lines
-        for line in lines:
-            self.console.print(line, overflow="ignore", no_wrap=True)
-
-    def _render_node(
+    def _build_rich_tree(
         self,
         node: TreeNode,
-        lines: List[Text],
-        prefix: str,
-        is_last: bool,
-        depth: int,
-        max_depth: Optional[int],
         max_changes: int,
-    ) -> None:
-        """Recursively render a tree node and its children."""
-        if max_depth is not None and depth > max_depth:
-            return
+        max_depth: Optional[int],
+        depth: int = 0,
+    ) -> Tree:
+        """
+        Build a Rich Tree from a TreeNode.
 
-        # Build the tree structure prefix
-        if depth == 0:
-            tree_prefix = ""
-            connector = ""
-        else:
-            connector = "└── " if is_last else "├── "
-            tree_prefix = prefix
+        Args:
+            node: TreeNode to convert.
+            max_changes: Maximum changes for scaling progress bars.
+            max_depth: Maximum depth to render (None for unlimited).
+            depth: Current depth in tree.
 
-        # Create the line
-        line = Text()
+        Returns:
+            Rich Tree object.
+        """
+        # Create label for this node
+        label = self._make_node_label(node, max_changes)
 
-        # Column 1: Tree structure + name
+        # Create Rich Tree with the label
+        tree = Tree(label)
+
+        # Add children if within depth limit
+        if max_depth is None or depth < max_depth:
+            if not node.is_file and node.children:
+                for child in node.children.values():
+                    child_tree = self._build_rich_tree(
+                        child,
+                        max_changes,
+                        max_depth,
+                        depth + 1,
+                    )
+                    tree.add(child_tree)
+
+        return tree
+
+    def _make_node_label(self, node: TreeNode, max_changes: int) -> Text:
+        """
+        Create the label for a tree node with stats and progress bars.
+
+        Args:
+            node: TreeNode to create label for.
+            max_changes: Maximum changes for scaling progress bars.
+
+        Returns:
+            Rich Text object with formatted label.
+        """
+        label = Text()
+
+        # Node name
         name_color = "bold blue" if not node.is_file else "white"
-        line.append(tree_prefix + connector, style="dim")
-        line.append(node.name, style=name_color)
+        label.append(node.name, style=name_color)
 
         # Add spacing before stats
-        line.append("  ")
+        label.append("  ")
 
         # Column 2-3: +/- counts
-        if self.show_counts:
+        if self.config.show_counts():
             if node.additions > 0:
-                line.append(f"+{node.additions}", style="green")
-            line.append(" ")
+                label.append(f"+{node.additions}", style="green")
+            label.append(" ")
             if node.deletions > 0:
-                line.append(f"-{node.deletions}", style="red")
-            line.append("  ")
+                label.append(f"-{node.deletions}", style="red")
+            label.append("  ")
 
         # Column 4-5: Progress bars
-        if self.show_bars:
+        if self.config.show_bars():
             add_bar = self._make_progress_bar(
                 node.additions,
                 max_changes,
-                self.bar_width,
+                self.config.bar_width,
                 align="right",
                 color="green",
             )
             del_bar = self._make_progress_bar(
                 node.deletions,
                 max_changes,
-                self.bar_width,
+                self.config.bar_width,
                 align="left",
                 color="red",
             )
-            line.append(add_bar)
-            line.append(del_bar)
-            line.append("  ")
+            label.append(add_bar)
+            label.append(del_bar)
+            label.append("  ")
 
         # Column 6: Percentage
-        if self.show_percentages and max_changes > 0:
+        if self.config.show_percentages() and max_changes > 0:
             percentage = (node.total_changes / max_changes) * 100
-            line.append(f"{percentage:5.1f}%", style="cyan")
+            label.append(f"{percentage:5.1f}%", style="cyan")
 
-        lines.append(line)
-
-        # Render children
-        if not node.is_file and node.children:
-            children = list(node.children.values())
-            for i, child in enumerate(children):
-                is_last_child = i == len(children) - 1
-                extension = "    " if is_last else "│   "
-                new_prefix = prefix + extension if depth > 0 else ""
-
-                self._render_node(
-                    child,
-                    lines=lines,
-                    prefix=new_prefix,
-                    is_last=is_last_child,
-                    depth=depth + 1,
-                    max_depth=max_depth,
-                    max_changes=max_changes,
-                )
+        return label
 
     def _make_progress_bar(
         self,

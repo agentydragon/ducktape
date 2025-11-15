@@ -22,10 +22,10 @@ def test_renderer_initialization():
     renderer = DiffTreeRenderer()
 
     assert renderer.console is not None
-    assert renderer.show_counts is True
-    assert renderer.show_bars is True
-    assert renderer.show_percentages is True
-    assert renderer.bar_width == 20
+    assert renderer.config.show_counts() is True
+    assert renderer.config.show_bars() is True
+    assert renderer.config.show_percentages() is True
+    assert renderer.config.bar_width == 20
 
 
 def test_renderer_with_custom_options():
@@ -40,10 +40,10 @@ def test_renderer_with_custom_options():
     )
 
     assert renderer.console is console
-    assert renderer.show_counts is False
-    assert renderer.show_bars is False
-    assert renderer.show_percentages is False
-    assert renderer.bar_width == 30
+    assert renderer.config.show_counts() is False
+    assert renderer.config.show_bars() is False
+    assert renderer.config.show_percentages() is False
+    assert renderer.config.bar_width == 30
 
 
 def test_render_simple_tree(sample_changes):
