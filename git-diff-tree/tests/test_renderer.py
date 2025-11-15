@@ -8,7 +8,31 @@ from git_diff_tree.renderer import BLOCKS, DiffTreeRenderer
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
+from rich.segment import Segment
 from rich.text import Text
+
+
+def _render_to_text_lines(renderer: DiffTreeRenderer, root) -> list[Text]:
+    """Render tree and return lines as Rich Text objects."""
+    # Use recording console to capture segments
+    console = Console(record=True, width=renderer.console.width or 80)
+    renderer.console = console
+    renderer.render(root)
+
+    # Get segments and split into lines
+    segments = console._record_buffer
+    lines = list(Segment.split_lines(segments))
+
+    # Convert each line to Text object
+    text_lines = []
+    for line_segments in lines:
+        text = Text()
+        for seg in line_segments:
+            if not seg.is_control:
+                text.append(seg.text, style=seg.style)
+        text_lines.append(text)
+
+    return text_lines
 
 
 def test_blocks_constant():
@@ -298,19 +322,15 @@ def test_progress_bar_format_pattern():
         FileChange(path="file.py", additions=100, deletions=50),
     ]
 
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=120, legacy_windows=False)
-
     root = build_tree(changes)
     config = RenderConfig.default()
     config.bar_width = 20  # Set explicit width for predictability
+
+    console = Console(width=120)
     renderer = DiffTreeRenderer(console=console, config=config)
-    renderer.render(root)
 
-    result = output.getvalue()
-
-    # Extract the line with file.py
-    lines = [Text.from_ansi(line) for line in result.split("\n")]
+    # Render and get Text lines directly
+    lines = _render_to_text_lines(renderer, root)
     file_line = next(line for line in lines if "file.py" in line.plain)
 
     # Extract just the progress bar part
@@ -361,17 +381,15 @@ def test_progress_bar_format_various_sizes(additions, deletions):
         ),
     ]
 
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=150, legacy_windows=False)
-
     root = build_tree(changes)
     config = RenderConfig.default()
     config.bar_width = 20
-    renderer = DiffTreeRenderer(console=console, config=config)
-    renderer.render(root)
 
-    result = output.getvalue()
-    lines = [Text.from_ansi(line) for line in result.split("\n")]
+    console = Console(width=150)
+    renderer = DiffTreeRenderer(console=console, config=config)
+
+    # Render and get Text lines directly
+    lines = _render_to_text_lines(renderer, root)
     file_line = next(
         line for line in lines if f"file_{additions}_{deletions}.py" in line.plain
     )
@@ -412,17 +430,15 @@ def test_progress_bars_align_consistently():
         FileChange(path="c.py", additions=100, deletions=50),
     ]
 
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=150, legacy_windows=False)
-
     root = build_tree(changes)
     config = RenderConfig.default()
     config.bar_width = 20
-    renderer = DiffTreeRenderer(console=console, config=config)
-    renderer.render(root)
 
-    result = output.getvalue()
-    lines = [Text.from_ansi(line) for line in result.split("\n")]
+    console = Console(width=150)
+    renderer = DiffTreeRenderer(console=console, config=config)
+
+    # Render and get Text lines directly
+    lines = _render_to_text_lines(renderer, root)
 
     # Extract lines for each file
     file_lines = {
