@@ -271,15 +271,10 @@ def test_console_width_handling(width, description):
 # Progress bar format tests
 
 
-def _strip_ansi(text: str) -> str:
-    """Strip ANSI escape codes from text using Rich's built-in parser."""
-    return Text.from_ansi(text).plain
-
-
 def _extract_progress_bars(line: str) -> str:
     """Extract just the progress bar characters from a line (after filename and counts)."""
     # Strip ANSI codes first
-    plain = _strip_ansi(line)
+    plain = Text.from_ansi(line).plain
 
     # Find the progress bar part - it's the block characters between counts and percentage
     # Block characters are: " ▏▎▍▌▋▊▉█"
@@ -428,7 +423,7 @@ def test_progress_bars_align_consistently():
     renderer.render(root)
 
     result = output.getvalue()
-    lines = [_strip_ansi(line) for line in result.split("\n")]
+    lines = [Text.from_ansi(line).plain for line in result.split("\n")]
 
     # Extract lines for each file
     file_lines = {
