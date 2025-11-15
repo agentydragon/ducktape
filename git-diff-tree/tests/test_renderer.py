@@ -5,6 +5,7 @@ from io import StringIO
 import pytest
 from rich.console import Console
 
+from git_diff_tree.parser import FileChange
 from git_diff_tree.renderer import BLOCKS, DiffTreeRenderer
 from git_diff_tree.tree import build_tree
 
@@ -131,3 +132,66 @@ def test_make_progress_bar_alignment():
     plain = bar_left.plain
     # Should be left-aligned (padding on right)
     assert len(plain) == 10
+
+
+@pytest.mark.parametrize(
+    "value,max_value,expected_has_sliver",
+    [
+        (1, 10000, True),  # Very small ratio
+        (1, 1000000, True),  # Extremely small ratio
+        (1, 100, True),  # Small but visible ratio
+        (0, 100, False),  # Zero should show nothing
+    ],
+)
+def test_make_progress_bar_minimum_sliver(value, max_value, expected_has_sliver):
+    """Test that any value >0 shows at least a minimal sliver."""
+    renderer = DiffTreeRenderer(bar_width=20)
+
+    bar = renderer._make_progress_bar(value, max_value, 20, "left", "green")
+    plain = bar.plain
+
+    assert len(plain) == 20
+
+    if expected_has_sliver:
+        # Should have at least ▏
+        assert "▏" in plain or any(block in plain for block in BLOCKS[1:])
+    else:
+        # Should be all spaces
+        assert plain.strip() == ""
+
+
+@pytest.mark.parametrize("align", ["left", "right"])
+def test_make_progress_bar_minimum_sliver_alignment(align):
+    """Test minimum sliver works with both alignments."""
+    renderer = DiffTreeRenderer(bar_width=20)
+
+    bar = renderer._make_progress_bar(1, 10000, 20, align, "green")
+    plain = bar.plain
+
+    # Should have ▏ regardless of alignment
+    assert "▏" in plain
+    assert len(plain) == 20
+
+
+def test_minimum_sliver_with_small_changes():
+    """Test rendering with one very small change among larger ones."""
+    # Create changes where one is very small relative to others
+    changes = [
+        FileChange(path="large_file.py", additions=10000, deletions=5000),
+        FileChange(path="tiny_file.py", additions=1, deletions=0),
+    ]
+
+    output = StringIO()
+    console = Console(file=output, force_terminal=True, width=120)
+
+    root = build_tree(changes)
+    renderer = DiffTreeRenderer(console=console)
+    renderer.render(root)
+
+    result = output.getvalue()
+
+    # Both files should be visible in the output
+    assert "large_file.py" in result
+    assert "tiny_file.py" in result
+    # The tiny file should have some visible indicator despite small ratio
+    # (This is a high-level test; the unit test above is more precise)

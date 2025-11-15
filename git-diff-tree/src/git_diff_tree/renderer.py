@@ -189,6 +189,10 @@ class DiffTreeRenderer:
         if full_blocks < width and partial_block_index > 0:
             bar_chars += BLOCKS[partial_block_index]
 
+        # Ensure any value >0 shows at least a minimal sliver
+        if value > 0 and not bar_chars:
+            bar_chars = BLOCKS[1]  # Smallest visible block: ▏
+
         # Pad to full width
         if align == "right":
             bar_chars = bar_chars.rjust(width)

@@ -14,10 +14,7 @@
   - Maintain preferred minimum progress bar size
   - Ensure progress bars remain useful and visible
 
-- [ ] Minimum visible progress bar sliver
-  - Any change >0 should render at least a minimal visible sliver (e.g., ▏)
-  - Ensures small changes are always visible
-  - Add test case for very small ratios
+- [x] Minimum visible progress bar sliver
 
 ## Features
 
