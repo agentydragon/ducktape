@@ -137,6 +137,55 @@ from openai.types.responses import (
 # TODO: Check if OpenAI SDK has status enums we should use
 ```
 
+## Pattern: Unstructured Error Messages
+
+Error reason/message fields storing free-form strings should use structured types:
+
+```python
+# BAD: Free-form error strings
+class Response(BaseModel):
+    status_reason: str | None = None  # Could be anything!
+
+# Usage scattered across codebase:
+status_reason = "Streaming proxy failure"
+status_reason = str(exc)  # Exception message
+status_reason = f"Upstream status {resp.status_code}"
+status_reason = "Upstream returned non-JSON response"
+
+# GOOD: Structured error with StrEnum
+class ProxyErrorType(StrEnum):
+    UPSTREAM_HTTP = "upstream_http"
+    STREAMING_FAILURE = "streaming_failure"
+    REQUEST_EXCEPTION = "request_exception"
+    INVALID_RESPONSE = "invalid_response"
+
+class ProxyError(BaseModel):
+    type: ProxyErrorType
+    message: str
+    detail: dict[str, Any] | None = None
+
+class Response(BaseModel):
+    error: ProxyError | None = None
+
+# BETTER: Tagged union for type-specific fields
+class UpstreamHttpError(BaseModel):
+    type: Literal["upstream_http"]
+    status_code: int
+    response_body: str | None = None
+
+class StreamingFailure(BaseModel):
+    type: Literal["streaming_failure"]
+    exception_message: str
+
+ProxyError = UpstreamHttpError | StreamingFailure | ...
+```
+
+**Why structured errors?**
+- Categorize errors for metrics/alerting
+- Type-safe error handling
+- Extract structured info (status codes, etc.)
+- Query/filter errors in DB by type
+
 ## Common Enum-Worthy Patterns
 
 These string patterns often indicate enum candidates:
@@ -147,6 +196,7 @@ These string patterns often indicate enum candidates:
 - **Level**: `"debug"`, `"info"`, `"warning"`, `"error"`
 - **Direction**: `"inbound"`, `"outbound"`
 - **Format**: `"json"`, `"xml"`, `"csv"`
+- **Error reasons**: Multiple different error messages → categorize with enum
 
 ## References
 
