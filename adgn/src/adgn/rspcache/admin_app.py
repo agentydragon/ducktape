@@ -88,10 +88,11 @@ class ResponseRecordModel(BaseModel):
     created_ts: datetime
     last_update_ts: datetime
     latency_ms: int | None = None
-    request_body: dict[str, Any] | None = None
-    token_usage: dict[str, Any] | None = None
 
-    # Nested snapshot (matches DB structure)
+    # TODO: Type this properly (OpenAI request model)
+    request_body: dict[str, Any]
+
+    # Nested snapshot (typed response data)
     snapshot: FinalResponseSnapshot | None = None
 
 
