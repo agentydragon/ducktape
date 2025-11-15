@@ -39,17 +39,46 @@ class DiffTreeRenderer:
             root: Root TreeNode to render.
             max_depth: Maximum depth to render (None for unlimited).
         """
-        # Calculate max values for scaling progress bars
-        max_changes = root.total_changes if root.total_changes > 0 else 1
+        # Find max additions and deletions separately for consistent bar breakpoints
+        max_additions, max_deletions = self._find_max_additions_deletions(root)
+        max_changes = (
+            max_additions + max_deletions if (max_additions + max_deletions) > 0 else 1
+        )
 
         # Build Rich Tree and render
-        tree = self._build_rich_tree(root, max_changes, max_depth, depth=0)
+        tree = self._build_rich_tree(
+            root, max_changes, max_additions, max_deletions, max_depth, depth=0
+        )
         self.console.print(tree)
+
+    def _find_max_additions_deletions(self, node: TreeNode) -> tuple[int, int]:
+        """
+        Find the maximum additions and deletions separately across all nodes.
+
+        This ensures bars align at a consistent breakpoint across all files.
+
+        Args:
+            node: TreeNode to search.
+
+        Returns:
+            Tuple of (max_additions, max_deletions).
+        """
+        max_additions = node.additions
+        max_deletions = node.deletions
+
+        for child in node.children.values():
+            child_max_add, child_max_del = self._find_max_additions_deletions(child)
+            max_additions = max(max_additions, child_max_add)
+            max_deletions = max(max_deletions, child_max_del)
+
+        return max_additions, max_deletions
 
     def _build_rich_tree(
         self,
         node: TreeNode,
         max_changes: int,
+        max_additions: int,
+        max_deletions: int,
         max_depth: Optional[int],
         depth: int = 0,
     ) -> Tree:
@@ -58,7 +87,9 @@ class DiffTreeRenderer:
 
         Args:
             node: TreeNode to convert.
-            max_changes: Maximum changes for scaling progress bars.
+            max_changes: Maximum total changes (for percentage calculation).
+            max_additions: Maximum additions across all nodes (for bar scaling).
+            max_deletions: Maximum deletions across all nodes (for bar scaling).
             max_depth: Maximum depth to render (None for unlimited).
             depth: Current depth in tree.
 
@@ -66,7 +97,7 @@ class DiffTreeRenderer:
             Rich Tree object.
         """
         # Create label for this node
-        label = self._make_node_label(node, max_changes)
+        label = self._make_node_label(node, max_changes, max_additions, max_deletions)
 
         # Create Rich Tree with the label
         tree = Tree(label)
@@ -81,6 +112,8 @@ class DiffTreeRenderer:
                 child_tree = self._build_rich_tree(
                     child,
                     max_changes,
+                    max_additions,
+                    max_deletions,
                     max_depth,
                     depth + 1,
                 )
@@ -88,13 +121,20 @@ class DiffTreeRenderer:
 
         return tree
 
-    def _make_node_label(self, node: TreeNode, max_changes: int) -> Text:
+    def _make_node_label(
+        self, node: TreeNode, max_changes: int, max_additions: int, max_deletions: int
+    ) -> Text:
         """
         Create the label for a tree node with stats and progress bars.
 
+        Bars are scaled independently so the breakpoint between additions (green)
+        and deletions (red) is at a consistent position across all files.
+
         Args:
             node: TreeNode to create label for.
-            max_changes: Maximum changes for scaling progress bars.
+            max_changes: Maximum total changes (for percentage).
+            max_additions: Maximum additions across all nodes.
+            max_deletions: Maximum deletions across all nodes.
 
         Returns:
             Rich Text object with formatted label.
@@ -117,18 +157,19 @@ class DiffTreeRenderer:
                 label.append(f"-{node.deletions}", style="red")
             label.append("  ")
 
-        # Column 4-5: Progress bars
+        # Column 4-5: Progress bars with consistent breakpoint
+        # Green bar grows RTL (right-to-left), red bar grows LTR (left-to-right)
         if Column.BARS in self.config.columns:
             add_bar = self._make_progress_bar(
                 node.additions,
-                max_changes,
+                max_additions,  # Scale to max additions, not total changes
                 self.config.bar_width,
                 align="right",
                 color="green",
             )
             del_bar = self._make_progress_bar(
                 node.deletions,
-                max_changes,
+                max_deletions,  # Scale to max deletions, not total changes
                 self.config.bar_width,
                 align="left",
                 color="red",

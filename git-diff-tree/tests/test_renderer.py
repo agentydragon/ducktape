@@ -214,3 +214,51 @@ def test_minimum_sliver_with_small_changes():
     assert "tiny_file.py" in result
     # The tiny file should have some visible indicator despite small ratio
     # (This is a high-level test; the unit test above is more precise)
+
+
+# Console width tests
+
+
+@pytest.mark.parametrize(
+    ("width", "description"),
+    [
+        (40, "too_narrow"),  # Very narrow terminal
+        (80, "just_right"),  # Standard terminal width
+        (200, "very_wide"),  # Wide terminal
+    ],
+)
+def test_console_width_handling(width, description):
+    """Test rendering with different console widths."""
+    from git_diff_tree.config import RenderConfig
+
+    changes = [
+        FileChange(
+            path="src/very_long_filename_that_might_wrap.py",
+            additions=100,
+            deletions=50,
+        ),
+        FileChange(path="test.py", additions=10, deletions=5),
+    ]
+
+    output = StringIO()
+    console = Console(file=output, force_terminal=True, width=width)
+
+    root = build_tree(changes)
+    config = RenderConfig.default()
+    renderer = DiffTreeRenderer(console=console, config=config)
+    renderer.render(root)
+
+    result = output.getvalue()
+
+    # Basic assertions: output should contain expected elements
+    assert result.strip() != ""
+
+    # File names should appear (possibly truncated for narrow widths)
+    assert "test.py" in result
+
+    # Stats should be present
+    assert "+100" in result or "+10" in result
+
+    # For wide consoles, check full filename visibility
+    if width >= 80:
+        assert "very_long_filename" in result
