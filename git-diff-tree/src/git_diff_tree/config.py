@@ -14,6 +14,32 @@ class Column(StrEnum):
     PERCENTAGES = "percentages"
 
 
+def parse_columns(columns_str: str) -> list[Column]:
+    """
+    Parse comma-separated column names into Column enum values.
+
+    Args:
+        columns_str: Comma-separated column names (case-insensitive).
+
+    Returns:
+        List of Column enum values.
+
+    Raises:
+        ValueError: If any column name is invalid.
+    """
+    column_list = []
+    for col in columns_str.split(","):
+        col_upper = col.strip().upper()
+        try:
+            column_list.append(Column[col_upper])
+        except KeyError:
+            valid_options = ", ".join(c.value for c in Column)
+            raise ValueError(
+                f"Unknown column '{col}'. Valid options: {valid_options}"
+            ) from None
+    return column_list
+
+
 @dataclass
 class RenderConfig:
     """Configuration for rendering diff trees."""

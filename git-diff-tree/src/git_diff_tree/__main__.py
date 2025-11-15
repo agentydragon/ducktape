@@ -6,7 +6,7 @@ from typing import Optional
 import click
 from rich.console import Console
 
-from .config import Column, RenderConfig
+from .config import RenderConfig, parse_columns
 from .parser import parse_git_diff
 from .renderer import DiffTreeRenderer
 from .tree import build_tree, sort_tree
@@ -82,19 +82,12 @@ def main(
         sort_tree(root, sort_by=sort)
 
         # Parse column configuration
-        column_list = []
-        for col in columns.split(","):
-            col_upper = col.strip().upper()
-            try:
-                column_list.append(Column[col_upper])
-            except KeyError:
-                console = Console(stderr=True)
-                console.print(
-                    f"Error: Unknown column '{col}'. "
-                    f"Valid options: {', '.join(c.value for c in Column)}",
-                    style="bold red",
-                )
-                sys.exit(1)
+        try:
+            column_list = parse_columns(columns)
+        except ValueError as e:
+            console = Console(stderr=True)
+            console.print(f"Error: {e}", style="bold red")
+            sys.exit(1)
 
         config = RenderConfig(
             columns=column_list,
