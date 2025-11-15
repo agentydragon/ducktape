@@ -21,7 +21,6 @@
 - [ ] Support for binary files visualization
 - [ ] Color scheme customization
 - [ ] Different tree styles (ascii, unicode, etc.)
-- [ ] Export to HTML/SVG
 - [ ] Integration as git pager (automatic detection)
 
 ## Code Quality

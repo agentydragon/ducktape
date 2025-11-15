@@ -14,8 +14,12 @@ Tree-style visualization of git diffs with progress bars.
 ## Installation
 
 ```bash
-# From the project directory
-uv pip install -e .
+# The development environment uses devenv + direnv
+# Once direnv is allowed, the environment activates automatically
+direnv allow
+
+# Install package in editable mode
+pip install -e .
 ```
 
 ## Usage
@@ -96,18 +100,17 @@ tests/
 
 ## Development
 
-```bash
-# Install in development mode with test dependencies
-uv sync --extra dev
+The project uses devenv for environment management. Once you run `direnv allow`, all dependencies are automatically available.
 
+```bash
 # Run tests
-uv run pytest
+pytest
 
 # Run with coverage
-uv run pytest --cov=git_diff_tree
+pytest --cov=git_diff_tree
 
 # Update snapshot tests
-uv run pytest --snapshot-update
+pytest --snapshot-update
 ```
 
 ## Testing
@@ -119,4 +122,4 @@ The project includes:
 
 ## License
 
-MIT
+AGPL-3.0-or-later
