@@ -1,6 +1,14 @@
 # TODO(mpokorny): Once nested pyprojects are gone, move this Ruff config into
 # the single pyproject.toml at repo root and delete ruff.toml.
 
+# Prefer one-line formatting when code fits
+line-length = 120
+
+[format]
+# Ignore trailing commas when deciding whether to collapse to one line
+# (Google-style formatting: pack code densely when it fits)
+skip-magic-trailing-comma = true
+
 [lint]
 select = [
     # Base
@@ -52,6 +60,8 @@ extend-ignore = ["COM812"]
 known-first-party = ["adgn", "tana", "wt", "ducktape", "claude_hooks", "homeassistant", "llm"]
 force-sort-within-sections = true
 combine-as-imports = true
+# Compatible with format.skip-magic-trailing-comma
+split-on-trailing-comma = false
 
 [lint.per-file-ignores]
 "experimental/webhook_inbox/webhook_inbox.py" = ["RUF003"]  # Ambiguous unicode characters in comments
