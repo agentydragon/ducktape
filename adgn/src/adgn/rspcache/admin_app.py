@@ -17,6 +17,7 @@ from pydantic.config import ConfigDict
 
 from adgn.rspcache.models import (
     FRAME_ADAPTER,
+    FinalResponseSnapshot,
     stream_event_event_id,
 )
 from adgn.rspcache.responses_db import (
@@ -76,6 +77,7 @@ class FrameRecordModel(BaseModel):
 class ResponseRecordModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    # Core Response fields
     key: str
     response_id: str | None = None
     api_key_id: UUID | None = None
@@ -86,10 +88,11 @@ class ResponseRecordModel(BaseModel):
     created_ts: datetime
     last_update_ts: datetime
     latency_ms: int | None = None
-    token_usage: dict[str, Any] | None = None
-    request_body: dict[str, Any] | None = None
-    final_response: dict[str, Any] | None = None
-    response_error: dict[str, Any] | None = None
+    request_body_json: dict[str, Any] | None = None
+    token_usage_json: dict[str, Any] | None = None
+
+    # Nested snapshot (matches DB structure)
+    snapshot: FinalResponseSnapshot | None = None
 
 
 class ResponseListModel(BaseModel):
@@ -152,28 +155,12 @@ async def _shutdown() -> None:
 
 
 def _to_response_model(record: Response) -> ResponseRecordModel:
-    api_key_name = record.api_key.name if record.api_key else None
-    snapshot = record.snapshot.to_model() if record.snapshot else None
-
-    # Use Pydantic's model_dump to serialize snapshot fields
-    snapshot_dict = snapshot.model_dump(mode="json") if snapshot else {}
-
-    return ResponseRecordModel(
-        key=record.key,
-        response_id=record.response_id,
-        api_key_id=record.api_key_id,
-        api_key_name=api_key_name,
-        model=record.model,
-        status=record.status,
-        status_reason=record.status_reason,
-        created_ts=record.created_ts,
-        last_update_ts=record.last_update_ts,
-        latency_ms=record.latency_ms,
-        token_usage=snapshot_dict.get("token_usage") or record.token_usage_json,
-        request_body=record.request_body_json,
-        final_response=snapshot_dict.get("response"),
-        response_error=snapshot_dict.get("error"),
-    )
+    """Convert DB Response record to API model using Pydantic's from_attributes."""
+    return ResponseRecordModel.model_validate({
+        **{k: v for k, v in record.__dict__.items() if not k.startswith("_")},
+        "api_key_name": record.api_key.name if record.api_key else None,
+        "snapshot": record.snapshot.to_model() if record.snapshot else None,
+    })
 
 
 def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:
