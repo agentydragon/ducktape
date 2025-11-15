@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from rich.console import Console
+from rich.console import Console, ConsoleOptions, RenderResult
 from rich.text import Text
 from rich.tree import Tree
 
@@ -13,47 +13,55 @@ from .tree import TreeNode
 BLOCKS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
 
 
-class DiffTreeRenderer:
-    """Renders a diff tree with progress bars and statistics."""
+class DiffTree:
+    """A renderable diff tree with progress bars and statistics.
+
+    Follows Rich's Renderable protocol - use with console.print(DiffTree(...))
+    """
 
     def __init__(
         self,
+        root: TreeNode,
         config: Optional[RenderConfig] = None,
-        console: Optional[Console] = None,
     ):
         """
-        Initialize the renderer.
-
-        Args:
-            config: RenderConfig object (uses default if None).
-            console: Rich Console instance (creates one if None).
-        """
-        self.console = console or Console()
-        self.config = config or RenderConfig.default()
-
-    def render(self, root: TreeNode) -> None:
-        """
-        Render the tree to the console.
+        Initialize the diff tree.
 
         Args:
             root: Root TreeNode to render.
+            config: RenderConfig object (uses default if None).
+        """
+        self.root = root
+        self.config = config or RenderConfig.default()
+
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        """Rich console protocol for rendering.
+
+        Args:
+            console: The console instance.
+            options: Console rendering options.
+
+        Yields:
+            Rich Tree to render.
         """
         # Find max additions and deletions separately for consistent bar breakpoints
-        max_additions, max_deletions = self._find_max_additions_deletions(root)
+        max_additions, max_deletions = self._find_max_additions_deletions(self.root)
         max_changes = (
             max_additions + max_deletions if (max_additions + max_deletions) > 0 else 1
         )
 
-        # Build Rich Tree and render
+        # Build Rich Tree and yield
         tree = self._build_rich_tree(
-            root,
+            self.root,
             max_changes,
             max_additions,
             max_deletions,
             self.config.max_depth,
             depth=0,
         )
-        self.console.print(tree)
+        yield tree
 
     def _find_max_additions_deletions(self, node: TreeNode) -> tuple[int, int]:
         """
@@ -233,3 +241,7 @@ class DiffTreeRenderer:
             bar_chars = bar_chars.ljust(width)
 
         return Text(bar_chars, style=color)
+
+
+# Backward compatibility alias (deprecated)
+DiffTreeRenderer = DiffTree

@@ -7,8 +7,8 @@ import click
 from rich.console import Console
 
 from .config import RenderConfig, parse_columns
+from .diff_tree import DiffTree
 from .parser import parse_diff_from_stdin, parse_git_diff
-from .renderer import DiffTreeRenderer
 from .tree import build_tree, sort_tree
 
 
@@ -109,8 +109,9 @@ def main(
         )
 
         # Render tree
-        renderer = DiffTreeRenderer(config=config)
-        renderer.render(root)
+        diff_tree = DiffTree(root, config=config)
+        console = Console()
+        console.print(diff_tree)
 
     except Exception as e:
         console = Console(stderr=True)

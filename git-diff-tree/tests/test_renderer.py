@@ -3,8 +3,8 @@
 from io import StringIO
 
 from git_diff_tree.config import RenderConfig
+from git_diff_tree.diff_tree import BLOCKS, DiffTree
 from git_diff_tree.parser import FileChange
-from git_diff_tree.renderer import BLOCKS, DiffTreeRenderer
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
@@ -12,12 +12,11 @@ from rich.segment import Segment
 from rich.text import Text
 
 
-def _render_to_text_lines(renderer: DiffTreeRenderer, root) -> list[Text]:
+def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
     """Render tree and return lines as Rich Text objects."""
     # Use recording console to capture segments
-    console = Console(record=True, width=renderer.console.width or 80)
-    renderer.console = console
-    renderer.render(root)
+    console = Console(record=True, width=width)
+    console.print(diff_tree)
 
     # Get segments and split into lines
     segments = console._record_buffer
@@ -43,31 +42,32 @@ def test_blocks_constant():
 
 
 def test_renderer_initialization():
-    """Test DiffTreeRenderer initialization."""
+    """Test DiffTree initialization."""
     from git_diff_tree.config import Column
 
-    renderer = DiffTreeRenderer()
+    root = build_tree([FileChange(path="test.py", additions=1, deletions=0)])
+    diff_tree = DiffTree(root)
 
-    assert renderer.console is not None
-    assert Column.COUNTS in renderer.config.columns
-    assert Column.BARS in renderer.config.columns
-    assert Column.PERCENTAGES in renderer.config.columns
-    assert renderer.config.bar_width == 20
+    assert diff_tree.root is root
+    assert Column.COUNTS in diff_tree.config.columns
+    assert Column.BARS in diff_tree.config.columns
+    assert Column.PERCENTAGES in diff_tree.config.columns
+    assert diff_tree.config.bar_width == 20
 
 
 def test_renderer_with_custom_options():
-    """Test DiffTreeRenderer with custom options."""
+    """Test DiffTree with custom options."""
     from git_diff_tree.config import Column, RenderConfig
 
-    console = Console()
+    root = build_tree([FileChange(path="test.py", additions=1, deletions=0)])
     config = RenderConfig(columns=[Column.TREE], bar_width=30)
-    renderer = DiffTreeRenderer(console=console, config=config)
+    diff_tree = DiffTree(root, config=config)
 
-    assert renderer.console is console
-    assert Column.COUNTS not in renderer.config.columns
-    assert Column.BARS not in renderer.config.columns
-    assert Column.PERCENTAGES not in renderer.config.columns
-    assert renderer.config.bar_width == 30
+    assert diff_tree.root is root
+    assert Column.COUNTS not in diff_tree.config.columns
+    assert Column.BARS not in diff_tree.config.columns
+    assert Column.PERCENTAGES not in diff_tree.config.columns
+    assert diff_tree.config.bar_width == 30
 
 
 def test_render_simple_tree(sample_changes):
@@ -77,8 +77,8 @@ def test_render_simple_tree(sample_changes):
     console = Console(file=output, force_terminal=True, width=120)
 
     root = build_tree(sample_changes)
-    renderer = DiffTreeRenderer(console=console)
-    renderer.render(root)
+    diff_tree = DiffTree(root)
+    console.print(diff_tree)
 
     # Get the output
     result = output.getvalue()
@@ -100,8 +100,8 @@ def test_render_with_no_counts(sample_changes):
 
     root = build_tree(sample_changes)
     config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
-    renderer = DiffTreeRenderer(console=console, config=config)
-    renderer.render(root)
+    diff_tree = DiffTree(root, config=config)
+    console.print(diff_tree)
 
     result = output.getvalue()
 
@@ -117,8 +117,8 @@ def test_render_with_max_depth(sample_changes):
     root = build_tree(sample_changes)
     config = RenderConfig.default()
     config.max_depth = 1
-    renderer = DiffTreeRenderer(console=console, config=config)
-    renderer.render(root)
+    diff_tree = DiffTree(root, config=config)
+    console.print(diff_tree)
 
     result = output.getvalue()
 
@@ -134,18 +134,18 @@ def test_make_progress_bar():
 
     config = RenderConfig.default()
     config.bar_width = 10
-    renderer = DiffTreeRenderer(config=config)
+    diff_tree = DiffTree(build_tree([]), config=config)
 
     # Test empty bar
-    bar = renderer._make_progress_bar(0, 100, 10, "left", "green")
+    bar = diff_tree._make_progress_bar(0, 100, 10, "left", "green")
     assert len(bar.plain) == 10
 
     # Test full bar
-    bar = renderer._make_progress_bar(100, 100, 10, "left", "green")
+    bar = diff_tree._make_progress_bar(100, 100, 10, "left", "green")
     assert "█" in bar.plain
 
     # Test partial bar
-    bar = renderer._make_progress_bar(50, 100, 10, "left", "green")
+    bar = diff_tree._make_progress_bar(50, 100, 10, "left", "green")
     # Should have some filled blocks
     assert bar.plain.strip() != ""
 
@@ -156,10 +156,10 @@ def test_make_progress_bar_alignment():
 
     config = RenderConfig.default()
     config.bar_width = 10
-    renderer = DiffTreeRenderer(config=config)
+    diff_tree = DiffTree(build_tree([]), config=config)
 
     # Right-aligned bar
-    bar_right = renderer._make_progress_bar(30, 100, 10, "right", "green")
+    bar_right = diff_tree._make_progress_bar(30, 100, 10, "right", "green")
     plain = bar_right.plain
     # Should be right-aligned (padding on left)
     assert (
@@ -167,7 +167,7 @@ def test_make_progress_bar_alignment():
     )
 
     # Left-aligned bar
-    bar_left = renderer._make_progress_bar(30, 100, 10, "left", "green")
+    bar_left = diff_tree._make_progress_bar(30, 100, 10, "left", "green")
     plain = bar_left.plain
     # Should be left-aligned (padding on right)
     assert len(plain) == 10
@@ -188,9 +188,9 @@ def test_make_progress_bar_minimum_sliver(value, max_value, expected_has_sliver)
 
     config = RenderConfig.default()
     config.bar_width = 20
-    renderer = DiffTreeRenderer(config=config)
+    diff_tree = DiffTree(build_tree([]), config=config)
 
-    bar = renderer._make_progress_bar(value, max_value, 20, "left", "green")
+    bar = diff_tree._make_progress_bar(value, max_value, 20, "left", "green")
     plain = bar.plain
 
     assert len(plain) == 20
@@ -210,9 +210,9 @@ def test_make_progress_bar_minimum_sliver_alignment(align):
 
     config = RenderConfig.default()
     config.bar_width = 20
-    renderer = DiffTreeRenderer(config=config)
+    diff_tree = DiffTree(build_tree([]), config=config)
 
-    bar = renderer._make_progress_bar(1, 10000, 20, align, "green")
+    bar = diff_tree._make_progress_bar(1, 10000, 20, align, "green")
     plain = bar.plain
 
     # Should have ▏ regardless of alignment
@@ -232,8 +232,8 @@ def test_minimum_sliver_with_small_changes():
     console = Console(file=output, force_terminal=True, width=120)
 
     root = build_tree(changes)
-    renderer = DiffTreeRenderer(console=console)
-    renderer.render(root)
+    diff_tree = DiffTree(root)
+    console.print(diff_tree)
 
     result = output.getvalue()
 
@@ -273,8 +273,8 @@ def test_console_width_handling(width, description):
 
     root = build_tree(changes)
     config = RenderConfig.default()
-    renderer = DiffTreeRenderer(console=console, config=config)
-    renderer.render(root)
+    diff_tree = DiffTree(root, config=config)
+    console.print(diff_tree)
 
     result = output.getvalue()
 
@@ -326,11 +326,10 @@ def test_progress_bar_format_pattern():
     config = RenderConfig.default()
     config.bar_width = 20  # Set explicit width for predictability
 
-    console = Console(width=120)
-    renderer = DiffTreeRenderer(console=console, config=config)
+    diff_tree = DiffTree(root, config=config)
 
     # Render and get Text lines directly
-    lines = _render_to_text_lines(renderer, root)
+    lines = _render_to_text_lines(diff_tree, width=120)
     file_line = next(line for line in lines if "file.py" in line.plain)
 
     # Extract just the progress bar part
@@ -385,11 +384,10 @@ def test_progress_bar_format_various_sizes(additions, deletions):
     config = RenderConfig.default()
     config.bar_width = 20
 
-    console = Console(width=150)
-    renderer = DiffTreeRenderer(console=console, config=config)
+    diff_tree = DiffTree(root, config=config)
 
     # Render and get Text lines directly
-    lines = _render_to_text_lines(renderer, root)
+    lines = _render_to_text_lines(diff_tree, width=150)
     file_line = next(
         line for line in lines if f"file_{additions}_{deletions}.py" in line.plain
     )
@@ -434,11 +432,10 @@ def test_progress_bars_align_consistently():
     config = RenderConfig.default()
     config.bar_width = 20
 
-    console = Console(width=150)
-    renderer = DiffTreeRenderer(console=console, config=config)
+    diff_tree = DiffTree(root, config=config)
 
     # Render and get Text lines directly
-    lines = _render_to_text_lines(renderer, root)
+    lines = _render_to_text_lines(diff_tree, width=150)
 
     # Extract lines for each file
     file_lines = {
