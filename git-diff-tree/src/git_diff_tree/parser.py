@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import subprocess
 import sys
 
+from unidiff import PatchSet
+
 
 @dataclass
 class FileChange:
@@ -24,8 +26,8 @@ def parse_unified_diff(diff_output: str) -> list[FileChange]:
     """
     Parse unified diff format to extract file change statistics.
 
-    Parses both git unified diff and standard unified diff formats.
-    Counts additions (+) and deletions (-) from diff hunks.
+    Uses the unidiff library to parse standard unified diff format.
+    Handles git diff, svn diff, and standard diff output.
 
     Args:
         diff_output: Unified diff output (from git diff, svn diff, etc.)
@@ -38,59 +40,38 @@ def parse_unified_diff(diff_output: str) -> list[FileChange]:
         - Standard diff format (--- a/... +++ b/...)
         - Binary files
         - Added/deleted files
+        - Renamed files
     """
-    changes: dict[str, FileChange] = {}
-    current_file: str | None = None
+    patch_set = PatchSet(diff_output)
+    changes = []
 
-    for line in diff_output.split("\n"):
-        # Git diff format: diff --git a/path b/path
-        if line.startswith("diff --git "):
-            parts = line.split()
-            if len(parts) >= 4:
-                # Extract path from "b/path" (new file path)
-                new_path = parts[3]
-                current_file = new_path.removeprefix("b/")
+    for patched_file in patch_set:
+        # Get the target file path (use source_file if target doesn't exist - deleted files)
+        path = patched_file.target_file
+        if path.startswith("b/"):
+            path = path[2:]
+        elif path == "/dev/null":
+            # File was deleted, use source file
+            path = patched_file.source_file
+            path = path.removeprefix("a/")
 
-                # Initialize if not seen before
-                if current_file and current_file not in changes:
-                    changes[current_file] = FileChange(
-                        path=current_file,
-                        additions=0,
-                        deletions=0,
-                        is_binary=False,
-                    )
+        # Check if binary
+        is_binary = patched_file.is_binary_file
 
-        # Standard diff format: +++ b/path
-        elif line.startswith("+++ "):
-            path = line[4:]
-            if path.startswith("b/"):
-                path = path[2:]
-            elif path == "/dev/null":
-                # File was deleted, keep current_file from --- line
-                continue
-            current_file = path
+        # Count additions and deletions
+        additions = patched_file.added
+        deletions = patched_file.removed
 
-            if current_file and current_file not in changes:
-                changes[current_file] = FileChange(
-                    path=current_file,
-                    additions=0,
-                    deletions=0,
-                    is_binary=False,
-                )
+        changes.append(
+            FileChange(
+                path=path,
+                additions=additions,
+                deletions=deletions,
+                is_binary=is_binary,
+            )
+        )
 
-        # Binary file marker
-        elif line.startswith("Binary files ") and current_file:
-            changes[current_file].is_binary = True
-
-        # Count additions (lines starting with +, but not +++)
-        elif line.startswith("+") and not line.startswith("+++") and current_file:
-            changes[current_file].additions += 1
-
-        # Count deletions (lines starting with -, but not ---)
-        elif line.startswith("-") and not line.startswith("---") and current_file:
-            changes[current_file].deletions += 1
-
-    return list(changes.values())
+    return changes
 
 
 def parse_numstat_output(numstat_output: str) -> list[FileChange]:
@@ -103,13 +84,9 @@ def parse_numstat_output(numstat_output: str) -> list[FileChange]:
     Returns:
         List of FileChange objects.
 
-    TODO: Handle edge cases:
-          - File paths with tabs or special characters
-          - File paths with spaces (currently handled by tab split)
-          - Unicode file names
-          - Very long file paths
-          - Renamed files (shown as "old => new" format)
-          - Malformed numstat output (invalid format)
+    Note: This is kept for backward compatibility with tests.
+          For new code, prefer parse_unified_diff() which uses the
+          standard unidiff library.
     """
     changes = []
     for line in numstat_output.strip().split("\n"):
@@ -118,16 +95,12 @@ def parse_numstat_output(numstat_output: str) -> list[FileChange]:
 
         parts = line.split("\t")
         if len(parts) != 3:
-            # TODO: Log warning for malformed lines instead of silently skipping
             continue
 
         additions_str, deletions_str, path = parts
 
         # Handle binary files (shown as '-' for both additions and deletions)
         is_binary = additions_str == "-" and deletions_str == "-"
-
-        # TODO: Handle renamed files (format: "old_name => new_name")
-        # TODO: Validate path doesn't contain malicious characters
 
         try:
             additions = int(additions_str)
@@ -183,7 +156,7 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
 
 def parse_diff_from_stdin() -> list[FileChange]:
     """
-    Parse diff from stdin.
+    Parse diff from stdin using unidiff library.
 
     Reads unified diff format from stdin and extracts file change statistics.
     This allows the tool to work as a git pager or with piped input.
