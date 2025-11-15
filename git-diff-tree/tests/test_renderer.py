@@ -1,6 +1,7 @@
 """Tests for tree renderer."""
 
 from io import StringIO
+import re
 
 from git_diff_tree.config import RenderConfig
 from git_diff_tree.parser import FileChange
@@ -265,3 +266,214 @@ def test_console_width_handling(width, description):
     # For wide consoles, check full filename visibility
     if width >= 80:
         assert "very_long_filename" in result
+
+
+# Progress bar format tests
+
+
+def _strip_ansi(text: str) -> str:
+    """Strip ANSI escape codes from text."""
+    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+    return ansi_escape.sub("", text)
+
+
+def _extract_progress_bars(line: str) -> str:
+    """Extract just the progress bar characters from a line (after filename and counts)."""
+    # Strip ANSI codes first
+    plain = _strip_ansi(line)
+
+    # Find the progress bar part - it's the block characters between counts and percentage
+    # Block characters are: " ▏▎▍▌▋▊▉█"
+    block_chars = " ▏▎▍▌▋▊▉█"
+    in_blocks = False
+    blocks_part = []
+
+    for char in plain:
+        if char in block_chars:
+            in_blocks = True
+            blocks_part.append(char)
+        elif in_blocks and char not in block_chars:
+            # Reached the end of blocks section
+            break
+
+    return "".join(blocks_part)
+
+
+def test_progress_bar_format_pattern():
+    """Test that progress bars match the expected format: green(RTL) + red(LTR) with no space."""
+    changes = [
+        FileChange(path="file.py", additions=100, deletions=50),
+    ]
+
+    output = StringIO()
+    console = Console(file=output, force_terminal=True, width=120, legacy_windows=False)
+
+    root = build_tree(changes)
+    config = RenderConfig.default()
+    config.bar_width = 20  # Set explicit width for predictability
+    renderer = DiffTreeRenderer(console=console, config=config)
+    renderer.render(root)
+
+    result = output.getvalue()
+
+    # Extract the line with file.py
+    lines = result.split("\n")
+    file_line = next(line for line in lines if "file.py" in line)
+
+    # Extract just the progress bar part
+    bars = _extract_progress_bars(file_line)
+
+    # The pattern should be:
+    # - Some spaces + optional partial block + full blocks (green, right-aligned)
+    # - Full blocks + optional partial block + spaces (red, left-aligned)
+    # Total length should be 2 * bar_width (20 + 20 = 40)
+
+    assert len(bars) == 40, f"Expected 40 chars, got {len(bars)}: {bars!r}"
+
+    # Check format: green part (0-19) and red part (20-39) touch with no space
+    green_part = bars[:20]
+    red_part = bars[20:40]
+
+    # Green part: right-aligned (spaces on left, blocks on right)
+    # Should end with a block character (not space) if there are additions
+    assert green_part.rstrip(" ") != "", "Green part should have some blocks"
+    assert green_part[-1] != " ", "Green part should end with a block, not space"
+
+    # Red part: left-aligned (blocks on left, spaces on right)
+    # Should start with a block character (not space) if there are deletions
+    assert red_part.lstrip(" ") != "", "Red part should have some blocks"
+    assert red_part[0] != " ", "Red part should start with a block, not space"
+
+    # No space between green and red
+    # (already ensured by the alignment checks above - green ends with block, red starts with block)
+
+
+@pytest.mark.parametrize(
+    ("additions", "deletions"),
+    [
+        (100, 50),
+        (200, 10),
+        (5, 300),
+        (1000, 500),
+        (1, 1),
+    ],
+)
+def test_progress_bar_format_various_sizes(additions, deletions):
+    """Test progress bar format with files of different sizes."""
+    changes = [
+        FileChange(
+            path=f"file_{additions}_{deletions}.py",
+            additions=additions,
+            deletions=deletions,
+        ),
+    ]
+
+    output = StringIO()
+    console = Console(file=output, force_terminal=True, width=150, legacy_windows=False)
+
+    root = build_tree(changes)
+    config = RenderConfig.default()
+    config.bar_width = 20
+    renderer = DiffTreeRenderer(console=console, config=config)
+    renderer.render(root)
+
+    result = output.getvalue()
+    lines = result.split("\n")
+    file_line = next(
+        line for line in lines if f"file_{additions}_{deletions}.py" in line
+    )
+
+    bars = _extract_progress_bars(file_line)
+
+    # Check total length
+    assert len(bars) == 40, (
+        f"Expected 40 chars for {additions}+/{deletions}-, got {len(bars)}"
+    )
+
+    green_part = bars[:20]
+    red_part = bars[20:40]
+
+    # If there are additions, green part should end with a block
+    if additions > 0:
+        assert green_part.rstrip(" ") != "", (
+            f"Green part empty for {additions} additions"
+        )
+        assert green_part[-1] != " ", (
+            f"Green part ends with space for {additions} additions"
+        )
+
+    # If there are deletions, red part should start with a block
+    if deletions > 0:
+        assert red_part.lstrip(" ") != "", f"Red part empty for {deletions} deletions"
+        assert red_part[0] != " ", (
+            f"Red part starts with space for {deletions} deletions"
+        )
+
+
+def test_progress_bars_align_consistently():
+    """Test that files with same delta count have progress bars at same position."""
+    # 3 files with same additions and deletions but different names
+    changes = [
+        FileChange(path="aaaa.py", additions=100, deletions=50),
+        FileChange(path="bbbbbbbbbb.py", additions=100, deletions=50),
+        FileChange(path="c.py", additions=100, deletions=50),
+    ]
+
+    output = StringIO()
+    console = Console(file=output, force_terminal=True, width=150, legacy_windows=False)
+
+    root = build_tree(changes)
+    config = RenderConfig.default()
+    config.bar_width = 20
+    renderer = DiffTreeRenderer(console=console, config=config)
+    renderer.render(root)
+
+    result = output.getvalue()
+    lines = [_strip_ansi(line) for line in result.split("\n")]
+
+    # Extract lines for each file
+    file_lines = {
+        "aaaa.py": next(line for line in lines if "aaaa.py" in line),
+        "bbbbbbbbbb.py": next(line for line in lines if "bbbbbbbbbb.py" in line),
+        "c.py": next(line for line in lines if "c.py" in line),
+    }
+
+    # Find the character range where progress bars appear in each line
+    # Progress bars are the consecutive block characters
+    block_chars = set(" ▏▎▍▌▋▊▉█")
+
+    def find_bar_range(line: str) -> tuple[int, int]:
+        """Find start and end index of progress bar section."""
+        start = None
+        end = None
+        in_blocks = False
+        consecutive_blocks = 0
+
+        for i, char in enumerate(line):
+            if char in block_chars:
+                if not in_blocks:
+                    # Count consecutive block chars to distinguish from single spaces
+                    in_blocks = True
+                    start = i
+                consecutive_blocks += 1
+            else:
+                if (
+                    in_blocks and consecutive_blocks >= 10
+                ):  # Must be substantial to be the bar
+                    end = i
+                    break
+                in_blocks = False
+                consecutive_blocks = 0
+
+        return (start or -1, end or -1)
+
+    ranges = {name: find_bar_range(line) for name, line in file_lines.items()}
+
+    # All files should have bars starting and ending at the same position
+    # (since they have the same stats and we're in a consistent layout)
+    start_positions = [r[0] for r in ranges.values()]
+    end_positions = [r[1] for r in ranges.values()]
+
+    # The bars should align at the same column positions
+    assert len(set(start_positions)) == 1, f"Bar start positions don't align: {ranges}"
+    assert len(set(end_positions)) == 1, f"Bar end positions don't align: {ranges}"
