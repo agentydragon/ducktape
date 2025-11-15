@@ -7,10 +7,8 @@ from rich.text import Text
 from rich.tree import Tree
 
 from .config import Column, RenderConfig
+from .progress_bar import DualProgressBar
 from .tree import TreeNode
-
-# Unicode block characters for progress bars (from empty to full)
-BLOCKS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
 
 
 class DiffTree:
@@ -172,22 +170,14 @@ class DiffTree:
         # Column 4-5: Progress bars with consistent breakpoint
         # Green bar grows RTL (right-to-left), red bar grows LTR (left-to-right)
         if Column.BARS in self.config.columns:
-            add_bar = self._make_progress_bar(
-                node.additions,
-                max_additions,  # Scale to max additions, not total changes
-                self.config.bar_width,
-                align="right",
-                color="green",
+            dual_bar = DualProgressBar(
+                additions=node.additions,
+                deletions=node.deletions,
+                max_additions=max_additions,
+                max_deletions=max_deletions,
+                width=self.config.bar_width,
             )
-            del_bar = self._make_progress_bar(
-                node.deletions,
-                max_deletions,  # Scale to max deletions, not total changes
-                self.config.bar_width,
-                align="left",
-                color="red",
-            )
-            label.append(add_bar)
-            label.append(del_bar)
+            label.append_text(dual_bar.to_text())
             label.append("  ")
 
         # Column 6: Percentage
@@ -196,51 +186,6 @@ class DiffTree:
             label.append(f"{percentage:5.1f}%", style="cyan")
 
         return label
-
-    def _make_progress_bar(
-        self,
-        value: int,
-        max_value: int,
-        width: int,
-        align: str,
-        color: str,
-    ) -> Text:
-        """
-        Create a Unicode block progress bar.
-
-        Args:
-            value: Current value.
-            max_value: Maximum value for scaling.
-            width: Width in characters.
-            align: "left" or "right" alignment.
-            color: Color style for the bar.
-
-        Returns:
-            Rich Text object with the progress bar.
-        """
-        ratio = 0 if max_value == 0 else min(value / max_value, 1.0)
-
-        # Calculate how many characters to fill
-        filled_width = ratio * width
-        full_blocks = int(filled_width)
-        partial_block_index = int((filled_width - full_blocks) * (len(BLOCKS) - 1))
-
-        # Build the bar
-        bar_chars = BLOCKS[-1] * full_blocks
-        if full_blocks < width and partial_block_index > 0:
-            bar_chars += BLOCKS[partial_block_index]
-
-        # Ensure any value >0 shows at least a minimal sliver
-        if value > 0 and not bar_chars:
-            bar_chars = BLOCKS[1]  # Smallest visible block: ▏
-
-        # Pad to full width
-        if align == "right":
-            bar_chars = bar_chars.rjust(width)
-        else:
-            bar_chars = bar_chars.ljust(width)
-
-        return Text(bar_chars, style=color)
 
 
 # Backward compatibility alias (deprecated)

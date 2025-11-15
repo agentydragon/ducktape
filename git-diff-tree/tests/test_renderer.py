@@ -3,8 +3,9 @@
 from io import StringIO
 
 from git_diff_tree.config import RenderConfig
-from git_diff_tree.diff_tree import BLOCKS, DiffTree
+from git_diff_tree.diff_tree import DiffTree
 from git_diff_tree.parser import FileChange
+from git_diff_tree.progress_bar import BLOCKS, ProgressBar
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
@@ -130,36 +131,26 @@ def test_render_with_max_depth(sample_changes):
 
 def test_make_progress_bar():
     """Test progress bar generation."""
-    from git_diff_tree.config import RenderConfig
-
-    config = RenderConfig.default()
-    config.bar_width = 10
-    diff_tree = DiffTree(build_tree([]), config=config)
 
     # Test empty bar
-    bar = diff_tree._make_progress_bar(0, 100, 10, "left", "green")
+    bar = ProgressBar(0, 100, 10, "left", "green").to_text()
     assert len(bar.plain) == 10
 
     # Test full bar
-    bar = diff_tree._make_progress_bar(100, 100, 10, "left", "green")
+    bar = ProgressBar(100, 100, 10, "left", "green").to_text()
     assert "█" in bar.plain
 
     # Test partial bar
-    bar = diff_tree._make_progress_bar(50, 100, 10, "left", "green")
+    bar = ProgressBar(50, 100, 10, "left", "green").to_text()
     # Should have some filled blocks
     assert bar.plain.strip() != ""
 
 
 def test_make_progress_bar_alignment():
     """Test progress bar alignment."""
-    from git_diff_tree.config import RenderConfig
-
-    config = RenderConfig.default()
-    config.bar_width = 10
-    diff_tree = DiffTree(build_tree([]), config=config)
 
     # Right-aligned bar
-    bar_right = diff_tree._make_progress_bar(30, 100, 10, "right", "green")
+    bar_right = ProgressBar(30, 100, 10, "right", "green").to_text()
     plain = bar_right.plain
     # Should be right-aligned (padding on left)
     assert (
@@ -167,7 +158,7 @@ def test_make_progress_bar_alignment():
     )
 
     # Left-aligned bar
-    bar_left = diff_tree._make_progress_bar(30, 100, 10, "left", "green")
+    bar_left = ProgressBar(30, 100, 10, "left", "green").to_text()
     plain = bar_left.plain
     # Should be left-aligned (padding on right)
     assert len(plain) == 10
@@ -184,13 +175,8 @@ def test_make_progress_bar_alignment():
 )
 def test_make_progress_bar_minimum_sliver(value, max_value, expected_has_sliver):
     """Test that any value >0 shows at least a minimal sliver."""
-    from git_diff_tree.config import RenderConfig
 
-    config = RenderConfig.default()
-    config.bar_width = 20
-    diff_tree = DiffTree(build_tree([]), config=config)
-
-    bar = diff_tree._make_progress_bar(value, max_value, 20, "left", "green")
+    bar = ProgressBar(value, max_value, 20, "left", "green").to_text()
     plain = bar.plain
 
     assert len(plain) == 20
@@ -206,13 +192,8 @@ def test_make_progress_bar_minimum_sliver(value, max_value, expected_has_sliver)
 @pytest.mark.parametrize("align", ["left", "right"])
 def test_make_progress_bar_minimum_sliver_alignment(align):
     """Test minimum sliver works with both alignments."""
-    from git_diff_tree.config import RenderConfig
 
-    config = RenderConfig.default()
-    config.bar_width = 20
-    diff_tree = DiffTree(build_tree([]), config=config)
-
-    bar = diff_tree._make_progress_bar(1, 10000, 20, align, "green")
+    bar = ProgressBar(1, 10000, 20, align, "green").to_text()
     plain = bar.plain
 
     # Should have ▏ regardless of alignment
@@ -298,22 +279,32 @@ def test_console_width_handling(width, description):
 def _extract_progress_bars(line: Text) -> str:
     """Extract just the progress bar characters from a line (after filename and counts)."""
     plain = line.plain
-
-    # Find the progress bar part - it's the block characters between counts and percentage
-    # Block characters are: " ▏▎▍▌▋▊▉█"
     block_chars = " ▏▎▍▌▋▊▉█"
-    in_blocks = False
-    blocks_part = []
 
-    for char in plain:
-        if char in block_chars:
-            in_blocks = True
-            blocks_part.append(char)
-        elif in_blocks and char not in block_chars:
-            # Reached the end of blocks section
-            break
+    # Find a sequence of at least 40 consecutive block characters (2 * bar_width)
+    # This is the dual progress bar section
+    i = 0
+    while i < len(plain):
+        if plain[i] in block_chars:
+            # Found start of a potential block sequence
+            start = i
+            while i < len(plain) and plain[i] in block_chars:
+                i += 1
+            length = i - start
 
-    return "".join(blocks_part)
+            # If this sequence is at least 40 chars, it's our progress bar
+            if length >= 40:
+                # The sequence might include padding spaces before/after the bar
+                # The bar itself is exactly 40 characters
+                # Skip leading padding spaces (between counts and bar)
+                bar_candidate = plain[start:i].lstrip(" ")
+                # Take exactly 40 characters (the dual progress bar)
+                return bar_candidate[:40]
+        else:
+            i += 1
+
+    # Fallback: return empty if not found
+    return ""
 
 
 def test_progress_bar_format_pattern():
@@ -421,11 +412,11 @@ def test_progress_bar_format_various_sizes(additions, deletions):
 
 def test_progress_bars_align_consistently():
     """Test that files with same delta count have progress bars at same position."""
-    # 3 files with same additions and deletions but different names
+    # 3 files with same additions and deletions and same-length names for alignment
     changes = [
-        FileChange(path="aaaa.py", additions=100, deletions=50),
-        FileChange(path="bbbbbbbbbb.py", additions=100, deletions=50),
-        FileChange(path="c.py", additions=100, deletions=50),
+        FileChange(path="file_a.py", additions=100, deletions=50),
+        FileChange(path="file_b.py", additions=100, deletions=50),
+        FileChange(path="file_c.py", additions=100, deletions=50),
     ]
 
     root = build_tree(changes)
@@ -439,9 +430,9 @@ def test_progress_bars_align_consistently():
 
     # Extract lines for each file
     file_lines = {
-        "aaaa.py": next(line for line in lines if "aaaa.py" in line.plain),
-        "bbbbbbbbbb.py": next(line for line in lines if "bbbbbbbbbb.py" in line.plain),
-        "c.py": next(line for line in lines if "c.py" in line.plain),
+        "file_a.py": next(line for line in lines if "file_a.py" in line.plain),
+        "file_b.py": next(line for line in lines if "file_b.py" in line.plain),
+        "file_c.py": next(line for line in lines if "file_c.py" in line.plain),
     }
 
     # Find the character range where progress bars appear in each line
