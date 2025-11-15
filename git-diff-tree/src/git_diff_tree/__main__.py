@@ -6,6 +6,7 @@ from typing import Optional
 import click
 from rich.console import Console
 
+from .config import Column, RenderConfig
 from .parser import parse_git_diff
 from .renderer import DiffTreeRenderer
 from .tree import build_tree, sort_tree
@@ -20,19 +21,25 @@ from .tree import build_tree, sort_tree
     help="Sort mode: 'size' (default) or 'alpha'",
 )
 @click.option(
+    "--columns",
+    type=str,
+    default=None,
+    help="Columns to display (comma-separated): tree,counts,bars,percentages",
+)
+@click.option(
     "--no-counts",
     is_flag=True,
-    help="Hide +/- count columns",
+    help="DEPRECATED: Use --columns instead. Hide +/- count columns",
 )
 @click.option(
     "--no-bars",
     is_flag=True,
-    help="Hide progress bar columns",
+    help="DEPRECATED: Use --columns instead. Hide progress bar columns",
 )
 @click.option(
     "--no-percentages",
     is_flag=True,
-    help="Hide percentage column",
+    help="DEPRECATED: Use --columns instead. Hide percentage column",
 )
 @click.option(
     "--bar-width",
@@ -49,6 +56,7 @@ from .tree import build_tree, sort_tree
 def main(
     diff_args: tuple[str, ...],
     sort: str,
+    columns: Optional[str],
     no_counts: bool,
     no_bars: bool,
     no_percentages: bool,
@@ -91,13 +99,41 @@ def main(
         # Sort tree
         sort_tree(root, sort_by=sort)
 
-        # Render tree
-        renderer = DiffTreeRenderer(
-            show_counts=not no_counts,
-            show_bars=not no_bars,
-            show_percentages=not no_percentages,
+        # Build render configuration
+        if columns is not None:
+            # Use new --columns flag
+            column_list = []
+            for col_name in columns.split(","):
+                col_name = col_name.strip().upper()
+                try:
+                    column_list.append(Column[col_name])
+                except KeyError:
+                    console = Console(stderr=True)
+                    console.print(
+                        f"Error: Unknown column '{col_name}'. "
+                        f"Valid options: {', '.join(c.value for c in Column)}",
+                        style="bold red",
+                    )
+                    sys.exit(1)
+        else:
+            # Fall back to deprecated boolean flags
+            column_list = [Column.TREE]  # Always include tree
+            if not no_counts:
+                column_list.append(Column.COUNTS)
+            if not no_bars:
+                column_list.append(Column.BARS)
+            if not no_percentages:
+                column_list.append(Column.PERCENTAGES)
+
+        config = RenderConfig(
+            columns=column_list,
             bar_width=bar_width,
+            sort_by=sort,
+            max_depth=max_depth,
         )
+
+        # Render tree
+        renderer = DiffTreeRenderer(config=config)
         renderer.render(root, max_depth=max_depth)
 
     except Exception as e:

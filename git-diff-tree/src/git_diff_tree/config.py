@@ -1,11 +1,11 @@
 """Configuration for git-diff-tree rendering."""
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Optional
 
 
-class Column(str, Enum):
+class Column(StrEnum):
     """Available columns to display."""
 
     TREE = "tree"
