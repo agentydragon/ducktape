@@ -217,11 +217,14 @@ def extract_text_from_openai_response(response: ResponsesResult) -> str:
 
     Raises:
         RuntimeError: If no text content is found
-    """
-    for item in response.output:
-        if isinstance(item, AssistantMessageOut):
-            text = item.text
-            if text:
-                return text
 
-    raise RuntimeError("No text content found in OpenAI response")
+    Note:
+        This is a legacy wrapper. New code should use:
+        adgn.openai_utils.text_extraction.first_assistant_text
+    """
+    from adgn.openai_utils.text_extraction import first_assistant_text
+
+    try:
+        return first_assistant_text(response)
+    except ValueError as e:
+        raise RuntimeError(str(e)) from e
