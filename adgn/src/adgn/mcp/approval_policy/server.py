@@ -154,7 +154,6 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         )
         def active_policy() -> str:
             # Single source of truth: engine
-            content: str
             content, _version = self._engine.get_policy()
             policy_text: str = content
             return policy_text
@@ -169,8 +168,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
                 got := await self._persistence.get_policy_proposal(self._agent_id, id)
             ) is None:
                 raise KeyError(id)
-            content: str = got.content
-            return content
+            return got.content
 
         @self.flat_model()
         async def decide(input: PolicyRequest) -> PolicyResponse:  # type: ignore[unused-ignore]
