@@ -1,0 +1,37 @@
+[project]
+name = "git-diff-tree"
+version = "0.0.1"
+description = "Tree-style visualization of git diffs with progress bars"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "rich>=13.0",
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "syrupy>=4.0",  # For snapshot testing
+]
+
+[project.scripts]
+git-diff-tree = "git_diff_tree.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["git_diff_tree*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
