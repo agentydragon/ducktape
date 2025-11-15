@@ -1,10 +1,12 @@
 """Snapshot tests for ANSI-rendered output."""
 
 from io import StringIO
+from typing import Optional
 
 import pytest
 from rich.console import Console
 
+from git_diff_tree.config import Column, RenderConfig
 from git_diff_tree.parser import FileChange
 from git_diff_tree.renderer import DiffTreeRenderer
 from git_diff_tree.tree import build_tree, sort_tree
@@ -29,7 +31,7 @@ def complex_changes() -> list[FileChange]:
 def render_to_string(
     changes: list[FileChange],
     sort_by: str = "size",
-    **renderer_kwargs,
+    config: Optional[RenderConfig] = None,
 ) -> str:
     """Helper to render tree to string."""
     output = StringIO()
@@ -44,7 +46,7 @@ def render_to_string(
     root = build_tree(changes)
     sort_tree(root, sort_by=sort_by)
 
-    renderer = DiffTreeRenderer(console=console, **renderer_kwargs)
+    renderer = DiffTreeRenderer(console=console, config=config)
     renderer.render(root)
 
     return output.getvalue()
@@ -64,36 +66,37 @@ def test_snapshot_alphabetical_sort(snapshot, complex_changes):
 
 def test_snapshot_no_bars(snapshot, complex_changes):
     """Snapshot test without progress bars."""
-    output = render_to_string(complex_changes, show_bars=False)
+    config = RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.PERCENTAGES])
+    output = render_to_string(complex_changes, config=config)
     assert output == snapshot
 
 
 def test_snapshot_no_counts(snapshot, complex_changes):
     """Snapshot test without count columns."""
-    output = render_to_string(complex_changes, show_counts=False)
+    config = RenderConfig(columns=[Column.TREE, Column.BARS, Column.PERCENTAGES])
+    output = render_to_string(complex_changes, config=config)
     assert output == snapshot
 
 
 def test_snapshot_no_percentages(snapshot, complex_changes):
     """Snapshot test without percentage column."""
-    output = render_to_string(complex_changes, show_percentages=False)
+    config = RenderConfig(columns=[Column.TREE, Column.COUNTS, Column.BARS])
+    output = render_to_string(complex_changes, config=config)
     assert output == snapshot
 
 
 def test_snapshot_minimal(snapshot, complex_changes):
     """Snapshot test with minimal output (tree only)."""
-    output = render_to_string(
-        complex_changes,
-        show_bars=False,
-        show_counts=False,
-        show_percentages=False,
-    )
+    config = RenderConfig.minimal()
+    output = render_to_string(complex_changes, config=config)
     assert output == snapshot
 
 
 def test_snapshot_custom_bar_width(snapshot, complex_changes):
     """Snapshot test with custom progress bar width."""
-    output = render_to_string(complex_changes, bar_width=30)
+    config = RenderConfig.default()
+    config.bar_width = 30
+    output = render_to_string(complex_changes, config=config)
     assert output == snapshot
 
 

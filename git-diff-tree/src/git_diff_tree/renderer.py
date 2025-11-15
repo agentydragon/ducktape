@@ -21,44 +21,16 @@ class DiffTreeRenderer:
         self,
         config: Optional[RenderConfig] = None,
         console: Optional[Console] = None,
-        # Deprecated: kept for backward compatibility
-        show_counts: Optional[bool] = None,
-        show_bars: Optional[bool] = None,
-        show_percentages: Optional[bool] = None,
-        bar_width: Optional[int] = None,
     ):
         """
         Initialize the renderer.
 
         Args:
-            config: RenderConfig object (preferred).
+            config: RenderConfig object (uses default if None).
             console: Rich Console instance (creates one if None).
-            show_counts: DEPRECATED - use config instead.
-            show_bars: DEPRECATED - use config instead.
-            show_percentages: DEPRECATED - use config instead.
-            bar_width: DEPRECATED - use config instead.
         """
         self.console = console or Console()
-
-        # Handle backward compatibility
-        if config is None:
-            from .config import Column
-
-            columns = []
-            columns.append(Column.TREE)  # Always include tree
-            if show_counts is not False:
-                columns.append(Column.COUNTS)
-            if show_bars is not False:
-                columns.append(Column.BARS)
-            if show_percentages is not False:
-                columns.append(Column.PERCENTAGES)
-
-            config = RenderConfig(
-                columns=columns,
-                bar_width=bar_width or 20,
-            )
-
-        self.config = config
+        self.config = config or RenderConfig.default()
 
     def render(self, root: TreeNode, max_depth: Optional[int] = None) -> None:
         """

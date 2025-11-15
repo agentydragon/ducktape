@@ -118,62 +118,6 @@ def test_cli_columns_flag_with_spaces(runner, git_repo_with_changes):
     assert result.output.strip() != ""
 
 
-def test_cli_backward_compat_no_counts(runner, git_repo_with_changes):
-    """Test backward compatibility with --no-counts flag."""
-    result = runner.invoke(
-        main, ["--no-counts"], obj={}, catch_exceptions=False
-    )
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
-def test_cli_backward_compat_no_bars(runner, git_repo_with_changes):
-    """Test backward compatibility with --no-bars flag."""
-    result = runner.invoke(main, ["--no-bars"], obj={}, catch_exceptions=False)
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
-def test_cli_backward_compat_no_percentages(runner, git_repo_with_changes):
-    """Test backward compatibility with --no-percentages flag."""
-    result = runner.invoke(
-        main, ["--no-percentages"], obj={}, catch_exceptions=False
-    )
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
-def test_cli_backward_compat_all_disabled(runner, git_repo_with_changes):
-    """Test backward compatibility with all --no-* flags."""
-    result = runner.invoke(
-        main,
-        ["--no-counts", "--no-bars", "--no-percentages"],
-        obj={},
-        catch_exceptions=False,
-    )
-
-    assert result.exit_code == 0
-    # Should still show tree structure
-    assert result.output.strip() != ""
-
-
-def test_cli_columns_overrides_deprecated_flags(runner, git_repo_with_changes):
-    """Test that --columns flag takes precedence over deprecated --no-* flags."""
-    # If both are provided, --columns should be used
-    result = runner.invoke(
-        main,
-        ["--columns", "tree,counts", "--no-bars"],
-        obj={},
-        catch_exceptions=False,
-    )
-
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
-
-
 def test_cli_sort_alpha(runner, git_repo_with_changes):
     """Test --sort alpha option."""
     result = runner.invoke(

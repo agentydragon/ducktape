@@ -23,23 +23,8 @@ from .tree import build_tree, sort_tree
 @click.option(
     "--columns",
     type=str,
-    default=None,
+    default="tree,counts,bars,percentages",
     help="Columns to display (comma-separated): tree,counts,bars,percentages",
-)
-@click.option(
-    "--no-counts",
-    is_flag=True,
-    help="DEPRECATED: Use --columns instead. Hide +/- count columns",
-)
-@click.option(
-    "--no-bars",
-    is_flag=True,
-    help="DEPRECATED: Use --columns instead. Hide progress bar columns",
-)
-@click.option(
-    "--no-percentages",
-    is_flag=True,
-    help="DEPRECATED: Use --columns instead. Hide percentage column",
 )
 @click.option(
     "--bar-width",
@@ -56,10 +41,7 @@ from .tree import build_tree, sort_tree
 def main(
     diff_args: tuple[str, ...],
     sort: str,
-    columns: Optional[str],
-    no_counts: bool,
-    no_bars: bool,
-    no_percentages: bool,
+    columns: str,
     bar_width: int,
     max_depth: Optional[int],
 ) -> None:
@@ -99,31 +81,20 @@ def main(
         # Sort tree
         sort_tree(root, sort_by=sort)
 
-        # Build render configuration
-        if columns is not None:
-            # Use new --columns flag
-            column_list = []
-            for col_name in columns.split(","):
-                col_name = col_name.strip().upper()
-                try:
-                    column_list.append(Column[col_name])
-                except KeyError:
-                    console = Console(stderr=True)
-                    console.print(
-                        f"Error: Unknown column '{col_name}'. "
-                        f"Valid options: {', '.join(c.value for c in Column)}",
-                        style="bold red",
-                    )
-                    sys.exit(1)
-        else:
-            # Fall back to deprecated boolean flags
-            column_list = [Column.TREE]  # Always include tree
-            if not no_counts:
-                column_list.append(Column.COUNTS)
-            if not no_bars:
-                column_list.append(Column.BARS)
-            if not no_percentages:
-                column_list.append(Column.PERCENTAGES)
+        # Parse column configuration
+        column_list = []
+        for col_name in columns.split(","):
+            col_name = col_name.strip().upper()
+            try:
+                column_list.append(Column[col_name])
+            except KeyError:
+                console = Console(stderr=True)
+                console.print(
+                    f"Error: Unknown column '{col_name}'. "
+                    f"Valid options: {', '.join(c.value for c in Column)}",
+                    style="bold red",
+                )
+                sys.exit(1)
 
         config = RenderConfig(
             columns=column_list,
