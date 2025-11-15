@@ -4,7 +4,7 @@ from pathlib import Path
 
 from git_diff_tree.parser import FileChange, parse_git_diff, parse_numstat_output
 
-from .conftest import create_file, git_add_commit
+from .conftest import PNG_HEADER, create_file, git_add_commit
 
 
 def test_file_change_dataclass():
@@ -74,16 +74,13 @@ def test_parse_git_diff_empty(temp_git_repo: Path, run_git):
 
 def test_file_change_with_binary(temp_git_repo: Path, run_git):
     """Test handling binary files (shown as '-' in numstat)."""
-    # PNG file header
-    png_header = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
-
     # Create initial commit with a binary file
     binary_file = temp_git_repo / "image.png"
-    binary_file.write_bytes(png_header + b"\x00" * 100)
+    binary_file.write_bytes(PNG_HEADER + b"\x00" * 100)
     git_add_commit(temp_git_repo, "Initial commit")
 
     # Modify the binary file
-    binary_file.write_bytes(png_header + b"\xff" * 100)  # Different content
+    binary_file.write_bytes(PNG_HEADER + b"\xff" * 100)  # Different content
 
     # Get the diff output to verify binary handling
     result = run_git("diff", "--numstat")

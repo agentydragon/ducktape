@@ -8,6 +8,9 @@ import tempfile
 from git_diff_tree.parser import FileChange
 import pytest
 
+# Test constants
+PNG_HEADER = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
 
 @pytest.fixture
 def sample_changes() -> list[FileChange]:
