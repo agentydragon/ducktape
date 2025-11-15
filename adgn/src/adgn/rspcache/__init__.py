@@ -87,7 +87,7 @@ def _extract_client_token(
                 token = stripped.strip()
                 if token:
                     return token
-    header_token = request.headers.get("X-API-Key")
+    header_token: str | None = request.headers.get("X-API-Key")  # type: ignore[assignment]
     if header_token:
         token = header_token.strip()
         if token:

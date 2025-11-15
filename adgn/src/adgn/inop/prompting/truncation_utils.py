@@ -8,10 +8,6 @@ import tiktoken
 
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import FileInfo
-from adgn.openai_utils.model import (
-    AssistantMessageOut,
-    ResponsesResult,
-)
 
 
 class _Tokenizer(Protocol):
@@ -204,5 +200,3 @@ class TruncationManager:
             return file_path.read_text()
         except UnicodeDecodeError:
             return "<<not a plaintext file>>"
-
-

@@ -19,7 +19,7 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 # FastMCP-only: no TokenVerifier in server construction
 from pydantic import BaseModel, Field

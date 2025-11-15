@@ -157,11 +157,13 @@ async def _shutdown() -> None:
 
 def _to_response_model(record: Response) -> ResponseRecordModel:
     """Convert DB Response record to API model using Pydantic's from_attributes."""
-    return ResponseRecordModel.model_validate({
-        **{k: v for k, v in record.__dict__.items() if not k.startswith("_")},
-        "api_key_name": record.api_key.name if record.api_key else None,
-        "snapshot": record.snapshot.to_model() if record.snapshot else None,
-    })
+    return ResponseRecordModel.model_validate(
+        {
+            **{k: v for k, v in record.__dict__.items() if not k.startswith("_")},
+            "api_key_name": record.api_key.name if record.api_key else None,
+            "snapshot": record.snapshot.to_model() if record.snapshot else None,
+        }
+    )
 
 
 def _to_frame_model(frame: ResponseFrame) -> FrameRecordModel:

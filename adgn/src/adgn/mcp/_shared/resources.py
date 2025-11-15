@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 from fastmcp.client.client import ClientSession
 from mcp import types as mcp_types
@@ -22,7 +22,7 @@ def extract_single_text_content(res: mcp_types.ReadResourceResult) -> str:
         raise RuntimeError("expected a single text part, found blob content")
     if len(text_parts) != 1:
         raise RuntimeError(f"expected exactly one text part, found {len(text_parts)}")
-    text = text_parts[0].text
+    text: str | None = text_parts[0].text
     if text is None:
         raise RuntimeError("text content part missing text payload")
     return text

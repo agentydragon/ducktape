@@ -172,12 +172,14 @@ class ResponseSnapshot(Base):
     response_rel: Mapped[Response] = relationship(back_populates="snapshot")
 
     def to_model(self) -> FinalResponseSnapshot:
-        return FinalResponseSnapshot.model_validate({
-            "status": self.status,
-            "response": self.response,
-            "error": self.error,
-            "token_usage": self.token_usage,
-        })
+        return FinalResponseSnapshot.model_validate(
+            {
+                "status": self.status,
+                "response": self.response,
+                "error": self.error,
+                "token_usage": self.token_usage,
+            }
+        )
 
 
 @dataclass(slots=True)
@@ -634,7 +636,8 @@ class ResponsesDB:
             snapshot_model = snapshot.to_model()
             if snapshot_model.status != ResponseStatus.COMPLETE or snapshot_model.response is None:
                 return None
-            return snapshot_model.response.model_dump(mode="json")
+            result: dict[str, Any] = snapshot_model.response.model_dump(mode="json")  # type: ignore[assignment]
+            return result
 
     async def get_response_detail(self, identifier: str) -> ResponseDetail | None:
         if self._session_factory is None:

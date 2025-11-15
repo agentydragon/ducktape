@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
 from openai.types.responses import (
     Response as OpenAIResponse,
@@ -43,7 +43,7 @@ class FinalResponseSnapshot(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    @field_serializer('status')
+    @field_serializer("status")
     def serialize_status(self, value: ResponseStatus) -> str:
         return value.value
 
