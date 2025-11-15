@@ -20,14 +20,12 @@ Centralizes string construction to avoid ad-hoc concatenations across modules.
 
 def approval_policy_uri() -> str:
     """Canonical resource URI for the active approval policy program."""
-    uri: str = APPROVAL_POLICY_RESOURCE_URI
-    return uri
+    return APPROVAL_POLICY_RESOURCE_URI
 
 
 def approval_policy_proposals_index_uri() -> str:
     """Root URI for policy proposals (index)."""
-    uri: str = APPROVAL_POLICY_PROPOSALS_INDEX_URI
-    return uri
+    return APPROVAL_POLICY_PROPOSALS_INDEX_URI
 
 
 def approval_policy_proposal_item_uri(proposal_id: str) -> str:
@@ -39,24 +37,20 @@ def approval_policy_proposal_item_uri(proposal_id: str) -> str:
 
 
 def compositor_meta_state_uri(server: str) -> str:
-    uri: str = COMPOSITOR_META_STATE_URI_FMT.format(server=server)
-    return uri
+    return COMPOSITOR_META_STATE_URI_FMT.format(server=server)
 
 
 def compositor_meta_state_prefix() -> str:
     # Build a safe prefix by formatting with an empty server name
-    uri: str = COMPOSITOR_META_STATE_URI_FMT.format(server="")
-    return uri
+    return COMPOSITOR_META_STATE_URI_FMT.format(server="")
 
 
 def compositor_meta_instructions_uri(server: str) -> str:
-    uri: str = COMPOSITOR_META_INSTRUCTIONS_URI_FMT.format(server=server)
-    return uri
+    return COMPOSITOR_META_INSTRUCTIONS_URI_FMT.format(server=server)
 
 
 def compositor_meta_capabilities_uri(server: str) -> str:
-    uri: str = COMPOSITOR_META_CAPABILITIES_URI_FMT.format(server=server)
-    return uri
+    return COMPOSITOR_META_CAPABILITIES_URI_FMT.format(server=server)
 
 
 # Internal module — keep imports explicit at call sites
@@ -84,5 +78,4 @@ def parse_compositor_state_server(uri: str) -> str | None:
 
 
 def subscriptions_index_uri() -> str:
-    uri: str = RESOURCES_SUBSCRIPTIONS_INDEX_URI
-    return uri
+    return RESOURCES_SUBSCRIPTIONS_INDEX_URI

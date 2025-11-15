@@ -94,9 +94,6 @@ repos:
         language_version: python3.12
         args:
           - "--config-file=adgn/pyproject.toml"
-          # Workaround for mypy 1.18 expression cache bug losing Final[str] types across modules
-          # TODO: Remove --disable-expression-cache once upstream bug is fixed
-          - "--disable-expression-cache"
         additional_dependencies:
           - pydantic>=2
           - types-PyYAML

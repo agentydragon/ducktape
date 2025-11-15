@@ -211,10 +211,6 @@ adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
 python_version = "3.12"
 ignore_missing_imports = true
 warn_return_any = true
-# Workaround for mypy 1.18 expression cache bug losing Final[str] types across modules
-# Introduced in PR #19505 (https://github.com/python/mypy/pull/19505)
-# TODO: Remove once upstream bug is fixed. Consider filing issue at python/mypy with repro case.
-disable_expression_cache = true
 # Run from within adgn/ directory: mypy --config-file pyproject.toml src/adgn
 # Source root for the adgn package is "src" from adgn/ directory
 mypy_path = ["src"]
