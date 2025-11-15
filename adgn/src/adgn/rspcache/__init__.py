@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
-from openai.types.responses import Response as OpenAIResponse, ResponseUsage
+from openai.types.responses import Response as OpenAIResponse
 
 from adgn.rspcache.models import (
     FRAME_ADAPTER,
@@ -21,7 +21,6 @@ from adgn.rspcache.models import (
     parse_response,
     stream_event_final_response,
     stream_event_response_id,
-    stream_event_usage,
 )
 from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
 
@@ -88,7 +87,7 @@ def _extract_client_token(
                 if token:
                     return token
     header_token = request.headers.get("X-API-Key")
-    if header_token:
+    if isinstance(header_token, str):
         token = header_token.strip()
         if token:
             return token
@@ -97,6 +96,45 @@ def _extract_client_token(
 
 def canonical_json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+async def _record_upstream_error(
+    db: ResponsesDB,
+    key: str,
+    *,
+    exc: Exception,
+    response_id: str | None = None,
+) -> None:
+    """Record an upstream request failure error."""
+    await db.record_error(
+        key,
+        error_reason=f"Upstream request failed: {type(exc).__name__}",
+        response_id=response_id,
+        error=ErrorPayload(
+            message="Upstream request failed",
+            detail={"error_type": type(exc).__name__, "error_message": str(exc)},
+        ),
+    )
+
+
+async def _record_http_error(
+    db: ResponsesDB,
+    key: str,
+    *,
+    status_code: int,
+    body: str,
+    response_id: str | None = None,
+) -> None:
+    """Record an upstream HTTP error response."""
+    await db.record_error(
+        key,
+        error_reason=f"Upstream HTTP {status_code}",
+        response_id=response_id,
+        error=ErrorPayload(
+            message="Upstream HTTP error",
+            detail={"status_code": status_code, "response_body": body},
+        ),
+    )
 
 
 def make_key_from_body(body: dict[str, Any]) -> str:
@@ -176,7 +214,6 @@ async def _proxy_stream(
 ) -> AsyncIterator[bytes]:
     text_buffer = ""
     ordinal = 0
-    token_usage: ResponseUsage | None = None
     latest_response: OpenAIResponse | None = None
     try:
         async for chunk in resp.aiter_bytes():
@@ -198,9 +235,6 @@ async def _proxy_stream(
                 if maybe_response_id and response_id != maybe_response_id:
                     response_id = maybe_response_id
                     await db.mark_in_progress(key, response_id)
-                usage = stream_event_usage(frame_payload)
-                if usage:
-                    token_usage = usage
                 response_candidate = stream_event_final_response(frame_payload)
                 if response_candidate is not None:
                     latest_response = response_candidate
@@ -218,9 +252,6 @@ async def _proxy_stream(
             if maybe_response_id and response_id != maybe_response_id:
                 response_id = maybe_response_id
                 await db.mark_in_progress(key, response_id)
-            usage = stream_event_usage(frame_payload)
-            if usage:
-                token_usage = usage
             response_candidate = stream_event_final_response(frame_payload)
             if response_candidate is not None:
                 latest_response = response_candidate
@@ -230,25 +261,22 @@ async def _proxy_stream(
                 ordinal=ordinal,
                 response_id=response_id,
             )
-        latency_ms = int((time.perf_counter() - start_time) * 1000)
-        if latest_response is not None and latest_response.usage is not None:
-            token_usage = latest_response.usage
         await db.finalize_response(
             key,
             response_id=response_id,
             response_obj=latest_response,
-            latency_ms=latency_ms,
-            token_usage=token_usage,
         )
     except asyncio.CancelledError:
         raise
-    except Exception:
-        status_reason = "Streaming proxy failure"
+    except Exception as exc:
         await db.record_error(
             key,
-            status_reason=status_reason,
+            error_reason=f"Streaming proxy failure: {type(exc).__name__}",
             response_id=response_id,
-            error=ErrorPayload(message=status_reason),
+            error=ErrorPayload(
+                message="Streaming proxy failure",
+                detail={"error_type": type(exc).__name__, "error_message": str(exc)},
+            ),
         )
         raise
     finally:
@@ -321,23 +349,12 @@ async def responses_endpoint(
             resp = await client.send(request_obj, stream=True)
         except Exception as exc:  # noqa: BLE001
             await client.aclose()
-            await db.record_error(
-                key,
-                status_reason=str(exc),
-                response_id=None,
-                error=ErrorPayload(message=str(exc)),
-            )
+            await _record_upstream_error(db, key, exc=exc)
             raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
         if resp.status_code >= HTTP_ERROR_MIN:
             payload = await resp.aread()
-            await db.record_error(
-                key,
-                status_reason=f"Upstream status {resp.status_code}",
-                response_id=None,
-                error=ErrorPayload(
-                    message="Upstream error",
-                    detail={"status": resp.status_code, "body": payload.decode(errors="ignore")},
-                ),
+            await _record_http_error(
+                db, key, status_code=resp.status_code, body=payload.decode(errors="ignore")
             )
             await resp.aclose()
             await client.aclose()
@@ -367,24 +384,11 @@ async def responses_endpoint(
         try:
             resp = await client.post(upstream_url, json=body, headers=headers)
         except Exception as exc:  # noqa: BLE001
-            await db.record_error(
-                key,
-                status_reason=str(exc),
-                response_id=None,
-                error=ErrorPayload(message=str(exc)),
-            )
+            await _record_upstream_error(db, key, exc=exc)
             raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}") from exc
 
     if resp.status_code >= HTTP_ERROR_MIN:
-        detail = resp.text
-        await db.record_error(
-            key,
-            status_reason=f"Upstream status {resp.status_code}",
-            response_id=None,
-            error=ErrorPayload(
-                message="Upstream error", detail={"status": resp.status_code, "body": detail}
-            ),
-        )
+        await _record_http_error(db, key, status_code=resp.status_code, body=resp.text)
         return _relay_error_response(resp)
 
     try:
@@ -392,10 +396,15 @@ async def responses_endpoint(
     except Exception as exc:  # noqa: BLE001
         await db.record_error(
             key,
-            status_reason="Upstream returned non-JSON response",
+            error_reason=f"Non-JSON response: {type(exc).__name__}",
             response_id=None,
             error=ErrorPayload(
-                message="Upstream returned non-JSON response", detail={"body": resp.text}
+                message="Upstream returned non-JSON response",
+                detail={
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    "response_body": resp.text,
+                },
             ),
         )
         raise HTTPException(status_code=502, detail="Upstream returned non-JSON response") from exc
@@ -403,15 +412,11 @@ async def responses_endpoint(
     response_model = parse_response(resp_json)
     response_id = response_model.id
     await db.mark_in_progress(key, response_id)
-    latency_ms = int((time.perf_counter() - start_time) * 1000)
-    token_usage = response_model.usage
 
     await db.finalize_response(
         key,
         response_id=response_id,
         response_obj=response_model,
-        latency_ms=latency_ms,
-        token_usage=token_usage,
     )
 
     headers = {"X-Cache-Hit": "0", "X-Cache-Key": key}

@@ -12,7 +12,7 @@ from typing import Any, cast
 import uuid
 
 import asyncpg
-from openai.types.responses import Response as OpenAIResponse, ResponseStreamEvent, ResponseUsage
+from openai.types.responses import Response as OpenAIResponse, ResponseStreamEvent
 from sqlalchemy import (
     BigInteger,
     DateTime,
@@ -35,22 +35,20 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, selectinload
 
-from adgn.rspcache.events import (
+from adgn.rspcache.models import (
+    CacheStatus,
+    ErrorPayload,
+    FinalResponseSnapshot,
+    stream_event_event_id,
+    stream_event_response_id,
+)
+from adgn.rspcache.pg_events import (
     APIKeyCreatedEvent,
     APIKeyRevokedEvent,
     EventPayload,
     FrameAppendedEvent,
     ResponseStatusEvent,
     parse_event,
-)
-from adgn.rspcache.models import (
-    ErrorPayload,
-    FinalResponseSnapshot,
-    ResponseStatus,
-    dump_response,
-    dump_usage,
-    stream_event_event_id,
-    stream_event_response_id,
 )
 
 __all__ = [
@@ -87,10 +85,10 @@ class ClientAPIKey(Base):
         default="default",
         doc="Logical name for selecting an upstream OpenAI API key (see _load_openai_keys).",
     )
-    created_ts: Mapped[datetime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    revoked_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     responses: Mapped[list[Response]] = relationship(
         back_populates="api_key", cascade="all, delete-orphan"
@@ -100,19 +98,19 @@ class ClientAPIKey(Base):
 class ResponseFrame(Base):
     __tablename__ = "response_frames"
     __table_args__ = (
-        Index("idx_response_frames_key_ordinal", "key", "ordinal"),
+        Index("idx_response_frames_cache_key_ordinal", "cache_key", "ordinal"),
         Index("idx_response_frames_response_id_ordinal", "response_id", "ordinal"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    key: Mapped[str] = mapped_column(
-        String, ForeignKey("responses.key", ondelete="CASCADE"), nullable=False
+    cache_key: Mapped[str] = mapped_column(
+        String, ForeignKey("responses.cache_key", ondelete="CASCADE"), nullable=False
     )
     response_id: Mapped[str | None] = mapped_column(String, nullable=True)
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     frame_type: Mapped[str | None] = mapped_column(String)
     event_id: Mapped[str | None] = mapped_column(String)
-    created_ts: Mapped[datetime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     frame_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
@@ -123,28 +121,27 @@ class ResponseFrame(Base):
 class Response(Base):
     __tablename__ = "responses"
     __table_args__ = (
-        Index("idx_responses_created_ts", "created_ts"),
+        Index("idx_responses_created_at", "created_at"),
         Index("idx_responses_model", "model"),
         Index("idx_responses_response_id", "response_id"),
     )
 
-    key: Mapped[str] = mapped_column(String, primary_key=True)
+    cache_key: Mapped[str] = mapped_column(String, primary_key=True)
     response_id: Mapped[str | None] = mapped_column(String, unique=True)
     api_key_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("client_api_keys.id")
     )
     model: Mapped[str] = mapped_column(String, nullable=False)
-    request_body_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
-    status_reason: Mapped[str | None] = mapped_column(String)
-    created_ts: Mapped[datetime] = mapped_column(
+    error: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    last_update_ts: Mapped[datetime] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    latency_ms: Mapped[int | None] = mapped_column(Integer)
-    token_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     api_key: Mapped[ClientAPIKey | None] = relationship(back_populates="responses")
     frames: Mapped[list[ResponseFrame]] = relationship(
@@ -158,28 +155,30 @@ class Response(Base):
 class ResponseSnapshot(Base):
     __tablename__ = "response_snapshots"
 
-    key: Mapped[str] = mapped_column(
-        String, ForeignKey("responses.key", ondelete="CASCADE"), primary_key=True
+    cache_key: Mapped[str] = mapped_column(
+        String, ForeignKey("responses.cache_key", ondelete="CASCADE"), primary_key=True
     )
     status: Mapped[str] = mapped_column(String, nullable=False)
-    response_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    token_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    created_ts: Mapped[datetime] = mapped_column(
+    response: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    updated_ts: Mapped[datetime] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    response: Mapped[Response] = relationship(back_populates="snapshot")
+    response_rel: Mapped[Response] = relationship(back_populates="snapshot")
 
     def to_model(self) -> FinalResponseSnapshot:
-        return FinalResponseSnapshot.from_db(
-            status=self.status,
-            response_json=self.response_json,
-            error_json=self.error_json,
-            token_usage_json=self.token_usage_json,
+        return FinalResponseSnapshot.model_validate(
+            {
+                "status": self.status,
+                "response": self.response,
+                "error": self.error,
+                "token_usage": self.token_usage,
+            }
         )
 
 
@@ -189,8 +188,8 @@ class APIKeyRecord:
     name: str
     token_prefix: str
     upstream_alias: str
-    created_ts: datetime
-    revoked_ts: datetime | None
+    created_at: datetime
+    revoked_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -286,7 +285,7 @@ class ResponsesDB:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
-            stmt = select(ClientAPIKey).order_by(ClientAPIKey.created_ts.desc())
+            stmt = select(ClientAPIKey).order_by(ClientAPIKey.created_at.desc())
             result = await session.execute(stmt)
             records = list(result.scalars())
         return records
@@ -297,8 +296,8 @@ class ResponsesDB:
         async with self._session_factory() as session:
             result = await session.execute(
                 update(ClientAPIKey)
-                .where(ClientAPIKey.id == key_id, ClientAPIKey.revoked_ts.is_(None))
-                .values(revoked_ts=datetime.now(UTC))
+                .where(ClientAPIKey.id == key_id, ClientAPIKey.revoked_at.is_(None))
+                .values(revoked_at=datetime.now(UTC))
             )
             rowcount = int(result.rowcount or 0)
             if rowcount > 0:
@@ -321,7 +320,7 @@ class ResponsesDB:
         async with self._session_factory() as session:
             result = await session.execute(
                 select(ClientAPIKey).where(
-                    ClientAPIKey.token_prefix == prefix, ClientAPIKey.revoked_ts.is_(None)
+                    ClientAPIKey.token_prefix == prefix, ClientAPIKey.revoked_at.is_(None)
                 )
             )
             record = result.scalar_one_or_none()
@@ -349,15 +348,15 @@ class ResponsesDB:
         stmt = (
             pg_insert(Response)
             .values(
-                key=key,
+                cache_key=key,
                 model=model,
-                request_body_json=request_body,
+                request_body=request_body,
                 status="queued",
-                created_ts=now,
-                last_update_ts=now,
+                created_at=now,
+                updated_at=now,
                 api_key_id=api_key.id if api_key else None,
             )
-            .on_conflict_do_nothing(index_elements=[Response.key])
+            .on_conflict_do_nothing(index_elements=[Response.cache_key])
         )
         async with self._session_factory() as session:
             result = await session.execute(stmt)
@@ -365,7 +364,7 @@ class ResponsesDB:
                 await self._emit_event(
                     session,
                     ResponseStatusEvent(
-                        key=key,
+                        cache_key=key,
                         response_id=None,
                         status="queued",
                     ),
@@ -383,18 +382,18 @@ class ResponsesDB:
         async with self._session_factory() as session:
             update_result = await session.execute(
                 update(Response)
-                .where(Response.key == key)
+                .where(Response.cache_key == key)
                 .values(
                     status="in_progress",
                     response_id=response_id,
-                    last_update_ts=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
                 )
             )
             if update_result.rowcount:
                 await self._emit_event(
                     session,
                     ResponseStatusEvent(
-                        key=key,
+                        cache_key=key,
                         response_id=response_id,
                         status="in_progress",
                     ),
@@ -428,16 +427,16 @@ class ResponsesDB:
             )
             await session.execute(
                 update(Response)
-                .where(Response.key == key)
+                .where(Response.cache_key == key)
                 .values(
                     response_id=response_id,
-                    last_update_ts=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
                 )
             )
             await self._emit_event(
                 session,
                 FrameAppendedEvent(
-                    key=key,
+                    cache_key=key,
                     response_id=response_id,
                     ordinal=assigned_ordinal,
                     frame_type=frame_type,
@@ -453,25 +452,24 @@ class ResponsesDB:
         *,
         response_id: str | None,
         response_obj: OpenAIResponse | None,
-        latency_ms: int | None,
-        token_usage: ResponseUsage | None,
     ) -> None:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
+        now = datetime.now(UTC)
+        token_usage = response_obj.usage if response_obj else None
         async with self._session_factory() as session:
             await session.execute(
                 update(Response)
-                .where(Response.key == key)
+                .where(Response.cache_key == key)
                 .values(
-                    status=ResponseStatus.COMPLETE.value,
+                    status=CacheStatus.COMPLETE.value,
                     response_id=response_id,
-                    latency_ms=latency_ms,
-                    token_usage_json=dump_usage(token_usage),
-                    last_update_ts=datetime.now(UTC),
+                    completed_at=now,
+                    updated_at=now,
                 )
             )
             snapshot = FinalResponseSnapshot(
-                status=ResponseStatus.COMPLETE,
+                status=CacheStatus.COMPLETE,
                 response=response_obj,
                 error=None,
                 token_usage=token_usage,
@@ -480,7 +478,7 @@ class ResponsesDB:
             await self._emit_event(
                 session,
                 ResponseStatusEvent(
-                    key=key,
+                    cache_key=key,
                     response_id=response_id,
                     status=snapshot.status.value,
                 ),
@@ -491,7 +489,7 @@ class ResponsesDB:
         self,
         key: str,
         *,
-        status_reason: str | None,
+        error_reason: str | None,
         response_id: str | None,
         error: ErrorPayload | None,
     ) -> None:
@@ -500,16 +498,16 @@ class ResponsesDB:
         async with self._session_factory() as session:
             await session.execute(
                 update(Response)
-                .where(Response.key == key)
+                .where(Response.cache_key == key)
                 .values(
-                    status=ResponseStatus.ERROR.value,
-                    status_reason=status_reason,
+                    status=CacheStatus.ERROR.value,
+                    error=error_reason,
                     response_id=response_id,
-                    last_update_ts=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
                 )
             )
             snapshot = FinalResponseSnapshot(
-                status=ResponseStatus.ERROR,
+                status=CacheStatus.ERROR,
                 response=None,
                 error=error,
                 token_usage=None,
@@ -518,10 +516,10 @@ class ResponsesDB:
             await self._emit_event(
                 session,
                 ResponseStatusEvent(
-                    key=key,
+                    cache_key=key,
                     response_id=response_id,
                     status=snapshot.status.value,
-                    status_reason=status_reason,
+                    error=error_reason,
                 ),
             )
             await session.commit()
@@ -538,7 +536,7 @@ class ResponsesDB:
             stmt = (
                 select(Response)
                 .options(selectinload(Response.api_key), selectinload(Response.snapshot))
-                .order_by(Response.created_ts.desc())
+                .order_by(Response.created_at.desc())
                 .offset(offset)
                 .limit(limit)
             )
@@ -551,7 +549,7 @@ class ResponsesDB:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
-            column = Response.response_id if identifier.startswith("resp_") else Response.key
+            column = Response.response_id if identifier.startswith("resp_") else Response.cache_key
             result = await session.execute(
                 select(Response)
                 .options(selectinload(Response.api_key), selectinload(Response.snapshot))
@@ -570,10 +568,10 @@ class ResponsesDB:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         async with self._session_factory() as session:
-            key_stmt = select(Response.key).where(
+            key_stmt = select(Response.cache_key).where(
                 Response.response_id == identifier
                 if identifier.startswith("resp_")
-                else Response.key == identifier
+                else Response.cache_key == identifier
             )
             key_result = await session.execute(key_stmt)
             key_value = key_result.scalar_one_or_none()
@@ -581,7 +579,7 @@ class ResponsesDB:
                 return []
             stmt = (
                 select(ResponseFrame)
-                .where(ResponseFrame.key == key_value)
+                .where(ResponseFrame.cache_key == key_value)
                 .order_by(ResponseFrame.ordinal.asc())
             )
             if after_ordinal is not None:
@@ -609,7 +607,7 @@ class ResponsesDB:
     ) -> int:
         if ordinal is None:
             result = await session.execute(
-                select(func.max(ResponseFrame.ordinal)).where(ResponseFrame.key == key)
+                select(func.max(ResponseFrame.ordinal)).where(ResponseFrame.cache_key == key)
             )
             max_ordinal = result.scalar_one_or_none() or 0
             assigned_ordinal = max_ordinal + 1
@@ -636,9 +634,10 @@ class ResponsesDB:
             if snapshot is None:
                 return None
             snapshot_model = snapshot.to_model()
-            if snapshot_model.status != ResponseStatus.COMPLETE or snapshot_model.response is None:
+            if snapshot_model.status != CacheStatus.COMPLETE or snapshot_model.response is None:
                 return None
-            return cast(dict[str, Any] | None, dump_response(snapshot_model.response))
+            result: dict[str, Any] = snapshot_model.response.model_dump(mode="json")  # type: ignore[assignment]
+            return result
 
     async def get_response_detail(self, identifier: str) -> ResponseDetail | None:
         if self._session_factory is None:
@@ -654,7 +653,7 @@ class ResponsesDB:
                 result = await session.execute(
                     select(Response)
                     .options(selectinload(Response.api_key), selectinload(Response.snapshot))
-                    .where(Response.key == identifier)
+                    .where(Response.cache_key == identifier)
                 )
             record = result.scalar_one_or_none()
             if record is None:
@@ -679,21 +678,13 @@ class ResponsesDB:
         snapshot: FinalResponseSnapshot,
     ) -> None:
         existing = await session.get(ResponseSnapshot, key)
-        payload = snapshot.to_db_payload()
+        payload = snapshot.model_dump(mode="json")
         if existing is None:
-            new_row = ResponseSnapshot(
-                key=key,
-                status=payload["status"],
-                response_json=payload["response_json"],
-                error_json=payload["error_json"],
-                token_usage_json=payload["token_usage_json"],
-            )
+            new_row = ResponseSnapshot(cache_key=key, **payload)
             session.add(new_row)
         else:
-            existing.status = payload["status"]
-            existing.response_json = payload["response_json"]
-            existing.error_json = payload["error_json"]
-            existing.token_usage_json = payload["token_usage_json"]
+            for field, value in payload.items():
+                setattr(existing, field, value)
 
     async def subscribe_events(self) -> AsyncIterator[EventPayload]:
         queue: asyncio.Queue[EventPayload] = asyncio.Queue()
@@ -747,6 +738,6 @@ class ResponsesDB:
             name=obj.name,
             token_prefix=obj.token_prefix,
             upstream_alias=obj.upstream_alias,
-            created_ts=obj.created_ts,
-            revoked_ts=obj.revoked_ts,
+            created_at=obj.created_at,
+            revoked_at=obj.revoked_at,
         )

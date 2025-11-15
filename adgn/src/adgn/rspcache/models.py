@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
 from openai.types.responses import (
     Response as OpenAIResponse,
@@ -12,13 +12,20 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
+from adgn.llm.openai_utils.responses_api import (
+    ResponseStatus,  # noqa: F401
+    StreamEventType,  # noqa: F401
+)
+
 FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
 RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
 ERROR_ADAPTER: TypeAdapter[ResponseError] = TypeAdapter(ResponseError)
 USAGE_ADAPTER: TypeAdapter[ResponseUsage] = TypeAdapter(ResponseUsage)
 
 
-class ResponseStatus(StrEnum):
+class CacheStatus(StrEnum):
+    """Internal cache status tracking (distinct from OpenAI response status)."""
+
     COMPLETE = "complete"
     ERROR = "error"
 
@@ -36,36 +43,12 @@ class ErrorPayload(BaseModel):
 class FinalResponseSnapshot(BaseModel):
     """Canonical representation of a completed or errored response."""
 
-    status: ResponseStatus
+    status: CacheStatus
     response: OpenAIResponse | None = None
     error: ErrorPayload | None = None
     token_usage: ResponseUsage | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    @classmethod
-    def from_db(
-        cls,
-        *,
-        status: str,
-        response_json: Any,
-        error_json: Any,
-        token_usage_json: Any,
-    ) -> FinalResponseSnapshot:
-        return cls(
-            status=ResponseStatus(status),
-            response=parse_response(response_json) if response_json is not None else None,
-            error=parse_error(error_json) if error_json is not None else None,
-            token_usage=parse_usage(token_usage_json) if token_usage_json is not None else None,
-        )
-
-    def to_db_payload(self) -> dict[str, Any]:
-        return {
-            "status": self.status.value,
-            "response_json": dump_response(self.response),
-            "error_json": dump_error(self.error),
-            "token_usage_json": dump_usage(self.token_usage),
-        }
 
 
 def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
@@ -93,14 +76,14 @@ def stream_event_usage(event: ResponseStreamEvent) -> ResponseUsage | None:
     if isinstance(usage_candidate, ResponseUsage):
         return usage_candidate
     if isinstance(usage_candidate, Mapping):
-        return parse_usage(usage_candidate)
+        return USAGE_ADAPTER.validate_python(usage_candidate)
     response = payload.get("response")
     if isinstance(response, Mapping):
         usage_value = response.get("usage")
         if isinstance(usage_value, ResponseUsage):
             return usage_value
         if isinstance(usage_value, Mapping):
-            return parse_usage(usage_value)
+            return USAGE_ADAPTER.validate_python(usage_value)
     return None
 
 
@@ -118,39 +101,3 @@ def parse_response(value: OpenAIResponse | Mapping[str, object]) -> OpenAIRespon
     if isinstance(value, OpenAIResponse):
         return value
     return RESPONSE_ADAPTER.validate_python(value)
-
-
-def dump_response(value: OpenAIResponse | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))
-
-
-def parse_error(value: Any) -> ErrorPayload:
-    if value is None:
-        return ErrorPayload()
-    if isinstance(value, ErrorPayload):
-        return value
-    if isinstance(value, ResponseError):
-        return ErrorPayload.model_validate(value.model_dump(mode="json"))
-    if not isinstance(value, dict):
-        raise ValueError("error payload must be a mapping")
-    return ErrorPayload.model_validate(value)
-
-
-def dump_error(value: ErrorPayload | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))
-
-
-def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
-    if isinstance(value, ResponseUsage):
-        return value
-    return USAGE_ADAPTER.validate_python(value)
-
-
-def dump_usage(value: ResponseUsage | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return cast(dict[str, Any], value.model_dump(mode="json"))

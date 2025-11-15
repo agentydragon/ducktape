@@ -40,7 +40,7 @@ type ResponseStatusEvent = {
   key: string;
   response_id?: string | null;
   status: string;
-  status_reason?: string | null;
+  error?: string | null;
 };
 
 type FrameEvent = {
@@ -191,9 +191,9 @@ const App = () => {
 
   const handleSelectResponse = useCallback(
     async (record: ResponseRecord) => {
-      const identifier = record.response_id || record.key;
-      setSelectedIdentifier(identifier);
-      await Promise.all([fetchDetail(identifier), fetchFrames(identifier)]);
+      // Always use cache_key as identifier (primary key, always present)
+      setSelectedIdentifier(record.cache_key);
+      await Promise.all([fetchDetail(record.cache_key), fetchFrames(record.cache_key)]);
     },
     [fetchDetail, fetchFrames],
   );
@@ -325,22 +325,22 @@ const App = () => {
   const responseTableRows = useMemo(
     () =>
       responses.map((record) => {
-        const identifier = record.response_id || record.key;
+        const identifier = record.response_id || record.cache_key;
         const isActive = selectedIdentifier === identifier;
         return (
           <Table.Tr
-            key={record.key}
+            key={record.cache_key}
             onClick={() => handleSelectResponse(record)}
             style={{ cursor: 'pointer' }}
             bg={isActive ? 'blue.0' : undefined}
           >
-            <Table.Td>{formatDate(record.created_ts)}</Table.Td>
+            <Table.Td>{formatDate(record.created_at)}</Table.Td>
             <Table.Td>
               <Badge color={statusBadgeColor(record.status)}>{record.status}</Badge>
             </Table.Td>
             <Table.Td>{record.model}</Table.Td>
-            <Table.Td>{record.latency_ms != null ? `${record.latency_ms} ms` : '—'}</Table.Td>
-            <Table.Td>{record.api_key_name || '—'}</Table.Td>
+            <Table.Td>{record.completed_at ? new Date(record.completed_at).toLocaleString() : '—'}</Table.Td>
+            <Table.Td>{record.api_key?.name || '—'}</Table.Td>
           </Table.Tr>
         );
       }),
@@ -410,7 +410,7 @@ const App = () => {
               <Text fw={600} span>
                 Key:
               </Text>{' '}
-              {selectedDetail.key}
+              {selectedDetail.cache_key}
             </Text>
             {selectedDetail.response_id && (
               <Text>
@@ -426,12 +426,12 @@ const App = () => {
               </Text>{' '}
               <Badge color={statusBadgeColor(selectedDetail.status)}>{selectedDetail.status}</Badge>
             </Text>
-            {selectedDetail.status_reason && (
+            {selectedDetail.error && (
               <Text>
                 <Text fw={600} span>
                   Status reason:
                 </Text>{' '}
-                {selectedDetail.status_reason}
+                {selectedDetail.error}
               </Text>
             )}
             <Text>
@@ -444,19 +444,19 @@ const App = () => {
               <Text fw={600} span>
                 API Key:
               </Text>{' '}
-              {selectedDetail.api_key_name || '—'}
+              {selectedDetail.api_key?.name || '—'}
             </Text>
             <Text>
               <Text fw={600} span>
-                Latency:
+                Completed:
               </Text>{' '}
-              {selectedDetail.latency_ms != null ? `${selectedDetail.latency_ms} ms` : '—'}
+              {selectedDetail.completed_at ? formatDate(selectedDetail.completed_at) : '—'}
             </Text>
             <Text>
               <Text fw={600} span>
                 Last updated:
               </Text>{' '}
-              {formatDate(selectedDetail.last_update_ts)}
+              {formatDate(selectedDetail.updated_at)}
             </Text>
             <JsonBlock label="Request" value={selectedDetail.request_body ?? {}} />
             {selectedDetail.final_response && <JsonBlock label="Response" value={selectedDetail.final_response} />}
@@ -469,7 +469,7 @@ const App = () => {
                     {frames.map((frame) => (
                       <Card key={frame.ordinal} withBorder radius="md" padding="sm">
                         <Text fw={600} size="sm" mb="xs">
-                          #{frame.ordinal} · {frame.frame_type ?? 'frame'} · {formatDate(frame.created_ts)}
+                          #{frame.ordinal} · {frame.frame_type ?? 'frame'} · {formatDate(frame.created_at)}
                         </Text>
                         <JsonView value={frame.frame ?? {}} displayDataTypes={false} enableClipboard collapsed={2} />
                       </Card>
@@ -556,8 +556,10 @@ const App = () => {
                     <Table.Td>{key.name}</Table.Td>
                     <Table.Td>{key.upstream_alias}</Table.Td>
                     <Table.Td>{key.token_prefix}</Table.Td>
-                    <Table.Td>{key.revoked_ts ? 'revoked' : 'active'}</Table.Td>
-                    <Table.Td>{formatDate(key.created_ts)}</Table.Td>
+                    <Table.Td>
+                      {key.revoked_at ? `revoked ${formatDate(key.revoked_at)}` : 'active'}
+                    </Table.Td>
+                    <Table.Td>{formatDate(key.created_at)}</Table.Td>
                   </Table.Tr>
                 ))
               ) : (
