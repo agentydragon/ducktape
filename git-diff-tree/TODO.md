@@ -62,4 +62,4 @@
 ## Code Quality
 
 - [x] Use Rich's built-in Tree widget instead of custom tree rendering
-- [ ] Consider using existing diff parsers (unidiff, whatthepatch) for more complex diff formats
+- [x] Use standard diff parser (unidiff) instead of custom parsing
