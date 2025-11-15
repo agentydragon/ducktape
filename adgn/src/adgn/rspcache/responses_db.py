@@ -173,12 +173,12 @@ class ResponseSnapshot(Base):
     response_rel: Mapped[Response] = relationship(back_populates="snapshot")
 
     def to_model(self) -> FinalResponseSnapshot:
-        return FinalResponseSnapshot.from_db(
-            status=self.status,
-            response=self.response,
-            error=self.error,
-            token_usage=self.token_usage,
-        )
+        return FinalResponseSnapshot.model_validate({
+            "status": self.status,
+            "response": self.response,
+            "error": self.error,
+            "token_usage": self.token_usage,
+        })
 
 
 @dataclass(slots=True)

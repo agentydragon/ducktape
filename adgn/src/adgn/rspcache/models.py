@@ -47,22 +47,6 @@ class FinalResponseSnapshot(BaseModel):
     def serialize_status(self, value: ResponseStatus) -> str:
         return value.value
 
-    @classmethod
-    def from_db(
-        cls,
-        *,
-        status: str,
-        response: Any,
-        error: Any,
-        token_usage: Any,
-    ) -> FinalResponseSnapshot:
-        return cls(
-            status=ResponseStatus(status),
-            response=parse_response(response) if response is not None else None,
-            error=parse_error(error) if error is not None else None,
-            token_usage=parse_usage(token_usage) if token_usage is not None else None,
-        )
-
 
 def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
     payload = event.model_dump(mode="python")
@@ -114,18 +98,6 @@ def parse_response(value: OpenAIResponse | Mapping[str, object]) -> OpenAIRespon
     if isinstance(value, OpenAIResponse):
         return value
     return RESPONSE_ADAPTER.validate_python(value)
-
-
-def parse_error(value: Any) -> ErrorPayload:
-    if value is None:
-        return ErrorPayload()
-    if isinstance(value, ErrorPayload):
-        return value
-    if isinstance(value, ResponseError):
-        return ErrorPayload.model_validate(value.model_dump(mode="json"))
-    if not isinstance(value, dict):
-        raise ValueError("error payload must be a mapping")
-    return ErrorPayload.model_validate(value)
 
 
 def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
