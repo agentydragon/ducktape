@@ -194,3 +194,69 @@ def test_cli_combined_options(runner, git_repo_with_changes):
 
     assert result.exit_code == 0
     assert result.output.strip() != ""
+
+
+# CLI Integration Tests (actual subprocess invocation)
+
+
+def test_cli_integration_basic(temp_git_repo):
+    """Test CLI integration with actual subprocess invocation."""
+    # Create changes
+    create_file(temp_git_repo, "file.py", "line1\n")
+    git_add_commit(temp_git_repo, "Initial commit")
+    create_file(temp_git_repo, "file.py", "line1\nline2\n")
+
+    # Run actual CLI command
+    result = subprocess.run(
+        [sys.executable, "-m", "git_diff_tree"],
+        cwd=temp_git_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "file.py" in result.stdout
+    assert "+1" in result.stdout  # Should show additions
+
+
+def test_cli_integration_with_args(temp_git_repo):
+    """Test CLI integration with diff arguments."""
+    # Create two commits
+    create_file(temp_git_repo, "file.py", "v1\n")
+    git_add_commit(temp_git_repo, "First")
+    create_file(temp_git_repo, "file.py", "v2\n")
+    git_add_commit(temp_git_repo, "Second")
+
+    # Compare commits
+    result = subprocess.run(
+        [sys.executable, "-m", "git_diff_tree", "HEAD~1", "HEAD"],
+        cwd=temp_git_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "file.py" in result.stdout
+    assert "+1" in result.stdout
+    assert "-1" in result.stdout
+
+
+def test_cli_integration_invalid_column(temp_git_repo):
+    """Test CLI with invalid column name."""
+    create_file(temp_git_repo, "file.py", "line1\n")
+    git_add_commit(temp_git_repo, "Initial")
+    create_file(temp_git_repo, "file.py", "line1\nline2\n")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "git_diff_tree", "--columns", "tree,invalid"],
+        cwd=temp_git_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Unknown column" in result.stderr
+    assert "invalid" in result.stderr
