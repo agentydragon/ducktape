@@ -84,7 +84,12 @@ def agent_factory(
 
     def factory(client: AsyncOpenAI) -> OpenAIAgent:
         return OpenAIAgent(
-            settings, history, client, matrix_client, workspace_path, None
+            settings=settings,
+            history=history,
+            client=client,
+            status_provider=matrix_client,
+            workspace_path=workspace_path,
+            object_store=None,
         )
 
     return factory
