@@ -80,8 +80,6 @@ class ResponseRecordModel(BaseModel):
     # Core Response fields
     key: str
     response_id: str | None = None
-    api_key_id: UUID | None = None
-    api_key_name: str | None = None
     model: str
     status: str
     status_reason: str | None = None
@@ -92,8 +90,20 @@ class ResponseRecordModel(BaseModel):
     # TODO: Type this properly (OpenAI request model)
     request_body: dict[str, Any]
 
-    # Nested snapshot (typed response data)
+    # Nested relationships (typed)
+    api_key: APIKeyModel | None = None
     snapshot: FinalResponseSnapshot | None = None
+
+    # Backward compatibility
+    @property
+    def api_key_id(self) -> UUID | None:
+        """Deprecated: use api_key.id instead."""
+        return self.api_key.id if self.api_key else None
+
+    @property
+    def api_key_name(self) -> str | None:
+        """Deprecated: use api_key.name instead."""
+        return self.api_key.name if self.api_key else None
 
 
 class ResponseListModel(BaseModel):
@@ -156,13 +166,19 @@ async def _shutdown() -> None:
 
 
 def _to_response_model(record: Response) -> ResponseRecordModel:
-    """Convert DB Response record to API model using Pydantic's from_attributes."""
-    return ResponseRecordModel.model_validate(
-        {
-            **{k: v for k, v in record.__dict__.items() if not k.startswith("_")},
-            "api_key_name": record.api_key.name if record.api_key else None,
-            "snapshot": record.snapshot.to_model() if record.snapshot else None,
-        }
+    """Convert DB Response record to API model."""
+    return ResponseRecordModel(
+        key=record.key,
+        response_id=record.response_id,
+        model=record.model,
+        status=record.status,
+        status_reason=record.status_reason,
+        created_ts=record.created_ts,
+        last_update_ts=record.last_update_ts,
+        latency_ms=record.latency_ms,
+        request_body=record.request_body,
+        api_key=_to_api_key_model(record.api_key) if record.api_key else None,
+        snapshot=record.snapshot.to_model() if record.snapshot else None,
     )
 
 
