@@ -18,12 +18,14 @@ def test_blocks_constant():
 
 def test_renderer_initialization():
     """Test DiffTreeRenderer initialization."""
+    from git_diff_tree.config import Column
+
     renderer = DiffTreeRenderer()
 
     assert renderer.console is not None
-    assert renderer.config.show_counts() is True
-    assert renderer.config.show_bars() is True
-    assert renderer.config.show_percentages() is True
+    assert Column.COUNTS in renderer.config.columns
+    assert Column.BARS in renderer.config.columns
+    assert Column.PERCENTAGES in renderer.config.columns
     assert renderer.config.bar_width == 20
 
 
@@ -36,9 +38,9 @@ def test_renderer_with_custom_options():
     renderer = DiffTreeRenderer(console=console, config=config)
 
     assert renderer.console is console
-    assert renderer.config.show_counts() is False
-    assert renderer.config.show_bars() is False
-    assert renderer.config.show_percentages() is False
+    assert Column.COUNTS not in renderer.config.columns
+    assert Column.BARS not in renderer.config.columns
+    assert Column.PERCENTAGES not in renderer.config.columns
     assert renderer.config.bar_width == 30
 
 

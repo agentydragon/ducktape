@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.text import Text
 from rich.tree import Tree
 
-from .config import RenderConfig
+from .config import Column, RenderConfig
 from .tree import TreeNode
 
 # Unicode block characters for progress bars (from empty to full)
@@ -109,7 +109,7 @@ class DiffTreeRenderer:
         label.append("  ")
 
         # Column 2-3: +/- counts
-        if self.config.show_counts():
+        if Column.COUNTS in self.config.columns:
             if node.additions > 0:
                 label.append(f"+{node.additions}", style="green")
             label.append(" ")
@@ -118,7 +118,7 @@ class DiffTreeRenderer:
             label.append("  ")
 
         # Column 4-5: Progress bars
-        if self.config.show_bars():
+        if Column.BARS in self.config.columns:
             add_bar = self._make_progress_bar(
                 node.additions,
                 max_changes,
@@ -138,7 +138,7 @@ class DiffTreeRenderer:
             label.append("  ")
 
         # Column 6: Percentage
-        if self.config.show_percentages() and max_changes > 0:
+        if Column.PERCENTAGES in self.config.columns and max_changes > 0:
             percentage = (node.total_changes / max_changes) * 100
             label.append(f"{percentage:5.1f}%", style="cyan")
 

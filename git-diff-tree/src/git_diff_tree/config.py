@@ -23,22 +23,6 @@ class RenderConfig:
     sort_by: str = "size"
     max_depth: Optional[int] = None
 
-    def show_tree(self) -> bool:
-        """Whether to show tree column."""
-        return Column.TREE in self.columns
-
-    def show_counts(self) -> bool:
-        """Whether to show counts column."""
-        return Column.COUNTS in self.columns
-
-    def show_bars(self) -> bool:
-        """Whether to show progress bars column."""
-        return Column.BARS in self.columns
-
-    def show_percentages(self) -> bool:
-        """Whether to show percentages column."""
-        return Column.PERCENTAGES in self.columns
-
     @classmethod
     def default(cls) -> "RenderConfig":
         """Create default configuration with all columns."""
