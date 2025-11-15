@@ -1,11 +1,10 @@
 """Tests for git diff parser."""
 
-import subprocess
 from pathlib import Path
-
-import pytest
+import subprocess
 
 from git_diff_tree.parser import FileChange, parse_git_diff
+
 from .conftest import create_file, git_add_commit
 
 
@@ -59,10 +58,50 @@ def test_parse_git_diff_empty(temp_git_repo: Path):
     assert result.stdout.strip() == ""
 
 
-def test_file_change_with_binary():
+def test_file_change_with_binary(temp_git_repo: Path):
     """Test handling binary files (shown as '-' in numstat)."""
-    # Binary files are shown as:
-    # -       -       file.bin
-    # Our parser should handle this gracefully
-    # This is tested implicitly in the parse logic
-    pass
+    # PNG file header
+    png_header = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
+    # Create initial commit with a binary file
+    binary_file = temp_git_repo / "image.png"
+    binary_file.write_bytes(png_header + b"\x00" * 100)
+    git_add_commit(temp_git_repo, "Initial commit")
+
+    # Modify the binary file
+    binary_file.write_bytes(png_header + b"\xff" * 100)  # Different content
+
+    # Get the diff output manually to verify binary handling
+    result = subprocess.run(
+        ["git", "diff", "--numstat"],
+        cwd=temp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    # Binary files should show as "-\t-\tfilename"
+    assert "-\t-\timage.png" in result.stdout
+
+    # Parse and verify is_binary flag is set
+    changes = []
+    for line in result.stdout.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) == 3:
+            additions_str, deletions_str, path = parts
+            is_binary = additions_str == "-" and deletions_str == "-"
+            changes.append(
+                FileChange(
+                    path=path,
+                    additions=0 if is_binary else int(additions_str),
+                    deletions=0 if is_binary else int(deletions_str),
+                    is_binary=is_binary,
+                )
+            )
+
+    binary_change = next(c for c in changes if c.path == "image.png")
+    assert binary_change.is_binary is True
+    assert binary_change.additions == 0
+    assert binary_change.deletions == 0

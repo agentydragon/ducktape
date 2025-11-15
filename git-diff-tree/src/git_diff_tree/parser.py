@@ -1,8 +1,7 @@
 """Parse git diff output to extract file change statistics."""
 
-import subprocess
 from dataclasses import dataclass
-from typing import List
+import subprocess
 
 
 @dataclass
@@ -12,6 +11,7 @@ class FileChange:
     path: str
     additions: int
     deletions: int
+    is_binary: bool = False
 
     @property
     def total_changes(self) -> int:
@@ -19,7 +19,7 @@ class FileChange:
         return self.additions + self.deletions
 
 
-def parse_git_diff(diff_args: List[str] | None = None) -> List[FileChange]:
+def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
     """
     Parse git diff output using --numstat format.
 
@@ -52,7 +52,9 @@ def parse_git_diff(diff_args: List[str] | None = None) -> List[FileChange]:
 
         additions_str, deletions_str, path = parts
 
-        # Handle binary files (shown as '-')
+        # Handle binary files (shown as '-' for both additions and deletions)
+        is_binary = additions_str == "-" and deletions_str == "-"
+
         try:
             additions = int(additions_str)
         except ValueError:
@@ -63,10 +65,13 @@ def parse_git_diff(diff_args: List[str] | None = None) -> List[FileChange]:
         except ValueError:
             deletions = 0
 
-        changes.append(FileChange(
-            path=path,
-            additions=additions,
-            deletions=deletions,
-        ))
+        changes.append(
+            FileChange(
+                path=path,
+                additions=additions,
+                deletions=deletions,
+                is_binary=is_binary,
+            )
+        )
 
     return changes
