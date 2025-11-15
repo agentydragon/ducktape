@@ -7,7 +7,7 @@ import click
 from rich.console import Console
 
 from .config import RenderConfig, parse_columns
-from .parser import parse_git_diff
+from .parser import parse_diff_from_stdin, parse_git_diff
 from .renderer import DiffTreeRenderer
 from .tree import build_tree, sort_tree
 
@@ -48,6 +48,8 @@ def main(
     """
     Visualize git diff as a tree with progress bars.
 
+    Can read from stdin (piped input) or run git diff directly.
+
     Examples:
 
     \b
@@ -63,12 +65,22 @@ def main(
     git-diff-tree --cached
 
     \b
+    # Use as a pager (read from stdin)
+    git diff | git-diff-tree
+    svn diff | git-diff-tree
+
+    \b
     # Sort alphabetically without progress bars
-    git-diff-tree --sort alpha --no-bars
+    git-diff-tree --sort alpha --columns tree,counts
     """
     try:
-        # Parse git diff
-        changes = parse_git_diff(list(diff_args) if diff_args else None)
+        # Determine input source
+        if not sys.stdin.isatty():
+            # Reading from stdin (piped input)
+            changes = parse_diff_from_stdin()
+        else:
+            # Interactive mode - run git diff
+            changes = parse_git_diff(list(diff_args) if diff_args else None)
 
         if not changes:
             console = Console(stderr=True)

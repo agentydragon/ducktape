@@ -1,10 +1,8 @@
 """Parse git diff output to extract file change statistics."""
 
 from dataclasses import dataclass
-from pathlib import Path
 import subprocess
-
-import pygit2
+import sys
 
 
 @dataclass
@@ -20,6 +18,79 @@ class FileChange:
     def total_changes(self) -> int:
         """Total number of line changes (additions + deletions)."""
         return self.additions + self.deletions
+
+
+def parse_unified_diff(diff_output: str) -> list[FileChange]:
+    """
+    Parse unified diff format to extract file change statistics.
+
+    Parses both git unified diff and standard unified diff formats.
+    Counts additions (+) and deletions (-) from diff hunks.
+
+    Args:
+        diff_output: Unified diff output (from git diff, svn diff, etc.)
+
+    Returns:
+        List of FileChange objects.
+
+    Handles:
+        - git diff format (diff --git a/... b/...)
+        - Standard diff format (--- a/... +++ b/...)
+        - Binary files
+        - Added/deleted files
+    """
+    changes: dict[str, FileChange] = {}
+    current_file: str | None = None
+
+    for line in diff_output.split("\n"):
+        # Git diff format: diff --git a/path b/path
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                # Extract path from "b/path" (new file path)
+                new_path = parts[3]
+                current_file = new_path.removeprefix("b/")
+
+                # Initialize if not seen before
+                if current_file and current_file not in changes:
+                    changes[current_file] = FileChange(
+                        path=current_file,
+                        additions=0,
+                        deletions=0,
+                        is_binary=False,
+                    )
+
+        # Standard diff format: +++ b/path
+        elif line.startswith("+++ "):
+            path = line[4:]
+            if path.startswith("b/"):
+                path = path[2:]
+            elif path == "/dev/null":
+                # File was deleted, keep current_file from --- line
+                continue
+            current_file = path
+
+            if current_file and current_file not in changes:
+                changes[current_file] = FileChange(
+                    path=current_file,
+                    additions=0,
+                    deletions=0,
+                    is_binary=False,
+                )
+
+        # Binary file marker
+        elif line.startswith("Binary files ") and current_file:
+            changes[current_file].is_binary = True
+
+        # Count additions (lines starting with +, but not +++)
+        elif line.startswith("+") and not line.startswith("+++") and current_file:
+            changes[current_file].additions += 1
+
+        # Count deletions (lines starting with -, but not ---)
+        elif line.startswith("-") and not line.startswith("---") and current_file:
+            changes[current_file].deletions += 1
+
+    return list(changes.values())
 
 
 def parse_numstat_output(numstat_output: str) -> list[FileChange]:
@@ -84,7 +155,7 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
     """
     Parse git diff output using --numstat format.
 
-    Uses pygit2 for repository discovery and validation.
+    Runs git diff via subprocess and parses the numstat output.
 
     Args:
         diff_args: Additional arguments to pass to git diff (e.g., ['HEAD~1', 'HEAD'])
@@ -94,24 +165,8 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
         List of FileChange objects.
 
     Raises:
-        RuntimeError: If not in a git repository.
         subprocess.CalledProcessError: If git command fails.
     """
-    # Use pygit2 to discover and validate git repository
-    repo_path = pygit2.discover_repository(str(Path.cwd()))
-    if repo_path is None:
-        raise RuntimeError(
-            "Not in a git repository. Run this command from within a git repository."
-        )
-
-    # Open repository to validate it's accessible
-    repo = pygit2.Repository(repo_path)
-
-    # Run git diff --numstat using subprocess
-    # We use subprocess here because:
-    # 1. We already have a parser for numstat format
-    # 2. pygit2's diff API doesn't provide numstat format directly
-    # 3. The repo validation above ensures we're in a valid git repo
     cmd = ["git", "diff", "--numstat"]
     if diff_args:
         cmd.extend(diff_args)
@@ -121,7 +176,24 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
         capture_output=True,
         text=True,
         check=True,
-        cwd=repo.workdir,
     )
 
     return parse_numstat_output(result.stdout)
+
+
+def parse_diff_from_stdin() -> list[FileChange]:
+    """
+    Parse diff from stdin.
+
+    Reads unified diff format from stdin and extracts file change statistics.
+    This allows the tool to work as a git pager or with piped input.
+
+    Returns:
+        List of FileChange objects.
+
+    Example:
+        git diff | git-diff-tree
+        svn diff | git-diff-tree
+    """
+    diff_output = sys.stdin.read()
+    return parse_unified_diff(diff_output)
