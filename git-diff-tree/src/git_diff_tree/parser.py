@@ -22,6 +22,11 @@ class FileChange:
         return self.additions + self.deletions
 
 
+def _strip_path_prefix(path: str) -> str:
+    """Strip git diff path prefixes (a/ or b/)."""
+    return path.removeprefix("b/").removeprefix("a/")
+
+
 def parse_unified_diff(diff_output: str) -> list[FileChange]:
     """
     Parse unified diff format to extract file change statistics.
@@ -47,13 +52,11 @@ def parse_unified_diff(diff_output: str) -> list[FileChange]:
 
     for patched_file in patch_set:
         # Get the target file path (use source_file if target doesn't exist - deleted files)
-        path = patched_file.target_file
-        if path.startswith("b/"):
-            path = path[2:]
-        elif path == "/dev/null":
+        if patched_file.target_file == "/dev/null":
             # File was deleted, use source file
-            path = patched_file.source_file
-            path = path.removeprefix("a/")
+            path = _strip_path_prefix(patched_file.source_file)
+        else:
+            path = _strip_path_prefix(patched_file.target_file)
 
         # Check if binary
         is_binary = patched_file.is_binary_file
@@ -126,9 +129,9 @@ def parse_numstat_output(numstat_output: str) -> list[FileChange]:
 
 def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
     """
-    Parse git diff output using --numstat format.
+    Parse git diff output using unified diff format.
 
-    Runs git diff via subprocess and parses the numstat output.
+    Runs git diff via subprocess and parses with unidiff library.
 
     Args:
         diff_args: Additional arguments to pass to git diff (e.g., ['HEAD~1', 'HEAD'])
@@ -140,7 +143,7 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
     Raises:
         subprocess.CalledProcessError: If git command fails.
     """
-    cmd = ["git", "diff", "--numstat"]
+    cmd = ["git", "diff"]
     if diff_args:
         cmd.extend(diff_args)
 
@@ -151,7 +154,7 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
         check=True,
     )
 
-    return parse_numstat_output(result.stdout)
+    return parse_unified_diff(result.stdout)
 
 
 def parse_diff_from_stdin() -> list[FileChange]:
