@@ -40,7 +40,7 @@ type ResponseStatusEvent = {
   key: string;
   response_id?: string | null;
   status: string;
-  status_reason?: string | null;
+  error?: string | null;
 };
 
 type FrameEvent = {
@@ -191,7 +191,7 @@ const App = () => {
 
   const handleSelectResponse = useCallback(
     async (record: ResponseRecord) => {
-      const identifier = record.response_id || record.key;
+      const identifier = record.response_id || record.cache_key;
       setSelectedIdentifier(identifier);
       await Promise.all([fetchDetail(identifier), fetchFrames(identifier)]);
     },
@@ -325,11 +325,11 @@ const App = () => {
   const responseTableRows = useMemo(
     () =>
       responses.map((record) => {
-        const identifier = record.response_id || record.key;
+        const identifier = record.response_id || record.cache_key;
         const isActive = selectedIdentifier === identifier;
         return (
           <Table.Tr
-            key={record.key}
+            key={record.cache_key}
             onClick={() => handleSelectResponse(record)}
             style={{ cursor: 'pointer' }}
             bg={isActive ? 'blue.0' : undefined}
@@ -410,7 +410,7 @@ const App = () => {
               <Text fw={600} span>
                 Key:
               </Text>{' '}
-              {selectedDetail.key}
+              {selectedDetail.cache_key}
             </Text>
             {selectedDetail.response_id && (
               <Text>
@@ -426,12 +426,12 @@ const App = () => {
               </Text>{' '}
               <Badge color={statusBadgeColor(selectedDetail.status)}>{selectedDetail.status}</Badge>
             </Text>
-            {selectedDetail.status_reason && (
+            {selectedDetail.error && (
               <Text>
                 <Text fw={600} span>
                   Status reason:
                 </Text>{' '}
-                {selectedDetail.status_reason}
+                {selectedDetail.error}
               </Text>
             )}
             <Text>

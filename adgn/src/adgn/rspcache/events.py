@@ -14,15 +14,15 @@ class EventBase(BaseModel):
 
 class ResponseStatusEvent(EventBase):
     type: Literal["response_status"] = "response_status"
-    key: str
+    cache_key: str
     response_id: str | None = None
     status: str
-    status_reason: str | None = None
+    error: str | None = None
 
 
 class FrameAppendedEvent(EventBase):
     type: Literal["frame"] = "frame"
-    key: str
+    cache_key: str
     response_id: str | None = None
     ordinal: int
     frame_type: str | None = None

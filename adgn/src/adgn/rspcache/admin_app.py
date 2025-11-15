@@ -78,20 +78,20 @@ class ResponseRecordModel(BaseModel):
     """API model for cached OpenAI API responses.
 
     Attributes:
-        key: SHA256 hash of request body (used for cache lookups)
+        cache_key: SHA256 hash of request body (used for cache lookups)
         response_id: OpenAI's response ID (e.g., 'resp_abc123'), nullable
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     # Core Response fields
-    key: str
+    cache_key: str
     response_id: str | None = None
     model: str
     status: (
         Literal["completed", "failed", "in_progress", "cancelled", "queued", "incomplete"] | None
     ) = None
-    status_reason: str | None = None
+    error: str | None = None
     created_at: datetime
     updated_at: datetime
     latency_ms: int | None = None
@@ -166,11 +166,11 @@ async def _shutdown() -> None:
 def _to_response_model(record: Response) -> ResponseRecordModel:
     """Convert DB Response record to API model."""
     return ResponseRecordModel(
-        key=record.key,
+        cache_key=record.cache_key,
         response_id=record.response_id,
         model=record.model,
         status=record.status,
-        status_reason=record.status_reason,
+        error=record.error,
         created_at=record.created_ts,
         updated_at=record.last_update_ts,
         latency_ms=record.latency_ms,

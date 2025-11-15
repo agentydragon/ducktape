@@ -243,12 +243,12 @@ async def _proxy_stream(
     except asyncio.CancelledError:
         raise
     except Exception:
-        status_reason = "Streaming proxy failure"
+        error_reason = "Streaming proxy failure"
         await db.record_error(
             key,
-            status_reason=status_reason,
+            error_reason=error_reason,
             response_id=response_id,
-            error=ErrorPayload(message=status_reason),
+            error=ErrorPayload(message=error_reason),
         )
         raise
     finally:
@@ -323,7 +323,7 @@ async def responses_endpoint(
             await client.aclose()
             await db.record_error(
                 key,
-                status_reason=str(exc),
+                error_reason=str(exc),
                 response_id=None,
                 error=ErrorPayload(message=str(exc)),
             )
@@ -332,7 +332,7 @@ async def responses_endpoint(
             payload = await resp.aread()
             await db.record_error(
                 key,
-                status_reason=f"Upstream status {resp.status_code}",
+                error_reason=f"Upstream status {resp.status_code}",
                 response_id=None,
                 error=ErrorPayload(
                     message="Upstream error",
@@ -369,7 +369,7 @@ async def responses_endpoint(
         except Exception as exc:  # noqa: BLE001
             await db.record_error(
                 key,
-                status_reason=str(exc),
+                error_reason=str(exc),
                 response_id=None,
                 error=ErrorPayload(message=str(exc)),
             )
@@ -379,7 +379,7 @@ async def responses_endpoint(
         detail = resp.text
         await db.record_error(
             key,
-            status_reason=f"Upstream status {resp.status_code}",
+            error_reason=f"Upstream status {resp.status_code}",
             response_id=None,
             error=ErrorPayload(
                 message="Upstream error", detail={"status": resp.status_code, "body": detail}
@@ -392,7 +392,7 @@ async def responses_endpoint(
     except Exception as exc:  # noqa: BLE001
         await db.record_error(
             key,
-            status_reason="Upstream returned non-JSON response",
+            error_reason="Upstream returned non-JSON response",
             response_id=None,
             error=ErrorPayload(
                 message="Upstream returned non-JSON response", detail={"body": resp.text}
