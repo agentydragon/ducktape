@@ -151,25 +151,13 @@ async def _shutdown() -> None:
     await _db.close()
 
 
-def _to_response_model(
-    record: Response,
-    *,
-    response_payload: dict[str, Any] | None = None,
-    error_payload: dict[str, Any] | None = None,
-    token_usage: dict[str, Any] | None = None,
-) -> ResponseRecordModel:
+def _to_response_model(record: Response) -> ResponseRecordModel:
     api_key_name = record.api_key.name if record.api_key else None
     snapshot = record.snapshot.to_model() if record.snapshot else None
-    final_response_json = response_payload
-    error_json = error_payload
-    token_usage_json = token_usage
-    if snapshot is not None:
-        if final_response_json is None and snapshot.response is not None:
-            final_response_json = snapshot.response.model_dump(mode="json")
-        if error_json is None and snapshot.error is not None:
-            error_json = snapshot.error.model_dump(mode="json")
-        if token_usage_json is None and snapshot.token_usage is not None:
-            token_usage_json = snapshot.token_usage.model_dump(mode="json")
+
+    # Use Pydantic's model_dump to serialize snapshot fields
+    snapshot_dict = snapshot.model_dump(mode="json") if snapshot else {}
+
     return ResponseRecordModel(
         key=record.key,
         response_id=record.response_id,
@@ -181,10 +169,10 @@ def _to_response_model(
         created_ts=record.created_ts,
         last_update_ts=record.last_update_ts,
         latency_ms=record.latency_ms,
-        token_usage=token_usage_json or record.token_usage_json,
+        token_usage=snapshot_dict.get("token_usage") or record.token_usage_json,
         request_body=record.request_body_json,
-        final_response=final_response_json,
-        response_error=error_json,
+        final_response=snapshot_dict.get("response"),
+        response_error=snapshot_dict.get("error"),
     )
 
 
@@ -230,15 +218,7 @@ async def get_response(identifier: str, db: ResponsesDB = Depends(get_db)) -> Re
     detail = await db.get_response_detail(identifier)
     if detail is None:
         raise HTTPException(status_code=404, detail="Response not found")
-    snapshot = detail.snapshot
-    return _to_response_model(
-        detail.record,
-        response_payload=snapshot.response.model_dump(mode="json")
-        if snapshot and snapshot.response
-        else None,
-        error_payload=snapshot.error.model_dump(mode="json") if snapshot and snapshot.error else None,
-        token_usage=snapshot.token_usage.model_dump(mode="json") if snapshot and snapshot.token_usage else None,
-    )
+    return _to_response_model(detail.record)
 
 
 @admin_app.get("/api/responses/{identifier}/frames", response_model=FrameListModel)
