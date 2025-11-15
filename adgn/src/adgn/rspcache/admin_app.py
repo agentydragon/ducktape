@@ -88,8 +88,8 @@ class ResponseRecordModel(BaseModel):
     created_ts: datetime
     last_update_ts: datetime
     latency_ms: int | None = None
-    request_body_json: dict[str, Any] | None = None
-    token_usage_json: dict[str, Any] | None = None
+    request_body: dict[str, Any] | None = None
+    token_usage: dict[str, Any] | None = None
 
     # Nested snapshot (matches DB structure)
     snapshot: FinalResponseSnapshot | None = None

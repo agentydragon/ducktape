@@ -132,7 +132,7 @@ class Response(Base):
         PGUUID(as_uuid=True), ForeignKey("client_api_keys.id")
     )
     model: Mapped[str] = mapped_column(String, nullable=False)
-    request_body_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
     status_reason: Mapped[str | None] = mapped_column(String)
     created_ts: Mapped[datetime] = mapped_column(
@@ -142,7 +142,7 @@ class Response(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     latency_ms: Mapped[int | None] = mapped_column(Integer)
-    token_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     api_key: Mapped[ClientAPIKey | None] = relationship(back_populates="responses")
     frames: Mapped[list[ResponseFrame]] = relationship(
@@ -349,7 +349,7 @@ class ResponsesDB:
             .values(
                 key=key,
                 model=model,
-                request_body_json=request_body,
+                request_body=request_body,
                 status="queued",
                 created_ts=now,
                 last_update_ts=now,
@@ -464,7 +464,7 @@ class ResponsesDB:
                     status=ResponseStatus.COMPLETE.value,
                     response_id=response_id,
                     latency_ms=latency_ms,
-                    token_usage_json=token_usage.model_dump(mode="json") if token_usage else None,
+                    token_usage=token_usage.model_dump(mode="json") if token_usage else None,
                     last_update_ts=datetime.now(UTC),
                 )
             )
