@@ -1,25 +1,31 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-import json
 from pathlib import Path
 from typing import cast
 
-from openai import AsyncOpenAI
-from openai.types.responses import FunctionTool, Response, ResponseFunctionToolCall, ResponseReasoningItem, Tool
-from openai.types.responses.response_reasoning_item import Summary
 import pytest
+from openai import AsyncOpenAI
+from openai.types.responses import (
+    FunctionTool,
+    Response,
+    ResponseFunctionToolCall,
+    ResponseReasoningItem,
+    Tool,
+)
+from openai.types.responses.response_reasoning_item import Summary
 
+import ember.tools.run_shell_command as run_shell_tool
 from ember.config import EnforcedSleepUntilUserMessagePolicy, OpenAISettings
 from ember.history import ConversationHistory
 from ember.matrix_client import ConversationStatus
 from ember.openai_agent import OpenAIAgent
 from ember.secrets import ProjectedSecret
-import ember.tools.run_shell_command as run_shell_tool
 from ember.tools.run_shell_command import ShellCommandResult
+from ember.tools.sleep_until_user_message import SleepUntilUserMessageArgs
 from ember.tools.sleep_until_user_message import (
-    SleepUntilUserMessageArgs,
     build_spec as build_sleep_until_user_message_spec,
 )
 
@@ -69,26 +75,39 @@ def _make_openai_client(api_key: str, responses: list[Response]) -> AsyncOpenAI:
 
 
 @pytest.fixture
-def agent_factory(settings: OpenAISettings, history: ConversationHistory, matrix_client: FakeMatrixClient):
+def agent_factory(
+    settings: OpenAISettings,
+    history: ConversationHistory,
+    matrix_client: FakeMatrixClient,
+):
     workspace_path = history.path.parent  # type: ignore[attr-defined]
 
     def factory(client: AsyncOpenAI) -> OpenAIAgent:
-        return OpenAIAgent(settings, history, client, matrix_client, workspace_path, None)
+        return OpenAIAgent(
+            settings, history, client, matrix_client, workspace_path, None
+        )
 
     return factory
 
 
 @pytest.mark.asyncio
 async def test_agent_runs_shell_command(
-    monkeypatch: pytest.MonkeyPatch, settings: OpenAISettings, history: ConversationHistory, agent_factory
+    monkeypatch: pytest.MonkeyPatch,
+    settings: OpenAISettings,
+    history: ConversationHistory,
+    agent_factory,
 ) -> None:
     client = _make_openai_client(
         settings.api_key_secret.value(required=True),
         [
             _response_with_tool_call(
-                call_id="call-1", tool_name="run_shell_command", arguments='{"command": "echo hi"}'
+                call_id="call-1",
+                tool_name="run_shell_command",
+                arguments='{"command": "echo hi"}',
             ),
-            _response_with_tool_call(call_id="call-2", tool_name="sleep_until_user_message", arguments="{}"),
+            _response_with_tool_call(
+                call_id="call-2", tool_name="sleep_until_user_message", arguments="{}"
+            ),
         ],
     )
 
@@ -102,7 +121,10 @@ async def test_agent_runs_shell_command(
 
     assert agent.waiting_for_matrix
 
-    items = [cast(Mapping[str, object], item) for item in history.build_input_items(settings.system_prompt)]
+    items = [
+        cast(Mapping[str, object], item)
+        for item in history.build_input_items(settings.system_prompt)
+    ]
     reasoning_items = [item for item in items if item.get("type") == "reasoning"]
     assert reasoning_items
     reasoning_model = ResponseReasoningItem.model_validate(reasoning_items[0])
@@ -111,9 +133,16 @@ async def test_agent_runs_shell_command(
     outputs = [item for item in items if item.get("type") == "function_call_output"]
     assert outputs
     run_command_output = next(
-        payload for payload in (json.loads(cast(str, item["output"])) for item in outputs) if "exit_code" in payload
+        payload
+        for payload in (json.loads(cast(str, item["output"])) for item in outputs)
+        if "exit_code" in payload
     )
-    assert run_command_output == {"exit_code": 0, "stdout": "ran echo hi", "stderr": "", "timed_out": False}
+    assert run_command_output == {
+        "exit_code": 0,
+        "stdout": "ran echo hi",
+        "stderr": "",
+        "timed_out": False,
+    }
 
     await client.close()
 
@@ -124,7 +153,13 @@ async def test_agent_sleep_until_user_message(
 ) -> None:
     client = _make_openai_client(
         settings.api_key_secret.value(required=True),
-        [_response_with_tool_call(call_id="call-sleep", tool_name="sleep_until_user_message", arguments="{}")],
+        [
+            _response_with_tool_call(
+                call_id="call-sleep",
+                tool_name="sleep_until_user_message",
+                arguments="{}",
+            )
+        ],
     )
 
     agent = agent_factory(client)
@@ -132,13 +167,18 @@ async def test_agent_sleep_until_user_message(
 
     assert agent.waiting_for_matrix
 
-    items = [cast(Mapping[str, object], entry) for entry in history.build_input_items(settings.system_prompt)]
+    items = [
+        cast(Mapping[str, object], entry)
+        for entry in history.build_input_items(settings.system_prompt)
+    ]
     reasoning_items = [item for item in items if item.get("type") == "reasoning"]
     assert reasoning_items
     reasoning_model = ResponseReasoningItem.model_validate(reasoning_items[0])
     assert reasoning_model.encrypted_content == "ciphertext"
     assert reasoning_model.content in (None, [])
-    function_outputs = [item for item in items if item.get("type") == "function_call_output"]
+    function_outputs = [
+        item for item in items if item.get("type") == "function_call_output"
+    ]
     assert function_outputs
     sleep_payload = cast(str, function_outputs[-1]["output"])
     assert json.loads(sleep_payload) == {"status": "waiting_for_matrix", "reason": None}
@@ -155,7 +195,9 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
         encrypted_content="ciphertext",
     )
 
-    function_call = ResponseFunctionToolCall(call_id=call_id, name=tool_name, arguments=arguments, type="function_call")
+    function_call = ResponseFunctionToolCall(
+        call_id=call_id, name=tool_name, arguments=arguments, type="function_call"
+    )
 
     tools = cast(
         list[Tool],
@@ -163,7 +205,11 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
             FunctionTool(
                 name="run_shell_command",
                 description="Execute shell command.",
-                parameters={"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
+                parameters={
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                    "required": ["command"],
+                },
                 strict=False,
                 type="function",
             ),
@@ -193,7 +239,9 @@ def _response_with_tool_call(call_id: str, tool_name: str, arguments: str) -> Re
 async def test_sleep_until_user_message_rejected_when_enforced_policy_blocks() -> None:
     policy = EnforcedSleepUntilUserMessagePolicy(timeout_seconds=30)
     now = datetime.now(UTC)
-    status = ConversationStatus(last_user_message_at=now, last_agent_message_at=now - timedelta(seconds=60))
+    status = ConversationStatus(
+        last_user_message_at=now, last_agent_message_at=now - timedelta(seconds=60)
+    )
 
     class Provider:
         async def get_conversation_status(self) -> ConversationStatus:
