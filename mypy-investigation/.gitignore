@@ -1,0 +1,9 @@
+# Test results and artifacts
+results/
+.mypy_cache/
+__pycache__/
+*.pyc
+.git/
+
+# Virtual environments from testing
+venv-*/
