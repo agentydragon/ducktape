@@ -65,6 +65,90 @@ Often these patterns appear because:
 - **Not reading library source**: Assuming types are worse than they are
 - **Cargo-culting**: Copying patterns without understanding
 - **Outdated**: Code written for older library versions with worse typing
+- **Missing type stubs**: Library has types but stubs aren't installed
+- **Old library version**: Newer versions have better typing
+
+## Before Assuming Types Are Bad: Research Library Improvements
+
+When you find mypy-appeasing code, **always research if there's a better solution** before accepting the cast/workaround:
+
+### 1. Check for Type Stubs Packages
+
+```bash
+# Search PyPI for type stubs
+pip index versions types-{library}
+
+# Common stub packages:
+types-sqlalchemy      # SQLAlchemy ORM types
+types-pygit2          # pygit2 Git library types
+types-requests        # requests HTTP library
+types-redis           # Redis client types
+```
+
+**Action**: If stubs exist, add to requirements and test if casts can be removed.
+
+### 2. Check Library Version
+
+```bash
+# Find current version
+pip show library-name
+
+# Check latest version
+pip index versions library-name
+
+# Read changelog for typing improvements
+# Often in CHANGELOG.md or release notes on GitHub
+```
+
+**Action**: If newer version has better types, update pinned version.
+
+### 3. Check for Better Patterns/Helpers
+
+Read library documentation for:
+- Type-safe helper functions
+- Generic/overload improvements in newer versions
+- Recommended patterns in migration guides
+
+**Example**: SQLAlchemy 2.0 added much better typing with `Mapped[]` annotations:
+
+```python
+# Old pattern (required casts)
+users = cast(list[User], session.query(User).all())
+
+# New pattern (no cast needed with SQLAlchemy 2.0)
+users = session.scalars(select(User)).all()  # Properly typed!
+```
+
+### 4. Research Process for Each Cast
+
+```python
+# Found this cast:
+result = cast(pygit2.Oid, repo.index.write_tree())
+
+# Research steps:
+# 1. Check current version
+pip show pygit2  # Shows: 1.14.0
+
+# 2. Check for type stubs
+pip index versions types-pygit2  # Shows: 1.15.0.20250319 available!
+
+# 3. Install and test
+pip install types-pygit2
+mypy file.py  # Does cast still needed?
+
+# 4. If cast no longer needed, remove it
+result = repo.index.write_tree()  # Now properly typed
+```
+
+### 5. Document Remaining Casts
+
+If after research the cast is still needed:
+
+```python
+# Cast needed: pygit2.index.write_tree() returns Any in v1.14
+# TODO: Recheck after updating to pygit2 1.16+
+result = cast(pygit2.Oid, repo.index.write_tree())
+```
 
 ## Detection Strategy
 

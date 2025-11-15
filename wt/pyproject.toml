@@ -17,6 +17,7 @@ dependencies = [
   "punq>=0.6.2",
   "pydantic>=2.0",
   "pygit2>=1.18",
+  "types-pygit2>=1.15.0",
   "tabulate>=0.9",
   "typer>=0.12",
   "watchdog>=4.0",

@@ -10,7 +10,7 @@ from openai.types.responses import (
     ResponseStreamEvent,
     ResponseUsage,
 )
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer
 
 FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
 RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
@@ -37,11 +37,15 @@ class FinalResponseSnapshot(BaseModel):
     """Canonical representation of a completed or errored response."""
 
     status: ResponseStatus
-    response: OpenAIResponse | None = None
-    error: ErrorPayload | None = None
-    token_usage: ResponseUsage | None = None
+    response: OpenAIResponse | None = Field(default=None, serialization_alias="response_json")
+    error: ErrorPayload | None = Field(default=None, serialization_alias="error_json")
+    token_usage: ResponseUsage | None = Field(default=None, serialization_alias="token_usage_json")
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+
+    @field_serializer('status')
+    def serialize_status(self, value: ResponseStatus) -> str:
+        return value.value
 
     @classmethod
     def from_db(
@@ -60,12 +64,7 @@ class FinalResponseSnapshot(BaseModel):
         )
 
     def to_db_payload(self) -> dict[str, Any]:
-        return {
-            "status": self.status.value,
-            "response_json": self.response.model_dump(mode="json") if self.response else None,
-            "error_json": self.error.model_dump(mode="json") if self.error else None,
-            "token_usage_json": self.token_usage.model_dump(mode="json") if self.token_usage else None,
-        }
+        return self.model_dump(mode="json", by_alias=True)
 
 
 def stream_event_event_id(event: ResponseStreamEvent) -> str | None:

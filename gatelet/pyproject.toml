@@ -16,6 +16,7 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.23.2",
     "SQLAlchemy>=2.0.0",
+    "types-sqlalchemy>=1.4.53",
     "alembic>=1.12.0",
     "psycopg2-binary>=2.9.6",
     "asyncpg>=0.27.0",

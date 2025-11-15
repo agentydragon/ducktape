@@ -461,16 +461,15 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
                     return apply_text_slice(text, input.slice)
             raise FileNotFoundError(f"Path not found: {path}")
         obj_any = repo.revparse_single(objspec)
-        # Narrow runtime types explicitly and bind to a typed local variable so mypy can follow.
+        # Narrow runtime types explicitly
         if isinstance(obj_any, pygit2.Tag):
-            maybe_commit = obj_any.peel(pygit2.Commit)
+            obj = obj_any.peel(pygit2.Commit)
         elif isinstance(obj_any, pygit2.Commit):
-            maybe_commit = obj_any
+            obj = obj_any
         else:
             raise TypeError(
                 f"Unexpected git object type for {objspec}: {type(obj_any)!r}",
             )
-        obj: pygit2.Commit = cast(pygit2.Commit, maybe_commit)
 
         # Build commit diff against first parent (or empty tree)
         if obj.parent_ids:

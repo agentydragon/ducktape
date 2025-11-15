@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from typing import cast
 
 import pygit2
 
@@ -46,8 +45,7 @@ def _head_commit_oid(repo: pygit2.Repository) -> pygit2.Oid:
 
 
 def _index_tree_oid(repo: pygit2.Repository) -> pygit2.Oid:
-    oid = repo.index.write_tree()
-    return cast(pygit2.Oid, oid)
+    return repo.index.write_tree()
 
 
 def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
