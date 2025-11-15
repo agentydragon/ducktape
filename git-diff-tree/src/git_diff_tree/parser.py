@@ -1,7 +1,15 @@
 """Parse git diff output to extract file change statistics."""
 
 from dataclasses import dataclass
+from pathlib import Path
 import subprocess
+
+try:
+    from git import InvalidGitRepositoryError, Repo
+
+    HAS_GITPYTHON = True
+except ImportError:
+    HAS_GITPYTHON = False
 
 
 @dataclass
@@ -83,6 +91,8 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
     """
     Parse git diff output using --numstat format.
 
+    Uses GitPython library if available (recommended), falls back to subprocess.
+
     Args:
         diff_args: Additional arguments to pass to git diff (e.g., ['HEAD~1', 'HEAD'])
                   If None, uses unstaged changes.
@@ -91,20 +101,62 @@ def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
         List of FileChange objects.
 
     Raises:
-        subprocess.CalledProcessError: If git command fails.
+        subprocess.CalledProcessError: If git command fails (subprocess mode).
+        InvalidGitRepositoryError: If not in a git repository (GitPython mode).
+    """
+    if HAS_GITPYTHON:
+        return _parse_git_diff_gitpython(diff_args)
+    return _parse_git_diff_subprocess(diff_args)
 
-    TODO: Add validation for diff_args to prevent command injection
-    TODO: Check if git is available before running (subprocess.run can fail)
-    TODO: Handle git errors gracefully (missing commits, invalid refs, etc.)
-    TODO: Consider timeout for long-running git operations
-    TODO: Support --git-dir and --work-tree for non-standard repo layouts
+
+def _parse_git_diff_gitpython(diff_args: list[str] | None = None) -> list[FileChange]:
+    """
+    Parse git diff using GitPython library.
+
+    Args:
+        diff_args: Additional arguments to pass to git diff.
+
+    Returns:
+        List of FileChange objects.
+
+    Raises:
+        InvalidGitRepositoryError: If not in a git repository.
+    """
+    try:
+        repo = Repo(Path.cwd(), search_parent_directories=True)
+    except InvalidGitRepositoryError as e:
+        raise InvalidGitRepositoryError(
+            "Not in a git repository. Run this command from within a git repository."
+        ) from e
+
+    # Build git diff command arguments
+    if diff_args:
+        # GitPython handles argument validation and escaping
+        numstat_output = repo.git.diff("--numstat", *diff_args)
+    else:
+        # Unstaged changes
+        numstat_output = repo.git.diff("--numstat")
+
+    return parse_numstat_output(numstat_output)
+
+
+def _parse_git_diff_subprocess(diff_args: list[str] | None = None) -> list[FileChange]:
+    """
+    Parse git diff using subprocess (fallback when GitPython unavailable).
+
+    Args:
+        diff_args: Additional arguments to pass to git diff.
+
+    Returns:
+        List of FileChange objects.
+
+    Raises:
+        subprocess.CalledProcessError: If git command fails.
     """
     cmd = ["git", "diff", "--numstat"]
     if diff_args:
-        # TODO: Validate diff_args don't contain shell metacharacters
         cmd.extend(diff_args)
 
-    # TODO: Add timeout parameter to prevent hanging on large repos
     result = subprocess.run(
         cmd,
         capture_output=True,

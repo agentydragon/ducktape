@@ -8,6 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
     "rich>=13.0",
     "click>=8.0",
+    "gitpython>=3.1.0",
 ]
 classifiers = [
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
