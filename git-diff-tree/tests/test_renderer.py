@@ -1,7 +1,6 @@
 """Tests for tree renderer."""
 
 from io import StringIO
-import re
 
 from git_diff_tree.config import RenderConfig
 from git_diff_tree.parser import FileChange
@@ -9,6 +8,7 @@ from git_diff_tree.renderer import BLOCKS, DiffTreeRenderer
 from git_diff_tree.tree import build_tree
 import pytest
 from rich.console import Console
+from rich.text import Text
 
 
 def test_blocks_constant():
@@ -272,9 +272,8 @@ def test_console_width_handling(width, description):
 
 
 def _strip_ansi(text: str) -> str:
-    """Strip ANSI escape codes from text."""
-    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-    return ansi_escape.sub("", text)
+    """Strip ANSI escape codes from text using Rich's built-in parser."""
+    return Text.from_ansi(text).plain
 
 
 def _extract_progress_bars(line: str) -> str:
