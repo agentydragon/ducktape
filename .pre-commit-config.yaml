@@ -90,8 +90,6 @@ repos:
           - types-docker
           - types-toml
           - types-aiofiles
-          - types-colorama
-          - types-psutil
           - homeassistant-stubs
 
   - repo: https://github.com/keith/pre-commit-buildifier
