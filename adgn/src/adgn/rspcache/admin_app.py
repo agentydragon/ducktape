@@ -17,9 +17,6 @@ from pydantic.config import ConfigDict
 
 from adgn.rspcache.models import (
     FRAME_ADAPTER,
-    dump_error,
-    dump_response,
-    dump_usage,
     stream_event_event_id,
 )
 from adgn.rspcache.responses_db import (
@@ -168,11 +165,11 @@ def _to_response_model(
     token_usage_json = token_usage
     if snapshot is not None:
         if final_response_json is None and snapshot.response is not None:
-            final_response_json = dump_response(snapshot.response)
+            final_response_json = snapshot.response.model_dump(mode="json")
         if error_json is None and snapshot.error is not None:
-            error_json = dump_error(snapshot.error)
+            error_json = snapshot.error.model_dump(mode="json")
         if token_usage_json is None and snapshot.token_usage is not None:
-            token_usage_json = dump_usage(snapshot.token_usage)
+            token_usage_json = snapshot.token_usage.model_dump(mode="json")
     return ResponseRecordModel(
         key=record.key,
         response_id=record.response_id,
@@ -236,11 +233,11 @@ async def get_response(identifier: str, db: ResponsesDB = Depends(get_db)) -> Re
     snapshot = detail.snapshot
     return _to_response_model(
         detail.record,
-        response_payload=dump_response(snapshot.response)
+        response_payload=snapshot.response.model_dump(mode="json")
         if snapshot and snapshot.response
         else None,
-        error_payload=dump_error(snapshot.error) if snapshot and snapshot.error else None,
-        token_usage=dump_usage(snapshot.token_usage) if snapshot and snapshot.token_usage else None,
+        error_payload=snapshot.error.model_dump(mode="json") if snapshot and snapshot.error else None,
+        token_usage=snapshot.token_usage.model_dump(mode="json") if snapshot and snapshot.token_usage else None,
     )
 
 

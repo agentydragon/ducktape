@@ -62,9 +62,9 @@ class FinalResponseSnapshot(BaseModel):
     def to_db_payload(self) -> dict[str, Any]:
         return {
             "status": self.status.value,
-            "response_json": dump_response(self.response),
-            "error_json": dump_error(self.error),
-            "token_usage_json": dump_usage(self.token_usage),
+            "response_json": self.response.model_dump(mode="json") if self.response else None,
+            "error_json": self.error.model_dump(mode="json") if self.error else None,
+            "token_usage_json": self.token_usage.model_dump(mode="json") if self.token_usage else None,
         }
 
 
@@ -120,12 +120,6 @@ def parse_response(value: OpenAIResponse | Mapping[str, object]) -> OpenAIRespon
     return RESPONSE_ADAPTER.validate_python(value)
 
 
-def dump_response(value: OpenAIResponse | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return value.model_dump(mode="json")
-
-
 def parse_error(value: Any) -> ErrorPayload:
     if value is None:
         return ErrorPayload()
@@ -138,19 +132,7 @@ def parse_error(value: Any) -> ErrorPayload:
     return ErrorPayload.model_validate(value)
 
 
-def dump_error(value: ErrorPayload | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return value.model_dump(mode="json")
-
-
 def parse_usage(value: ResponseUsage | Mapping[str, object]) -> ResponseUsage:
     if isinstance(value, ResponseUsage):
         return value
     return USAGE_ADAPTER.validate_python(value)
-
-
-def dump_usage(value: ResponseUsage | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return value.model_dump(mode="json")

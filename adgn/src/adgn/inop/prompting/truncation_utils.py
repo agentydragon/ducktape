@@ -206,25 +206,3 @@ class TruncationManager:
             return "<<not a plaintext file>>"
 
 
-def extract_text_from_openai_response(response: ResponsesResult) -> str:
-    """Extract text content from OpenAI response, handling nested message structure.
-
-    Args:
-        response: OpenAI response object
-
-    Returns:
-        First text content found in the response
-
-    Raises:
-        RuntimeError: If no text content is found
-
-    Note:
-        This is a legacy wrapper. New code should use:
-        adgn.openai_utils.text_extraction.first_assistant_text
-    """
-    from adgn.openai_utils.text_extraction import first_assistant_text
-
-    try:
-        return first_assistant_text(response)
-    except ValueError as e:
-        raise RuntimeError(str(e)) from e
