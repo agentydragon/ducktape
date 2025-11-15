@@ -160,9 +160,9 @@ class ResponseSnapshot(Base):
         String, ForeignKey("responses.key", ondelete="CASCADE"), primary_key=True
     )
     status: Mapped[str] = mapped_column(String, nullable=False)
-    response_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    error_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    token_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    response: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_ts: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -170,14 +170,14 @@ class ResponseSnapshot(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    response: Mapped[Response] = relationship(back_populates="snapshot")
+    response_rel: Mapped[Response] = relationship(back_populates="snapshot")
 
     def to_model(self) -> FinalResponseSnapshot:
         return FinalResponseSnapshot.from_db(
             status=self.status,
-            response_json=self.response_json,
-            error_json=self.error_json,
-            token_usage_json=self.token_usage_json,
+            response=self.response,
+            error=self.error,
+            token_usage=self.token_usage,
         )
 
 
@@ -677,21 +677,21 @@ class ResponsesDB:
         snapshot: FinalResponseSnapshot,
     ) -> None:
         existing = await session.get(ResponseSnapshot, key)
-        payload = snapshot.to_db_payload()
+        payload = snapshot.model_dump(mode="json")
         if existing is None:
             new_row = ResponseSnapshot(
                 key=key,
                 status=payload["status"],
-                response_json=payload["response_json"],
-                error_json=payload["error_json"],
-                token_usage_json=payload["token_usage_json"],
+                response=payload["response"],
+                error=payload["error"],
+                token_usage=payload["token_usage"],
             )
             session.add(new_row)
         else:
             existing.status = payload["status"]
-            existing.response_json = payload["response_json"]
-            existing.error_json = payload["error_json"]
-            existing.token_usage_json = payload["token_usage_json"]
+            existing.response = payload["response"]
+            existing.error = payload["error"]
+            existing.token_usage = payload["token_usage"]
 
     async def subscribe_events(self) -> AsyncIterator[EventPayload]:
         queue: asyncio.Queue[EventPayload] = asyncio.Queue()

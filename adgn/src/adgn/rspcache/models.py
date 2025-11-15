@@ -10,7 +10,7 @@ from openai.types.responses import (
     ResponseStreamEvent,
     ResponseUsage,
 )
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer
+from pydantic import BaseModel, ConfigDict, TypeAdapter, field_serializer
 
 FRAME_ADAPTER: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
 RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
@@ -37,11 +37,11 @@ class FinalResponseSnapshot(BaseModel):
     """Canonical representation of a completed or errored response."""
 
     status: ResponseStatus
-    response: OpenAIResponse | None = Field(default=None, serialization_alias="response_json")
-    error: ErrorPayload | None = Field(default=None, serialization_alias="error_json")
-    token_usage: ResponseUsage | None = Field(default=None, serialization_alias="token_usage_json")
+    response: OpenAIResponse | None = None
+    error: ErrorPayload | None = None
+    token_usage: ResponseUsage | None = None
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_serializer('status')
     def serialize_status(self, value: ResponseStatus) -> str:
@@ -52,19 +52,16 @@ class FinalResponseSnapshot(BaseModel):
         cls,
         *,
         status: str,
-        response_json: Any,
-        error_json: Any,
-        token_usage_json: Any,
+        response: Any,
+        error: Any,
+        token_usage: Any,
     ) -> FinalResponseSnapshot:
         return cls(
             status=ResponseStatus(status),
-            response=parse_response(response_json) if response_json is not None else None,
-            error=parse_error(error_json) if error_json is not None else None,
-            token_usage=parse_usage(token_usage_json) if token_usage_json is not None else None,
+            response=parse_response(response) if response is not None else None,
+            error=parse_error(error) if error is not None else None,
+            token_usage=parse_usage(token_usage) if token_usage is not None else None,
         )
-
-    def to_db_payload(self) -> dict[str, Any]:
-        return self.model_dump(mode="json", by_alias=True)
 
 
 def stream_event_event_id(event: ResponseStreamEvent) -> str | None:
