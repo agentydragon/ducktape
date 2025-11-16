@@ -185,8 +185,6 @@
     status_code: 200
   register: k3s_health
   until: k3s_health.status == 200
-  retries: 60
-  delay: 10
   tags: [k3s, vm-start]
 
 - name: Fetch kubeconfig from master
