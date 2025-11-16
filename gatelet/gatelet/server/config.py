@@ -1,11 +1,11 @@
 """Configuration management for Gatelet server."""
 
+from datetime import timedelta
 import logging
 import os
+from pathlib import Path
 import re
 import tomllib
-from datetime import timedelta
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -41,11 +41,7 @@ class DatabaseSettings(BaseModel):
     # The DATABASE_URL environment variable overrides the value from the
     # configuration file. This makes it easy to point tests at a temporary
     # database.
-    dsn: str = Field(
-        default=os.getenv(
-            "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/gatelet"
-        )
-    )
+    dsn: str = Field(default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/gatelet"))
 
 
 class ServerSettings(BaseModel):
@@ -90,9 +86,7 @@ class ChallengeResponseAuthSettings(BaseModel):
 
 class AuthSettings(BaseModel):
     key_in_url: KeyInUrlAuthSettings = Field(default=KeyInUrlAuthSettings())
-    challenge_response: ChallengeResponseAuthSettings = Field(
-        default=ChallengeResponseAuthSettings()
-    )
+    challenge_response: ChallengeResponseAuthSettings = Field(default=ChallengeResponseAuthSettings())
 
 
 class HomeAssistantSettings(BaseModel):
@@ -127,13 +121,9 @@ class WebhookSettings(BaseModel):
         for name in v:
             # Check for URL-safe names
             if not re.match(r"^[a-zA-Z0-9_-]+$", name):
-                raise ValueError(
-                    f"Integration name '{name}' not only letters, numbers, underscores, and hyphens."
-                )
+                raise ValueError(f"Integration name '{name}' not only letters, numbers, underscores, and hyphens.")
             if len(name) > MAX_INTEGRATION_NAME_LEN:
-                raise ValueError(
-                    f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)"
-                )
+                raise ValueError(f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)")
         return v
 
     @field_validator("default_page_size")
