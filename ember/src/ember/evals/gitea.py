@@ -3,9 +3,35 @@ from __future__ import annotations
 from collections.abc import Iterable
 import re
 
+from ember.integrations.gitea import GiteaClient, GiteaRepository
+
 from ember.evals.definitions import Scenario
 
 CHECKLIST_PATTERN = re.compile(r"- \[[ xX]\]")
+
+
+def _expected_author(scenario: Scenario) -> tuple[str, str]:
+    request = scenario.executor.request
+    author = request.gitea_username or request.ember_user_id
+    if not author:
+        scenario.fail("Gitea author not configured for this run")
+    return author, author.lower()
+
+
+def _gitea_client(scenario: Scenario, repo: str | GiteaRepository | None = None) -> GiteaClient:
+    request = scenario.executor.request
+    base_url = request.gitea_base_url
+    token = request.gitea_token
+    if not base_url or not token:
+        scenario.fail("Gitea access is not configured for this eval run")
+    default_repo = request.gitea_repo
+    repository = GiteaRepository.parse(default_repo) if default_repo else None
+    if repo is None and repository is None:
+        scenario.fail("No default Gitea repository configured for this eval run")
+    client = GiteaClient(base_url=base_url, token=token, default_repo=repository)
+    if repo is None:
+        return client
+    return client.with_repo(repo)
 
 
 def verify_issue_comment(
@@ -16,12 +42,12 @@ def verify_issue_comment(
     require_checklist: bool = True,
     artifact: str | None = None,
 ):
-    client = scenario.gitea()
+    client = _gitea_client(scenario)
     comments = client.issue_comments(issue)
     if not comments:
         scenario.fail(f"No comments found on issue #{issue}")
 
-    expected = scenario.expected_gitea_author.lower()
+    expected_display, expected = _expected_author(scenario)
     keywords = [kw.lower() for kw in (required_keywords or [])]
 
     matched_comment = None
@@ -40,7 +66,7 @@ def verify_issue_comment(
         break
 
     if matched_comment is None:
-        scenario.fail(f"No matching comment from {scenario.expected_gitea_author}")
+        scenario.fail(f"No matching comment from {expected_display}")
 
     if artifact:
         scenario.write_json_artifact(artifact, {"comments": [c.model_dump() for c in comments]})
@@ -56,7 +82,7 @@ def verify_issue_comment(
 
 def verify_branch_file(scenario: Scenario, *, branch_template: str, file: str, contains: str, repo: str | None = None):
     branch_name = scenario.format(branch_template)
-    client = scenario.gitea(repo)
+    client = _gitea_client(scenario, repo)
     branch = client.branch_info(branch_name)
     content = client.file_contents(file, branch.sha)
     if contains not in content:

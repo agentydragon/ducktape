@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import datetime
 import json
 from pathlib import Path
-import re
 import shlex
 import time
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
-
-from ember.integrations.gitea import GiteaClient
 
 from .definitions import ScenarioSuite
 from .kubernetes import ExecResult, NamespacedKubernetes
@@ -28,10 +24,8 @@ from .steps import (
     SnapshotWorkspaceResult,
     StepErrorResult,
     StepSkippedResult,
-    ValidateRegexResult,
     VerifyFileContainsResult,
     VerifyFileContentsResult,
-    VerifyFileTimestampsResult,
     WaitForMatrixResponseResult,
     WaitSecondsResult,
 )
@@ -68,9 +62,6 @@ class ScenarioExecutor:
         self._artifact_dir = artifact_dir
         self._kube = kube
         self._last_matrix_message: MatrixMessage | None = None
-        self._gitea_client = GiteaClient(
-            base_url=request.gitea_base_url, token=request.gitea_token, default_repo=request.gitea_repo
-        )
 
     # ------------------------------------------------------------------ #
     # Public properties consumed by Scenario                             #
@@ -86,11 +77,6 @@ class ScenarioExecutor:
     @property
     def last_matrix_message(self) -> MatrixMessage | None:
         return self._last_matrix_message
-
-    def gitea_client(self, repo_slug: str | None) -> GiteaClient:
-        if repo_slug is None:
-            return self._gitea_client
-        return self._gitea_client.with_repo(repo_slug)
 
     def write_json_artifact(self, path: Path, payload: Mapping[str, object] | BaseModel) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,23 +111,6 @@ class ScenarioExecutor:
     async def expect_matrix_reply(self, expected: str, *, timeout_seconds: int = 60) -> ExpectMatrixReplyResult:
         self._last_matrix_message = await self._matrix.expect_reply(expected, timeout_seconds=timeout_seconds)
         return ExpectMatrixReplyResult(expected=expected, actual=self._last_matrix_message.body)
-
-    def validate_last_matrix_regex(
-        self, pattern: str, *, flags: str | None = None, timezone_tolerance_days: int | None = None
-    ) -> ValidateRegexResult:
-        message = self._require_last_message()
-        flag_value = 0
-        if flags:
-            flag_map = {"i": re.IGNORECASE, "m": re.MULTILINE, "s": re.DOTALL}
-            for ch in flags.lower():
-                flag_value |= flag_map.get(ch, 0)
-        compiled = re.compile(pattern, flags=flag_value)
-        body = message.body.strip()
-        if not compiled.search(body):
-            raise ScenarioExecutionError(f"Regex {pattern!r} did not match '{body}'")
-        if timezone_tolerance_days is not None:
-            self._validate_iso_date(body, timezone_tolerance_days)
-        return ValidateRegexResult(pattern=pattern, flags=flags, timezone_tolerance_days=timezone_tolerance_days)
 
     async def run_in_container(self, container: str | None, command: Sequence[str]) -> ExecResult:
         target = container or DEFAULT_AGENT_CONTAINER
@@ -206,13 +175,6 @@ class ScenarioExecutor:
         if min_size_bytes is not None and len(contents.encode("utf-8")) < min_size_bytes:
             raise ScenarioExecutionError(f"{path} smaller than {min_size_bytes} bytes")
         return VerifyFileContainsResult(path=path, includes=list(includes), min_size_bytes=min_size_bytes)
-
-    async def verify_file_timestamps(
-        self, path: str, *, minimum_entries: int = 1, order: str = "ascending"
-    ) -> VerifyFileTimestampsResult:
-        contents = await self._read_file(path)
-        count = self._verify_timestamps(contents, minimum_entries, order)
-        return VerifyFileTimestampsResult(path=path, count=count, order=order)
 
     async def kill_process(self, *, container: str, pattern: str) -> KillProcessResult:
         result = await self.run_in_container(container, ["pkill", "-f", pattern])
@@ -286,36 +248,5 @@ class ScenarioExecutor:
                 f"Failed to read file {path}: {result.stderr.strip() if result.stderr else result.stdout}"
             )
         return result.stdout
-
-    def _verify_timestamps(self, contents: str, minimum_entries: int, order: str) -> int:
-        lines = [line.strip() for line in contents.splitlines() if line.strip()]
-        if len(lines) < minimum_entries:
-            raise ScenarioExecutionError(f"Expected at least {minimum_entries} timestamps, saw {len(lines)}")
-        parsed = []
-        for line in lines:
-            try:
-                parsed.append(datetime.fromisoformat(line))
-            except ValueError as exc:
-                raise ScenarioExecutionError(f"Invalid ISO timestamp: {line}") from exc
-        pairs = list(zip(parsed, parsed[1:], strict=False))
-        if order == "ascending":
-            if any(a >= b for a, b in pairs):
-                raise ScenarioExecutionError("Timestamps not strictly ascending")
-        elif any(a <= b for a, b in pairs):
-            raise ScenarioExecutionError("Timestamps not strictly descending")
-        return len(lines)
-
-    def _validate_iso_date(self, value: str, tolerance_days: int) -> None:
-        try:
-            parsed = datetime.strptime(value, "%Y-%m-%d").date()
-        except ValueError as exc:
-            raise ScenarioExecutionError(f"Value '{value}' is not YYYY-MM-DD") from exc
-        today = datetime.utcnow().date()
-        delta = abs((parsed - today).days)
-        if delta > tolerance_days:
-            raise ScenarioExecutionError(
-                f"Date {value} outside tolerance of {tolerance_days} days (today={today.isoformat()})"
-            )
-
 
 __all__ = ["ScenarioExecutionError", "ScenarioExecutor", "ScenarioSkipped"]

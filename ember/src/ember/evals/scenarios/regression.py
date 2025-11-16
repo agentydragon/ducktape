@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+import re
 from pathlib import Path
 
 from ember.evals import gitea as gitea_helpers
@@ -47,7 +49,21 @@ class IsoDateResponseScenario(Scenario):
     async def run(self) -> None:
         await self.send_matrix_message("What is today's date in ISO 8601 (YYYY-MM-DD) format?")
         await self.wait_for_matrix_response(timeout_seconds=30)
-        self.validate_last_matrix_regex(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", timezone_tolerance_days=1)
+        message = self.last_matrix_message
+        if message is None:
+            self.fail("Matrix response missing after wait_for_matrix_response")
+        body = message.body.strip()
+        pattern = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        if not re.fullmatch(pattern, body):
+            self.fail(f"Response '{body}' did not match required ISO format")
+        try:
+            parsed = datetime.strptime(body, "%Y-%m-%d").date()
+        except ValueError:
+            self.fail(f"Response '{body}' is not a valid calendar date")
+        today = datetime.utcnow().date()
+        if abs((parsed - today).days) > 1:
+            self.fail(f"Date {body} outside tolerance of 1 day (today={today.isoformat()})")
+        self.record(self.ok(description="Validated ISO 8601 response", body=body))
 
 
 class FileWriteSanityScenario(Scenario):

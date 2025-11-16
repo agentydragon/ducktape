@@ -9,10 +9,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from ember.integrations.gitea import GiteaRepository
-
 from .executor import ScenarioExecutionError, ScenarioSkipped
-from .kubernetes import ExecResult
 from .steps import (
     EvalResult,
     ExpectMatrixReplyResult,
@@ -25,31 +22,14 @@ from .steps import (
     StepResult,
     StepSkippedResult,
     StepStatus,
-    ValidateRegexResult,
     VerifyFileContainsResult,
     VerifyFileContentsResult,
-    VerifyFileTimestampsResult,
     WaitForMatrixResponseResult,
     WaitSecondsResult,
 )
 
 if TYPE_CHECKING:
     from .executor import ScenarioExecutor
-
-
-class ContainerHandle:
-    def __init__(self, executor: ScenarioExecutor, name: str | None) -> None:
-        self._executor = executor
-        self._name = name
-
-    async def exec(self, *command: str) -> ExecResult:
-        return await self._executor.run_in_container(self._name, list(command))
-
-    async def exec_binary(self, *command: str) -> bytes:
-        return await self._executor.run_in_container_binary(self._name, list(command))
-
-    async def kill(self, pattern: str) -> KillProcessResult:
-        return await self._executor.kill_process(container=self._name, pattern=pattern)
 
 
 class Scenario(ABC):
@@ -101,21 +81,6 @@ class Scenario(ABC):
     def pod_name(self) -> str:
         return self.executor.pod_name
 
-    @property
-    def expected_gitea_author(self) -> str:
-        request = self.executor.request
-        return request.gitea_username or request.ember_user_id
-
-    def gitea(self, repo: str | GiteaRepository | None = None):
-
-        if repo is None:
-            slug = None
-        elif isinstance(repo, GiteaRepository):
-            slug = repo.api_path
-        else:
-            slug = repo
-        return self.executor.gitea_client(slug)
-
     def _normalize_path(self, path: str | Path) -> str:
         return path if isinstance(path, str) else str(path)
 
@@ -151,15 +116,6 @@ class Scenario(ABC):
     async def expect_matrix_reply(self, equals: str, *, timeout_seconds: int = 60) -> ExpectMatrixReplyResult:
         return await self._record_async_step(
             self.executor.expect_matrix_reply(equals, timeout_seconds=timeout_seconds)
-        )
-
-    def validate_last_matrix_regex(
-        self, pattern: str, *, flags: str | None = None, timezone_tolerance_days: int | None = None
-    ) -> ValidateRegexResult:
-        return self._record_step(
-            self.executor.validate_last_matrix_regex(
-                pattern, flags=flags, timezone_tolerance_days=timezone_tolerance_days
-            )
         )
 
     async def probe_http(
@@ -200,29 +156,10 @@ class Scenario(ABC):
             )
         )
 
-    async def verify_file_timestamps(
-        self, path: str | Path, *, minimum_entries: int = 1, order: str = "ascending"
-    ) -> VerifyFileTimestampsResult:
-        return await self._record_async_step(
-            self.executor.verify_file_timestamps(
-                self._normalize_path(path), minimum_entries=minimum_entries, order=order
-            )
-        )
-
     async def kill_process(self, *, container: str | None = None, pattern: str) -> KillProcessResult:
         return await self._record_async_step(
             self.executor.kill_process(container=container, pattern=pattern)
         )
-
-    def container(self, name: str | None = None) -> ContainerHandle:
-        return ContainerHandle(self.executor, name)
-
-    @property
-    def emberd_container(self) -> ContainerHandle:
-        return self.container()
-
-    async def agent_exec(self, *command: str, container: str | None = None) -> ExecResult:
-        return await self.executor.exec(container=container, command=list(command))
 
     def ok(
         self, description: str | None = None, *, status: StepStatus = StepStatus.OK, **details: object
