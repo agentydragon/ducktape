@@ -8,3 +8,12 @@ firecrawl_enable: true
 firecrawl_use_db_auth: "false"
 firecrawl_logging_level: "info"
 firecrawl_test_api_key: "test-api-key-for-local-dev"
+
+# Timeout defaults (seconds)
+firecrawl_diagnose_timeout: 10
+firecrawl_cleanup_timeout: 30
+firecrawl_compose_down_timeout: 60
+firecrawl_compose_up_timeout: 120
+firecrawl_health_timeout: 10
+firecrawl_health_retries: 30
+firecrawl_health_delay: 2

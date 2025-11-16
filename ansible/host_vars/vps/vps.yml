@@ -3,6 +3,9 @@ syncthing_user: syncthing
 syncthing_graph_path: /srv/syncthing
 syncthing_open_ports: true
 
+# Firecrawl handled via k8s on vps; disable local compose instance
+firecrawl_enable: false
+
 # ACME account e-mail address.  Only set this if you want Ansible to register
 # a new Let’s Encrypt account with that address.  If the host already has an
 # account (from a previous manual run of `certbot` or from older playbooks),

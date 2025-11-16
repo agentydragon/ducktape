@@ -39,8 +39,8 @@
   block:
     - name: Check what's using port 3002 before cleanup
       ansible.builtin.shell: |
-        lsof -i :3002 || true
-        docker ps --filter "publish=3002" || true
+        timeout {{ firecrawl_diagnose_timeout | default(10) }} lsof -i :3002 || true
+        timeout {{ firecrawl_diagnose_timeout | default(10) }} docker ps --filter "publish=3002" || true
       register: port_check_before
       failed_when: false
       changed_when: false
@@ -52,8 +52,10 @@
     - name: Find all containers with firecrawl in name
       ansible.builtin.shell: |
         set -o pipefail
-        docker ps -aq --filter "name=firecrawl" | xargs -r docker stop
-        docker ps -aq --filter "name=firecrawl" | xargs -r docker rm
+        timeout {{ firecrawl_cleanup_timeout | default(30) }} \
+          docker ps -aq --filter "name=firecrawl" | xargs -r docker stop
+        timeout {{ firecrawl_cleanup_timeout | default(30) }} \
+          docker ps -aq --filter "name=firecrawl" | xargs -r docker rm
       register: cleanup_result
       failed_when: false  # Don't fail if no containers found
       changed_when: cleanup_result.stdout != ""
@@ -64,11 +66,13 @@
         project_name: firecrawl  # Explicitly set project name
         state: absent
         remove_orphans: true
+        timeout: "{{ firecrawl_compose_down_timeout | default(60) }}"
       failed_when: false  # Don't fail if project doesn't exist
 
     - name: Verify Firecrawl port is now free {{ firecrawl_port }}
       ansible.builtin.shell: |
-        lsof -i :{{ firecrawl_port }} || echo "Port {{ firecrawl_port }} is free"
+        timeout {{ firecrawl_diagnose_timeout | default(10) }} \
+          lsof -i :{{ firecrawl_port }} || echo "Port {{ firecrawl_port }} is free"
       register: port_check_after
       failed_when: false
       changed_when: false
@@ -86,6 +90,7 @@
     recreate: always # pick up any env / compose modifications
     remove_orphans: true  # Remove containers for services not in compose file
     state: present  # Ensure services are running
+    timeout: "{{ firecrawl_compose_up_timeout | default(120) }}"
   register: firecrawl_compose
 
 - name: Show compose output (verbosity 1)
@@ -97,10 +102,12 @@
   ansible.builtin.uri:
     url: "http://localhost:{{ firecrawl_port }}/"
     status_code: 200
+    validate_certs: false
+    timeout: "{{ firecrawl_health_timeout | default(10) }}"
   register: result
   until: result.status == 200
-  retries: 30
-  delay: 2
+  retries: "{{ firecrawl_health_retries | default(30) }}"
+  delay: "{{ firecrawl_health_delay | default(2) }}"
 
 - name: Display Firecrawl access information
   ansible.builtin.debug:

@@ -116,7 +116,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
     - Uses FastMCP's LowLevelServer to hook session creation cleanly
     """
 
-    _mcp_server: LowLevelServer
+    _mcp_server: _CapturingServer
 
     def __init__(
         self,

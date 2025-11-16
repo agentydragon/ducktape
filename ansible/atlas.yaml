@@ -9,6 +9,9 @@
     docker_state: absent  # Proxmox host doesn't need Docker
     skip_ubuntu_ppas: true  # Debian-based Proxmox can't use Ubuntu PPAs
     include_heavy_dev_packages: false
+    apt_async_timeout: 600
+    apt_async_poll_interval: 5
+    git_async_timeout: 300
   remote_user: root
 
   tasks:
@@ -31,7 +34,20 @@
 
     - name: Update apt cache after repository changes
       ansible.builtin.apt:
-        update_cache: true
+        update_cache: yes
+      async: "{{ apt_async_timeout }}"
+      poll: 0
+      register: apt_cache_job
+      tags: [repositories]
+
+    - name: Wait for apt cache update
+      ansible.builtin.async_status:
+        jid: "{{ apt_cache_job.ansible_job_id }}"
+      register: apt_cache_status
+      until: apt_cache_status.finished
+      retries: "{{ (apt_async_timeout // apt_async_poll_interval) | int }}"
+      delay: "{{ apt_async_poll_interval }}"
+      failed_when: apt_cache_status.failed | default(false)
       tags: [repositories]
 
     - name: Ensure ducktape directory parent exists
@@ -50,13 +66,39 @@
         accept_hostkey: true
       become: true
       become_user: "{{ my_user }}"
+      async: "{{ git_async_timeout }}"
+      poll: 0
+      register: ducktape_git_job
       tags: [dotfiles]
       failed_when: false  # In case SSH keys aren't set up yet
+
+    - name: Wait for ducktape repository clone
+      ansible.builtin.async_status:
+        jid: "{{ ducktape_git_job.ansible_job_id }}"
+      register: ducktape_git_status
+      until: ducktape_git_status.finished
+      retries: "{{ (git_async_timeout // apt_async_poll_interval) | int }}"
+      delay: "{{ apt_async_poll_interval }}"
+      failed_when: ducktape_git_status.rc is defined and ducktape_git_status.rc != 0
+      tags: [dotfiles]
 
     - name: Install Firefox
       ansible.builtin.package:
         name: firefox-esr
         state: present
+      async: "{{ apt_async_timeout }}"
+      poll: 0
+      register: install_firefox_job
+      tags: [packages]
+
+    - name: Wait for Firefox installation
+      ansible.builtin.async_status:
+        jid: "{{ install_firefox_job.ansible_job_id }}"
+      register: install_firefox_status
+      until: install_firefox_status.finished
+      retries: "{{ (apt_async_timeout // apt_async_poll_interval) | int }}"
+      delay: "{{ apt_async_poll_interval }}"
+      failed_when: install_firefox_status.failed | default(false)
       tags: [packages]
 
     - name: Install desktop and virtualization packages
@@ -71,6 +113,19 @@
           - spice-client-gtk  # For SPICE console connections
         state: present
         install_recommends: false
+      async: "{{ apt_async_timeout }}"
+      poll: 0
+      register: desktop_pkg_job
+      tags: [packages, desktop, virtualization]
+
+    - name: Wait for desktop package installation
+      ansible.builtin.async_status:
+        jid: "{{ desktop_pkg_job.ansible_job_id }}"
+      register: desktop_pkg_status
+      until: desktop_pkg_status.finished
+      retries: "{{ (apt_async_timeout // apt_async_poll_interval) | int }}"
+      delay: "{{ apt_async_poll_interval }}"
+      failed_when: desktop_pkg_status.failed | default(false)
       tags: [packages, desktop, virtualization]
 
     - name: Ensure libvirt service is started
@@ -115,7 +170,6 @@
       ansible.builtin.import_role:
         name: cli
       tags: [cli]
-
     # cli_nix_migrated excluded - atlas now uses Nix/home-manager for migrated packages
 
     - name: Apply Nix role
@@ -134,6 +188,10 @@
       ansible.builtin.import_role:
         name: dnsmasq_k3s
       tags: [dnsmasq, dns]
+
+    - import_role:
+        name: gitea-mirrors
+      tags: [gitea-mirrors, storage]
 
     # TODO
     # - ansible.builtin.import_role:

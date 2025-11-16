@@ -23,3 +23,48 @@
       ansible.builtin.debug:
         msg: "SSH access to k3s nodes working"
       tags: [verify]
+
+    - name: Create mount point for gitea-mirrors
+      ansible.builtin.file:
+        path: /mnt/gitea-mirrors
+        state: directory
+        mode: '0755'
+      tags: [gitea-mirrors, storage]
+
+    - name: Check if gitea-mirrors already in fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "gitea-mirrors /mnt/gitea-mirrors virtiofs defaults,_netdev 0 0"
+        state: present
+        create: no
+      check_mode: yes
+      register: fstab_check
+      tags: [gitea-mirrors, storage]
+
+    - name: Add gitea-mirrors to fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "gitea-mirrors /mnt/gitea-mirrors virtiofs defaults,_netdev 0 0"
+        state: present
+      when: fstab_check.changed
+      tags: [gitea-mirrors, storage]
+
+    - name: Mount gitea-mirrors filesystem
+      ansible.builtin.mount:
+        path: /mnt/gitea-mirrors
+        src: gitea-mirrors
+        fstype: virtiofs
+        opts: defaults,_netdev
+        state: mounted
+      tags: [gitea-mirrors, storage]
+
+    - name: Verify gitea-mirrors mount
+      ansible.builtin.stat:
+        path: /mnt/gitea-mirrors
+      register: mount_stat
+      tags: [gitea-mirrors, storage]
+
+    - name: Display mount verification
+      ansible.builtin.debug:
+        msg: "gitea-mirrors mounted successfully: {{ mount_stat.stat.exists }}"
+      tags: [gitea-mirrors, storage]

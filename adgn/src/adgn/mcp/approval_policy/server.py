@@ -1,7 +1,7 @@
 import asyncio
+import logging
 from datetime import UTC, datetime
 from importlib import resources
-import logging
 
 from fastmcp.server.context import ServerSession
 from jinja2 import Template
@@ -20,6 +20,7 @@ from adgn.mcp._shared.constants import (
     RUNTIME_EXEC_TOOL_NAME,
     RUNTIME_SERVER_NAME,
 )
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -54,17 +55,25 @@ class RejectProposalArgs(BaseModel):
 # IO types unified; see PolicyRequest/PolicyResponse in adgn.agent.approvals
 
 
+def _proposal_uri(proposal_id: str) -> str:
+    return f"{APPROVAL_POLICY_PROPOSALS_INDEX_URI}/{proposal_id}"
+
+
 def _load_instructions() -> str:
     """Load and render instructions with embedded shared constants via Jinja2."""
-    raw = resources.files(__package__).joinpath("instructions.j2.md").read_text(encoding="utf-8")
+    raw = (
+        resources.files(__package__)
+        .joinpath("instructions.j2.md")
+        .read_text(encoding="utf-8")
+    )
     tmpl = Template(raw)
-    rendered = tmpl.render(
+    rendered: str = tmpl.render(
         RUNTIME_SERVER_NAME=RUNTIME_SERVER_NAME,
         RUNTIME_EXEC_TOOL_NAME=RUNTIME_EXEC_TOOL_NAME,
         TRUSTED_POLICY_PATH=None,
         TRUSTED_POLICY_URL=APPROVAL_POLICY_RESOURCE_URI,
     )
-    return str(rendered)
+    return rendered
 
 
 class ApprovalPolicyServer(NotifyingFastMCP):
@@ -75,11 +84,12 @@ class ApprovalPolicyServer(NotifyingFastMCP):
     the backend snapshot.
     """
 
-    # Use shared constant for proposals index URI (broadcast mapping)
-
-    # proposal item URI helper removed; use approval_policy_proposal_item_uri directly
-
-    def __init__(self, engine: ApprovalPolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER) -> None:
+    def __init__(
+        self,
+        engine: ApprovalPolicyEngine,
+        *,
+        name: str = APPROVAL_POLICY_SERVER_NAME_READER,
+    ) -> None:
         super().__init__(name=name, instructions=_load_instructions())
         self._engine = engine
         # Required backend context must come from the engine
@@ -95,7 +105,9 @@ class ApprovalPolicyServer(NotifyingFastMCP):
             # Fire-and-forget; schedule broadcast and signal completion to waiters
             logger.debug("engine notify uri=%s", uri)
             task = asyncio.create_task(self._broadcast_and_signal(uri))
-            task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
+            task.add_done_callback(
+                lambda t: t.exception() if t.done() and not t.cancelled() else None
+            )
 
         # Install notifier hook on the engine (required wiring)
         self._engine.set_notifier(_notify)
@@ -137,17 +149,27 @@ class ApprovalPolicyServer(NotifyingFastMCP):
 
     def _register_resources(self) -> None:
         # Resources for agents: active policy, proposals index and items
-        @self.resource(APPROVAL_POLICY_RESOURCE_URI, name="policy.py", mime_type="text/x-python")
+        @self.resource(
+            APPROVAL_POLICY_RESOURCE_URI, name="policy.py", mime_type="text/x-python"
+        )
         def active_policy() -> str:
             # Single source of truth: engine
             content, _version = self._engine.get_policy()
-            return content
+            policy_text: str = content
+            return policy_text
 
-        @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
+        @self.resource(
+            APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}",
+            name="proposal",
+            mime_type="text/x-python",
+        )
         async def proposal_item(id: str) -> str:
-            if (got := await self._persistence.get_policy_proposal(self._agent_id, id)) is None:
+            if (
+                got := await self._persistence.get_policy_proposal(self._agent_id, id)
+            ) is None:
                 raise KeyError(id)
-            return got.content
+            proposal_content: str = got.content
+            return proposal_content
 
         @self.flat_model()
         async def decide(input: PolicyRequest) -> PolicyResponse:  # type: ignore[unused-ignore]
@@ -166,7 +188,9 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         """
         target = (since_version or 0) + 1
         async with self._broadcast_cond:
-            await self._broadcast_cond.wait_for(lambda: self._broadcast_version >= target)
+            await self._broadcast_cond.wait_for(
+                lambda: self._broadcast_version >= target
+            )
             return self._broadcast_version
 
     # No nested IO models; see module-level CreateProposalArgs/ProposalDescriptor
@@ -180,7 +204,6 @@ async def attach_approval_policy_readonly(
     engine: ApprovalPolicyEngine,
     *,
     name: str = APPROVAL_POLICY_SERVER_NAME_READER,
-    init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyServer:
     """Attach the approval policy readonly server (resources only; no proposer tools)."""
     server = ApprovalPolicyServer(engine, name=name)
@@ -194,7 +217,12 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
     Uses the readonly server to broadcast resource updates.
     """
 
-    def __init__(self, *, engine: ApprovalPolicyEngine, name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER) -> None:
+    def __init__(
+        self,
+        *,
+        engine: ApprovalPolicyEngine,
+        name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER,
+    ) -> None:
         super().__init__(name=name, instructions=None)
         self._engine = engine
 
@@ -203,14 +231,16 @@ class ApprovalPolicyProposerServer(NotifyingFastMCP):
             """Create a new policy proposal and return its descriptor."""
             new_id = await self._engine.create_proposal(input.content)
             return ProposalDescriptor(
-                id=new_id, status=ProposalStatus.PENDING, created_at=datetime.now(UTC), decided_at=None
+                id=new_id,
+                status=ProposalStatus.PENDING,
+                created_at=datetime.now(UTC),
+                decided_at=None,
             )
 
         @self.flat_model()
-        async def withdraw_proposal(input: WithdrawProposalArgs) -> bool:  # type: ignore[unused-ignore]
+        async def withdraw_proposal(input: WithdrawProposalArgs) -> None:
             """Withdraw a pending policy proposal by id."""
             await self._engine.withdraw_proposal(input.id)
-            return True
 
 
 async def attach_approval_policy_proposer(
@@ -218,7 +248,6 @@ async def attach_approval_policy_proposer(
     engine: ApprovalPolicyEngine,
     *,
     name: str = APPROVAL_POLICY_SERVER_NAME_PROPOSER,
-    init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyProposerServer:
     server = ApprovalPolicyProposerServer(engine=engine, name=name)
     await comp.mount_inproc(name, server)
@@ -231,29 +260,32 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
     Uses the readonly server to broadcast resource updates.
     """
 
-    def __init__(self, *, engine: ApprovalPolicyEngine, name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER) -> None:
+    def __init__(
+        self,
+        *,
+        engine: ApprovalPolicyEngine,
+        name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER,
+    ) -> None:
         super().__init__(name=name, instructions=None)
         self._engine = engine
 
         @self.flat_model()
-        async def approve_proposal(input: ApproveProposalArgs) -> bool:  # type: ignore[unused-ignore]
+        async def approve_proposal(input: ApproveProposalArgs) -> None:
             """Approve a pending policy proposal by id (activates policy)."""
             await self._engine.approve_proposal(input.id)
-            return True
 
         @self.flat_model()
-        async def reject_proposal(input: RejectProposalArgs) -> bool:  # type: ignore[unused-ignore]
+        async def reject_proposal(input: RejectProposalArgs) -> None:
             """Reject a pending policy proposal by id."""
             await self._engine.reject_proposal(input.id)
-            return True
 
         @self.flat_model()
-        async def set_policy_text(input: SetPolicyTextArgs) -> bool:  # type: ignore[unused-ignore]
+        async def set_policy_text(input: SetPolicyTextArgs) -> None:
             """Directly set active policy text after self-check."""
             # Self-check program using engine's docker client
             self._engine.self_check(input.source)
             self._engine.set_policy(input.source)
-            return True
+            return None
 
 
 async def attach_approval_policy_admin(
@@ -261,7 +293,6 @@ async def attach_approval_policy_admin(
     engine: ApprovalPolicyEngine,
     *,
     name: str = APPROVAL_POLICY_SERVER_NAME_APPROVER,
-    init_timeout_secs: float | None = None,
 ) -> ApprovalPolicyAdminServer:
     server = ApprovalPolicyAdminServer(engine=engine, name=name)
     await comp.mount_inproc(name, server)
