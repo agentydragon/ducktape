@@ -392,8 +392,7 @@ def register_container(mcp: NotifyingFastMCP, opts: ContainerOptions, *, tool_na
         description="Docker container details for this session",
     )(container_info_json)
 
-    # Tool: container exec (flat MCP payload, validated via ExecInput)
-    @mcp.tool(name=tool_name, flat=True, flat_output_model=BaseExecResult)
+    @mcp.tool(name=tool_name, flat=True)
     async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
         """Run a shell command inside the per-session Docker container."""
         async with async_timer() as get_duration_ms:

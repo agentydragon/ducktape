@@ -314,16 +314,14 @@ class FlatModelToolMixin:
         structured_output: bool = True
         model_config = ConfigDict(extra="ignore")
 
-    def tool(self, *args: Any, flat: bool = False, flat_output_model: type[BaseModel] | None = None, **kwargs: Any):  # type: ignore[misc]
+    def tool(self, *args: Any, flat: bool = False, **kwargs: Any):  # type: ignore[misc]
         """Wrapper around FastMCP.tool with optional flat-model support.
 
         Args:
-            flat: If True, enable flat-model mode
-            flat_output_model: Optional explicit output model type for flat mode
+            flat: If True, enable flat-model mode (output model inferred from return type)
             **kwargs: Other tool arguments passed through to FastMCP.tool
         """
-        wants_flat = flat or (flat_output_model is not None)
-        if not wants_flat:
+        if not flat:
             base_tool = super().tool  # type: ignore[misc]
             return base_tool(*args, **kwargs)
 
@@ -346,7 +344,7 @@ class FlatModelToolMixin:
                 description=opts.description,
                 annotations=opts.annotations,
                 structured_output=opts.structured_output,
-                output_model=flat_output_model,
+                output_model=None,  # Always infer from return type annotation
             ),
         )
 
