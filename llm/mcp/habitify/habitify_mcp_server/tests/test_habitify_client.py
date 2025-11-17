@@ -44,7 +44,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_get_habit_not_found(self, client, mock_async_response, patch_client_method):
-        """Test the get_habit method with an invalid habit ID."""
         mock_resp = mock_async_response("get_habit_invalid_id.yaml", status_code=500)
         mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "HTTP Error", request=MagicMock(), response=mock_resp
@@ -88,7 +87,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_get_journal_filtered(self, client, mock_async_response, patch_client_method):
-        """Test the get_journal method with filters."""
         today = datetime.date.today().isoformat()
         mock_resp = mock_async_response("get_journal_filtered.yaml")
 
@@ -122,7 +120,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_check_habit_status_invalid_date(self, client, mock_async_response, patch_client_method):
-        """Test the check_habit_status method with an invalid date format."""
         mock_resp = mock_async_response("get_habit_status_(invalid_date_format).yaml", status_code=500)
         mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "HTTP Error", request=MagicMock(), response=mock_resp
@@ -184,7 +181,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_set_habit_status_skipped(self, client, mock_async_response, patch_client_method):
-        """Test the set_habit_status method with skipped status."""
         mock_resp = mock_async_response("set_habit_status_(skipped).yaml")
 
         with patch_client_method("put", return_value=mock_resp) as mock_put:
