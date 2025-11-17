@@ -196,14 +196,13 @@ class Compositor(FastMCP):
             except Exception as e:
                 per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
 
-        if tool_tasks:
-            async with asyncio.TaskGroup() as tg:
-                for name, task in tool_tasks.items():
-                    entry = per_name[name]
-                    assert isinstance(entry, RunningServerEntry), (
-                        f"Expected RunningServerEntry for {name}, got {type(entry)}"
-                    )
-                    tg.create_task(_handle_tools(name, task, entry))
+        async with asyncio.TaskGroup() as tg:
+            for name, task in tool_tasks.items():
+                entry = per_name[name]
+                assert isinstance(entry, RunningServerEntry), (
+                    f"Expected RunningServerEntry for {name}, got {type(entry)}"
+                )
+                tg.create_task(_handle_tools(name, task, entry))
 
         return per_name
 

@@ -152,6 +152,28 @@ def get_status(self):
         return "complete"
     else:  # Unnecessary else
         return "pending"
+
+# BAD: Unnecessary empty-collection check before operations that handle empty naturally
+if tool_tasks:
+    async with asyncio.TaskGroup() as tg:
+        for name, task in tool_tasks.items():
+            tg.create_task(handle(name, task))
+
+# BAD: Early return for empty input in aggregation
+def sum_values(items):
+    if not items:
+        return 0
+    total = 0
+    for item in items:
+        total += item
+    return total
+
+# BAD: Early return for empty input in map operation
+def process_all(things):
+    if not things:
+        return
+    for thing in things:
+        process(thing)
 ```
 
 ### GOOD: Minimal necessary checks
@@ -170,7 +192,34 @@ def get_status(self):
     if self.is_complete:
         return "complete"
     return "pending"
+
+# GOOD: Let TaskGroup handle empty dict (it's a no-op)
+async with asyncio.TaskGroup() as tg:
+    for name, task in tool_tasks.items():
+        tg.create_task(handle(name, task))
+
+# GOOD: Natural handling of empty input
+def sum_values(items):
+    total = 0
+    for item in items:
+        total += item
+    return total
+
+# GOOD: Loop handles empty collection naturally
+def process_all(things):
+    for thing in things:
+        process(thing)
 ```
+
+### Principle: Prefer Code That Handles All Cases
+
+**Avoid special-casing empty inputs** when the general case already handles them correctly. Operations like loops, TaskGroups, comprehensions, and aggregations naturally handle empty collections without explicit checks. Adding `if not items: return` is:
+
+- **Unnecessary**: The loop/operation is a no-op anyway for empty inputs
+- **Verbose**: Adds extra line and indentation
+- **Not worth it**: Any "micro-optimization" is negligible in Python
+
+**Write one thing that handles all cases** rather than branching for edge cases that don't need special treatment.
 
 ## Pattern 4: Verbose Exception Handling
 

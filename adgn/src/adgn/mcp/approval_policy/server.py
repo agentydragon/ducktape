@@ -6,7 +6,7 @@ import logging
 
 from fastmcp.server.context import ServerSession
 from jinja2 import Template
-from pydantic import BaseModel
+from pydantic import AnyUrl, BaseModel
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.models.proposal_status import ProposalStatus
@@ -104,16 +104,20 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         # and maintain a minimal per-session index. Notifications are broadcast
         # by the server regardless of subscriptions, but handlers ensure that
         # capability gating reflects true support and calls succeed.
-        self._session_subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
+        self._session_subscriptions: defaultdict[ServerSession, set[AnyUrl]] = defaultdict(set)
         mcp_server = self._mcp_server
 
+        def _subscriptions() -> set[AnyUrl]:
+            """Return subscription set for current session context."""
+            return self._session_subscriptions[mcp_server.request_context.session]
+
         @mcp_server.subscribe_resource()
-        async def _subscribe(uri):
-            self._session_subscriptions[mcp_server.request_context.session].add(str(uri))
+        async def _subscribe(uri: AnyUrl):
+            _subscriptions().add(uri)
 
         @mcp_server.unsubscribe_resource()
-        async def _unsubscribe(uri):
-            self._session_subscriptions[mcp_server.request_context.session].discard(str(uri))
+        async def _unsubscribe(uri: AnyUrl):
+            _subscriptions().discard(uri)
             # Do not error if unknown; protocol allows idempotent unsubscribe
 
         # Do not expose a server-local "list subscriptions" resource; the
