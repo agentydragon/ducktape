@@ -85,25 +85,15 @@ def validate_config(config: Config) -> bool:
     """
     ...
 
-# BETTER: Fix the names first, then minimal docs
-def update_user_last_seen(user: User, *, skip_rate_limit: bool = False) -> None:
-    """Update user's last_seen timestamp and log the access.
-
-    Args:
-        user: Must have valid session (raises SessionExpiredError if expired)
-        skip_rate_limit: If True, skip rate limiting and audit log admin access.
-                        Only use for admin console requests.
-    """
-    # Names are clearer, docs add value (preconditions, when to use skip_rate_limit)
-    ...
-
-# BEST: Great names + docs only for non-obvious details
+# GOOD: Fix the names first, then docs only for non-obvious details
 def update_user_last_seen(user: User, *, from_admin_console: bool = False) -> None:
     """Update last_seen timestamp and log access (with optional admin audit trail).
 
     Raises SessionExpiredError if user.session has expired.
     """
-    # Function name says WHAT, param name says WHY it matters, docs cover edge cases
+    # Function name says WHAT it does, param name captures semantic context
+    # (why it matters - admin requests get special handling: skip rate limit, audit log)
+    # Docs cover edge cases (SessionExpiredError) rather than repeating what code says
     ...
 ```
 
