@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
-from .model import ResponsesResult
+from .model import ResponsesResult, convert_sdk_response
 
 # Default retry policy: 5 attempts, exponential backoff with jitter (~0.5s..60s)
 _DEFAULT_ATTEMPTS = 10
@@ -59,7 +59,8 @@ def retry_decorator(
 
 @retry_decorator()
 async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
-    return await client.responses.create(**kwargs)  # type: ignore[return-value]
+    sdk_resp = await client.responses.create(**kwargs)
+    return convert_sdk_response(sdk_resp)
 
 
 @retry_decorator()

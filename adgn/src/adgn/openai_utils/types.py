@@ -6,17 +6,10 @@ from typing import Literal
 from typing_extensions import TypedDict
 
 
-def to_reasoning_effort(value: ReasoningEffort | str | None) -> str | None:
+def to_reasoning_effort(value: ReasoningEffort | None) -> ReasoningEffortLiteral | None:
     if value is None:
         return None
-    if isinstance(value, ReasoningEffort):
-        return value.value
-    try:
-        effort = ReasoningEffort(value)
-    except ValueError as exc:
-        allowed = ", ".join(item.value for item in ReasoningEffort)
-        raise ValueError(f"Invalid reasoning effort {value!r}; expected one of: {allowed}") from exc
-    return effort.value
+    return value.value
 
 
 class ReasoningEffort(StrEnum):
@@ -34,25 +27,19 @@ class ReasoningParams(TypedDict, total=False):
 
 
 def build_reasoning_params(
-    effort: ReasoningEffort | str | None, summary: ReasoningSummary | str | None = None
+    effort: ReasoningEffort | None, summary: ReasoningSummary | None = None
 ) -> ReasoningParams | None:
     """Convert optional reasoning knobs into adapter ReasoningParams."""
 
     effort_value = to_reasoning_effort(effort)
-    summary_value: str | None
-    if summary is None:
-        summary_value = None
-    elif isinstance(summary, ReasoningSummary):
-        summary_value = summary.value
-    else:
-        summary_value = ReasoningSummary(summary).value
+    summary_value = summary.value if summary is not None else None
 
     if effort_value is None and summary_value is None:
         return None
 
     payload: ReasoningParams = {}
     if effort_value is not None:
-        payload["effort"] = effort_value  # type: ignore[typeddict-item]
+        payload["effort"] = effort_value
     if summary_value is not None:
         payload["summary"] = summary_value
 

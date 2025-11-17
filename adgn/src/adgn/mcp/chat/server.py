@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from aiosqlite import Row
 from pydantic import BaseModel, Field
 
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -25,16 +26,14 @@ class ChatMessage(BaseModel):
     content: str
 
 
-def _row_to_message(row: object) -> ChatMessage:
-    # Accept Row-like objects (mapping interface); rely on __getitem__ access
-    r = row  # alias
-    # Cast via dict interface for mypy; runtime objects provide __getitem__
+def _row_to_message(row: Row) -> ChatMessage:
+    # Accept Row objects (mapping interface with __getitem__ access)
     return ChatMessage(
-        id=str(r["id"]),  # type: ignore[index]
-        ts=str(r["ts"]),  # type: ignore[index]
-        author=ChatAuthor(str(r["author"])),  # type: ignore[index]
-        mime=str(r["mime"]),  # type: ignore[index]
-        content=str(r["content"]),  # type: ignore[index]
+        id=str(row["id"]),
+        ts=str(row["ts"]),
+        author=ChatAuthor(str(row["author"])),
+        mime=str(row["mime"]),
+        content=str(row["content"]),
     )
 
 
@@ -309,12 +308,12 @@ def make_chat_server(*, name: str, author: ChatAuthor, store: ChatStore) -> Noti
 
     # Tools: post and read_pending_messages (get+advance)
     @m.flat_model()
-    async def post(input: PostInput) -> PostResult:  # type: ignore[unused-ignore]
+    async def post(input: PostInput) -> PostResult:
         new_id = await store.append(author=author, mime=input.mime, content=input.content)
         return PostResult(id=new_id)
 
     @m.flat_model()
-    async def read_pending_messages(input: ReadPendingInput) -> ReadPendingResult:  # type: ignore[unused-ignore]
+    async def read_pending_messages(input: ReadPendingInput) -> ReadPendingResult:
         msgs, last_id = await store.read_pending_and_advance(server_name=name, server_author=author, limit=input.limit)
         return ReadPendingResult(messages=msgs, last_id=last_id)
 
