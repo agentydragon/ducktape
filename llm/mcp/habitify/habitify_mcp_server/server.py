@@ -50,7 +50,7 @@ def create_habitify_mcp_server(
         Returns:
             Dictionary containing the list of habits and count
         """
-        return await tools.get_habits(include_archived=include_archived)  # type: ignore[call-arg]
+        return await tools.get_habits(include_archived=include_archived)  # type: ignore[call-arg] - client injected by decorator
 
     @server.tool()
     async def get_habit(id: str | None = None, name: str | None = None) -> dict[str, Any]:
@@ -64,7 +64,7 @@ def create_habitify_mcp_server(
         Returns:
             Dictionary containing habit details or error information
         """
-        return await tools.get_habit(id=id, name=name)  # type: ignore[call-arg]
+        return await tools.get_habit(id=id, name=name)  # type: ignore[call-arg] - client injected by decorator
 
     @server.tool()
     async def get_habit_status(
@@ -100,7 +100,7 @@ def create_habitify_mcp_server(
         Returns:
             Dictionary with habit status(es) or error information
         """
-        return await tools.get_habit_status(  # type: ignore[call-arg]
+        return await tools.get_habit_status(  # type: ignore[call-arg] - client injected by decorator
             id=id, name=name, date=date, start_date=start_date, end_date=end_date, days=days
         )
 
@@ -127,7 +127,7 @@ def create_habitify_mcp_server(
         Returns:
             Dictionary containing status update result or error information
         """
-        return await tools.set_habit_status(  # type: ignore[call-arg]
+        return await tools.set_habit_status(  # type: ignore[call-arg] - client injected by decorator
             id=id, name=name, status=status.value, date=date, note=note, value=value
         )
 
