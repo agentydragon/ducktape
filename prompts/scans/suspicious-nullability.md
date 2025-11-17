@@ -9,6 +9,60 @@ Nullability (`T | None`) that is misused, propagated through too many layers, or
 
 **Key principle**: Handle None at boundaries, not in business logic. Functions deep in the call stack should work with non-None values.
 
+## Fix Philosophy: Propagate Non-Nullability Upward
+
+**CRITICAL**: When you find `assert x is not None`, the fix is usually NOT to keep the assertion or add type: ignore comments. Instead:
+
+1. **Question the type declaration**: Why is `x` typed as `T | None` in the first place?
+2. **Propagate non-nullability upward**: Change the type signature so `x` is `T`, not `T | None`
+3. **Handle None at the source**: If a value comes from a nullable source, handle the None case there, then pass non-None values downstream
+
+**Common mistake**: Treating assertions as "necessary for mypy" and leaving nullable types everywhere.
+
+**Correct approach**: Fix the root cause by making the type system reflect reality - if a value is never actually None in practice, it shouldn't be typed as nullable.
+
+**Important**: Suspicious nullability often points to a **design problem**, not just a typing problem. You usually cannot fix it by changing 1-2 annotations. Instead, you may need to:
+- Refactor data flow to handle None at boundaries
+- Restructure function call chains to eliminate None propagation
+- Rethink API design to make optional vs required explicit
+- Create type-narrowing helpers or wrapper types
+
+**This is architectural work, not just annotation fixes.**
+
+### Example: Before (Wrong Approach)
+
+```python
+class Container:
+    id: str | None  # Docker API says it can be None
+
+def process_container(container: Container) -> None:
+    container_id = container.id
+    assert container_id is not None  # "Needed for mypy"
+    use_container_id(container_id)
+```
+
+**Problem**: Accepting nullable type and working around it with assertions.
+
+### Example: After (Propagate Non-Nullability)
+
+```python
+class Container:
+    id: str | None  # Docker API says it can be None
+
+def _require_container_id(container: Container) -> str:
+    """Get container ID after creation (when it's guaranteed non-None)."""
+    if container.id is None:
+        raise RuntimeError("Container has no ID - must be created first")
+    return container.id
+
+def process_container(container: Container) -> None:
+    # Propagate non-nullability: container_id is str, not str | None
+    container_id = _require_container_id(container)
+    use_container_id(container_id)  # No assertion needed!
+```
+
+**Better**: Create a type-narrowing helper that returns non-None type, propagating non-nullability to all downstream code.
+
 ## Examples of Antipatterns
 
 ### BAD: Parameter typed as `T | None` but immediately fails if None
