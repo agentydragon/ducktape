@@ -84,13 +84,12 @@ assert_that(str(excinfo.value).lower(), contains_string("date format"))
 
 **Files with multiple assertion antipatterns:**
 - `difftree/tests/test_*.py` (8 files) - Mix of len() assertions and isinstance()
-- `llm/mcp/habitify/*/tests/test_*.py` (5 files) - Collection type checks
 - `claude/claude_optimizer/tests/test_*.py` (6 files) - Field-by-field assertions
 - `wt/tests/*/test_*.py` (15+ files) - Various assertion patterns
 
 **Bulk Fix Strategy:**
 1. Prioritize test files with 5+ assertion antipatterns
-2. Focus on high-traffic modules (habitify, claude_optimizer, wt)
+2. Focus on high-traffic modules (claude_optimizer, wt)
 3. Use search/replace for common patterns
 
 ---
