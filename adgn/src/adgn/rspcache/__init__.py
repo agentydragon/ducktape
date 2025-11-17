@@ -9,7 +9,7 @@ import hashlib
 import json
 import os
 import time
-from typing import Any
+from typing import Any, NewType
 
 import canonicaljson
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -32,10 +32,12 @@ from adgn.rspcache.models import (
 )
 from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
 
+CacheKey = NewType("CacheKey", str)
+
 
 @asynccontextmanager
 async def record_errors_to_db(
-    db: ResponsesDB, key: str, response_id: str | None = None, error_reason: str | None = None
+    db: ResponsesDB, key: CacheKey, response_id: str | None = None, error_reason: str | None = None
 ):
     """Context manager to automatically record exceptions to database.
 
@@ -111,15 +113,15 @@ def _extract_client_token(request: Request, authorization: str | None, x_api_key
     return None
 
 
-def make_key_from_body(body: ResponseCreateParams) -> str:
-    """Create cache key from OpenAI request body.
+def compute_cache_key(body: ResponseCreateParams) -> CacheKey:
+    """Compute cache key from OpenAI request body.
 
     Excludes non-deterministic fields via model_copy for validation.
     """
     # Use model_copy to exclude non-deterministic fields, benefiting from Pydantic validation
     cacheable = body.model_copy(update={"request_id": None, "request_timestamp": None, "nonce": None})
     keyed = cacheable.model_dump(mode="json", exclude_none=True, exclude_unset=True)
-    return hashlib.sha256(canonicaljson.encode_canonical_json(keyed)).hexdigest()
+    return CacheKey(hashlib.sha256(canonicaljson.encode_canonical_json(keyed)).hexdigest())
 
 
 def _extract_frames(buffer: str) -> tuple[str, list[dict[str, Any]]]:
@@ -173,7 +175,7 @@ async def health() -> dict[str, str]:
 
 
 async def _proxy_stream(
-    resp: httpx.Response, *, db: ResponsesDB, key: str, response_id: str | None, start_time: float
+    resp: httpx.Response, *, db: ResponsesDB, key: CacheKey, response_id: str | None, start_time: float
 ) -> AsyncIterator[bytes]:
     text_buffer = ""
     ordinal = 0
@@ -271,7 +273,7 @@ async def responses_endpoint(
     # Validate request body structure and generate cache key
     try:
         validated_body = ResponseCreateParams.model_validate(body)
-        key = make_key_from_body(validated_body)
+        key = compute_cache_key(validated_body)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid request: {exc}") from exc
 
