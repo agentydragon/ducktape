@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import asyncpg
 from openai._exceptions import APIStatusError
 from platformdirs import user_cache_dir
 
 from .core import family_of
+
+if TYPE_CHECKING:
+    from .main import ProbeResult
 
 
 def cache_dir() -> Path:
@@ -24,7 +27,7 @@ def ensure_cache_dir() -> None:
     cache_dir().mkdir(parents=True, exist_ok=True)
 
 
-def persist_result(res: Any) -> None:
+def persist_result(res: ProbeResult) -> None:
     ensure_cache_dir()
     record = res.to_cache_record()
     if not cache_file().exists():
@@ -60,7 +63,7 @@ async def get_db_pool() -> asyncpg.Pool:
     return _db_pool
 
 
-async def write_probe_result(res: Any) -> None:
+async def write_probe_result(res: ProbeResult) -> None:
     # Expect a ProbeResult-like object with attributes, not dynamic getattr probing
     if not res.started_at or not res.ended_at:
         return

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from rich import box
 from rich.console import Group
@@ -14,6 +14,9 @@ from textual.widgets import Footer, Header, Static
 
 from . import store as probe_store
 from .core import FAMILY_PRIORITY, FATAL_CODES, ErrorCode, Family, ModelProbe, ProbeRun, build_cell, family_of
+
+if TYPE_CHECKING:
+    from .main import ProbeResult
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,7 @@ class ProbeTUI(App):
     def __init__(
         self,
         *,
-        out_q: asyncio.Queue[Any],
+        out_q: asyncio.Queue[tuple[str, str, ProbeResult | None]],
         total_runners: int,
         filtered: list[str],
         repeats: int,
@@ -169,7 +172,7 @@ class ProbeTUI(App):
             model_ratio=3,
         )
 
-        def render_row(table: Table, r: Any, end_section: bool):
+        def render_row(table: Table, r: ModelProbe, end_section: bool):
             rcell, rcode, rdesc = build_cell(r.responses.calls)
             ccell, ccode, cdesc = build_cell(r.chat.calls)
             if rcode and rdesc:
@@ -264,7 +267,12 @@ class ProbeTUI(App):
 
 
 async def consume_stream_textual(
-    out_q: asyncio.Queue[Any], total_runners: int, filtered: list[str], repeats: int, *, show_fatal: bool = False
+    out_q: asyncio.Queue[tuple[str, str, ProbeResult | None]],
+    total_runners: int,
+    filtered: list[str],
+    repeats: int,
+    *,
+    show_fatal: bool = False,
 ) -> None:
     app = ProbeTUI(
         out_q=out_q, total_runners=total_runners, filtered=filtered, repeats=repeats, initial_show_fatal=show_fatal
