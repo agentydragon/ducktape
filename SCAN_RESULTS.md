@@ -20,13 +20,9 @@ This comprehensive scan identified **100+ instances** of code quality issues acr
 ### Overview
 Found 60+ test files using verbose plain assertions instead of PyHamcrest matchers.
 
-### Critical Issues
-
-✅ **FIXED:** Verbose collection type checks in habitify tests using `all_of()` matcher
-
 ---
 
-#### Issue 1.2: Full-Object has_properties Should Use Plain Equality
+#### Issue 1.1: Full-Object has_properties Should Use Plain Equality
 **File:** `claude/claude_hooks/tests/test_models.py:18-21`
 
 **Current Code:**
@@ -62,8 +58,7 @@ assert edit_input == EditInput(
 
 ---
 
-#### Issue 1.3: String Inclusion Assertions
-**Note:** habitify tests keep current style for simplicity
+#### Issue 1.2: String Inclusion Assertions
 
 **Pattern for other tests:**
 ```python

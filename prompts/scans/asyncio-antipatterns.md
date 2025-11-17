@@ -5,6 +5,28 @@
 
 ## Common Antipatterns
 
+### 0. Unnecessary @pytest.mark.asyncio Decorators
+
+**Context**: Many projects use `asyncio_mode = "auto"` in `pyproject.toml`, which automatically detects async test functions without requiring explicit `@pytest.mark.asyncio` decorators.
+
+**Projects with auto-detection enabled:**
+- `adgn/`
+- `gatelet/`
+- `claude/claude_optimizer/`
+- `homeassistant/iaqi/`
+- `mcp_starter/`
+- `experimental/dbus_fast_example/`
+
+**Antipattern**: Adding `@pytest.mark.asyncio` when `asyncio_mode = "auto"` is already configured.
+
+**Fix**: Remove the decorator. Pytest will automatically detect async test functions (any `async def test_*()`) and run them appropriately.
+
+**Detection**:
+```bash
+# Find explicit asyncio markers in projects with auto-detection
+rg --type py '@pytest\.mark\.asyncio' adgn/ gatelet/ claude/claude_optimizer/ homeassistant/iaqi/ mcp_starter/ experimental/dbus_fast_example/
+```
+
 ### 1. Blocking I/O in Async Functions
 - **File I/O**: `path.read_text()`, `path.write_text()`, `open()` without async wrappers
 - **Subprocess**: `subprocess.run()`, `subprocess.Popen().communicate()` without await
