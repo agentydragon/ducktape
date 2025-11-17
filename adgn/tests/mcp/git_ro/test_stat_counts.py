@@ -1,12 +1,10 @@
 from pathlib import Path
 
 import pygit2
-import pytest
 
 from adgn.mcp.git_ro.server import GIT_RO_SERVER_NAME, DiffFormat, DiffInput, ListSlice, make_git_ro_server
 
 
-@pytest.mark.asyncio
 async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
     """Create a repo, make a staged change, call git_diff(format=stat) and assert additions/deletions."""
     repo_dir = tmp_path / "repo"

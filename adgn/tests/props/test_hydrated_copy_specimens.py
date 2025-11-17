@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import pytest
-
 from adgn.props.specimens.registry import SpecimenRegistry
 
 
-@pytest.mark.asyncio
 async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen() -> None:
     """Hydrated local specimen workspace should contain only the scoped file.
 
@@ -23,7 +20,6 @@ async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen() -> No
     )
 
 
-@pytest.mark.asyncio
 async def test_hydrated_copy_git_specimen_has_wt_tree_rooted_correctly() -> None:
     """Hydrated git/github specimen should yield a content root whose subtree
     contains wt/wt/server directly under the yielded directory.

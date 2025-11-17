@@ -238,7 +238,7 @@ class TaskClaude:
 
         # Set up environment variables for wrapper script execution
         c = self._container_or_raise()
-        wrapper_env: dict[str, str] = {"CLAUDE_CONTAINER_ID": c.id, "DOCKER_BINARY": self._docker_path}
+        wrapper_env: dict[str, str] = {"CLAUDE_CONTAINER_ID": str(c.id), "DOCKER_BINARY": self._docker_path}
 
         if self.config.get("enable_strace", False):
             wrapper_env["CLAUDE_STRACE"] = "1"
@@ -411,7 +411,7 @@ class TaskClaude:
 
         process = await asyncio.create_subprocess_exec(
             str(setup_script),
-            container_id,
+            str(c.id),
             self.task_id,
             str(self._output_dir),
             stdout=asyncio.subprocess.PIPE,
@@ -474,7 +474,7 @@ class TaskClaude:
         process = await asyncio.create_subprocess_exec(
             "docker",
             "exec",
-            container_id,
+            str(c.id),
             "/bin/bash",
             "-c",
             commands,

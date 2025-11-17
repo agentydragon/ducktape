@@ -147,7 +147,6 @@ def test_build_prompt_with_amend(temp_repo: pygit2.Repository):
     assert "The commit is being amended" in prompt
 
 
-@pytest.mark.asyncio
 async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fake_editor):
     """Integration test of the full amend flow with mocked AI."""
     tmpdir = tmp_path / "repo"

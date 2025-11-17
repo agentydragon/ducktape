@@ -6,7 +6,6 @@ from fastmcp.client.messages import MessageHandler
 from hamcrest import anything, assert_that, contains, empty, has_properties, is_not, none
 from hamcrest.core.matcher import Matcher
 from mcp import types
-import pytest
 
 from adgn.mcp.chat.server import (
     ChatAuthor,
@@ -44,7 +43,6 @@ def assistant_markdown_message(content: str, *, id: Matcher[str] | None = None) 
     return has_properties(author=ChatAuthor.ASSISTANT, mime="text/markdown", content=content, id=id)  # type: ignore[return-value]
 
 
-@pytest.mark.asyncio
 async def test_chat_flow_user_to_agent_then_agent_to_user() -> None:
     store, human, assistant = create_chat_servers()
 
@@ -89,7 +87,6 @@ class _Capture(MessageHandler):
         self.updated.append(str(message.params.uri))
 
 
-@pytest.mark.asyncio
 async def test_chat_head_notifications_other_participant() -> None:
     store, human, assistant = create_chat_servers()
 
@@ -110,7 +107,6 @@ async def test_chat_head_notifications_other_participant() -> None:
         assert any(uri.endswith("chat://head") for uri in cap_human.updated), cap_human.updated
 
 
-@pytest.mark.asyncio
 async def test_chat_last_read_updates_with_read_pending() -> None:
     store, human, assistant = create_chat_servers()
 

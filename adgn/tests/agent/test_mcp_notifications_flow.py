@@ -57,7 +57,6 @@ def server() -> FastMCP:
     return _NotifierServer()
 
 
-@pytest.mark.asyncio
 async def test_notifications_pre_sampling_out_of_band(
     server: FastMCP, responses_factory: ResponsesFactory, make_buffered_client
 ) -> None:
@@ -102,7 +101,6 @@ async def test_notifications_pre_sampling_out_of_band(
         assert any(_has_sysfyi(req) for req in captured), "expected system notification in request input"
 
 
-@pytest.mark.asyncio
 async def test_notifications_within_turn_from_tool(
     server: FastMCP, responses_factory: ResponsesFactory, make_buffered_client
 ):
@@ -149,7 +147,6 @@ async def test_notifications_within_turn_from_tool(
         assert found, "expected system notification after tool-triggered update"
 
 
-@pytest.mark.asyncio
 async def test_notifications_broadcast_outside_tool(responses_factory: ResponsesFactory, make_buffered_client):
     # Server that can broadcast notifications outside a tool
     server = NotifyingFastMCP(name="notifier", instructions="Notifier test")

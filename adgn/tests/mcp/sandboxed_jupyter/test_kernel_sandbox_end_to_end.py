@@ -22,7 +22,6 @@ if os.environ.get("ADGN_RUN_SJ_STDIO") != "1":
 # Ensure required jupyter kernel/server packages are present — with pyproject deps these should be installed
 
 
-@pytest.mark.asyncio
 async def test_kernel_runs_minimal(tmp_path: Path, mcp_client_from_cmd):
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)

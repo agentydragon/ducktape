@@ -51,7 +51,6 @@ async def _behavior_ok(req):
     return responses_factory.make_assistant_message(text)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "openai_client_param",
     [pytest.param(_behavior_ok, id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)],
@@ -79,7 +78,6 @@ async def test_prompt_eval_signals_tool_error_on_critic_error(
         assert "simulated critic failure" in msg
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "openai_client_param",
     [pytest.param(_behavior_ok, id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)],

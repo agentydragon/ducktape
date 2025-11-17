@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, empty, has_item, has_properties
-import pytest
 from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
 from adgn.mcp.compositor.server import Compositor
@@ -42,7 +41,6 @@ def _make_origin() -> tuple[FastMCP, SubscriptionRecorder]:
     return m, recorder
 
 
-@pytest.mark.asyncio
 async def test_subscriptions_index_updates_on_unmount():
     # Compositor with one origin server mounted
     comp = Compositor("comp")

@@ -18,7 +18,6 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC]
         ([sys.executable, "-c", "print('HELLO_VENV')"], {}, ["PATH", "PYTHONPATH"], b"HELLO_VENV"),
     ],
 )
-@pytest.mark.asyncio
 async def test_basic_env_and_python(allow_all_policy, cmd, set_env, passthrough, expect_substring):
     # Build env passthrough + set
     env = {k: os.environ[k] for k in passthrough if k in os.environ}

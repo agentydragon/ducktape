@@ -4,7 +4,6 @@ import openai
 import pytest
 
 
-@pytest.mark.asyncio
 @pytest.mark.live_llm
 async def test_responses_nonstreaming_live(tmp_path):
     """Live test: call OpenAI Responses.create (non-streaming).
@@ -37,7 +36,6 @@ async def test_responses_nonstreaming_live(tmp_path):
     assert ("id" in data) or (data.get("object") is not None)
 
 
-@pytest.mark.asyncio
 @pytest.mark.live_llm
 async def test_responses_streaming_live(tmp_path):
     """Live test: call OpenAI Responses.create with stream=True and iterate.

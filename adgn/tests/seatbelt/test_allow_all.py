@@ -20,7 +20,6 @@ def allow_all_policy() -> SBPLPolicy:
     )
 
 
-@pytest.mark.asyncio
 async def test_exec_allow_all_runs_echo(allow_all_policy: SBPLPolicy):
     res = await run_sandboxed_async(allow_all_policy, ["/bin/sh", "-c", "echo ALLOW_ALL_OK"])
     assert res.exit_code == 0

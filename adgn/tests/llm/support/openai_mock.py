@@ -35,6 +35,10 @@ class FakeOpenAIModel(OpenAIModelProto):
         self.calls = 0
         self.captured: list[ResponsesRequest] = []
 
+    @property
+    def model(self) -> str:
+        return "fake-model"
+
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         if not isinstance(req, ResponsesRequest):
             raise TypeError("responses_create expects a ResponsesRequest instance")
@@ -59,6 +63,10 @@ def make_mock(responses_create_fn: ResponsesCreateFn) -> OpenAIClient:
     class _Client(OpenAIModelProto):
         def __init__(self) -> None:
             self.responses = _Responses()
+
+        @property
+        def model(self) -> str:
+            return "test-model"
 
         async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
             return await self.responses.create(req)

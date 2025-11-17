@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
@@ -9,7 +7,6 @@ from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, Re
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
-@pytest.mark.asyncio
 async def test_reasoning_threading_filters_reasoning_from_next_input(
     reasoning_model: str, responses_factory, make_pg_compositor_echo
 ) -> None:

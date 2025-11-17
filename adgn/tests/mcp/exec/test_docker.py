@@ -8,7 +8,6 @@ from adgn.mcp.exec.models import ExecInput, Exited, TimedOut
 
 
 @pytest.mark.requires_docker
-@pytest.mark.asyncio
 async def test_hello_world(docker_exec_server_alpine, make_typed_mcp) -> None:
     async with make_typed_mcp(docker_exec_server_alpine, "docker") as (client, session):
         tools = await session.list_tools()
@@ -23,7 +22,6 @@ async def test_hello_world(docker_exec_server_alpine, make_typed_mcp) -> None:
 
 
 @pytest.mark.requires_docker
-@pytest.mark.asyncio
 async def test_stderr_and_exit_code(docker_exec_server_alpine, make_typed_mcp) -> None:
     async with make_typed_mcp(docker_exec_server_alpine, "docker") as (client, _session):
         res = await client.docker_exec(ExecInput(cmd=["sh", "-lc", "echo err 1>&2; exit 3"], timeout_ms=10_000))
@@ -35,7 +33,6 @@ async def test_stderr_and_exit_code(docker_exec_server_alpine, make_typed_mcp) -
 
 
 @pytest.mark.requires_docker
-@pytest.mark.asyncio
 async def test_timeout_flag(docker_exec_server_alpine, make_typed_mcp) -> None:
     async with make_typed_mcp(docker_exec_server_alpine, "docker") as (client, _session):
         res = await client.docker_exec(ExecInput(cmd=["sh", "-lc", "sleep 5"], timeout_ms=500))

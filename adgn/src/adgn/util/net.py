@@ -10,6 +10,7 @@ def wait_for_port(host: str, port: int, *, timeout_secs: float = 10.0, interval_
 
     Uses monotonic time; raises TimeoutError on expiry.
     """
+
     def _try_connect() -> None:
         with socket.create_connection((host, int(port)), 0.5):
             pass

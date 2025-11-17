@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastmcp.client import Client
-import pytest
 
 from adgn.mcp._shared.urls import parse_any_url
 from adgn.mcp.notifications.buffer import NotificationsBuffer
@@ -13,7 +12,6 @@ def _u(s: str) -> str:
     return str(parse_any_url(s))
 
 
-@pytest.mark.asyncio
 async def test_queued_notifications_flush_on_first_list(make_compositor):
     # Create server and queue a list_changed before any sessions exist
     srv = NotifyingFastMCP("child")
@@ -29,7 +27,6 @@ async def test_queued_notifications_flush_on_first_list(make_compositor):
             assert "child" in batch.resource_list_changed
 
 
-@pytest.mark.asyncio
 async def test_broadcast_continues_after_session_failure(make_compositor):
     # Create server and open two client sessions
     srv = NotifyingFastMCP("notifier")

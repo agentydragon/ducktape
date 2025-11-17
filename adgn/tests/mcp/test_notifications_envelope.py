@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from tests.util.notifications import parse_system_notification_payload
 
 from adgn.agent.reducer import format_notifications_message
@@ -22,7 +21,6 @@ def _make_notifier(name: str = "child") -> NotifyingFastMCP:
     return m
 
 
-@pytest.mark.asyncio
 async def test_notifications_envelope_with_real_mcp(make_buffered_client):
     child = _make_notifier("child")
     async with make_buffered_client({"child": child}) as (sess, _comp, buf):
@@ -42,7 +40,6 @@ async def test_notifications_envelope_with_real_mcp(make_buffered_client):
         assert child_obj.get("list_changed") is True
 
 
-@pytest.mark.asyncio
 async def test_notifications_envelope_after_remount(make_buffered_client):
     child = _make_notifier("child")
     async with make_buffered_client({"child": child}) as (sess, comp, buf):

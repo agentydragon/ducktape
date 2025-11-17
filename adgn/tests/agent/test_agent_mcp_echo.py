@@ -36,7 +36,6 @@ class RecordingHandler(BaseHandler):
         self.rec.tool_outputs.append(res)
 
 
-@pytest.mark.asyncio
 async def test_agent_mcp_echo_tool_use(
     monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor_echo
 ) -> None:

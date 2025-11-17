@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
-import pytest
 
 
-@pytest.mark.asyncio
 async def test_server_slot_spec_open_initializes_once() -> None:
     app = FastMCP("demo")
 

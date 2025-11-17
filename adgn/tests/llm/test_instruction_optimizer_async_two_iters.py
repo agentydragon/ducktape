@@ -31,21 +31,17 @@ import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import FunctionCallItem, FunctionToolParam, ResponsesRequest
+from adgn.openai_utils.model import FunctionToolParam, ResponsesRequest
 from adgn.openai_utils.types import ReasoningEffort
-
-
-def mk_func_call(*, name: str, args: dict, call_id: str) -> FunctionCallItem:
-    return FunctionCallItem(name=name, arguments=json.dumps(args), call_id=call_id)
 
 
 class FakeModelLayer:
     """Protocol-level fake model used via DI factory (make_model)."""
 
-    def __init__(self, rf) -> None:
-        self._pe_counter = 0
+    def __init__(self, responses_factory) -> None:
         self.context_window_tokens = 200000
-        self._rf = rf
+        self._responses_factory = responses_factory
+        self.model = "fake-model"
 
     async def responses_create(self, req: ResponsesRequest):
         # Access typed fields directly (no getattr duck-typing)
@@ -59,17 +55,7 @@ class FakeModelLayer:
         # Tool-based routing
         if name is not None:
             if name == "submit_prompt":
-                self._pe_counter += 1
-                call = mk_func_call(
-                    name="submit_prompt",
-                    args={"prompt": f"PROMPT_V{self._pe_counter}"},
-                    call_id=f"pe-{self._pe_counter}",
-                )
-                return self._rf.make(
-                    self._rf.tool_call(
-                        call_id=call.call_id, name=call.name, arguments=json.loads(call.arguments or "{}")
-                    )
-                )
+                return self._responses_factory.make_tool_call(name="submit_prompt", arguments={"prompt": "test_prompt"})
             if name == "submit_grades":
                 assert all(isinstance(t, FunctionToolParam) for t in tools)
                 required = []
@@ -78,24 +64,15 @@ class FakeModelLayer:
                     params = tool.parameters or {}
                     required = params.get("required", [])
                 payload = {rk: {"score": 9.0, "rationale": "ok"} for rk in required}
-                call = mk_func_call(name="submit_grades", args=payload, call_id="grade-1")
-                return self._rf.make(self._rf.tool_call(call_id=call.call_id, name=call.name, arguments=payload))
+                return self._responses_factory.make_tool_call(name="submit_grades", arguments=payload)
         # When tool is required: emit propose_prompt in outer loop; inner (runner) returns text
         if tool_choice == "required":
             # Always propose a prompt when tool is required (outer PE agent)
-            self._pe_counter += 1
-            call = mk_func_call(
-                name=build_mcp_function("prompt_feedback", "propose_prompt"),
-                args={"prompt": f"PROMPT_V{self._pe_counter}"},
-                call_id=f"pe-{self._pe_counter}",
-            )
-            return self._rf.make(
-                self._rf.tool_call(
-                    call_id=call.call_id, name=call.name, arguments={"prompt": f"PROMPT_V{self._pe_counter}"}
-                )
+            return self._responses_factory.make_tool_call(
+                name=build_mcp_function("prompt_feedback", "propose_prompt"), arguments={"prompt": "test_prompt"}
             )
         # Default assistant text
-        return self._rf.make_assistant_message("default")
+        return self._responses_factory.make_assistant_message("default")
 
 
 @pytest.fixture
@@ -121,7 +98,6 @@ def cfg_two_iters() -> OptimizerConfig:
     )
 
 
-@pytest.mark.asyncio
 async def test_optimize_prompts_two_iterations_async(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cfg_two_iters: OptimizerConfig, responses_factory
 ):

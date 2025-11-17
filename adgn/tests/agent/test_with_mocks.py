@@ -14,7 +14,6 @@ from tests.llm.support.openai_mock import LIVE, FakeOpenAIModel
 @pytest.mark.parametrize(
     "client_mode", [pytest.param("mock", id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)]
 )
-@pytest.mark.asyncio
 async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     responses_factory, live_openai, client_mode, make_pg_compositor_echo
 ) -> None:

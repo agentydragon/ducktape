@@ -14,7 +14,6 @@ def bus():
     return ServerBus()
 
 
-@pytest.mark.asyncio
 async def test_ui_send_message_and_end_turn_bus(bus, make_typed_mcp) -> None:
     server = make_ui_server("ui", bus)
 

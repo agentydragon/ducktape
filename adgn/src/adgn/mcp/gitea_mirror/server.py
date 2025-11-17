@@ -35,6 +35,7 @@ class TriggerMirrorSyncArgs(BaseModel):
 
 class TriggerMirrorSyncResponse(BaseModel):
     """Response matching Gitea's mirror-sync behavior (returns nothing)."""
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -49,6 +50,7 @@ class _GiteaRepositoryFields(BaseModel):
 
     Shared by both the public response model and internal parsing model.
     """
+
     # Core repository identity
     id: int
     name: str = Field(description="Repository name. Mirror path for cloning: '{owner}/{name}.git'")
@@ -134,6 +136,7 @@ class GetRepoInfoResponse(_GiteaRepositoryFields):
     All fields from Gitea's Repository object are explicitly declared in base class.
     Mirror-relevant fields have detailed descriptions.
     """
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -164,6 +167,7 @@ class _UserInfo(BaseModel):
 
 class _RepositoryInfo(_GiteaRepositoryFields):
     """Internal model for parsing Gitea's /repos/{owner}/{repo} response."""
+
     model_config = ConfigDict(extra="ignore")  # Ignore fields we haven't declared
 
 
@@ -225,11 +229,7 @@ def _resolve_owner(base_url: str, token: str) -> str:
     return data.login
 
 
-def make_gitea_mirror_server(
-    *,
-    base_url: str | None = None,
-    token: str | None = None,
-) -> NotifyingFastMCP:
+def make_gitea_mirror_server(*, base_url: str | None = None, token: str | None = None) -> NotifyingFastMCP:
     cfg = MirrorConfig(
         base_url=str(base_url or os.environ.get("GITEA_BASE_URL", "")),
         token=str(token or os.environ.get("GITEA_TOKEN", "")),

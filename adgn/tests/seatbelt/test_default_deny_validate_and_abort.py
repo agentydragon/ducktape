@@ -44,7 +44,6 @@ def test_default_deny_without_dyld_roots_emits_warning():
     assert any("default deny" in m and "/System" in m for m in msgs), msgs
 
 
-@pytest.mark.asyncio
 @pytest.mark.xfail(
     reason="Document current abort signature for too-narrow default-deny; not stable across macOS versions",
     strict=False,
@@ -63,7 +62,6 @@ async def test_default_deny_narrow_policy_exec_aborts_or_fails():
     assert (res.trace_text or "") == ""
 
 
-@pytest.mark.asyncio
 @pytest.mark.xfail(
     reason="Even with explicit dyld roots, this host still aborts; will refine once stable", strict=False
 )

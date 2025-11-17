@@ -14,7 +14,6 @@ BAD_POLICY_SRC: str
 ## Removed: template-based seatbelt tests. Seatbelt now accepts only explicit policy.
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_container_timeout_causes_deny_abort(
     monkeypatch: pytest.MonkeyPatch,

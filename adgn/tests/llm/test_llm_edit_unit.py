@@ -51,7 +51,6 @@ def _extract_result(res):
     return payload.get("result", payload)
 
 
-@pytest.mark.asyncio
 async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "note.md"
     await asyncio.to_thread(p.write_text, "hello\n", encoding="utf-8")
@@ -68,7 +67,6 @@ async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_sessio
     assert content == "hello\nworld\n"
 
 
-@pytest.mark.asyncio
 async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "bad.py"
     await asyncio.to_thread(p.write_text, "def f():\n    return 1\n", encoding="utf-8")  # start valid
@@ -85,7 +83,6 @@ async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: P
     assert content == "def f():\n    return 1\n"
 
 
-@pytest.mark.asyncio
 async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "file.txt"
     await asyncio.to_thread(p.write_text, "A\n", encoding="utf-8")

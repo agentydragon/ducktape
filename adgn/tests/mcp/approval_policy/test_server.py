@@ -6,7 +6,6 @@ from adgn.mcp._shared.constants import APPROVAL_POLICY_RESOURCE_URI
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_resources_list_and_read_policy(make_typed_mcp, approval_engine):
     """List and read resources directly from the server without a compositor."""

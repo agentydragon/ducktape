@@ -21,7 +21,6 @@ async def _run_exec(sess, cmd, timeout_ms: int, shell: bool = True) -> BaseExecR
     return await call_tool_typed(sess, "exec", payload, BaseExecResult)
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_runtime_per_session_timeout_then_next_call_ok(
     make_pg_compositor, approval_policy_reader_allow_all

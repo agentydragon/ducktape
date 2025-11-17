@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from fastmcp.client import Client
-import pytest
 
 from adgn.mcp.exec.direct import DirectExecArgs, make_direct_exec_server
 from adgn.mcp.exec.models import Exited
 from adgn.mcp.testing.exec_stubs import DirectExecServerStub
 
 
-@pytest.mark.asyncio
 async def test_direct_exec_echo_inproc() -> None:
     """Direct exec (unsandboxed) in-proc server echo test."""
 

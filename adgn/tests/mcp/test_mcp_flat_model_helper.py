@@ -31,7 +31,6 @@ def make_echo_server():
     return mcp
 
 
-@pytest.mark.asyncio
 async def test_flat_schema_and_typed_invocation(make_typed_mcp):
     server = make_echo_server()
 
@@ -63,7 +62,6 @@ def list_tools_via_client():
     return _list
 
 
-@pytest.mark.asyncio
 async def test_mcp_flat_model_backward_compatibility(list_tools_via_client):
     legacy = FastMCP("legacy")
 
@@ -79,7 +77,6 @@ async def test_mcp_flat_model_backward_compatibility(list_tools_via_client):
     assert "input" not in props
 
 
-@pytest.mark.asyncio
 async def test_tool_flat_explicit_models(list_tools_via_client):
     mcp = FlatModelFastMCP("echo2")
 

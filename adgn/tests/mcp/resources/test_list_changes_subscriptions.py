@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, contains, contains_inanyorder, empty, has_item, has_properties
-import pytest
 
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.resources.clients import ResourcesClient
@@ -23,7 +22,6 @@ class _StubGatewayClient:
         self.session = _StubGatewaySession()
 
 
-@pytest.mark.asyncio
 async def test_list_changes_subscriptions_visible_and_cleared_on_unmount():
     comp = Compositor("comp")
     origin = FastMCP("origin")
@@ -45,7 +43,6 @@ async def test_list_changes_subscriptions_visible_and_cleared_on_unmount():
         assert_that(idx2.list_subscriptions, empty())
 
 
-@pytest.mark.asyncio
 async def test_list_changes_multiple_subscriptions_and_unsubscribe():
     comp = Compositor("comp2")
     a = FastMCP("a")

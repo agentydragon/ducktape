@@ -4,7 +4,6 @@ import anyio
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types
-import pytest
 
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -38,7 +37,6 @@ class _Recorder(MessageHandler):
             await self._evt_list.wait()
 
 
-@pytest.mark.asyncio
 async def test_notifying_fastmcp_queue_and_flush() -> None:
     # Create server but no sessions yet
     server = NotifyingFastMCP("notify_test")
@@ -58,7 +56,6 @@ async def test_notifying_fastmcp_queue_and_flush() -> None:
     assert rec.list_changed >= 1
 
 
-@pytest.mark.asyncio
 async def test_notifying_fastmcp_multisession_broadcast() -> None:
     server = NotifyingFastMCP("notify_multi")
 

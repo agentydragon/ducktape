@@ -12,7 +12,6 @@ from adgn.agent.runtime.container import build_container
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_notifications_handler_in_container_inserts_system_message(
     sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str

@@ -26,7 +26,6 @@ def policy_deny_users() -> SBPLPolicy:
     return base
 
 
-@pytest.mark.asyncio
 async def test_exec_allow_root_deny_users(policy_deny_users: SBPLPolicy):
     ok = await run_sandboxed_async(policy_deny_users, ["/bin/sh", "-c", "ls /System"])
     assert ok.exit_code == 0

@@ -17,7 +17,6 @@ else:
     Page = playwright.Page
 
 
-@pytest.mark.asyncio
 async def test_policy_proposal_reject_updates_ui(
     page: Page, run_server, responses_factory, policy_allow_all: str, sqlite_persistence
 ):

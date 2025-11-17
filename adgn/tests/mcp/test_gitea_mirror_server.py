@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from adgn.mcp.gitea_mirror import server
-from adgn.mcp.gitea_mirror.server import EnsureMirrorAndSyncArgs, EnsureMirrorAndSyncResponse
+from adgn.mcp.gitea_mirror.server import TriggerMirrorSyncArgs
 
 
 class _DummyResponse:
@@ -51,10 +51,8 @@ def _extract_payload(result):
     raise AssertionError(f"Unexpected tool response: {result!r}")
 
 
-@pytest.mark.asyncio
-async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch, make_typed_mcp) -> None:
+async def test_trigger_mirror_sync_success(monkeypatch: pytest.MonkeyPatch, make_typed_mcp) -> None:
     post_calls: list[tuple[str, dict, dict]] = []
-    get_sequence = iter([{"mirror": True, "mirror_updated": "first"}, {"mirror": True, "mirror_updated": "second"}])
 
     def fake_post(url: str, **kwargs: Any):
         headers = kwargs.get("headers", {})
@@ -66,35 +64,13 @@ async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch, make_typed_mcp
             return _DummyResponse(200)
         raise AssertionError(f"Unexpected POST {url}")
 
-    def fake_get(url: str, **kwargs: Any):
-        try:
-            payload = next(get_sequence)
-        except StopIteration as exc:  # pragma: no cover - defensive fallback
-            raise AssertionError("GET called more times than expected") from exc
-        return _DummyResponse(200, payload=payload)
-
     monkeypatch.setattr(server.requests, "post", fake_post)
-    monkeypatch.setattr(server.requests, "get", fake_get)
     monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
-    monotonic_values = _iter([0.0, 0.2, 0.4])
-    monkeypatch.setattr(server.time, "monotonic", lambda: next(monotonic_values))
-    monkeypatch.setattr(server.time, "sleep", lambda _: None)
 
-    mirror_server = server.make_gitea_mirror_server(
-        base_url="https://gitea.local", token="secret-token", poll_interval_secs=0.01, poll_timeout_secs=1
-    )
+    mirror_server = server.make_gitea_mirror_server(base_url="https://gitea.local", token="secret-token")
 
     async with make_typed_mcp(mirror_server, "gitea_mirror") as (client, _):
-        res: EnsureMirrorAndSyncResponse = await client.ensure_mirror_and_sync(
-            EnsureMirrorAndSyncArgs(url="https://example.com/org/repo.git")
-        )
-
-    assert res.model_dump() == {
-        "owner": "mirror-user",
-        "repo": "example-com-org-repo",
-        "mirror_path": "mirror-user/example-com-org-repo.git",
-        "mirror_updated": "first",
-    }
+        await client.trigger_mirror_sync(TriggerMirrorSyncArgs(url="https://example.com/org/repo.git"))
 
     assert [call[0] for call in post_calls] == [
         "https://gitea.local/api/v1/repos/migrate",
@@ -104,8 +80,7 @@ async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch, make_typed_mcp
     assert migrate_headers["Authorization"] == "token secret-token"
 
 
-@pytest.mark.asyncio
-async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_typed_mcp) -> None:
+async def test_trigger_sync_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_typed_mcp) -> None:
     def fake_post(url: str, **kwargs: Any):
         if url.endswith("/repos/migrate"):
             return _DummyResponse(500, text="boom")
@@ -123,9 +98,7 @@ async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_t
 
     async with make_typed_mcp(mirror_server, "gitea_mirror") as (client, _):
         # Error assertion path: expect tool error and capture message
-        err_msg = await client.error("ensure_mirror_and_sync")(
-            EnsureMirrorAndSyncArgs(url="https://example.com/org/repo")
-        )
+        err_msg = await client.error("trigger_mirror_sync")(TriggerMirrorSyncArgs(url="https://example.com/org/repo"))
         assert "boom" in err_msg or "HTTP 500" in err_msg
 
 

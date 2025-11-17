@@ -9,7 +9,6 @@ from adgn.props.models.issue import IssueCore, LineRange, Occurrence
 
 
 @pytest.mark.live_llm
-@pytest.mark.asyncio
 # XFAIL: specimen acquisition currently depends on local GitHub credentials. TODO: make credential-free.
 @pytest.mark.xfail(
     reason="Specimen acquisition for 2025-09-02-ducktape_wt depends on local GitHub creds; switch to token/codeload or vendored LocalSource.",

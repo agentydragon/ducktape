@@ -19,7 +19,6 @@ def restrictive_echo_policy() -> SBPLPolicy:
     )
 
 
-@pytest.mark.asyncio
 async def test_exec_minimal_restrictive_echo(restrictive_echo_policy: SBPLPolicy):
     res = await run_sandboxed_async(restrictive_echo_policy, ["/bin/echo", "HELLO_MINIMAL"])
     assert res.exit_code == 0

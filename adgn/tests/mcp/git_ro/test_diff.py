@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import pytest
-
 from adgn.mcp.git_ro.server import DiffInput, TextPage, TextSlice
 
 
-@pytest.mark.asyncio
 async def test_git_diff_patch_first_page(typed_git_ro) -> None:
     async with typed_git_ro() as (client, session):
         union = await client.git_diff(
@@ -18,7 +15,6 @@ async def test_git_diff_patch_first_page(typed_git_ro) -> None:
         assert union.next_offset > 0
 
 
-@pytest.mark.asyncio
 async def test_git_diff_patch_second_page(typed_git_ro) -> None:
     async with typed_git_ro() as (client, session):
         union1 = await client.git_diff(

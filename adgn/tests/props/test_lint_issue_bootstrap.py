@@ -48,7 +48,6 @@ def content_root() -> Generator[Path, None, None]:
         shutil.rmtree(p, ignore_errors=True)
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_lint_issue_bootstrap_small_files(
     content_root: Path, make_pg_compositor, approval_policy_reader_allow_all

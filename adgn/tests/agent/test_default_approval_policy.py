@@ -22,7 +22,6 @@ if __name__ == '__main__':
     )
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_ui_tools_allowed(policy_evaluator):
     ui_tools = [
@@ -34,7 +33,6 @@ async def test_ui_tools_allowed(policy_evaluator):
         assert result.decision is ApprovalDecision.ALLOW
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_resource_operations_allowed(policy_evaluator):
     resource_ops = [
@@ -46,7 +44,6 @@ async def test_resource_operations_allowed(policy_evaluator):
         assert result.decision is ApprovalDecision.ALLOW
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_other_tools_require_approval(policy_evaluator):
     other_tools = [

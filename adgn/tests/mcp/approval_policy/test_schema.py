@@ -5,7 +5,6 @@ import pytest
 from adgn.mcp.approval_policy.server import ApprovalPolicyProposerServer, ApprovalPolicyServer
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_approval_policy_tool_schemas(make_typed_mcp, approval_engine):
     """Verify approval_policy tools are exposed with flat typed schemas."""

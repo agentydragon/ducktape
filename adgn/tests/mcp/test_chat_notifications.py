@@ -3,7 +3,6 @@ import asyncio
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types
-import pytest
 
 from adgn.mcp.chat.server import attach_chat_servers
 from adgn.mcp.compositor.server import Compositor
@@ -17,7 +16,6 @@ class _Capture(MessageHandler):
         self.updated.append(str(message.params.uri))
 
 
-@pytest.mark.asyncio
 async def test_chat_head_notifications_other_participant() -> None:
     comp = Compositor("compositor")
     store, human, assistant = await attach_chat_servers(comp)

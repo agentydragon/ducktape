@@ -48,7 +48,6 @@ def _make_tool_call_resp(
     return result
 
 
-@pytest.mark.asyncio
 async def test_stateless_reasoning_forwarding(make_pg_compositor_echo, responses_factory: ResponsesFactory) -> None:
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
 
@@ -69,7 +68,6 @@ async def test_stateless_reasoning_forwarding(make_pg_compositor_echo, responses
         assert_items_include_instances(msgs, ReasoningItem, AssistantMessage)
 
 
-@pytest.mark.asyncio
 async def test_function_call_and_function_call_output_replay(
     make_pg_compositor_echo, responses_factory: ResponsesFactory
 ) -> None:
@@ -96,7 +94,6 @@ async def test_function_call_and_function_call_output_replay(
     assert_items_include_instances(input_items, FunctionCallItem, FunctionCallOutputItem)
 
 
-@pytest.mark.asyncio
 async def test_mixed_reasoning_fc_ordering(make_pg_compositor_echo, responses_factory: ResponsesFactory) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
@@ -125,7 +122,6 @@ async def test_mixed_reasoning_fc_ordering(make_pg_compositor_echo, responses_fa
     )
 
 
-@pytest.mark.asyncio
 async def test_no_synthesized_reasoning_items(make_pg_compositor_echo, responses_factory: ResponsesFactory) -> None:
     """Ensure agent does not fabricate reasoning rs_* items when missing."""
 
@@ -148,7 +144,6 @@ async def test_no_synthesized_reasoning_items(make_pg_compositor_echo, responses
     assert_items_exclude_instance(input_items, ReasoningItem)
 
 
-@pytest.mark.asyncio
 async def test_model_provided_tool_output_records_without_execution(
     responses_factory: ResponsesFactory, make_pg_compositor_echo
 ) -> None:

@@ -9,7 +9,6 @@ from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.approval_policy.server import ApprovalPolicyServer
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_approval_policy_server_is_available(
     responses_factory, make_echo_spec, make_pg_compositor, approval_engine

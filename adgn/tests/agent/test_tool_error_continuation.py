@@ -33,7 +33,6 @@ def _make_validation_server() -> FastMCP:
     return mcp
 
 
-@pytest.mark.asyncio
 async def test_tool_error_continues_turn(
     monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
 ) -> None:

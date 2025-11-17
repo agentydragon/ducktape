@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from adgn.mcp.editor_server import DoneInput, EditorOutcome, ReadInfoArgs, ReplaceTextArgs, Success
 
 
-@pytest.mark.asyncio
 async def test_editor_inproc_basic_ops(typed_editor_factory) -> None:
     async with typed_editor_factory() as (stub, target):
         # read_info works (typed via stub)

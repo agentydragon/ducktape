@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastmcp.server import FastMCP
 from pydantic import TypeAdapter
-import pytest
 
 from adgn.agent.server.protocol import Envelope, Snapshot
 
@@ -17,7 +16,6 @@ def _make_echo() -> FastMCP:
     return m
 
 
-@pytest.mark.asyncio
 def test_attach_server_populates_sampling_servers(agent_app_client):
     app, client = agent_app_client
     # Create an agent

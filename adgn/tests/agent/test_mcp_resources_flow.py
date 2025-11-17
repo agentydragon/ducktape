@@ -12,7 +12,6 @@ from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_model_reads_container_info_with_stubbed_openai(
     reasoning_model, responses_factory, docker_inproc_spec_alpine, make_pg_compositor, approval_policy_reader_allow_all

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import Abort, Auto, Continue
 from adgn.agent.reducer import BaseHandler
@@ -21,7 +19,6 @@ class SyntheticOnceHandler(BaseHandler):
         return Continue(Auto(), inserts_input=tuple(self._outputs), skip_sampling=True)
 
 
-@pytest.mark.asyncio
 async def test_mini_codex_handles_synthetic_action_without_api_calls(
     fake_openai_client_factory, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
 ) -> None:

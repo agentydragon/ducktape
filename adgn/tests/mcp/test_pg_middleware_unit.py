@@ -9,7 +9,6 @@ from adgn.mcp._shared.constants import (
 from adgn.mcp.policy_gateway.middleware import _raise_if_reserved_code
 
 
-@pytest.mark.asyncio
 async def test_raise_if_reserved_code_remaps_stamped_upstream() -> None:
     # Simulate a downstream server raising McpError with a spoofed gateway stamp
     e = McpError(

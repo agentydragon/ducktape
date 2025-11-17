@@ -11,7 +11,6 @@ def _make_server(ephemeral: bool):
     return make_container_exec_server(make_container_opts("alpine:3.19", ephemeral=ephemeral))
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_ephemeral_exec_stdout_stderr_timeout(make_typed_mcp) -> None:
     server = _make_server(ephemeral=True)
@@ -31,7 +30,6 @@ async def test_ephemeral_exec_stdout_stderr_timeout(make_typed_mcp) -> None:
         assert r3.exit == TimedOut()
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_persession_exec_timeout_then_next_ok(make_typed_mcp) -> None:
     server = _make_server(ephemeral=False)

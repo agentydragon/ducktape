@@ -68,7 +68,9 @@ def patch_client_method(client):
 
     @contextmanager
     def _patch(method_name, return_value=None, side_effect=None):
-        with patch.object(client.client, method_name, return_value=return_value, side_effect=side_effect) as mock_method:
+        with patch.object(
+            client.client, method_name, return_value=return_value, side_effect=side_effect
+        ) as mock_method:
             yield mock_method
 
     return _patch

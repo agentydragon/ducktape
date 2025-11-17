@@ -140,7 +140,6 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC]
         ),
     ],
 )
-@pytest.mark.asyncio
 async def test_incremental_widening(label: str, add_rules, expect: dict):
     pol = SBPLPolicy(
         default_behavior=DefaultBehavior.DENY,

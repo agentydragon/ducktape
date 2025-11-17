@@ -21,7 +21,6 @@ def text_block_contains(fragment: str):
     return has_item(has_entries(type="text", text=contains_string(fragment)))
 
 
-@pytest.mark.asyncio
 @pytest.mark.skipif(not (DATA / "ccr_min.jsonl").exists(), reason="ccr_min.jsonl test dataset missing")
 async def test_read_ccr_min():
     ds = await read_dataset(DATA / "ccr_min.jsonl")
@@ -47,7 +46,6 @@ async def test_read_ccr_min():
     )
 
 
-@pytest.mark.asyncio
 @pytest.mark.skipif(not (DATA / "crush_min.jsonl").exists(), reason="crush_min.jsonl test dataset missing")
 async def test_read_crush_min():
     ds = await read_dataset(DATA / "crush_min.jsonl")

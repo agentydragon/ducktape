@@ -13,7 +13,6 @@ from tests._markers import REQUIRES_SANDBOX_EXEC
 pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
 
-@pytest.mark.asyncio
 async def test_apopen_interactive_echo_with_trace(tmp_path: Path):
     if not shutil.which("sandbox-exec"):
         pytest.skip("sandbox-exec not found on PATH")
@@ -44,7 +43,6 @@ async def test_apopen_interactive_echo_with_trace(tmp_path: Path):
     p.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_run_sandboxed_async_echo(tmp_path: Path):
     if not shutil.which("sandbox-exec"):
         pytest.skip("sandbox-exec not found on PATH")

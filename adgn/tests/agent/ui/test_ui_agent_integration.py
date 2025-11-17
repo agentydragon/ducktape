@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import pytest
 from tests.agent.ui.typed_asserts import assert_typed_items_have_one, is_assistant_markdown
 from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock
@@ -35,7 +34,6 @@ def _make_ui_behavior(rf: ResponsesFactory):
     return _behavior
 
 
-@pytest.mark.asyncio
 async def test_ui_server_with_mock_agent_produces_ui_state_updates(
     responses_factory: ResponsesFactory, make_pg_compositor, stub_approval_policy_engine, approval_policy_reader_stub
 ):

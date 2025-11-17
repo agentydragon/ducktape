@@ -1,9 +1,8 @@
 import os
 from pathlib import Path
-
 import tomllib
-import tomli_w
 
+import tomli_w
 
 PRESERVE_KEYS = ("projects", "notice", "windows")
 

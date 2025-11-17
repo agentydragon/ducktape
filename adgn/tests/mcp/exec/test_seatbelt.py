@@ -70,7 +70,6 @@ def _extract_payload(resp):
     return resp
 
 
-@pytest.mark.asyncio
 async def test_sandbox_exec_echo_roundtrip(open_seatbelt_session) -> None:
     async with open_seatbelt_session() as (_server, session):
         # Execute echo under sandbox (typed stub)
@@ -96,7 +95,6 @@ async def test_sandbox_exec_echo_roundtrip(open_seatbelt_session) -> None:
         assert res.duration_ms >= 0
 
 
-@pytest.mark.asyncio
 async def test_sandbox_exec_write_denied(open_seatbelt_session) -> None:
     """Attempt a file write that should be denied by the sandbox policy."""
     import secrets
@@ -128,7 +126,6 @@ async def test_sandbox_exec_write_denied(open_seatbelt_session) -> None:
         # TODO(mpokorny): Revisit trace enablement and policy for reliable capture
 
 
-@pytest.mark.asyncio
 async def test_sandbox_exec_timeout(open_seatbelt_session) -> None:
     """Command exceeding timeout should return timeout=True and no exit_code."""
 
@@ -145,7 +142,6 @@ async def test_sandbox_exec_timeout(open_seatbelt_session) -> None:
         assert res.duration_ms >= 0
 
 
-@pytest.mark.asyncio
 async def test_sandbox_exec_cwd_and_env(tmp_path: Path, open_seatbelt_session) -> None:
     """Verify cwd and env injection (async)."""
     async with open_seatbelt_session() as (_server, session):

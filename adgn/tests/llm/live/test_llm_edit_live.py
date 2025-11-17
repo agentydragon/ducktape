@@ -51,7 +51,6 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
 
 
 # Shared trunk: run with mock (behavior) and live (LIVE sentinel)
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "openai_client_param",
     [pytest.param(make_edit_behavior(), id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)],

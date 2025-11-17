@@ -5,7 +5,6 @@ from typing import Any
 from unittest.mock import patch
 
 from fastmcp.server import FastMCP
-import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
@@ -64,7 +63,6 @@ def _make_slow_server(per_call_secs: float = 0.30) -> FastMCP:
     return mcp
 
 
-@pytest.mark.asyncio
 async def test_parallel_tool_calls_reduce_wall_time(make_compositor):
     # Build a real inproc FastMCP server with two slow tools
 

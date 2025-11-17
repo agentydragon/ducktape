@@ -16,7 +16,6 @@ def _backend(name: str = "backend") -> FastMCP:
     return m
 
 
-@pytest.mark.asyncio
 async def test_unmount_pinned_server_errors_and_kept():
     comp = Compositor("comp")
     srv = _backend()

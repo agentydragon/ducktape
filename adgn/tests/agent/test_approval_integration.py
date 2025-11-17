@@ -13,7 +13,6 @@ from adgn.mcp._shared.naming import build_mcp_function
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_approval_system_wired_and_blocks_on_ask(
     responses_factory,

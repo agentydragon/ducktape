@@ -29,7 +29,6 @@ async def _assert_exec_echo(sess) -> None:
     assert (res.stderr or "") == ""
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_exec_roundtrip_echo(make_pg_compositor_box) -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
@@ -39,7 +38,6 @@ async def test_exec_roundtrip_echo(make_pg_compositor_box) -> None:
 
 @pytest.mark.live_llm
 @pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
-@pytest.mark.asyncio
 async def test_live_llm_exec_echo(make_pg_compositor_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
 

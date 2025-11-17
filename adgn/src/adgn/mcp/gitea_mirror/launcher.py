@@ -21,18 +21,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path to file containing Gitea API token",
     )
-    parser.add_argument(
-        "--poll-interval",
-        type=float,
-        default=None,
-        help="Polling interval in seconds (env: GITEA_POLL_INTERVAL_SECS; default: 2.0)",
-    )
-    parser.add_argument(
-        "--poll-timeout",
-        type=float,
-        default=None,
-        help="Polling timeout in seconds (env: GITEA_POLL_TIMEOUT_SECS; default: 60.0)",
-    )
     return parser
 
 
@@ -50,19 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     if not token:
         parser.error("Gitea token is required via --token or --token-file")
 
-    # Resolve polling settings: CLI arg > env > hard default
-    poll_interval = (
-        args.poll_interval
-        if args.poll_interval is not None
-        else float(os.environ.get("GITEA_POLL_INTERVAL_SECS", "2.0"))
-    )
-    poll_timeout = (
-        args.poll_timeout if args.poll_timeout is not None else float(os.environ.get("GITEA_POLL_TIMEOUT_SECS", "60.0"))
-    )
-
-    server = make_gitea_mirror_server(
-        base_url=args.base_url, token=token, poll_interval_secs=poll_interval, poll_timeout_secs=poll_timeout
-    )
+    server = make_gitea_mirror_server(base_url=args.base_url, token=token)
 
     server.run("stdio")
     return 0

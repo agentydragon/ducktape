@@ -24,7 +24,6 @@ def _make_failing_server() -> FastMCP:
     return mcp
 
 
-@pytest.mark.asyncio
 async def test_tool_error_is_surfaced_in_sequence(
     monkeypatch: pytest.MonkeyPatch, responses_factory, make_pg_compositor, approval_policy_reader_allow_all
 ) -> None:

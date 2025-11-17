@@ -13,7 +13,6 @@ from adgn.mcp.testing.typed_stubs import call_tool_typed
 # FastMCP stdio client (hard import)
 
 
-@pytest.mark.asyncio
 async def test_stdio_server_list_tools(make_compositor) -> None:
     """Smoke test: connect to server-everything (stdio) and list tools.
 
@@ -47,7 +46,6 @@ async def test_stdio_server_list_tools(make_compositor) -> None:
         assert any(t.name.startswith("everything_") for t in tools)
 
 
-@pytest.mark.asyncio
 async def test_direct_inprocess_server(make_compositor) -> None:
     """Direct (unsandboxed) in-process FastMCP exec tool mounted in a Compositor."""
 
@@ -64,7 +62,6 @@ async def test_direct_inprocess_server(make_compositor) -> None:
         assert result.exit == Exited(exit_code=0)
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_inproc_container_exec_exposes_container_info_resource(docker_inproc_spec_py312: object) -> None:
     """in-proc container exec exposes a container.info resource."""

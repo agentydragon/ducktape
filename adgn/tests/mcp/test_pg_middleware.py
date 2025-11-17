@@ -24,7 +24,6 @@ def _policy_source(decision: ApprovalDecision) -> str:
     )
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_pg_middleware_allow(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.ALLOW))
@@ -36,7 +35,6 @@ async def test_pg_middleware_allow(make_pg_compositor, make_policy_engine, backe
         assert getattr(res, "structured_content", None) == {"echo": "7"}
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_pg_middleware_deny_abort(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.DENY_ABORT))
@@ -47,7 +45,6 @@ async def test_pg_middleware_deny_abort(make_pg_compositor, make_policy_engine, 
         assert POLICY_DENIED_ABORT_MSG in str(ei.value)
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_pg_middleware_deny_continue(make_pg_compositor, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.DENY_CONTINUE))
@@ -58,7 +55,6 @@ async def test_pg_middleware_deny_continue(make_pg_compositor, make_policy_engin
         assert POLICY_DENIED_CONTINUE_MSG in str(ei.value)
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_pg_middleware_reserved_backend_code_remap(
     make_pg_compositor, approval_policy_reader_allow_all, backend_server
@@ -77,7 +73,6 @@ async def test_pg_middleware_reserved_backend_code_remap(
         # Note: fastmcp wraps ToolError with text; structured error may not be available here.
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 @pytest.mark.xfail(reason="In-proc raises drop ErrorData; stamp not inspectable at middleware layer")
 async def test_pg_middleware_backend_stamp_misuse(make_pg_compositor, approval_policy_reader_allow_all, backend_server):
@@ -91,7 +86,6 @@ async def test_pg_middleware_backend_stamp_misuse(make_pg_compositor, approval_p
         assert POLICY_BACKEND_RESERVED_MISUSE_MSG in s
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_pg_middleware_backend_stamp_misuse_via_proxy(
     make_pg_compositor, approval_policy_reader_allow_all, backend_server
@@ -110,7 +104,6 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(
         assert POLICY_BACKEND_RESERVED_MISUSE_MSG in s
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_pg_middleware_ask_then_allow(make_pg_compositor, approval_hub, make_policy_engine, backend_server):
     eng = make_policy_engine(_policy_source(ApprovalDecision.ASK))

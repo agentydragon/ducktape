@@ -8,7 +8,6 @@ from adgn.mcp._shared.resources import extract_single_text_content
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
-@pytest.mark.asyncio
 @pytest.mark.requires_docker
 async def test_compositor_meta_resources_available(
     make_pg_compositor, approval_policy_reader_allow_all, backend_server

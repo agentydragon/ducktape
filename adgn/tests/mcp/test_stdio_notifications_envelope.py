@@ -6,7 +6,6 @@ import textwrap
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
-import pytest
 from tests.util.notifications import parse_system_notification_payload
 
 from adgn.agent.reducer import format_notifications_message
@@ -15,7 +14,6 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 
 
-@pytest.mark.asyncio
 async def test_stdio_child_notifications_envelope(tmp_path: Path):
     # Write a tiny stdio MCP server that emits notifications on a tool call
     server_py = tmp_path / "stdio_child_server.py"

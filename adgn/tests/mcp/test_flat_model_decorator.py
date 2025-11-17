@@ -21,7 +21,6 @@ class OutModel(BaseModel):
     note: str | None = None
 
 
-@pytest.mark.asyncio
 async def test_flat_model_infers_types_and_emits_schema():
     m = NotifyingFastMCP("decorator_test")
 
@@ -71,7 +70,6 @@ def test_flat_model_signature_exposed():
     assert (params[1].name, params[1].kind) == ("b", inspect.Parameter.KEYWORD_ONLY)
 
 
-@pytest.mark.asyncio
 async def test_flat_model_invocation_accepts_flat_kwargs():
     m = NotifyingFastMCP("decorator_call")
 
@@ -85,7 +83,6 @@ async def test_flat_model_invocation_accepts_flat_kwargs():
     assert res.structured_content == {"ok": True, "note": "hi"}
 
 
-@pytest.mark.asyncio
 async def test_flat_model_passes_context_kwarg():
     m = NotifyingFastMCP("decorator_context")
     seen: dict[str, Context] = {}

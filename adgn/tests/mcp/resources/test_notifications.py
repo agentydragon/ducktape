@@ -4,7 +4,6 @@ from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from fastmcp.server import FastMCP
 from mcp import types
-import pytest
 
 from adgn.mcp.resources.server import make_resources_server
 
@@ -26,7 +25,6 @@ class _NotifyCatcher(MessageHandler):
         self.events.append("list_changed")
 
 
-@pytest.mark.asyncio
 async def test_resources_list_changed_notification():
     # Use a minimal FastMCP as a placeholder gateway client
     gw_server = FastMCP("gw")

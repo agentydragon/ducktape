@@ -11,7 +11,6 @@ from adgn.mcp.exec.models import Exited
 from adgn.mcp.testing.exec_stubs import BwrapExecServerStub
 
 
-@pytest.mark.asyncio
 @pytest.mark.skipif(sys.platform != "linux", reason="bubblewrap is Linux-only")
 async def test_bwrap_exec_echo_inproc_linux() -> None:
     """bwrap exec (Linux sandbox) in-proc server echo test."""
