@@ -1,275 +1,270 @@
-# Scan: type: ignore and noqa Suppressions
+# Scan: Type Checker Suppression Comments
 
 ## Context
 @../shared-context.md
 
 ## Pattern Description
 
-Type checker and linter suppression comments (`# type: ignore`, `# noqa`) are often used to silence warnings without actually fixing the underlying issue. Most suppressions can be eliminated by properly typing the code.
+Type checker suppressions (`# type: ignore`, `# noqa`) silence warnings without fixing underlying issues. Most can be eliminated through proper typing, revealing and preventing bugs.
+
+**Key principle**: Every suppression should either be removed by fixing the code, or documented with a clear reason why it's necessary.
 
 ## Why Suppressions Are Problematic
 
-1. **Mask Real Bugs**: Type errors often indicate actual runtime bugs
-2. **Type Safety Holes**: Create blind spots in type coverage
-3. **Maintenance Burden**: Future refactorings miss type-checked code paths
-4. **Code Smell**: Usually indicates architectural or typing issues
+- **Mask Real Bugs**: Type errors often indicate runtime bugs
+- **Create Blind Spots**: Type checker can't help in suppressed areas
+- **Maintenance Burden**: Future refactorings miss type-checked paths
+- **Code Smell**: Usually indicate fixable typing or architectural issues
 
-## Common Patterns and Fixes
+## Common Fixable Patterns
 
-### 1. Missing Type Imports/Annotations
+### Pattern 1: Missing Type Conversion
 
-**Problem**: Function claims to return one type but actually returns another
-
+**BAD**: Suppressing return type mismatch
 ```python
-# BAD: Masking type mismatch with ignore
 async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
     return await client.responses.create(**kwargs)  # type: ignore[return-value]
 ```
 
-**Root Cause**: SDK returns `Response` but we claim to return `ResponsesResult`
+**Issue**: SDK returns `Response` but function claims to return `ResponsesResult`
 
-**Fix**: Actually convert the type
+**GOOD**: Actually convert the type
 ```python
-# GOOD: Proper conversion
 async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
     sdk_resp = await client.responses.create(**kwargs)
     return convert_sdk_response(sdk_resp)
 ```
 
-### 2. Overly Broad Parameter Types
+### Pattern 2: Overly Broad Type Annotations
 
-**Problem**: Function accepts `str | EnumType` but only needs `EnumType`
-
+**BAD**: Accepting broader types than needed
 ```python
-# BAD: Accepting strings adds validation complexity
-def to_reasoning_effort(value: ReasoningEffort | str | None) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, ReasoningEffort):
-        return value.value
-    try:
-        effort = ReasoningEffort(value)  # Validate string
-    except ValueError as exc:
-        raise ValueError(f"Invalid: {value!r}") from exc
-    return effort.value
-```
+def to_effort(value: ReasoningEffort | str | None) -> str | None:
+    # Complex validation to handle strings...
+    ...
 
-**Then Later**:
-```python
+# Later:
 payload["effort"] = effort_value  # type: ignore[typeddict-item]
 ```
 
-**Root Cause**: Return type is `str` but TypedDict expects `Literal["low", "medium", "high"]`
+**Issue**: Return type is `str` but TypedDict expects `Literal["low", "medium", "high"]`
 
-**Fix**: Narrow parameter types and return type
+**GOOD**: Narrow parameter and return types
 ```python
-# GOOD: Only accept enum, return literal type
-def to_reasoning_effort(value: ReasoningEffort | None) -> ReasoningEffortLiteral | None:
+def to_effort(value: ReasoningEffort | None) -> ReasoningEffortLiteral | None:
     if value is None:
         return None
     return value.value  # StrEnum.value is the literal type
 
-# Now this works without ignore:
+# Now works without ignore:
 payload["effort"] = effort_value
 ```
 
-### 3. Missing Type for Row-Like Objects
+### Pattern 3: Missing Type Import
 
-**Problem**: Accessing database row without proper type
-
+**BAD**: Using `object` when actual type is known
 ```python
-# BAD: Accessing row indices without type
 def _row_to_message(row: object) -> ChatMessage:
     return ChatMessage(
         id=str(row["id"]),  # type: ignore[index]
         ts=str(row["ts"]),  # type: ignore[index]
-        author=ChatAuthor(str(row["author"])),  # type: ignore[index]
     )
 ```
 
-**Root Cause**: Row type is `object` but actually is `aiosqlite.Row` which supports indexing
+**Issue**: Row is actually `aiosqlite.Row` which supports indexing
 
-**Fix**: Import and use the actual type
+**GOOD**: Import and use actual type
 ```python
-# GOOD: Proper Row type
 from aiosqlite import Row
 
 def _row_to_message(row: Row) -> ChatMessage:
     return ChatMessage(
         id=str(row["id"]),
         ts=str(row["ts"]),
-        author=ChatAuthor(str(row["author"])),
     )
 ```
 
-### 4. Accessing Private APIs
+### Pattern 4: Meta-Ignores (unused-ignore)
 
-**Problem**: Using `_private_method()` from outside class
-
+**BAD**: Suppressing the suppression
 ```python
-# BAD: Accessing private implementation
-async with self._p._open_row() as db:  # type: ignore[attr-defined]
-    ...
-```
-
-**Root Cause**: Method `_open_row()` is private but needed by external code
-
-**Fix Options**:
-1. **Make method public** if it's intentionally part of the API
-2. **Refactor to use public API** if one exists
-3. **Create a public wrapper** if needed
-
-This is an architectural decision - the `type: ignore` is a symptom of coupling to implementation details.
-
-### 5. Meta-Ignores (unused-ignore)
-
-**Problem**: `# type: ignore[unused-ignore]` means "ignore my ignore"
-
-```python
-# BAD: Meta-ignore is always suspicious
 async def post(input: PostInput) -> PostResult:  # type: ignore[unused-ignore]
     ...
 ```
 
-**Root Cause**: Someone added a type: ignore that mypy doesn't think is needed
+**Issue**: Someone added `type: ignore` that mypy doesn't think is needed
 
-**Fix**: Just remove it
+**GOOD**: Remove unnecessary suppression
 ```python
-# GOOD: Remove unnecessary suppression
 async def post(input: PostInput) -> PostResult:
     ...
 ```
 
-**Test**: Run mypy - if it passes without the ignore, the ignore was unnecessary.
+**Test**: Run mypy - if it passes without the ignore, remove it.
 
 ## Detection Strategy
 
-### Find All Suppressions
+**Goal**: Find ALL suppression comments (100% recall).
+
+**Recall/Precision**:
+- `grep "type: ignore\|noqa"` has ~100% recall, ~100% precision for finding suppressions
+- Determining if suppression is "necessary" requires code analysis (lower precision)
+
+**Recommended approach**:
+1. Run grep to find all suppression comments (100% recall)
+   ```bash
+   grep -rn "type: ignore\|noqa" --include="*.py" .
+   ```
+2. Group by file and suppression type to identify patterns
+3. For each suppression:
+   - Read surrounding code to understand the error
+   - Determine if fixable (missing import, wrong type, etc.)
+   - Try removing suppression and running type checker
+   - Either fix underlying issue or document why needed
+4. Verification strategy:
+   - **Potentially fixable**: Deep investigation (check library types, imports, conversions)
+   - **Intentional (AST visitor, side-effect imports)**: Verify legitimacy, keep with clear comment
+   - **Private API access**: Architectural decision, may need refactoring
+
+**Tool characteristics**:
+- Finding comments: 100% recall, 100% precision
+- Determining "necessary": Requires verification
+- Some patterns have clear fixes (missing imports, type conversions)
+- Others require architectural changes (private API access)
+
+## Verification Process
+
+For each suppression found:
+
+1. **Read context**: Understand what error is being suppressed
+2. **Research the fix**:
+   - Check if type conversion function exists
+   - Check if proper type can be imported
+   - Check if parameter types can be narrowed
+   - Check library version (may have better types now)
+3. **Test removal**: Comment out suppression and run type checker
+4. **Fix or document**:
+   - If fixable: Fix and remove suppression
+   - If needed: Add detailed comment explaining why
+
+## Common Legitimate Suppressions
+
+Some suppressions are necessary and should be kept (with documentation):
+
+### AST Visitor Pattern
+```python
+class Visitor(ast.NodeVisitor):
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        # Method name must match AST node type per visitor pattern
+        ...
+```
+
+### Side-Effect Imports
+```python
+from . import (
+    detector_a,  # noqa: F401  - imported for registration side effect
+    detector_b,  # noqa: F401
+)
+```
+
+### Private API (with TODO)
+```python
+async with self._p._open_row() as db:  # type: ignore[attr-defined]
+    # TODO: Make _open_row() public or use public API
+    ...
+```
+
+### Library Limitations (with version note)
+```python
+result = repo.write_tree()  # type: ignore[attr-defined]
+# pygit2 1.14 missing type stubs for write_tree()
+# TODO: Remove after upgrading to pygit2 1.16+
+```
+
+## Priority for Fixing
+
+**High Priority** (likely bugs):
+- `type: ignore[return-value]` - returning wrong type
+- `type: ignore[arg-type]` - passing wrong argument
+- `type: ignore[assignment]` - incompatible assignment
+
+**Medium Priority** (type safety):
+- `type: ignore[index]` - missing indexing support
+- `type: ignore[attr-defined]` - missing attribute
+- `type: ignore[typeddict-item]` - TypedDict field mismatch
+
+**Low Priority** (cleanup):
+- `type: ignore[unused-ignore]` - meta-ignore (often removable)
+- `noqa` without code - make specific
+
+## Grep Patterns
+
+Find all suppressions:
 ```bash
 # Count total
 grep -r "type: ignore\|noqa" --include="*.py" . | wc -l
 
-# Top files with most suppressions
-grep -r "type: ignore\|noqa" --include="*.py" . | cut -d: -f1 | sort | uniq -c | sort -rn | head -20
+# Group by file (find files with most suppressions)
+grep -r "type: ignore\|noqa" --include="*.py" . | cut -d: -f1 | sort | uniq -c | sort -rn
 
 # Group by suppression type
 grep -ro "type: ignore\[[^]]*\]" --include="*.py" . | cut -d: -f2 | sort | uniq -c | sort -rn
 ```
 
-### Verification Process
+Find specific types:
+```bash
+# All return-value ignores
+rg --type py "type: ignore\[return-value\]"
 
-For each suppression found:
+# All attribute access ignores
+rg --type py "type: ignore\[attr-defined\]"
 
-1. **Read the code context**: Understand what error is being suppressed
-2. **Understand the type error**: What is mypy/ruff complaining about?
-3. **Research the fix**: Is there a proper type annotation that would fix this?
-4. **Test removal**: Comment out the ignore and run type checker
-5. **Fix or document**: Either fix the underlying issue or add detailed comment explaining why suppression is needed
-
-## Common Legitimate Suppressions
-
-### Third-Party Library Limitations
-```python
-# type: ignore[attr-defined] - pygit2 1.14 missing type stubs for index.write_tree()
-# TODO: Remove after upgrading to pygit2 1.16+ with better types
-result = repo.index.write_tree()
+# All meta-ignores
+rg --type py "type: ignore\[unused-ignore\]"
 ```
-
-### Intentional Dynamic Behavior
-```python
-# type: ignore[misc] - Intentionally dynamic: setattr used for metaprogramming
-setattr(obj, dynamic_field_name, value)
-```
-
-### Gradual Migration
-```python
-# type: ignore[arg-type] - Legacy interface, refactoring to typed version in progress
-# TODO(#1234): Remove after migrating all callers to new typed API
-process_untyped_data(legacy_data)
-```
-
-## Fix Priority
-
-1. **High Priority** (likely bugs):
-   - `type: ignore[return-value]` - function returning wrong type
-   - `type: ignore[arg-type]` - passing wrong argument type
-   - `type: ignore[assignment]` - assigning incompatible type
-
-2. **Medium Priority** (type safety holes):
-   - `type: ignore[index]` - missing indexing support
-   - `type: ignore[attr-defined]` - missing attribute/method
-   - `type: ignore[typeddict-item]` - TypedDict field mismatch
-
-3. **Low Priority** (style/meta):
-   - `type: ignore[unused-ignore]` - meta-ignore (often just removable)
-   - `noqa` without specific code - too broad, should be specific
 
 ## Validation
 
-After removing suppressions:
+After removing suppressions, verify:
 
 ```bash
-# Run type checker
+# Type check passes
 mypy --strict path/to/file.py
 
-# Run linter
+# Linter passes
 ruff check path/to/file.py
 
-# Ensure tests pass
+# Tests still pass
 pytest path/to/tests/
 ```
 
-## Example Session
+## Example Fix Session
 
 ```bash
-# Find all type: ignore in a module
-$ grep -n "type: ignore" adgn/src/adgn/openai_utils/retry.py
+# Find suppressions in module
+$ rg -n "type: ignore" openai_utils/retry.py
 62:    return await client.responses.create(**kwargs)  # type: ignore[return-value]
 
-# Investigate the error
-$ mypy adgn/src/adgn/openai_utils/retry.py
+# Check what error it's suppressing
+$ mypy openai_utils/retry.py
 error: Incompatible return value type (got "Response", expected "ResponsesResult")
 
-# Research: Found convert_sdk_response() function in model.py
-# Fix: Call the conversion function
+# Research: Found convert_sdk_response() in model.py
+# Fix: Call conversion function
 $ git diff
 -    return await client.responses.create(**kwargs)  # type: ignore[return-value]
 +    sdk_resp = await client.responses.create(**kwargs)
 +    return convert_sdk_response(sdk_resp)
 
-# Validate fix
-$ mypy adgn/src/adgn/openai_utils/retry.py
+# Validate
+$ mypy openai_utils/retry.py
 Success: no issues found
 ```
 
-## Patterns to Watch For
-
-### Pattern: Import Missing
-- **Symptom**: `type: ignore[name-defined]`
-- **Fix**: Add missing import
-
-### Pattern: Forward Reference
-- **Symptom**: `type: ignore[name-defined]` with class used before definition
-- **Fix**: Use string literal `"ClassName"` or `from __future__ import annotations`
-
-### Pattern: Circular Import
-- **Symptom**: `type: ignore[attr-defined]` when importing from module that imports back
-- **Fix**: Use `TYPE_CHECKING` block:
-  ```python
-  from typing import TYPE_CHECKING
-
-  if TYPE_CHECKING:
-      from .other_module import SomeType
-  ```
-
-### Pattern: Protocol Violation
-- **Symptom**: `type: ignore[misc]` when implementing protocol incorrectly
-- **Fix**: Properly implement all protocol methods with correct signatures
-
 ## Summary
 
-**Golden Rule**: Every `type: ignore` or `noqa` should either be:
+**Golden Rule**: Every suppression should either be:
 1. **Removed** by fixing the underlying issue, or
-2. **Documented** with a detailed comment explaining why it's necessary
+2. **Documented** with a comment explaining why it's necessary
 
-If you can't explain in one sentence why the suppression is needed, it probably shouldn't exist.
+If you can't explain in one sentence why the suppression is needed, investigate deeper - it's likely fixable.
