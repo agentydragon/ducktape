@@ -63,10 +63,13 @@ def _build_arguments(
 ) -> dict[str, object] | None:
     if input_model is not None and not isinstance(payload, input_model):
         raise TypeError(f"{tool_name} expects {input_model.__name__}, got {type(payload).__name__}")
-    data = payload.model_dump(exclude_none=exclude_none) if isinstance(payload, BaseModel) else payload
+    # model_dump() returns dict[str, Any] which is compatible with dict[str, object]
+    data: dict[str, object] = (
+        payload.model_dump(exclude_none=exclude_none) if isinstance(payload, BaseModel) else payload
+    )
     if wrapper_field:
-        return {wrapper_field: data}  # type: ignore[no-any-return]
-    return data  # type: ignore[no-any-return]
+        return {wrapper_field: data}
+    return data
 
 
 async def call_tool_typed(
@@ -208,15 +211,19 @@ class TypedClient:
 
         Requires a server created via FastMCP. Uses server._tool_manager.list_tools()
         and reads each tool.fn_metadata.arg_model/output_model.
+
+        Note: This method intentionally accesses private attributes of FastMCP
+        objects for test introspection. These are not public APIs but are needed
+        to extract type information for creating typed test stubs.
         """
         # Access the internal tool manager and fetch local tools synchronously
         try:
-            tm = server._tool_manager  # type: ignore[attr-defined]
+            tm = server._tool_manager
         except AttributeError as exc:
             raise RuntimeError("Server does not expose _tool_manager") from exc
         # Prefer local tools; mounted tools aren't needed for typed tests here
         try:
-            tools_by_name = tm._tools  # type: ignore[attr-defined]
+            tools_by_name = tm._tools
         except AttributeError as exc:
             raise RuntimeError("Server tool manager does not expose _tools") from exc
         tools = list(tools_by_name.values())
@@ -224,22 +231,22 @@ class TypedClient:
         client = cls(session, exclude_none=exclude_none)
         for t in tools:
             try:
-                fm = t.fn_metadata  # type: ignore[attr-defined]
+                fm = t.fn_metadata
             except AttributeError:
                 fm = None
             try:
-                fn = t.fn  # type: ignore[attr-defined]
+                fn = t.fn
             except AttributeError:
                 fn = None
             hinted_input = None
             hinted_output = None
             if fn is not None:
                 try:
-                    hinted_input = fn._mcp_flat_input_model  # type: ignore[attr-defined]
+                    hinted_input = fn._mcp_flat_input_model
                 except AttributeError:
                     hinted_input = None
                 try:
-                    hinted_output = fn._mcp_flat_output_model  # type: ignore[attr-defined]
+                    hinted_output = fn._mcp_flat_output_model
                 except AttributeError:
                     hinted_output = None
             if fm is None:
@@ -249,8 +256,8 @@ class TypedClient:
                 if not (isinstance(arg_model, type) and issubclass(arg_model, BaseModel)):
                     continue
             else:
-                arg_model = fm.arg_model  # type: ignore[attr-defined]
-                out_model = fm.output_model  # type: ignore[attr-defined]
+                arg_model = fm.arg_model
+                out_model = fm.output_model
                 if out_model is None or arg_model is None:
                     continue
 
@@ -263,10 +270,10 @@ class TypedClient:
                 input_type = None
 
             try:
-                tool_key = t.key  # type: ignore[attr-defined]
+                tool_key = t.key
             except AttributeError:
                 try:
-                    tool_key = t.name  # type: ignore[attr-defined]
+                    tool_key = t.name
                 except AttributeError:
                     tool_key = None
             if not isinstance(tool_key, str) or not tool_key:

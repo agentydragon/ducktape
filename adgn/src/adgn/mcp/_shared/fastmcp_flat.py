@@ -194,7 +194,7 @@ def _build_flat_wrapper(
         async_wrapper._mcp_flat_input_model = wrapper._mcp_flat_input_model  # type: ignore[attr-defined]
         async_wrapper._mcp_flat_output_model = wrapper._mcp_flat_output_model  # type: ignore[attr-defined]
         async_wrapper.__signature__ = wrapper.__signature__  # type: ignore[attr-defined]
-        return async_wrapper  # type: ignore[return-value]
+        return async_wrapper
 
     # For sync functions, also create a proper function wrapper (not just the FlatWrapper instance)
     # This is required for fastmcp 2.13+ which validates that @tool receives a real function
@@ -303,6 +303,8 @@ def _flat_model_decorator(
 
 
 class FlatModelToolMixin:
+    """Mixin that extends FastMCP.tool() with flat-model support."""
+
     class _ToolOpts(BaseModel):
         name: str | None = None
         title: str | None = None
@@ -311,7 +313,7 @@ class FlatModelToolMixin:
         structured_output: bool = True
         model_config = ConfigDict(extra="ignore")
 
-    def tool(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+    def tool(self, *args: Any, **kwargs: Any):  # type: ignore[misc]
         """Wrapper around FastMCP.tool with optional flat-model support.
 
         Uses a Pydantic model to validate/normalize known kwargs; unknown kwargs are

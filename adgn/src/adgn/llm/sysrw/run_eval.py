@@ -120,7 +120,7 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                 ccr = CCRSample(
                     correlation_id=rec.get("correlation_id"),
                     timestamp=rec.get("timestamp"),
-                    anthropic_request=CCRRequest.model_validate(rec["anthropic_request"]),  # type: ignore[arg-type]
+                    anthropic_request=CCRRequest.model_validate(rec["anthropic_request"]),
                 )
                 items.append(ccr)
                 continue
@@ -130,7 +130,7 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                 crush = CrushSample(
                     correlation_id=rec.get("correlation_id"),
                     timestamp=rec.get("timestamp"),
-                    oai_request=payload,  # type: ignore[arg-type]
+                    oai_request=payload,
                     wirelog=rec.get("wirelog"),
                 )
                 items.append(crush)
@@ -321,7 +321,7 @@ def anthro_to_openai_messages(
             content_blocks: list[ContentBlockParam] = []
             for part in content:
                 if isinstance(part, dict):
-                    content_blocks.append(part)  # type: ignore[arg-type]
+                    content_blocks.append(part)
                 else:
                     continue
 
@@ -843,7 +843,7 @@ async def run_eval(
 
     scores: list[float] = []
     # Secondary metrics: tooling usage
-    tool_stats = {
+    tool_stats: dict[str, Any] = {
         "total_samples": 0,
         "text_only": 0,
         "with_tools": 0,
@@ -948,7 +948,7 @@ async def run_eval(
                     tool_stats["text_only"] = _as_int(tool_stats.get("text_only")) + 1
                 else:
                     tool_stats["with_tools"] = _as_int(tool_stats.get("with_tools")) + 1
-                    fc_top = cast(dict[str, int], tool_stats["function_counts"])  # type: ignore[index]
+                    fc_top = cast(dict[str, int], tool_stats["function_counts"])
                     for tc in tcs:
                         fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
                         fc_top[fn] = fc_top.get(fn, 0) + 1
@@ -960,7 +960,7 @@ async def run_eval(
                         src_stats["text_only"] = _as_int(src_stats.get("text_only")) + 1
                     else:
                         src_stats["with_tools"] = _as_int(src_stats.get("with_tools")) + 1
-                        ts_fc = cast(dict[str, int], src_stats["function_counts"])  # type: ignore[index]
+                        ts_fc = cast(dict[str, int], src_stats["function_counts"])
                         for tc in tcs:
                             fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
                             ts_fc[fn] = ts_fc.get(fn, 0) + 1
@@ -968,11 +968,11 @@ async def run_eval(
                 g_obj = EvalGradeRecord.model_validate(grade_rec)
                 g_out.write(json.dumps(g_obj.model_dump(), sort_keys=True) + "\n")
                 try:
-                    parsed = parse_grade_from_responses(grade_rec["response"])  # type: ignore[index]
+                    parsed = parse_grade_from_responses(grade_rec["response"])
                     score = float(parsed.get("score", 0))
                     scores.append(score)
                     if src in scores_by_source:
-                        scores_by_source[src].append(score)  # type: ignore[index]
+                        scores_by_source[src].append(score)
                     counters["processed"] += 1
                     summary_data = compute_and_write_summary(False)
                     print(
