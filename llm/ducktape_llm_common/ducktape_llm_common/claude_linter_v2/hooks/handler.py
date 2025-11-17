@@ -13,6 +13,7 @@ from ..check_python import check_python_file
 from ..checkers_v2 import filter_violations
 from ..cli import close_desktop_notification, send_desktop_notification
 from ..config import ConfigLoader
+from ..config.clean_models import ModularConfig
 from ..config.models import (
     AutofixCategory,
     NotificationHookConfig,
@@ -612,7 +613,7 @@ class HookHandler:
         file_path = request.tool_input.file_path or ""
         return file_path.endswith(".py") and bool(request.tool_input.content)
 
-    def _check_python_violations(self, request: PreToolUseRequest, config: Any) -> list[Violation]:
+    def _check_python_violations(self, request: PreToolUseRequest, config: ModularConfig) -> list[Violation]:
         """Check for Python AST and ruff violations."""
         file_path = request.tool_input.file_path
         content = request.tool_input.content
@@ -628,7 +629,7 @@ class HookHandler:
             critical_only=True,  # Pre-hook only checks critical violations
         )
 
-    def _try_autofix(self, request: PostToolUseRequest, config: Any) -> str | None:
+    def _try_autofix(self, request: PostToolUseRequest, config: ModularConfig) -> str | None:
         """Try to apply autofix and return message if successful."""
 
         hook_config = config.hooks.get("post")

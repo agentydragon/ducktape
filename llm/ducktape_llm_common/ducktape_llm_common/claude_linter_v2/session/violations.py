@@ -2,10 +2,13 @@
 
 from datetime import datetime
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..config.models import Violation
 from ..types import SessionID
+
+if TYPE_CHECKING:
+    from .manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ViolationTracker:
     """Tracks violations found during a session for quality gate."""
 
-    def __init__(self, session_manager: Any) -> None:
+    def __init__(self, session_manager: SessionManager) -> None:
         self.session_manager = session_manager
         self._violations: dict[
             SessionID, dict[tuple[str, int, str], dict[str, Any]]
