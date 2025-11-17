@@ -18,7 +18,6 @@ from ..types import Area, Habit, HabitStatus, Status
 class TestHabitifyClient:
     """Tests for the Habitify client using async methods only."""
 
-    @pytest.mark.asyncio
     async def test_get_habits(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("get_habits.yaml")
 
@@ -30,7 +29,6 @@ class TestHabitifyClient:
             assert habits[0].id == "-Lo9NTLRX3aCxg-PjN25"
             assert not habits[0].archived
 
-    @pytest.mark.asyncio
     async def test_get_habit(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("get_habit_by_id.yaml")
 
@@ -42,7 +40,6 @@ class TestHabitifyClient:
             assert habit.id == "-Lo9NTLRX3aCxg-PjN25"
             assert not habit.archived
 
-    @pytest.mark.asyncio
     async def test_get_habit_not_found(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("get_habit_invalid_id.yaml", status_code=500)
         mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
@@ -56,7 +53,6 @@ class TestHabitifyClient:
             mock_get.assert_called_once_with("/habits/invalid-id-that-does-not-exist")
             assert "habit does not exist" in str(excinfo.value).lower()
 
-    @pytest.mark.asyncio
     async def test_get_areas(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("get_areas.yaml")
 
@@ -68,7 +64,6 @@ class TestHabitifyClient:
             assert areas[0].id == "-LrYlUBnzjyceYei_k5Z"
             assert areas[0].name == "H****h"
 
-    @pytest.mark.asyncio
     async def test_get_journal(self, client, mock_async_response, patch_client_method):
         today = datetime.date.today().isoformat()
         mock_resp = mock_async_response("get_journal.yaml")
@@ -85,7 +80,6 @@ class TestHabitifyClient:
             assert params["order_by"] == "priority"
             assert_that(habits, only_contains(instance_of(Habit)))
 
-    @pytest.mark.asyncio
     async def test_get_journal_filtered(self, client, mock_async_response, patch_client_method):
         today = datetime.date.today().isoformat()
         mock_resp = mock_async_response("get_journal_filtered.yaml")
@@ -102,7 +96,6 @@ class TestHabitifyClient:
             assert params["status"] == "none"
             assert params["time_of_day"] == "morning,evening"
 
-    @pytest.mark.asyncio
     async def test_check_habit_status(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("get_habit_status.yaml")
 
@@ -118,7 +111,6 @@ class TestHabitifyClient:
             assert_that(status, instance_of(HabitStatus))
             assert status.status == Status.COMPLETED
 
-    @pytest.mark.asyncio
     async def test_check_habit_status_invalid_date(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("get_habit_status_(invalid_date_format).yaml", status_code=500)
         mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
@@ -132,7 +124,6 @@ class TestHabitifyClient:
             mock_get.assert_called_once()
             assert "date format" in str(excinfo.value).lower()
 
-    @pytest.mark.asyncio
     async def test_check_habit_status_range(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("get_habit_status.yaml")
         requested_dates = []
@@ -152,7 +143,6 @@ class TestHabitifyClient:
             dates = [status.date for status in statuses]
             assert dates == sorted(dates)
 
-    @pytest.mark.asyncio
     async def test_set_habit_status(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("set_habit_status_(completed).yaml")
 
@@ -179,7 +169,6 @@ class TestHabitifyClient:
                 status, has_properties(status=Status.COMPLETED, note="Test completed via async unit test", value=1.0)
             )
 
-    @pytest.mark.asyncio
     async def test_set_habit_status_skipped(self, client, mock_async_response, patch_client_method):
         mock_resp = mock_async_response("set_habit_status_(skipped).yaml")
 

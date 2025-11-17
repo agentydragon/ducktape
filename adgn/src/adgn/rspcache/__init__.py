@@ -110,9 +110,7 @@ def make_key_from_body(body: dict[str, Any]) -> str:
     keyed = {
         k: body[k] for k in sorted(body.keys()) if k not in {"request_id", "request_timestamp", "nonce", "__meta__"}
     }
-    digest = hashlib.sha256()
-    digest.update(canonicaljson.encode_canonical_json(keyed))
-    return digest.hexdigest()
+    return hashlib.sha256(canonicaljson.encode_canonical_json(keyed)).hexdigest()
 
 
 def _extract_frames(buffer: str) -> tuple[str, list[dict[str, Any]]]:
