@@ -37,7 +37,7 @@ def process(data: dict[str, Any] | str) -> str:
 **Action Items:**
 1. ✅ Review `adgn/src/adgn/openai_utils/` for Any parameters (COMPLETED)
 2. Review `adgn/src/adgn/rspcache/` for Any parameters
-3. Review `llm/ducktape_llm_common/` for Any parameters
+3. ✅ Review `llm/ducktape_llm_common/` for Any parameters (COMPLETED)
 
 **Priority:** Medium
 **Estimated Instances:** 30+ files
