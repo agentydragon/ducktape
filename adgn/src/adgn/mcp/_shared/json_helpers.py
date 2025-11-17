@@ -35,13 +35,12 @@ async def read_line_json_dict_async(
         return None
 
 
-def read_line_json_dict(inp: IO[bytes] | None, timeout: float | None = None) -> dict[str, Any] | None:
+def read_line_json_dict(inp: IO[bytes], timeout: float | None = None) -> dict[str, Any] | None:
     """Sync read a line of JSON from a stream and return as dict or None.
 
     Simplified sync version for test/subprocess contexts.
     Note: timeout is ignored in sync version.
     """
-    assert inp is not None
     line = inp.readline()
     if not line:
         return None
@@ -62,9 +61,8 @@ async def send_line_json_async(writer: asyncio.StreamWriter, payload: dict[str, 
     await writer.drain()
 
 
-def send_line_json(out: IO[bytes] | None, payload: dict[str, Any]) -> None:
+def send_line_json(out: IO[bytes], payload: dict[str, Any]) -> None:
     """Sync send a JSON payload as a line to a stream."""
-    assert out is not None
     line = json.dumps(payload).encode() + b"\n"
     out.write(line)
     out.flush()

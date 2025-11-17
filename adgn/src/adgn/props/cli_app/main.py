@@ -718,7 +718,6 @@ async def _exec_agent(
     submit_state = CriticSubmitState() if structured else None
     if structured and submit_state is not None:
         await attach_critic_submit(comp, submit_state)
-        assert submit_state is not None
 
         def _ready_state() -> bool:
             return (submit_state.result is not None) or (submit_state.error is not None)
@@ -740,13 +739,11 @@ async def _exec_agent(
         elif not final_only and (result.text or ""):
             print(result.text)
         # Persist structured critique as JSON when available
-        if structured and submit_state is not None:
-            assert submit_state is not None
-            if (submit_state.error is None) and (submit_state.result is not None):
-                out = base_dir / "critique.json"
-                s = submit_state.result.model_dump_json(indent=2)
-                out.write_text(s, encoding="utf-8")
-                print(f"Saved critique JSON: {out}")
+        if structured and submit_state is not None and submit_state.error is None and submit_state.result is not None:
+            out = base_dir / "critique.json"
+            s = submit_state.result.model_dump_json(indent=2)
+            out.write_text(s, encoding="utf-8")
+            print(f"Saved critique JSON: {out}")
 
 
 # --- Unified run command (structured/freeform; preset/prompt-file/text) ---

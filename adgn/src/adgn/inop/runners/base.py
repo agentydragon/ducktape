@@ -106,9 +106,9 @@ class AgentRunner(ABC):
                     *cmd, cwd=target_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
                 _stdout_b, _stderr_b = await proc.communicate()
-                rc = proc.returncode
-                assert rc is not None
-                exit_code = rc
+                # returncode is guaranteed non-None after communicate() completes per asyncio docs
+                assert proc.returncode is not None, "returncode should be set after communicate()"
+                exit_code = proc.returncode
                 stderr = _stderr_b.decode() if _stderr_b else ""
 
             if exit_code != 0:

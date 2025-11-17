@@ -54,10 +54,7 @@ class AgentRegistry:
         row = await self.persistence.get_agent(agent_id)
         if row is None:
             raise KeyError(f"agent not found: {agent_id}")
-        await self.create(agent_id, row.mcp_config, with_ui=with_ui)
-        c2 = self.get(agent_id)
-        assert c2 is not None
-        return c2
+        return await self.create(agent_id, row.mcp_config, with_ui=with_ui)
 
     def remove(self, agent_id: str) -> None:
         self._items.pop(agent_id, None)

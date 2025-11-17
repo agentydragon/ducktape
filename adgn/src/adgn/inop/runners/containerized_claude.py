@@ -590,7 +590,6 @@ class TaskClaude:
         if self._container:
             try:
                 c = self._container
-                assert c is not None
                 c.remove(force=True)
             except Exception as e:
                 cid = "<none>"
