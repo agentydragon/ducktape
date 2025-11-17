@@ -59,3 +59,16 @@ def mock_async_response(load_reference_data):
         return mock_resp
 
     return _create_mock_async_response
+
+
+@pytest.fixture
+def patch_client_method(client):
+    """Fixture that patches client HTTP methods with consistent API."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _patch(method_name, return_value=None, side_effect=None):
+        with patch.object(client.client, method_name, return_value=return_value, side_effect=side_effect) as mock_method:
+            yield mock_method
+
+    return _patch
