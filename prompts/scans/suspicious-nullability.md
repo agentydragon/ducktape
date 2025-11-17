@@ -29,6 +29,113 @@ Nullability (`T | None`) that is misused, propagated through too many layers, or
 
 **This is architectural work, not just annotation fixes.**
 
+## Core Principle: Optional at ONE Branch Point, Not Infecting 500 Inner Points
+
+**The Goal**: `Maybe<OneBigOptionalModule>` where module contains `{Foo, Bar, Baz}`
+- Optionality exists at **ONE** outer layer
+- Once you unwrap the Maybe, everything inside is non-optional
+- Handle None **once** at the branch point, then work with non-None values downstream
+
+**The Problem**: `OptionalModule` with `Maybe<Foo>, Maybe<Bar>, Maybe<Baz>`
+- Optionality "infects" every single field
+- Every function touching Foo must handle None
+- Every function touching Bar must handle None
+- Every function touching Baz must handle None
+- None checks scattered across 500 different points in the codebase
+
+### Haskell Analogy
+
+```haskell
+-- GOOD: Optional at one branch point
+data Config = Config { host :: String, port :: Int, database :: String }
+
+loadConfig :: IO (Maybe Config)
+
+useConfig :: Config -> IO ()
+useConfig cfg = connectToDB (host cfg) (port cfg) (database cfg)
+  -- host, port, database are all non-Maybe!
+
+main = do
+  maybeConfig <- loadConfig
+  case maybeConfig of
+    Just config -> useConfig config  -- Handle Maybe ONCE
+    Nothing -> putStrLn "No config"
+
+-- BAD: Infecting inner points
+data BadConfig = BadConfig
+  { host :: Maybe String
+  , port :: Maybe Int
+  , database :: Maybe String
+  }
+
+useBadConfig :: BadConfig -> IO ()
+useBadConfig cfg =
+  case (host cfg, port cfg, database cfg) of  -- None checks everywhere!
+    (Just h, Just p, Just d) -> connectToDB h p d
+    _ -> error "Missing config"
+```
+
+### Python Translation
+
+```python
+# GOOD: Optional at ONE branch point
+class DatabaseConfig:
+    host: str       # Non-optional!
+    port: int       # Non-optional!
+    database: str   # Non-optional!
+
+def load_config() -> DatabaseConfig | None:
+    """Returns None if config file missing, otherwise complete config."""
+    ...
+
+def connect_to_db(config: DatabaseConfig) -> Connection:
+    # Zero None checks here! config.host, config.port, config.database all guaranteed non-None
+    return Connection(config.host, config.port, config.database)
+
+# Usage: Handle None ONCE
+config = load_config()
+if config is not None:
+    conn = connect_to_db(config)
+    # 500 downstream functions work with non-None values
+    process_data(conn, config.host)
+    validate_schema(conn, config.database)
+    # ... no None checks needed in any of these
+
+
+# BAD: Infecting 500 inner points
+class BadDatabaseConfig:
+    host: str | None
+    port: int | None
+    database: str | None
+
+def connect_to_db_bad(config: BadDatabaseConfig) -> Connection:
+    # None infection spreads here
+    if config.host is None or config.port is None or config.database is None:
+        raise ValueError("Missing config")
+    return Connection(config.host, config.port, config.database)
+
+def process_data_bad(conn: Connection, host: str | None) -> None:
+    # None infection spreads to every function!
+    if host is None:
+        raise ValueError("Missing host")
+    ...
+
+def validate_schema_bad(conn: Connection, database: str | None) -> None:
+    # None infection spreads to every function!
+    if database is None:
+        raise ValueError("Missing database")
+    ...
+
+# Usage: None checks at 500+ different points
+config = load_bad_config()
+conn = connect_to_db_bad(config)  # None check #1
+process_data_bad(conn, config.host)  # None check #2
+validate_schema_bad(conn, config.database)  # None check #3
+# ... 497 more None checks scattered across the codebase
+```
+
+**The fix**: Restructure so optionality is handled at the boundary (loading the config), then everything downstream works with complete, non-None values.
+
 ### Example: Before (Wrong Approach)
 
 ```python
