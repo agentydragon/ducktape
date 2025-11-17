@@ -500,6 +500,41 @@ class CacheEntry(BaseModel):
     key: str       # OK: CacheEntry.key is clear
 ```
 
+### ✓ Module context provides clarity
+```python
+# File: kubernetes_client.py
+
+# GOOD: Module name provides context, avoid overly long Java-style names
+class Config(BaseModel):  # Clear it's KubernetesClientConfig from module context
+    endpoint: str
+    timeout: int
+
+class Client:  # Clear it's KubernetesClient from module context
+    def __init__(self, config: Config):
+        ...
+
+# BAD: Redundantly long when module already provides context
+class KubernetesClientConfig(BaseModel):  # Redundant! File is already kubernetes_client.py
+    ...
+
+class KubernetesClient:  # Redundant!
+    ...
+
+
+# File: cache/redis.py
+
+# GOOD: Short names when module provides context
+class RedisCache:  # Or just Cache if module is cache/redis.py
+    ...
+
+# BAD: Overly specific when import already clarifies
+from cache.redis import RedisDistributedInMemoryCache  # Redundant!
+# vs.
+from cache.redis import Cache  # Clear from import path
+```
+
+**Principle**: Leverage the import path and module name to avoid redundantly long class names. When you import `from kubernetes_client import Config`, the context is clear. Avoid Java-style `KubernetesClientConfigurationSettings` when `Config` suffices given the module context.
+
 ### ✓ Single entity of type in scope
 ```python
 def process_task(task: Task, cfg: OptimizerConfig):  # OK: only one config

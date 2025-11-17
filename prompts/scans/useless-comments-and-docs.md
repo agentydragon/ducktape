@@ -1,21 +1,29 @@
-# Scan: Useless Comments
+# Scan: Useless Comments and Documentation
 
 ## Context
 @../shared-context.md
 
 ## Core Principle
 
-**Comments should add value beyond what the code itself expresses.** A comment is useless if it:
+**Comments and documentation should add value beyond what the code itself expresses.** This applies to:
+- Inline comments (`# ...`)
+- Block comments (`# ---- Section ----`)
+- Docstrings (`"""..."""`)
+- Type hints and annotations (should be accurate, not duplicated in docs)
+
+A comment or docstring is useless if it:
 - Duplicates information already clear from code structure (types, decorators, names)
-- States the obvious ("increment counter" for `counter += 1`)
+- States the obvious ("increment counter" for `counter += 1`, "Validate config" for `validate_config()`)
 - Is outdated or contradicts the code
 - Uses vague language that doesn't clarify anything
 
-**Good comments explain WHY, not WHAT.** The code already shows what it does.
+**Good documentation explains WHY, not WHAT.** The code already shows what it does.
 
 ## Overview
 
-Python code should be self-documenting through clear naming and structure. Comments are valuable only when they provide context, rationale, or non-obvious information that cannot be expressed in code.
+Python code should be self-documenting through clear naming and structure. Documentation is valuable only when it provides context, rationale, or non-obvious information that cannot be expressed in code.
+
+This scan targets both **comments** and **docstrings** - the same principles apply to both.
 
 ---
 
@@ -38,9 +46,20 @@ async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
 def process_user(user: User):  # user is a User object
     ...
 
-# BAD: Comment duplicates function name
+# BAD: Docstring duplicates function name
 def validate_config(config: Config) -> bool:
-    """Validate config."""  # Obvious from function name!
+    """Validate config."""  # Useless! Function name already says this
+    ...
+
+# BAD: Docstring duplicates parameter types
+def process_user(user: User, admin: bool = False) -> None:
+    """Process user.
+
+    Args:
+        user: User object to process
+        admin: Boolean flag for admin privileges
+    """
+    # Type annotations already document types! Docs should explain semantics, not types
     ...
 ```
 
@@ -57,13 +76,25 @@ async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
     """
     ...
 
-# GOOD: Explains non-obvious validation logic
+# GOOD: Docstring explains non-obvious validation logic and cross-field constraints
 def validate_config(config: Config) -> bool:
     """Validate config structure and cross-field constraints.
 
     Returns False if optimizer_type="adam" but adam_beta1 is missing,
     or if learning_rate is negative. See docs/config-schema.md for full rules.
     """
+    ...
+
+# GOOD: Docstring explains semantics beyond types
+def process_user(user: User, admin: bool = False) -> None:
+    """Update user's last_seen timestamp and log the access.
+
+    Args:
+        user: User to process. Must have valid session (raises if session expired).
+        admin: If True, skip rate limiting and audit log the admin access.
+              Only set this when processing admin console requests.
+    """
+    # This explains WHAT happens (side effects) and WHY parameters matter (semantics)
     ...
 ```
 
