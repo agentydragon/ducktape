@@ -2,7 +2,6 @@ from http import HTTPStatus
 import re
 
 from httpx import AsyncClient
-import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,7 +22,6 @@ async def _login(client: AsyncClient) -> str:
     return response.cookies["admin_session"]
 
 
-@pytest.mark.asyncio
 async def test_list_keys(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     session = await _login(client)
     response = await client.get("/admin/keys/", cookies={"admin_session": session})
@@ -32,7 +30,6 @@ async def test_list_keys(client: AsyncClient, db_session: AsyncSession, test_aut
     assert test_auth_key.key_value in response.text
 
 
-@pytest.mark.asyncio
 async def test_create_key(client: AsyncClient, db_session: AsyncSession):
     session = await _login(client)
     response = await client.get("/admin/keys/new", cookies={"admin_session": session})
@@ -49,7 +46,6 @@ async def test_create_key(client: AsyncClient, db_session: AsyncSession):
     assert count_after == count_before + 1
 
 
-@pytest.mark.asyncio
 async def test_revoke_key(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
     session = await _login(client)
     response = await client.get("/admin/keys/", cookies={"admin_session": session})

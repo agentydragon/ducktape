@@ -1,19 +1,15 @@
-import pytest
-
 from gatelet.server.endpoints import activitywatch
 from gatelet.server.tests import activitywatch_sample as sample
 
 EPS = 0.01
 
 
-@pytest.mark.asyncio
 async def test_fetch_recent_activity_disabled(monkeypatch):
     monkeypatch.setattr(activitywatch.settings.activitywatch, "enabled", False)
     result = await activitywatch.fetch_recent_activity()
     assert result is None
 
 
-@pytest.mark.asyncio
 async def test_fetch_recent_activity(monkeypatch):
     class StubClient:
         def connect(self):

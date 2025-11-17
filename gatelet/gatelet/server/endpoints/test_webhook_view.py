@@ -5,7 +5,6 @@ import re
 
 from hamcrest import all_of, assert_that, contains_string, is_not
 from httpx import AsyncClient
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.models import WebhookIntegration, WebhookPayload
@@ -30,7 +29,6 @@ async def _admin_login(client: AsyncClient) -> str:
 templates.env.globals.update({"max": max, "min": min})
 
 
-@pytest.mark.asyncio
 async def test_list_all_payloads_key_auth(client: AsyncClient, db_session: AsyncSession, test_auth_key, monkeypatch):
     """Test listing all payloads with key path authentication."""
     # Create test integration and payloads
@@ -69,7 +67,6 @@ async def test_list_all_payloads_key_auth(client: AsyncClient, db_session: Async
     )
 
 
-@pytest.mark.asyncio
 async def test_list_integration_payloads(client: AsyncClient, db_session: AsyncSession, test_auth_key):
     """Test listing integration-specific payloads."""
     # Create test integration and payloads
@@ -99,7 +96,6 @@ async def test_list_integration_payloads(client: AsyncClient, db_session: AsyncS
     )
 
 
-@pytest.mark.asyncio
 async def test_list_nonexistent_integration(client: AsyncClient, db_session: AsyncSession, test_auth_key):
     """Test listing a non-existent integration."""
     # Use key-in-path authentication
@@ -107,7 +103,6 @@ async def test_list_nonexistent_integration(client: AsyncClient, db_session: Asy
     assert response.status_code == HTTPStatus.NOT_FOUND
 
 
-@pytest.mark.asyncio
 async def test_session_auth_webhooks(client: AsyncClient, db_session: AsyncSession, test_auth_session):
     """Test listing payloads with session authentication."""
     # Create test integration and payloads
@@ -136,7 +131,6 @@ async def test_session_auth_webhooks(client: AsyncClient, db_session: AsyncSessi
     )
 
 
-@pytest.mark.asyncio
 async def test_disabled_payloads_hidden(client: AsyncClient, db_session: AsyncSession, test_auth_key):
     """Ensure payloads from disabled integrations are not shown."""
     integration = WebhookIntegration(
@@ -156,7 +150,6 @@ async def test_disabled_payloads_hidden(client: AsyncClient, db_session: AsyncSe
     assert_that(response.text, is_not(contains_string(integration.name)))
 
 
-@pytest.mark.asyncio
 async def test_disabled_payloads_visible_admin(client: AsyncClient, db_session: AsyncSession):
     """Disabled integrations should be visible to admins."""
     integration = WebhookIntegration(

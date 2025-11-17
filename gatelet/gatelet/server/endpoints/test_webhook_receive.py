@@ -4,7 +4,6 @@ from http import HTTPStatus
 
 from hamcrest import anything, assert_that, equal_to, has_entries, has_properties, is_, none
 from httpx import AsyncClient
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +11,6 @@ from gatelet.server.models import WebhookIntegration, WebhookPayload
 from gatelet.server.tests.utils import persist
 
 
-@pytest.mark.asyncio
 async def test_receive_webhook_no_auth(client: AsyncClient, db_session: AsyncSession):
     """Test receiving webhook with no authentication."""
     # Create test integration with no auth
@@ -42,7 +40,6 @@ async def test_receive_webhook_no_auth(client: AsyncClient, db_session: AsyncSes
     assert_that(webhook_payload, has_properties(integration_id=integration.id, payload=payload))
 
 
-@pytest.mark.asyncio
 async def test_receive_webhook_bearer_auth(client: AsyncClient, db_session: AsyncSession):
     """Test receiving webhook with bearer authentication."""
     # Create test integration with bearer auth
@@ -73,7 +70,6 @@ async def test_receive_webhook_bearer_auth(client: AsyncClient, db_session: Asyn
     assert_that(webhook_payload, has_properties(integration_id=integration.id, payload=payload))
 
 
-@pytest.mark.asyncio
 async def test_receive_webhook_invalid_auth(client: AsyncClient, db_session: AsyncSession):
     """Test receiving webhook with invalid bearer authentication."""
     # Create test integration with bearer auth
@@ -98,7 +94,6 @@ async def test_receive_webhook_invalid_auth(client: AsyncClient, db_session: Asy
     assert_that(result.scalar_one_or_none(), is_(none()))
 
 
-@pytest.mark.asyncio
 async def test_receive_webhook_nonexistent_integration(client: AsyncClient, db_session: AsyncSession):
     """Test receiving webhook for non-existent integration."""
     payload = {"test": "data"}
@@ -106,7 +101,6 @@ async def test_receive_webhook_nonexistent_integration(client: AsyncClient, db_s
     assert_that(response.status_code, equal_to(HTTPStatus.NOT_FOUND))
 
 
-@pytest.mark.asyncio
 async def test_receive_webhook_disabled_integration(client: AsyncClient, db_session: AsyncSession):
     """Test receiving webhook for disabled integration."""
     # Create disabled integration
@@ -124,7 +118,6 @@ async def test_receive_webhook_disabled_integration(client: AsyncClient, db_sess
     assert_that(response.status_code, equal_to(HTTPStatus.FORBIDDEN))
 
 
-@pytest.mark.asyncio
 async def test_receive_webhook_invalid_json(client: AsyncClient, db_session: AsyncSession):
     """Test receiving webhook with invalid JSON."""
     # Create test integration

@@ -12,7 +12,6 @@ from gatelet.server.models import AuthKey
 from gatelet.server.tests.utils import persist
 
 
-@pytest.mark.asyncio
 async def test_validate_valid_key(db_session: AsyncSession):
     """Test validating a valid key."""
     # Create a valid key with unique value
@@ -28,14 +27,12 @@ async def test_validate_valid_key(db_session: AsyncSession):
     assert validated_key.key_value == key.key_value
 
 
-@pytest.mark.asyncio
 async def test_validate_nonexistent_key(db_session: AsyncSession):
     """Test validating a non-existent key."""
     with pytest.raises(KeyAuthError):
         await validate_key("nonexistent-key", db_session)
 
 
-@pytest.mark.asyncio
 async def test_validate_revoked_key(db_session: AsyncSession):
     """Test validating a revoked key."""
     # Create a revoked key with unique value
@@ -53,7 +50,6 @@ async def test_validate_revoked_key(db_session: AsyncSession):
         await validate_key(key.key_value, db_session)
 
 
-@pytest.mark.asyncio
 async def test_validate_expired_key(db_session: AsyncSession):
     """Test validating an expired key."""
     # Create a key that was created beyond the validity period with unique value

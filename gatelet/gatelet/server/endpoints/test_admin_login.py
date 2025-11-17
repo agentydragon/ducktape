@@ -3,11 +3,9 @@
 import re
 
 from httpx import AsyncClient
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-@pytest.mark.asyncio
 async def test_admin_login_success(client: AsyncClient, db_session: AsyncSession):
     home = await client.get("/")
     m = re.search(r'name="csrf_token" value="([^"]+)"', home.text)
@@ -19,7 +17,6 @@ async def test_admin_login_success(client: AsyncClient, db_session: AsyncSession
     assert "admin_session" in response.cookies
 
 
-@pytest.mark.asyncio
 async def test_admin_login_invalid(client: AsyncClient, db_session: AsyncSession):
     home = await client.get("/")
     m = re.search(r'name="csrf_token" value="([^"]+)"', home.text)

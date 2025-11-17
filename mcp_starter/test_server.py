@@ -2,20 +2,17 @@
 
 from adgn_mcp_starter.server import create_mcp_server
 from fastmcp.client import Client as FastMCPClient
-import pytest
 
 
 def test_server_creation() -> None:
     assert create_mcp_server() is not None
 
 
-@pytest.mark.asyncio
 async def test_greet_tool(mcp_client: FastMCPClient) -> None:
     result = await mcp_client.call_tool(name="greet", arguments={"name": "Alice"})
     assert not getattr(result, "is_error", False)
 
 
-@pytest.mark.asyncio
 async def test_get_text_chunks_tool(mcp_client: FastMCPClient) -> None:
     result = await mcp_client.call_tool(name="get_text_chunks", arguments={"text": "Hello World", "chunk_size": 5})
     assert not getattr(result, "is_error", False)
@@ -27,7 +24,6 @@ async def test_get_text_chunks_tool(mcp_client: FastMCPClient) -> None:
     assert chunks[2]["is_final"] is True
 
 
-@pytest.mark.asyncio
 async def test_get_text_chunks_validation_bad(mcp_client: FastMCPClient) -> None:
     bad = await mcp_client.call_tool(
         name="get_text_chunks", arguments={"text": "x", "chunk_size": 0}, raise_on_error=False
@@ -35,7 +31,6 @@ async def test_get_text_chunks_validation_bad(mcp_client: FastMCPClient) -> None
     assert getattr(bad, "is_error", False)
 
 
-@pytest.mark.asyncio
 async def test_get_text_chunks_validation_big(mcp_client: FastMCPClient) -> None:
     big = await mcp_client.call_tool(
         name="get_text_chunks", arguments={"text": "x", "chunk_size": 20000}, raise_on_error=False
@@ -43,7 +38,6 @@ async def test_get_text_chunks_validation_big(mcp_client: FastMCPClient) -> None
     assert getattr(big, "is_error", False)
 
 
-@pytest.mark.asyncio
 async def test_generate_sample_image_tool(mcp_client: FastMCPClient) -> None:
     result = await mcp_client.call_tool(name="generate_sample_image", arguments={})
     assert not getattr(result, "is_error", False)

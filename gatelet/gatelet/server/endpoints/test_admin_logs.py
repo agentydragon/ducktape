@@ -3,7 +3,6 @@ from pathlib import Path
 import re
 
 from httpx import AsyncClient
-import pytest
 
 from gatelet.server.config import settings
 
@@ -22,7 +21,6 @@ async def _login(client: AsyncClient) -> str:
     return response.cookies["admin_session"]
 
 
-@pytest.mark.asyncio
 async def test_view_logs(client: AsyncClient, tmp_path: Path, monkeypatch):
     log_file = tmp_path / "gatelet.log"
     log_file.write_text("line1\nline2\nline3\n", encoding="utf-8")

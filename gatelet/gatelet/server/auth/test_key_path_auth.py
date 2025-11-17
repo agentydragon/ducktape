@@ -15,7 +15,6 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.asyncio
 async def test_key_path_auth_success(db_session: AsyncSession):
     """Test key_path_auth with valid key."""
     # Create a test key
@@ -33,7 +32,6 @@ async def test_key_path_auth_success(db_session: AsyncSession):
     assert auth_context.key_value == key_value
 
 
-@pytest.mark.asyncio
 async def test_key_path_auth_invalid(db_session: AsyncSession):
     """Test key_path_auth with invalid key."""
     # Use a key that doesn't exist

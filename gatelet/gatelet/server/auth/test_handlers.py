@@ -17,7 +17,6 @@ from gatelet.server.auth.handlers import (
 from gatelet.server.models import AuthCRSession, AuthKey
 
 
-@pytest.mark.asyncio
 async def test_key_path_auth_context():
     """Test KeyPathAuthContext functions."""
     key = AuthKey(key_value="test-key", description="Test key")
@@ -37,7 +36,6 @@ async def test_key_path_auth_context():
     assert query_params["b"] == ["test"]
 
 
-@pytest.mark.asyncio
 async def test_session_auth_context():
     """Test SessionAuthContext functions."""
     session = AuthCRSession(session_token="test-token")
@@ -57,7 +55,6 @@ async def test_session_auth_context():
     assert query_params["b"] == ["test"]
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
 async def test_key_path_auth_valid(db_session: AsyncSession):
     """Test key_path_auth with valid key."""
@@ -76,7 +73,6 @@ async def test_key_path_auth_valid(db_session: AsyncSession):
     assert auth_context.key_value == key.key_value
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
 async def test_key_path_auth_invalid(db_session: AsyncSession):
     """Test key_path_auth with invalid key."""
@@ -85,7 +81,6 @@ async def test_key_path_auth_invalid(db_session: AsyncSession):
         await key_path_auth("invalid-key", db_session)
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
 async def test_session_auth_valid(db_session: AsyncSession):
     """Test session_auth with valid session."""
@@ -116,7 +111,6 @@ async def test_session_auth_valid(db_session: AsyncSession):
     assert session.last_activity_at > original_activity_time
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
 async def test_session_auth_invalid(db_session: AsyncSession):
     """Test session_auth with invalid session."""
@@ -125,7 +119,6 @@ async def test_session_auth_invalid(db_session: AsyncSession):
         await session_auth("invalid-session", db_session)
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
 async def test_session_auth_expired(db_session: AsyncSession):
     """Test session_auth with expired session."""

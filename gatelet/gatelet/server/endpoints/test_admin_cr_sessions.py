@@ -2,7 +2,6 @@ from http import HTTPStatus
 import re
 
 from httpx import AsyncClient
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,7 +22,6 @@ async def _login(client: AsyncClient) -> str:
     return response.cookies["admin_session"]
 
 
-@pytest.mark.asyncio
 async def test_list_llm_sessions(client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession):
     session_cookie = await _login(client)
     response = await client.get("/admin/llm-sessions/", cookies={"admin_session": session_cookie})
@@ -31,7 +29,6 @@ async def test_list_llm_sessions(client: AsyncClient, db_session: AsyncSession, 
     assert test_auth_session.session_token in response.text
 
 
-@pytest.mark.asyncio
 async def test_invalidate_llm_session(client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession):
     session_cookie = await _login(client)
     response = await client.get("/admin/llm-sessions/", cookies={"admin_session": session_cookie})

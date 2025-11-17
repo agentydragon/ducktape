@@ -38,21 +38,18 @@ def mock_request():
     return Request({"type": "http"})
 
 
-@pytest.mark.asyncio
 async def test_create_auth_handler_no_auth(no_auth_config):
     """Test create_auth_handler with NoAuth configuration."""
     handler = create_auth_handler(no_auth_config)
     assert isinstance(handler, NoAuthHandler)
 
 
-@pytest.mark.asyncio
 async def test_create_auth_handler_bearer_auth(bearer_auth_config):
     """Test create_auth_handler with BearerAuth configuration."""
     handler = create_auth_handler(bearer_auth_config)
     assert isinstance(handler, BearerAuthHandler)
 
 
-@pytest.mark.asyncio
 async def test_create_auth_handler_unknown_type():
     """Test create_auth_handler with unknown configuration type."""
 
@@ -63,35 +60,30 @@ async def test_create_auth_handler_unknown_type():
         create_auth_handler(UnknownAuthConfig())
 
 
-@pytest.mark.asyncio
 async def test_no_auth_handler_validate_no_credentials(no_auth_handler, mock_request):
     """Test NoAuthHandler validation with no credentials."""
     # Should pass without credentials
     await no_auth_handler.validate(mock_request, None)
 
 
-@pytest.mark.asyncio
 async def test_no_auth_handler_validate_with_credentials(no_auth_handler, mock_request):
     """Test NoAuthHandler validation with credentials."""
     # Should pass with any credentials
     await no_auth_handler.validate(mock_request, HTTPAuthorizationCredentials(scheme="any", credentials="any"))
 
 
-@pytest.mark.asyncio
 async def test_bearer_auth_handler_validate_success(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with valid credentials."""
     credentials = HTTPAuthorizationCredentials(scheme="bearer", credentials="test-token")
     await bearer_auth_handler.validate(mock_request, credentials)
 
 
-@pytest.mark.asyncio
 async def test_bearer_auth_handler_missing_credentials(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with missing credentials."""
     with pytest.raises(AuthError, match="Missing Authorization header"):
         await bearer_auth_handler.validate(mock_request, None)
 
 
-@pytest.mark.asyncio
 async def test_bearer_auth_handler_wrong_scheme(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with wrong scheme."""
     credentials = HTTPAuthorizationCredentials(scheme="basic", credentials="test-token")
@@ -99,7 +91,6 @@ async def test_bearer_auth_handler_wrong_scheme(bearer_auth_handler, mock_reques
         await bearer_auth_handler.validate(mock_request, credentials)
 
 
-@pytest.mark.asyncio
 async def test_bearer_auth_handler_invalid_token(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with invalid token."""
     credentials = HTTPAuthorizationCredentials(scheme="bearer", credentials="wrong-token")
