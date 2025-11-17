@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 import logging
+from typing import cast
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
@@ -139,12 +140,12 @@ class Compositor(FastMCP):
             self._o = owner
             self._name = name
 
-        async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:  # type: ignore[override]
+        async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
             self._o._pending_list_changed.add(self._name)
             # No forwarding here; child client handles forwarding via proxy
             await self._o._notify_list_changed(self._name)
 
-        async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+        async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
             # Forward to listeners with origin attribution
             await self._o._notify_resource_updated(self._name, str(message.params.uri))
 
@@ -173,7 +174,7 @@ class Compositor(FastMCP):
                 try:
                     init = mount.cached_init
                     if init is None:
-                        client_factory = mount.proxy.client_factory  # type: ignore[attr-defined]
+                        client_factory = mount.proxy.client_factory
                         client = client_factory()
                         async with client as c:
                             init = c.initialize_result
@@ -217,8 +218,10 @@ class Compositor(FastMCP):
             elif st == McpServerState.RUNNING:
                 init_val = rec.get("init")
                 assert init_val is not None
-                tools_val = rec.get("tools") or []
-                entries[name] = RunningServerEntry(initialize=init_val, tools=tools_val)  # type: ignore[arg-type]
+                tools_val = cast(list[mcp_types.Tool], rec.get("tools") or [])
+                entries[name] = RunningServerEntry(
+                    initialize=cast(mcp_types.InitializeResult, init_val), tools=tools_val
+                )
             else:
                 err = rec.get("error")
                 entries[name] = FailedServerEntry(error=err if isinstance(err, str) else None)
@@ -232,7 +235,7 @@ class Compositor(FastMCP):
     async def mount_specs(self) -> dict[str, MCPServerTypes]:
         """Return a snapshot of current mount specs keyed by name."""
         async with self._lock:
-            return {k: v.spec for k, v in self._mounts.items() if v.spec is not None}  # type: ignore[dict-item]
+            return {k: cast(MCPServerTypes, v.spec) for k, v in self._mounts.items() if v.spec is not None}
 
     # No resource helper methods: resources are aggregated and served via the
     # mounted proxy. Callers should use a client connected to this Compositor
