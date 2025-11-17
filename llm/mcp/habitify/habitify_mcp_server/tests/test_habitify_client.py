@@ -7,7 +7,7 @@ Uses mock data based on the actual API responses seen in the reference YAML file
 import datetime
 from unittest.mock import MagicMock, patch
 
-from hamcrest import assert_that, has_properties, instance_of, only_contains
+from hamcrest import all_of, assert_that, greater_than, has_length, has_properties, instance_of, only_contains
 import httpx
 import pytest
 
@@ -33,9 +33,7 @@ class TestHabitifyClient:
             mock_get.assert_called_once_with("/habits")
 
             # Check the returned data
-            assert_that(habits, instance_of(list))
-            assert_that(habits, only_contains(instance_of(Habit)))
-            assert len(habits) > 0
+            assert_that(habits, all_of(has_length(greater_than(0)), only_contains(instance_of(Habit))))
 
             # Check a specific habit attribute
             assert habits[0].id == "-Lo9NTLRX3aCxg-PjN25"
@@ -96,9 +94,7 @@ class TestHabitifyClient:
             mock_get.assert_called_once_with("/areas")
 
             # Check the returned data
-            assert_that(areas, instance_of(list))
-            assert_that(areas, only_contains(instance_of(Area)))
-            assert len(areas) > 0
+            assert_that(areas, all_of(has_length(greater_than(0)), only_contains(instance_of(Area))))
 
             # Check a specific area attribute
             assert areas[0].id == "-LrYlUBnzjyceYei_k5Z"
@@ -128,7 +124,6 @@ class TestHabitifyClient:
             assert params["order_by"] == "priority"
 
             # Check the returned data
-            assert_that(habits, instance_of(list))
             assert_that(habits, only_contains(instance_of(Habit)))
 
     @pytest.mark.asyncio
@@ -154,9 +149,6 @@ class TestHabitifyClient:
             assert "target_date" in params
             assert params["status"] == "none"
             assert params["time_of_day"] == "morning,evening"
-
-            # Check the returned data
-            assert_that(habits, instance_of(list))
 
     @pytest.mark.asyncio
     async def test_check_habit_status(self, client, mock_async_response):
@@ -229,9 +221,7 @@ class TestHabitifyClient:
             assert mock_get.call_count == 5
 
             # Check the returned data
-            assert_that(statuses, instance_of(list))
-            assert len(statuses) == 5
-            assert_that(statuses, only_contains(instance_of(HabitStatus)))
+            assert_that(statuses, all_of(has_length(5), only_contains(instance_of(HabitStatus))))
 
             # Check that dates are sorted in chronological order
             dates = [status.date for status in statuses]

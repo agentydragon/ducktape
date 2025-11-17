@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 import json
 from pathlib import Path
@@ -53,7 +54,7 @@ def _extract_result(res):
 @pytest.mark.asyncio
 async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "note.md"
-    p.write_text("hello\n", encoding="utf-8")
+    await asyncio.to_thread(p.write_text, "hello\n", encoding="utf-8")
 
     async with editor_session(p) as (client, sess):
         # Append a line after the first line (1-based after = insert at index 1)
@@ -63,13 +64,14 @@ async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_sessio
         assert (out.kind, out.summary) == ("Success", "ok")
 
     # file saved with edits
-    assert p.read_text(encoding="utf-8") == "hello\nworld\n"
+    content = await asyncio.to_thread(p.read_text, encoding="utf-8")
+    assert content == "hello\nworld\n"
 
 
 @pytest.mark.asyncio
 async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "bad.py"
-    p.write_text("def f():\n    return 1\n", encoding="utf-8")  # start valid
+    await asyncio.to_thread(p.write_text, "def f():\n    return 1\n", encoding="utf-8")  # start valid
 
     async with editor_session(p) as (client, sess):
         # Introduce a syntax error by replacing the function header
@@ -79,13 +81,14 @@ async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: P
         assert "Cannot complete" in (out.summary or "")
 
     # file on disk should not have been overwritten with bad content
-    assert p.read_text(encoding="utf-8") == "def f():\n    return 1\n"
+    content = await asyncio.to_thread(p.read_text, encoding="utf-8")
+    assert content == "def f():\n    return 1\n"
 
 
 @pytest.mark.asyncio
 async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "file.txt"
-    p.write_text("A\n", encoding="utf-8")
+    await asyncio.to_thread(p.write_text, "A\n", encoding="utf-8")
 
     async with editor_session(p) as (client, sess):
         # Stage change to "B" in-memory: delete line 1 and insert B at start
@@ -99,4 +102,5 @@ async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_se
         assert "A" in body
 
     # file on disk unchanged
-    assert p.read_text(encoding="utf-8") == "A\n"
+    content = await asyncio.to_thread(p.read_text, encoding="utf-8")
+    assert content == "A\n"

@@ -152,6 +152,8 @@ class TaskClaude:
         c = self._container
         if c is None:
             raise RuntimeError("Container not started")
+        if c.id is None:
+            raise RuntimeError("Container created but has no ID")
         return c
 
     def _get_container_volumes(self, git_readonly: bool) -> dict:
@@ -236,9 +238,7 @@ class TaskClaude:
 
         # Set up environment variables for wrapper script execution
         c = self._container_or_raise()
-        container_id = c.id
-        assert container_id is not None, "Container must have an ID"
-        wrapper_env: dict[str, str] = {"CLAUDE_CONTAINER_ID": container_id, "DOCKER_BINARY": self._docker_path}
+        wrapper_env: dict[str, str] = {"CLAUDE_CONTAINER_ID": c.id, "DOCKER_BINARY": self._docker_path}
 
         if self.config.get("enable_strace", False):
             wrapper_env["CLAUDE_STRACE"] = "1"
@@ -398,9 +398,7 @@ class TaskClaude:
 
         # Debug: Log the exact command being executed
         c = self._container_or_raise()
-        container_id = c.id
-        assert container_id is not None, "Container must have an ID"
-        cmd_args = [str(setup_script), container_id, self.task_id, str(self._output_dir)]
+        cmd_args = [str(setup_script), c.id, self.task_id, str(self._output_dir)]
         self._logger.info(
             f"Running {script_type.lower()} script",
             script=str(setup_script),
@@ -470,9 +468,7 @@ class TaskClaude:
             return
 
         c = self._container_or_raise()
-        container_id = c.id
-        assert container_id is not None, "Container must have an ID"
-        self._logger.info("Running pre-task commands", container_id=container_id, commands_preview=commands[:100])
+        self._logger.info("Running pre-task commands", container_id=c.id, commands_preview=commands[:100])
 
         # Execute commands inside container using docker exec
         process = await asyncio.create_subprocess_exec(
