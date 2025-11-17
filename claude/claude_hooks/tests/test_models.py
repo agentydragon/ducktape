@@ -15,9 +15,8 @@ def test_edit_input_valid():
     data = {"file_path": "/tmp/test.py", "old_string": "old code", "new_string": "new code", "replace_all": False}
 
     edit_input = EditInput.model_validate(data)
-    assert_that(
-        edit_input,
-        has_properties(file_path=Path("/tmp/test.py"), old_string="old code", new_string="new code", replace_all=False),
+    assert edit_input == EditInput(
+        file_path=Path("/tmp/test.py"), old_string="old code", new_string="new code", replace_all=False
     )
 
 
@@ -36,21 +35,21 @@ def test_write_input_valid():
     data = {"file_path": "/tmp/test.py", "content": "print('hello')"}
 
     write_input = WriteInput.model_validate(data)
-    assert_that(write_input, has_properties(file_path=Path("/tmp/test.py"), content="print('hello')"))
+    assert write_input == WriteInput(file_path=Path("/tmp/test.py"), content="print('hello')")
 
 
 def test_bash_input_valid():
     data = {"command": "ls -la", "description": "List files", "timeout": 30}
 
     bash_input = BashInput.model_validate(data)
-    assert_that(bash_input, has_properties(command="ls -la", description="List files", timeout=30))
+    assert bash_input == BashInput(command="ls -la", description="List files", timeout=30)
 
 
 def test_bash_input_minimal():
     data = {"command": "pwd"}
 
     bash_input = BashInput.model_validate(data)
-    assert_that(bash_input, has_properties(command="pwd", description=None, timeout=None))
+    assert bash_input == BashInput(command="pwd", description=None, timeout=None)
 
 
 def test_pre_tool_use_input():

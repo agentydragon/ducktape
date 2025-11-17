@@ -22,43 +22,7 @@ Found 60+ test files using verbose plain assertions instead of PyHamcrest matche
 
 ---
 
-#### Issue 1.1: Full-Object has_properties Should Use Plain Equality
-**File:** `claude/claude_hooks/tests/test_models.py:18-21`
-
-**Current Code:**
-```python
-# BAD: has_properties with ALL fields and exact values
-assert_that(
-    edit_input,
-    has_properties(
-        file_path=Path("/tmp/test.py"),
-        old_string="old code",
-        new_string="new code",
-        replace_all=False
-    ),
-)
-```
-
-**Recommended Fix:**
-```python
-# GOOD: Plain equality is clearer for full object comparison
-assert edit_input == EditInput(
-    file_path=Path("/tmp/test.py"),
-    old_string="old code",
-    new_string="new code",
-    replace_all=False
-)
-```
-
-**Rationale:** When checking ALL fields with exact values, plain `==` is simpler and clearer. Reserve `has_properties()` for partial matching or composed matchers.
-
-**Impact:** Simpler, more maintainable tests
-**Priority:** Low
-**Instances:** 10+ similar patterns in `claude/claude_hooks/tests/test_models.py`, `difftree/tests/test_tree.py`
-
----
-
-#### Issue 1.2: String Inclusion Assertions
+#### Issue 1.1: String Inclusion Assertions
 
 **Pattern for other tests:**
 ```python

@@ -69,6 +69,8 @@ def get_config() -> ConfigModel:
 
 ### Fix 3: Remaining Verbose Test Assertions
 
+**✅ Completed:** Full-object `has_properties` assertions in `claude/claude_hooks/tests/test_models.py` (4 instances) - converted to plain equality assertions.
+
 **Pattern (20+ instances in other test files):**
 ```python
 # BAD: Three assertions for "non-empty list of X"
