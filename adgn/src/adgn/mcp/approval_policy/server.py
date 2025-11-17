@@ -107,13 +107,13 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         ll = self._mcp_server
 
         @ll.subscribe_resource()
-        async def _subscribe(uri):  # type: ignore[no-redef]
+        async def _subscribe(uri):
             ctx = ll.request_context
             sess = ctx.session
             self._session_subscriptions.setdefault(sess, set()).add(str(uri))
 
         @ll.unsubscribe_resource()
-        async def _unsubscribe(uri):  # type: ignore[no-redef]
+        async def _unsubscribe(uri):
             ctx = ll.request_context
             sess = ctx.session
             self._session_subscriptions.get(sess, set()).discard(str(uri))

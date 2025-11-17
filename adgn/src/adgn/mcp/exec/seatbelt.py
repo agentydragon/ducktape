@@ -89,7 +89,7 @@ class SeatbeltExecMCP(NotifyingFastMCP):
 
         # Register sandbox_exec tool
         @self.flat_model()
-        async def sandbox_exec(input: SandboxExecArgs) -> SandboxExecResult:  # type: ignore[unused-ignore]
+        async def sandbox_exec(input: SandboxExecArgs) -> SandboxExecResult:
             """Execute a command via macOS seatbelt (sandbox-exec). Provide a full SBPL policy per call."""
             # Platform precheck
             if sys.platform != "darwin":
