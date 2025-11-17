@@ -103,7 +103,7 @@ class Server:
 - **Unnecessary fields**: Pollutes class namespace with redundant state
 - **Maintenance burden**: More fields to track and understand
 
-**Exception**: Cache frequently accessed fields if profiling shows significant overhead. But measure first.
+**No performance exception**: Python is not for performance-critical code. Don't cache fields for "performance" - the overhead is negligible and the complexity isn't worth it.
 
 ### When Intermediate Variables ARE Good
 

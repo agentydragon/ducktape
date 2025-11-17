@@ -23,6 +23,19 @@ class MirrorConfig:
     base_url: str
     token: str
 
+    @classmethod
+    def resolve(cls, base_url: str | None, token: str | None) -> MirrorConfig:
+        """Resolve config from parameters with environment variable fallback."""
+        if not base_url:
+            base_url = os.getenv("GITEA_BASE_URL")
+        if not token:
+            token = os.getenv("GITEA_TOKEN")
+
+        if not base_url or not token:
+            raise ValueError("Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN")
+
+        return cls(base_url=base_url, token=token)
+
 
 class MirrorError(RuntimeError):
     pass
@@ -230,12 +243,7 @@ def _resolve_owner(base_url: str, token: str) -> str:
 
 
 def make_gitea_mirror_server(*, base_url: str | None = None, token: str | None = None) -> NotifyingFastMCP:
-    cfg = MirrorConfig(
-        base_url=str(base_url or os.environ.get("GITEA_BASE_URL", "")),
-        token=str(token or os.environ.get("GITEA_TOKEN", "")),
-    )
-    if not cfg.base_url or not cfg.token:
-        raise ValueError("Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN")
+    cfg = MirrorConfig.resolve(base_url, token)
 
     server = NotifyingFastMCP(
         "Gitea Mirror",
