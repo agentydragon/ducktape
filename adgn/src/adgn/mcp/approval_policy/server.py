@@ -104,17 +104,17 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         # by the server regardless of subscriptions, but handlers ensure that
         # capability gating reflects true support and calls succeed.
         self._session_subscriptions: dict[ServerSession, set[str]] = {}
-        ll = self._mcp_server
+        mcp_server = self._mcp_server
 
-        @ll.subscribe_resource()
+        @mcp_server.subscribe_resource()
         async def _subscribe(uri):
-            ctx = ll.request_context
+            ctx = mcp_server.request_context
             sess = ctx.session
             self._session_subscriptions.setdefault(sess, set()).add(str(uri))
 
-        @ll.unsubscribe_resource()
+        @mcp_server.unsubscribe_resource()
         async def _unsubscribe(uri):
-            ctx = ll.request_context
+            ctx = mcp_server.request_context
             sess = ctx.session
             self._session_subscriptions.get(sess, set()).discard(str(uri))
             # Do not error if unknown; protocol allows idempotent unsubscribe

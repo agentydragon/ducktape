@@ -64,11 +64,11 @@ def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed
     Call this before mounting/connecting the server so the init handshake carries
     the desired caps.
     """
-    ll = getattr(server, "_mcp_server", None)
-    if ll is None:
+    mcp_server = getattr(server, "_mcp_server", None)
+    if mcp_server is None:
         raise RuntimeError("Server has no _mcp_server to patch")
-    base_create = ll.create_initialization_options
-    base_get_caps = ll.get_capabilities
+    base_create = mcp_server.create_initialization_options
+    base_get_caps = mcp_server.get_capabilities
 
     def patched_create_initialization_options(notification_options=None, experimental_capabilities=None, **kwargs):  # type: ignore[no-untyped-def]
         caps = dict(experimental_capabilities or {})
@@ -81,7 +81,7 @@ def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed
             caps["resources"] = res
         return base_create(notification_options=notification_options, experimental_capabilities=caps, **kwargs)
 
-    ll.create_initialization_options = patched_create_initialization_options
+    mcp_server.create_initialization_options = patched_create_initialization_options
 
     def patched_get_capabilities(notification_options, experimental_capabilities):  # type: ignore[no-untyped-def]
         caps = base_get_caps(notification_options, experimental_capabilities)
@@ -96,19 +96,19 @@ def enable_resources_caps(server, *, subscribe: bool | None = None, list_changed
             caps.resources = res_caps
         return caps
 
-    ll.get_capabilities = patched_get_capabilities
+    mcp_server.get_capabilities = patched_get_capabilities
 
     if subscribe:
         # Ensure subscribe/unsubscribe handlers exist so requests succeed.
-        if types.SubscribeRequest not in ll.request_handlers:
+        if types.SubscribeRequest not in mcp_server.request_handlers:
 
-            @ll.subscribe_resource()
+            @mcp_server.subscribe_resource()
             async def _test_subscribe(_uri):
                 return None
 
-        if types.UnsubscribeRequest not in ll.request_handlers:
+        if types.UnsubscribeRequest not in mcp_server.request_handlers:
 
-            @ll.unsubscribe_resource()
+            @mcp_server.unsubscribe_resource()
             async def _test_unsubscribe(_uri):
                 return None
 
@@ -123,16 +123,16 @@ class SubscriptionRecorder:
 
 def install_subscription_recorder(server) -> SubscriptionRecorder:  # type: ignore[no-untyped-def]
     """Register lightweight subscribe/unsubscribe handlers that record URIs."""
-    ll = getattr(server, "_mcp_server", None)
-    if ll is None:
+    mcp_server = getattr(server, "_mcp_server", None)
+    if mcp_server is None:
         raise RuntimeError("Server has no _mcp_server to patch")
     recorder = SubscriptionRecorder()
 
-    @ll.subscribe_resource()
+    @mcp_server.subscribe_resource()
     async def _record_subscribe(uri):
         recorder.subscribed.append(str(uri))
 
-    @ll.unsubscribe_resource()
+    @mcp_server.unsubscribe_resource()
     async def _record_unsubscribe(uri):
         recorder.unsubscribed.append(str(uri))
 
