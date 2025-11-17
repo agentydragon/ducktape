@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 import hashlib
 import json
 import os
@@ -35,30 +34,99 @@ from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
 CacheKey = NewType("CacheKey", str)
 
 
-@asynccontextmanager
-async def record_errors_to_db(
-    db: ResponsesDB, key: CacheKey, response_id: str | None = None, error_reason: str | None = None
-):
-    """Context manager to automatically record exceptions to database.
+class StreamingContext:
+    """Shared context for streaming response handling with automatic cleanup."""
 
-    Args:
-        db: Database instance
-        key: Cache key
-        response_id: Optional response ID
-        error_reason: Default error reason if not provided by exception
-    """
-    try:
-        yield
-    except HTTPException:
-        # Don't record HTTPExceptions from FastAPI - they're user-facing errors
-        raise
-    except asyncio.CancelledError:
-        # Don't record cancellations
-        raise
-    except Exception as exc:
-        reason = error_reason or str(exc)
-        await db.record_error(key, error_reason=reason, response_id=response_id, error=ErrorPayload(message=reason))
-        raise
+    def __init__(
+        self,
+        db: ResponsesDB,
+        key: CacheKey,
+        response_id: str | None = None,
+        *,
+        client: httpx.AsyncClient | None = None,
+        error_reason: str | None = None,
+    ):
+        self.db = db
+        self.key = key
+        self.response_id = response_id
+        self._client = client
+        self._error_reason = error_reason
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is not None:
+                if exc_type in (HTTPException, asyncio.CancelledError):
+                    return False  # Don't handle these
+                reason = self._error_reason or str(exc_val)
+                await self.db.record_error(
+                    self.key, error_reason=reason, response_id=self.response_id, error=ErrorPayload(message=reason)
+                )
+        finally:
+            if self._client:
+                await self._client.aclose()
+        return False  # Don't suppress exceptions
+
+    async def proxy_stream(self, resp: httpx.Response, start_time: float) -> AsyncIterator[bytes]:
+        """Stream response chunks while recording frames to database."""
+        text_buffer = ""
+        ordinal = 0
+        token_usage: ResponseUsage | None = None
+        latest_response: OpenAIResponse | None = None
+        try:
+            async for chunk in resp.aiter_bytes():
+                if not chunk:
+                    continue
+                yield chunk
+                try:
+                    decoded = chunk.decode("utf-8")
+                except UnicodeDecodeError:
+                    continue
+                text_buffer += decoded
+                text_buffer, parsed = _extract_frames(text_buffer)
+                if not parsed:
+                    continue
+                for frame in parsed:
+                    frame_payload = ResponseStreamEvent.model_validate(frame)
+                    ordinal += 1
+                    if (
+                        maybe_response_id := stream_event_response_id(frame_payload)
+                    ) and self.response_id != maybe_response_id:
+                        self.response_id = maybe_response_id
+                        await self.db.mark_in_progress(self.key, self.response_id)
+                    if usage := stream_event_usage(frame_payload):
+                        token_usage = usage
+                    if (response_candidate := stream_event_final_response(frame_payload)) is not None:
+                        latest_response = response_candidate
+                    await self.db.append_frame(self.key, frame_payload, ordinal=ordinal, response_id=self.response_id)
+            trailing_frames = _extract_remaining(text_buffer)
+            for frame in trailing_frames:
+                frame_payload = ResponseStreamEvent.model_validate(frame)
+                ordinal += 1
+                if (
+                    maybe_response_id := stream_event_response_id(frame_payload)
+                ) and self.response_id != maybe_response_id:
+                    self.response_id = maybe_response_id
+                    await self.db.mark_in_progress(self.key, self.response_id)
+                if usage := stream_event_usage(frame_payload):
+                    token_usage = usage
+                if (response_candidate := stream_event_final_response(frame_payload)) is not None:
+                    latest_response = response_candidate
+                await self.db.append_frame(self.key, frame_payload, ordinal=ordinal, response_id=self.response_id)
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            if latest_response is not None and latest_response.usage is not None:
+                token_usage = latest_response.usage
+            await self.db.finalize_response(
+                self.key,
+                response_id=self.response_id,
+                response_obj=latest_response,
+                latency_ms=latency_ms,
+                token_usage=token_usage,
+            )
+        finally:
+            await resp.aclose()
 
 
 HTTP_ERROR_MIN = 400
@@ -174,66 +242,6 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def _proxy_stream(
-    resp: httpx.Response, *, db: ResponsesDB, key: CacheKey, response_id: str | None, start_time: float
-) -> AsyncIterator[bytes]:
-    text_buffer = ""
-    ordinal = 0
-    token_usage: ResponseUsage | None = None
-    latest_response: OpenAIResponse | None = None
-
-    async def _process_frame(frame_dict: dict[str, Any]) -> None:
-        nonlocal ordinal, response_id, token_usage, latest_response
-
-        frame_payload = ResponseStreamEvent.model_validate(frame_dict)
-        ordinal += 1
-        if (maybe_response_id := stream_event_response_id(frame_payload)) and response_id != maybe_response_id:
-            response_id = maybe_response_id
-            await db.mark_in_progress(key, response_id)
-        if usage := stream_event_usage(frame_payload):
-            token_usage = usage
-        if (response_candidate := stream_event_final_response(frame_payload)) is not None:
-            latest_response = response_candidate
-        await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
-
-    try:
-        async for chunk in resp.aiter_bytes():
-            if not chunk:
-                continue
-            yield chunk
-            try:
-                decoded = chunk.decode("utf-8")
-            except UnicodeDecodeError:
-                continue
-            text_buffer += decoded
-            text_buffer, parsed = _extract_frames(text_buffer)
-            if not parsed:
-                continue
-            for frame in parsed:
-                await _process_frame(frame)
-
-        trailing_frames = _extract_remaining(text_buffer)
-        for frame in trailing_frames:
-            await _process_frame(frame)
-
-        latency_ms = int((time.perf_counter() - start_time) * 1000)
-        if latest_response is not None and latest_response.usage is not None:
-            token_usage = latest_response.usage
-        await db.finalize_response(
-            key, response_id=response_id, response_obj=latest_response, latency_ms=latency_ms, token_usage=token_usage
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        error_reason = "Streaming proxy failure"
-        await db.record_error(
-            key, error_reason=error_reason, response_id=response_id, error=ErrorPayload(message=error_reason)
-        )
-        raise
-    finally:
-        await resp.aclose()
-
-
 def _relay_error_response(resp: httpx.Response) -> Response:
     media_type = resp.headers.get("content-type")
     body = resp.content
@@ -320,11 +328,11 @@ async def responses_endpoint(
             return _relay_error_response(upstream_error)
 
         async def event_stream() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in _proxy_stream(resp, db=db, key=key, response_id=None, start_time=start_time):
+            async with StreamingContext(
+                db=db, key=key, response_id=None, client=client, error_reason="Streaming proxy failure"
+            ) as ctx:
+                async for chunk in ctx.proxy_stream(resp, start_time=start_time):
                     yield chunk
-            finally:
-                await client.aclose()
 
         return StreamingResponse(
             event_stream(), media_type="text/event-stream", headers={"X-Cache-Hit": "0", "X-Cache-Key": key}
