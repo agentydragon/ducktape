@@ -11,6 +11,7 @@ import os
 import time
 from typing import Any
 
+import canonicaljson
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
@@ -105,16 +106,12 @@ def _extract_client_token(request: Request, authorization: str | None, x_api_key
     return None
 
 
-def canonical_json(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-
-
 def make_key_from_body(body: dict[str, Any]) -> str:
     keyed = {
         k: body[k] for k in sorted(body.keys()) if k not in {"request_id", "request_timestamp", "nonce", "__meta__"}
     }
     digest = hashlib.sha256()
-    digest.update(canonical_json(keyed).encode("utf-8"))
+    digest.update(canonicaljson.encode_canonical_json(keyed))
     return digest.hexdigest()
 
 
