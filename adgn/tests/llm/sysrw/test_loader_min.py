@@ -14,6 +14,11 @@ from adgn.llm.sysrw.schemas import CCRSample, CrushSample
 ROOT = Path(str(resources.files("adgn.llm.sysrw")))
 DATA = ROOT / "data" / "_test"
 
+# TODO: Add test datasets to repo
+# Currently these tests are skipped because test datasets (ccr_min.jsonl, crush_min.jsonl)
+# are not checked into the repository. Need to add minimal test datasets to
+# adgn/src/adgn/llm/sysrw/data/_test/ directory and ensure they're included in package.
+
 
 def text_block_contains(fragment: str):
     """Return a matcher that finds a text content block containing ``fragment``."""

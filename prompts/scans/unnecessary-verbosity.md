@@ -35,6 +35,12 @@ return temp.lower()
 config = load_config()
 processor = DataProcessor(config)
 return processor
+
+# BAD: Path variable used once for single method call
+out = base_dir / "critique.json"
+s = submit_state.result.model_dump_json(indent=2)
+out.write_text(s, encoding="utf-8")
+print(f"Saved critique JSON: {out}")
 ```
 
 ### GOOD: Direct usage when clear
@@ -51,6 +57,17 @@ return value.strip().lower()
 
 # GOOD: Direct construction
 return DataProcessor(load_config())
+
+# GOOD: Fully inline if path not needed later
+(base_dir / "critique.json").write_text(
+    submit_state.result.model_dump_json(indent=2), encoding="utf-8"
+)
+print(f"Saved critique JSON: {base_dir / 'critique.json'}")
+
+# BETTER: Keep variable if used multiple times (avoids repeating path construction)
+critique_path = base_dir / "critique.json"
+critique_path.write_text(submit_state.result.model_dump_json(indent=2), encoding="utf-8")
+print(f"Saved critique JSON: {critique_path}")
 ```
 
 ### When Intermediate Variables ARE Good
