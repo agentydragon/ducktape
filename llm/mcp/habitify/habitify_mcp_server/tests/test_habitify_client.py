@@ -20,7 +20,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_get_habits(self, client, mock_async_response, patch_client_method):
-        """Test the get_habits method."""
         mock_resp = mock_async_response("get_habits.yaml")
 
         with patch_client_method("get", return_value=mock_resp) as mock_get:
@@ -33,7 +32,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_get_habit(self, client, mock_async_response, patch_client_method):
-        """Test the get_habit method."""
         mock_resp = mock_async_response("get_habit_by_id.yaml")
 
         with patch_client_method("get", return_value=mock_resp) as mock_get:
@@ -61,7 +59,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_get_areas(self, client, mock_async_response, patch_client_method):
-        """Test the get_areas method."""
         mock_resp = mock_async_response("get_areas.yaml")
 
         with patch_client_method("get", return_value=mock_resp) as mock_get:
@@ -74,7 +71,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_get_journal(self, client, mock_async_response, patch_client_method):
-        """Test the get_journal method."""
         today = datetime.date.today().isoformat()
         mock_resp = mock_async_response("get_journal.yaml")
 
@@ -110,7 +106,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_check_habit_status(self, client, mock_async_response, patch_client_method):
-        """Test the check_habit_status method."""
         mock_resp = mock_async_response("get_habit_status.yaml")
 
         with patch_client_method("get", return_value=mock_resp) as mock_get:
@@ -142,7 +137,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_check_habit_status_range(self, client, mock_async_response, patch_client_method):
-        """Test the check_habit_status_range method."""
         mock_resp = mock_async_response("get_habit_status.yaml")
         requested_dates = []
 
@@ -163,7 +157,6 @@ class TestHabitifyClient:
 
     @pytest.mark.asyncio
     async def test_set_habit_status(self, client, mock_async_response, patch_client_method):
-        """Test the set_habit_status method."""
         mock_resp = mock_async_response("set_habit_status_(completed).yaml")
 
         with patch_client_method("put", return_value=mock_resp) as mock_put:
