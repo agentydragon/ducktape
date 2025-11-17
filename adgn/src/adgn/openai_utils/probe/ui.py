@@ -199,8 +199,8 @@ class ProbeTUI(App):
         for mid2 in sorted(self.filtered, key=lambda m: (family_of(m).value, m)):
             if not self._filter_mid(mid2):
                 continue
-            rc2, _, _ = build_cell(self.acc[mid2]["responses"])  # type: ignore[index]
-            cc2, _, _ = build_cell(self.acc[mid2]["chat"])  # type: ignore[index]
+            rc2, _, _ = build_cell(self.acc[mid2]["responses"])
+            cc2, _, _ = build_cell(self.acc[mid2]["chat"])
             if rc2 != "[yellow]waiting…[/yellow]" or cc2 != "[yellow]waiting…[/yellow]":
                 partials_resp.append((family_of(mid2).value, mid2, rc2))
                 partials_chat.append((family_of(mid2).value, mid2, cc2))
@@ -221,8 +221,8 @@ class ProbeTUI(App):
                 title="Other models (unclassified)", header_style="bold magenta", model_ratio=3
             )
             for mid7 in others_all:
-                rc, _, _ = build_cell(self.acc[mid7]["responses"])  # type: ignore[index]
-                cc, _, _ = build_cell(self.acc[mid7]["chat"])  # type: ignore[index]
+                rc, _, _ = build_cell(self.acc[mid7]["responses"])
+                cc, _, _ = build_cell(self.acc[mid7]["chat"])
                 others_table.add_row(mid7, rc, cc)
             renderables.append(others_table)
 
