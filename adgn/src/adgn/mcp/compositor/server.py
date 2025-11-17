@@ -189,18 +189,20 @@ class Compositor(FastMCP):
                 per_name[name] = InitializingServerEntry()
 
         # Phase 2: resolve tool enumeration in parallel with structured concurrency
+        async def _handle_tools(name: str, task: asyncio.Task):
+            try:
+                tools = await task
+                # Entry is guaranteed RunningServerEntry (task only created after successful init)
+                entry = per_name[name]
+                assert isinstance(entry, RunningServerEntry), (
+                    f"Expected RunningServerEntry for {name}, got {type(entry)}"
+                )
+                per_name[name] = RunningServerEntry(initialize=entry.initialize, tools=tools)
+            except Exception as e:
+                per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
+
         if tool_tasks:
             async with asyncio.TaskGroup() as tg:
-
-                async def _handle_tools(name: str, task: asyncio.Task):
-                    try:
-                        tools = await task
-                        entry = per_name[name]
-                        if isinstance(entry, RunningServerEntry):
-                            per_name[name] = RunningServerEntry(initialize=entry.initialize, tools=tools)
-                    except Exception as e:
-                        per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
-
                 for name, task in tool_tasks.items():
                     tg.create_task(_handle_tools(name, task))
 
