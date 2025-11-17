@@ -215,8 +215,7 @@ async def _run_specimen_minicodex_async(
     mode: str,
     final_only: bool,
     output_final_message: Path | None,
-    client: OpenAIModelProto | None,
-    model: str = "gpt-5",
+    client: OpenAIModelProto,
 ) -> int:
     rec = SpecimenRegistry.load_strict(specimen)
     man = rec.manifest
@@ -260,13 +259,9 @@ async def _run_specimen_minicodex_async(
         def _ready_state() -> bool:
             return (submit_state.result is not None) or (submit_state.error is not None)
 
-        # Ensure client is provided
-        if client is None:
-            client = build_client(model)
-
         async with Client(comp) as mcp_client:
             agent = await MiniCodex.create(
-                model=model,
+                model=client.model,
                 mcp_client=mcp_client,
                 system="You are a code agent. Be concise.",
                 client=client,
@@ -329,7 +324,7 @@ async def cmd_specimen_discover(
         mode="discover",
         final_only=final_only,
         output_final_message=output_final_message,
-        client=(None if dry_run else build_client("gpt-5")),
+        client=build_client("gpt-5"),
     )
     raise typer.Exit(code=rc)
 

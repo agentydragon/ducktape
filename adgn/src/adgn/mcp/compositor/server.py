@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 import logging
-from typing import cast
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
@@ -50,6 +49,16 @@ class _MountState:
     # Persistent child client to keep a session open for notifications/subscriptions
     child_client: Client | None = None
     stack: AsyncExitStack | None = None
+
+
+@dataclass
+class _ServerSnapshot:
+    """Intermediate snapshot of server state during status gathering."""
+
+    state: McpServerState
+    init: mcp_types.InitializeResult | None = None
+    error: str | None = None
+    tools: list[mcp_types.Tool] | None = None
 
 
 class MountEvent(StrEnum):
@@ -137,17 +146,17 @@ class Compositor(FastMCP):
     # ---- Child notifications capture (origin attribution) -----------------
     class _ChildHandler(MessageHandler):
         def __init__(self, owner: Compositor, name: str) -> None:
-            self._o = owner
+            self._compositor = owner
             self._name = name
 
         async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
-            self._o._pending_list_changed.add(self._name)
+            self._compositor._pending_list_changed.add(self._name)
             # No forwarding here; child client handles forwarding via proxy
-            await self._o._notify_list_changed(self._name)
+            await self._compositor._notify_list_changed(self._name)
 
         async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
             # Forward to listeners with origin attribution
-            await self._o._notify_resource_updated(self._name, str(message.params.uri))
+            await self._compositor._notify_resource_updated(self._name, str(message.params.uri))
 
     def pop_recent_list_changed(self) -> list[str]:
         names = sorted(self._pending_list_changed)
@@ -164,7 +173,7 @@ class Compositor(FastMCP):
         # Phase 1: capture init results and schedule tool enumeration concurrently
         async with self._lock:
             items = list(self._mounts.items())
-        per_name: dict[str, dict[str, object | None]] = {}
+        per_name: dict[str, _ServerSnapshot] = {}
         tool_tasks: dict[str, asyncio.Task[list[mcp_types.Tool]]] = {}
         for name, mount in items:
             state = McpServerState.INITIALIZING
@@ -192,39 +201,32 @@ class Compositor(FastMCP):
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
                     state = McpServerState.FAILED
-            per_name[name] = {"state": state, "init": init_view, "error": error, "tools": None}
+            per_name[name] = _ServerSnapshot(state=state, init=init_view, error=error, tools=None)
 
         # Phase 2: resolve tool enumeration tasks (per-server failure captured individually)
         if tool_tasks:
             order = list(tool_tasks.keys())
             results = await asyncio.gather(*(tool_tasks[n] for n in order), return_exceptions=True)
             for nm, res in zip(order, results, strict=False):
-                rec = per_name.get(nm)
-                if rec is None:
+                snapshot = per_name.get(nm)
+                if snapshot is None:
                     continue
-                if isinstance(res, Exception):
-                    rec["state"] = McpServerState.FAILED
-                    rec["error"] = f"{type(res).__name__}: {res}"
+                if isinstance(res, BaseException):
+                    snapshot.state = McpServerState.FAILED
+                    snapshot.error = f"{type(res).__name__}: {res}"
                 else:
-                    rec["tools"] = res
-                per_name[nm] = rec
+                    snapshot.tools = res
 
         # Phase 3: build the discriminated-union entries map
         entries: dict[str, ServerEntry] = {}
-        for name, rec in per_name.items():
-            st = rec.get("state")
-            if st == McpServerState.INITIALIZING:
+        for name, snapshot in per_name.items():
+            if snapshot.state == McpServerState.INITIALIZING:
                 entries[name] = InitializingServerEntry()
-            elif st == McpServerState.RUNNING:
-                init_val = rec.get("init")
-                assert init_val is not None
-                tools_val = cast(list[mcp_types.Tool], rec.get("tools") or [])
-                entries[name] = RunningServerEntry(
-                    initialize=cast(mcp_types.InitializeResult, init_val), tools=tools_val
-                )
+            elif snapshot.state == McpServerState.RUNNING:
+                assert snapshot.init is not None, f"Running server {name} must have init result"
+                entries[name] = RunningServerEntry(initialize=snapshot.init, tools=snapshot.tools or [])
             else:
-                err = rec.get("error")
-                entries[name] = FailedServerEntry(error=err if isinstance(err, str) else None)
+                entries[name] = FailedServerEntry(error=snapshot.error)
         return entries
 
     async def sampling_snapshot(self) -> SamplingSnapshot:
@@ -233,9 +235,16 @@ class Compositor(FastMCP):
         return SamplingSnapshot(ts=datetime.now(UTC).isoformat(), servers=entries_map)
 
     async def mount_specs(self) -> dict[str, MCPServerTypes]:
-        """Return a snapshot of current mount specs keyed by name."""
+        """Return a snapshot of current mount specs keyed by name.
+
+        Only includes spec-based mounts; in-process mounts (spec=None) are excluded.
+        """
         async with self._lock:
-            return {k: cast(MCPServerTypes, v.spec) for k, v in self._mounts.items() if v.spec is not None}
+            result: dict[str, MCPServerTypes] = {}
+            for k, v in self._mounts.items():
+                if v.spec is not None:
+                    result[k] = v.spec
+            return result
 
     # No resource helper methods: resources are aggregated and served via the
     # mounted proxy. Callers should use a client connected to this Compositor

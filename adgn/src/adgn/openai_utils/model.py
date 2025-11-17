@@ -338,6 +338,10 @@ class RetryingOpenAIModel:
 
     base: OpenAIModelProto
 
+    @property
+    def model(self) -> str:
+        return self.base.model
+
     @retry_decorator()
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         result = await self.base.responses_create(req)
@@ -371,4 +375,7 @@ class BoundOpenAIModel:
 
 
 class OpenAIModelProto(Protocol):  # pragma: no cover - structural typing only
+    @property
+    def model(self) -> str: ...
+
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...
