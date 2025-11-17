@@ -414,8 +414,7 @@ def make_resources_server(
         except McpError as e:
             # Reflect error in index and re-raise
             async with subs_lock:
-                rec = subs.get(rec_key)
-                if rec is not None:
+                if (rec := subs.get(rec_key)) is not None:
                     rec.active = False
                     rec.last_error = f"{type(e).__name__}: {e}"
             await _broadcast_subs_updated()

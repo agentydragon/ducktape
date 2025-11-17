@@ -272,8 +272,7 @@ def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> Notifyin
     @mcp.flat_model()
     async def send_message(input: SendMessageInput) -> MessageSendResult:
         """Send a plaintext message to the configured room."""
-        mc = client_holder.get("client")
-        if mc is None:
+        if (mc := client_holder.get("client")) is None:
             # Surface as tool error; FastMCP converts to protocol-level error
             raise ToolError("matrix client not running")
         res = await mc.send_text(input.content)

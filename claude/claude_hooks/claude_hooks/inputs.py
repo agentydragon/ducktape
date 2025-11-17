@@ -64,8 +64,7 @@ class PreToolInput(BaseHookInput):
         if not tool_name:
             return v
 
-        tool_class = TOOL_INPUT_MAP.get(tool_name)
-        if tool_class:
+        if tool_class := TOOL_INPUT_MAP.get(tool_name):
             # Parse directly with the correct class based on tool_name
             try:
                 return tool_class.model_validate(v)
@@ -92,8 +91,7 @@ class PostToolInput(BaseHookInput):
         if not tool_name:
             return v
 
-        tool_class = TOOL_INPUT_MAP.get(tool_name)
-        if tool_class:
+        if tool_class := TOOL_INPUT_MAP.get(tool_name):
             # Parse directly with the correct class based on tool_name
             try:
                 return tool_class.model_validate(v)

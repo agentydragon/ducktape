@@ -288,8 +288,7 @@ def main() -> int:
 
     # Ensure expected runtime dirs exist (TMPDIR/TMP/TEMP, MPLCONFIGDIR, PYTHONPYCACHEPREFIX)
     for key in ("TMPDIR", "TMP", "TEMP", "MPLCONFIGDIR", "PYTHONPYCACHEPREFIX"):
-        p = child_env.get(key)
-        if p:
+        if p := child_env.get(key):
             Path(p).mkdir(parents=True, exist_ok=True)
 
     # Compose SBPL policy file

@@ -48,8 +48,7 @@ class AgentRegistry:
         Raises KeyError if the agent does not exist in persistence. Propagates
         validation errors for invalid specs and container startup errors.
         """
-        c = self.get(agent_id)
-        if c is not None:
+        if (c := self.get(agent_id)) is not None:
             return c
         row = await self.persistence.get_agent(agent_id)
         if row is None:

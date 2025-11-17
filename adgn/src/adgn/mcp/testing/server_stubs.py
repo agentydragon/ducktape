@@ -63,8 +63,7 @@ class ServerStub:
                 continue
 
             # Extract return type (output model)
-            return_type = hints.get("return")
-            if not return_type:
+            if not (return_type := hints.get("return")):
                 continue
 
             # Handle Awaitable wrapping if present
