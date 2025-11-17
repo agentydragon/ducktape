@@ -26,7 +26,6 @@ from mcp import types as mcp_types
 from adgn.mcp.snapshots import (
     FailedServerEntry,
     InitializingServerEntry,
-    McpServerState,
     RunningServerEntry,
     SamplingSnapshot,
     ServerEntry,
@@ -52,13 +51,33 @@ class _MountState:
 
 
 @dataclass
-class _ServerSnapshot:
-    """Intermediate snapshot of server state during status gathering."""
+class _InitializingSnapshot:
+    """Server is initializing."""
 
-    state: McpServerState
-    init: mcp_types.InitializeResult | None = None
+
+@dataclass
+class _PendingToolsSnapshot:
+    """Server initialized, waiting for tools enumeration."""
+
+    init: mcp_types.InitializeResult
+
+
+@dataclass
+class _ReadySnapshot:
+    """Server ready with tools enumerated."""
+
+    init: mcp_types.InitializeResult
+    tools: list[mcp_types.Tool]
+
+
+@dataclass
+class _FailedSnapshot:
+    """Server failed during initialization or tool enumeration."""
+
     error: str | None = None
-    tools: list[mcp_types.Tool] | None = None
+
+
+_ServerSnapshot = _InitializingSnapshot | _PendingToolsSnapshot | _ReadySnapshot | _FailedSnapshot
 
 
 class MountEvent(StrEnum):
@@ -176,9 +195,6 @@ class Compositor(FastMCP):
         per_name: dict[str, _ServerSnapshot] = {}
         tool_tasks: dict[str, asyncio.Task[list[mcp_types.Tool]]] = {}
         for name, mount in items:
-            state = McpServerState.INITIALIZING
-            error: str | None = None
-            init_view: mcp_types.InitializeResult | None = None
             if mount.proxy is not None:
                 try:
                     init = mount.cached_init
@@ -188,7 +204,6 @@ class Compositor(FastMCP):
                         async with client as c:
                             init = c.initialize_result
                             mount.cached_init = init
-                    init_view = init
 
                     # Schedule list_tools via proxy client for parallel enumeration
                     async def _list_tools_via_client(cf):
@@ -197,11 +212,11 @@ class Compositor(FastMCP):
                             return await cli.list_tools()
 
                     tool_tasks[name] = asyncio.create_task(_list_tools_via_client(mount.proxy.client_factory))
-                    state = McpServerState.RUNNING
+                    per_name[name] = _PendingToolsSnapshot(init=init)
                 except Exception as e:
-                    error = f"{type(e).__name__}: {e}"
-                    state = McpServerState.FAILED
-            per_name[name] = _ServerSnapshot(state=state, init=init_view, error=error, tools=None)
+                    per_name[name] = _FailedSnapshot(error=f"{type(e).__name__}: {e}")
+            else:
+                per_name[name] = _InitializingSnapshot()
 
         # Phase 2: resolve tool enumeration tasks (per-server failure captured individually)
         if tool_tasks:
@@ -212,20 +227,20 @@ class Compositor(FastMCP):
                 if snapshot is None:
                     continue
                 if isinstance(res, BaseException):
-                    snapshot.state = McpServerState.FAILED
-                    snapshot.error = f"{type(res).__name__}: {res}"
-                else:
-                    snapshot.tools = res
+                    per_name[nm] = _FailedSnapshot(error=f"{type(res).__name__}: {res}")
+                elif isinstance(snapshot, _PendingToolsSnapshot):
+                    per_name[nm] = _ReadySnapshot(init=snapshot.init, tools=res)
+                # else: ignore tools result for non-pending snapshots (already failed/initializing)
 
         # Phase 3: build the discriminated-union entries map
         entries: dict[str, ServerEntry] = {}
         for name, snapshot in per_name.items():
-            if snapshot.state == McpServerState.INITIALIZING:
+            if isinstance(snapshot, _InitializingSnapshot):
                 entries[name] = InitializingServerEntry()
-            elif snapshot.state == McpServerState.RUNNING:
-                assert snapshot.init is not None, f"Running server {name} must have init result"
-                entries[name] = RunningServerEntry(initialize=snapshot.init, tools=snapshot.tools or [])
-            else:
+            elif isinstance(snapshot, _PendingToolsSnapshot | _ReadySnapshot):
+                tools = snapshot.tools if isinstance(snapshot, _ReadySnapshot) else []
+                entries[name] = RunningServerEntry(initialize=snapshot.init, tools=tools)
+            elif isinstance(snapshot, _FailedSnapshot):
                 entries[name] = FailedServerEntry(error=snapshot.error)
         return entries
 

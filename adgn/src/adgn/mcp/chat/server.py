@@ -176,12 +176,12 @@ class ChatStorePersisted(ChatStore):
 
     def __init__(self, *, persistence: SQLitePersistence, agent_id: str) -> None:
         super().__init__()
-        self._p = persistence
+        self._persistence = persistence
         self._agent = agent_id
 
     async def last_id_async(self) -> str | None:
         async with (
-            self._p._open_row() as db,
+            self._persistence._open_row() as db,
             db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
         ):
             if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
@@ -190,7 +190,7 @@ class ChatStorePersisted(ChatStore):
 
     async def get_last_read_async(self, server_name: str) -> str | None:
         async with (
-            self._p._open_row() as db,
+            self._persistence._open_row() as db,
             db.execute(
                 "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
             ) as cur,
@@ -201,7 +201,7 @@ class ChatStorePersisted(ChatStore):
 
     async def append(self, *, author: ChatAuthor, mime: str, content: str) -> str:
         ts = datetime.now(UTC).isoformat()
-        async with self._p._open() as db:
+        async with self._persistence._open() as db:
             cur = await db.execute(
                 "INSERT INTO chat_messages (agent_id, ts, author, mime, content) VALUES (?, ?, ?, ?, ?)",
                 (self._agent, ts, author.value, mime, content),
@@ -218,7 +218,7 @@ class ChatStorePersisted(ChatStore):
         except (TypeError, ValueError):
             return None
         async with (
-            self._p._open_row() as db,
+            self._persistence._open_row() as db,
             db.execute(
                 "SELECT id, ts, author, mime, content FROM chat_messages WHERE agent_id = ? AND id = ?",
                 (self._agent, seq),
@@ -240,7 +240,7 @@ class ChatStorePersisted(ChatStore):
         other = ChatAuthor.ASSISTANT if server_author is ChatAuthor.USER else ChatAuthor.USER
         cap = limit if isinstance(limit, int) and limit > 0 else None
         async with (
-            self._p._open_row() as db,
+            self._persistence._open_row() as db,
             db.execute(
                 "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
             ) as cur,
@@ -249,7 +249,7 @@ class ChatStorePersisted(ChatStore):
             after_seq = r["last_id"] if r else None
 
         # Fetch messages after HWM
-        async with self._p._open_row() as db:
+        async with self._persistence._open_row() as db:
             sql = (
                 "SELECT id, ts, author, mime, content FROM chat_messages "
                 "WHERE agent_id = ? AND id > ? AND author = ? ORDER BY id ASC"
@@ -265,7 +265,7 @@ class ChatStorePersisted(ChatStore):
 
         if msgs:
             last_seq = int(msgs[-1].id)
-            async with self._p._open() as db:
+            async with self._persistence._open() as db:
                 await db.execute(
                     "INSERT INTO chat_last_read (agent_id, server_name, last_id) VALUES (?, ?, ?) "
                     "ON CONFLICT(agent_id, server_name) DO UPDATE SET last_id=excluded.last_id",
@@ -275,7 +275,7 @@ class ChatStorePersisted(ChatStore):
             await self._notify_last_read(server_name=server_name)
         # last_id: query MAX(id)
         async with (
-            self._p._open_row() as db,
+            self._persistence._open_row() as db,
             db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
         ):
             r = await cur.fetchone()

@@ -1,15 +1,9 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, cast
 
 from typing_extensions import TypedDict
-
-
-def to_reasoning_effort(value: ReasoningEffort | None) -> ReasoningEffortLiteral | None:
-    if value is None:
-        return None
-    return value.value
 
 
 class ReasoningEffort(StrEnum):
@@ -31,7 +25,9 @@ def build_reasoning_params(
 ) -> ReasoningParams | None:
     """Convert optional reasoning knobs into adapter ReasoningParams."""
 
-    effort_value = to_reasoning_effort(effort)
+    effort_value: ReasoningEffortLiteral | None = (
+        cast(ReasoningEffortLiteral, effort.value) if effort is not None else None
+    )
     summary_value = summary.value if summary is not None else None
 
     if effort_value is None and summary_value is None:
