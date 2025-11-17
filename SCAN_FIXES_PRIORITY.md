@@ -1,31 +1,12 @@
 # Priority Fixes from Code Quality Scan
 
-This document provides **immediately actionable** fixes for the highest-priority issues found in the comprehensive code scan.
+Remaining actionable fixes from comprehensive code scan.
 
 ---
 
-## ✅ COMPLETED FIXES
+## 🟡 HIGH PRIORITY
 
-### ~~Fix 1: Overly Permissive Union in builders.py~~ [DONE]
-**Status:** Removed `| str` from all signatures, now requires `dict[str, Any]`
-
-### ~~Fix 2: Deprecated asyncio.get_event_loop()~~ [DONE]
-**Status:** Changed to `get_running_loop()` in 3 files, removed dead code
-
-### ~~Fix 3: Docker Container ID Assertions~~ [DONE]
-**Status:** Made `_container_or_raise()` validate container.id internally
-
-### ~~Fix 4: Blocking File I/O in Async Tests~~ [DONE]
-**Status:** Used `asyncio.to_thread()` for all file I/O in 3 tests
-
-### ~~Fix 5: Verbose Test Collection Checks~~ [DONE]
-**Status:** Combined assertions using `all_of()` matcher in habitify tests
-
----
-
-## 🟡 REMAINING HIGH PRIORITY
-
-### Fix 6: Parameter Typed as Any in High-Traffic Functions
+### Fix 1: Parameter Typed as Any in High-Traffic Functions
 
 Search strategy:
 ```bash
@@ -38,7 +19,7 @@ rg --type py "def \w+\([^)]*: Any" adgn/src/ -n
 # 3. What callers actually pass
 ```
 
-**Common Pattern Found:**
+**Common Pattern:**
 ```python
 # BAD
 def process(data: Any) -> str:
@@ -48,11 +29,6 @@ def process(data: Any) -> str:
 
 # GOOD
 def process(data: dict[str, Any] | str) -> str:
-    """Process data to JSON string.
-
-    Args:
-        data: Data as dict (will be serialized) or pre-serialized string
-    """
     if isinstance(data, str):
         return data
     return json.dumps(data)
@@ -68,7 +44,7 @@ def process(data: dict[str, Any] | str) -> str:
 
 ---
 
-### Fix 7: Functions Returning dict[str, Any]
+### Fix 2: Functions Returning dict[str, Any]
 
 **Pattern:**
 ```python
@@ -91,7 +67,7 @@ def get_config() -> ConfigModel:
 
 ## 🟢 LOWER PRIORITY
 
-### Fix 8: Remaining Verbose Test Assertions
+### Fix 3: Remaining Verbose Test Assertions
 
 **Pattern (20+ instances in other test files):**
 ```python
@@ -121,7 +97,6 @@ assert_that(result, all_of(
 
 ## 📊 Progress Summary
 
-**Completed:** 5/8 identified issues (all critical + high priority async/test fixes)
 **Remaining:**
 - 2 Medium Priority (Any parameters, dict[str, Any] returns)
 - 1 Low Priority (remaining verbose test assertions)
@@ -157,15 +132,3 @@ rg --type py ": dict\[str, Any\]" -B1
 echo ""
 echo "Check if should return Pydantic model instead"
 ```
-
----
-
-## 📝 NOTES
-
-- All critical fixes have been applied and tested
-- Type safety improvements enable better IDE support
-- Async fixes ensure proper non-blocking I/O
-- Test clarity improvements provide better error messages
-- Remaining fixes are incremental improvements, not blockers
-
-Run detection scripts to identify remaining fix opportunities.
