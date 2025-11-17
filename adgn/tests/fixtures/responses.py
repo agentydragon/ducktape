@@ -48,7 +48,7 @@ class ResponsesFactory:
             output=[self._item_factory.assistant_text(text)],
         )
 
-    def make_tool_call(self, name: str, arguments: dict | str, call_id: str | None = None) -> ResponsesResult:
+    def make_tool_call(self, name: str, arguments: dict[str, Any], call_id: str | None = None) -> ResponsesResult:
         return self.make(self._item_factory.tool_call(name, arguments, call_id))
 
     # ---- Low-level item builders (compose with make(...items)) ----
@@ -56,15 +56,15 @@ class ResponsesFactory:
     def assistant_text(self, text: str) -> AssistantMessageOut:
         """Create an assistant text item. Delegates to ItemFactory."""
         return self._item_factory.assistant_text(text)
-    
-    def tool_call(self, name: str, arguments: dict[str, Any] | str, call_id: str | None = None) -> FunctionCallItem:
+
+    def tool_call(self, name: str, arguments: dict[str, Any], call_id: str | None = None) -> FunctionCallItem:
         """Create a tool call item. Delegates to ItemFactory."""
         return self._item_factory.tool_call(name, arguments, call_id)
 
     def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:
         return ReasoningItem(id=id or f"rs_{self._next_reasoning_id()}")
 
-    def make_item_tool_call_auto(self, name: str, arguments: dict | str) -> FunctionCallItem:
+    def make_item_tool_call_auto(self, name: str, arguments: dict[str, Any]) -> FunctionCallItem:
         return self._item_factory.tool_call(name, arguments)
 
     # ---- Message/response constructors (compose items) ----
@@ -79,7 +79,7 @@ class ResponsesFactory:
         # Coerce any plain dicts to proper models if needed (not expected here)
         return ResponsesResult(id="resp_generic", usage=usage, output=list(items))
 
-    def make_tool_call_auto(self, name: str, arguments: dict | str) -> ResponsesResult:
+    def make_tool_call_auto(self, name: str, arguments: dict[str, Any]) -> ResponsesResult:
         return self.make(self.make_item_tool_call_auto(name, arguments))
 
     def make_final_assistant(self, text: str) -> ResponsesResult:
@@ -89,14 +89,14 @@ class ResponsesFactory:
         return self.make(self.make_item_reasoning(), self._item_factory.assistant_text(text))
 
     def make_reasoning_tool_then_assistant(
-        self, *, call_id: str, name: str, arguments: dict | str, text: str
+        self, *, call_id: str, name: str, arguments: dict[str, Any], text: str
     ) -> ResponsesResult:
         return self.make(
             self.make_item_reasoning(), self._item_factory.tool_call(name, arguments, call_id), self._item_factory.assistant_text(text)
         )
 
     def make_tool_call_with_output(
-        self, name: str, arguments: dict | str, output: Any, call_id: str | None = None
+        self, name: str, arguments: dict[str, Any], output: Any, call_id: str | None = None
     ) -> ResponsesResult:
         call = self._item_factory.tool_call(name, arguments, call_id)
         result = CallToolResult(content=[], structured_content=output, data=None, is_error=False)

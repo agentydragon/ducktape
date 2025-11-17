@@ -43,7 +43,7 @@ async def async_timer() -> AsyncGenerator[Callable[[], int], None]:
             # do work
             duration_ms = get_duration_ms()
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     start_time = loop.time()
 
     def get_duration_ms() -> int:

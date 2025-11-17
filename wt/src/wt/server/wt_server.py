@@ -203,11 +203,6 @@ class WtDaemon:
         self.registry = WorktreeRegistry()
         self._startup_tasks: list[asyncio.Task] = []
 
-        def _shared_async_run(awaitable):
-            return asyncio.get_event_loop().run_until_complete(awaitable)
-
-        self.shared_async_run = _shared_async_run
-
         # Ensure daemon directory exists
         self.config.wt_dir.mkdir(exist_ok=True)
 

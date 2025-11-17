@@ -132,7 +132,7 @@ class SeatbeltExecMCP(NotifyingFastMCP):
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     ) as proc:
-                        loop = asyncio.get_event_loop()
+                        loop = asyncio.get_running_loop()
                         start = loop.time()
                         total_secs = max(0.001, float(input.timeout_ms) / 1000.0)
                         deadline = start + total_secs
