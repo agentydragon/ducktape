@@ -74,7 +74,7 @@ class _ReadySnapshot:
 class _FailedSnapshot:
     """Server failed during initialization or tool enumeration."""
 
-    error: str | None = None
+    error: str
 
 
 _ServerSnapshot = _InitializingSnapshot | _PendingToolsSnapshot | _ReadySnapshot | _FailedSnapshot

@@ -25,7 +25,7 @@ class RunningServerEntry(BaseModel):
 
 class FailedServerEntry(BaseModel):
     state: Literal[McpServerState.FAILED] = McpServerState.FAILED
-    error: str | None
+    error: str
 
 
 ServerEntry = Annotated[InitializingServerEntry | RunningServerEntry | FailedServerEntry, Field(discriminator="state")]
