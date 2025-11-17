@@ -85,16 +85,25 @@ def validate_config(config: Config) -> bool:
     """
     ...
 
-# GOOD: Docstring explains semantics beyond types
-def process_user(user: User, admin: bool = False) -> None:
+# BETTER: Fix the names first, then minimal docs
+def update_user_last_seen(user: User, *, skip_rate_limit: bool = False) -> None:
     """Update user's last_seen timestamp and log the access.
 
     Args:
-        user: User to process. Must have valid session (raises if session expired).
-        admin: If True, skip rate limiting and audit log the admin access.
-              Only set this when processing admin console requests.
+        user: Must have valid session (raises SessionExpiredError if expired)
+        skip_rate_limit: If True, skip rate limiting and audit log admin access.
+                        Only use for admin console requests.
     """
-    # This explains WHAT happens (side effects) and WHY parameters matter (semantics)
+    # Names are clearer, docs add value (preconditions, when to use skip_rate_limit)
+    ...
+
+# BEST: Great names + docs only for non-obvious details
+def update_user_last_seen(user: User, *, from_admin_console: bool = False) -> None:
+    """Update last_seen timestamp and log access (with optional admin audit trail).
+
+    Raises SessionExpiredError if user.session has expired.
+    """
+    # Function name says WHAT, param name says WHY it matters, docs cover edge cases
     ...
 ```
 
