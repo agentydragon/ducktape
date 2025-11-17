@@ -6,12 +6,19 @@
 
 ## Executive Summary
 
-This comprehensive scan identified **100+ instances** of code quality issues across 4 categories:
+This comprehensive scan identified remaining actionable code quality issues across 3 categories:
 
 1. **Test Assertions** (60+ files): Verbose test assertions that could use PyHamcrest matchers
-2. **Suspicious Nullability** (50+ instances): Unnecessary None handling and type propagation
-3. **Overly Loose Typing** (70+ instances): `Any` and `dict[str, Any]` that should be specific types
-4. **Asyncio Antipatterns** (6 instances): Deprecated APIs and blocking I/O in async functions
+2. **Suspicious Nullability** (40+ instances): Unnecessary None handling and type propagation
+3. **Overly Loose Typing** (50+ instances): `dict[str, Any]` that should be specific types
+4. **Asyncio Antipatterns** (4 instances): Blocking I/O in async functions
+
+**Recently Completed** (not shown in this document):
+- ✅ Issue 2.1: Container ID assertions (containerized_claude.py)
+- ✅ Issue 3.1: Overly Permissive Union (builders.py)
+- ✅ Issue 3.2: Parameter Typed as Any (builders.py)
+- ✅ Issue 4.1: Deprecated get_event_loop() (wt_server.py)
+- ✅ Issue 4.3: os.pipe() Without O_NONBLOCK (wt_client.py)
 
 ---
 
@@ -92,56 +99,11 @@ assert_that(str(excinfo.value).lower(), contains_string("date format"))
 ## 2. Suspicious Nullability
 
 ### Overview
-Found 50+ instances where `| None` typing is suspicious or propagates unnecessarily.
+Found 40+ remaining instances where `| None` typing is suspicious or propagates unnecessarily.
 
 ### Critical Issues
 
-#### Issue 2.1: Immediate Assertion That Value Is Not None
-**File:** `adgn/src/adgn/inop/runners/containerized_claude.py:240,402,474`
-
-**Current Code:**
-```python
-# BAD: container.id is typed str | None but we immediately assert non-None
-container_id = c.id  # Type: str | None from Docker API
-assert container_id is not None, "Container must have an ID"
-# ... use container_id (3 times in this file)
-```
-
-**Recommended Fix:**
-```python
-# GOOD: Type-narrowing helper
-def _require_container_id(container: Container) -> str:
-    """Get container ID, raising if None.
-
-    Args:
-        container: Docker container object
-
-    Returns:
-        Container ID (non-None)
-
-    Raises:
-        RuntimeError: If container has no ID (should never happen after creation)
-    """
-    if container.id is None:
-        raise RuntimeError("Container created but has no ID - this should never happen")
-    return container.id
-
-# Usage (replace all 3 instances):
-container_id = _require_container_id(c)  # Type: str
-```
-
-**Rationale:**
-- Docker containers always have IDs after creation
-- Docker library types are overly conservative
-- Type-narrowing helper makes intent clear and types precise
-
-**Impact:** Type safety, clearer domain constraints
-**Priority:** High
-**Instances:** 3 in this file, 20+ across adgn/src/
-
----
-
-#### Issue 2.2: Parameter Typed as T | None But Immediately Fails If None
+#### Issue 2.1: Parameter Typed as T | None But Immediately Fails If None
 **Location:** Not found in grep, but pattern likely exists
 
 **Detection Strategy:**
@@ -173,7 +135,7 @@ if value is not None:
 
 ---
 
-#### Issue 2.3: None Propagation Through Layers
+#### Issue 2.2: None Propagation Through Layers
 **File:** `wt/src/wt/server/services.py`, `wt/src/wt/server/gitstatusd_listener.py`
 
 **Pattern Found:**
@@ -196,114 +158,24 @@ return x if x else None
 
 **Files with assert is not None:**
 - `wt/src/wt/server/pr_service.py` - Multiple assertions
-- `adgn/src/adgn/agent/runtime/*.py` - Container management
+- `adgn/src/adgn/agent/runtime/*.py` - Container management (some fixed, may have more)
 - `llm/ducktape_llm_common/tests/*/test_*.py` - Test setup code
 - `adgn/tests/*/test_*.py` - Test assertions
 
 **Bulk Fix Strategy:**
-1. Create type-narrowing helpers for Docker container.id pattern (highest frequency)
-2. Review functions with `| None` parameters for immediate None checks
-3. Refactor None propagation chains in wt/src/
+1. Review functions with `| None` parameters for immediate None checks
+2. Refactor None propagation chains in wt/src/
 
 ---
 
 ## 3. Overly Loose Typing
 
 ### Overview
-Found 70+ instances of `Any`, `dict[str, Any]`, and overly permissive unions.
+Found 50+ remaining instances of `dict[str, Any]` and overly permissive unions.
 
 ### Critical Issues
 
-#### Issue 3.1: Overly Permissive Union - dict | str
-**File:** `adgn/src/adgn/openai_utils/builders.py:18-20`
-
-**Current Code:**
-```python
-# BAD: Accepts both dict and str "for convenience"
-def make_item_tool_call(
-    *,
-    call_id: str,
-    name: str,
-    arguments: dict[str, Any] | str  # Ambiguous!
-) -> FunctionCallItem:
-    args_json = json.dumps(arguments) if isinstance(arguments, dict) else str(arguments)
-    return FunctionCallItem(call_id=call_id, name=name, arguments=args_json)
-```
-
-**Recommended Fix:**
-```python
-# GOOD: Clear, unambiguous API - accept only structured data
-def make_item_tool_call(
-    *,
-    call_id: str,
-    name: str,
-    arguments: dict[str, Any]  # Clearly wants structured data
-) -> FunctionCallItem:
-    """Create a function call item.
-
-    Args:
-        call_id: Unique call identifier
-        name: Function name
-        arguments: Function arguments as dict (will be JSON-serialized internally)
-                  If you have pre-serialized JSON string, deserialize it first:
-                  `make_item_tool_call(arguments=json.loads(json_string))`
-    """
-    args_json = json.dumps(arguments)
-    return FunctionCallItem(call_id=call_id, name=name, arguments=args_json)
-```
-
-**Rationale:**
-- API should have ONE clear contract
-- Force callers to be explicit about what they're passing
-- Runtime isinstance() check is a code smell
-- One `json.loads()` at call site > ambiguous API
-
-**Impact:** Type safety, clearer API contracts
-**Priority:** High
-**Instances:** 3 in this file (lines 18, 42, 50)
-
----
-
-#### Issue 3.2: Parameter Typed as Any
-**File:** `adgn/src/adgn/openai_utils/builders.py:50`
-
-**Current Code:**
-```python
-# BAD: output typed as Any
-def tool_call_with_output(
-    self,
-    name: str,
-    arguments: dict[str, Any] | str,  # Already bad
-    output: Any,  # VERY BAD
-    call_id: str | None = None
-) -> tuple[FunctionCallItem, FunctionCallOutputItem]:
-```
-
-**Recommended Fix:**
-```python
-# GOOD: Specific union type
-def tool_call_with_output(
-    self,
-    name: str,
-    arguments: dict[str, Any],  # Fix this too per Issue 3.1
-    output: str | dict[str, Any] | FunctionCallOutputItem,  # Explicit types
-    call_id: str | None = None
-) -> tuple[FunctionCallItem, FunctionCallOutputItem]:
-    """Create a tool call with output.
-
-    Args:
-        output: Tool output as string, dict (will be JSON-serialized),
-                or pre-constructed FunctionCallOutputItem
-    """
-```
-
-**Impact:** Type safety, better IDE support
-**Priority:** High
-**Instances:** 30+ files with `Any` parameters
-
----
-
-#### Issue 3.3: Functions Returning dict[str, Any]
+#### Issue 3.1: Functions Returning dict[str, Any]
 **File:** `llm/ducktape_llm_common/ducktape_llm_common/claude_code_api.py:39,47`
 
 **Current Code:**
@@ -337,66 +209,28 @@ def get_config() -> ConfigModel:
 
 **Categories:**
 
-1. **Parameters typed as `Any`** (30+ files):
-   - experimental/cotrl, ansible/plugins, wt/src/, llm/mcp/
-   - Priority: Review each, replace with specific union
-
-2. **dict[str, Any] parameters** (50+ files):
+1. **dict[str, Any] parameters** (50+ files):
    - Widespread across all components
    - Priority: Check if should be Pydantic models
 
-3. **dict[str, Any] returns** (30+ files):
+2. **dict[str, Any] returns** (30+ files):
    - Often from model_dump() - should return model directly
    - Priority: Trace back to source
 
 **Bulk Fix Strategy:**
-1. Fix highest-impact: `adgn/src/adgn/openai_utils/builders.py` (used widely)
-2. Create Pydantic models for common dict[str, Any] patterns
-3. Add type aliases for truly dynamic data (with documentation)
+1. Create Pydantic models for common dict[str, Any] patterns
+2. Add type aliases for truly dynamic data (with documentation)
 
 ---
 
 ## 4. Asyncio Antipatterns
 
 ### Overview
-Found 6 instances of deprecated APIs and blocking I/O in async functions.
+Found 4 remaining instances of blocking I/O in async functions.
 
 ### Critical Issues
 
-#### Issue 4.1: Deprecated asyncio.get_event_loop()
-**File:** `wt/src/wt/server/wt_server.py:207`
-
-**Current Code:**
-```python
-# BAD: get_event_loop() is deprecated in Python 3.10+
-def _shared_async_run(awaitable):
-    return asyncio.get_event_loop().run_until_complete(awaitable)
-```
-
-**Recommended Fix:**
-```python
-# GOOD: Use get_running_loop() if already in async context
-# Or create new event loop if this is top-level entry point
-
-# Option 1: If this is top-level entry (e.g., called from __main__)
-def _shared_async_run(awaitable):
-    return asyncio.run(awaitable)
-
-# Option 2: If this is called from within async context
-async def _shared_async_run(awaitable):
-    # Already have a running loop, just await
-    return await awaitable
-```
-
-**Context Needed:** Need to understand where `_shared_async_run` is called from.
-
-**Impact:** Future Python compatibility
-**Priority:** High
-**Instances:** 3 files (wt_server.py, adgn/src/adgn/mcp/exec/models.py, seatbelt.py)
-
----
-
-#### Issue 4.2: Blocking File I/O in Async Functions
+#### Issue 4.1: Blocking File I/O in Async Functions
 **File:** `adgn/tests/llm/test_llm_edit_unit.py:56,66,72,82,88,102`
 
 **Current Code:**
@@ -455,39 +289,7 @@ async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_sessio
 
 ---
 
-#### Issue 4.3: os.pipe() Without O_NONBLOCK
-**File:** `wt/src/wt/client/wt_client.py`
-
-**Current Code:** (Need to read to confirm)
-
-**Recommended Fix:**
-```python
-# BAD: os.pipe() without non-blocking setup
-read_fd, write_fd = os.pipe()
-# ... use with asyncio
-
-# GOOD: Set O_NONBLOCK before asyncio use
-import fcntl
-import os
-
-read_fd, write_fd = os.pipe()
-for fd in (read_fd, write_fd):
-    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-# Now safe for asyncio
-```
-
-**Priority:** High (can cause blocking)
-**Instances:** 1 file
-
----
-
 ### Additional Asyncio Issues
-
-**Files with deprecated get_event_loop():**
-- `wt/src/wt/server/wt_server.py:207`
-- `adgn/src/adgn/mcp/exec/models.py` (location TBD)
-- `adgn/src/adgn/mcp/exec/seatbelt.py` (location TBD)
 
 **Files with blocking file I/O in async:**
 - `gatelet/gatelet/server/endpoints/test_admin_logs.py`
@@ -495,9 +297,8 @@ for fd in (read_fd, write_fd):
 - `adgn/tests/agent/conftest.py`
 
 **Bulk Fix Strategy:**
-1. Fix deprecated get_event_loop() first (high priority, easy fix)
-2. Add aiofiles to test dependencies
-3. Create async file I/O helper for tests
+1. Add aiofiles to test dependencies
+2. Create async file I/O helper for tests
 
 ---
 
@@ -505,50 +306,41 @@ for fd in (read_fd, write_fd):
 
 | Issue | Priority | Impact | Effort | Files Affected |
 |-------|----------|--------|--------|----------------|
-| 3.1 Permissive Union (builders.py) | HIGH | High | Low | 1 (high usage) |
-| 2.1 Container ID Assertions | HIGH | Medium | Low | 3+ |
-| 4.1 Deprecated get_event_loop() | HIGH | Medium | Low | 3 |
-| 4.3 os.pipe() O_NONBLOCK | HIGH | High | Low | 1 |
-| 3.2 Any Parameters | HIGH | High | Medium | 30+ |
-| 2.2 None Parameter Raises | HIGH | Medium | Medium | 10-15 |
-| 4.2 Blocking File I/O | MEDIUM | Low | Medium | 3 |
-| 1.1 Verbose Collection Checks | MEDIUM | Low | Low | 20+ |
-| 3.3 dict[str, Any] Returns | MEDIUM | Medium | High | 30+ |
-| 1.2 Full-Object has_properties | LOW | Low | Low | 10+ |
-| 1.3 String Inclusion | LOW | Low | Low | 20+ |
+| 2.1 None Parameter Raises | HIGH | Medium | Medium | 10-15 |
+| 4.1 Blocking File I/O | MEDIUM | Low | Medium | 3 |
+| 3.1 dict[str, Any] Returns | MEDIUM | Medium | High | 30+ |
+| 1.1 Full-Object has_properties | LOW | Low | Low | 10+ |
+| 1.2 String Inclusion | LOW | Low | Low | 20+ |
 
 ---
 
 ## Recommended Action Plan
 
-### Phase 1: High-Priority Quick Wins (1-2 hours)
-1. Fix `adgn/src/adgn/openai_utils/builders.py` (Issue 3.1, 3.2) - high usage
-2. Fix deprecated `get_event_loop()` in 3 files (Issue 4.1)
-3. Add type-narrowing helper for container.id (Issue 2.1)
-4. Fix os.pipe() O_NONBLOCK (Issue 4.3)
+### Phase 1: Nullability Cleanup (2-4 hours)
+1. Identify functions with `| None` params that immediately raise (Issue 2.1)
+2. Refactor None propagation chains in wt/src/ (Issue 2.2)
 
-**Expected Impact:** Type safety in core libraries, Python 3.10+ compatibility
+**Expected Impact:** Better type safety, clearer APIs
 
-### Phase 2: Parameter Type Cleanup (4-6 hours)
-1. Review and fix `Any` parameters in adgn/src/adgn/ (Issue 3.2)
-2. Identify functions with `| None` params that immediately raise (Issue 2.2)
-3. Fix blocking file I/O in tests (Issue 4.2)
+### Phase 2: Async I/O Improvements (2-3 hours)
+1. Fix blocking file I/O in tests (Issue 4.1)
+2. Add aiofiles dependency
+3. Create async file I/O helper for tests
 
-**Expected Impact:** Better type safety across adgn codebase
+**Expected Impact:** Proper async I/O patterns in tests
 
-### Phase 3: Test Improvements (2-4 hours)
-1. Fix verbose collection checks in habitify tests (Issue 1.1)
-2. Convert full-object has_properties to plain equality (Issue 1.2)
-3. Add PyHamcrest matchers for string assertions (Issue 1.3)
-
-**Expected Impact:** Better test error messages, clearer test intent
-
-### Phase 4: dict[str, Any] Audit (8-12 hours)
-1. Create Pydantic models for common dict[str, Any] patterns (Issue 3.3)
+### Phase 3: dict[str, Any] Audit (8-12 hours)
+1. Create Pydantic models for common dict[str, Any] patterns (Issue 3.1)
 2. Trace model_dump() returns back to source
 3. Document truly dynamic data cases
 
 **Expected Impact:** Comprehensive type safety, better IDE support
+
+### Phase 4: Test Improvements (2-4 hours)
+1. Convert full-object has_properties to plain equality (Issue 1.1)
+2. Add PyHamcrest matchers for string assertions (Issue 1.2)
+
+**Expected Impact:** Better test error messages, clearer test intent
 
 ---
 
@@ -567,27 +359,15 @@ rg --type py "def \w+\([^)]*: \w+ \| None" -A3 | grep -B3 "raise" > nullable_par
 ### Script 2: Find Loose Typing
 ```bash
 #!/bin/bash
-# Find Any parameters
-rg --type py "def \w+\([^)]*: Any" > any_parameters.txt
-
 # Find dict[str, Any] returns
 rg --type py ": dict\[str, Any\]" -B1 > dict_any_usage.txt
-
-# Find permissive unions
-rg --type py ": dict\[str, Any\] \| str" > permissive_unions.txt
 ```
 
 ### Script 3: Find Asyncio Issues
 ```bash
 #!/bin/bash
-# Find deprecated get_event_loop
-rg --type py 'asyncio\.get_event_loop\(\)' -B3 -A3 > deprecated_event_loop.txt
-
 # Find blocking file I/O in async
 rg --type py -U 'async def.*\n.*\n.*\.(read_text|write_text)\(' > async_blocking_io.txt
-
-# Find os.pipe usage
-rg --type py 'os\.pipe\(\)' -B5 -A10 > os_pipe_usage.txt
 ```
 
 ---
@@ -604,9 +384,7 @@ rg --type py 'os\.pipe\(\)' -B5 -A10 > os_pipe_usage.txt
 
 ## Next Steps
 
-1. Review and approve this scan report
-2. Create GitHub issues for each high-priority item
-3. Execute Phase 1 fixes
-4. Re-run scans to verify fixes
-5. Continue with subsequent phases
-
+1. Review this updated scan report
+2. Execute Phase 1 fixes (nullability cleanup)
+3. Re-run scans to verify fixes
+4. Continue with subsequent phases

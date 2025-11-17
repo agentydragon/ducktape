@@ -7,25 +7,34 @@
 
 ### 0. Unnecessary @pytest.mark.asyncio Decorators
 
-**Context**: Many projects use `asyncio_mode = "auto"` in `pyproject.toml`, which automatically detects async test functions without requiring explicit `@pytest.mark.asyncio` decorators.
+**Context**: Projects can configure `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` section of `pyproject.toml` (or `pytest.ini`), which automatically detects async test functions without requiring explicit `@pytest.mark.asyncio` decorators.
 
-**Projects with auto-detection enabled:**
-- `adgn/`
-- `gatelet/`
-- `claude/claude_optimizer/`
-- `homeassistant/iaqi/`
-- `mcp_starter/`
-- `experimental/dbus_fast_example/`
+**Antipattern**: Using `@pytest.mark.asyncio` decorators when `asyncio_mode = "auto"` is configured.
 
-**Antipattern**: Adding `@pytest.mark.asyncio` when `asyncio_mode = "auto"` is already configured.
-
-**Fix**: Remove the decorator. Pytest will automatically detect async test functions (any `async def test_*()`) and run them appropriately.
+**Fix Strategy**:
+1. **Check pytest configuration**: Look for `asyncio_mode = "auto"` in project's `pyproject.toml` or `pytest.ini`
+2. **If auto-detection is enabled**: Remove `@pytest.mark.asyncio` decorators - pytest will automatically detect `async def test_*()` functions
+3. **If auto-detection is NOT enabled**: Consider enabling it by adding to `pyproject.toml`:
+   ```toml
+   [tool.pytest.ini_options]
+   asyncio_mode = "auto"
+   ```
+   Then remove the decorators.
 
 **Detection**:
 ```bash
-# Find explicit asyncio markers in projects with auto-detection
-rg --type py '@pytest\.mark\.asyncio' adgn/ gatelet/ claude/claude_optimizer/ homeassistant/iaqi/ mcp_starter/ experimental/dbus_fast_example/
+# Step 1: Check if project has asyncio auto-detection
+rg --type toml 'asyncio_mode.*=.*"auto"' pyproject.toml
+rg 'asyncio_mode.*=.*auto' pytest.ini
+
+# Step 2: If auto-detection is found, find redundant decorators
+rg --type py '@pytest\.mark\.asyncio'
+
+# Step 3: Review each async test to confirm it would be auto-detected
+# (any `async def test_*()` function will be detected)
 ```
+
+**Benefit**: Cleaner test code, automatic detection of new async tests without manual decorator addition.
 
 ### 1. Blocking I/O in Async Functions
 - **File I/O**: `path.read_text()`, `path.write_text()`, `open()` without async wrappers
