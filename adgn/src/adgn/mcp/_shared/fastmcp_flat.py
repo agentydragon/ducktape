@@ -171,6 +171,13 @@ def _extract_signature_params(fn: Callable[..., Any]) -> tuple[inspect.Parameter
     return payload_param, context_param, context_name
 
 
+def _transfer_mcp_metadata(target: Callable[..., Any], wrapper: FlatWrapper) -> None:
+    """Transfer MCP metadata from FlatWrapper to a wrapper function."""
+    target._mcp_flat_input_model = wrapper._mcp_flat_input_model  # type: ignore[attr-defined]
+    target._mcp_flat_output_model = wrapper._mcp_flat_output_model  # type: ignore[attr-defined]
+    target.__signature__ = wrapper.__signature__  # type: ignore[attr-defined]
+
+
 def _build_flat_wrapper(
     fn: Callable[..., Any],
     *,
@@ -190,10 +197,7 @@ def _build_flat_wrapper(
         async def async_wrapper(**kwargs: Any) -> Any:
             return await wrapper.__acall__(**kwargs)
 
-        # Transfer MCP metadata to the async wrapper
-        async_wrapper._mcp_flat_input_model = wrapper._mcp_flat_input_model  # type: ignore[attr-defined]
-        async_wrapper._mcp_flat_output_model = wrapper._mcp_flat_output_model  # type: ignore[attr-defined]
-        async_wrapper.__signature__ = wrapper.__signature__  # type: ignore[attr-defined]
+        _transfer_mcp_metadata(async_wrapper, wrapper)
         return async_wrapper
 
     # For sync functions, also create a proper function wrapper (not just the FlatWrapper instance)
@@ -202,10 +206,7 @@ def _build_flat_wrapper(
     def sync_wrapper(**kwargs: Any) -> Any:
         return wrapper.__call__(**kwargs)
 
-    # Transfer MCP metadata to the sync wrapper
-    sync_wrapper._mcp_flat_input_model = wrapper._mcp_flat_input_model  # type: ignore[attr-defined]
-    sync_wrapper._mcp_flat_output_model = wrapper._mcp_flat_output_model  # type: ignore[attr-defined]
-    sync_wrapper.__signature__ = wrapper.__signature__  # type: ignore[attr-defined]
+    _transfer_mcp_metadata(sync_wrapper, wrapper)
     return sync_wrapper
 
 
@@ -313,14 +314,14 @@ class FlatModelToolMixin:
         structured_output: bool = True
         model_config = ConfigDict(extra="ignore")
 
-    def tool(self, *args: Any, **kwargs: Any):  # type: ignore[misc]
+    def tool(self, *args: Any, flat: bool = False, flat_output_model: type[BaseModel] | None = None, **kwargs: Any):  # type: ignore[misc]
         """Wrapper around FastMCP.tool with optional flat-model support.
 
-        Uses a Pydantic model to validate/normalize known kwargs; unknown kwargs are
-        ignored for flat-mode and passed through for non-flat mode.
+        Args:
+            flat: If True, enable flat-model mode
+            flat_output_model: Optional explicit output model type for flat mode
+            **kwargs: Other tool arguments passed through to FastMCP.tool
         """
-        flat: bool = bool(kwargs.pop("flat", False))
-        flat_output_model = kwargs.pop("flat_output_model", None)
         wants_flat = flat or (flat_output_model is not None)
         if not wants_flat:
             base_tool = super().tool  # type: ignore[misc]
