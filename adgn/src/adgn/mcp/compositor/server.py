@@ -50,36 +50,6 @@ class _MountState:
     stack: AsyncExitStack | None = None
 
 
-@dataclass
-class _InitializingSnapshot:
-    """Server is initializing."""
-
-
-@dataclass
-class _PendingToolsSnapshot:
-    """Server initialized, waiting for tools enumeration."""
-
-    init: mcp_types.InitializeResult
-
-
-@dataclass
-class _ReadySnapshot:
-    """Server ready with tools enumerated."""
-
-    init: mcp_types.InitializeResult
-    tools: list[mcp_types.Tool]
-
-
-@dataclass
-class _FailedSnapshot:
-    """Server failed during initialization or tool enumeration."""
-
-    error: str
-
-
-_ServerSnapshot = _InitializingSnapshot | _PendingToolsSnapshot | _ReadySnapshot | _FailedSnapshot
-
-
 class MountEvent(StrEnum):
     MOUNTED = "mounted"
     UNMOUNTED = "unmounted"
@@ -192,7 +162,7 @@ class Compositor(FastMCP):
         # Phase 1: capture init results and schedule tool enumeration concurrently
         async with self._lock:
             items = list(self._mounts.items())
-        per_name: dict[str, _ServerSnapshot] = {}
+        per_name: dict[str, ServerEntry] = {}
         tool_tasks: dict[str, asyncio.Task[list[mcp_types.Tool]]] = {}
         for name, mount in items:
             if mount.proxy is not None:
@@ -212,37 +182,27 @@ class Compositor(FastMCP):
                             return await cli.list_tools()
 
                     tool_tasks[name] = asyncio.create_task(_list_tools_via_client(mount.proxy.client_factory))
-                    per_name[name] = _PendingToolsSnapshot(init=init)
+                    per_name[name] = RunningServerEntry(initialize=init, tools=[])
                 except Exception as e:
-                    per_name[name] = _FailedSnapshot(error=f"{type(e).__name__}: {e}")
+                    per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
             else:
-                per_name[name] = _InitializingSnapshot()
+                per_name[name] = InitializingServerEntry()
 
         # Phase 2: resolve tool enumeration tasks (per-server failure captured individually)
         if tool_tasks:
             order = list(tool_tasks.keys())
             results = await asyncio.gather(*(tool_tasks[n] for n in order), return_exceptions=True)
             for nm, res in zip(order, results, strict=False):
-                snapshot = per_name.get(nm)
-                if snapshot is None:
+                entry = per_name.get(nm)
+                if entry is None:
                     continue
                 if isinstance(res, BaseException):
-                    per_name[nm] = _FailedSnapshot(error=f"{type(res).__name__}: {res}")
-                elif isinstance(snapshot, _PendingToolsSnapshot):
-                    per_name[nm] = _ReadySnapshot(init=snapshot.init, tools=res)
-                # else: ignore tools result for non-pending snapshots (already failed/initializing)
+                    per_name[nm] = FailedServerEntry(error=f"{type(res).__name__}: {res}")
+                elif isinstance(entry, RunningServerEntry):
+                    per_name[nm] = RunningServerEntry(initialize=entry.initialize, tools=res)
+                # else: ignore tools result for non-running entries (already failed/initializing)
 
-        # Phase 3: build the discriminated-union entries map
-        entries: dict[str, ServerEntry] = {}
-        for name, snapshot in per_name.items():
-            if isinstance(snapshot, _InitializingSnapshot):
-                entries[name] = InitializingServerEntry()
-            elif isinstance(snapshot, _PendingToolsSnapshot | _ReadySnapshot):
-                tools = snapshot.tools if isinstance(snapshot, _ReadySnapshot) else []
-                entries[name] = RunningServerEntry(initialize=snapshot.init, tools=tools)
-            elif isinstance(snapshot, _FailedSnapshot):
-                entries[name] = FailedServerEntry(error=snapshot.error)
-        return entries
+        return per_name
 
     async def sampling_snapshot(self) -> SamplingSnapshot:
         """Return a SamplingSnapshot mirroring the manager's shape, aggregated over children."""
