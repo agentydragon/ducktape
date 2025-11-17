@@ -15,7 +15,12 @@ import canonicaljson
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
-from openai.types.responses import Response as OpenAIResponse, ResponseStreamEvent, ResponseUsage
+from openai.types.responses import (
+    Response as OpenAIResponse,
+    ResponseCreateParams,
+    ResponseStreamEvent,
+    ResponseUsage,
+)
 
 from adgn.rspcache.models import (
     ErrorPayload,
@@ -106,10 +111,14 @@ def _extract_client_token(request: Request, authorization: str | None, x_api_key
     return None
 
 
-def make_key_from_body(body: dict[str, Any]) -> str:
-    keyed = {
-        k: body[k] for k in sorted(body.keys()) if k not in {"request_id", "request_timestamp", "nonce", "__meta__"}
-    }
+def make_key_from_body(body: ResponseCreateParams) -> str:
+    """Create cache key from OpenAI request body.
+
+    Excludes non-deterministic fields via model_copy for validation.
+    """
+    # Use model_copy to exclude non-deterministic fields, benefiting from Pydantic validation
+    cacheable = body.model_copy(update={"request_id": None, "request_timestamp": None, "nonce": None})
+    keyed = cacheable.model_dump(mode="json", exclude_none=True, exclude_unset=True)
     return hashlib.sha256(canonicaljson.encode_canonical_json(keyed)).hexdigest()
 
 
@@ -258,10 +267,13 @@ async def responses_endpoint(
     upstream_key = _resolve_openai_api_key(upstream_alias)
 
     cache_skip = body.get("cache_skip") in (True, "true", "True", 1)
+
+    # Validate request body structure and generate cache key
     try:
-        key = make_key_from_body(body)
+        validated_body = ResponseCreateParams.model_validate(body)
+        key = make_key_from_body(validated_body)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=f"Invalid request: {exc}") from exc
 
     is_stream = bool(body.get("stream"))
     if not cache_skip:
