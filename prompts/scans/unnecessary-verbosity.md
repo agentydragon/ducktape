@@ -166,6 +166,38 @@ def has_permission(self) -> bool:
     return self.user.is_admin or self.user.id == self.owner_id
 ```
 
+## Pattern 2.5: Redundant Type Annotations with TypeVars
+
+When a function uses TypeVars that are inferred from arguments, explicit type annotations on the result are redundant.
+
+### BAD: Redundant type annotation when TypeVar provides inference
+
+```python
+# BAD: Type annotation duplicates what TypeVar already provides
+T_Out = TypeVar("T_Out")
+
+async def call_tool_typed(
+    session: Client,
+    name: str,
+    payload: BaseModel,
+    out_type: type[T_Out],
+) -> T_Out:
+    ...
+
+# Type checker already knows result is BaseExecResult from out_type argument
+result: BaseExecResult = await call_tool_typed(sess, "exec", payload, BaseExecResult)
+```
+
+### GOOD: Let TypeVar inference work
+
+```python
+# GOOD: Type inferred from out_type argument
+result = await call_tool_typed(sess, "exec", payload, BaseExecResult)
+# Type checker knows: result is BaseExecResult
+```
+
+**Principle**: If a function signature already provides full type information through TypeVars, don't duplicate it with explicit annotations at call sites. Let type inference work.
+
 ## Pattern 3: Redundant Conditionals
 
 ### BAD: Checking what's already guaranteed
