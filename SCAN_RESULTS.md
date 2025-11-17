@@ -13,16 +13,6 @@ This comprehensive scan identified remaining actionable code quality issues acro
 3. **Overly Loose Typing** (50+ instances): `dict[str, Any]` that should be specific types
 4. **Asyncio Antipatterns** (4 instances): Blocking I/O in async functions
 
-**Recently Completed** (not shown in this document):
-- ✅ Issue 2.1: Container ID assertions (containerized_claude.py)
-- ✅ Issue 3.1: Overly Permissive Union (builders.py)
-- ✅ Issue 3.2: Parameter Typed as Any (builders.py)
-- ✅ Issue 4.1: Deprecated get_event_loop() (wt_server.py)
-- ✅ Issue 4.3: os.pipe() Without O_NONBLOCK (wt_client.py)
-- ✅ Nullability: JSON helpers parameters (json_helpers.py) - removed | None from parameters
-- ✅ Nullability: Registry API simplification (registry.py) - create() returns Container
-- ✅ Nullability: Redundant None assertions (main.py, containerized_claude.py, base.py)
-
 ---
 
 ## 1. Test Assertion Antipatterns
