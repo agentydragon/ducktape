@@ -79,10 +79,6 @@ class ApprovalPolicyServer(NotifyingFastMCP):
     def __init__(self, engine: ApprovalPolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME_READER) -> None:
         super().__init__(name=name, instructions=_load_instructions())
         self._engine = engine
-        # Required backend context must come from the engine
-        self._agent_id = engine.agent_id
-        self._persistence = engine.persistence
-        self._docker = engine.docker_client
         # Broadcast coordination for deterministic waits (tests)
         self._broadcast_version: int = 0
         self._broadcast_cond: asyncio.Condition = asyncio.Condition()
@@ -142,7 +138,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
 
         @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
         async def proposal_item(id: str) -> str:
-            if (got := await self._persistence.get_policy_proposal(self._agent_id, id)) is None:
+            if (got := await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)) is None:
                 raise KeyError(id)
             return got.content
 
@@ -150,7 +146,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         async def decide(input: PolicyRequest) -> PolicyResponse:
             """Evaluate a policy decision for a single tool call via Docker-backed evaluator."""
             evaluator = ContainerPolicyEvaluator(
-                agent_id=self._agent_id, docker_client=self._docker, engine=self._engine
+                agent_id=self._engine.agent_id, docker_client=self._engine.docker_client, engine=self._engine
             )
             # Pass through input directly; it's already a PolicyRequest
             return await evaluator.decide(input)

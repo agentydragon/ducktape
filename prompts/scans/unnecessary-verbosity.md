@@ -70,6 +70,41 @@ critique_path.write_text(submit_state.result.model_dump_json(indent=2), encoding
 print(f"Saved critique JSON: {critique_path}")
 ```
 
+### Subpattern: Redundant Field Storage
+
+Don't store references to sub-fields when you already have the parent object stored.
+
+```python
+# BAD: Storing both parent and its fields
+class Server:
+    def __init__(self, engine: Engine):
+        self._engine = engine
+        self._agent_id = engine.agent_id  # Redundant
+        self._persistence = engine.persistence  # Redundant
+        self._docker = engine.docker_client  # Redundant
+
+    async def handle(self, id: str):
+        # Creates multiple paths to same dependency
+        await self._persistence.get(self._agent_id, id)
+
+# GOOD: Access through parent
+class Server:
+    def __init__(self, engine: Engine):
+        self._engine = engine
+
+    async def handle(self, id: str):
+        # Single path to dependency
+        await self._engine.persistence.get(self._engine.agent_id, id)
+```
+
+**Why this is bad**:
+- **Multiple paths**: Creates redundant ways to access same downstream dependency
+- **Synchronization risk**: If engine internals change, cached fields become stale
+- **Unnecessary fields**: Pollutes class namespace with redundant state
+- **Maintenance burden**: More fields to track and understand
+
+**Exception**: Cache frequently accessed fields if profiling shows significant overhead. But measure first.
+
 ### When Intermediate Variables ARE Good
 
 ```python
