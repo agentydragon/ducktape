@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from datetime import UTC, datetime
 from importlib import resources
 import logging
@@ -103,20 +104,16 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         # and maintain a minimal per-session index. Notifications are broadcast
         # by the server regardless of subscriptions, but handlers ensure that
         # capability gating reflects true support and calls succeed.
-        self._session_subscriptions: dict[ServerSession, set[str]] = {}
+        self._session_subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
         mcp_server = self._mcp_server
 
         @mcp_server.subscribe_resource()
         async def _subscribe(uri):
-            ctx = mcp_server.request_context
-            sess = ctx.session
-            self._session_subscriptions.setdefault(sess, set()).add(str(uri))
+            self._session_subscriptions[mcp_server.request_context.session].add(str(uri))
 
         @mcp_server.unsubscribe_resource()
         async def _unsubscribe(uri):
-            ctx = mcp_server.request_context
-            sess = ctx.session
-            self._session_subscriptions.get(sess, set()).discard(str(uri))
+            self._session_subscriptions[mcp_server.request_context.session].discard(str(uri))
             # Do not error if unknown; protocol allows idempotent unsubscribe
 
         # Do not expose a server-local "list subscriptions" resource; the
