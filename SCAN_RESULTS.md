@@ -19,6 +19,9 @@ This comprehensive scan identified remaining actionable code quality issues acro
 - ✅ Issue 3.2: Parameter Typed as Any (builders.py)
 - ✅ Issue 4.1: Deprecated get_event_loop() (wt_server.py)
 - ✅ Issue 4.3: os.pipe() Without O_NONBLOCK (wt_client.py)
+- ✅ Nullability: JSON helpers parameters (json_helpers.py) - removed | None from parameters
+- ✅ Nullability: Registry API simplification (registry.py) - create() returns Container
+- ✅ Nullability: Redundant None assertions (main.py, containerized_claude.py, base.py)
 
 ---
 
@@ -158,9 +161,10 @@ return x if x else None
 
 **Files with assert is not None:**
 - `wt/src/wt/server/pr_service.py` - Multiple assertions
-- `adgn/src/adgn/agent/runtime/*.py` - Container management (some fixed, may have more)
 - `llm/ducktape_llm_common/tests/*/test_*.py` - Test setup code
 - `adgn/tests/*/test_*.py` - Test assertions
+
+**Note**: `adgn/src/adgn/agent/runtime/registry.py`, `adgn/src/adgn/props/cli_app/main.py`, `adgn/src/adgn/inop/runners/containerized_claude.py`, and `adgn/src/adgn/mcp/_shared/json_helpers.py` have been fixed.
 
 **Bulk Fix Strategy:**
 1. Review functions with `| None` parameters for immediate None checks
