@@ -22,31 +22,7 @@ Found 60+ test files using verbose plain assertions instead of PyHamcrest matche
 
 ### Critical Issues
 
-#### Issue 1.1: Verbose Collection Type Checks
-**File:** `llm/mcp/habitify/habitify_mcp_server/tests/test_habitify_client.py:36-38`
-
-**Current Code:**
-```python
-# BAD: Three separate assertions saying "non-empty list of Habit"
-assert_that(habits, instance_of(list))
-assert_that(habits, only_contains(instance_of(Habit)))
-assert len(habits) > 0
-```
-
-**Recommended Fix:**
-```python
-# GOOD: Single assertion expressing intent
-from hamcrest import all_of, has_length, greater_than
-
-assert_that(habits, all_of(
-    has_length(greater_than(0)),
-    only_contains(instance_of(Habit))
-))
-```
-
-**Impact:** Better error messages, clearer intent
-**Priority:** Medium
-**Instances:** 20+ similar patterns across test files
+✅ **FIXED:** Verbose collection type checks in habitify tests using `all_of()` matcher
 
 ---
 
@@ -87,16 +63,9 @@ assert edit_input == EditInput(
 ---
 
 #### Issue 1.3: String Inclusion Assertions
-**File:** `llm/mcp/habitify/habitify_mcp_server/tests/test_habitify_client.py:82,203`
+**Note:** habitify tests keep current style for simplicity
 
-**Current Code:**
-```python
-# BAD: Manual string checking
-assert "habit does not exist" in str(excinfo.value).lower()
-assert "date format" in str(excinfo.value).lower()
-```
-
-**Recommended Fix:**
+**Pattern for other tests:**
 ```python
 # GOOD: PyHamcrest matcher with better error messages
 from hamcrest import contains_string
