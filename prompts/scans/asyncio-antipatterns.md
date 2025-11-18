@@ -5,7 +5,176 @@
 
 ## Common Antipatterns
 
-### 0. Unnecessary @pytest.mark.asyncio Decorators
+### 0. asyncio.gather() Instead of TaskGroup (Python 3.11+)
+
+**Pattern**: Using `asyncio.gather()` with manual order synchronization when `asyncio.TaskGroup` would be clearer and safer.
+
+```python
+# BAD: Manual gather with zip-based order synchronization
+tool_tasks: dict[str, asyncio.Task[list[Tool]]] = {}
+for name, entry in per_name.items():
+    if isinstance(entry, RunningServerEntry):
+        tool_tasks[name] = asyncio.create_task(entry.tools)
+
+# Waits for all tasks even if some fail, manual exception handling
+results = await asyncio.gather(*tool_tasks.values(), return_exceptions=True)
+for (name, _), result in zip(tool_tasks.items(), results):
+    if isinstance(result, Exception):
+        per_name[name] = FailedServerEntry(error=str(result))
+    else:
+        per_name[name] = RunningServerEntry(initialize=entry.initialize, tools=result)
+
+# GOOD: TaskGroup with structured concurrency
+async def _handle_tools(name: str, task: asyncio.Task, entry: RunningServerEntry):
+    try:
+        tools = await task
+        per_name[name] = RunningServerEntry(initialize=entry.initialize, tools=tools)
+    except Exception as e:
+        per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
+
+async with asyncio.TaskGroup() as tg:
+    for name, task in tool_tasks.items():
+        entry = per_name[name]
+        assert isinstance(entry, RunningServerEntry)
+        tg.create_task(_handle_tools(name, task, entry))
+```
+
+**Why TaskGroup is better:**
+- **Exception propagation**: First exception cancels remaining tasks and is re-raised
+- **No manual exception handling**: No need for `return_exceptions=True` + isinstance checks
+- **No order synchronization**: Use dict, update in-place per task
+- **Clearer task lifetime**: Automatic cleanup on exception
+- **Structured concurrency**: Tasks complete before exiting `async with` block
+
+**When to use TaskGroup:**
+- Python 3.11+ (required)
+- Need to run multiple tasks concurrently
+- Want automatic cancellation on first error (default behavior)
+- Tasks update shared state (dict, instance fields)
+
+**When gather() might still be OK:**
+- Need `return_exceptions=True` and want all results regardless of failures
+- Order matters and zip() pattern is genuinely needed
+- Python 3.10 or older (TaskGroup not available)
+
+**Detection:**
+```bash
+# Find gather() usage - review each for TaskGroup suitability
+rg --type py 'asyncio\.gather\('
+```
+
+### 0.5. Context Managers for Resource Management + Cleanup
+
+**Pattern**: Manual try-finally for resource cleanup when async context manager would centralize it.
+
+**Applies to both sync and async code.**
+
+```python
+# BAD: Manual cleanup scattered across call sites
+async def _proxy_stream(resp: httpx.Response, db: ResponsesDB, key: str, ...) -> AsyncIterator[bytes]:
+    try:
+        # ... streaming logic using db, key repeatedly ...
+        await db.finalize_response(key, ...)
+    except Exception as exc:
+        await db.record_error(key, error_reason=str(exc), ...)
+        raise
+    finally:
+        await resp.aclose()
+
+async def event_stream():
+    try:
+        async for chunk in _proxy_stream(resp, db=db, key=key, ...):
+            yield chunk
+    finally:
+        await client.aclose()
+
+# GOOD: Context manager bundles state + handles cleanup
+class StreamingContext:
+    def __init__(self, db: ResponsesDB, key: str, *, client: httpx.AsyncClient | None = None):
+        self.db = db
+        self.key = key
+        self._client = client
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is not None:
+                await self.db.record_error(self.key, error_reason=str(exc_val), ...)
+        finally:
+            if self._client:
+                await self._client.aclose()
+        return False
+
+    async def proxy_stream(self, resp: httpx.Response, ...) -> AsyncIterator[bytes]:
+        try:
+            # ... streaming logic using self.db, self.key ...
+            await self.db.finalize_response(self.key, ...)
+        finally:
+            await resp.aclose()
+
+async def event_stream():
+    async with StreamingContext(db=db, key=key, client=client) as ctx:
+        async for chunk in ctx.proxy_stream(resp, ...):
+            yield chunk
+```
+
+**When to use context manager for bundling + cleanup:**
+- 3+ parameters passed together repeatedly (db, key, response_id)
+- Resource cleanup needed (client.aclose(), file.close())
+- Error handling that must run regardless of success/failure
+- Multiple related functions operate on same state
+
+**Benefits:**
+- **Single cleanup location**: Error handling in `__aexit__`, not scattered
+- **Automatic resource cleanup**: Guaranteed via context manager protocol
+- **Bundled parameters**: Avoid repeating (db, key, ...) at every call site
+- **Object-oriented**: Methods on context vs standalone functions
+
+**Detection:**
+```bash
+# Find try-finally with resource cleanup
+rg --type py -U 'try:.*finally:.*\.(close|aclose)\(' --multiline
+
+# Find repeated parameter bundles (candidates for context manager)
+rg --type py 'def.*\(.*db.*key.*response'
+
+# Find manual error recording patterns
+rg --type py -U 'except.*:.*record_error' --multiline
+```
+
+**Sync version example:**
+```python
+# Sync context manager
+class Transaction:
+    def __init__(self, db: Database, isolation_level: str = "READ COMMITTED"):
+        self.db = db
+        self._isolation_level = isolation_level
+        self._conn = None
+
+    def __enter__(self):
+        self._conn = self.db.begin_transaction(self._isolation_level)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+    def execute(self, query: str, params: dict):
+        return self._conn.execute(query, params)
+
+# Usage
+with Transaction(db) as tx:
+    tx.execute("INSERT ...", {})
+    tx.execute("UPDATE ...", {})
+```
+
+### 1. Unnecessary @pytest.mark.asyncio Decorators
 
 **Context**: Projects can configure `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` section of `pyproject.toml` (or `pytest.ini`), which automatically detects async test functions without requiring explicit `@pytest.mark.asyncio` decorators.
 

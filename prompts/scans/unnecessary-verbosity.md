@@ -198,6 +198,125 @@ result = await call_tool_typed(sess, "exec", payload, BaseExecResult)
 
 **Principle**: If a function signature already provides full type information through TypeVars, don't duplicate it with explicit annotations at call sites. Let type inference work.
 
+## Pattern 2.7: Verbose Default Derivation
+
+When a parameter accepts None to mean "derive a default", use the concise `if not x: x = ...` pattern.
+
+### BAD: Verbose default derivation
+
+```python
+# BAD: Separate variable + conditional
+def configure(url: str | None = None, token: str | None = None):
+    actual_url = url
+    if actual_url is None:
+        actual_url = os.getenv("API_URL")
+
+    actual_token = token
+    if actual_token is None:
+        actual_token = os.getenv("API_TOKEN")
+
+    if actual_url is None or actual_token is None:
+        raise ValueError("Missing config")
+
+    return Config(url=actual_url, token=actual_token)
+
+# BAD: Ternary for simple None check
+def configure(url: str | None = None):
+    actual_url = url if url is not None else os.getenv("API_URL")
+    return Config(url=actual_url)
+
+# BAD: Nested conditionals
+def configure(url: str | None = None):
+    if url is None:
+        url = os.getenv("API_URL")
+        if url is None:
+            raise ValueError("Missing URL")
+    return Config(url=url)
+```
+
+### GOOD: Concise default derivation
+
+```python
+# GOOD: Direct reassignment pattern
+def configure(url: str | None = None, token: str | None = None):
+    if not url:
+        url = os.getenv("API_URL")
+    if not token:
+        token = os.getenv("API_TOKEN")
+
+    if not url or not token:
+        raise ValueError("Missing config")
+
+    return Config(url=url, token=token)
+
+# GOOD: Works for any default derivation, not just os.getenv
+def process(data: list | None = None, config: Config | None = None):
+    if not data:
+        data = fetch_default_data()
+    if not config:
+        config = load_default_config()
+
+    return run_processing(data, config)
+
+# GOOD: Chain multiple fallbacks
+def get_api_key(override: str | None = None) -> str:
+    key = override
+    if not key:
+        key = os.getenv("API_KEY")
+    if not key:
+        key = load_from_keyring("api-key")
+    if not key:
+        raise ValueError("No API key found")
+    return key
+```
+
+**Pattern generalization:**
+- Parameter accepts None to mean "use default"
+- Default is derived (not a constant)
+- Pattern: `if not x: x = derive_default()`
+
+**When to use:**
+- Environment variable fallback (`os.getenv`)
+- Function call fallback (`load_config()`)
+- Complex derivation (`compute_from_system_state()`)
+- Multiple fallback levels
+
+**When NOT to use:**
+- Default is a simple constant → use parameter default value instead:
+  ```python
+  # GOOD: Simple constant default
+  def process(timeout: int = 30):
+      ...
+
+  # BAD: Overcomplicated for constant
+  def process(timeout: int | None = None):
+      if not timeout:
+          timeout = 30
+  ```
+
+- Empty string/0/False are valid values → use `is None` check instead:
+  ```python
+  # GOOD: Allow empty string
+  def process(prefix: str | None = None):
+      if prefix is None:
+          prefix = os.getenv("PREFIX", "")
+
+  # BAD: Empty string would be replaced
+  def process(prefix: str | None = None):
+      if not prefix:  # ❌ Would replace ""
+          prefix = os.getenv("PREFIX", "")
+  ```
+
+**Detection:**
+```bash
+# Find verbose None checks with assignment
+rg --type py -U 'if.*is None:.*\n.*=.*getenv' --multiline
+rg --type py 'if .* is not None else'
+
+# Find potential simplification candidates
+rg --type py 'actual_\w+ = \w+'
+```
+
 ## Pattern 3: Redundant Conditionals
 
 ### BAD: Checking what's already guaranteed
