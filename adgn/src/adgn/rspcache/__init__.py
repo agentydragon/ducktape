@@ -37,20 +37,11 @@ CacheKey = NewType("CacheKey", str)
 class StreamingContext:
     """Shared context for streaming response handling with automatic cleanup."""
 
-    def __init__(
-        self,
-        db: ResponsesDB,
-        key: CacheKey,
-        response_id: str | None = None,
-        *,
-        client: httpx.AsyncClient | None = None,
-        error_reason: str | None = None,
-    ):
+    def __init__(self, db: ResponsesDB, key: CacheKey, *, client: httpx.AsyncClient | None = None):
         self.db = db
         self.key = key
-        self.response_id = response_id
+        self.response_id: str | None = None
         self._client = client
-        self._error_reason = error_reason
 
     async def __aenter__(self):
         return self
@@ -60,9 +51,11 @@ class StreamingContext:
             if exc_type is not None:
                 if exc_type in (HTTPException, asyncio.CancelledError):
                     return False  # Don't handle these
-                reason = self._error_reason or str(exc_val)
                 await self.db.record_error(
-                    self.key, error_reason=reason, response_id=self.response_id, error=ErrorPayload(message=reason)
+                    self.key,
+                    error_reason="Streaming proxy failure",
+                    response_id=self.response_id,
+                    error=ErrorPayload(message=str(exc_val)),
                 )
         finally:
             if self._client:
@@ -328,9 +321,7 @@ async def responses_endpoint(
             return _relay_error_response(upstream_error)
 
         async def event_stream() -> AsyncIterator[bytes]:
-            async with StreamingContext(
-                db=db, key=key, response_id=None, client=client, error_reason="Streaming proxy failure"
-            ) as ctx:
+            async with StreamingContext(db=db, key=key, client=client) as ctx:
                 async for chunk in ctx.proxy_stream(resp, start_time=start_time):
                     yield chunk
 
