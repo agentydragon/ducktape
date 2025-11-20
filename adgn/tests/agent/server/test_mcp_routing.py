@@ -8,16 +8,16 @@ from fastapi.testclient import TestClient
 import pytest
 
 from adgn.agent.server.app import create_app
-from adgn.agent.server.mcp_routing import TOKEN_TABLE, TokenRole
+from adgn.agent.server.mcp_routing import AgentTokenInfo, HumanTokenInfo, TOKEN_TABLE, TokenInfo, TokenRole
+from adgn.agent.types import AgentID
 
 
 @pytest.fixture
-def test_tokens():
+def test_tokens() -> dict[str, TokenInfo]:
     """Override the global TOKEN_TABLE for testing."""
     return {
-        "test-human-token": {"role": "human"},
-        "test-agent-token": {"role": "agent", "agent_id": "test-agent-1"},
-        "test-invalid-role": {"role": "invalid"},
+        "test-human-token": HumanTokenInfo(role=TokenRole.HUMAN),
+        "test-agent-token": AgentTokenInfo(role=TokenRole.AGENT, agent_id=AgentID("test-agent-1")),
     }
 
 
@@ -146,9 +146,6 @@ class TestMCPRouting:
     @pytest.mark.asyncio
     async def test_token_role_enum(self):
         """Test TokenRole enum values."""
-        assert TokenRole.HUMAN == "human"
-        assert TokenRole.AGENT == "agent"
-
         # Test that enum can be created from string
         role = TokenRole("human")
         assert role == TokenRole.HUMAN
