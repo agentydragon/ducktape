@@ -17,6 +17,25 @@ from adgn.mcp.approval_policy.server import (
     RejectProposalArgs,
 )
 
+# Common policy constants for tests
+POLICY_ALLOW = """
+class ApprovalPolicy:
+    def decide(self, name: str, arguments: dict) -> dict:
+        return {"decision": "allow"}
+"""
+
+POLICY_DENY_ABORT = """
+class ApprovalPolicy:
+    def decide(self, name: str, arguments: dict) -> dict:
+        return {"decision": "deny_abort"}
+"""
+
+POLICY_DENY_CONTINUE = """
+class ApprovalPolicy:
+    def decide(self, name: str, arguments: dict) -> dict:
+        return {"decision": "deny_continue"}
+"""
+
 
 @pytest.mark.requires_docker
 async def test_create_and_list_proposals(make_typed_mcp, approval_engine):
@@ -28,13 +47,7 @@ async def test_create_and_list_proposals(make_typed_mcp, approval_engine):
         # Create a proposal
         result = await proposer_client.call_tool(
             "create_proposal",
-            CreateProposalArgs(
-                content="""
-class ApprovalPolicy:
-    def decide(self, name: str, arguments: dict) -> dict:
-        return {"decision": "allow"}
-"""
-            ),
+            CreateProposalArgs(content=POLICY_ALLOW),
         )
         proposal = ProposalDescriptor.model_validate(result.structured_content)
         assert_that(proposal.status, equal_to(ProposalStatus.PENDING))
@@ -57,14 +70,9 @@ async def test_get_proposal_detail(make_typed_mcp, approval_engine):
     """Test retrieving full proposal details via resource."""
     # Create a proposal first
     proposer = ApprovalPolicyProposerServer(engine=approval_engine)
-    test_content = """
-class ApprovalPolicy:
-    def decide(self, name: str, arguments: dict) -> dict:
-        return {"decision": "allow"}
-"""
 
     async with make_typed_mcp(proposer, "approval_policy.proposer") as (proposer_client, _sess):
-        result = await proposer_client.call_tool("create_proposal", CreateProposalArgs(content=test_content))
+        result = await proposer_client.call_tool("create_proposal", CreateProposalArgs(content=POLICY_ALLOW))
         proposal = ProposalDescriptor.model_validate(result.structured_content)
 
     # Read proposal detail via resource
@@ -75,7 +83,7 @@ class ApprovalPolicy:
         )
         assert_that(detail.id, equal_to(proposal.id))
         assert_that(detail.status, equal_to(ProposalStatus.PENDING))
-        assert_that(detail.content, equal_to(test_content))
+        assert_that(detail.content, equal_to(POLICY_ALLOW))
         assert detail.created_at is not None
         assert detail.decided_at is None
 
@@ -83,16 +91,10 @@ class ApprovalPolicy:
 @pytest.mark.requires_docker
 async def test_approve_proposal_workflow(make_typed_mcp, approval_engine):
     """Test complete approval workflow: create, list, approve, verify."""
-    test_content = """
-class ApprovalPolicy:
-    def decide(self, name: str, arguments: dict) -> dict:
-        return {"decision": "allow"}
-"""
-
     # Create proposal
     proposer = ApprovalPolicyProposerServer(engine=approval_engine)
     async with make_typed_mcp(proposer, "approval_policy.proposer") as (proposer_client, _sess):
-        result = await proposer_client.call_tool("create_proposal", CreateProposalArgs(content=test_content))
+        result = await proposer_client.call_tool("create_proposal", CreateProposalArgs(content=POLICY_ALLOW))
         proposal = ProposalDescriptor.model_validate(result.structured_content)
 
     # Approve proposal
@@ -124,16 +126,10 @@ class ApprovalPolicy:
 @pytest.mark.requires_docker
 async def test_reject_proposal_workflow(make_typed_mcp, approval_engine):
     """Test complete rejection workflow: create, list, reject, verify."""
-    test_content = """
-class ApprovalPolicy:
-    def decide(self, name: str, arguments: dict) -> dict:
-        return {"decision": "deny_abort"}
-"""
-
     # Create proposal
     proposer = ApprovalPolicyProposerServer(engine=approval_engine)
     async with make_typed_mcp(proposer, "approval_policy.proposer") as (proposer_client, _sess):
-        result = await proposer_client.call_tool("create_proposal", CreateProposalArgs(content=test_content))
+        result = await proposer_client.call_tool("create_proposal", CreateProposalArgs(content=POLICY_DENY_ABORT))
         proposal = ProposalDescriptor.model_validate(result.structured_content)
 
     # Reject proposal
@@ -156,24 +152,13 @@ class ApprovalPolicy:
 @pytest.mark.requires_docker
 async def test_list_proposals_with_multiple_statuses(make_typed_mcp, approval_engine):
     """Test listing proposals with different statuses (pending, approved, rejected)."""
-    test_content_allow = """
-class ApprovalPolicy:
-    def decide(self, name: str, arguments: dict) -> dict:
-        return {"decision": "allow"}
-"""
-    test_content_deny = """
-class ApprovalPolicy:
-    def decide(self, name: str, arguments: dict) -> dict:
-        return {"decision": "deny_continue"}
-"""
-
     # Create multiple proposals
     proposer = ApprovalPolicyProposerServer(engine=approval_engine)
     proposal_ids = []
 
     async with make_typed_mcp(proposer, "approval_policy.proposer") as (proposer_client, _sess):
         # Create 3 proposals
-        for content in [test_content_allow, test_content_deny, test_content_allow]:
+        for content in [POLICY_ALLOW, POLICY_DENY_CONTINUE, POLICY_ALLOW]:
             proposal = await proposer_client.create_proposal(CreateProposalArgs(content=content))
             proposal_ids.append(proposal.id)
 
