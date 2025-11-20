@@ -13,6 +13,27 @@ specimen-name/
     └── ...
 ```
 
+## Critical: Specimens are Frozen Snapshots
+
+**Specimens are training/evaluation data representing code quality issues at a specific commit.**
+
+- Each specimen is pinned to a specific commit (see `manifest.yaml` `ref` field)
+- Issue files (`.libsonnet`) describe what was **wrong at that commit**
+- **NEVER** update issue files to record resolution status or mark issues "COMPLETED"
+- Issue files should remain accurate descriptions of problems as they existed
+- Fixes happen on separate branches; specimens remain unchanged historical records
+- Think of specimens like labeled training data: the label describes the frozen state
+
+**Example violations:**
+- ❌ Adding "Status: COMPLETED" or "Note: This was fixed in commit X"
+- ❌ Updating rationale to say "This issue has been resolved"
+- ❌ Removing or modifying issue descriptions after fixes are made
+
+**Correct approach:**
+- ✅ Record issues as they exist at the snapshot commit
+- ✅ Fix issues on separate branches without modifying specimen files
+- ✅ Create new specimens for new commits if you want to capture improvements
+
 ## Authoring Rules
 
 ### 1. Single Source of Truth: Jsonnet Files
