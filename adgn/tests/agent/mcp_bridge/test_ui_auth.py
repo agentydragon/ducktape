@@ -17,11 +17,8 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 
 
 @pytest.fixture
-async def infrastructure_registry(temp_db: Path, docker_client) -> InfrastructureRegistry:
+async def infrastructure_registry(persistence: SQLitePersistence, docker_client) -> InfrastructureRegistry:
     """Create infrastructure registry for testing."""
-    persistence = SQLitePersistence(temp_db)
-    await persistence.ensure_schema()
-
     return InfrastructureRegistry(
         persistence=persistence, docker_client=docker_client, mcp_config=MCPConfig(mcpServers={}), initial_policy=None
     )

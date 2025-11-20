@@ -41,6 +41,14 @@ from tests.types import McpServerSpecs
 
 
 @pytest.fixture
+async def persistence(tmp_path: Path) -> SQLitePersistence:
+    """Shared persistence fixture for agent tests."""
+    persist = SQLitePersistence(tmp_path / "test.db")
+    await persist.ensure_schema()
+    return persist
+
+
+@pytest.fixture
 async def test_agent(persistence: SQLitePersistence) -> str:
     """Shared test agent fixture - creates a test agent in the database.
 
