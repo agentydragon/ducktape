@@ -25,14 +25,11 @@ from collections.abc import Iterable
 import getpass
 import gzip
 import json
-import logging
 from pathlib import Path
 import re
 import subprocess
 import sys
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 # Hardcoded drop types per requirements
 DROP_TYPES: set[str] = {"agent_reasoning", "turn_diff", "exec_command_output_delta"}
@@ -71,9 +68,7 @@ def detect_repo_root(git_cwd: Path) -> Path | None:
         )
         p = Path(proc.stdout.strip())
         return p if p.exists() else None
-    except Exception as e:
-        # Returning None is acceptable (not in a git repo), but log for visibility
-        logger.debug("Failed to detect git repo root from %s: %s", git_cwd, e)
+    except Exception:
         return None
 
 
