@@ -577,8 +577,7 @@ async def run_all_evals(
         tasks = [tg.create_task(_run_one(s)) for s in SAMPLES]
     entries = [await t for t in tasks]
 
-    eval_index = EvalIndex(samples=list(entries))
-    (root / "index.json").write_text(eval_index.model_dump_json(indent=2), encoding="utf-8")
+    (root / "index.json").write_text((eval_index := EvalIndex(samples=list(entries))).model_dump_json(indent=2), encoding="utf-8")
 
     # Pretty print a concise Rich table summary (in-memory; no read-back)
     table = Table(title="Eval Summary", show_lines=False)

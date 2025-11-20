@@ -177,9 +177,7 @@ def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, runs_
             out_spec.mkdir(parents=True, exist_ok=True)
             tasks.append(cluster_unknowns_async(items, model=model, out_root=out_spec, client=typed_client))
         # Run in parallel; await all
-        async with asyncio.TaskGroup() as tg:
-            for task_coro in tasks:
-                tg.create_task(task_coro)
+        await asyncio.gather(*tasks)
         return root
 
     out_root_path: Path = asyncio.run(_run_all())
