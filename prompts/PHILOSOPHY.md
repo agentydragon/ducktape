@@ -137,27 +137,34 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 
 ### When to Make Scans MANDATORY
 
+**Requirement**: Every scan prompt should have at least one mandatory scan step (or more).
+
+**Goal**: Mandatory steps should achieve **high recall** (ideally include all true positives), even if precision is low. The purpose is to surface ALL files and locations that need checking, preventing the agent from checking 3 files and declaring "done" when there are actually 20 more.
+
 Automated scans should be **required as the first step** when:
 
-1. **Prevents agent laziness**
-   - Forces agent to gather concrete candidates before analyzing
-   - Agent might skip discovery and claim "looks fine" without thorough search
-   - **Example**: Running `scan_error_handling.py` forces review of every exception handler
-   - **Language**: "MUST run", "Begin by running", "First step: run"
+1. **High-recall discovery is possible**
+   - Tool can find most or all instances of the pattern (even with false positives)
+   - Agent gets a comprehensive list of candidates to review
+   - **Example**: `grep "cast("` finds ALL cast() calls (100% recall, high precision)
+   - **Example**: AST scan for single-return functions finds ALL trivial forwarder candidates (100% recall, 30% precision after filtering)
+   - **Language**: "MANDATORY Step 0: Run scan to find ALL candidates"
 
-2. **Provides concrete starting points**
-   - Scan surfaces specific instances for agent to examine
-   - Agent analyzes real code rather than abstract patterns
-   - **Example**: `scan_comments.py` gives agent every comment to judge as useful/useless
-   - **Language**: "Run scan_*.py to gather ALL candidates for review"
+2. **Prevents "I checked a few files" laziness**
+   - Without mandatory scan, agent might check 3-5 files and stop
+   - Mandatory scan forces agent to see the full scope (e.g., "found 47 instances")
+   - Agent must at least acknowledge all candidates, can't pretend they don't exist
+   - **Example**: Finding all `os.environ` manipulation in tests - agent sees all 23 test files, not just the first 3
+   - **Language**: "Do not skip this step - prevents checking only a few files"
 
-3. **Makes comprehensive review practical**
-   - Manual search across entire codebase is tedious and error-prone
-   - Automated scan makes it feasible to review all instances
-   - **Example**: Finding all dataclass candidates across 200 files
-   - **Language**: "Run automated scan (do not skip this step)"
+3. **Makes comprehensive review tractable**
+   - Scan outputs specific line numbers/files for ALL candidates
+   - Agent reviews concrete instances rather than guessing where to look
+   - Prevents "I read a few files" when pattern exists in many more
+   - **Example**: `scan_comments.py` outputs all 200 comments with line numbers - agent must review all, not guess where comments might be
+   - **Language**: "This step is required to surface all locations requiring review"
 
-**Key insight**: Mandatory scans aren't just about tool recall - they're about forcing the agent to do the work of gathering and reviewing candidates rather than taking shortcuts.
+**Key insight**: Mandatory scans force the agent to confront the full scope of work. Even if the scan has 50% false positives, it ensures the agent knows about all 20 files that need checking, not just the 3 they happened to look at.
 
 ### When to Make Scans RECOMMENDED
 
