@@ -180,19 +180,13 @@ class TestCreatePolicyTool:
         # Create first policy
         await admin_server._mcp_server.call_tool(
             "create_policy",
-            arguments=CreatePolicyArgs(
-                id="dup-policy",
-                text="print('dup')",
-            ).model_dump(),
+            arguments=CreatePolicyArgs(id="dup-policy", text="print('dup')").model_dump(),
         )
 
         # Try to create another with same ID
         result = await admin_server._mcp_server.call_tool(
             "create_policy",
-            arguments=CreatePolicyArgs(
-                id="dup-policy",
-                text="print('dup 2')",
-            ).model_dump(),
+            arguments=CreatePolicyArgs(id="dup-policy", text="print('dup 2')").model_dump(),
             raise_on_error=False,
         )
 
@@ -202,10 +196,7 @@ class TestCreatePolicyTool:
         """Test creating a policy with minimal args."""
         result = await admin_server._mcp_server.call_tool(
             "create_policy",
-            arguments=CreatePolicyArgs(
-                id="minimal",
-                text="pass",
-            ).model_dump(),
+            arguments=CreatePolicyArgs(id="minimal", text="pass").model_dump(),
         )
 
         assert result.isError is False
@@ -226,21 +217,13 @@ class TestUpdatePolicyTool:
         # Create a policy first
         await admin_server._mcp_server.call_tool(
             "create_policy",
-            arguments=CreatePolicyArgs(
-                id="update-me",
-                text="print('v1')",
-                description="Version 1",
-            ).model_dump(),
+            arguments=CreatePolicyArgs(id="update-me", text="print('v1')", description="Version 1").model_dump(),
         )
 
         # Update it
         result = await admin_server._mcp_server.call_tool(
             "update_policy",
-            arguments=UpdatePolicyArgs(
-                id="update-me",
-                text="print('v2')",
-                description="Version 2",
-            ).model_dump(),
+            arguments=UpdatePolicyArgs(id="update-me", text="print('v2')", description="Version 2").model_dump(),
         )
 
         assert result.isError is False
@@ -255,10 +238,7 @@ class TestUpdatePolicyTool:
         """Test updating a nonexistent policy fails."""
         result = await admin_server._mcp_server.call_tool(
             "update_policy",
-            arguments=UpdatePolicyArgs(
-                id="nonexistent",
-                text="print('new')",
-            ).model_dump(),
+            arguments=UpdatePolicyArgs(id="nonexistent", text="print('new')").model_dump(),
             raise_on_error=False,
         )
 
@@ -269,19 +249,13 @@ class TestUpdatePolicyTool:
         # Create initial policy
         await admin_server._mcp_server.call_tool(
             "create_policy",
-            arguments=CreatePolicyArgs(
-                id="versioned",
-                text="print('v1')",
-            ).model_dump(),
+            arguments=CreatePolicyArgs(id="versioned", text="print('v1')").model_dump(),
         )
 
         # Update it
         await admin_server._mcp_server.call_tool(
             "update_policy",
-            arguments=UpdatePolicyArgs(
-                id="versioned",
-                text="print('v2')",
-            ).model_dump(),
+            arguments=UpdatePolicyArgs(id="versioned", text="print('v2')").model_dump(),
         )
 
         # Check that history was created (requires accessing policy_history table)
@@ -298,10 +272,7 @@ class TestDeletePolicyTool:
         # Create a policy first
         await admin_server._mcp_server.call_tool(
             "create_policy",
-            arguments=CreatePolicyArgs(
-                id="delete-me",
-                text="print('bye')",
-            ).model_dump(),
+            arguments=CreatePolicyArgs(id="delete-me", text="print('bye')").model_dump(),
         )
 
         # Verify it exists
@@ -365,10 +336,7 @@ class TestErrorHandling:
         # Note: create_policy doesn't validate syntax, so this should succeed
         result = await admin_server._mcp_server.call_tool(
             "create_policy",
-            arguments=CreatePolicyArgs(
-                id="invalid",
-                text="this is not valid python !!!",
-            ).model_dump(),
+            arguments=CreatePolicyArgs(id="invalid", text="this is not valid python !!!").model_dump(),
         )
 
         # Creation succeeds (validation happens at execution time)
