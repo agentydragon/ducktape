@@ -1,13 +1,13 @@
 local I = import '../../specimens/lib.libsonnet';
 
-// iss-016: _coerce_error_data is overly defensive, should use model_validate
+// iss-016: Delete _coerce_error_data, use Pydantic model_validate directly
 
 I.issueOneOccurrence(
   rationale=|||
     The `_coerce_error_data` function (lines 62-93) attempts to coerce various error
     representations to `mtypes.ErrorData` with extensive defensive fallback logic. This
-    is a red flag - the function should most likely just use `mtypes.ErrorData.model_validate`
-    and let Pydantic handle validation.
+    is a red flag - the function should be **deleted entirely** and callers should use
+    Pydantic's `model_validate` directly.
 
     **Current approach (overly defensive):**
     ```python
@@ -32,10 +32,12 @@ I.issueOneOccurrence(
     - Mixes validation concerns with data extraction
     - Makes debugging harder when data doesn't match expected shape
     - Violates fail-fast principle - should let validation errors propagate
+    - The Protocol-based fallback (_ErrorFields) is over-engineered
 
-    **Recommended approach:**
-    Remove `_coerce_error_data` entirely. Callers should use `mtypes.ErrorData.model_validate`
-    directly:
+    **Correct approach:**
+    **Delete `_coerce_error_data` entirely** (lines 62-93) and the `_ErrorFields` protocol
+    (lines 56-60). Callers should use `mtypes.ErrorData.model_validate` directly:
+
     ```python
     # Before:
     error_data = _coerce_error_data(err.error)
@@ -45,7 +47,7 @@ I.issueOneOccurrence(
     ```
 
     If the data doesn't match ErrorData schema, Pydantic will raise a clear validation
-    error, which is better than silently constructing minimal ErrorData or returning None.
+    error, which is far better than silently constructing minimal ErrorData or returning None.
 
     **Locations using _coerce_error_data:**
     - Line 116: `error_data = _coerce_error_data(err.error)`
@@ -53,23 +55,13 @@ I.issueOneOccurrence(
     - Line 122: `error_data = _coerce_error_data(err.error)`
 
     All three should be replaced with direct `model_validate` calls (with appropriate
-    None-checking if the attribute might not exist).
-
-    **Alternative (if None handling is needed):**
-    If callers genuinely need to handle None gracefully:
-    ```python
-    try:
-        error_data = mtypes.ErrorData.model_validate(obj)
-    except ValidationError:
-        error_data = None
-    ```
-
-    But this should be caller's choice, not hidden in a helper function.
+    try/except if None handling is genuinely needed, but that should be caller's decision).
   |||,
   properties=['fail-fast', 'validation', 'error-handling', 'simplicity', 'dead-code'],
   filesToRanges={
     'adgn/src/adgn/mcp/policy_gateway/signals.py': [
-      [62, 93],   // Entire _coerce_error_data function
+      [56, 60],   // _ErrorFields protocol - should be deleted
+      [62, 93],   // Entire _coerce_error_data function - should be deleted
       [116, 116], // Usage in detect_policy_gateway_error
       [119, 119], // Usage in detect_policy_gateway_error
       [122, 122], // Usage in detect_policy_gateway_error
