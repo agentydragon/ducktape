@@ -21,9 +21,8 @@ SERVER_NAME = "box"
 async def _assert_exec_echo(sess) -> None:
     # Call via compositor using namespaced tool key
     stub = ToolStub(sess, build_mcp_function(SERVER_NAME, "exec"), BaseExecResult)
-    res = await stub(ExecInput(cmd=ECHO_CMD, timeout_ms=10_000))
     assert_that(
-        res,
+        await stub(ExecInput(cmd=ECHO_CMD, timeout_ms=10_000)),
         has_properties(
             exit=all_of(instance_of(Exited), has_properties(exit_code=0)),
             stdout="hello",

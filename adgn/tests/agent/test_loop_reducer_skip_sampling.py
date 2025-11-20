@@ -21,9 +21,8 @@ def test_all_continue_same_policy_skip_true_merge():
     m1 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "a"}]}
     m2 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "b"}]}
     ctrl = Reducer([_SkipHandler(skip=True, inserts=(m1,)), _SkipHandler(skip=True, inserts=(m2,))])
-    dec = ctrl.on_before_sample()
     assert_that(
-        dec,
+        ctrl.on_before_sample(),
         all_of(
             instance_of(Continue),
             has_properties(tool_policy=instance_of(Auto), skip_sampling=True, inserts_input=(m1, m2)),
@@ -35,9 +34,8 @@ def test_all_continue_same_policy_no_skip_merge():
     m1 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "x"}]}
     m2 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "y"}]}
     ctrl = Reducer([_SkipHandler(skip=False, inserts=(m1,)), _SkipHandler(skip=False, inserts=(m2,))])
-    dec = ctrl.on_before_sample()
     assert_that(
-        dec,
+        ctrl.on_before_sample(),
         all_of(
             instance_of(Continue),
             has_properties(tool_policy=instance_of(Auto), skip_sampling=False, inserts_input=(m1, m2)),

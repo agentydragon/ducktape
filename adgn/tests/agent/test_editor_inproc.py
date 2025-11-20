@@ -26,8 +26,10 @@ async def test_editor_inproc_basic_ops(typed_editor_factory) -> None:
         assert result == ReplaceTextResult(ok=True)
 
         # done(success=True) runs syntax check for .py and saves
-        done_result = await stub.done(DoneInput(outcome=EditorOutcome.SUCCESS, summary=None))
-        assert_that(done_result, all_of(instance_of(Success), has_properties(kind="Success")))
+        assert_that(
+            await stub.done(DoneInput(outcome=EditorOutcome.SUCCESS, summary=None)),
+            all_of(instance_of(Success), has_properties(kind="Success")),
+        )
 
     # File should be persisted with new content
     assert Path(target).read_text(encoding="utf-8") == "x = 2\n"
