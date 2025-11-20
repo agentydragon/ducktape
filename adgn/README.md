@@ -2,10 +2,9 @@
 
 Local tools and libraries for my dev/worktree/LLM workflows.
 
-- **MiniCodex**: MCP-based agent management UI with approval workflows and real-time monitoring
 - Worktree tools (wt): local server/CLI for git worktrees + GitHub display
 - Tana export: convert Tana JSON dumps to Markdown/TanaPaste
-- LLM utilities: properties/specimens, system rewriter, etc.
+- LLM utilities: MiniCodex client/UI, properties/specimens, system rewriter, etc.
 
 Environment and setup (direnv + devenv)
 - Requirements: Nix + devenv, direnv; Python 3.11+
@@ -42,17 +41,6 @@ Environment and setup (direnv + devenv)
 - rspcache → adgn.rspcache.cli:main
 - LLM: adgn-mini-codex, adgn-llm-edit, adgn-sysrw, adgn-properties, sandbox-jupyter
 - Worktree tooling (`wt`, `wt-install`) now lives in the sibling `wt/` project
-
-## MCP Architecture
-
-MiniCodex uses a unified **MCP-based management architecture** with:
-- Single `agents` MCP server providing cross-agent management
-- Resource-based state management (subscriptions, real-time updates)
-- Tool-based actions (approve/reject/abort)
-- End-to-end type safety (Pydantic → TypeScript)
-- Token-based authentication (Streamable HTTP)
-
-See **MCP_MIGRATION_SUMMARY.md** for complete details on the migration, architecture, and usage.
 
 ## More details
 - See ./CLAUDE.md for a deeper guide (test config, module map, LLM toolkit notes).
