@@ -1,27 +1,27 @@
 """Tests for policy validation and reload functionality."""
 
-from pathlib import Path
-
 from docker import DockerClient
+from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
-from hamcrest import assert_that, has_length, greater_than
+from hamcrest import assert_that, contains_string, has_item, has_length
 import pytest
 
 from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
 from adgn.agent.persist import AgentMetadata
 from adgn.agent.persist.sqlite import SQLitePersistence
-from adgn.mcp.approval_policy.server import ApprovalPolicyAdminServer, ReloadPolicyArgs, ValidatePolicyArgs
+from adgn.mcp.approval_policy.server import (
+    ApprovalPolicyAdminServer,
+    ReloadPolicyArgs,
+    ValidatePolicyArgs,
+)
+from adgn.mcp.testing.approval_policy_stubs import ApprovalPolicyAdminServerStub
 
 pytestmark = pytest.mark.requires_docker
 
 
 @pytest.fixture
-async def engine_and_persistence(tmp_path: Path, docker_client: DockerClient):
-    """Create engine and persistence for testing."""
-    db_path = tmp_path / "test.db"
-    persistence = SQLitePersistence(db_path)
-    await persistence.ensure_schema()
-
+async def engine(persistence: SQLitePersistence, docker_client: DockerClient):
+    """Create engine for testing."""
     # Create agent
     agent_id = await persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
 
@@ -33,105 +33,87 @@ async def engine_and_persistence(tmp_path: Path, docker_client: DockerClient):
         policy_source=load_default_policy_source(),
     )
 
-    return engine, persistence
+    return engine
 
 
-async def test_validate_policy_valid(engine_and_persistence, docker_client: DockerClient):
+@pytest.fixture
+async def admin_server(engine):
+    """Create admin server for testing."""
+    return ApprovalPolicyAdminServer(engine=engine)
+
+
+async def test_validate_policy_valid(admin_server, docker_client: DockerClient):
     """Test validating a valid policy."""
-    engine, _ = engine_and_persistence
-
-    admin_server = ApprovalPolicyAdminServer(engine=engine)
-
-    # Valid Python code
-    result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello')"))
+    async with Client(admin_server) as session:
+        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
+        result = await stub.validate_policy(ValidatePolicyArgs(source="print('hello')"))
 
     assert result.valid is True
     assert_that(result.errors, has_length(0))
 
 
-async def test_validate_policy_syntax_error(engine_and_persistence):
+async def test_validate_policy_syntax_error(admin_server):
     """Test validating a policy with syntax errors."""
-    engine, _ = engine_and_persistence
-
-    admin_server = ApprovalPolicyAdminServer(engine=engine)
-
-    # Invalid syntax
-    result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello'"))
+    async with Client(admin_server) as session:
+        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
+        result = await stub.validate_policy(ValidatePolicyArgs(source="print('hello'"))
 
     assert result.valid is False
-    assert_that(result.errors, has_length(greater_than(0)))
-    assert "Syntax error" in result.errors[0]
+    assert_that(result.errors, has_item(contains_string("Syntax error")))
 
 
-async def test_validate_policy_runtime_error(engine_and_persistence, docker_client: DockerClient):
+async def test_validate_policy_runtime_error(admin_server, docker_client: DockerClient):
     """Test validating a policy that fails at runtime."""
-    engine, _ = engine_and_persistence
-
-    admin_server = ApprovalPolicyAdminServer(engine=engine)
-
-    # Syntactically valid but fails self-check (wrong structure)
-    result = await admin_server._mcp_server._tools["validate_policy"].fn(
-        ValidatePolicyArgs(source="import sys; sys.exit(1)")
-    )
+    async with Client(admin_server) as session:
+        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
+        result = await stub.validate_policy(ValidatePolicyArgs(source="import sys; sys.exit(1)"))
 
     assert result.valid is False
-    assert_that(result.errors, has_length(greater_than(0)))
-    assert "Runtime validation failed" in result.errors[0]
+    assert_that(result.errors, has_item(contains_string("Runtime validation failed")))
 
 
-async def test_reload_policy_from_persistence(engine_and_persistence, docker_client: DockerClient):
+async def test_reload_policy_from_persistence(engine, persistence, admin_server, docker_client: DockerClient):
     """Test reloading policy from persistence."""
-    engine, persistence = engine_and_persistence
-
     # Save a policy to persistence
-    new_policy = "print('from persistence')"
-    await persistence.set_policy(engine.agent_id, content=new_policy)
-
-    admin_server = ApprovalPolicyAdminServer(engine=engine)
+    await persistence.set_policy(engine.agent_id, content="print('from persistence')")
 
     # Change engine's in-memory policy
     engine.set_policy("print('different')")
 
     # Reload from persistence
-    await admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source=None))
+    async with Client(admin_server) as session:
+        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
+        await stub.reload_policy(ReloadPolicyArgs(source=None))
 
     # Engine should now have the persisted policy
     current_policy, _ = engine.get_policy()
-    assert current_policy == new_policy
+    assert current_policy == "print('from persistence')"
 
 
-async def test_reload_policy_from_source(engine_and_persistence, docker_client: DockerClient):
+async def test_reload_policy_from_source(engine, admin_server, docker_client: DockerClient):
     """Test reloading policy from provided source."""
-    engine, _ = engine_and_persistence
-
-    admin_server = ApprovalPolicyAdminServer(engine=engine)
-
     # Reload with provided source
     new_source = load_default_policy_source()
-    await admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source=new_source))
+    async with Client(admin_server) as session:
+        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
+        await stub.reload_policy(ReloadPolicyArgs(source=new_source))
 
     # Engine should have the new source
     current_policy, _ = engine.get_policy()
     assert current_policy == new_source
 
 
-async def test_reload_policy_validates_source(engine_and_persistence, docker_client: DockerClient):
+async def test_reload_policy_validates_source(admin_server, docker_client: DockerClient):
     """Test that reload validates the source before setting."""
-    engine, _ = engine_and_persistence
-
-    admin_server = ApprovalPolicyAdminServer(engine=engine)
-
     # Try to reload with invalid source
-    with pytest.raises(Exception):  # Should fail validation
-        await admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source="import sys; sys.exit(1)"))
+    async with Client(admin_server) as session:
+        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
+        with pytest.raises(Exception):  # Should fail validation
+            await stub.reload_policy(ReloadPolicyArgs(source="import sys; sys.exit(1)"))
 
 
-async def test_reload_policy_no_persistence_raises(engine_and_persistence):
+async def test_reload_policy_no_persistence_raises(engine, persistence):
     """Test that reloading from empty persistence raises error."""
-    engine, persistence = engine_and_persistence
-
-    admin_server = ApprovalPolicyAdminServer(engine=engine)
-
     # Create a new agent with no policy in persistence
     new_agent_id = await persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
 
@@ -146,9 +128,7 @@ async def test_reload_policy_no_persistence_raises(engine_and_persistence):
     new_admin_server = ApprovalPolicyAdminServer(engine=new_engine)
 
     # Try to reload (should fail - no policy in persistence)
-    with pytest.raises(ValueError, match="No policy found in persistence"):
-        await new_admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source=None))
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    async with Client(new_admin_server) as session:
+        stub = ApprovalPolicyAdminServerStub.from_server(new_admin_server, session)
+        with pytest.raises(ValueError, match="No policy found in persistence"):
+            await stub.reload_policy(ReloadPolicyArgs(source=None))
