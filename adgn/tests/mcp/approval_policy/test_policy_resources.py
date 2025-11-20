@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from docker import DockerClient
+from fastmcp.mcp_config import MCPConfig
 import pytest
 
 from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
+from adgn.agent.persist import AgentMetadata
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.mcp.approval_policy.server import (
     ApprovalPolicyAdminServer,
@@ -18,9 +20,7 @@ from adgn.mcp.approval_policy.server import (
 
 @pytest.fixture
 async def persistence(tmp_path):
-    """Create a temporary SQLite persistence instance."""
-    db_path = tmp_path / "test.db"
-    persist = SQLitePersistence(db_path)
+    persist = SQLitePersistence(tmp_path / "test.db")
     await persist.ensure_schema()
     return persist
 
@@ -28,17 +28,8 @@ async def persistence(tmp_path):
 @pytest.fixture
 async def engine(persistence, docker_client: DockerClient):
     """Create an approval policy engine with test persistence."""
-
     agent_id = "test-agent"
-
-    # Create agent in persistence
-    from fastmcp.mcp_config import MCPConfig
-
-    from adgn.agent.persist import AgentMetadata
-
     await persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
-
-    # Create engine with default policy
     policy_source = load_default_policy_source()
     engine = ApprovalPolicyEngine(
         docker_client=docker_client,

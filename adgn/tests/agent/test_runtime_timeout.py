@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from hamcrest import assert_that, instance_of
+from hamcrest import all_of, assert_that, has_properties, instance_of
 
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.docker.server import make_container_exec_server
@@ -35,6 +35,7 @@ async def test_runtime_per_session_timeout_then_next_call_ok(
 
         # Next call should work; container should have been restarted
         res_ok = await stub(ExecInput(cmd=["/bin/echo", "-n", "ok"], timeout_ms=5000, shell=False))
-        assert_that(res_ok.exit, instance_of(Exited))
-        assert res_ok.exit.exit_code == 0
-        assert (res_ok.stdout or "") == "ok"
+        assert_that(
+            res_ok,
+            has_properties(exit=all_of(instance_of(Exited), has_properties(exit_code=0)), stdout="ok"),
+        )
