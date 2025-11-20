@@ -86,16 +86,14 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     )
     assert ri1_idx is not None, f"Turn 2 missing ReasoningItem(rs_turn1): {turn2_types}"
 
-    fc1 = turn2_input[ri1_idx + 1]
     assert_that(
-        fc1,
+        turn2_input[ri1_idx + 1],
         is_function_call_item(call_id="call_1", id="fc_id_1", status="completed"),
         f"Turn 2: FC1 fields not preserved or wrong type: {turn2_types}",
     )
 
-    fco1 = turn2_input[ri1_idx + 2]
     assert_that(
-        fco1,
+        turn2_input[ri1_idx + 2],
         is_function_call_output_item(call_id="call_1"),
         f"Turn 2: FunctionCallItem not followed by FunctionCallOutputItem: {turn2_types}",
     )
@@ -110,10 +108,8 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     )
     assert ri1_idx is not None, f"Turn 3 missing ReasoningItem(rs_turn1): {turn3_types}"
 
-    fc1 = turn3_input[ri1_idx + 1]
-    assert_that(fc1, is_function_call_item(call_id="call_1", id="fc_id_1"))
-    fco1 = turn3_input[ri1_idx + 2]
-    assert_that(fco1, is_function_call_output_item(call_id="call_1"))
+    assert_that(turn3_input[ri1_idx + 1], is_function_call_item(call_id="call_1", id="fc_id_1"))
+    assert_that(turn3_input[ri1_idx + 2], is_function_call_output_item(call_id="call_1"))
 
     # Verify Turn 2's sequence
     ri2_idx = next(
@@ -121,12 +117,10 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     )
     assert ri2_idx is not None, f"Turn 3 missing ReasoningItem(rs_turn2): {turn3_types}"
 
-    fc2 = turn3_input[ri2_idx + 1]
     assert_that(
-        fc2,
+        turn3_input[ri2_idx + 1],
         is_function_call_item(call_id="call_2", id="fc_id_2", status="in_progress"),
         f"Turn 3: FC2 fields not preserved or wrong type: {turn3_types}",
     )
 
-    fco2 = turn3_input[ri2_idx + 2]
-    assert_that(fco2, is_function_call_output_item(call_id="call_2"))
+    assert_that(turn3_input[ri2_idx + 2], is_function_call_output_item(call_id="call_2"))
