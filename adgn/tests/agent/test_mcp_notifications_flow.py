@@ -4,7 +4,17 @@ from typing import Any
 
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
-from hamcrest import assert_that, has_length, has_item, greater_than_or_equal_to, matches
+from hamcrest import (
+    all_of,
+    assert_that,
+    contains_string,
+    greater_than_or_equal_to,
+    has_item,
+    has_length,
+    has_properties,
+    instance_of,
+    matches,
+)
 from pydantic import BaseModel, ConfigDict
 import pytest
 
@@ -134,17 +144,20 @@ async def test_notifications_within_turn_from_tool(
 
         # The second create call (post-tool) should include the injected system notification
         assert_that(captured, has_length(greater_than_or_equal_to(2)), "expected at least two sampling calls")
-        second = captured[-1]
-        found = False
-        for msg in second.input or []:
-            if isinstance(msg, UserMessage):
-                for c in msg.content or []:
-                    if isinstance(c, InputTextPart) and "<system notification>" in c.text:
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "expected system notification after tool-triggered update"
+        assert_that(
+            captured[-1].input,
+            has_item(
+                all_of(
+                    instance_of(UserMessage),
+                    has_properties(
+                        content=has_item(
+                            all_of(instance_of(InputTextPart), has_properties(text=contains_string("<system notification>")))
+                        )
+                    ),
+                )
+            ),
+            "expected system notification in last sampling call",
+        )
 
 
 async def test_notifications_broadcast_outside_tool(responses_factory: ResponsesFactory, make_buffered_client):
