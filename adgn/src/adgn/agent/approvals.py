@@ -60,15 +60,11 @@ class TurnAbortRequested(Exception):  # noqa: N818
         super().__init__(f"Turn abort requested: {reason} (call_id={call_id})")
 
 
-class ApprovalRequest(BaseModel):
-    tool_call: ToolCall
-
-
 @dataclass
 class PendingApproval:
-    """Pending approval with request and future."""
+    """Pending approval with tool call and future."""
 
-    request: ApprovalRequest
+    tool_call: ToolCall
     future: asyncio.Future[ContinueDecision | DenyContinueDecision | AbortTurnDecision]
 
 
@@ -93,13 +89,13 @@ class ApprovalHub:
         self._notifier = notifier
 
     async def await_decision(
-        self, call_id: str, request: ApprovalRequest
+        self, call_id: str, tool_call: ToolCall
     ) -> ContinueDecision | DenyContinueDecision | AbortTurnDecision:
         async with self._lock:
             pending = self._pending.get(call_id)
             if pending is None:
                 fut = asyncio.get_running_loop().create_future()
-                self._pending[call_id] = PendingApproval(request=request, future=fut)
+                self._pending[call_id] = PendingApproval(tool_call=tool_call, future=fut)
             else:
                 fut = pending.future
         if self._notifier:
@@ -114,9 +110,9 @@ class ApprovalHub:
             self._notifier()
 
     @property
-    def pending(self) -> dict[str, ApprovalRequest]:
-        """Public view of pending approval requests (immutable contract by convention)."""
-        return {call_id: p.request for call_id, p in self._pending.items()}
+    def pending(self) -> dict[str, ToolCall]:
+        """Public view of pending approval tool calls (immutable contract by convention)."""
+        return {call_id: p.tool_call for call_id, p in self._pending.items()}
 
 
 # ---- Approval Policy Engine (decoupled, in-memory; optional) ----

@@ -18,7 +18,6 @@ from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field, TypeAdapter
 
-from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
 from adgn.agent.mcp_bridge import resources
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
@@ -48,13 +47,13 @@ logger = logging.getLogger(__name__)
 # Helper functions for data conversion
 
 
-def _convert_pending_approvals(pending_map: dict[str, ApprovalRequest]) -> list[PendingApproval]:
+def _convert_pending_approvals(pending_map: dict[str, ToolCall]) -> list[PendingApproval]:
     result: list[PendingApproval] = []
-    for _call_id, request in pending_map.items():
+    for _call_id, tool_call in pending_map.items():
         result.append(
             PendingApproval(
-                tool_call=request.tool_call,
-                timestamp=datetime.now(),  # TODO: Track creation time in ApprovalRequest
+                tool_call=tool_call,
+                timestamp=datetime.now(),  # TODO: Track creation time in PendingApproval or separately
             )
         )
     return result

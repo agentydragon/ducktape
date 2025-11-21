@@ -13,7 +13,7 @@ from fastmcp.tools.tool import ToolResult
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
 
-from adgn.agent.approvals import ApprovalHub, ApprovalRequest
+from adgn.agent.approvals import ApprovalHub
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
 from adgn.agent.persist import ApprovalOutcome, Decision, Persistence, ToolCall, ToolCallExecution, ToolCallRecord
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest
@@ -288,13 +288,11 @@ class PolicyGatewayMiddleware(Middleware):
             raise _policy_denied_error(ApprovalDecision.DENY_CONTINUE, name, rationale)
 
         # ASK: block until resolved via ApprovalHub
-        req = ApprovalRequest(
-            tool_call=ToolCall(name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None))
-        )
+        tool_call = ToolCall(name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None))
         # Register + notify before awaiting
-        wait_coro = self._hub.await_decision(call_id, req)
+        wait_coro = self._hub.await_decision(call_id, tool_call)
         if self._notify is not None:
-            await self._notify(req.tool_call)
+            await self._notify(tool_call)
 
         decision_response = await wait_coro
 
