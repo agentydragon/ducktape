@@ -515,8 +515,6 @@ class TaskClaude:
         if not self.use_git_volume:
             # Git volume disabled - no remounting needed
             self._logger.info("Git volume disabled - skipping remount")
-            # Still need to setup the wrapper after container start
-            await self._setup_wrapper()
             return
 
         # Stop current container
@@ -574,15 +572,6 @@ class TaskClaude:
             raise RuntimeError(f"Remounted container {c.id} failed to start within {max_wait}s: {c.status}")
 
         self._logger.info("Remounted container running", container_id=c.id, status=c.status)
-
-    async def _setup_wrapper(self) -> None:
-        """Set up or refresh any container-dependent wrapper state.
-
-        Currently a no-op: we use a committed host-side wrapper script that only
-        needs the container ID and docker binary provided via environment in
-        receive_messages(). This hook is kept for future extensibility.
-        """
-        return
 
     async def _cleanup(self):
         """Clean up container and wrapper."""

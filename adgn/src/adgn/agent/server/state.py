@@ -38,9 +38,6 @@ class EndTurnItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-ApprovalKind = UserApprovalDecision
-
-
 # Tool content variants nested under a single ToolItem
 class ExecContent(BaseModel):
     content_kind: Literal["Exec"] = "Exec"
@@ -70,7 +67,7 @@ class ToolItem(BaseModel):
     ts: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Timestamp when tool was called")
     tool: str = Field(description="Tool name")
     call_id: str = Field(description="Unique call identifier")
-    decision: ApprovalKind | None = Field(None, description="Approval decision (approve, deny_continue, or deny_abort)")
+    decision: UserApprovalDecision | None = Field(None, description="Approval decision (approve, deny_continue, or deny_abort)")
     content: ToolContent = Field(description="Tool execution content (Exec or Json variant)")
     model_config = ConfigDict(extra="forbid")
 
@@ -127,7 +124,7 @@ def _find_last_tool_index(state: UiState, call_id: str) -> int | None:
     return None
 
 
-def update_tool_decision(state: UiState, call_id: str, decision: ApprovalKind | None) -> UiState:
+def update_tool_decision(state: UiState, call_id: str, decision: UserApprovalDecision | None) -> UiState:
     if (idx := _find_last_tool_index(state, call_id)) is None:
         return state
     it = state.items[idx]

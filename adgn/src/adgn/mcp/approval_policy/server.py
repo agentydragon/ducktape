@@ -270,7 +270,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             """Directly set active policy text after self-check."""
             # Self-check program using engine's docker client
             self._engine.self_check(input.source)
-            self._engine.set_policy(input.source)
+            await self._engine.set_policy(input.source)
 
         @self.flat_model()
         async def validate_policy(input: ValidatePolicyArgs) -> ValidationResult:
@@ -298,7 +298,7 @@ class ApprovalPolicyAdminServer(NotifyingFastMCP):
             if input.source is not None:
                 # Reload from provided source
                 self._engine.self_check(input.source)
-                self._engine.set_policy(input.source)
+                await self._engine.set_policy(input.source)
             else:
                 # Reload from persistence
                 result = await self._engine.persistence.get_latest_policy(self._engine.agent_id)

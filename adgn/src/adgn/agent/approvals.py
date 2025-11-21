@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import StrEnum
 from importlib import resources
 import logging
@@ -63,6 +64,14 @@ class ApprovalRequest(BaseModel):
     tool_call: ToolCall
 
 
+@dataclass
+class PendingApproval:
+    """Pending approval with request and future."""
+
+    request: ApprovalRequest
+    future: asyncio.Future[ContinueDecision | DenyContinueDecision | AbortTurnDecision]
+
+
 class ApprovalHub:
     """In-process rendezvous for pending approval/decision events.
 
@@ -72,10 +81,7 @@ class ApprovalHub:
     """
 
     def __init__(self, notifier: Callable[[], None] | None = None) -> None:
-        self._futures: dict[
-            str, asyncio.Future[ContinueDecision | DenyContinueDecision | AbortTurnDecision]
-        ] = {}
-        self._requests: dict[str, ApprovalRequest] = {}
+        self._pending: dict[str, PendingApproval] = {}
         self._lock = asyncio.Lock()
         self._notifier = notifier
 
@@ -90,28 +96,27 @@ class ApprovalHub:
         self, call_id: str, request: ApprovalRequest
     ) -> ContinueDecision | DenyContinueDecision | AbortTurnDecision:
         async with self._lock:
-            # Track the request so UIs can snapshot pending approvals
-            self._requests[call_id] = request
-            fut = self._futures.get(call_id)
-            if fut is None:
+            pending = self._pending.get(call_id)
+            if pending is None:
                 fut = asyncio.get_running_loop().create_future()
-                self._futures[call_id] = fut
+                self._pending[call_id] = PendingApproval(request=request, future=fut)
+            else:
+                fut = pending.future
         if self._notifier:
             self._notifier()
         return await fut
 
     def resolve(self, call_id: str, decision: ContinueDecision | DenyContinueDecision | AbortTurnDecision) -> None:
-        fut = self._futures.pop(call_id, None)
-        self._requests.pop(call_id, None)
-        if fut is not None and not fut.done():
-            fut.set_result(decision)
+        pending = self._pending.pop(call_id, None)
+        if pending is not None and not pending.future.done():
+            pending.future.set_result(decision)
         if self._notifier:
             self._notifier()
 
     @property
     def pending(self) -> dict[str, ApprovalRequest]:
         """Public view of pending approval requests (immutable contract by convention)."""
-        return self._requests
+        return {call_id: p.request for call_id, p in self._pending.items()}
 
 
 # ---- Approval Policy Engine (decoupled, in-memory; optional) ----
@@ -169,10 +174,11 @@ class ApprovalPolicyEngine:
     def get_policy(self) -> tuple[str, int]:
         return self._policy_source, self._policy_id
 
-    def set_policy(self, source: str) -> int:
-        # Store as-is; evaluator enforces correctness at call time
+    async def set_policy(self, source: str) -> int:
+        """Store new policy and return its database ID."""
         self._policy_source = source
-        self._policy_id += 1
+        # Call persistence to get ACTUAL ID
+        self._policy_id = await self.persistence.set_policy(self.agent_id, content=source)
         if self._notify:
             self._notify(APPROVAL_POLICY_RESOURCE_URI)
             # Also notify agent-specific policy state resource
@@ -248,7 +254,7 @@ class ApprovalPolicyEngine:
         if self.docker_client is not None:
             self.self_check(got.content)
         # Activate policy (notifies via engine's set_policy)
-        self.set_policy(got.content)
+        await self.set_policy(got.content)
         await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
         self.notify_proposal_change(str(proposal_id))
 

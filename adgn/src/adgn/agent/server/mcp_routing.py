@@ -13,7 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
@@ -40,12 +40,16 @@ class HumanTokenInfo(BaseModel):
 
     role: Literal[TokenRole.HUMAN]
 
+    model_config = ConfigDict(frozen=True)
+
 
 class AgentTokenInfo(BaseModel):
     """Token info for agent connections (routes to agent's compositor)."""
 
     role: Literal[TokenRole.AGENT]
     agent_id: AgentID  # Required for agent tokens
+
+    model_config = ConfigDict(frozen=True)
 
 
 TokenInfo = Annotated[HumanTokenInfo | AgentTokenInfo, Field(discriminator="role")]
@@ -76,8 +80,8 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
         self.token_table = token_table
         self.registry = registry
         self.agents_server = agents_server
-        # Cache for backend ASGI apps by routing key
-        self._backend_apps: dict[str, ASGIApp] = {}
+        # Cache for backend ASGI apps by token info
+        self._backend_apps: dict[TokenInfo, ASGIApp] = {}
 
     def _extract_bearer_token(self, headers: list[tuple[bytes, bytes]]) -> str | None:
         """Extract Bearer token from Authorization header."""
@@ -90,22 +94,17 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
 
     async def _get_backend_app(self, token_info: TokenInfo) -> ASGIApp:
         """Get or create backend ASGI app for the given token info."""
-        match token_info:
-            case HumanTokenInfo():
-                backend_key = "human"
-                if backend_key not in self._backend_apps:
+        if token_info not in self._backend_apps:
+            match token_info:
+                case HumanTokenInfo():
                     # Use the agents management server's HTTP app
-                    self._backend_apps[backend_key] = self.agents_server.http_app()  # type: ignore[assignment]
-                return self._backend_apps[backend_key]
-
-            case AgentTokenInfo(agent_id=agent_id):
-                backend_key = f"agent:{agent_id}"
-                if backend_key not in self._backend_apps:
+                    self._backend_apps[token_info] = self.agents_server.http_app()  # type: ignore[assignment]
+                case AgentTokenInfo(agent_id=agent_id):
                     # Get the agent's compositor HTTP app
                     container = await self.registry.ensure_live(agent_id, with_ui=False)
                     compositor_app = container.running.compositor.http_app()
-                    self._backend_apps[backend_key] = compositor_app  # type: ignore[assignment]
-                return self._backend_apps[backend_key]
+                    self._backend_apps[token_info] = compositor_app  # type: ignore[assignment]
+        return self._backend_apps[token_info]
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         """Route request to appropriate backend based on token."""

@@ -253,9 +253,6 @@ class MiniCodex:
 
     async def _handle_pending_tool_calls(self) -> None:
         function_calls: list[FunctionCallItem] = list(self.pending_function_calls)
-        calls: list[tuple[FunctionCallItem, str | None]] = [
-            (function_call, function_call.arguments) for function_call in function_calls
-        ]
 
         local_result_map: dict[str, CallToolResult] = {
             evt.call_id: evt.result for evt in self._transcript if isinstance(evt, ToolCallOutput)
@@ -288,13 +285,13 @@ class MiniCodex:
             return ToolCallSuccess(result=res)
 
         if self._parallel_tool_calls:
-            await self._run_tool_calls_parallel(calls, function_calls, _invoke)
+            await self._run_tool_calls_parallel(function_calls, _invoke)
         else:
-            await self._run_tool_calls_sequential(calls, function_calls, _invoke)
+            await self._run_tool_calls_sequential(function_calls, _invoke)
         self.pending_function_calls.clear()
 
     async def _run_tool_calls_parallel(
-        self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
+        self, function_calls: list[FunctionCallItem], invoker
     ) -> None:
         results: dict[str, ToolCallOutcome] = {}
         abort_triggered = False
@@ -302,10 +299,10 @@ class MiniCodex:
         async with anyio.create_task_group() as tg:
             cancelled_exc = anyio.get_cancelled_exc_class()
 
-            async def runner(fc: FunctionCallItem, aj: str | None) -> None:
+            async def runner(fc: FunctionCallItem) -> None:
                 nonlocal abort_triggered
                 try:
-                    outcome = await invoker(fc, aj)
+                    outcome = await invoker(fc, fc.arguments)
                 except cancelled_exc:
                     return
                 cid = _require_call_id(fc)
@@ -314,8 +311,8 @@ class MiniCodex:
                     abort_triggered = True
                     tg.cancel_scope.cancel()
 
-            for function_call, args_json in calls:
-                tg.start_soon(runner, function_call, args_json)
+            for function_call in function_calls:
+                tg.start_soon(runner, function_call)
 
         had_error = False
         for function_call in function_calls:
@@ -331,10 +328,10 @@ class MiniCodex:
             self.finished = True
 
     async def _run_tool_calls_sequential(
-        self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
+        self, function_calls: list[FunctionCallItem], invoker
     ) -> None:
-        for i, (function_call, args_json) in enumerate(calls):
-            outcome = await invoker(function_call, args_json)
+        for i, function_call in enumerate(function_calls):
+            outcome = await invoker(function_call, function_call.arguments)
             self._emit_tool_result(function_call, outcome.result)
             if isinstance(outcome, ToolCallAborted):
                 for remaining in function_calls[i + 1 :]:

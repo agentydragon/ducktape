@@ -27,7 +27,6 @@ from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
 from adgn.agent.policies.policy_types import UserApprovalDecision
 from adgn.agent.presets import discover_presets
-from adgn.agent.server.state import ApprovalKind
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.approval_policy.server import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
 from adgn.mcp.compositor.server import MountEvent
@@ -606,7 +605,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
 
     @server.tool()
     async def decide_approval(
-        agent_id: AgentID, call_id: str, decision: ApprovalKind, reason: str | None = None
+        agent_id: AgentID, call_id: str, decision: UserApprovalDecision, reason: str | None = None
     ) -> None:
         """Unified tool for handling approval decisions.
 

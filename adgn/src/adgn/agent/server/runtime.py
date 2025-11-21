@@ -132,12 +132,7 @@ class ConnectionManager(BaseHandler):
         await self.send_payload(payload)
         assert self._session is not None
         await self._session._apply_ui_event(payload)
-        # Mirror run status changes to agents hub
-        if isinstance(payload, RunStatusEvt):
-            st = payload.run_state.status
-            run_id = payload.run_state.run_id
-            active = run_id if st != UiRunStatus.FINISHED else None
-            await self.broadcast_status(True, active)
+        # Run status mirroring removed with WebSocket status broadcasts
 
     async def _emit_ui_bus_messages(self) -> None:
         assert self._session is not None
@@ -154,18 +149,9 @@ class ConnectionManager(BaseHandler):
 
     async def send_payload(self, payload: ServerMessage) -> None:
         await self.send_json(payload)
-        # Mirror run status events to agents hub
-        if isinstance(payload, RunStatusEvt):
-            st = payload.run_state.status
-            run_id = payload.run_state.run_id
-            active = run_id if st != UiRunStatus.FINISHED else None
-            await self.broadcast_status(True, active)
 
     def set_session(self, session: AgentSession) -> None:
         self._session = session
-
-    def on_response(self, evt: Any) -> None:
-        return None
 
     def _spawn(self, coro: Awaitable[None]) -> None:
         t: asyncio.Task[Any] = asyncio.create_task(coro)
@@ -219,10 +205,6 @@ class ConnectionManager(BaseHandler):
     def set_session_state_notifier(self, notifier: Callable[[], None]) -> None:
         """Set notifier callback for session state changes (for MCP resource updates)."""
         self._session_state_notifier = notifier
-
-    async def broadcast_status(self, live: bool, active_run_id) -> None:
-        # No-op: WebSocket status broadcasts removed
-        pass
 
 
 class AgentSession:
@@ -289,9 +271,7 @@ class AgentSession:
             for r in rows:
                 pid = str(r.id)
                 raw = str(r.status)
-                # Strict mapping; surface invalid data rather than swallowing
-                status = ProposalStatus(raw)
-                proposals.append(ProposalInfo(id=pid, status=status))
+                proposals.append(ProposalInfo(id=pid, status=ProposalStatus(raw)))
         approval_policy = ApprovalPolicyInfo(content=content, id=policy_id, proposals=proposals)
 
         # Build preferred details bundle when all components are present
@@ -391,8 +371,6 @@ class AgentSession:
                     )
                 )
             )
-            # Mirror live status immediately to agents hub if configured
-            await self._manager.broadcast_status(True, run_id)
             # Also push a fresh Snapshot so UIs that rely on snapshot-only
             # state (not incremental run_status) update immediately.
             # This helps early UI elements like the Abort button appear
@@ -440,7 +418,6 @@ class AgentSession:
                 )
                 # Keep snapshot run_state in sync with finished status
                 await self._manager.send_payload(await self.build_snapshot())
-                await self._manager.broadcast_status(True, None)
                 # Notify MCP bridge of session state change (run finished)
                 if self._manager._session_state_notifier is not None:
                     self._manager._session_state_notifier()
