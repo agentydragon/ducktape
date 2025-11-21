@@ -179,7 +179,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         # Create agents management server for MCP routing
         # Import here to avoid circular dependency with registry setup
         from adgn.agent.mcp_bridge.server import InfrastructureRegistry  # noqa: PLC0415
-        from adgn.agent.mcp_bridge.servers.agents import make_agents_server  # noqa: PLC0415
 
         # Create minimal infrastructure registry for agents server
         # Note: This is a simplified setup - in production, you'd want proper registry management
@@ -189,8 +188,28 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             mcp_config=MCPConfig(servers={}),
             initial_policy=None,
         )
-        app.state.agents_server = await make_agents_server(app.state.mcp_registry)
-        logger.info("agents management server created")
+
+        # Feature flag: Use new compositor architecture or old monolithic server
+        use_compositor = os.getenv("ADGN_USE_COMPOSITOR_BRIDGE", "false").lower() == "true"
+
+        if use_compositor:
+            # New: Create global compositor with two-level architecture
+            from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor  # noqa: PLC0415
+
+            # TODO: Figure out gateway_client setup for resources server
+            # For now, pass None - standard infrastructure servers won't be mounted
+            gateway_client = None
+
+            app.state.agents_server = await create_global_compositor(
+                registry=app.state.mcp_registry, gateway_client=gateway_client
+            )
+            logger.info("agents management compositor created (new architecture)")
+        else:
+            # Old: Use monolithic agents server
+            from adgn.agent.mcp_bridge.servers.agents import make_agents_server  # noqa: PLC0415
+
+            app.state.agents_server = await make_agents_server(app.state.mcp_registry)
+            logger.info("agents management server created (legacy architecture)")
 
         # Multi-agent: agents should be created via API after startup
         app.state.ready.set()
