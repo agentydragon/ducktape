@@ -4,8 +4,7 @@ from enum import StrEnum
 import logging
 from typing import Any, Protocol, runtime_checkable
 
-from fastmcp.client.client import CallToolResult as FastMcpCallToolResult
-from mcp import McpError, types as mtypes
+from mcp import types as mtypes
 from pydantic import BaseModel
 
 from adgn.mcp._shared.constants import (
@@ -90,56 +89,4 @@ def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
         except Exception as e:
             logger.debug("Failed to extract ErrorData from object attributes: %s", e)
             return None
-    return None
-
-
-def detect_policy_gateway_error(
-    err: FastMcpCallToolResult | mtypes.CallToolResult | McpError | dict[str, Any] | mtypes.ErrorData | BaseException,
-) -> PolicyGatewayError | None:
-    """Detect and classify policy-gateway errors robustly.
-
-    Accepts either:
-    - FastMCP CallToolResult with is_error=True
-    - MCP types.CallToolResult with is_error=True
-    - McpError exception (has .error attribute)
-    - Raw error payload (dict or ErrorData)
-    - Other exceptions (will return None unless they have .error attribute)
-
-    Returns a typed PolicyGatewayError when recognized; otherwise None.
-
-    NOTE: This function is currently unused in the codebase.
-    """
-    # Prefer structured error data when present (CallToolResult or exception with .error)
-    error_data: mtypes.ErrorData | None = None
-    # Check for CallToolResult with is_error=True
-    if (isinstance(err, FastMcpCallToolResult | mtypes.CallToolResult) and err.is_error) or isinstance(err, McpError):
-        error_data = _coerce_error_data(err.error)
-    # Check for direct error data
-    elif isinstance(err, dict | mtypes.ErrorData):
-        error_data = _coerce_error_data(err)
-    # Fallback: other exceptions with .error attribute
-    elif hasattr(err, "error"):
-        error_data = _coerce_error_data(err.error)
-
-    # Map structured error first
-    if error_data is not None:
-        # Extract minimally-typed fields
-        code: int | None
-        try:
-            code = int(error_data.code)
-        except Exception:
-            code = None
-        msg = str(error_data.message)
-        data = error_data.data
-
-        # Only accept stamped errors as originating from the policy gateway.
-        if not (isinstance(data, dict) and data.get(POLICY_GATEWAY_STAMP_KEY) is True):
-            return None
-        kind = _CODE_TO_KIND.get(code) if code is not None else _MSG_TO_KIND.get(msg)
-        if kind is None:
-            # Unknown code/message but stamped as gateway: treat as evaluator error fallback
-            kind = PolicyGatewayErrorKind.POLICY_EVALUATOR_ERROR
-        return PolicyGatewayError(kind=kind, code=code, message=msg, data=data)
-
-    # Fallback: detect by message string on generic exceptions (e.g., ToolError)
     return None

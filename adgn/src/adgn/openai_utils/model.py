@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import singledispatch
 from typing import Any, Literal, Protocol, Self, cast
 
 from openai import AsyncOpenAI
@@ -216,41 +215,8 @@ class AssistantMessageOut(BaseModel):
             content_parts.append(InputTextPart.model_validate(part_data))
         return AssistantMessage(role="assistant", content=content_parts)
 
-    @classmethod
-    def from_input_item(cls, item: AssistantMessage) -> AssistantMessageOut:
-        parts: list[OutputText] = []
-        for block in item.content or []:
-            if isinstance(block, InputTextPart):
-                parts.append(OutputText.model_validate(block.model_dump(exclude_none=True)))
-        return cls(parts=parts)
-
 
 ResponseOutItem = ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
-
-
-@singledispatch
-def response_out_item_to_input(item: BaseModel) -> InputItem:
-    raise TypeError(f"Unsupported response item type: {type(item)!r}")
-
-
-@response_out_item_to_input.register
-def _(item: ReasoningItem) -> InputItem:
-    return item  # No conversion needed, ReasoningItem is already an InputItem
-
-
-@response_out_item_to_input.register
-def _(item: FunctionCallItem) -> InputItem:
-    return item  # No conversion needed, FunctionCallItem is already an InputItem
-
-
-@response_out_item_to_input.register
-def _(item: FunctionCallOutputItem) -> InputItem:
-    return item  # No conversion needed, FunctionCallOutputItem is already an InputItem
-
-
-@response_out_item_to_input.register
-def _(item: AssistantMessageOut) -> InputItem:
-    return item.to_input_item()
 
 
 def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMessageOut | None:
@@ -276,9 +242,6 @@ class ResponsesResult(BaseModel):
     id: str
     usage: ResponseUsage | None
     output: list[ResponseOutItem]
-
-    def to_input_items(self) -> list[InputItem]:
-        return [response_out_item_to_input(item) for item in self.output]
 
 
 def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
