@@ -148,7 +148,6 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/list", name="proposals_list", mime_type="application/json")
         async def proposals_list() -> list[ProposalDescriptor]:
             """List all policy proposals with status and timestamps."""
-            proposals = await self._engine.persistence.list_policy_proposals(self._engine.agent_id)
             return [
                 ProposalDescriptor(
                     id=p.id,
@@ -156,14 +155,13 @@ class ApprovalPolicyServer(NotifyingFastMCP):
                     created_at=p.created_at,
                     decided_at=p.decided_at,
                 )
-                for p in proposals
+                for p in await self._engine.persistence.list_policy_proposals(self._engine.agent_id)
             ]
 
         @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal_detail", mime_type="application/json")
         async def proposal_detail(id: str) -> ProposalDetail:
             """Get full proposal details including content and metadata."""
-            got = await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)
-            if got is None:
+            if (got := await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)) is None:
                 raise KeyError(id)
             return ProposalDetail(
                 id=got.id,
