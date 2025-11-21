@@ -79,9 +79,7 @@ I.issueOneOccurrence(
 
     **Recommended fix:**
 
-    **Option 1 (Return PolicyProposal directly - if content is acceptable):**
-
-    Delete PolicyProposalInfo entirely and use PolicyProposal:
+    Delete PolicyProposalInfo entirely and return PolicyProposal objects directly:
 
     ```python
     # Delete PolicyProposalInfo class (lines 171-178)
@@ -107,46 +105,8 @@ I.issueOneOccurrence(
         )
     ```
 
-    **Option 2 (If content is too heavy, define lightweight descriptor):**
-
-    If the `content` field is too large to include in listings, define a proper lightweight type:
-
-    ```python
-    class PolicyProposalDescriptor(BaseModel):
-        """Lightweight proposal descriptor without content."""
-        id: str
-        status: ProposalStatus
-        created_at: datetime
-        decided_at: datetime | None = None
-        # No content, no URI - just the metadata
-
-    class AgentPolicyProposals(BaseModel):
-        agent_id: AgentID
-        proposals: list[PolicyProposalDescriptor]
-        active_policy_uri: str
-
-    async def agent_policy_proposals(agent_id: AgentID) -> AgentPolicyProposals:
-        infra = await registry.get_infrastructure(agent_id)
-        proposals = await infra.approval_engine.persistence.list_policy_proposals(agent_id)
-
-        # Convert to lightweight descriptors
-        descriptors = [
-            PolicyProposalDescriptor(
-                id=p.id,
-                status=p.status,
-                created_at=p.created_at,
-                decided_at=p.decided_at,
-            )
-            for p in proposals
-        ]
-
-        return AgentPolicyProposals(agent_id=agent_id, proposals=descriptors, active_policy_uri="...")
-    ```
-
-    But this should NOT include the computable `proposal_uri` field.
-
     **Benefits:**
-    - Eliminates unnecessary wrapper type (Option 1)
+    - Eliminates unnecessary wrapper type
     - No manual URI construction needed
     - Single source of truth for proposal data
     - Direct use of persistence objects
@@ -154,9 +114,7 @@ I.issueOneOccurrence(
     - Clearer data flow (database → API, no transformation)
 
     **Note:**
-    If Option 1 is chosen, this also resolves issue 024 (proposal_uri field) by removing
-    PolicyProposalInfo entirely. The user's preference is to return proposals directly
-    (Option 1), not create a different structure.
+    This also resolves issue 024 (proposal_uri field) by removing PolicyProposalInfo entirely.
   |||,
   properties=['unnecessary-abstraction', 'data-modeling', 'simplicity'],
   filesToRanges={
