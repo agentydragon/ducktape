@@ -64,20 +64,20 @@ async def test_list_agents_resource(agents_client):
         agents,
         has_items(
             has_entries(
-                agent_id="local-agent",
+                id="local-agent",
                 mode="local",
+                live=True,
+                run_phase="sampling",
+                pending_approvals=0,
                 capabilities=has_entries(chat=True, agent_loop=True),
-                state_uri="resource://agents/local-agent/state",
-                approvals_uri="resource://agents/local-agent/approvals/pending",
-                policy_proposals_uri="resource://agents/local-agent/policy/proposals",
             ),
             has_entries(
-                agent_id="bridge-agent",
+                id="bridge-agent",
                 mode="bridge",
+                live=True,
+                run_phase="sampling",
+                pending_approvals=0,
                 capabilities=has_entries(chat=False, agent_loop=False),
-                state_uri=None,
-                approvals_uri="resource://agents/bridge-agent/approvals/pending",
-                policy_proposals_uri="resource://agents/bridge-agent/policy/proposals",
             ),
         ),
     )
