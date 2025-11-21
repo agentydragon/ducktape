@@ -573,9 +573,7 @@ async def run_all_evals(
                 failed=summary.failed,
             )
 
-    async with asyncio.TaskGroup() as tg:
-        tasks = [tg.create_task(_run_one(s)) for s in SAMPLES]
-    entries = [await t for t in tasks]
+    entries = await asyncio.gather(*[_run_one(s) for s in SAMPLES])
 
     (root / "index.json").write_text((eval_index := EvalIndex(samples=list(entries))).model_dump_json(indent=2), encoding="utf-8")
 
