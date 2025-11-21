@@ -217,7 +217,7 @@ GROUP BY a.id
             return policy.id
 
     # ---- Policy proposals (single-store: SQLite) ----------------------------
-    async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> None:
+    async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> int:
         async with self._session() as session:
             # proposal_id is provided but new schema uses autoincrement
             # Store the proposal with PROPOSED status
@@ -230,6 +230,9 @@ GROUP BY a.id
             )
             session.add(policy)
             await session.commit()
+            # Return the actual database-assigned ID
+            await session.refresh(policy)
+            return policy.id
 
     async def list_policy_proposals(self, agent_id: AgentID) -> list[PolicyProposal]:
         async with self._session() as session:
