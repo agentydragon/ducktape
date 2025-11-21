@@ -14,11 +14,17 @@ from unittest.mock import AsyncMock, Mock
 from fastmcp.client import Client
 import pytest
 
-from adgn.agent.approvals import ApprovalHub, ApprovalRequest
+from adgn.agent.approvals import ApprovalHub, PendingApproval
 from adgn.agent.mcp_bridge.servers.agents import make_agents_server
 from adgn.agent.mcp_bridge.types import AgentID
 from adgn.agent.persist import ToolCall
 from adgn.mcp._shared.constants import APPROVAL_POLICY_RESOURCE_URI
+
+
+def add_pending_approval(hub: ApprovalHub, call_id: str, tool_call: ToolCall) -> None:
+    """Helper to add a pending approval to the hub for testing."""
+    fut = asyncio.get_event_loop().create_future()
+    hub._pending[call_id] = PendingApproval(tool_call=tool_call, future=fut)
 
 # --- Test-specific fixtures ---
 # Shared fixtures (mock_persistence, mock_approval_hub, mock_approval_engine,
@@ -86,12 +92,7 @@ async def test_approve_tool_broadcasts_notifications(agents_client_and_server, m
 
     # Setup pending approval
     tool_call = ToolCall(name="test_tool", call_id="call-123", args_json="{}")
-    request = ApprovalRequest(tool_call=tool_call)
-
-    # Create future for the approval
-    fut = asyncio.get_running_loop().create_future()
-    mock_approval_hub._futures["call-123"] = fut
-    mock_approval_hub._requests["call-123"] = request
+    add_pending_approval(mock_approval_hub, "call-123", tool_call)
 
     # Track notifications
     notifications_received = []
@@ -128,12 +129,7 @@ async def test_reject_tool_broadcasts_notifications(agents_client_and_server, mo
 
     # Setup pending approval
     tool_call = ToolCall(name="test_tool", call_id="call-456", args_json="{}")
-    request = ApprovalRequest(tool_call=tool_call)
-
-    # Create future for the approval
-    fut = asyncio.get_running_loop().create_future()
-    mock_approval_hub._futures["call-456"] = fut
-    mock_approval_hub._requests["call-456"] = request
+    add_pending_approval(mock_approval_hub, "call-456", tool_call)
 
     # Track notifications
     notifications_received = []

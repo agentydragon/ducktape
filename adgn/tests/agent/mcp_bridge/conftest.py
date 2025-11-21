@@ -53,8 +53,7 @@ def mock_persistence():
 def mock_approval_hub():
     """Mock ApprovalHub with pending approvals.
 
-    Shared by all infrastructure tests. Returns a real ApprovalHub instance
-    so tests can verify approval request handling.
+    Shared by all infrastructure tests. Just use a real ApprovalHub - it's simple enough.
     """
     return ApprovalHub()
 
