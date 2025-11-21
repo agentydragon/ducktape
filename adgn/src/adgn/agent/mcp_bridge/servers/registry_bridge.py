@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING
+
+from pydantic import BaseModel
 
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -14,6 +15,27 @@ if TYPE_CHECKING:
     from adgn.mcp.compositor.server import Compositor
 
 logger = logging.getLogger(__name__)
+
+
+class AgentCapabilities(BaseModel):
+    """Capabilities available for an agent."""
+    chat: bool
+    agent_loop: bool
+
+
+class AgentInfo(BaseModel):
+    """Information about a single agent."""
+    id: AgentID
+    mode: AgentMode
+    live: bool
+    run_phase: str
+    pending_approvals: int
+    capabilities: AgentCapabilities
+
+
+class AgentsListResponse(BaseModel):
+    """Response containing list of all agents."""
+    agents: list[AgentInfo]
 
 
 class AgentRegistryBridgeServer(NotifyingFastMCP):
@@ -35,7 +57,7 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
 
     def _register_resources(self) -> None:
         @self.resource("resource://agents/list", name="agents_list", mime_type="application/json")
-        async def list_agents() -> str:
+        async def list_agents() -> AgentsListResponse:
             """List all agents with detailed status."""
             agents = []
             for agent_id in self._registry.known_agents():
@@ -64,21 +86,22 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
 
                 # Determine capabilities
                 is_local = mode == AgentMode.LOCAL
-                capabilities = {"chat": is_local, "agent_loop": is_local}
 
-                agents.append({
-                    "id": agent_id,
-                    "mode": mode.value,
-                    "live": live,
-                    "run_phase": run_phase,
-                    "pending_approvals": pending_approvals,
-                    "capabilities": capabilities,
-                })
+                agents.append(
+                    AgentInfo(
+                        id=agent_id,
+                        mode=mode,
+                        live=live,
+                        run_phase=run_phase,
+                        pending_approvals=pending_approvals,
+                        capabilities=AgentCapabilities(chat=is_local, agent_loop=is_local),
+                    )
+                )
 
-            return json.dumps({"agents": agents})
+            return AgentsListResponse(agents=agents)
 
         @self.resource("resource://agents/{agent_id}/info", name="agent_info", mime_type="application/json")
-        async def get_agent_info(agent_id: AgentID) -> str:
+        async def get_agent_info(agent_id: AgentID) -> AgentInfo:
             """Get detailed information about a specific agent."""
             try:
                 mode = self._registry.get_agent_mode(agent_id)
@@ -100,17 +123,14 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
 
             is_local = mode == AgentMode.LOCAL
 
-            return json.dumps({
-                "id": agent_id,
-                "mode": mode.value,
-                "live": live,
-                "run_phase": run_phase,
-                "pending_approvals": pending_approvals,
-                "capabilities": {
-                    "chat": is_local,
-                    "agent_loop": is_local,
-                },
-            })
+            return AgentInfo(
+                id=agent_id,
+                mode=mode,
+                live=live,
+                run_phase=run_phase,
+                pending_approvals=pending_approvals,
+                capabilities=AgentCapabilities(chat=is_local, agent_loop=is_local),
+            )
 
     async def notify_agents_list_changed(self) -> None:
         """Notify that the agents list has changed."""

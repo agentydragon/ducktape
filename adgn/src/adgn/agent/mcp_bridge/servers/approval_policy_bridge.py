@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import json
+from datetime import datetime
 import logging
+
+from pydantic import BaseModel
 
 from adgn.agent.approvals import ApprovalPolicyEngine
 from adgn.agent.mcp_bridge.types import AgentID
@@ -11,6 +13,29 @@ from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 logger = logging.getLogger(__name__)
+
+
+class ProposalDescriptor(BaseModel):
+    """Descriptor for a policy proposal."""
+    id: str
+    status: ProposalStatus
+    created_at: datetime
+    decided_at: datetime | None = None
+
+
+class ProposalsList(BaseModel):
+    """List of policy proposals for an agent."""
+    agent_id: AgentID
+    proposals: list[ProposalDescriptor]
+
+
+class ProposalDetail(BaseModel):
+    """Full details for a single policy proposal."""
+    id: str
+    status: ProposalStatus
+    created_at: datetime
+    decided_at: datetime | None = None
+    content: str
 
 
 class ApprovalPolicyBridgeServer(NotifyingFastMCP):
@@ -39,36 +64,36 @@ class ApprovalPolicyBridgeServer(NotifyingFastMCP):
             return source
 
         @self.resource("resource://proposals/list", name="proposals_list", mime_type="application/json")
-        async def proposals_list() -> str:
+        async def proposals_list() -> ProposalsList:
             """List all policy proposals with status and timestamps."""
             proposals = await self._engine.persistence.list_policy_proposals(self._engine.agent_id)
-            return json.dumps({
-                "agent_id": self._agent_id,
-                "proposals": [
-                    {
-                        "id": p.id,
-                        "status": ProposalStatus(p.status).value,
-                        "created_at": p.created_at.isoformat(),
-                        "decided_at": p.decided_at.isoformat() if p.decided_at else None,
-                    }
+            return ProposalsList(
+                agent_id=self._agent_id,
+                proposals=[
+                    ProposalDescriptor(
+                        id=p.id,
+                        status=ProposalStatus(p.status),
+                        created_at=p.created_at,
+                        decided_at=p.decided_at,
+                    )
                     for p in proposals
                 ]
-            })
+            )
 
         @self.resource("resource://proposals/{id}", name="proposal_detail", mime_type="application/json")
-        async def proposal_detail(id: str) -> str:
+        async def proposal_detail(id: str) -> ProposalDetail:
             """Get full proposal details including content and metadata."""
             got = await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)
             if got is None:
                 raise KeyError(f"Proposal {id} not found")
 
-            return json.dumps({
-                "id": got.id,
-                "status": ProposalStatus(got.status).value,
-                "created_at": got.created_at.isoformat(),
-                "decided_at": got.decided_at.isoformat() if got.decided_at else None,
-                "content": got.content,
-            })
+            return ProposalDetail(
+                id=got.id,
+                status=ProposalStatus(got.status),
+                created_at=got.created_at,
+                decided_at=got.decided_at,
+                content=got.content,
+            )
 
     async def notify_policy_changed(self) -> None:
         """Notify that the policy has changed."""
