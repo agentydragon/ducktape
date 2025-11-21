@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from adgn.agent.mcp_bridge.servers.types import RunPhase
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -28,7 +29,7 @@ class AgentInfo(BaseModel):
     id: AgentID
     mode: AgentMode
     live: bool
-    run_phase: str
+    run_phase: RunPhase
     pending_approvals: int
     capabilities: AgentCapabilities
 
@@ -72,7 +73,7 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
 
                 # Compute status fields
                 pending_approvals = 0
-                run_phase = "idle"
+                run_phase = RunPhase.IDLE
 
                 if infra:
                     # Get pending approvals count
@@ -80,9 +81,9 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
 
                     # Derive run phase
                     if pending_approvals > 0:
-                        run_phase = "waiting_approval"
+                        run_phase = RunPhase.WAITING_APPROVAL
                     elif live:
-                        run_phase = "sampling"
+                        run_phase = RunPhase.SAMPLING
 
                 # Determine capabilities
                 is_local = mode == AgentMode.LOCAL
@@ -112,14 +113,14 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
             live = infra is not None
 
             pending_approvals = 0
-            run_phase = "idle"
+            run_phase = RunPhase.IDLE
 
             if infra:
                 pending_approvals = len(infra.approval_hub.pending)
                 if pending_approvals > 0:
-                    run_phase = "waiting_approval"
+                    run_phase = RunPhase.WAITING_APPROVAL
                 elif live:
-                    run_phase = "sampling"
+                    run_phase = RunPhase.SAMPLING
 
             is_local = mode == AgentMode.LOCAL
 
