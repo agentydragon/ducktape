@@ -19,7 +19,7 @@ from ..shared.protocol import (
     WorktreeCreateStep,
 )
 from .cd_utils import emit_cd_command
-from .wt_client import WtClient
+from .wt_client import WtClient, read_daemon_pid
 
 
 @dataclass(frozen=True)
@@ -242,20 +242,13 @@ async def handle_kill_daemon(config) -> None:
     pid_file = config.daemon_pid_path
     socket_file = config.daemon_socket_path
 
-    if not pid_file.exists():
-        click.echo("No daemon PID file found - daemon is not running")
-        return
-
     try:
-        pid_str = await asyncio.to_thread(pid_file.read_text)
-        pid_str = pid_str.strip()
+        pid = await read_daemon_pid(pid_file)
 
-        if not pid_str:
-            click.echo("Empty PID file - cleaning up stale files")
+        if pid is None:
+            click.echo("Empty or invalid PID file - cleaning up stale files")
             _cleanup_daemon_files(pid_file, socket_file)
             return
-
-        pid = int(pid_str)
 
         # Check if process exists and kill it
         if psutil.pid_exists(pid):
