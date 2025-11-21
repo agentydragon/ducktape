@@ -15,17 +15,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from docker import DockerClient
-from fastapi import FastAPI, Request, Response, WebSocket
+from fastapi import FastAPI, Request, Response
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping, UITokenAuthMiddleware, generate_ui_token
-from adgn.agent.mcp_bridge.servers.agents import AgentList, make_agents_server
+from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure, RunningInfrastructure
-from adgn.mcp._shared.resources import read_text_json_typed
 
 if TYPE_CHECKING:
     from adgn.agent.runtime.local_runtime import LocalAgentRuntime

@@ -769,15 +769,11 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
         return SimpleOk(ok=True)
 
     @server.tool()
-    async def create_agent(preset: str, system_message: str | None = None) -> AgentBrief:
-        """Create a new agent with the given preset and optional system message.
+    async def create_agent() -> AgentBrief:
+        """Create a new agent.
 
         Generates a unique agent ID and initializes infrastructure for a new agent.
         The agent will be ready to accept connections and process requests.
-
-        Args:
-            preset: Agent preset name/configuration identifier.
-            system_message: Optional system message override for the agent.
 
         Returns:
             AgentBrief with the newly created agent's ID and initial state.
