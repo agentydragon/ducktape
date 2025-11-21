@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from adgn.agent.approvals import ApprovalHub
+from adgn.agent.handler import ContinueDecision, DenyContinueDecision
 from adgn.agent.mcp_bridge.servers.types import ApprovalStatus
 from adgn.agent.mcp_bridge.types import AgentID
 from adgn.agent.persist import ApprovalOutcome, ToolCallRecord
@@ -54,6 +55,7 @@ class ApprovalsBridgeServer(NotifyingFastMCP):
         self._persistence = persistence
         self._agent_id = agent_id
         self._register_resources()
+        self._register_tools()
 
     def _register_resources(self) -> None:
         @self.resource("resource://approvals", name="approvals", mime_type="application/json")
@@ -114,6 +116,39 @@ class ApprovalsBridgeServer(NotifyingFastMCP):
                 pending_count=pending_count,
                 decided_count=decided_count,
             )
+
+    def _register_tools(self) -> None:
+        @self.tool()
+        async def approve(call_id: str, reasoning: str | None = None) -> dict:
+            """Approve a pending tool call.
+
+            Args:
+                call_id: ID of the tool call to approve
+                reasoning: Optional reasoning for the approval
+
+            Returns:
+                Dictionary confirming the approval
+            """
+            decision = ContinueDecision(reasoning=reasoning)
+            self._hub.resolve(call_id, decision)
+            await self.notify_approvals_changed()
+            return {"status": "approved", "call_id": call_id, "agent_id": self._agent_id}
+
+        @self.tool()
+        async def reject(call_id: str, reasoning: str | None = None) -> dict:
+            """Reject a pending tool call.
+
+            Args:
+                call_id: ID of the tool call to reject
+                reasoning: Optional reasoning for the rejection
+
+            Returns:
+                Dictionary confirming the rejection
+            """
+            decision = DenyContinueDecision(reason=reasoning or "Rejected by user")
+            self._hub.resolve(call_id, decision)
+            await self.notify_approvals_changed()
+            return {"status": "rejected", "call_id": call_id, "agent_id": self._agent_id}
 
     async def notify_approvals_changed(self) -> None:
         """Notify that approvals have changed."""

@@ -55,6 +55,7 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
         self._registry = registry
         self._global_compositor = global_compositor
         self._register_resources()
+        self._register_tools()
 
     def _register_resources(self) -> None:
         @self.resource("resource://agents/list", name="agents_list", mime_type="application/json")
@@ -132,6 +133,62 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
                 pending_approvals=pending_approvals,
                 capabilities=AgentCapabilities(chat=is_local, agent_loop=is_local),
             )
+
+    def _register_tools(self) -> None:
+        @self.tool()
+        async def create_agent(agent_id: AgentID) -> dict:
+            """Create a new agent and mount its compositor.
+
+            Args:
+                agent_id: Unique identifier for the new agent
+
+            Returns:
+                Dictionary with agent_id and status
+            """
+            # Create agent infrastructure
+            await self._registry.create_agent(agent_id)
+
+            # Dynamically mount the new agent's compositor if we have a global compositor
+            if self._global_compositor is not None:
+                from adgn.agent.mcp_bridge.compositor_factory import mount_agent_compositor_dynamically
+
+                await mount_agent_compositor_dynamically(
+                    global_compositor=self._global_compositor,
+                    agent_id=agent_id,
+                    registry=self._registry
+                )
+
+            # Notify that agents list changed
+            await self.notify_agents_list_changed()
+
+            return {"agent_id": agent_id, "status": "created"}
+
+        @self.tool()
+        async def delete_agent(agent_id: AgentID) -> dict:
+            """Delete an agent and unmount its compositor.
+
+            Args:
+                agent_id: ID of the agent to delete
+
+            Returns:
+                Dictionary with agent_id and status
+            """
+            # Dynamically unmount the agent's compositor if we have a global compositor
+            if self._global_compositor is not None:
+                from adgn.agent.mcp_bridge.compositor_factory import unmount_agent_compositor_dynamically
+
+                await unmount_agent_compositor_dynamically(
+                    global_compositor=self._global_compositor,
+                    agent_id=agent_id
+                )
+
+            # Remove agent infrastructure
+            await self._registry.remove_agent(agent_id)
+
+            # Notify that agents list changed
+            await self.notify_agents_list_changed()
+
+            return {"agent_id": agent_id, "status": "deleted"}
 
     async def notify_agents_list_changed(self) -> None:
         """Notify that the agents list has changed."""

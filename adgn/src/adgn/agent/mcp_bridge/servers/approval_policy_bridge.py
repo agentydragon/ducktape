@@ -55,6 +55,7 @@ class ApprovalPolicyBridgeServer(NotifyingFastMCP):
         self._engine = engine
         self._agent_id = agent_id
         self._register_resources()
+        self._register_tools()
 
     def _register_resources(self) -> None:
         @self.resource("resource://policy.py", name="policy.py", mime_type="text/x-python")
@@ -94,6 +95,64 @@ class ApprovalPolicyBridgeServer(NotifyingFastMCP):
                 decided_at=got.decided_at,
                 content=got.content,
             )
+
+    def _register_tools(self) -> None:
+        @self.tool()
+        async def set_policy(source: str) -> dict:
+            """Update the active approval policy.
+
+            Args:
+                source: Python source code for the new policy
+
+            Returns:
+                Dictionary with the new policy_id
+            """
+            policy_id = await self._engine.set_policy(source)
+            await self.notify_policy_changed()
+            return {"policy_id": policy_id, "agent_id": self._agent_id}
+
+        @self.tool()
+        async def create_proposal(content: str) -> dict:
+            """Create a new policy proposal.
+
+            Args:
+                content: Python source code for the proposed policy
+
+            Returns:
+                Dictionary with the new proposal_id
+            """
+            proposal_id = await self._engine.create_proposal(content)
+            await self.notify_proposals_changed()
+            return {"proposal_id": proposal_id, "agent_id": self._agent_id}
+
+        @self.tool()
+        async def approve_proposal(proposal_id: str) -> dict:
+            """Approve and activate a policy proposal.
+
+            Args:
+                proposal_id: ID of the proposal to approve
+
+            Returns:
+                Dictionary confirming the approval
+            """
+            await self._engine.approve_proposal(int(proposal_id))
+            await self.notify_policy_changed()
+            await self.notify_proposals_changed()
+            return {"status": "approved", "proposal_id": proposal_id, "agent_id": self._agent_id}
+
+        @self.tool()
+        async def reject_proposal(proposal_id: str) -> dict:
+            """Reject a policy proposal.
+
+            Args:
+                proposal_id: ID of the proposal to reject
+
+            Returns:
+                Dictionary confirming the rejection
+            """
+            await self._engine.reject_proposal(int(proposal_id))
+            await self.notify_proposals_changed()
+            return {"status": "rejected", "proposal_id": proposal_id, "agent_id": self._agent_id}
 
     async def notify_policy_changed(self) -> None:
         """Notify that the policy has changed."""
