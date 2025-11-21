@@ -1,0 +1,11 @@
+source:
+  vcs: github
+  org: agentydragon
+  repo: ducktape
+  ref: 96954248ceb8c309cc90ced6de1d402b56f1161c
+scope:
+  include:
+    - "**/*.py"
+    - "**/*.md"
+    - "**/*.yaml"
+    - "**/*.yml"
