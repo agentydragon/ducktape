@@ -146,79 +146,82 @@ I.issueOneOccurrence(
 
     **What should be done:**
 
-    **Option 1: Use proper observer pattern**
+    **Option 1: Use proper async observer pattern with URI parameters**
 
-    Replace single notifier with a list of observers:
+    Replace single notifier with a list of async observers that receive URI parameters for granular notifications:
 
     ```python
     class ApprovalHub:
         def __init__(self):
-            self._observers: list[Callable[[], None]] = []
+            self._observers: list[Callable[[str], Awaitable[None]]] = []
 
-        def add_observer(self, observer: Callable[[], None]) -> None:
+        def add_observer(self, observer: Callable[[str], Awaitable[None]]) -> None:
             self._observers.append(observer)
 
-        def remove_observer(self, observer: Callable[[], None]) -> None:
+        def remove_observer(self, observer: Callable[[str], Awaitable[None]]) -> None:
             self._observers.remove(observer)
 
-        def _notify_observers(self) -> None:
+        async def _notify_observers(self, uri: str) -> None:
             for observer in self._observers:
                 try:
-                    observer()
+                    await observer(uri)
                 except Exception as e:
-                    logger.warning(f"Observer failed: {e}", exc_info=True)
+                    logger.warning(f"Observer notification failed for {uri}: {e}", exc_info=True)
                     # Continue notifying other observers
-    ```
-
-    **Option 2: Make everything async and await notifications**
-
-    Remove the "sync but schedules async" hack:
-
-    ```python
-    class ApprovalHub:
-        def __init__(self):
-            self._notifier: Callable[[], Awaitable[None]] | None = None
-
-        async def _notify(self) -> None:
-            if self._notifier:
-                try:
-                    await self._notifier()
-                except Exception as e:
-                    logger.warning(f"Notifier failed: {e}", exc_info=True)
     ```
 
     Then call sites become:
     ```python
-    await self._notify()
+    await self._notify_observers(resources.agent_approvals_pending(self.agent_id))
     ```
 
-    **Option 3: Use asyncio events/queues instead of callbacks**
+    **Benefits:**
+    - Multiple observers supported natively
+    - Observers receive specific URI that changed (granular notifications)
+    - Consistent async/await pattern (no sync/async mixing)
+    - Explicit exception handling per observer
+    - Failed observers don't prevent other observers from being notified
+    - Type-safe (no "sync but may schedule async" hack)
 
-    Replace callbacks with structured events:
+    **Option 2: Use asyncio events/queues instead of callbacks**
+
+    Replace callbacks with structured events that include URI information:
 
     ```python
+    @dataclass
+    class ResourceChangeEvent:
+        uri: str
+        timestamp: datetime
+
     class ApprovalHub:
         def __init__(self):
-            self._event_queue: asyncio.Queue[ApprovalEvent] = asyncio.Queue()
+            self._event_queue: asyncio.Queue[ResourceChangeEvent] = asyncio.Queue()
 
         async def await_decision(...):
             # ... set up pending ...
-            await self._event_queue.put(ApprovalEvent.PENDING_ADDED)
+            await self._event_queue.put(
+                ResourceChangeEvent(uri=resources.agent_approvals_pending(self.agent_id),
+                                   timestamp=datetime.now())
+            )
             return await fut
 
         async def notification_listener(self):
             while True:
                 event = await self._event_queue.get()
-                # Handle event (broadcast, etc.)
+                # Handle event (broadcast event.uri, etc.)
     ```
 
-    **Benefits of fixing:**
-    - Multiple observers supported natively
-    - Consistent async/await pattern
-    - Explicit exception handling
-    - No fire-and-forget surprises
-    - Clearer control flow
-    - Type-safe (no "sync but may schedule async" hack)
+    **Benefits:**
+    - Decouples event producers from consumers
+    - Events are queued and processed in order
+    - Can include additional metadata (timestamp, event type, etc.)
+    - Natural backpressure via queue size limits
+    - Easier to test (can drain queue and inspect events)
+
+    **Recommendation:**
+    Option 1 (async observer pattern with URI parameters) is simpler and more direct. It requires
+    minimal refactoring and naturally fits the current call-site patterns. Option 2 (event queues)
+    is more complex but provides better decoupling if that becomes necessary.
 
     **Impact:**
     This is a fundamental architectural issue that affects:
