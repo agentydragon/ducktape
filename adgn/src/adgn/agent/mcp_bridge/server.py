@@ -46,8 +46,12 @@ class RunningAgent:
 
     running: RunningInfrastructure
     compositor_app: FastAPI
-    mode: AgentMode
     local_runtime: LocalAgentRuntime | None  # None for bridge agents
+
+    @property
+    def mode(self) -> AgentMode:
+        """Derive mode from local_runtime presence."""
+        return AgentMode.LOCAL if self.local_runtime else AgentMode.BRIDGE
 
 
 @dataclass
@@ -152,7 +156,7 @@ class InfrastructureRegistry(NotifyingFastMCP):
             compositor_app: FastAPI = running.compositor.http_app()  # type: ignore[assignment]
 
             entry.agent = RunningAgent(
-                running=running, compositor_app=compositor_app, mode=AgentMode.BRIDGE, local_runtime=None
+                running=running, compositor_app=compositor_app, local_runtime=None
             )
 
             logger.info(f"Infrastructure ready for {agent_id=}")
@@ -203,7 +207,7 @@ class InfrastructureRegistry(NotifyingFastMCP):
         local_runtime: LocalAgentRuntime,
     ) -> None:
         self._agents[agent_id].agent = RunningAgent(
-            running=running, compositor_app=compositor_app, mode=AgentMode.LOCAL, local_runtime=local_runtime
+            running=running, compositor_app=compositor_app, local_runtime=local_runtime
         )
 
     async def create_agent(self, agent_id: AgentID) -> RunningInfrastructure:
