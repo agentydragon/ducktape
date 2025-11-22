@@ -15,13 +15,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from docker import DockerClient
-from pydantic import BaseModel
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
+from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping
+from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping, UITokenAuthMiddleware, generate_ui_token
+from adgn.agent.mcp_bridge.compositor_factory import (
+    create_global_compositor,
+    mount_agent_compositor_dynamically,
+    unmount_agent_compositor_dynamically,
+)
 from adgn.agent.mcp_bridge.servers.types import RunPhase
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -149,7 +156,7 @@ class InfrastructureRegistry(NotifyingFastMCP):
                 running=running, compositor_app=compositor_app, mode=AgentMode.BRIDGE, local_runtime=None
             )
 
-            logger.info(f"Infrastructure ready for agent_id={agent_id}")
+            logger.info(f"Infrastructure ready for {agent_id=}")
             return (running, compositor_app)
 
     async def get_compositor_app(self, agent_id: AgentID) -> FastAPI:
@@ -206,7 +213,6 @@ class InfrastructureRegistry(NotifyingFastMCP):
         Returns the running infrastructure for the agent.
         """
         running, _ = await self.get_or_create_infrastructure(agent_id)
-        # Notify that agent list changed
         await self.notify_agents_list_changed()
         return running
 
@@ -325,9 +331,7 @@ class InfrastructureRegistry(NotifyingFastMCP):
             # Create agent infrastructure
             await self.create_agent(agent_id)
 
-            # Dynamically mount the new agent's compositor if we have a global compositor
             if self._global_compositor is not None:
-                from adgn.agent.mcp_bridge.compositor_factory import mount_agent_compositor_dynamically
 
                 await mount_agent_compositor_dynamically(
                     global_compositor=self._global_compositor,
@@ -335,7 +339,6 @@ class InfrastructureRegistry(NotifyingFastMCP):
                     registry=self
                 )
 
-            # Notify that agents list changed
             await self.notify_agents_list_changed()
 
             return {"agent_id": agent_id, "status": "created"}
@@ -347,19 +350,15 @@ class InfrastructureRegistry(NotifyingFastMCP):
             Returns:
                 Dictionary with agent_id and status
             """
-            # Dynamically unmount the agent's compositor if we have a global compositor
             if self._global_compositor is not None:
-                from adgn.agent.mcp_bridge.compositor_factory import unmount_agent_compositor_dynamically
 
                 await unmount_agent_compositor_dynamically(
                     global_compositor=self._global_compositor,
                     agent_id=agent_id
                 )
 
-            # Remove agent infrastructure
             await self.remove_agent(agent_id)
 
-            # Notify that agents list changed
             await self.notify_agents_list_changed()
 
             return {"agent_id": agent_id, "status": "deleted"}
@@ -435,10 +434,7 @@ async def create_management_ui_app(
     Returns:
         Tuple of (FastAPI app, UI token string)
     """
-    from adgn.agent.mcp_bridge.auth import UITokenAuthMiddleware, generate_ui_token
-    from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
 
-    # Generate or use provided UI token
     if ui_token is None:
         ui_token = generate_ui_token()
 
@@ -448,14 +444,10 @@ async def create_management_ui_app(
     global_compositor = await create_global_compositor(registry)
 
     # Mount compositor as ASGI app at /mcp for streamable HTTP transport
-    # The compositor (FastMCP) is itself an ASGI app
     app.mount("/mcp", global_compositor)
 
-    # Add UI token authentication (applies to all routes except /mcp which has its own auth)
-    # Actually, we want auth on /mcp too, so add middleware
     app.add_middleware(UITokenAuthMiddleware, expected_token=ui_token)
 
-    # Health check endpoint
     @app.get("/health")
     async def health():
         return {"status": "ok"}
@@ -472,8 +464,6 @@ async def create_management_ui_app(
 
     # Static files (if provided)
     if static_files_dir and static_files_dir.exists():
-        from fastapi.staticfiles import StaticFiles
-        from fastapi.responses import FileResponse
 
         app.mount("/static", StaticFiles(directory=static_files_dir), name="static")
 

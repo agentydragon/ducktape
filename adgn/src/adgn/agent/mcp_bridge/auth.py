@@ -21,6 +21,21 @@ from adgn.agent.types import AgentID
 logger = logging.getLogger(__name__)
 
 
+def extract_bearer_token(auth_header: str) -> str | None:
+    """Extract Bearer token from Authorization header.
+
+    Args:
+        auth_header: Authorization header value (e.g., "Bearer abc123")
+
+    Returns:
+        Token string if valid Bearer format, None otherwise
+    """
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1]
+
+
 class TokenMapping:
     """Maps Bearer tokens to agent_ids from a JSON file.
 
@@ -72,23 +87,19 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         self.token_mapping = token_mapping
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
+        if not (auth_header := request.headers.get("Authorization")):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing Authorization header",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
+        if (token := extract_bearer_token(auth_header)) is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid Authorization header format (expected: Bearer <token>)",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-
-        token = parts[1]
 
         if (agent_id := self.token_mapping.get_agent_id(token)) is None:
             raise HTTPException(
@@ -96,7 +107,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             )
 
         request.state.agent_id = agent_id
-        logger.debug(f"Authenticated request: token → agent_id={agent_id}")
+        logger.debug(f"Authenticated request: token → {agent_id=}")
 
         return await call_next(request)
 
@@ -110,8 +121,7 @@ def generate_ui_token() -> str:
     Returns:
         UI token string for Bearer authentication
     """
-    env_token = os.environ.get("ADGN_UI_TOKEN")
-    if env_token:
+    if env_token := os.environ.get("ADGN_UI_TOKEN"):
         logger.info("Using ADGN_UI_TOKEN from environment")
         return env_token
 
@@ -141,21 +151,18 @@ class UITokenAuthMiddleware:
 
         # Parse headers
         headers = dict(scope.get("headers", []))
-        auth_header = headers.get(b"authorization", b"").decode()
 
         # Validate authentication
         error_response = None
-        if not auth_header:
+        if not (auth_header := headers.get(b"authorization", b"").decode()):
             error_response = self._create_error_response(
                 401, "Missing Authorization header"
             )
-        else:
-            parts = auth_header.split()
-            if len(parts) != 2 or parts[0].lower() != "bearer":
-                error_response = self._create_error_response(
-                    401, "Invalid Authorization header format (expected: Bearer <token>)"
-                )
-            elif parts[1] != self.expected_token:
+        elif (token := extract_bearer_token(auth_header)) is None:
+            error_response = self._create_error_response(
+                401, "Invalid Authorization header format (expected: Bearer <token>)"
+            )
+        elif token != self.expected_token:
                 error_response = self._create_error_response(
                     401, "Invalid token"
                 )
@@ -177,7 +184,6 @@ class UITokenAuthMiddleware:
 
     def _create_error_response(self, status_code: int, detail: str) -> dict:
         """Create error response dict."""
-        import json
         body = json.dumps({"detail": detail}).encode()
         return {
             "status": status_code,

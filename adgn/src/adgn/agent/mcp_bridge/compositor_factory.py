@@ -40,11 +40,9 @@ async def create_agent_compositor(agent_id: AgentID, registry: InfrastructureReg
     # Get agent infrastructure
     infra = await registry.get_infrastructure(agent_id)
 
-    # Mount approval policy engine (now an MCP server)
     await comp.mount_inproc("policy", infra.approval_engine)
     logger.info(f"Mounted approval policy engine for agent {agent_id}")
 
-    # Mount approvals hub (now an MCP server)
     await comp.mount_inproc("approvals", infra.approval_hub)
     logger.info(f"Mounted approvals hub for agent {agent_id}")
 
@@ -86,13 +84,9 @@ async def create_global_compositor(
 
     # Mount per-agent compositors for existing agents
     for agent_id in registry.known_agents():
-        try:
-            agent_comp = await create_agent_compositor(agent_id, registry)
-            await global_comp.mount_inproc(f"agent{agent_id}", agent_comp)
-            logger.info(f"Mounted agent compositor for agent {agent_id}")
-        except Exception as e:
-            logger.error(f"Failed to mount compositor for agent {agent_id}: {e}", exc_info=True)
-            # Continue mounting other agents
+        agent_comp = await create_agent_compositor(agent_id, registry)
+        await global_comp.mount_inproc(f"agent{agent_id}", agent_comp)
+        logger.info(f"Mounted agent compositor for agent {agent_id}")
 
     # Standard infrastructure (resources aggregator, compositor metadata, admin)
     if gateway_client is not None:
