@@ -303,6 +303,8 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         self._policy_id = policy_id
 
     def self_check(self, source: str) -> None:
+        if self.docker_client is None:
+            return  # Skip validation if Docker not available
         run_policy_source(
             docker_client=self.docker_client,
             source=source,
@@ -315,9 +317,7 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         Validates the proposal content if docker_client is available,
         persists it, and notifies about the change.
         """
-        # Self-check proposal program if docker is available
-        if self.docker_client is not None:
-            self.self_check(content)
+        self.self_check(content)
         new_id = await self.persistence.create_policy_proposal(self.agent_id, proposal_id=0, content=content)
         await self.notify_proposal_change(new_id)
         return new_id
@@ -330,9 +330,7 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         """
         if (got := await self.persistence.get_policy_proposal(self.agent_id, proposal_id)) is None:
             raise KeyError(str(proposal_id))
-        # Self-check the proposal program before activation
-        if self.docker_client is not None:
-            self.self_check(got.content)
+        self.self_check(got.content)
         # Activate policy (notifies via engine's set_policy)
         await self.set_policy(got.content)
         await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
