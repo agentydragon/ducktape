@@ -180,12 +180,6 @@ def generate_mcp_constants() -> None:
 # ============================================================================
 
 
-def get_json_schema(model: type) -> dict[str, Any]:
-    """Get JSON Schema for a Pydantic model."""
-    adapter = TypeAdapter(model)
-    return adapter.json_schema(mode="serialization")
-
-
 def generate_typescript_from_schema(schema: dict[str, Any], type_name: str) -> str:
     """Generate TypeScript interface from JSON Schema using json-schema-to-typescript."""
     schema_json = json.dumps(schema, indent=2)
@@ -247,13 +241,12 @@ def generate_pydantic_types() -> None:
     for model_class in models_to_export:
         type_name = model_class.__name__
         print(f"  Processing {type_name}...")
-        schema = get_json_schema(model_class)
+        schema = TypeAdapter(model_class).json_schema(mode="serialization")
 
         if "$defs" in schema:
             all_defs.update(schema["$defs"])
 
-        main_schema = {k: v for k, v in schema.items() if k != "$defs"}
-        all_defs[type_name] = main_schema
+        all_defs[type_name] = {k: v for k, v in schema.items() if k != "$defs"}
 
     # Create unified schema
     unified_schema = {
@@ -265,11 +258,12 @@ def generate_pydantic_types() -> None:
 
     try:
         ts_code = generate_typescript_from_schema(unified_schema, "AgentTypes")
-        ts_output = []
-        ts_output.append("// Auto-generated TypeScript types from Pydantic models")
-        ts_output.append("// Do not edit manually - regenerate with: npm run codegen")
-        ts_output.append("")
-        ts_output.append(ts_code.strip())
+        ts_output = [
+            "// Auto-generated TypeScript types from Pydantic models",
+            "// Do not edit manually - regenerate with: npm run codegen",
+            "",
+            ts_code.strip(),
+        ]
 
         output_file.write_text("\n".join(ts_output))
         print(f"  ✓ Generated TypeScript types for {len(models_to_export)} models")
