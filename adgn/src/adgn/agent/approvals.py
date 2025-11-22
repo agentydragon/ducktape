@@ -356,7 +356,7 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
                 proposals=[
                     ProposalDescriptor(
                         id=p.id,
-                        status=ProposalStatus(p.status),
+                        status=p.status,
                         created_at=p.created_at,
                         decided_at=p.decided_at,
                     )
@@ -373,7 +373,7 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
 
             return ProposalDetail(
                 id=got.id,
-                status=ProposalStatus(got.status),
+                status=got.status,
                 created_at=got.created_at,
                 decided_at=got.decided_at,
                 content=got.content,
