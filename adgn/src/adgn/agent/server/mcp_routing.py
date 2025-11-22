@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
+import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
@@ -55,12 +57,44 @@ class AgentTokenInfo(BaseModel):
 TokenInfo = Annotated[HumanTokenInfo | AgentTokenInfo, Field(discriminator="role")]
 
 
-# Token table: token -> TokenInfo
-# In production, this would be a database lookup or external service
-TOKEN_TABLE: dict[str, TokenInfo] = {
-    "human-token-123": HumanTokenInfo(role=TokenRole.HUMAN),
-    "agent-token-abc": AgentTokenInfo(role=TokenRole.AGENT, agent_id=AgentID("agent-1")),
-}
+class TokenInfoMapping:
+    """Maps Bearer tokens to TokenInfo from a JSON file.
+
+    File format:
+        {
+          "human-token-123": {"role": "human"},
+          "agent-token-abc": {"role": "agent", "agent_id": "agent-1"}
+        }
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._mapping: dict[str, TokenInfo] = {}
+        self.reload()
+
+    def reload(self) -> None:
+        """Reload mapping from file."""
+        if not self.path.exists():
+            raise FileNotFoundError(f"Token mapping file not found: {self.path}")
+
+        data = json.loads(self.path.read_text())
+        if not isinstance(data, dict):
+            raise ValueError("Token mapping must be a JSON object")
+
+        # Validate and convert to TokenInfo instances
+        mapping: dict[str, TokenInfo] = {}
+        adapter = TypeAdapter(TokenInfo)
+        for token, token_data in data.items():
+            if not isinstance(token, str) or not isinstance(token_data, dict):
+                raise ValueError(f"Invalid mapping entry: {token} -> {token_data}")
+            mapping[token] = adapter.validate_python(token_data)
+
+        self._mapping = mapping
+        logger.info(f"Loaded {len(self._mapping)} token mappings from {self.path}")
+
+    def get(self, token: str) -> TokenInfo | None:
+        """Get TokenInfo for a token, or None if not found."""
+        return self._mapping.get(token)
 
 
 class MCPRoutingMiddleware(BaseHTTPMiddleware):
@@ -74,10 +108,20 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
     """
 
     def __init__(
-        self, app: ASGIApp, token_table: dict[str, TokenInfo], registry: AgentRegistry, agents_server: NotifyingFastMCP
+        self, app: ASGIApp, token_mapping: TokenInfoMapping | dict[str, TokenInfo], registry: AgentRegistry, agents_server: NotifyingFastMCP
     ):
         super().__init__(app)
-        self.token_table = token_table
+        # Support both TokenInfoMapping and dict for backwards compatibility
+        if isinstance(token_mapping, dict):
+            # For testing: wrap dict in a simple object with .get() method
+            class _DictMapping:
+                def __init__(self, d: dict[str, TokenInfo]):
+                    self._d = d
+                def get(self, token: str) -> TokenInfo | None:
+                    return self._d.get(token)
+            self.token_mapping = _DictMapping(token_mapping)
+        else:
+            self.token_mapping = token_mapping
         self.registry = registry
         self.agents_server = agents_server
         # Cache for backend ASGI apps by token info
@@ -114,7 +158,7 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
             logger.warning("Missing Authorization header")
             return Response(content="Missing Authorization header", status_code=401)
 
-        if not (token_info := self.token_table.get(token)):
+        if not (token_info := self.token_mapping.get(token)):
             logger.warning(f"Invalid token: {token[:10]}...")
             return Response(content="Invalid token", status_code=401)
 
