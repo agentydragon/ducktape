@@ -182,10 +182,9 @@ class ApprovalHub(NotifyingFastMCP):
                 Dictionary confirming the approval
             """
             # Inline resolve logic
-            pending = self._pending[call_id]
-            if not pending.future.done():
+            pending = self._pending.pop(call_id, None)
+            if pending is not None and not pending.future.done():
                 pending.future.set_result(ContinueDecision(reasoning=reasoning))
-            del self._pending[call_id]
             await self.notify_approvals_changed()
             return {"status": "approved", "call_id": call_id, "agent_id": self._agent_id}
 
@@ -197,10 +196,9 @@ class ApprovalHub(NotifyingFastMCP):
                 Dictionary confirming the rejection
             """
             # Inline resolve logic
-            pending = self._pending[call_id]
-            if not pending.future.done():
+            pending = self._pending.pop(call_id, None)
+            if pending is not None and not pending.future.done():
                 pending.future.set_result(DenyContinueDecision(reason=reasoning or "Rejected by user"))
-            del self._pending[call_id]
             await self.notify_approvals_changed()
             return {"status": "rejected", "call_id": call_id, "agent_id": self._agent_id}
 
@@ -295,7 +293,8 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         so it is not inlined despite being primarily tool-facing.
         """
         self._policy_source = source
-        self._policy_id = await self.persistence.set_policy(self.agent_id, content=source)
+        record = await self.persistence.set_policy(self.agent_id, content=source)
+        self._policy_id = record.id
         await self.notify_policy_changed()
         return self._policy_id
 
