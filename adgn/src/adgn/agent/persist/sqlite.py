@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastmcp.mcp_config import MCPConfig
 from pydantic import JsonValue
-from sqlalchemy import event, select, update, delete
+from sqlalchemy import event, select, text, update, delete
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine, async_sessionmaker
 
 from adgn.agent.models.proposal_status import ProposalStatus
@@ -18,7 +18,6 @@ from adgn.agent.runtime.auto_attach import filter_persistable_servers
 from adgn.agent.types import AgentID
 
 from . import (
-    AgentMetadata,
     AgentRow,
     Decision,
     EventType,
@@ -71,7 +70,7 @@ class SQLitePersistence(Persistence):
             await conn.run_sync(Base.metadata.create_all)
 
     # Agents -----------------------------------------------------------------
-    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> AgentID:
+    async def create_agent(self, *, mcp_config: MCPConfig, preset: str) -> AgentID:
         agent_id = AgentID(uuid.uuid4().hex)
         async with self._session() as session:
             # Persist only user-configured servers (exclude default auto-attached)
@@ -80,7 +79,7 @@ class SQLitePersistence(Persistence):
                 id=agent_id,
                 created_at=_now(),
                 mcp_config=spec_json,
-                preset=metadata.preset,
+                preset=preset,
             )
             session.add(agent)
             await session.commit()
@@ -117,21 +116,18 @@ class SQLitePersistence(Persistence):
         return cfg
 
     async def list_agents(self) -> list[AgentRow]:
-        out: list[AgentRow] = []
         async with self._session() as session:
             result = await session.execute(select(Agent).order_by(Agent.created_at.desc()))
             agents = result.scalars().all()
-            for agent in agents:
-                meta_val = AgentMetadata(preset=agent.preset)
-                out.append(
-                    AgentRow(
-                        id=agent.id,
-                        created_at=agent.created_at,
-                        mcp_config=MCPConfig.model_validate(agent.mcp_config) if agent.mcp_config else MCPConfig(),
-                        metadata=meta_val,
-                    )
+            return [
+                AgentRow(
+                    id=agent.id,
+                    created_at=agent.created_at,
+                    mcp_config=MCPConfig.model_validate(agent.mcp_config) if agent.mcp_config else MCPConfig(),
+                    preset=agent.preset,
                 )
-        return out
+                for agent in agents
+            ]
 
     async def get_agent(self, agent_id: AgentID) -> AgentRow | None:
         async with self._session() as session:
@@ -139,12 +135,11 @@ class SQLitePersistence(Persistence):
             agent = result.scalar_one_or_none()
             if not agent:
                 return None
-            meta_val = AgentMetadata(preset=agent.preset)
             return AgentRow(
                 id=agent.id,
                 created_at=agent.created_at,
                 mcp_config=MCPConfig.model_validate(agent.mcp_config) if agent.mcp_config else MCPConfig(),
-                metadata=meta_val,
+                preset=agent.preset,
             )
 
     async def list_agents_last_activity(self) -> dict[AgentID, datetime | None]:
@@ -153,10 +148,8 @@ class SQLitePersistence(Persistence):
         Activity considers any of: event event_at, run finished_at, run started_at, or
         agent created_at as a fallback, taking the maximum.
         """
-        out: dict[AgentID, datetime | None] = {}
         async with self._session() as session:
             # This is complex to do purely in ORM, so we'll use raw SQL
-            from sqlalchemy import text
             result = await session.execute(
                 text("""
 SELECT a.id as agent_id,
@@ -169,10 +162,7 @@ LEFT JOIN events e ON e.run_id = r.id
 GROUP BY a.id
                     """)
             )
-            for row in result:
-                ts = row.last_ts
-                out[AgentID(row.agent_id)] = ts if ts is not None else None
-        return out
+            return {AgentID(row.agent_id): row.last_ts for row in result}
 
     async def delete_agent(self, agent_id: AgentID) -> None:
         """Delete an agent and all associated records (cascaded by ORM)."""
@@ -242,18 +232,16 @@ GROUP BY a.id
                 .order_by(Policy.created_at.desc())
             )
             policies = result.scalars().all()
-            out: list[PolicyProposal] = []
-            for policy in policies:
-                out.append(
-                    PolicyProposal(
-                        id=str(policy.id),  # Convert int id to string for API compatibility
-                        status=policy.status,
-                        created_at=policy.created_at,
-                        decided_at=policy.decided_at,
-                        content="",  # content not selected in list; leave empty
-                    )
+            return [
+                PolicyProposal(
+                    id=str(policy.id),  # Convert int id to string for API compatibility
+                    status=policy.status,
+                    created_at=policy.created_at,
+                    decided_at=policy.decided_at,
+                    content="",  # content not selected in list; leave empty
                 )
-        return out
+                for policy in policies
+            ]
 
     async def get_policy_proposal(self, agent_id: AgentID, proposal_id: int) -> PolicyProposal | None:
         async with self._session() as session:
@@ -413,26 +401,24 @@ GROUP BY a.id
             )
 
     async def load_events(self, run_id: UUID) -> list[EventRecord]:
-        out: list[EventRecord] = []
         async with self._session() as session:
             result = await session.execute(
                 select(Event).where(Event.run_id == run_id).order_by(Event.seq.asc())
             )
             events = result.scalars().all()
-            for event in events:
-                out.append(
-                    parse_event(
-                        {
-                            "seq": event.seq,
-                            "ts": event.event_at,
-                            "type": event.type,
-                            "payload": event.payload,
-                            "call_id": event.call_id,
-                            "tool_key": event.tool_key,
-                        }
-                    )
+            return [
+                parse_event(
+                    {
+                        "seq": event.seq,
+                        "ts": event.event_at,
+                        "type": event.type,
+                        "payload": event.payload,
+                        "call_id": event.call_id,
+                        "tool_key": event.tool_key,
+                    }
                 )
-        return out
+                for event in events
+            ]
 
     # Tool Calls (new ToolCallRecord persistence) --------------------------------
     async def save_tool_call(self, record: ToolCallRecord) -> None:
@@ -505,7 +491,6 @@ GROUP BY a.id
 
     async def list_tool_calls(self, run_id: str | None = None) -> list[ToolCallRecord]:
         """List tool call records, optionally filtered by run_id."""
-        out: list[ToolCallRecord] = []
         async with self._session() as session:
             query = select(ToolCallModel)
             if run_id:
@@ -515,25 +500,21 @@ GROUP BY a.id
             result = await session.execute(query)
             tool_calls = result.scalars().all()
 
-            for tool_call in tool_calls:
-                # Deserialize JSON to Pydantic models
-                tc = ToolCall.model_validate(tool_call.tool_call_json)
-                decision = Decision.model_validate(tool_call.decision_json) if tool_call.decision_json else None
-                execution = (
-                    ToolCallExecution.model_validate(tool_call.execution_json) if tool_call.execution_json else None
+            return [
+                ToolCallRecord(
+                    call_id=tool_call.call_id,
+                    run_id=tool_call.run_id,
+                    agent_id=AgentID(tool_call.agent_id),
+                    tool_call=ToolCall.model_validate(tool_call.tool_call_json),
+                    decision=Decision.model_validate(tool_call.decision_json) if tool_call.decision_json else None,
+                    execution=(
+                        ToolCallExecution.model_validate(tool_call.execution_json)
+                        if tool_call.execution_json
+                        else None
+                    ),
                 )
-
-                out.append(
-                    ToolCallRecord(
-                        call_id=tool_call.call_id,
-                        run_id=tool_call.run_id,
-                        agent_id=AgentID(tool_call.agent_id),
-                        tool_call=tc,
-                        decision=decision,
-                        execution=execution,
-                    )
-                )
-        return out
+                for tool_call in tool_calls
+            ]
 
     # Policy state management (removed - now handled by unified Policy table above)
     # The old create_policy, get_policy, update_policy, list_policies, delete_policy

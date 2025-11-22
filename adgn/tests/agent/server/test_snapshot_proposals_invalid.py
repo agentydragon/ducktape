@@ -5,14 +5,13 @@ from fastmcp.mcp_config import MCPConfig
 from hamcrest import assert_that, equal_to, has_length, not_none
 
 from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
-from adgn.agent.persist import AgentMetadata
 from adgn.agent.server.protocol import Snapshot
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 
 
 async def test_snapshot_surfaces_invalid_proposal(sqlite_persistence) -> None:
     # Arrange: create persistence and persist an invalid proposal
-    agent_id = await sqlite_persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="tests"))
+    agent_id = await sqlite_persistence.create_agent(mcp_config=MCPConfig(), preset="tests")
     await sqlite_persistence.create_policy_proposal(agent_id, proposal_id="bad1", content="this is not python\n")
 
     # Build a minimal session with an engine and agent_id so snapshot reads from persistence

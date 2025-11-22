@@ -7,7 +7,6 @@ from hamcrest import assert_that, contains_string, has_item, has_length
 import pytest
 
 from adgn.agent.approvals import ApprovalPolicyEngine, load_default_policy_source
-from adgn.agent.persist import AgentMetadata
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.mcp.approval_policy.server import (
     ApprovalPolicyAdminServer,
@@ -23,7 +22,7 @@ pytestmark = pytest.mark.requires_docker
 async def engine(persistence: SQLitePersistence, docker_client: DockerClient):
     """Create engine for testing."""
     # Create agent
-    agent_id = await persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
+    agent_id = await persistence.create_agent(mcp_config=MCPConfig(), preset="test")
 
     # Create engine
     engine = ApprovalPolicyEngine(
@@ -115,7 +114,7 @@ async def test_reload_policy_validates_source(admin_server, docker_client: Docke
 async def test_reload_policy_no_persistence_raises(engine, persistence):
     """Test that reloading from empty persistence raises error."""
     # Create a new agent with no policy in persistence
-    new_agent_id = await persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
+    new_agent_id = await persistence.create_agent(mcp_config=MCPConfig(), preset="test")
 
     # Create new engine with no persisted policy
     new_engine = ApprovalPolicyEngine(

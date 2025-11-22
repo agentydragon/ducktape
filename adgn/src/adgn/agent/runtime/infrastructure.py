@@ -136,8 +136,8 @@ class MCPInfrastructure:
         """
         row = await self.persistence.get_agent(self.agent_id)
         preset_name: str | None = None
-        if row and row.metadata is not None:
-            preset_name = row.metadata.preset
+        if row:
+            preset_name = row.preset
 
         presets = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR")) if preset_name else {}
         preset = presets.get(preset_name) if preset_name else None

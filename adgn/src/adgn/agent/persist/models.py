@@ -66,7 +66,7 @@ class Agent(Base):
     id: Mapped[AgentID] = mapped_column(String, primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     mcp_config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)  # MCPConfig as JSON
-    preset: Mapped[str] = mapped_column(String, nullable=False)  # AgentMetadata.preset
+    preset: Mapped[str] = mapped_column(String, nullable=False)  # Agent preset name
 
     # Relationships
     runs: Mapped[list["Run"]] = relationship(

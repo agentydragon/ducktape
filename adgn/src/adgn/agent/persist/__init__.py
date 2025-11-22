@@ -13,20 +13,11 @@ from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.types import AgentID, ToolCall
 
 
-class AgentMetadata(BaseModel):
-    """Typed per-agent metadata stored in persistence.
-
-    Currently only preset name is tracked; expand here if new metadata is added.
-    """
-
-    preset: str
-
-
 class AgentRow(BaseModel):
     id: AgentID
     created_at: datetime
     mcp_config: MCPConfig
-    metadata: AgentMetadata
+    preset: str
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -134,7 +125,7 @@ class Persistence(Protocol):
     async def ensure_schema(self) -> None: ...
 
     # Agents API ---------------------------------------------------------------
-    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> AgentID: ...
+    async def create_agent(self, *, mcp_config: MCPConfig, preset: str) -> AgentID: ...
     async def update_agent_specs(self, agent_id: AgentID, *, mcp_config: MCPConfig) -> None: ...
     async def patch_agent_specs(
         self, agent_id: AgentID, *, attach: dict[str, MCPConfig] = {}, detach: list[str] = []
