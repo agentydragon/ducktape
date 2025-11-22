@@ -29,8 +29,7 @@ from adgn.agent.mcp_bridge.compositor_factory import (
     mount_agent_compositor_dynamically,
     unmount_agent_compositor_dynamically,
 )
-from adgn.agent.mcp_bridge.servers.types import RunPhase
-from adgn.agent.mcp_bridge.types import AgentID, AgentMode
+from adgn.agent.mcp_bridge.types import AgentID, AgentMode, RunPhase
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure, RunningInfrastructure
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
