@@ -16,9 +16,9 @@ from pydantic import BaseModel
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
 from adgn.agent.models.policy_error import PolicyError
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import ApprovalOutcome, Persistence
+from adgn.agent.persist import Persistence
 from adgn.agent.policy_eval.runner import run_policy_source
-from adgn.agent.types import AgentID, ToolCall
+from adgn.agent.types import AgentID, ApprovalStatus, ToolCall
 from adgn.mcp._shared.constants import (
     AGENTS_POLICY_STATE_URI_FMT,
     APPROVAL_POLICY_PROPOSALS_INDEX_URI,
@@ -62,15 +62,6 @@ class TurnAbortRequested(Exception):  # noqa: N818
         self.reason = reason
         self.context = context or {}
         super().__init__(f"Turn abort requested: {reason} (call_id={call_id})")
-
-
-class ApprovalStatus(StrEnum):
-    """Status of an approval (pending or decided)."""
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    DENIED = "denied"
-    ABORTED = "aborted"
 
 
 class ApprovalItem(BaseModel):
@@ -169,19 +160,11 @@ class ApprovalHub(NotifyingFastMCP):
             # Build decided approvals from persistence
             records = await self._persistence.get_tool_call_records(self._agent_id)
 
-            def map_outcome_to_status(outcome: ApprovalOutcome) -> ApprovalStatus:
-                """Map ApprovalOutcome to ApprovalStatus using value-based conversion."""
-                try:
-                    return ApprovalStatus(outcome.value)
-                except ValueError:
-                    # Fallback for unknown outcomes
-                    return ApprovalStatus.REJECTED
-
             decided_approvals = [
                 ApprovalItem(
                     call_id=record.tool_call.id,
                     tool_call=record.tool_call,
-                    status=map_outcome_to_status(record.decision.outcome),
+                    status=record.decision.outcome,  # Already ApprovalStatus after unification
                     reason=record.decision.reason,
                     updated_at=record.decision.decided_at,
                 )

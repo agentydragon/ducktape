@@ -15,9 +15,9 @@ from mcp.types import ErrorData
 
 from adgn.agent.approvals import ApprovalHub
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
-from adgn.agent.persist import ApprovalOutcome, Decision, Persistence, ToolCall, ToolCallExecution, ToolCallRecord
+from adgn.agent.persist import Decision, Persistence, ToolCall, ToolCallExecution, ToolCallRecord
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest
-from adgn.agent.types import AgentID
+from adgn.agent.types import AgentID, ApprovalStatus
 from adgn.mcp._shared.calltool import convert_fastmcp_result
 from adgn.mcp._shared.constants import (
     POLICY_BACKEND_RESERVED_MISUSE_CODE,
@@ -176,7 +176,7 @@ class PolicyGatewayMiddleware(Middleware):
 
         if decision is ApprovalDecision.ALLOW:
             # Update with decision (PENDING → EXECUTING)
-            decision_obj = Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=_now(), reason=rationale)
+            decision_obj = Decision(outcome=ApprovalStatus.APPROVED, decided_at=_now(), reason=rationale)
             executing_record = ToolCallRecord(
                 call_id=call_id,
                 run_id=str(self._run_id) if self._run_id is not None else None,
@@ -259,7 +259,7 @@ class PolicyGatewayMiddleware(Middleware):
 
         if decision is ApprovalDecision.DENY_ABORT:
             # Update with decision (no execution)
-            decision_obj = Decision(outcome=ApprovalOutcome.POLICY_DENY_ABORT, decided_at=_now(), reason=rationale)
+            decision_obj = Decision(outcome=ApprovalStatus.ABORTED, decided_at=_now(), reason=rationale)
             denied_record = ToolCallRecord(
                 call_id=call_id,
                 run_id=str(self._run_id) if self._run_id is not None else None,
@@ -274,7 +274,7 @@ class PolicyGatewayMiddleware(Middleware):
 
         if decision is ApprovalDecision.DENY_CONTINUE:
             # Update with decision (no execution)
-            decision_obj = Decision(outcome=ApprovalOutcome.POLICY_DENY_CONTINUE, decided_at=_now(), reason=rationale)
+            decision_obj = Decision(outcome=ApprovalStatus.DENIED, decided_at=_now(), reason=rationale)
             denied_record = ToolCallRecord(
                 call_id=call_id,
                 run_id=str(self._run_id) if self._run_id is not None else None,
@@ -298,7 +298,7 @@ class PolicyGatewayMiddleware(Middleware):
 
         if isinstance(decision_response, ContinueDecision):
             # User approved - update with decision (PENDING → EXECUTING)
-            decision_obj = Decision(outcome=ApprovalOutcome.USER_APPROVE, decided_at=_now(), reason=None)
+            decision_obj = Decision(outcome=ApprovalStatus.APPROVED, decided_at=_now(), reason=None)
             executing_record = ToolCallRecord(
                 call_id=call_id,
                 run_id=str(self._run_id) if self._run_id is not None else None,
@@ -334,7 +334,7 @@ class PolicyGatewayMiddleware(Middleware):
         if isinstance(decision_response, AbortTurnDecision):
             # User denied - update with decision (no execution)
             decision_obj = Decision(
-                outcome=ApprovalOutcome.USER_DENY_ABORT, decided_at=_now(), reason=decision_response.reason
+                outcome=ApprovalStatus.ABORTED, decided_at=_now(), reason=decision_response.reason
             )
             denied_record = ToolCallRecord(
                 call_id=call_id,

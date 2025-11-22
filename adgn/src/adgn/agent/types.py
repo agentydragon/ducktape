@@ -1,10 +1,20 @@
 """Shared types for the agent package."""
 
+from enum import StrEnum
 from typing import NewType
 
 from pydantic import BaseModel, Field
 
 AgentID = NewType("AgentID", str)
+
+
+class ApprovalStatus(StrEnum):
+    """Status of a tool call approval."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    DENIED = "denied"
+    ABORTED = "aborted"
 
 
 class ToolCall(BaseModel):

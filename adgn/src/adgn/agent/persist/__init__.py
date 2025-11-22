@@ -11,7 +11,7 @@ from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.types import AgentID, ToolCall
+from adgn.agent.types import AgentID, ApprovalStatus, ToolCall
 
 
 class AgentRow(BaseModel):
@@ -32,15 +32,6 @@ class PersistenceRunStatus(StrEnum):
     FINISHED = "finished"
     ERROR = "error"
     ABORTED = "aborted"
-
-
-class ApprovalOutcome(StrEnum):
-    POLICY_ALLOW = "policy_allow"
-    POLICY_DENY_CONTINUE = "policy_deny_continue"
-    POLICY_DENY_ABORT = "policy_deny_abort"
-    USER_APPROVE = "user_approve"
-    USER_DENY_CONTINUE = "user_deny_continue"
-    USER_DENY_ABORT = "user_deny_abort"
 
 
 class EventType(StrEnum):
@@ -85,7 +76,7 @@ class Decision(BaseModel):
     All fields are REQUIRED. The entire Decision object is optional on ToolCallRecord.
     """
 
-    outcome: ApprovalOutcome
+    outcome: ApprovalStatus
     decided_at: datetime
     reason: str | None = None
 
