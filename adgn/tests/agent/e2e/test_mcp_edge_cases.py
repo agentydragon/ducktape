@@ -167,13 +167,6 @@ def test_mcp_server_disconnect_reconnect(page: Page, run_server, responses_facto
     # Send prompt that triggers subscription
     send_prompt(page, "subscribe to resource")
 
-    # Wait for approval (if needed) and approve
-    try:
-        wait_for_pending_approvals(page, count=1, timeout=5000)
-        approve_first_pending(page)
-    except Exception:
-        pass  # No approval needed
-
     # Wait for run to finish
     page.get_by_text("Status: finished").wait_for(timeout=10000)
 
@@ -246,13 +239,6 @@ def test_network_interruption_during_resource_read(page: Page, run_server, respo
 
     # Send prompt that triggers slow resource read
     send_prompt(page, "read slow resource")
-
-    # Wait for approval if needed and approve
-    try:
-        wait_for_pending_approvals(page, count=1, timeout=5000)
-        approve_first_pending(page)
-    except Exception:
-        pass  # No approval needed
 
     # Wait for run to complete (with extended timeout due to slow resource)
     page.get_by_text("Status: finished").wait_for(timeout=15000)
