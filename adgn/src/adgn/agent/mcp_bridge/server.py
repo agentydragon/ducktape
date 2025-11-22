@@ -227,57 +227,50 @@ class InfrastructureRegistry(NotifyingFastMCP):
         return running
 
     async def remove_agent(self, agent_id: AgentID) -> None:
-        """Remove and clean up agent infrastructure.
-
-        Closes the running infrastructure and removes the agent from the registry.
-        """
-        if agent_id not in self._agents:
-            raise KeyError(f"Agent {agent_id} not found in registry")
-
-        agent = self._agents[agent_id].agent
-        if agent is not None:
-            await agent.running.close()
-
+        """Remove and clean up agent infrastructure."""
+        agent = self._get_agent_or_raise(agent_id)
+        await agent.running.close()
         del self._agents[agent_id]
-
         await self.notify_agents_list_changed()
+
+    def _determine_run_phase(
+        self, infra: RunningInfrastructure | None
+    ) -> tuple[RunPhase, int]:
+        """Determine run phase and pending approvals count."""
+        if not infra:
+            return RunPhase.IDLE, 0
+
+        pending_approvals = len(infra.approval_hub.pending)
+        if pending_approvals > 0:
+            return RunPhase.WAITING_APPROVAL, pending_approvals
+        else:
+            return RunPhase.SAMPLING, pending_approvals
 
     def _register_resources(self) -> None:
         @self.resource("resource://agents/list", name="agents_list", mime_type="application/json")
         async def list_agents() -> AgentsListResponse:
             """List all agents with detailed status."""
             agents = []
-            for agent_id in self.known_agents():
-                try:
-                    mode = self.get_agent_mode(agent_id)
-                except KeyError:
-                    continue
+            for agent_id, entry in self._agents.items():
+                if entry.agent is None:
+                    continue  # Skip uninitialized agents
+
+                agent = entry.agent
 
                 # Get infrastructure if available
-                infra = self.get_running_infrastructure(agent_id)
+                infra = agent.running
                 live = infra is not None
 
-                # Compute status fields
-                pending_approvals = 0
-                run_phase = RunPhase.IDLE
-
-                if infra:
-                    # Get pending approvals count
-                    pending_approvals = len(infra.approval_hub.pending)
-
-                    # Derive run phase
-                    if pending_approvals > 0:
-                        run_phase = RunPhase.WAITING_APPROVAL
-                    elif live:
-                        run_phase = RunPhase.SAMPLING
+                # Determine run phase and pending approvals
+                run_phase, pending_approvals = self._determine_run_phase(infra)
 
                 # Determine capabilities
-                is_local = mode == AgentMode.LOCAL
+                is_local = agent.mode == AgentMode.LOCAL
 
                 agents.append(
                     AgentInfo(
                         id=agent_id,
-                        mode=mode,
+                        mode=agent.mode,
                         live=live,
                         run_phase=run_phase,
                         pending_approvals=pending_approvals,
@@ -290,29 +283,19 @@ class InfrastructureRegistry(NotifyingFastMCP):
         @self.resource("resource://agents/{agent_id}/info", name="agent_info", mime_type="application/json")
         async def get_agent_info(agent_id: AgentID) -> AgentInfo:
             """Get detailed information about a specific agent."""
-            try:
-                mode = self.get_agent_mode(agent_id)
-            except KeyError:
-                raise KeyError(f"Agent {agent_id} not found")
+            agent = self._get_agent_or_raise(agent_id)
 
-            infra = self.get_running_infrastructure(agent_id)
+            infra = agent.running
             live = infra is not None
 
-            pending_approvals = 0
-            run_phase = RunPhase.IDLE
+            # Determine run phase and pending approvals
+            run_phase, pending_approvals = self._determine_run_phase(infra)
 
-            if infra:
-                pending_approvals = len(infra.approval_hub.pending)
-                if pending_approvals > 0:
-                    run_phase = RunPhase.WAITING_APPROVAL
-                elif live:
-                    run_phase = RunPhase.SAMPLING
-
-            is_local = mode == AgentMode.LOCAL
+            is_local = agent.mode == AgentMode.LOCAL
 
             return AgentInfo(
                 id=agent_id,
-                mode=mode,
+                mode=agent.mode,
                 live=live,
                 run_phase=run_phase,
                 pending_approvals=pending_approvals,
