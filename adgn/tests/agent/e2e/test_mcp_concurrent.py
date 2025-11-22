@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.agent.helpers import api_create_agent, approve_first_pending, attach_echo_mcp, wait_for_pending_approvals, send_prompt
+from tests.agent.helpers import api_create_agent, approve_first_pending, attach_echo_mcp, make_stateful_responses, wait_for_pending_approvals, send_prompt
 from tests.llm.support.openai_mock import make_mock
 
 # Skip if Playwright is not installed
@@ -73,12 +73,11 @@ def test_multiple_agents_rapid_status_changes(page: Page, run_server, responses_
 
     # Auto-approve all pending approvals by clicking approve repeatedly
     for _ in range(15):  # 5 agents x 3 calls each = 15 approvals
-        try:
-            approve_btn = page.get_by_role("button", name="Approve").first
-            if approve_btn.count() > 0:
-                approve_btn.click()
-                page.wait_for_timeout(100)  # Small delay between approvals
-        except Exception:
+        approve_btn = page.get_by_role("button", name="Approve").first
+        if approve_btn.count() > 0:
+            approve_btn.click()
+            page.wait_for_timeout(100)  # Small delay between approvals
+        else:
             break
 
     # Verify all agents finished (check for finished status)
@@ -97,16 +96,13 @@ def test_subscribe_unsubscribe_resubscribe(page: Page, run_server, responses_fac
     - Resubscribe
     - State consistency maintained
     """
-    state = {"i": 0}
-
-    async def responses_create(_req):
-        i = state["i"]
-        state["i"] = i + 1
-        if i == 0:
-            return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"), {"text": "first call"}, call_id="call_echo_1"
-            )
-        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+    responses_create = make_stateful_responses(
+        responses_factory,
+        [
+            ("echo", "echo", {"text": "first call"}),
+            ("end_turn", "ui", {}),
+        ],
+    )
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -156,16 +152,13 @@ def test_agent_deleted_while_subscribed(page: Page, run_server, responses_factor
     - No errors occur
     - Graceful cleanup
     """
-    state = {"i": 0}
-
-    async def responses_create(_req):
-        i = state["i"]
-        state["i"] = i + 1
-        if i == 0:
-            return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"), {"text": "test"}, call_id="call_echo_1"
-            )
-        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+    responses_create = make_stateful_responses(
+        responses_factory,
+        [
+            ("echo", "echo", {"text": "test"}),
+            ("end_turn", "ui", {}),
+        ],
+    )
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
@@ -266,20 +259,14 @@ def test_subscription_survives_temporary_disconnect(page: Page, run_server, resp
     - Simulate network hiccup (pause/resume via offline mode)
     - Subscription recovers correctly
     """
-    state = {"i": 0}
-
-    async def responses_create(_req):
-        i = state["i"]
-        state["i"] = i + 1
-        if i == 0:
-            return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"), {"text": "before disconnect"}, call_id="call_echo_1"
-            )
-        if i == 1:
-            return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"), {"text": "after disconnect"}, call_id="call_echo_2"
-            )
-        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+    responses_create = make_stateful_responses(
+        responses_factory,
+        [
+            ("echo", "echo", {"text": "before disconnect"}),
+            ("echo", "echo", {"text": "after disconnect"}),
+            ("end_turn", "ui", {}),
+        ],
+    )
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]
