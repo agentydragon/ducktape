@@ -26,7 +26,13 @@ class GroundTruthUsage(BaseModel):
     input_tokens_details: InputTokensDetails | None = Field(None, description="Breakdown of input token usage")
     output_tokens: int | None = Field(None, description="Number of output tokens generated")
     output_tokens_details: OutputTokensDetails | None = Field(None, description="Breakdown of output token usage")
-    total_tokens: int | None = Field(None, description="Total tokens consumed (input + output)")
+
+    @property
+    def total_tokens(self) -> int | None:
+        """Total tokens consumed (input + output)."""
+        if self.input_tokens is None and self.output_tokens is None:
+            return None
+        return (self.input_tokens or 0) + (self.output_tokens or 0)
 
 
 # ---- Typed events (no shared runtime base required) ----
