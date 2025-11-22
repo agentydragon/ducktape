@@ -133,18 +133,34 @@ This duplicates the `rationale` field. **Delete these blocks.**
 
 ### 5. When to Use GAP Notes
 
+Use `gap_note` to document **gaps in the property taxonomy** - when a finding relates to existing properties but also represents a generalizable principle that deserves its own property definition.
+
 Use `gap_note` when:
-- Issue is covered by existing property (e.g., `no-dead-code`)
-- But lacks a more specific/precise property definition
-- You want to document the abstraction gap without creating new property yet
+- Issue is covered by existing property (list it in `properties`)
+- But the finding represents a more specific pattern that deserves its own property
+- You want to document what property SHOULD exist without creating it yet
+- The gap note describes the abstraction gap between existing and ideal properties
+
+**What to include in gap_note:**
+- Description of the generalizable principle
+- Suggested property name (e.g., "fail-fast-on-missing-explicit-inputs")
+- How it differs from/refines existing properties
+
+**What NOT to use gap_note for:**
+- General recommendations or notes (those go in `rationale`)
+- Location-specific details (those go in occurrence `note`)
+- Property violations (those go in `properties` array)
 
 Example:
 ```jsonnet
+properties=['no-swallowing-errors'],  // Existing property that covers this
 gap_note=|||
-  Both flags exhibit the same anti-pattern: user provides file path,
-  file doesn't exist, code silently ignores it. This could be a distinct
-  property: "fail-fast-on-missing-explicit-inputs" rather than generic
-  "no-swallowing-errors".
+  This pattern deserves a more specific property like "fail-fast-on-missing-explicit-inputs"
+  to distinguish between:
+  - Intentionally-missing optional files (acceptable to ignore)
+  - User-explicitly-provided file paths that are missing (should fail-fast)
+
+  The existing "no-swallowing-errors" is too generic to capture this distinction.
 |||
 ```
 

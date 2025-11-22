@@ -70,6 +70,14 @@ local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
 // Issue constructors
 
 // One occurrence that can span multiple files/ranges
+// Parameters:
+//   rationale: Full explanation of what's wrong and recommended fix
+//   filesToRanges: Dict of file paths → array of line ranges
+//   properties: Array of property IDs from props/ that this issue violates
+//   gap_note: Documents gaps in property taxonomy - when finding relates to existing properties
+//             but represents a generalizable principle deserving its own property definition.
+//             Describe what property SHOULD exist to capture this pattern more precisely.
+//   should_flag: Whether this should be flagged (default: true)
 local issueOneOccurrence(rationale, filesToRanges, properties=[], gap_note=null, should_flag=true) = {
   should_flag: should_flag,
   rationale: rationale,

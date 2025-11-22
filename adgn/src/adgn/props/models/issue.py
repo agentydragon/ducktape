@@ -88,6 +88,16 @@ class IssueCore(BaseModel):
     id: IssueId
     should_flag: bool
     rationale: str
-    gap_note: str | None = None
+    gap_note: str | None = Field(
+        None,
+        description=(
+            "Documents gaps in the property taxonomy: when this finding relates to existing properties "
+            "but also represents a generalizable principle that deserves its own property definition. "
+            "Describes what property SHOULD exist to more precisely capture this pattern. "
+            "Example: 'This pattern deserves a more specific property like \"fail-fast-on-missing-explicit-inputs\" "
+            "to distinguish intentionally-missing vs user-explicitly-provided-but-missing files, rather than "
+            "relying on the generic \"no-swallowing-errors\" property.'"
+        )
+    )
 
     model_config = ConfigDict(extra="forbid")
