@@ -1,6 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-011: Do not silently swallow config read/parse errors
+
+I.issueOneOccurrence(
+  rationale=|||
     Do not silently swallow config read/parse errors.
 
     `load_config` iterates a list of candidate config files and attempts to read/parse the first that exists. On a read or JSON-parse error it currently swallows the exception and continues to the next candidate, which silently discards explicit user intent when `--config` is provided and hides real problems in configuration files.
@@ -42,8 +45,8 @@ local obj = {
 
     Either option makes configuration problems visible to users and avoids silently violating explicit `--config` intent.
   |||,
-  // properties: [],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 46, end_line: 51 }] } }],
-};
-
-obj
+  properties=['python/no-swallowing-errors'],
+  filesToRanges={
+    'pyright_watch_report.py': [[46, 51]],
+  },
+)

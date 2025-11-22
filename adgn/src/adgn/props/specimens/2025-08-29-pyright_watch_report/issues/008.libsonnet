@@ -1,8 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
-    Normalize patterns in one place.
+local I = import '../../specimens/lib.libsonnet';
 
+// iss-008: Normalize patterns in one place
+
+I.issueOneOccurrence(
+  rationale=|||
     Specimen has many scattered calls to `normalize_pattern`; internal variables are a mix of normalized/un-normalized patterns:
 
     Original (normalizes per call inside matcher):
@@ -34,9 +35,11 @@ local obj = {
     * Name variable hints, e.g. 'xyzzy_normalized` prefix/suffix
     * Marker type like `NormalizedPattern = NewType("NormalizedPattern", str)`
   |||,
-  gap_note: "there's analogous gaps in other places about things like clear contract boundary layers / gates (e.g. compiler: 'lex -> AST -> compile pass 1 -> codegen -> optimize -> emit'. Code belongs in clear phases with clear input/output contracts that never or very rarely mix/punch through. 'fn foo(raw input string, piece of AST, 3x piece of Assembly, another raw input string, commandline argv array)' is inherently very suspicious.)",
-  // properties: [],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 65 }, { start_line: 70 }] } }],
-};
-
-obj
+  properties=['python/modern-python-idioms'],
+  filesToRanges={
+    'pyright_watch_report.py': [65, 70],
+  },
+  gap_note=|||
+    There's analogous gaps in other places about things like clear contract boundary layers / gates (e.g. compiler: 'lex -> AST -> compile pass 1 -> codegen -> optimize -> emit'. Code belongs in clear phases with clear input/output contracts that never or very rarely mix/punch through. 'fn foo(raw input string, piece of AST, 3x piece of Assembly, another raw input string, commandline argv array)' is inherently very suspicious.)
+  |||,
+)

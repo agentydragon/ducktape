@@ -1,6 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-004: dump_path type annotation is misleading
+
+I.issueOneOccurrence(
+  rationale=|||
     `dump_path` type annotation is misleading - it types it as `Path | None`, but the rhs is never `None`:
 
     ```python
@@ -9,8 +12,8 @@ local obj = {
 
     Annotate as `Path` (not `Path | None`).
   |||,
-  // properties: [],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 50 }] } }],
-};
-
-obj
+  properties=['type-correctness-and-specificity'],
+  filesToRanges={
+    'pyright_watch_report.py': [50],
+  },
+)

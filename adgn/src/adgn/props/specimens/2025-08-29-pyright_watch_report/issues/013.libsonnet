@@ -1,6 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-013: Use collections.Counter for tallying exclude-pattern hits
+
+I.issueOneOccurrence(
+  rationale=|||
     Use collections.Counter for tallying exclude-pattern hits.
 
     The code currently initializes a mapping of exclude pattern -> 0 and increments counts imperatively. Using collections.Counter makes intent clearer, avoids the manual zero-initialization, and expresses that this object is for counting/histogram purposes.
@@ -27,11 +30,11 @@ local obj = {
 
     Counter saves the initialization/default-to-zero and documents intent (counts/histogram) succinctly.
   |||,
-  // properties: [],
-  instances: [
-    { files: { 'pyright_watch_report.py': [{ start_line: 104, end_line: 105 }] } },
-    { files: { 'pyright_watch_report.py': [{ start_line: 134, end_line: 139 }] } },
-  ],
-};
-
-obj
+  properties=['python/modern-python-idioms'],
+  filesToRanges={
+    'pyright_watch_report.py': [
+      [104, 105],  // exclude_hits initialization
+      [134, 139],  // exclude_hits usage
+    ],
+  },
+)

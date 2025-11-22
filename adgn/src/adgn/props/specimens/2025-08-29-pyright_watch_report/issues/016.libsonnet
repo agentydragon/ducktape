@@ -1,6 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-016: Prefer Path.write_text for concise dump writing
+
+I.issueOneOccurrence(
+  rationale=|||
     Prefer Path.write_text for concise dump writing when appropriate.
 
     The code currently writes out the dumped file with an explicit open + loop which is fine,
@@ -22,8 +25,8 @@ local obj = {
     Note: this is appropriate when the dumped content comfortably fits in memory. If the list
     can be very large (streaming required), keep the streaming form; prefer clarity over micro-optimizations.
   |||,
-  // properties: [],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 292, end_line: 299 }] } }],
-};
-
-obj
+  properties=['python/modern-python-idioms'],
+  filesToRanges={
+    'pyright_watch_report.py': [[292, 299]],
+  },
+)

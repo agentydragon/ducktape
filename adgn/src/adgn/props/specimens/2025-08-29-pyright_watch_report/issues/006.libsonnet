@@ -1,6 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-006: Explicit --config flag silently skipped if broken
+
+I.issueOneOccurrence(
+  rationale=|||
     If `load_config` is run with explicit `--config=<file>`, it will *silently skip it* if it's broken and instead potentially use other autodiscovered candidates, which (A) *discards user intent* despite the *explicit flags*, and (B) does so *silently*, without announcing any kind of error.
 
     `load_config` does:
@@ -24,8 +27,11 @@ local obj = {
     Fallback discovery as in specimen would only be acceptable as "friendly default" when no explicit `--config` passed.
     (Motivating scary example: imagine a PII-holding server, with `--config=explicit_config.json`, `explicit_config.json` having `{"dangerous_pii_exposing_debug_switch"=false}` (type) and silently discovered fallback `random_debug_developer_config.json` setting it to `true`).
   |||,
-  // properties: [],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 12 }, { start_line: 46 }] } }],
-};
-
-obj
+  properties=['python/no-swallowing-errors', 'early-bailout'],
+  filesToRanges={
+    'pyright_watch_report.py': [
+      12,  // config_path argument
+      46,  // load_config function
+    ],
+  },
+)

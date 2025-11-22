@@ -1,8 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
-    Compute include impacts during the scan (not post‑hoc)
+local I = import '../../specimens/lib.libsonnet';
 
+// iss-007: Compute include impacts during the scan (not post-hoc)
+
+I.issueOneOccurrence(
+  rationale=|||
     Account include and exclude pattern hits symmetrically: accumulate include stats inside the main walk instead of reconstructing later.
     This avoids a second pass and keeps ordering semantics obvious.
 
@@ -35,8 +36,8 @@ local obj = {
 
     This reduces moving parts and cognitive load needed do understand the pipeline.
   |||,
-  // properties: [],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 218 }, { start_line: 236 }] } }],
-};
-
-obj
+  properties=['python/modern-python-idioms'],
+  filesToRanges={
+    'pyright_watch_report.py': [218, 236],
+  },
+)

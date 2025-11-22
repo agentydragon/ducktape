@@ -1,6 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-017: Condense and de-duplicate config printing
+
+I.issueOneOccurrence(
+  rationale=|||
     Condense and de-duplicate config printing.
 
     The code prints the config path with an if/else that can be expressed more concisely without losing clarity. A single expression using `or` is shorter and avoids branching noise.
@@ -20,8 +23,8 @@ local obj = {
 
     This is a readability-focused micro-refactor: it reduces branching for a simple, readable output and keeps intent clear.
   |||,
-  // properties: [],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 259, end_line: 262 }] } }],
-};
-
-obj
+  properties=['python/modern-python-idioms'],
+  filesToRanges={
+    'pyright_watch_report.py': [[259, 262]],
+  },
+)

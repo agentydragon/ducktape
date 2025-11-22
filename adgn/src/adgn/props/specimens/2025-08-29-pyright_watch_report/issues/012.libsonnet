@@ -1,6 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-012: Use dict comprehension for per_include_kept
+
+I.issueOneOccurrence(
+  rationale=|||
     Use a dict comprehension for per_include_kept to reduce ephemeral state and make intent clear.
 
     Before (pyright_watch_report.py original):
@@ -22,8 +25,8 @@ local obj = {
 
     This is clearer, fewer moving parts, and avoids an imperative accumulation pattern.
   |||,
-  // properties: ['no-oneoff-vars-and-trivial-wrappers'],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 228, end_line: 231 }] } }],
-};
-
-obj
+  properties=['python/modern-python-idioms'],
+  filesToRanges={
+    'pyright_watch_report.py': [[228, 231]],
+  },
+)

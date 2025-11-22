@@ -1,6 +1,9 @@
-local obj = {
-  should_flag: true,
-  rationale: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-003b: Extension list is misleading and duplicated
+
+I.issueOneOccurrence(
+  rationale=|||
     Extension list is misleading and duplicated.
     Printed list is hard-coded `.py/.pyi/.pyx` which does not match `CODE_EXTS` (set to `{'.py', '.pyi'}`).
 
@@ -16,8 +19,8 @@ local obj = {
 
     This makes the message not misleading and avoids future drift.
   |||,
-  // properties: [],
-  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 36 }] } }],
-};
-
-obj
+  properties=['truthfulness'],
+  filesToRanges={
+    'pyright_watch_report.py': [36],
+  },
+)
