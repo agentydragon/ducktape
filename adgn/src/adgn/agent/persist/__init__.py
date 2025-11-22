@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
@@ -118,6 +119,16 @@ class ToolCallRecord(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
+@dataclass
+class PolicyRecord:
+    """Active policy record."""
+
+    id: int
+    content: str
+    created_at: datetime
+    agent_id: AgentID
+
+
 from .events import EventRecord, TypedPayload  # noqa: E402
 
 
@@ -185,8 +196,13 @@ class Persistence(Protocol):
     async def load_events(self, run_id: UUID) -> list[EventRecord]: ...
 
     # Approval policy (per-agent) --------------------------------------------
-    async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None: ...
-    async def set_policy(self, agent_id: AgentID, *, content: str) -> int: ...
+    async def get_latest_policy(self, agent_id: AgentID) -> PolicyRecord | None:
+        """Get latest active policy, or None if no policy set."""
+        ...
+
+    async def set_policy(self, agent_id: AgentID, *, content: str) -> PolicyRecord:
+        """Set new policy and return the created record."""
+        ...
 
     # Approval policy proposals (single store impl: SQLite)
     async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> int: ...
