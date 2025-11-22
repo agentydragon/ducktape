@@ -92,11 +92,12 @@ async def create_bridge_infrastructure(
     initial_policy: str | None = None,
 ):
     """Create RunningInfrastructure for external agent HTTP bridge."""
-    builder = MCPInfrastructure(
-        agent_id=agent_id, persistence=persistence, docker_client=docker_client, initial_policy=initial_policy
-    )
-
-    return await builder.start(mcp_config)
+    return await MCPInfrastructure(
+        agent_id=agent_id,
+        persistence=persistence,
+        docker_client=docker_client,
+        initial_policy=initial_policy
+    ).start(mcp_config)
 
 
 class InfrastructureRegistry(NotifyingFastMCP):
@@ -179,8 +180,7 @@ class InfrastructureRegistry(NotifyingFastMCP):
         """Raises KeyError if agent not in registry or not yet initialized."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        agent = self._agents[agent_id].agent
-        if agent is None:
+        if (agent := self._agents[agent_id].agent) is None:
             raise KeyError(f"Agent {agent_id} infrastructure not yet initialized")
         return agent.running
 
@@ -188,8 +188,7 @@ class InfrastructureRegistry(NotifyingFastMCP):
         """Raises KeyError if agent not in registry or not yet initialized."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
-        agent = self._agents[agent_id].agent
-        if agent is None:
+        if (agent := self._agents[agent_id].agent) is None:
             raise KeyError(f"Agent {agent_id} mode not yet initialized")
         return agent.mode
 
