@@ -79,7 +79,7 @@ class ApprovalItem(BaseModel):
     tool_call: ToolCall
     status: ApprovalStatus
     reason: str | None = None
-    timestamp: datetime
+    updated_at: datetime
 
 
 class ApprovalsResponse(BaseModel):
@@ -161,7 +161,7 @@ class ApprovalHub(NotifyingFastMCP):
                     tool_call=tool_call,
                     status=ApprovalStatus.PENDING,
                     reason=None,
-                    timestamp=datetime.now(),  # Approx timestamp for pending
+                    updated_at=datetime.now(),  # Current time for pending
                 )
                 for call_id, tool_call in self.pending.items()
             ]
@@ -183,18 +183,18 @@ class ApprovalHub(NotifyingFastMCP):
                     tool_call=record.tool_call,
                     status=map_outcome_to_status(record.decision.outcome),
                     reason=record.decision.reason,
-                    timestamp=record.decision.decided_at,
+                    updated_at=record.decision.decided_at,
                 )
                 for record in records
                 if record.decision is not None
             ]
 
-            # Combine and sort by timestamp (most recent first)
+            # Combine and sort by updated_at (most recent first)
             return ApprovalsResponse(
                 agent_id=self._agent_id,
                 approvals=sorted(
                     pending_approvals + decided_approvals,
-                    key=lambda x: x.timestamp,
+                    key=lambda x: x.updated_at,
                     reverse=True,
                 ),
             )
