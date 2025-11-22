@@ -1,26 +1,8 @@
-{
-  title: 'ApprovalOutcome and ApprovalStatus are duplicate enums that should be unified',
-  severity: 'medium',
-  category: 'type-design',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [70, 76],
-      context: 'ApprovalStatus enum definition',
-    },
-    {
-      path: 'adgn/src/adgn/agent/persist/__init__.py',
-      lines: null,
-      context: 'ApprovalOutcome enum definition (referenced)',
-    },
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [175, 181],
-      context: 'map_outcome_to_status conversion function',
-    },
-  ],
-  description: |||
-    There are TWO separate enums representing the status of a tool call approval:
+local I = import '../../specimens/lib.libsonnet';
+
+I.issueOneOccurrence(
+  rationale= |||
+    There are TWO separate enums representing the same concept - the status of a tool call approval:
 
     **1. ApprovalStatus (in approvals.py, lines 70-76):**
     ```python
@@ -34,10 +16,9 @@
     ```
 
     **2. ApprovalOutcome (in persist/__init__.py):**
-    Used in persistence layer for the same concept.
+    Used in the persistence layer for the same concept.
 
-    **The problem:**
-    This requires conversion between the two (lines 175-181):
+    This duplication requires a conversion function (lines 175-181):
     ```python
     def map_outcome_to_status(outcome: ApprovalOutcome) -> ApprovalStatus:
         """Map ApprovalOutcome to ApprovalStatus using value-based conversion."""
@@ -48,17 +29,18 @@
             return ApprovalStatus.REJECTED  # HIDES ERRORS!
     ```
 
-    This converter:
-    1. **Hides errors** - Falls back to REJECTED for unknown outcomes instead of failing fast
-    2. **Indicates design smell** - If two enums need value-based conversion, they should be ONE enum
-    3. **Creates maintenance burden** - Changes to one enum must be synchronized with the other
+    **Multiple problems:**
 
-    There should NOT be two separate enums encoding the same concept.
-  |||,
-  recommendation: |||
-    **Unify ApprovalOutcome and ApprovalStatus into a single enum:**
+    1. **Hides errors via silent fallback:** The converter falls back to REJECTED for unknown outcomes instead of failing fast. This masks data corruption or version mismatches.
 
-    **Option 1: Keep ApprovalStatus, remove ApprovalOutcome**
+    2. **Design smell:** If two enums need value-based conversion, they should be ONE enum. The existence of this converter indicates they represent the same domain concept but are duplicated across layers.
+
+    3. **Maintenance burden:** Changes to approval statuses must be synchronized across both enums and the converter, creating opportunities for inconsistency.
+
+    4. **Type imprecision:** Having two types for the same concept weakens type safety - conversions can silently succeed even when semantics diverge.
+
+    **Fix:**
+    Unify into a single enum shared between the API and persistence layers:
     ```python
     # In a shared module (e.g., adgn.agent.types)
     class ApprovalStatus(StrEnum):
@@ -68,25 +50,33 @@
         REJECTED = "rejected"
         DENIED = "denied"
         ABORTED = "aborted"
-        # Add any states from ApprovalOutcome that differ
     ```
 
-    Use this single enum everywhere - in persistence, in API responses, in the approval hub.
+    Use this single enum everywhere - in persistence, API responses, and the approval hub. If there's a genuine semantic difference between "outcome" and "status", document it clearly and create an explicit, exhaustive mapping that raises errors for unmapped values rather than hiding them with fallbacks.
 
-    **Option 2: If there's a semantic difference**
-    If ApprovalOutcome genuinely represents something different from ApprovalStatus
-    (e.g., outcomes have more granular states than statuses), document this clearly
-    and create an explicit mapping function that:
-    1. **Does NOT hide errors** - removes the try/except fallback
-    2. **Has exhaustive pattern matching** - uses match/case to ensure all outcomes are handled
-    3. **Fails fast** - raises error for unmapped values
-
-    But most likely, these two enums represent the same concept and should be unified.
-
-    **Benefits of unification:**
+    Benefits of unification:
     - No conversion needed
     - Single source of truth
-    - Errors caught at compile time (type checking)
+    - Type errors caught at compile time
     - Simpler codebase
+    - No silent error masking
   |||,
-}
+  properties=['type-correctness-and-specificity', 'python/no-swallowing-errors'],
+  filesToRanges={
+    'adgn/src/adgn/agent/approvals.py': [
+      [70, 76],   // ApprovalStatus enum definition
+      [175, 181], // map_outcome_to_status converter with error hiding
+    ],
+  },
+  gap_note= |||
+    This finding represents a generalizable anti-pattern: "duplicate domain enums across architectural layers requiring error-hiding converters."
+
+    A property like "single-source-domain-types" could capture:
+    - Domain concepts should have exactly one canonical type definition
+    - Types should not be duplicated across layers (API, persistence, business logic)
+    - Layer-crossing code should use the same types, not convert between duplicates
+    - When conversion is truly needed (e.g., external API schema vs internal), converters must be explicit and fail-fast
+
+    This is distinct from the existing "type-correctness-and-specificity" property which focuses on type precision/narrowness, not on avoiding duplication of domain type definitions.
+  |||,
+)

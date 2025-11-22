@@ -1,23 +1,12 @@
-{
-  title: 'Policy persistence API has awkward return types',
-  severity: 'medium',
-  category: 'api-design',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/persist/__init__.py',
-      lines: [188],
-      context: 'get_latest_policy returns tuple[str, int] | None',
-    },
-    {
-      path: 'adgn/src/adgn/agent/persist/__init__.py',
-      lines: [189],
-      context: 'set_policy returns int',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-045: untyped tuple returns instead of structured types
+
+I.issueOneOccurrence(
+  rationale= |||
     The policy persistence methods have non-obvious return types:
 
-    **1. get_latest_policy returns tuple[str, int] | None:**
+    1. get_latest_policy returns tuple[str, int] | None:
     ```python
     async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None: ...
     ```
@@ -30,7 +19,7 @@
 
     This should return a typed object like PolicyRecord or ActivePolicy.
 
-    **2. set_policy returns int:**
+    2. set_policy returns int:
     ```python
     async def set_policy(self, agent_id: AgentID, *, content: str) -> int: ...
     ```
@@ -46,9 +35,8 @@
     ```
 
     But better: return a PolicyRecord object with id, content, timestamp, etc.
-  |||,
-  recommendation: |||
-    **Option 1: Create a PolicyRecord type (preferred):**
+
+    Fix - Option 1: Create a PolicyRecord type (preferred):
 
     ```python
     @dataclass
@@ -76,7 +64,7 @@
         policy_id = policy.id
     ```
 
-    **Option 2: Use NamedTuple (lighter weight):**
+    Fix - Option 2: Use NamedTuple (lighter weight):
 
     ```python
     class PolicyData(NamedTuple):
@@ -87,7 +75,7 @@
         ...
     ```
 
-    **Option 3: At least document the return type:**
+    Fix - Option 3: At least document the return type:
 
     ```python
     async def set_policy(self, agent_id: AgentID, *, content: str) -> int:
@@ -99,11 +87,18 @@
         ...
     ```
 
-    **Benefits of Option 1:**
+    Benefits of Option 1:
     - Self-documenting (PolicyRecord.content, PolicyRecord.id)
     - Type-safe
     - Can add fields later without breaking API
     - Clear semantics
     - IDE autocomplete works
   |||,
-}
+  properties=['structured-data-over-untyped-mappings', 'type-correctness-and-specificity'],
+  filesToRanges={
+    'adgn/src/adgn/agent/persist/__init__.py': [
+      188,
+      189,
+    ],
+  },
+)

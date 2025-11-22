@@ -1,88 +1,31 @@
-{
-  title: 'generate_frontend_code.py should inline helper function and use list literals',
-  severity: 'minor',
-  category: 'code-style',
-  locations: [
-    {
-      path: 'adgn/scripts/generate_frontend_code.py',
-      lines: [183, 186],
-      context: 'get_json_schema function is used only once',
-    },
-    {
-      path: 'adgn/scripts/generate_frontend_code.py',
-      lines: [255],
-      context: 'main_schema variable assigned and used once',
-    },
-    {
-      path: 'adgn/scripts/generate_frontend_code.py',
-      lines: [268, 274],
-      context: 'ts_output built via imperative appends',
-    },
-  ],
-  description: |||
-    The generate_frontend_code.py script has several minor style issues:
+local I = import '../../specimens/lib.libsonnet';
 
-    **1. get_json_schema should be inlined (lines 183-186)**
-    ```python
-    def get_json_schema(model: type) -> dict[str, Any]:
-        """Get JSON Schema for a Pydantic model."""
-        adapter = TypeAdapter(model)
-        return adapter.json_schema(mode="serialization")
-    ```
-    This 3-line helper is used exactly once at line 250. It should be inlined.
+I.issueOneOccurrence(
+  rationale= |||
+    The generate_frontend_code.py script has three instances of unnecessary one-off variables that should be inlined:
 
-    **2. main_schema should be inlined (line 255)**
-    ```python
-    main_schema = {k: v for k, v in schema.items() if k != "$defs"}
-    all_defs[type_name] = main_schema
-    ```
-    The `main_schema` variable is assigned and immediately used once. Should inline:
-    ```python
-    all_defs[type_name] = {k: v for k, v in schema.items() if k != "$defs"}
-    ```
+    **1. get_json_schema helper function (lines 183-186):**
+    This 3-line helper wraps TypeAdapter().json_schema() and is used exactly once at line 250. It adds no value beyond the direct call and should be inlined.
 
-    **3. ts_output should use list literal (lines 268-274)**
-    ```python
-    ts_output = []
-    ts_output.append("// Auto-generated TypeScript types from Pydantic models")
-    ts_output.append("// Do not edit manually - regenerate with: npm run codegen")
-    ts_output.append("")
-    ts_output.append(ts_code.strip())
-    ```
-    This should be a list literal:
-    ```python
-    ts_output = [
-        "// Auto-generated TypeScript types from Pydantic models",
-        "// Do not edit manually - regenerate with: npm run codegen",
-        "",
-        ts_code.strip(),
-    ]
-    ```
+    **2. main_schema variable (line 255):**
+    The variable is assigned a dict comprehension and immediately used once to update all_defs. This intermediate variable adds no clarity and should be inlined directly into the dict assignment.
+
+    **3. ts_output list construction (lines 268-274):**
+    The code creates an empty list and then imperatively appends four items. This should be replaced with a list literal containing all four items, which is more direct and idiomatic Python.
+
+    **Fix:**
+    - Remove get_json_schema function and inline the TypeAdapter call at line 250
+    - Inline the dict comprehension directly: `all_defs[type_name] = {k: v for k, v in schema.items() if k != "$defs"}`
+    - Replace ts_output construction with a list literal containing all four string elements
+
+    These changes eliminate unnecessary indirection and make the code more direct and readable.
   |||,
-  recommendation: |||
-    Apply these inline simplifications:
-
-    1. Remove get_json_schema helper, inline at line 250:
-    ```python
-    schema = TypeAdapter(model_class).json_schema(mode="serialization")
-    ```
-
-    2. Inline main_schema at line 256:
-    ```python
-    all_defs[type_name] = {k: v for k, v in schema.items() if k != "$defs"}
-    ```
-
-    3. Replace ts_output construction with list literal:
-    ```python
-    ts_output = [
-        "// Auto-generated TypeScript types from Pydantic models",
-        "// Do not edit manually - regenerate with: npm run codegen",
-        "",
-        ts_code.strip(),
-    ]
-    output_file.write_text("\n".join(ts_output))
-    ```
-
-    These changes reduce indirection and make the code more direct.
-  |||,
-}
+  properties=['no-oneoff-vars-and-trivial-wrappers'],
+  filesToRanges={
+    'adgn/scripts/generate_frontend_code.py': [
+      [183, 186],  // get_json_schema function
+      255,         // main_schema variable
+      [268, 274],  // ts_output imperative construction
+    ],
+  },
+)

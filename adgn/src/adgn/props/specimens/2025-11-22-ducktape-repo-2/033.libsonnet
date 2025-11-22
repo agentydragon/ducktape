@@ -1,53 +1,34 @@
-{
-  title: 'total_tokens field is redundant - trivial sum of input_tokens + output_tokens',
-  severity: 'minor',
-  category: 'data-modeling',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/handler.py',
-      lines: [29],
-      context: 'total_tokens field in TokenUsage model',
-    },
-  ],
-  description: |||
-    The TokenUsage model has a `total_tokens` field that is a trivial sum of two other fields:
+local I = import '../../specimens/lib.libsonnet';
 
-    ```python
+// iss-033: total_tokens field is redundant - trivial sum of input_tokens + output_tokens
+
+I.issueOneOccurrence(
+  rationale= |||
+    The TokenUsage model has a total_tokens field that is a trivial sum of two other fields:
+
     class TokenUsage(BaseModel):
-        input_tokens: int | None = Field(None, description="Input tokens consumed")
-        output_tokens: int | None = Field(None, description="Output tokens generated")
+        input_tokens: int | None = Field(None, ...)
+        output_tokens: int | None = Field(None, ...)
         total_tokens: int | None = Field(None, description="Total tokens consumed (input + output)")
-    ```
 
-    The `total_tokens` field is redundant:
-    - It's always `input_tokens + output_tokens`
+    The total_tokens field is redundant:
+    - It's always input_tokens + output_tokens
     - No additional information
     - Must be kept in sync manually (error-prone)
     - Wastes storage/bandwidth
 
     This violates DRY - the total is trivially computable from the parts.
-  |||,
-  recommendation: |||
-    **Remove the total_tokens field entirely.**
 
-    Callers who need the total can compute it trivially:
-    ```python
-    total = (usage.input_tokens or 0) + (usage.output_tokens or 0)
-    ```
+    Fix options:
+    1. Preferred: Remove total_tokens field entirely. Callers compute:
+       total = (usage.input_tokens or 0) + (usage.output_tokens or 0)
 
-    **If keeping for API compatibility, make it a computed property:**
-    ```python
-    class TokenUsage(BaseModel):
-        input_tokens: int | None = Field(None, description="Input tokens consumed")
-        output_tokens: int | None = Field(None, description="Output tokens generated")
-
-        @property
-        def total_tokens(self) -> int | None:
-            """Total tokens (input + output). Returns None if both are None."""
-            if self.input_tokens is None and self.output_tokens is None:
-                return None
-            return (self.input_tokens or 0) + (self.output_tokens or 0)
-    ```
+    2. For API compatibility, make it a computed property:
+       @property
+       def total_tokens(self) -> int | None:
+           if self.input_tokens is None and self.output_tokens is None:
+               return None
+           return (self.input_tokens or 0) + (self.output_tokens or 0)
 
     This ensures:
     - Single source of truth (input + output)
@@ -55,4 +36,23 @@
     - No redundant storage
     - Backward compatible if needed
   |||,
-}
+  properties=['no-oneoff-vars-and-trivial-wrappers'],
+  filesToRanges={
+    'adgn/src/adgn/agent/handler.py': [
+      29,  // total_tokens field definition
+    ],
+  },
+  gap_note= |||
+    This finding represents a pattern that could be a property: "prefer-computed-properties"
+    or "no-derived-fields".
+
+    When a field's value is always a trivial computation of other fields
+    (sum, concatenation, boolean combination), prefer:
+    - Removing the field and computing on demand
+    - Making it a @property (for API compatibility)
+    - NOT storing it as a redundant field that must be kept in sync
+
+    Related to DRY but specifically about data modeling and avoiding redundant
+    derived state that can get out of sync.
+  |||,
+)

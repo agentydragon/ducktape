@@ -1,21 +1,10 @@
-{
-  title: 'Inline single-use builder variable and use walrus operators',
-  severity: 'minor',
-  category: 'code-style',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/server.py',
-      lines: [85, 89],
-      context: 'builder variable assigned and immediately used',
-    },
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/server.py',
-      lines: [172, 173],
-      context: 'agent = ... if agent is None: raise - should use walrus',
-    },
-  ],
-  description: |||
-    **1. create_bridge_infrastructure has unnecessary builder variable:**
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-042: single-use variable and missing walrus operators
+
+I.issueOneOccurrence(
+  rationale= |||
+    1. create_bridge_infrastructure has unnecessary builder variable:
     ```python
     async def create_bridge_infrastructure(...):
         """Create RunningInfrastructure for external agent HTTP bridge."""
@@ -28,7 +17,7 @@
 
     The `builder` variable is assigned and immediately used once - should be inlined.
 
-    **2. Multiple methods should use walrus operator:**
+    2. Multiple methods should use walrus operator:
     ```python
     agent = self._agents[agent_id].agent
     if agent is None:
@@ -36,9 +25,10 @@
     ```
 
     This pattern appears multiple times and should use walrus in the conditional.
-  |||,
-  recommendation: |||
-    **1. Inline builder:**
+
+    Fixes:
+
+    1. Inline builder:
     ```python
     async def create_bridge_infrastructure(...):
         """Create RunningInfrastructure for external agent HTTP bridge."""
@@ -50,7 +40,7 @@
         ).start(mcp_config)
     ```
 
-    **2. Use walrus operator:**
+    2. Use walrus operator:
     ```python
     if (agent := self._agents[agent_id].agent) is None:
         raise KeyError(f"Agent {agent_id} infrastructure not yet initialized")
@@ -59,4 +49,11 @@
 
     These changes make the code more concise and idiomatic.
   |||,
-}
+  properties=['no-oneoff-vars-and-trivial-wrappers', 'python/walrus'],
+  filesToRanges={
+    'adgn/src/adgn/agent/mcp_bridge/server.py': [
+      [85, 89],
+      [172, 173],
+    ],
+  },
+)

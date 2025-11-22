@@ -1,88 +1,44 @@
-{
-  title: 'docker_client None check should be inside self_check, not at call sites',
-  severity: 'minor',
-  category: 'api-design',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [344, 345],
-      context: 'if self.docker_client is not None: self.self_check(content)',
-    },
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [360, 361],
-      context: 'if self.docker_client is not None: self.self_check(got.content)',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-028: docker_client None check should be inside self_check, not at call sites
+
+I.issueOneOccurrence(
+  rationale= |||
     The pattern `if self.docker_client is not None: self.self_check(...)` appears
-    twice in the codebase:
+    twice (lines 344-345, 360-361). This conditional is repeated at every call site.
 
-    **create_proposal() - lines 344-345:**
-    ```python
-    # Self-check proposal program if docker is available
-    if self.docker_client is not None:
-        self.self_check(content)
-    ```
+    The check should be internal to self_check() itself, not the caller's
+    responsibility. Currently self_check() assumes docker_client is valid (line 342),
+    forcing callers to guard it.
 
-    **approve_proposal() - lines 360-361:**
-    ```python
-    # Self-check the proposal program before activation
-    if self.docker_client is not None:
-        self.self_check(got.content)
-    ```
+    Fix: Move the None check inside self_check():
 
-    This conditional is repeated at every call site. The check should be
-    internal to `self_check()` itself, not the caller's responsibility.
-
-    **Current self_check() implementation (lines 330-335):**
-    ```python
     def self_check(self, source: str) -> None:
-        run_policy_source(
-            docker_client=self.docker_client,  # Passed unconditionally
-            source=source,
-            input_payload=...,
-        )
-    ```
-
-    The method assumes `docker_client` is valid, forcing callers to guard it.
-  |||,
-  recommendation: |||
-    Move the None check inside `self_check()`:
-
-    ```python
-    def self_check(self, source: str) -> None:
-        """Validate policy source by running it in Docker sandbox.
-
-        If docker_client is None, validation is skipped.
-        """
         if self.docker_client is None:
             return  # Skip validation if Docker not available
+        run_policy_source(docker_client=self.docker_client, ...)
 
-        run_policy_source(
-            docker_client=self.docker_client,
-            source=source,
-            input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
-        )
-    ```
+    Then call sites simplify to: self.self_check(content)
 
-    Then simplify call sites:
-
-    **create_proposal():**
-    ```python
-    # Self-check proposal program (skips if Docker unavailable)
-    self.self_check(content)
-    ```
-
-    **approve_proposal():**
-    ```python
-    # Self-check the proposal program before activation
-    self.self_check(got.content)
-    ```
-
-    **Benefits:**
-    - Single responsibility - `self_check()` handles its own preconditions
-    - DRY - check not repeated at call sites
-    - Cleaner API - callers don't need to know about Docker availability
+    Benefits:
+    - Single responsibility: self_check handles its own preconditions
+    - DRY: check not repeated at call sites
+    - Cleaner API: callers don't need to know about Docker availability
   |||,
-}
+  properties=['no-oneoff-vars-and-trivial-wrappers'],
+  filesToRanges={
+    'adgn/src/adgn/agent/approvals.py': [
+      [344, 345],  // create_proposal: if self.docker_client is not None
+      [360, 361],  // approve_proposal: if self.docker_client is not None
+    ],
+  },
+  gap_note= |||
+    This pattern deserves a property like "encapsulate-preconditions" to capture:
+    When a method has optional dependencies or preconditions, the method itself
+    should handle them (early return, skip, or raise), not force every caller to
+    check the precondition before calling.
+
+    Related to but distinct from "no-defensive-programming" - this is about API
+    design and encapsulation, not redundant validation.
+  |||,
+)

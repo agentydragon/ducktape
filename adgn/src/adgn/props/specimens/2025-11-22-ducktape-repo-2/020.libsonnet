@@ -1,51 +1,36 @@
-{
-  title: 'Useless TYPE_CHECKING blocks with only pass',
-  severity: 'minor',
-  category: 'code-quality',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [31, 32],
-      context: 'if TYPE_CHECKING:\\n    pass',
-    },
-    {
-      path: 'adgn/src/adgn/agent/agent.py',
-      lines: [43, 44],
-      context: 'if TYPE_CHECKING:\\n    pass',
-    },
-  ],
-  description: |||
-    Two files contain TYPE_CHECKING blocks that only contain `pass`:
+local I = import '../../specimens/lib.libsonnet';
 
-    **adgn/src/adgn/agent/approvals.py (lines 31-32):**
+I.issueOneOccurrence(
+  rationale= |||
+    Two files contain TYPE_CHECKING blocks that only contain `pass`, serving no purpose:
+
     ```python
     if TYPE_CHECKING:
         pass
     ```
 
-    **adgn/src/adgn/agent/agent.py (lines 43-44):**
-    ```python
-    if TYPE_CHECKING:
-        pass
-    ```
-
-    These blocks serve no purpose. TYPE_CHECKING is meant for type-only imports
-    to avoid circular dependencies at runtime, e.g.:
-
+    TYPE_CHECKING blocks exist to enable type-only imports that avoid circular dependencies at runtime. A typical use looks like:
     ```python
     if TYPE_CHECKING:
         from module import TypeOnlyNeeded
     ```
 
-    An empty TYPE_CHECKING block with only `pass` does nothing and should be deleted.
-  |||,
-  recommendation: |||
-    Delete both useless TYPE_CHECKING blocks:
+    Empty TYPE_CHECKING blocks with only `pass` are dead code - they add noise without providing any functionality. They may have been placeholders that were never filled in, or had imports removed without deleting the block itself.
 
-    **adgn/src/adgn/agent/approvals.py** - remove lines 31-32
-    **adgn/src/adgn/agent/agent.py** - remove lines 43-44
+    **Fix:**
+    Delete both empty TYPE_CHECKING blocks:
+    - adgn/src/adgn/agent/approvals.py lines 31-32
+    - adgn/src/adgn/agent/agent.py lines 43-44
 
-    If type-only imports are needed in the future, they can be added back.
-    For now, these blocks just add noise.
+    If type-only imports are needed in the future, they can be added back with actual imports. These empty blocks provide no value.
   |||,
-}
+  properties=['no-dead-code'],
+  filesToRanges={
+    'adgn/src/adgn/agent/approvals.py': [
+      [31, 32],  // if TYPE_CHECKING: pass
+    ],
+    'adgn/src/adgn/agent/agent.py': [
+      [43, 44],  // if TYPE_CHECKING: pass
+    ],
+  },
+)

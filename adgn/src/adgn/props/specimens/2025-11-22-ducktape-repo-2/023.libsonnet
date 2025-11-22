@@ -1,17 +1,8 @@
-{
-  title: 'get_approvals() uses intermediate pending_map variable unnecessarily',
-  severity: 'minor',
-  category: 'code-style',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [160, 169],
-      context: 'pending_map = self.pending then iterate over pending_map.items()',
-    },
-  ],
-  description: |||
-    The `get_approvals()` resource handler assigns `self.pending` to a local variable
-    and then immediately iterates over it:
+local I = import '../../specimens/lib.libsonnet';
+
+I.issueOneOccurrence(
+  rationale= |||
+    The `get_approvals()` resource handler assigns `self.pending` to a local variable `pending_map` and then immediately iterates over it once:
 
     ```python
     async def get_approvals() -> ApprovalsResponse:
@@ -30,12 +21,16 @@
         ]
     ```
 
-    The `pending_map` variable serves no purpose - it's assigned and used once.
-    This should directly use `self.pending.items()`.
-  |||,
-  recommendation: |||
-    Remove the `pending_map` variable and iterate directly:
+    The `pending_map` variable is a one-off variable that adds no value:
+    - It's assigned once from `self.pending`
+    - It's used exactly once in the list comprehension
+    - It doesn't add clarity or improve readability
+    - It doesn't capture an intermediate computation
 
+    This should directly use `self.pending.items()` in the list comprehension.
+
+    **Fix:**
+    Remove the intermediate variable and iterate directly:
     ```python
     async def get_approvals() -> ApprovalsResponse:
         """Get all approvals for this agent (pending + decided history)."""
@@ -50,10 +45,15 @@
             )
             for call_id, tool_call in self.pending.items()
         ]
-
-        # ... rest of function
     ```
 
-    This removes unnecessary indirection.
+    This eliminates unnecessary indirection.
   |||,
-}
+  properties=['no-oneoff-vars-and-trivial-wrappers'],
+  filesToRanges={
+    'adgn/src/adgn/agent/approvals.py': [
+      160,  // pending_map = self.pending
+      169,  // for call_id, tool_call in pending_map.items()
+    ],
+  },
+)

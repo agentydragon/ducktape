@@ -1,15 +1,9 @@
-{
-  title: 'Mount compositor exception should crash, not continue',
-  severity: 'high',
-  category: 'error-handling',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/compositor_factory.py',
-      lines: [93, 95],
-      context: 'Exception handler with "Continue mounting other agents" comment',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-037: exception handler swallows critical initialization errors
+
+I.issueOneOccurrence(
+  rationale= |||
     The create_global_compositor function catches exceptions when mounting
     agent compositors and continues silently:
 
@@ -22,30 +16,29 @@
         # Continue mounting other agents
     ```
 
-    **This is WRONG.** The exception should NOT be caught. It should crash.
+    This is WRONG. The exception should NOT be caught. It should crash.
 
-    **Why this is dangerous:**
-    1. **Silent failure**: The server starts successfully but is missing critical infrastructure
-    2. **Debugging nightmare**: Errors are logged but the system appears "healthy"
-    3. **Inconsistent state**: Some agents mounted, others not - partial initialization
-    4. **No recovery path**: The failed agent is simply... missing. Forever.
-    5. **Violates fail-fast principle**: Better to crash loudly than fail silently
+    Why this is dangerous:
+    1. Silent failure: The server starts successfully but is missing critical infrastructure
+    2. Debugging nightmare: Errors are logged but the system appears "healthy"
+    3. Inconsistent state: Some agents mounted, others not - partial initialization
+    4. No recovery path: The failed agent is simply... missing. Forever.
+    5. Violates fail-fast principle: Better to crash loudly than fail silently
 
-    **When should you catch exceptions:**
+    When should you catch exceptions:
     - When you can meaningfully recover
     - When partial success is acceptable
     - When you have a fallback strategy
 
-    **When should you let it crash:**
+    When should you let it crash:
     - During initialization/startup (this case!)
     - When partial state is worse than no state
     - When the failure indicates configuration/environment issues
 
     Mounting compositors is CRITICAL INFRASTRUCTURE. If it fails, the entire
     server is misconfigured and should not start.
-  |||,
-  recommendation: |||
-    **Remove the try/except entirely. Let it crash.**
+
+    Remove the try/except entirely. Let it crash.
 
     Before:
     ```python
@@ -70,7 +63,7 @@
     - System never enters partially-broken state
     - Problem must be fixed before server can start
 
-    **This is the correct behavior.**
+    This is the correct behavior.
 
     If you truly need partial mounting (debatable), you need:
     1. Explicit tracking of which agents failed to mount
@@ -81,4 +74,10 @@
 
     But most likely: mounting is initialization, initialization failures should crash.
   |||,
-}
+  properties=['python/no-swallowing-errors', 'early-bailout'],
+  filesToRanges={
+    'adgn/src/adgn/agent/mcp_bridge/compositor_factory.py': [
+      [93, 95],
+    ],
+  },
+)

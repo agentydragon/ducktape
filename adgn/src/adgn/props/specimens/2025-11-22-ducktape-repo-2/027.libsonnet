@@ -1,69 +1,30 @@
-{
-  title: 'Unnecessary comments stating the obvious',
-  severity: 'minor',
-  category: 'code-quality',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [319],
-      context: '# Call persistence to get ACTUAL ID',
-    },
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [346],
-      context: '# Create proposal and get actual database-assigned ID',
-    },
-  ],
-  description: |||
-    Two comments state obvious facts about database operations:
+local I = import '../../specimens/lib.libsonnet';
 
-    **Line 319:**
-    ```python
-    # Call persistence to get ACTUAL ID
-    self._policy_id = await self.persistence.set_policy(self.agent_id, content=source)
-    ```
+// iss-027: Unnecessary comments stating the obvious
 
-    **Line 346:**
-    ```python
-    # Create proposal and get actual database-assigned ID
-    new_id = await self.persistence.create_policy_proposal(...)
-    ```
+I.issueOneOccurrence(
+  rationale= |||
+    Two comments state obvious facts about database operations without adding value:
 
-    These comments add no value:
-    1. "Call persistence" - obviously we're calling persistence, it's right there
-    2. "get ACTUAL ID" / "actual database-assigned ID" - DUH. Obviously. We're professionals.
-       We don't write bullshit code that invents random numbers or lies.
+    Line 319: "Call persistence to get ACTUAL ID" - Obviously calling persistence
+    (it's right there), obviously getting an actual ID (we're professionals, not
+    writing code that invents random numbers).
 
-    The method names (`set_policy`, `create_policy_proposal`) and return types
-    already make it clear that these return IDs. The comments just add noise.
+    Line 346: "Create proposal and get actual database-assigned ID" - Same issue.
+    The method names (set_policy, create_policy_proposal) and return types already
+    make it clear that these return IDs.
+
+    These comments just add noise. The code is self-documenting. If clarification
+    is needed, it should explain WHY we're storing the policy or WHAT the ID will
+    be used for, not just repeat what the code obviously does.
+
+    Fix: Delete both comments. The method names and types are sufficient.
   |||,
-  recommendation: |||
-    Delete both comments:
-
-    **Before:**
-    ```python
-    # Call persistence to get ACTUAL ID
-    self._policy_id = await self.persistence.set_policy(self.agent_id, content=source)
-    ```
-
-    **After:**
-    ```python
-    self._policy_id = await self.persistence.set_policy(self.agent_id, content=source)
-    ```
-
-    **Before:**
-    ```python
-    # Create proposal and get actual database-assigned ID
-    new_id = await self.persistence.create_policy_proposal(...)
-    ```
-
-    **After:**
-    ```python
-    new_id = await self.persistence.create_policy_proposal(...)
-    ```
-
-    The code is self-documenting. If clarification is needed, it should explain
-    *why* we're storing the policy or *what* the ID will be used for, not just
-    repeat what the code obviously does.
-  |||,
-}
+  properties=['no-useless-docs'],
+  filesToRanges={
+    'adgn/src/adgn/agent/approvals.py': [
+      319,  // "Call persistence to get ACTUAL ID"
+      346,  // "Create proposal and get actual database-assigned ID"
+    ],
+  },
+)

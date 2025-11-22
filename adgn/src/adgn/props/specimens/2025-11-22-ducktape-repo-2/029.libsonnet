@@ -1,58 +1,37 @@
-{
-  title: 'proposals variable should be inlined in proposals_list resource',
-  severity: 'minor',
-  category: 'code-style',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/approvals.py',
-      lines: [382, 393],
-      context: 'proposals = await ...; return ProposalsList(proposals=[... for p in proposals])',
-    },
-  ],
-  description: |||
-    In the `proposals_list()` resource handler, the `proposals` variable is
-    fetched and immediately consumed in a list comprehension:
+local I = import '../../specimens/lib.libsonnet';
 
-    ```python
-    async def proposals_list() -> ProposalsList:
-        """List all policy proposals with status and timestamps."""
-        proposals = await self.persistence.list_policy_proposals(self.agent_id)
-        return ProposalsList(
-            agent_id=self.agent_id,
-            proposals=[
-                ProposalDescriptor(
-                    id=p.id,
-                    status=ProposalStatus(p.status),
-                    created_at=p.created_at,
-                    decided_at=p.decided_at,
-                )
-                for p in proposals  # Used once here
-            ]
-        )
-    ```
+// iss-029: proposals variable should be inlined in proposals_list resource
 
-    The `proposals` variable is not reused - it should be inlined.
-  |||,
-  recommendation: |||
-    Inline the persistence call directly in the list comprehension:
+I.issueOneOccurrence(
+  rationale= |||
+    In the proposals_list() resource handler (lines 382-393), the proposals variable
+    is fetched and immediately consumed in a list comprehension without reuse:
 
-    ```python
-    async def proposals_list() -> ProposalsList:
-        """List all policy proposals with status and timestamps."""
-        return ProposalsList(
-            agent_id=self.agent_id,
-            proposals=[
-                ProposalDescriptor(
-                    id=p.id,
-                    status=ProposalStatus(p.status),
-                    created_at=p.created_at,
-                    decided_at=p.decided_at,
-                )
-                for p in await self.persistence.list_policy_proposals(self.agent_id)
-            ]
-        )
-    ```
+    proposals = await self.persistence.list_policy_proposals(self.agent_id)
+    return ProposalsList(
+        agent_id=self.agent_id,
+        proposals=[... for p in proposals]  # Used once here
+    )
+
+    The proposals variable is not reused and should be inlined directly in the
+    list comprehension.
+
+    Fix: Inline the persistence call:
+
+    return ProposalsList(
+        agent_id=self.agent_id,
+        proposals=[
+            ProposalDescriptor(...)
+            for p in await self.persistence.list_policy_proposals(self.agent_id)
+        ]
+    )
 
     This removes the unnecessary intermediate variable.
   |||,
-}
+  properties=['no-oneoff-vars-and-trivial-wrappers'],
+  filesToRanges={
+    'adgn/src/adgn/agent/approvals.py': [
+      [382, 393],  // proposals_list resource with one-off proposals variable
+    ],
+  },
+)
