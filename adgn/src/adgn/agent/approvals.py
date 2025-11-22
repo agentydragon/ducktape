@@ -137,9 +137,10 @@ class ApprovalHub(NotifyingFastMCP):
         return await fut
 
     def resolve(self, call_id: str, decision: ContinueDecision | DenyContinueDecision | AbortTurnDecision) -> None:
-        pending = self._pending.pop(call_id, None)
-        if pending is not None and not pending.future.done():
+        pending = self._pending[call_id]
+        if not pending.future.done():
             pending.future.set_result(decision)
+        del self._pending[call_id]
         # Schedule notification asynchronously if MCP is enabled
         if self._has_mcp:
             asyncio.create_task(self.notify_approvals_changed())
