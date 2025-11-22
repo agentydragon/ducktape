@@ -152,7 +152,7 @@ class MCPInfrastructure:
             agent_id=self.agent_id, persistence=self.persistence, docker_client=self.docker_client, policy_source=chosen
         )
 
-        approval_hub = ApprovalHub()
+        approval_hub = ApprovalHub(agent_id=self.agent_id, persistence=self.persistence)
 
         return (approval_engine, approval_hub)
 

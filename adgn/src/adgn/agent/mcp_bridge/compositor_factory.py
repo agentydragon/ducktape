@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 
 from fastmcp.client import Client
 
-from adgn.agent.mcp_bridge.servers.approval_policy_bridge import ApprovalPolicyBridgeServer
-from adgn.agent.mcp_bridge.servers.approvals_bridge import ApprovalsBridgeServer
 from adgn.agent.mcp_bridge.servers.registry_bridge import AgentRegistryBridgeServer
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.mcp.compositor.server import Compositor
@@ -23,14 +21,13 @@ logger = logging.getLogger(__name__)
 async def create_agent_compositor(agent_id: AgentID, registry: InfrastructureRegistry) -> Compositor:
     """Create per-agent compositor with infrastructure servers.
 
-    This compositor contains small servers that wrap the agent's infrastructure
-    objects (ApprovalPolicyEngine, ApprovalHub, etc.). When mounted in the global
+    This compositor contains the agent's infrastructure objects (ApprovalPolicyEngine,
+    ApprovalHub, etc.) which are now MCP servers themselves. When mounted in the global
     compositor with prefix f"agent{agent_id}", the resources become:
 
     - resource://agent{id}/policy/policy.py
     - resource://agent{id}/policy/proposals/list
-    - resource://agent{id}/approvals/pending
-    - resource://agent{id}/approvals/history
+    - resource://agent{id}/approvals/approvals
 
     Args:
         agent_id: The agent's unique identifier
@@ -44,19 +41,13 @@ async def create_agent_compositor(agent_id: AgentID, registry: InfrastructureReg
     # Get agent infrastructure
     infra = await registry.get_infrastructure(agent_id)
 
-    # Mount approval policy server
-    policy_server = ApprovalPolicyBridgeServer(infra.approval_engine, agent_id)
-    await comp.mount_inproc("policy", policy_server)
-    logger.info(f"Mounted approval policy server for agent {agent_id}")
+    # Mount approval policy engine (now an MCP server)
+    await comp.mount_inproc("policy", infra.approval_engine)
+    logger.info(f"Mounted approval policy engine for agent {agent_id}")
 
-    # Mount approvals server
-    approvals_server = ApprovalsBridgeServer(
-        infra.approval_hub,
-        registry.persistence,
-        agent_id
-    )
-    await comp.mount_inproc("approvals", approvals_server)
-    logger.info(f"Mounted approvals server for agent {agent_id}")
+    # Mount approvals hub (now an MCP server)
+    await comp.mount_inproc("approvals", infra.approval_hub)
+    logger.info(f"Mounted approvals hub for agent {agent_id}")
 
     # TODO: Mount session server (if local agent with session)
     # if infra.mode == AgentMode.LOCAL and infra.local_runtime:
