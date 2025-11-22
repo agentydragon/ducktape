@@ -404,12 +404,14 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
             pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
 
             for approval in pending_approvals:
-                approval_uri = f"resource://agents/{agent_id}/approvals/{approval.call_id}"
+                approval_uri = f"resource://agents/{agent_id}/approvals/{approval.tool_call.call_id}"
+                # Parse args_json if present
+                args = json.loads(approval.tool_call.args_json) if approval.tool_call.args_json else {}
                 approval_data = {
                     "agent_id": agent_id,
-                    "call_id": approval.call_id,
-                    "tool": approval.tool,
-                    "args": approval.args,
+                    "call_id": approval.tool_call.call_id,
+                    "tool": approval.tool_call.name,
+                    "args": args,
                     "timestamp": approval.timestamp.isoformat(),
                 }
                 block = mcp_types.TextResourceContents(
@@ -509,7 +511,7 @@ async def make_agents_server(registry: InfrastructureRegistry) -> NotifyingFastM
     async def agent_ui_state_resource(agent_id: AgentID) -> str:
         """UI state (optional, only if UI server attached)."""
         runtime = registry.get(agent_id)
-        if not runtime or not runtime.runtime.session:
+        if not runtime or not runtime.runtime or not runtime.runtime.session:
             raise ValueError(f"Agent {agent_id} has no session")
 
         ui_state = runtime.runtime.session.ui_state

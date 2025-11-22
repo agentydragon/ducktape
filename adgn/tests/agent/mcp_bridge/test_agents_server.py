@@ -196,9 +196,9 @@ async def test_agent_approvals_pending_with_items(agents_client, mock_approval_h
     assert_that(content["pending"], has_length(1))
 
     approval = content["pending"][0]
-    assert approval["call_id"] == "call-123"
-    assert approval["tool"] == "test_tool"
-    assert approval["args"] == {"arg1": "value1"}
+    assert approval["tool_call"]["call_id"] == "call-123"
+    assert approval["tool_call"]["name"] == "test_tool"
+    assert json.loads(approval["tool_call"]["args_json"]) == {"arg1": "value1"}
     assert "timestamp" in approval
 
 
@@ -295,9 +295,9 @@ async def test_agent_approvals_history_with_records(agents_client, mock_persiste
     assert content["count"] == 1
 
     entry = content["timeline"][0]
-    assert entry["call_id"] == "call-123"
-    assert entry["tool"] == "test_tool"
-    assert entry["args"] == {"arg1": "value1"}
+    assert entry["tool_call"]["call_id"] == "call-123"
+    assert entry["tool_call"]["name"] == "test_tool"
+    assert json.loads(entry["tool_call"]["args_json"]) == {"arg1": "value1"}
     assert entry["outcome"] == "user_approve"
 
 
@@ -330,7 +330,7 @@ async def test_agent_approvals_history_filters_pending(agents_client, mock_persi
 
     # Only completed record should be in timeline
     assert_that(content["timeline"], has_length(1))
-    assert content["timeline"][0]["call_id"] == "call-completed"
+    assert content["timeline"][0]["tool_call"]["call_id"] == "call-completed"
 
 
 @pytest.mark.asyncio
@@ -409,7 +409,7 @@ async def test_approve_tool_call(agents_client, mock_approval_hub):
     add_pending_approval(mock_approval_hub, "call-123", tool_call)
 
     result = await agents_client.call_tool(
-        "approve_tool_call", arguments={"agent_id": "local-agent", "call_id": "call-123"}
+        "decide_approval", arguments={"agent_id": "local-agent", "call_id": "call-123", "decision": "approve"}
     )
 
     assert result.is_error is False
@@ -425,7 +425,7 @@ async def test_reject_tool_call(agents_client, mock_approval_hub):
     add_pending_approval(mock_approval_hub, "call-456", tool_call)
 
     result = await agents_client.call_tool(
-        "reject_tool_call", arguments={"agent_id": "local-agent", "call_id": "call-456", "reason": "Test rejection"}
+        "decide_approval", arguments={"agent_id": "local-agent", "call_id": "call-456", "decision": "deny_continue", "reason": "Test rejection"}
     )
 
     assert result.is_error is False
@@ -481,7 +481,7 @@ async def test_abort_agent_no_runtime(mock_registry, agents_client):
 async def test_approve_nonexistent_call_id(agents_client):
     """Test approve_tool_call with non-existent call_id (no-op)."""
     result = await agents_client.call_tool(
-        "approve_tool_call", arguments={"agent_id": "local-agent", "call_id": "nonexistent"}
+        "decide_approval", arguments={"agent_id": "local-agent", "call_id": "nonexistent", "decision": "approve"}
     )
 
     assert result.is_error is False
@@ -491,7 +491,7 @@ async def test_approve_nonexistent_call_id(agents_client):
 async def test_reject_nonexistent_call_id(agents_client):
     """Test reject_tool_call with non-existent call_id (no-op)."""
     result = await agents_client.call_tool(
-        "reject_tool_call", arguments={"agent_id": "local-agent", "call_id": "nonexistent", "reason": "test"}
+        "decide_approval", arguments={"agent_id": "local-agent", "call_id": "nonexistent", "decision": "deny_continue", "reason": "test"}
     )
 
     assert result.is_error is False
@@ -648,14 +648,14 @@ async def test_agent_approvals_history_mixed_outcomes(agents_client, mock_persis
     assert ApprovalOutcome.USER_DENY_ABORT in outcomes_in_timeline
 
     # Verify specific entries
-    policy_allow_entry = next(e for e in content["timeline"] if e["call_id"] == "call-policy-allow")
+    policy_allow_entry = next(e for e in content["timeline"] if e["tool_call"]["call_id"] == "call-policy-allow")
     assert policy_allow_entry["outcome"] == "policy_allow"
-    assert policy_allow_entry["tool"] == "safe_tool"
+    assert policy_allow_entry["tool_call"]["name"] == "safe_tool"
     assert policy_allow_entry["reason"] == "Auto-approved"
 
-    user_deny_entry = next(e for e in content["timeline"] if e["call_id"] == "call-user-deny-abort")
+    user_deny_entry = next(e for e in content["timeline"] if e["tool_call"]["call_id"] == "call-user-deny-abort")
     assert user_deny_entry["outcome"] == "user_deny_abort"
-    assert user_deny_entry["tool"] == "dangerous_tool"
+    assert user_deny_entry["tool_call"]["name"] == "dangerous_tool"
     assert user_deny_entry["reason"] == "User rejected"
 
 
@@ -1100,7 +1100,7 @@ async def test_agent_session_state_resource(agents_client, mock_local_runtime):
             run_state=has_entries(
                 run_id="12345678-1234-5678-1234-567812345678",
                 status="running",
-                started_at="2025-01-15T10:30:00",
+                started_at="2025-01-15T10:30:00+00:00",
             ),
         ),
     )

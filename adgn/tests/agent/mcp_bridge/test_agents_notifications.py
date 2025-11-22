@@ -59,9 +59,6 @@ async def test_policy_change_broadcasts_notification(agents_client_and_server, m
     # Track notifications
     notifications_received = []
 
-    # Subscribe to policy resource
-    await client.subscribe_resource(APPROVAL_POLICY_RESOURCE_URI)
-
     # Mock the server's broadcast method to capture notifications
     original_broadcast = server.broadcast_resource_updated
 
@@ -105,8 +102,8 @@ async def test_approve_tool_broadcasts_notifications(agents_client_and_server, m
 
     server.broadcast_resource_updated = track_broadcast
 
-    # Call approve tool
-    await client.call_tool("approve_tool_call", arguments={"agent_id": "test-agent", "call_id": "call-123"})
+    # Call decide_approval tool with approve decision
+    await client.call_tool("decide_approval", arguments={"agent_id": "test-agent", "call_id": "call-123", "decision": "approve"})
 
     # Give time for notifications
     await asyncio.sleep(0.1)
@@ -142,9 +139,9 @@ async def test_reject_tool_broadcasts_notifications(agents_client_and_server, mo
 
     server.broadcast_resource_updated = track_broadcast
 
-    # Call reject tool
+    # Call decide_approval tool with deny_continue decision
     await client.call_tool(
-        "reject_tool_call", arguments={"agent_id": "test-agent", "call_id": "call-456", "reason": "Test"}
+        "decide_approval", arguments={"agent_id": "test-agent", "call_id": "call-456", "decision": "deny_continue", "reason": "Test"}
     )
 
     # Give time for notifications
