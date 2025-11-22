@@ -174,18 +174,10 @@ class Persistence(Protocol):
 
     # ToolCallRecord API (new) -------------------------------------------------
     async def save_tool_call(self, record: ToolCallRecord) -> None:
-        """Save or update a tool call record (INSERT OR REPLACE).
-
-        Use this for all lifecycle stages:
-        - PENDING: decision=None, execution=None
-        - EXECUTING: decision!=None, execution=None
-        - COMPLETED: decision!=None, execution!=None
-        """
+        """Save or update a tool call record (INSERT OR REPLACE)."""
         ...
 
-    async def get_tool_call(self, call_id: str) -> ToolCallRecord | None:
-        """Get a tool call record by call_id."""
-        ...
+    async def get_tool_call(self, call_id: str) -> ToolCallRecord | None: ...
 
     async def list_tool_calls(self, run_id: str | None = None) -> list[ToolCallRecord]:
         """List tool call records, optionally filtered by run_id."""

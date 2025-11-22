@@ -476,7 +476,6 @@ GROUP BY a.id
             await session.commit()
 
     async def get_tool_call(self, call_id: str) -> ToolCallRecord | None:
-        """Get a tool call record by call_id."""
         async with self._session() as session:
             result = await session.execute(
                 select(ToolCallModel).where(ToolCallModel.call_id == call_id)
