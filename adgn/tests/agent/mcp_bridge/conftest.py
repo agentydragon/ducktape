@@ -293,7 +293,7 @@ def auth_test_app_factory():
         async def test_endpoint():
             return {"status": "ok"}
 
-        client = TestClient(app)
+        client = TestClient(app, raise_server_exceptions=False)
         return app, client
 
     return _create

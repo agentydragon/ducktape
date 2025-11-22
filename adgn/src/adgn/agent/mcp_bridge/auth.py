@@ -120,41 +120,70 @@ def generate_ui_token() -> str:
     return token
 
 
-class UITokenAuthMiddleware(BaseHTTPMiddleware):
-    """Validates UI token for Management UI access.
+class UITokenAuthMiddleware:
+    """Validates UI token for Management UI access (pure ASGI middleware).
 
     Simpler than TokenAuthMiddleware - just validates a single token for accessing the management UI.
     No multi-tenancy: all authenticated requests get the same access.
+
+    Implemented as pure ASGI middleware instead of BaseHTTPMiddleware to avoid
+    exception handling issues with anyio task groups.
     """
 
     def __init__(self, app, expected_token: str):
-        super().__init__(app)
+        self.app = app
         self.expected_token = expected_token
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        auth_header = request.headers.get("Authorization")
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Parse headers
+        headers = dict(scope.get("headers", []))
+        auth_header = headers.get(b"authorization", b"").decode()
+
+        # Validate authentication
+        error_response = None
         if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing Authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
+            error_response = self._create_error_response(
+                401, "Missing Authorization header"
             )
+        else:
+            parts = auth_header.split()
+            if len(parts) != 2 or parts[0].lower() != "bearer":
+                error_response = self._create_error_response(
+                    401, "Invalid Authorization header format (expected: Bearer <token>)"
+                )
+            elif parts[1] != self.expected_token:
+                error_response = self._create_error_response(
+                    401, "Invalid token"
+                )
 
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Authorization header format (expected: Bearer <token>)",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        # Send error or continue
+        if error_response:
+            await send({
+                "type": "http.response.start",
+                "status": error_response["status"],
+                "headers": error_response["headers"],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": error_response["body"],
+            })
+        else:
+            logger.debug("Authenticated UI request")
+            await self.app(scope, receive, send)
 
-        token = parts[1]
-
-        if token != self.expected_token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"}
-            )
-
-        logger.debug("Authenticated UI request")
-
-        return await call_next(request)
+    def _create_error_response(self, status_code: int, detail: str) -> dict:
+        """Create error response dict."""
+        import json
+        body = json.dumps({"detail": detail}).encode()
+        return {
+            "status": status_code,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"www-authenticate", b"Bearer"),
+            ],
+            "body": body,
+        }
