@@ -260,7 +260,6 @@ class MiniCodex:
 
         async def _invoke(
             function_call: FunctionCallItem,
-            args_json: str | None,
             local_map: dict[str, CallToolResult] = local_result_map,
         ) -> ToolCallOutcome:
             cid = _require_call_id(function_call)
@@ -272,6 +271,7 @@ class MiniCodex:
 
             # Invoke via Policy Gateway client; do not swallow exceptions.
             # Parse arguments strictly; invalid JSON/object shape is a hard error.
+            args_json = function_call.arguments
             args: dict[str, Any] = {}
             if args_json:
                 val = json.loads(args_json)
@@ -302,7 +302,7 @@ class MiniCodex:
             async def runner(fc: FunctionCallItem) -> None:
                 nonlocal abort_triggered
                 try:
-                    outcome = await invoker(fc, fc.arguments)
+                    outcome = await invoker(fc)
                 except cancelled_exc:
                     return
                 cid = _require_call_id(fc)
@@ -331,7 +331,7 @@ class MiniCodex:
         self, function_calls: list[FunctionCallItem], invoker
     ) -> None:
         for i, function_call in enumerate(function_calls):
-            outcome = await invoker(function_call, function_call.arguments)
+            outcome = await invoker(function_call)
             self._emit_tool_result(function_call, outcome.result)
             if isinstance(outcome, ToolCallAborted):
                 for remaining in function_calls[i + 1 :]:
