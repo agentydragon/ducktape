@@ -40,9 +40,6 @@ from adgn.openai_utils.types import ReasoningEffort, ReasoningSummary, build_rea
 
 from .reducer import BaseHandler, Reducer
 
-if TYPE_CHECKING:
-    pass
-
 
 @dataclass
 class AgentResult:

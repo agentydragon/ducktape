@@ -28,9 +28,6 @@ from adgn.mcp._shared.constants import (
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
-if TYPE_CHECKING:
-    pass
-
 # build_mcp_function is used for self_check payload construction
 
 logger = logging.getLogger(__name__)
