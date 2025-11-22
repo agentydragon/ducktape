@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
 from adgn.agent.models.policy_error import PolicyError
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import Persistence
+from adgn.agent.persist import Persistence, PolicyProposal
 from adgn.agent.policy_eval.runner import run_policy_source
 from adgn.agent.types import AgentID, ApprovalStatus, ToolCall
 from adgn.mcp._shared.constants import (
@@ -311,6 +311,13 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
             input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
         )
 
+    async def _get_proposal_or_raise(self, proposal_id: int | str) -> PolicyProposal:
+        """Get policy proposal by ID or raise KeyError if not found."""
+        got = await self.persistence.get_policy_proposal(self.agent_id, proposal_id)
+        if got is None:
+            raise KeyError(f"Proposal {proposal_id} not found")
+        return got
+
     async def create_proposal(self, content: str) -> int:
         """Create a new policy proposal and return its ID.
 
@@ -328,8 +335,7 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         Retrieves the proposal, validates it, activates it as the current policy,
         marks it approved in persistence, and notifies about the change.
         """
-        if (got := await self.persistence.get_policy_proposal(self.agent_id, proposal_id)) is None:
-            raise KeyError(str(proposal_id))
+        got = await self._get_proposal_or_raise(proposal_id)
         self.self_check(got.content)
         # Activate policy (notifies via engine's set_policy)
         await self.set_policy(got.content)
@@ -367,10 +373,7 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         @self.resource("resource://proposals/{id}", name="proposal_detail", mime_type="application/json")
         async def proposal_detail(id: str) -> ProposalDetail:
             """Get full proposal details including content and metadata."""
-            got = await self.persistence.get_policy_proposal(self.agent_id, id)
-            if got is None:
-                raise KeyError(f"Proposal {id} not found")
-
+            got = await self._get_proposal_or_raise(id)
             return ProposalDetail(
                 id=got.id,
                 status=got.status,
