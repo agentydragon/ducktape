@@ -171,8 +171,8 @@ GROUP BY a.id
             await session.commit()
 
     # ---- Approval policy (per-agent) ---------------------------------------
-    async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None:
-        """Return (content, id) of the latest ACTIVE policy for the agent, or None."""
+    async def get_latest_policy(self, agent_id: AgentID):
+        """Return PolicyRecord of the latest ACTIVE policy for the agent, or None."""
         async with self._session() as session:
             result = await session.execute(
                 select(Policy)
@@ -183,10 +183,16 @@ GROUP BY a.id
             policy = result.scalar_one_or_none()
             if not policy:
                 return None
-            return (policy.content, policy.id)
+            from . import PolicyRecord
+            return PolicyRecord(
+                id=policy.id,
+                content=policy.content,
+                created_at=policy.created_at,
+                agent_id=agent_id,
+            )
 
-    async def set_policy(self, agent_id: AgentID, *, content: str) -> int:
-        """Persist a new ACTIVE policy for agent; supersedes any existing ACTIVE policy; returns assigned id."""
+    async def set_policy(self, agent_id: AgentID, *, content: str):
+        """Persist a new ACTIVE policy for agent; supersedes any existing ACTIVE policy; returns PolicyRecord."""
         async with self._session() as session:
             # Mark existing ACTIVE policy as SUPERSEDED
             await session.execute(
@@ -204,7 +210,13 @@ GROUP BY a.id
             session.add(policy)
             await session.commit()
             await session.refresh(policy)
-            return policy.id
+            from . import PolicyRecord
+            return PolicyRecord(
+                id=policy.id,
+                content=content,
+                created_at=policy.created_at,
+                agent_id=agent_id,
+            )
 
     # ---- Policy proposals (single-store: SQLite) ----------------------------
     async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> int:
@@ -464,7 +476,6 @@ GROUP BY a.id
             await session.commit()
 
     async def get_tool_call(self, call_id: str) -> ToolCallRecord | None:
-        """Get a tool call record by call_id."""
         async with self._session() as session:
             result = await session.execute(
                 select(ToolCallModel).where(ToolCallModel.call_id == call_id)

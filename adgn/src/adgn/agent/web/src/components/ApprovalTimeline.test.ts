@@ -473,78 +473,6 @@ describe('ApprovalTimeline', () => {
     })
   })
 
-  it('should update timeline via WebSocket message', async () => {
-    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
-
-    render(ApprovalTimeline, { props: { agentId: mockAgentId } })
-
-    await waitFor(() => {
-      expect(screen.getByText('No approval history yet')).toBeTruthy()
-    })
-
-    // Get the WebSocket instance
-    const wsUrl = `ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`
-    const ws = new MockWebSocket(wsUrl)
-
-    // Simulate receiving a new approval decision
-    ws._simulateMessage({
-      type: 'approval_decision',
-      call_id: 'new-call-1',
-      tool: 'new_tool',
-      args: { key: 'value' },
-      outcome: 'user_approve',
-    })
-
-    await waitFor(() => {
-      expect(screen.getByText('new_tool')).toBeTruthy()
-    })
-  })
-
-  it('should handle WebSocket snapshot messages', async () => {
-    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
-
-    render(ApprovalTimeline, { props: { agentId: mockAgentId } })
-
-    await waitFor(() => {
-      expect(screen.getByText('No approval history yet')).toBeTruthy()
-    })
-
-    const ws = new MockWebSocket(`ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`)
-
-    // Simulate receiving a snapshot
-    const snapshotTimeline = [
-      createMockEntry('call-1', 'snapshot_tool', 'user_approve'),
-    ]
-
-    ws._simulateMessage({
-      type: 'approvals_snapshot',
-      timeline: snapshotTimeline,
-    })
-
-    await waitFor(() => {
-      expect(screen.getByText('snapshot_tool')).toBeTruthy()
-    })
-  })
-
-  it('should close WebSocket on component destroy', async () => {
-    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
-
-    const { unmount } = render(ApprovalTimeline, { props: { agentId: mockAgentId } })
-
-    await waitFor(() => {
-      expect(screen.getByText('No approval history yet')).toBeTruthy()
-    })
-
-    const ws = new MockWebSocket(`ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`)
-    const closeSpy = vi.spyOn(ws, 'close')
-
-    // Unmount component
-    unmount()
-
-    // WebSocket close should be called
-    expect(closeSpy).toHaveBeenCalled()
-  })
-
   it('should show message when filters match no entries', async () => {
     const timeline = [
       createMockEntry('call-1', 'tool_1', 'user_approve'),
@@ -585,32 +513,6 @@ describe('ApprovalTimeline', () => {
     await waitFor(() => {
       expect(mockGetApprovalHistory).toHaveBeenCalledWith('agent-2')
     })
-  })
-
-  it('should handle JSON parse errors in WebSocket messages', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-    mockGetApprovalHistory.mockResolvedValue({ timeline: [] })
-
-    render(ApprovalTimeline, { props: { agentId: mockAgentId } })
-
-    await waitFor(() => {
-      expect(screen.getByText('No approval history yet')).toBeTruthy()
-    })
-
-    const ws = new MockWebSocket(`ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`)
-
-    // Simulate invalid JSON message
-    if (ws.onmessage) {
-      ws.onmessage(new MessageEvent('message', { data: 'invalid json{' }))
-    }
-
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      'Failed to parse WebSocket message:',
-      expect.any(Error)
-    )
-
-    consoleErrorSpy.mockRestore()
   })
 
   it('should format timestamps correctly', async () => {

@@ -16,9 +16,9 @@ from pydantic import BaseModel
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision, DenyContinueDecision
 from adgn.agent.models.policy_error import PolicyError
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist import ApprovalOutcome, Persistence
+from adgn.agent.persist import Persistence, PolicyProposal
 from adgn.agent.policy_eval.runner import run_policy_source
-from adgn.agent.types import AgentID, ToolCall
+from adgn.agent.types import AgentID, ApprovalStatus, ToolCall
 from adgn.mcp._shared.constants import (
     AGENTS_POLICY_STATE_URI_FMT,
     APPROVAL_POLICY_PROPOSALS_INDEX_URI,
@@ -27,9 +27,6 @@ from adgn.mcp._shared.constants import (
 )
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-
-if TYPE_CHECKING:
-    pass
 
 # build_mcp_function is used for self_check payload construction
 
@@ -67,22 +64,13 @@ class TurnAbortRequested(Exception):  # noqa: N818
         super().__init__(f"Turn abort requested: {reason} (call_id={call_id})")
 
 
-class ApprovalStatus(StrEnum):
-    """Status of an approval (pending or decided)."""
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    DENIED = "denied"
-    ABORTED = "aborted"
-
-
 class ApprovalItem(BaseModel):
     """A single approval (pending or decided)."""
     call_id: str
     tool_call: ToolCall
     status: ApprovalStatus
     reason: str | None = None
-    timestamp: datetime
+    updated_at: datetime
 
 
 class ApprovalsResponse(BaseModel):
@@ -139,14 +127,6 @@ class ApprovalHub(NotifyingFastMCP):
             await self.notify_approvals_changed()
         return await fut
 
-    def resolve(self, call_id: str, decision: ContinueDecision | DenyContinueDecision | AbortTurnDecision) -> None:
-        pending = self._pending.pop(call_id, None)
-        if pending is not None and not pending.future.done():
-            pending.future.set_result(decision)
-        # Schedule notification asynchronously if MCP is enabled
-        if self._has_mcp:
-            asyncio.create_task(self.notify_approvals_changed())
-
     @property
     def pending(self) -> dict[str, ToolCall]:
         """Public view of pending approval tool calls (immutable contract by convention)."""
@@ -157,51 +137,40 @@ class ApprovalHub(NotifyingFastMCP):
         async def get_approvals() -> ApprovalsResponse:
             """Get all approvals for this agent (pending + decided history)."""
             # Build pending approvals
-            pending_map = self.pending
             pending_approvals = [
                 ApprovalItem(
                     call_id=call_id,
                     tool_call=tool_call,
                     status=ApprovalStatus.PENDING,
                     reason=None,
-                    timestamp=datetime.now(),  # Approx timestamp for pending
+                    updated_at=datetime.now(),  # Current time for pending
                 )
-                for call_id, tool_call in pending_map.items()
+                for call_id, tool_call in self.pending.items()
             ]
 
             # Build decided approvals from persistence
             records = await self._persistence.get_tool_call_records(self._agent_id)
 
-            def map_outcome_to_status(outcome: ApprovalOutcome) -> ApprovalStatus:
-                """Map ApprovalOutcome to ApprovalStatus using value-based conversion."""
-                try:
-                    return ApprovalStatus(outcome.value)
-                except ValueError:
-                    # Fallback for unknown outcomes
-                    return ApprovalStatus.REJECTED
-
             decided_approvals = [
                 ApprovalItem(
                     call_id=record.tool_call.id,
                     tool_call=record.tool_call,
-                    status=map_outcome_to_status(record.decision.outcome),
+                    status=record.decision.outcome,  # Already ApprovalStatus after unification
                     reason=record.decision.reason,
-                    timestamp=record.decision.decided_at,
+                    updated_at=record.decision.decided_at,
                 )
                 for record in records
                 if record.decision is not None
             ]
 
-            # Combine and sort by timestamp (most recent first)
-            approvals_list = sorted(
-                pending_approvals + decided_approvals,
-                key=lambda x: x.timestamp,
-                reverse=True,
-            )
-
+            # Combine and sort by updated_at (most recent first)
             return ApprovalsResponse(
                 agent_id=self._agent_id,
-                approvals=approvals_list,
+                approvals=sorted(
+                    pending_approvals + decided_approvals,
+                    key=lambda x: x.updated_at,
+                    reverse=True,
+                ),
             )
 
     def _register_tools(self) -> None:
@@ -212,8 +181,11 @@ class ApprovalHub(NotifyingFastMCP):
             Returns:
                 Dictionary confirming the approval
             """
-            decision = ContinueDecision(reasoning=reasoning)
-            self.resolve(call_id, decision)
+            # Inline resolve logic
+            pending = self._pending[call_id]
+            if not pending.future.done():
+                pending.future.set_result(ContinueDecision(reasoning=reasoning))
+            del self._pending[call_id]
             await self.notify_approvals_changed()
             return {"status": "approved", "call_id": call_id, "agent_id": self._agent_id}
 
@@ -224,8 +196,11 @@ class ApprovalHub(NotifyingFastMCP):
             Returns:
                 Dictionary confirming the rejection
             """
-            decision = DenyContinueDecision(reason=reasoning or "Rejected by user")
-            self.resolve(call_id, decision)
+            # Inline resolve logic
+            pending = self._pending[call_id]
+            if not pending.future.done():
+                pending.future.set_result(DenyContinueDecision(reason=reasoning or "Rejected by user"))
+            del self._pending[call_id]
             await self.notify_approvals_changed()
             return {"status": "rejected", "call_id": call_id, "agent_id": self._agent_id}
 
@@ -314,9 +289,12 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         return self._policy_source, self._policy_id
 
     async def set_policy(self, source: str) -> int:
-        """Store new policy and return its database ID."""
+        """Store new policy and return its database ID.
+
+        Note: This method is called from both the set_policy tool and approve_proposal tool,
+        so it is not inlined despite being primarily tool-facing.
+        """
         self._policy_source = source
-        # Call persistence to get ACTUAL ID
         self._policy_id = await self.persistence.set_policy(self.agent_id, content=source)
         await self.notify_policy_changed()
         return self._policy_id
@@ -328,46 +306,20 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         self._policy_id = policy_id
 
     def self_check(self, source: str) -> None:
+        if self.docker_client is None:
+            return  # Skip validation if Docker not available
         run_policy_source(
             docker_client=self.docker_client,
             source=source,
             input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
         )
 
-    async def create_proposal(self, content: str) -> int:
-        """Create a new policy proposal and return its ID.
-
-        Validates the proposal content if docker_client is available,
-        persists it, and notifies about the change.
-        """
-        # Self-check proposal program if docker is available
-        if self.docker_client is not None:
-            self.self_check(content)
-        # Create proposal and get actual database-assigned ID
-        new_id = await self.persistence.create_policy_proposal(self.agent_id, proposal_id=0, content=content)
-        await self.notify_proposal_change(new_id)
-        return new_id
-
-    async def approve_proposal(self, proposal_id: int) -> None:
-        """Approve a pending policy proposal by ID and activate it.
-
-        Retrieves the proposal, validates it, activates it as the current policy,
-        marks it approved in persistence, and notifies about the change.
-        """
-        if (got := await self.persistence.get_policy_proposal(self.agent_id, proposal_id)) is None:
-            raise KeyError(str(proposal_id))
-        # Self-check the proposal program before activation
-        if self.docker_client is not None:
-            self.self_check(got.content)
-        # Activate policy (notifies via engine's set_policy)
-        await self.set_policy(got.content)
-        await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
-        await self.notify_proposal_change(proposal_id)
-
-    async def reject_proposal(self, proposal_id: int) -> None:
-        """Reject a pending policy proposal by ID."""
-        await self.persistence.reject_policy_proposal(self.agent_id, proposal_id)
-        await self.notify_proposal_change(proposal_id)
+    async def _get_proposal_or_raise(self, proposal_id: int | str) -> PolicyProposal:
+        """Get policy proposal by ID or raise KeyError if not found."""
+        got = await self.persistence.get_policy_proposal(self.agent_id, proposal_id)
+        if got is None:
+            raise KeyError(f"Proposal {proposal_id} not found")
+        return got
 
     def _register_resources(self) -> None:
         @self.resource("resource://policy.py", name="policy.py", mime_type="text/x-python")
@@ -379,30 +331,26 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         @self.resource("resource://proposals/list", name="proposals_list", mime_type="application/json")
         async def proposals_list() -> ProposalsList:
             """List all policy proposals with status and timestamps."""
-            proposals = await self.persistence.list_policy_proposals(self.agent_id)
             return ProposalsList(
                 agent_id=self.agent_id,
                 proposals=[
                     ProposalDescriptor(
                         id=p.id,
-                        status=ProposalStatus(p.status),
+                        status=p.status,
                         created_at=p.created_at,
                         decided_at=p.decided_at,
                     )
-                    for p in proposals
+                    for p in await self.persistence.list_policy_proposals(self.agent_id)
                 ]
             )
 
         @self.resource("resource://proposals/{id}", name="proposal_detail", mime_type="application/json")
         async def proposal_detail(id: str) -> ProposalDetail:
             """Get full proposal details including content and metadata."""
-            got = await self.persistence.get_policy_proposal(self.agent_id, id)
-            if got is None:
-                raise KeyError(f"Proposal {id} not found")
-
+            got = await self._get_proposal_or_raise(id)
             return ProposalDetail(
                 id=got.id,
-                status=ProposalStatus(got.status),
+                status=got.status,
                 created_at=got.created_at,
                 decided_at=got.decided_at,
                 content=got.content,
@@ -427,8 +375,10 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
             Returns:
                 Dictionary with the new proposal_id
             """
-            proposal_id = await self.create_proposal(content)
-            await self.notify_proposals_changed()
+            # Inline create_proposal logic
+            self.self_check(content)
+            proposal_id = await self.persistence.create_policy_proposal(self.agent_id, proposal_id=0, content=content)
+            await self.notify_proposal_change(proposal_id)
             return {"proposal_id": proposal_id, "agent_id": self.agent_id}
 
         @self.tool()
@@ -438,9 +388,13 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
             Returns:
                 Dictionary confirming the approval
             """
-            await self.approve_proposal(int(proposal_id))
-            await self.notify_policy_changed()
-            await self.notify_proposals_changed()
+            # Inline approve_proposal logic
+            got = await self._get_proposal_or_raise(int(proposal_id))
+            self.self_check(got.content)
+            # Activate policy (notifies via engine's set_policy)
+            await self.set_policy(got.content)
+            await self.persistence.approve_policy_proposal(self.agent_id, int(proposal_id))
+            await self.notify_proposal_change(int(proposal_id))
             return {"status": "approved", "proposal_id": proposal_id, "agent_id": self.agent_id}
 
         @self.tool()
@@ -450,8 +404,9 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
             Returns:
                 Dictionary confirming the rejection
             """
-            await self.reject_proposal(int(proposal_id))
-            await self.notify_proposals_changed()
+            # Inline reject_proposal logic
+            await self.persistence.reject_policy_proposal(self.agent_id, int(proposal_id))
+            await self.notify_proposal_change(int(proposal_id))
             return {"status": "rejected", "proposal_id": proposal_id, "agent_id": self.agent_id}
 
     async def notify_policy_changed(self) -> None:

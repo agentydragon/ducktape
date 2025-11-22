@@ -85,9 +85,7 @@ def serve(
     else:
         config = MCPConfig(mcpServers={})
 
-    policy_source = None
-    if initial_policy:
-        policy_source = initial_policy.read_text()
+    policy_source = initial_policy.read_text() if initial_policy else None
 
     asyncio.run(
         _run_server(

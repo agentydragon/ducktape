@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
@@ -10,7 +11,7 @@ from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.types import AgentID, ToolCall
+from adgn.agent.types import AgentID, ApprovalStatus, ToolCall
 
 
 class AgentRow(BaseModel):
@@ -31,15 +32,6 @@ class PersistenceRunStatus(StrEnum):
     FINISHED = "finished"
     ERROR = "error"
     ABORTED = "aborted"
-
-
-class ApprovalOutcome(StrEnum):
-    POLICY_ALLOW = "policy_allow"
-    POLICY_DENY_CONTINUE = "policy_deny_continue"
-    POLICY_DENY_ABORT = "policy_deny_abort"
-    USER_APPROVE = "user_approve"
-    USER_DENY_CONTINUE = "user_deny_continue"
-    USER_DENY_ABORT = "user_deny_abort"
 
 
 class EventType(StrEnum):
@@ -84,7 +76,7 @@ class Decision(BaseModel):
     All fields are REQUIRED. The entire Decision object is optional on ToolCallRecord.
     """
 
-    outcome: ApprovalOutcome
+    outcome: ApprovalStatus
     decided_at: datetime
     reason: str | None = None
 
@@ -116,6 +108,16 @@ class ToolCallRecord(BaseModel):
     decision: Decision | None = None
     execution: ToolCallExecution | None = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+@dataclass
+class PolicyRecord:
+    """Active policy record."""
+
+    id: int
+    content: str
+    created_at: datetime
+    agent_id: AgentID
 
 
 from .events import EventRecord, TypedPayload  # noqa: E402
@@ -163,18 +165,10 @@ class Persistence(Protocol):
 
     # ToolCallRecord API (new) -------------------------------------------------
     async def save_tool_call(self, record: ToolCallRecord) -> None:
-        """Save or update a tool call record (INSERT OR REPLACE).
-
-        Use this for all lifecycle stages:
-        - PENDING: decision=None, execution=None
-        - EXECUTING: decision!=None, execution=None
-        - COMPLETED: decision!=None, execution!=None
-        """
+        """Save or update a tool call record (INSERT OR REPLACE)."""
         ...
 
-    async def get_tool_call(self, call_id: str) -> ToolCallRecord | None:
-        """Get a tool call record by call_id."""
-        ...
+    async def get_tool_call(self, call_id: str) -> ToolCallRecord | None: ...
 
     async def list_tool_calls(self, run_id: str | None = None) -> list[ToolCallRecord]:
         """List tool call records, optionally filtered by run_id."""
@@ -185,8 +179,13 @@ class Persistence(Protocol):
     async def load_events(self, run_id: UUID) -> list[EventRecord]: ...
 
     # Approval policy (per-agent) --------------------------------------------
-    async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None: ...
-    async def set_policy(self, agent_id: AgentID, *, content: str) -> int: ...
+    async def get_latest_policy(self, agent_id: AgentID) -> PolicyRecord | None:
+        """Get latest active policy, or None if no policy set."""
+        ...
+
+    async def set_policy(self, agent_id: AgentID, *, content: str) -> PolicyRecord:
+        """Set new policy and return the created record."""
+        ...
 
     # Approval policy proposals (single store impl: SQLite)
     async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> int: ...

@@ -65,24 +65,19 @@ async def build_local_agent(
     await runtime.close()
     await running.close()
     """
-    ui_bus: ServerBus | None = None
-    connection_manager: ConnectionManager | None = None
-    if with_ui:
-        ui_bus = ServerBus()
-        connection_manager = ConnectionManager()
-
     builder = MCPInfrastructure(
         agent_id=agent_id,
         persistence=persistence,
         docker_client=docker_client,
         initial_policy=initial_policy,
-        connection_manager=connection_manager,
+        connection_manager=ConnectionManager() if with_ui else None,
     )
 
     running = await builder.start(mcp_config)
 
+    ui_bus: ServerBus | None = None
     if with_ui:
-        assert ui_bus is not None
+        ui_bus = ServerBus()
         await running.attach_sidecar(UISidecar(ui_bus))
     await running.attach_sidecar(ChatSidecar())
     await running.attach_sidecar(LoopControlSidecar())
@@ -93,9 +88,9 @@ async def build_local_agent(
         client_factory=client_factory,
         system_override=system_override,
         ui_bus=ui_bus,
-        connection_manager=connection_manager,
+        connection_manager=builder.connection_manager,
     )
 
     await runtime.start()
 
-    return (running, runtime, ui_bus, connection_manager)
+    return (running, runtime, ui_bus, builder.connection_manager)
