@@ -22,9 +22,6 @@ import type {
 import {
   ChannelManager,
   type ChannelHandlers,
-  type SessionMessage,
-  type PolicyMessage,
-  type ErrorMessage,
 } from './channels'
 import {
   getSnapshot as httpGetSnapshot,
@@ -168,7 +165,7 @@ export function disconnectAgentChannels() {
 
 // Message handlers per channel
 
-function handleSessionMessage(msg: SessionMessage) {
+function handleSessionMessage(msg: any) {
   console.log('[CHANNEL:session]', msg.type)
 
   switch (msg.type) {
@@ -196,7 +193,7 @@ function handleSessionMessage(msg: SessionMessage) {
 }
 
 
-function handleApprovalsMessage(msg: ApprovalsMessage) {
+function handleApprovalsMessage(msg: any) {
   console.log('[CHANNEL:approvals]', msg.type)
 
   switch (msg.type) {
@@ -234,7 +231,7 @@ function handleApprovalsMessage(msg: ApprovalsMessage) {
   }
 }
 
-function handlePolicyMessage(msg: PolicyMessage) {
+function handlePolicyMessage(msg: any) {
   console.log('[CHANNEL:policy]', msg.type)
 
   switch (msg.type) {
