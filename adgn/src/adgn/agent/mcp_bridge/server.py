@@ -176,27 +176,25 @@ class InfrastructureRegistry(NotifyingFastMCP):
     def known_agents(self) -> list[AgentID]:
         return list(self._agents.keys())
 
-    async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
-        """Raises KeyError if agent not in registry or not yet initialized."""
+    def _get_agent_or_raise(self, agent_id: AgentID) -> RunningAgent:
+        """Get RunningAgent or raise KeyError if not found/initialized."""
         if agent_id not in self._agents:
             raise KeyError(f"Agent {agent_id} not found in registry")
         if (agent := self._agents[agent_id].agent) is None:
-            raise KeyError(f"Agent {agent_id} infrastructure not yet initialized")
-        return agent.running
+            raise KeyError(f"Agent {agent_id} not yet initialized")
+        return agent
+
+    async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
+        """Get infrastructure. Raises KeyError if not found."""
+        return self._get_agent_or_raise(agent_id).running
 
     def get_agent_mode(self, agent_id: AgentID) -> AgentMode:
-        """Raises KeyError if agent not in registry or not yet initialized."""
-        if agent_id not in self._agents:
-            raise KeyError(f"Agent {agent_id} not found in registry")
-        if (agent := self._agents[agent_id].agent) is None:
-            raise KeyError(f"Agent {agent_id} mode not yet initialized")
-        return agent.mode
+        """Get agent mode. Raises KeyError if not found."""
+        return self._get_agent_or_raise(agent_id).mode
 
     def get_local_runtime(self, agent_id: AgentID) -> LocalAgentRuntime | None:
-        """Returns None if agent is not local. Raises KeyError if agent not in registry."""
-        if agent_id not in self._agents:
-            raise KeyError(f"Agent {agent_id} not found in registry")
-        return agent.local_runtime if (agent := self._agents[agent_id].agent) else None
+        """Get local runtime or None if bridge agent. Raises KeyError if not found."""
+        return self._get_agent_or_raise(agent_id).local_runtime
 
     def register_local_agent(
         self,
