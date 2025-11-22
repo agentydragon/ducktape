@@ -15,15 +15,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from docker import DockerClient
+from pydantic import BaseModel
 from fastapi import FastAPI, Request, Response
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from adgn.agent.mcp_bridge.auth import TokenAuthMiddleware, TokenMapping
+from adgn.agent.mcp_bridge.servers.types import RunPhase
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.runtime.infrastructure import MCPInfrastructure, RunningInfrastructure
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
     from adgn.agent.runtime.local_runtime import LocalAgentRuntime
@@ -50,6 +53,27 @@ class AgentEntry:
     operation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
+class AgentCapabilities(BaseModel):
+    """Capabilities available for an agent."""
+    chat: bool
+    agent_loop: bool
+
+
+class AgentInfo(BaseModel):
+    """Information about a single agent."""
+    id: AgentID
+    mode: AgentMode
+    live: bool
+    run_phase: RunPhase
+    pending_approvals: int
+    capabilities: AgentCapabilities
+
+
+class AgentsListResponse(BaseModel):
+    """Response containing list of all agents."""
+    agents: list[AgentInfo]
+
+
 async def create_bridge_infrastructure(
     agent_id: AgentID,
     persistence: SQLitePersistence,
@@ -65,8 +89,17 @@ async def create_bridge_infrastructure(
     return await builder.start(mcp_config)
 
 
-class InfrastructureRegistry:
-    """Shared registry for managing per-agent infrastructure."""
+class InfrastructureRegistry(NotifyingFastMCP):
+    """Shared registry for managing per-agent infrastructure with MCP server.
+
+    MCP Resources:
+    - resource://agents/list - List all agents with status
+    - resource://agents/{id}/info - Specific agent information
+
+    MCP Tools:
+    - create_agent(agent_id) - Create a new agent and mount its compositor
+    - delete_agent(agent_id) - Delete an agent and unmount its compositor
+    """
 
     def __init__(
         self,
@@ -74,20 +107,17 @@ class InfrastructureRegistry:
         docker_client: DockerClient,
         mcp_config: MCPConfig,
         initial_policy: str | None,
+        global_compositor=None,
     ):
+        super().__init__(name="registry")
         self.persistence = persistence
         self.docker_client = docker_client
         self.mcp_config = mcp_config
         self.initial_policy = initial_policy
         self._agents: defaultdict[AgentID, AgentEntry] = defaultdict(AgentEntry)
-        self._notifier: Callable[[str], Awaitable[None]] | None = None
-
-    def set_notifier(self, notifier: Callable[[str], Awaitable[None]]) -> None:
-        """Set notifier callback for registry changes.
-
-        The notifier is called with a resource URI when agents are created/deleted.
-        """
-        self._notifier = notifier
+        self._global_compositor = global_compositor
+        self._register_resources()
+        self._register_tools()
 
     async def get_or_create_infrastructure(self, agent_id: AgentID) -> tuple[RunningInfrastructure, FastAPI]:
         """Get or create infrastructure for an agent_id (creates bridge agent).
@@ -177,8 +207,7 @@ class InfrastructureRegistry:
         """
         running, _ = await self.get_or_create_infrastructure(agent_id)
         # Notify that agent list changed
-        if self._notifier:
-            await self._notifier("resource://agents/list")
+        await self.notify_agents_list_changed()
         return running
 
     async def ensure_live(self, agent_id: AgentID) -> RunningInfrastructure:
@@ -206,8 +235,139 @@ class InfrastructureRegistry:
 
         del self._agents[agent_id]
 
-        if self._notifier:
-            await self._notifier("resource://agents/list")
+        await self.notify_agents_list_changed()
+
+    def _register_resources(self) -> None:
+        @self.resource("resource://agents/list", name="agents_list", mime_type="application/json")
+        async def list_agents() -> AgentsListResponse:
+            """List all agents with detailed status."""
+            agents = []
+            for agent_id in self.known_agents():
+                try:
+                    mode = self.get_agent_mode(agent_id)
+                except KeyError:
+                    continue
+
+                # Get infrastructure if available
+                infra = self.get_running_infrastructure(agent_id)
+                live = infra is not None
+
+                # Compute status fields
+                pending_approvals = 0
+                run_phase = RunPhase.IDLE
+
+                if infra:
+                    # Get pending approvals count
+                    pending_approvals = len(infra.approval_hub.pending)
+
+                    # Derive run phase
+                    if pending_approvals > 0:
+                        run_phase = RunPhase.WAITING_APPROVAL
+                    elif live:
+                        run_phase = RunPhase.SAMPLING
+
+                # Determine capabilities
+                is_local = mode == AgentMode.LOCAL
+
+                agents.append(
+                    AgentInfo(
+                        id=agent_id,
+                        mode=mode,
+                        live=live,
+                        run_phase=run_phase,
+                        pending_approvals=pending_approvals,
+                        capabilities=AgentCapabilities(chat=is_local, agent_loop=is_local),
+                    )
+                )
+
+            return AgentsListResponse(agents=agents)
+
+        @self.resource("resource://agents/{agent_id}/info", name="agent_info", mime_type="application/json")
+        async def get_agent_info(agent_id: AgentID) -> AgentInfo:
+            """Get detailed information about a specific agent."""
+            try:
+                mode = self.get_agent_mode(agent_id)
+            except KeyError:
+                raise KeyError(f"Agent {agent_id} not found")
+
+            infra = self.get_running_infrastructure(agent_id)
+            live = infra is not None
+
+            pending_approvals = 0
+            run_phase = RunPhase.IDLE
+
+            if infra:
+                pending_approvals = len(infra.approval_hub.pending)
+                if pending_approvals > 0:
+                    run_phase = RunPhase.WAITING_APPROVAL
+                elif live:
+                    run_phase = RunPhase.SAMPLING
+
+            is_local = mode == AgentMode.LOCAL
+
+            return AgentInfo(
+                id=agent_id,
+                mode=mode,
+                live=live,
+                run_phase=run_phase,
+                pending_approvals=pending_approvals,
+                capabilities=AgentCapabilities(chat=is_local, agent_loop=is_local),
+            )
+
+    def _register_tools(self) -> None:
+        @self.tool()
+        async def create_agent(agent_id: AgentID) -> dict:
+            """Create a new agent and mount its compositor.
+
+            Returns:
+                Dictionary with agent_id and status
+            """
+            # Create agent infrastructure
+            await self.create_agent(agent_id)
+
+            # Dynamically mount the new agent's compositor if we have a global compositor
+            if self._global_compositor is not None:
+                from adgn.agent.mcp_bridge.compositor_factory import mount_agent_compositor_dynamically
+
+                await mount_agent_compositor_dynamically(
+                    global_compositor=self._global_compositor,
+                    agent_id=agent_id,
+                    registry=self
+                )
+
+            # Notify that agents list changed
+            await self.notify_agents_list_changed()
+
+            return {"agent_id": agent_id, "status": "created"}
+
+        @self.tool()
+        async def delete_agent(agent_id: AgentID) -> dict:
+            """Delete an agent and unmount its compositor.
+
+            Returns:
+                Dictionary with agent_id and status
+            """
+            # Dynamically unmount the agent's compositor if we have a global compositor
+            if self._global_compositor is not None:
+                from adgn.agent.mcp_bridge.compositor_factory import unmount_agent_compositor_dynamically
+
+                await unmount_agent_compositor_dynamically(
+                    global_compositor=self._global_compositor,
+                    agent_id=agent_id
+                )
+
+            # Remove agent infrastructure
+            await self.remove_agent(agent_id)
+
+            # Notify that agents list changed
+            await self.notify_agents_list_changed()
+
+            return {"agent_id": agent_id, "status": "deleted"}
+
+    async def notify_agents_list_changed(self) -> None:
+        """Notify that the agents list has changed."""
+        await self.broadcast_resource_updated("resource://agents/list")
+        await self.broadcast_resource_list_changed()
 
 
 async def create_mcp_server_app(auth_tokens_path: Path, registry: InfrastructureRegistry) -> FastAPI:

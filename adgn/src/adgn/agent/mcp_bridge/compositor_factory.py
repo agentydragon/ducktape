@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from fastmcp.client import Client
 
-from adgn.agent.mcp_bridge.servers.registry_bridge import AgentRegistryBridgeServer
 from adgn.agent.mcp_bridge.types import AgentID, AgentMode
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
@@ -78,9 +77,11 @@ async def create_global_compositor(
     """
     global_comp = Compositor("agents_bridge")
 
-    # Mount registry server (provides global agent list and management)
-    registry_server = AgentRegistryBridgeServer(registry, global_comp)
-    await global_comp.mount_inproc("registry", registry_server)
+    # Set global compositor reference in registry for dynamic mounting
+    registry._global_compositor = global_comp
+
+    # Mount registry (now an MCP server itself)
+    await global_comp.mount_inproc("registry", registry)
     logger.info("Mounted registry server")
 
     # Mount per-agent compositors for existing agents
