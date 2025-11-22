@@ -157,7 +157,6 @@ class ApprovalHub(NotifyingFastMCP):
         async def get_approvals() -> ApprovalsResponse:
             """Get all approvals for this agent (pending + decided history)."""
             # Build pending approvals
-            pending_map = self.pending
             pending_approvals = [
                 ApprovalItem(
                     call_id=call_id,
@@ -166,7 +165,7 @@ class ApprovalHub(NotifyingFastMCP):
                     reason=None,
                     timestamp=datetime.now(),  # Approx timestamp for pending
                 )
-                for call_id, tool_call in pending_map.items()
+                for call_id, tool_call in self.pending.items()
             ]
 
             # Build decided approvals from persistence
@@ -193,15 +192,13 @@ class ApprovalHub(NotifyingFastMCP):
             ]
 
             # Combine and sort by timestamp (most recent first)
-            approvals_list = sorted(
-                pending_approvals + decided_approvals,
-                key=lambda x: x.timestamp,
-                reverse=True,
-            )
-
             return ApprovalsResponse(
                 agent_id=self._agent_id,
-                approvals=approvals_list,
+                approvals=sorted(
+                    pending_approvals + decided_approvals,
+                    key=lambda x: x.timestamp,
+                    reverse=True,
+                ),
             )
 
     def _register_tools(self) -> None:
@@ -212,8 +209,7 @@ class ApprovalHub(NotifyingFastMCP):
             Returns:
                 Dictionary confirming the approval
             """
-            decision = ContinueDecision(reasoning=reasoning)
-            self.resolve(call_id, decision)
+            self.resolve(call_id, ContinueDecision(reasoning=reasoning))
             await self.notify_approvals_changed()
             return {"status": "approved", "call_id": call_id, "agent_id": self._agent_id}
 
@@ -224,8 +220,7 @@ class ApprovalHub(NotifyingFastMCP):
             Returns:
                 Dictionary confirming the rejection
             """
-            decision = DenyContinueDecision(reason=reasoning or "Rejected by user")
-            self.resolve(call_id, decision)
+            self.resolve(call_id, DenyContinueDecision(reason=reasoning or "Rejected by user"))
             await self.notify_approvals_changed()
             return {"status": "rejected", "call_id": call_id, "agent_id": self._agent_id}
 
@@ -316,7 +311,6 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
     async def set_policy(self, source: str) -> int:
         """Store new policy and return its database ID."""
         self._policy_source = source
-        # Call persistence to get ACTUAL ID
         self._policy_id = await self.persistence.set_policy(self.agent_id, content=source)
         await self.notify_policy_changed()
         return self._policy_id
@@ -343,7 +337,6 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         # Self-check proposal program if docker is available
         if self.docker_client is not None:
             self.self_check(content)
-        # Create proposal and get actual database-assigned ID
         new_id = await self.persistence.create_policy_proposal(self.agent_id, proposal_id=0, content=content)
         await self.notify_proposal_change(new_id)
         return new_id
@@ -379,7 +372,6 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
         @self.resource("resource://proposals/list", name="proposals_list", mime_type="application/json")
         async def proposals_list() -> ProposalsList:
             """List all policy proposals with status and timestamps."""
-            proposals = await self.persistence.list_policy_proposals(self.agent_id)
             return ProposalsList(
                 agent_id=self.agent_id,
                 proposals=[
@@ -389,7 +381,7 @@ class ApprovalPolicyEngine(NotifyingFastMCP):
                         created_at=p.created_at,
                         decided_at=p.decided_at,
                     )
-                    for p in proposals
+                    for p in await self.persistence.list_policy_proposals(self.agent_id)
                 ]
             )
 
