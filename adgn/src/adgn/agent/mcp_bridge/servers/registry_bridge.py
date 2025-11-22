@@ -139,9 +139,6 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
         async def create_agent(agent_id: AgentID) -> dict:
             """Create a new agent and mount its compositor.
 
-            Args:
-                agent_id: Unique identifier for the new agent
-
             Returns:
                 Dictionary with agent_id and status
             """
@@ -166,9 +163,6 @@ class AgentRegistryBridgeServer(NotifyingFastMCP):
         @self.tool()
         async def delete_agent(agent_id: AgentID) -> dict:
             """Delete an agent and unmount its compositor.
-
-            Args:
-                agent_id: ID of the agent to delete
 
             Returns:
                 Dictionary with agent_id and status

@@ -264,14 +264,13 @@ class AgentSession:
             raise RuntimeError("approval_engine not configured for session")
 
         content, policy_id = self.approval_engine.get_policy()
-        proposals: list[ProposalInfo] = []
         # Load proposals from persistence policy store
-        if self._persistence is not None and self.agent_id:
-            rows = await self._persistence.list_policy_proposals(self.agent_id)
-            for r in rows:
-                pid = str(r.id)
-                raw = str(r.status)
-                proposals.append(ProposalInfo(id=pid, status=ProposalStatus(raw)))
+        proposals: list[ProposalInfo] = (
+            [ProposalInfo(id=str(r.id), status=ProposalStatus(str(r.status)))
+             for r in await self._persistence.list_policy_proposals(self.agent_id)]
+            if self._persistence is not None and self.agent_id
+            else []
+        )
         approval_policy = ApprovalPolicyInfo(content=content, id=policy_id, proposals=proposals)
 
         # Build preferred details bundle when all components are present

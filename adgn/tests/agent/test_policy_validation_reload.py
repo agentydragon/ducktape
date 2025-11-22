@@ -41,37 +41,38 @@ async def admin_server(engine):
     return ApprovalPolicyAdminServer(engine=engine)
 
 
-async def test_validate_policy_valid(admin_server, docker_client: DockerClient):
-    """Test validating a valid policy."""
+@pytest.fixture
+async def stub(admin_server):
+    """Create stub for admin server with client session."""
     async with Client(admin_server) as session:
-        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
-        result = await stub.validate_policy(ValidatePolicyArgs(source="print('hello')"))
+        yield ApprovalPolicyAdminServerStub.from_server(admin_server, session)
+
+
+async def test_validate_policy_valid(stub, docker_client: DockerClient):
+    """Test validating a valid policy."""
+    result = await stub.validate_policy(ValidatePolicyArgs(source="print('hello')"))
 
     assert result.valid is True
     assert_that(result.errors, has_length(0))
 
 
-async def test_validate_policy_syntax_error(admin_server):
+async def test_validate_policy_syntax_error(stub):
     """Test validating a policy with syntax errors."""
-    async with Client(admin_server) as session:
-        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
-        result = await stub.validate_policy(ValidatePolicyArgs(source="print('hello'"))
+    result = await stub.validate_policy(ValidatePolicyArgs(source="print('hello'"))
 
     assert result.valid is False
     assert_that(result.errors, has_item(contains_string("Syntax error")))
 
 
-async def test_validate_policy_runtime_error(admin_server, docker_client: DockerClient):
+async def test_validate_policy_runtime_error(stub, docker_client: DockerClient):
     """Test validating a policy that fails at runtime."""
-    async with Client(admin_server) as session:
-        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
-        result = await stub.validate_policy(ValidatePolicyArgs(source="import sys; sys.exit(1)"))
+    result = await stub.validate_policy(ValidatePolicyArgs(source="import sys; sys.exit(1)"))
 
     assert result.valid is False
     assert_that(result.errors, has_item(contains_string("Runtime validation failed")))
 
 
-async def test_reload_policy_from_persistence(engine, persistence, admin_server, docker_client: DockerClient):
+async def test_reload_policy_from_persistence(engine, persistence, stub, docker_client: DockerClient):
     """Test reloading policy from persistence."""
     # Save a policy to persistence
     await persistence.set_policy(engine.agent_id, content="print('from persistence')")
@@ -80,35 +81,29 @@ async def test_reload_policy_from_persistence(engine, persistence, admin_server,
     engine.set_policy("print('different')")
 
     # Reload from persistence
-    async with Client(admin_server) as session:
-        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
-        await stub.reload_policy(ReloadPolicyArgs(source=None))
+    await stub.reload_policy(ReloadPolicyArgs(source=None))
 
     # Engine should now have the persisted policy
     current_policy, _ = engine.get_policy()
     assert current_policy == "print('from persistence')"
 
 
-async def test_reload_policy_from_source(engine, admin_server, docker_client: DockerClient):
+async def test_reload_policy_from_source(engine, stub, docker_client: DockerClient):
     """Test reloading policy from provided source."""
     # Reload with provided source
     new_source = load_default_policy_source()
-    async with Client(admin_server) as session:
-        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
-        await stub.reload_policy(ReloadPolicyArgs(source=new_source))
+    await stub.reload_policy(ReloadPolicyArgs(source=new_source))
 
     # Engine should have the new source
     current_policy, _ = engine.get_policy()
     assert current_policy == new_source
 
 
-async def test_reload_policy_validates_source(admin_server, docker_client: DockerClient):
+async def test_reload_policy_validates_source(stub, docker_client: DockerClient):
     """Test that reload validates the source before setting."""
     # Try to reload with invalid source
-    async with Client(admin_server) as session:
-        stub = ApprovalPolicyAdminServerStub.from_server(admin_server, session)
-        with pytest.raises(Exception):  # Should fail validation
-            await stub.reload_policy(ReloadPolicyArgs(source="import sys; sys.exit(1)"))
+    with pytest.raises(Exception):  # Should fail validation
+        await stub.reload_policy(ReloadPolicyArgs(source="import sys; sys.exit(1)"))
 
 
 async def test_reload_policy_no_persistence_raises(engine, persistence):

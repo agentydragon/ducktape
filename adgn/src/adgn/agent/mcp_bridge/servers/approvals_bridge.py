@@ -35,8 +35,6 @@ class ApprovalsResponse(BaseModel):
     """Response containing all approvals for an agent (pending + decided history)."""
     agent_id: AgentID
     approvals: list[ApprovalItem]
-    pending_count: int
-    decided_count: int
 
 
 class ApprovalsBridgeServer(NotifyingFastMCP):
@@ -61,70 +59,58 @@ class ApprovalsBridgeServer(NotifyingFastMCP):
         @self.resource("resource://approvals", name="approvals", mime_type="application/json")
         async def get_approvals() -> ApprovalsResponse:
             """Get all approvals for this agent (pending + decided history)."""
-            approvals_list = []
-            pending_count = 0
-            decided_count = 0
-
-            # Add pending approvals
+            # Build pending approvals
             pending_map = self._hub.pending
-            for call_id, tool_call in pending_map.items():
-                approvals_list.append(
-                    ApprovalItem(
-                        call_id=call_id,
-                        tool_call=tool_call,
-                        status=ApprovalStatus.PENDING,
-                        reason=None,
-                        timestamp=datetime.now(),  # Approx timestamp for pending
-                    )
+            pending_approvals = [
+                ApprovalItem(
+                    call_id=call_id,
+                    tool_call=tool_call,
+                    status=ApprovalStatus.PENDING,
+                    reason=None,
+                    timestamp=datetime.now(),  # Approx timestamp for pending
                 )
-                pending_count += 1
+                for call_id, tool_call in pending_map.items()
+            ]
 
-            # Add decided approvals from persistence
+            # Build decided approvals from persistence
             records = await self._persistence.get_tool_call_records(self._agent_id)
-            for record in records:
-                if record.decision is not None:
-                    # Map ApprovalOutcome to ApprovalStatus
-                    if record.decision.outcome == ApprovalOutcome.APPROVED:
-                        status = ApprovalStatus.APPROVED
-                    elif record.decision.outcome == ApprovalOutcome.REJECTED:
-                        status = ApprovalStatus.REJECTED
-                    elif record.decision.outcome == ApprovalOutcome.DENIED:
-                        status = ApprovalStatus.DENIED
-                    elif record.decision.outcome == ApprovalOutcome.ABORTED:
-                        status = ApprovalStatus.ABORTED
-                    else:
-                        # Fallback for unknown outcomes
-                        status = ApprovalStatus.REJECTED
 
-                    approvals_list.append(
-                        ApprovalItem(
-                            call_id=record.tool_call.id,
-                            tool_call=record.tool_call,
-                            status=status,
-                            reason=record.decision.reason,
-                            timestamp=record.decision.decided_at,
-                        )
-                    )
-                    decided_count += 1
+            def map_outcome_to_status(outcome: ApprovalOutcome) -> ApprovalStatus:
+                """Map ApprovalOutcome to ApprovalStatus using value-based conversion."""
+                try:
+                    return ApprovalStatus(outcome.value)
+                except ValueError:
+                    # Fallback for unknown outcomes
+                    return ApprovalStatus.REJECTED
 
-            # Sort by timestamp (most recent first)
-            approvals_list.sort(key=lambda x: x.timestamp, reverse=True)
+            decided_approvals = [
+                ApprovalItem(
+                    call_id=record.tool_call.id,
+                    tool_call=record.tool_call,
+                    status=map_outcome_to_status(record.decision.outcome),
+                    reason=record.decision.reason,
+                    timestamp=record.decision.decided_at,
+                )
+                for record in records
+                if record.decision is not None
+            ]
+
+            # Combine and sort by timestamp (most recent first)
+            approvals_list = sorted(
+                pending_approvals + decided_approvals,
+                key=lambda x: x.timestamp,
+                reverse=True,
+            )
 
             return ApprovalsResponse(
                 agent_id=self._agent_id,
                 approvals=approvals_list,
-                pending_count=pending_count,
-                decided_count=decided_count,
             )
 
     def _register_tools(self) -> None:
         @self.tool()
         async def approve(call_id: str, reasoning: str | None = None) -> dict:
             """Approve a pending tool call.
-
-            Args:
-                call_id: ID of the tool call to approve
-                reasoning: Optional reasoning for the approval
 
             Returns:
                 Dictionary confirming the approval
@@ -137,10 +123,6 @@ class ApprovalsBridgeServer(NotifyingFastMCP):
         @self.tool()
         async def reject(call_id: str, reasoning: str | None = None) -> dict:
             """Reject a pending tool call.
-
-            Args:
-                call_id: ID of the tool call to reject
-                reasoning: Optional reasoning for the rejection
 
             Returns:
                 Dictionary confirming the rejection
