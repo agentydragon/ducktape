@@ -1,25 +1,9 @@
-{
-  title: 'Test functions should use pytest parameterization instead of loops or multiple subtests',
-  severity: 'minor',
-  category: 'test-quality',
-  locations: [
-    {
-      path: 'adgn/tests/agent/persist/test_integration.py',
-      lines: [288, 351],
-      context: 'test_decision_outcome_variants uses for loop over test cases',
-    },
-    {
-      path: 'adgn/tests/agent/persist/test_integration.py',
-      lines: [355, 476],
-      context: 'test_complex_calltoolresult_content_types contains 5 subtests in one function',
-    },
-    {
-      path: 'adgn/tests/agent/persist/test_integration.py',
-      lines: [533, 640],
-      context: 'test_error_handling_and_data_validation contains 4+ subtests in one function',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-017: Test functions should use pytest parameterization instead of loops or multiple subtests
+
+I.issueOneOccurrence(
+  rationale=|||
     Three test functions violate pytest best practices by either using loops to test
     multiple cases or bundling multiple independent tests into a single function:
 
@@ -61,9 +45,10 @@
     2. **Unclear test names**: Can't see which specific case failed without reading output
     3. **Hard to run individually**: Can't run just "test image content" or "test POLICY_ALLOW"
     4. **Violates pytest conventions**: One test function should test one thing
-  |||,
-  recommendation: |||
-    **For test_decision_outcome_variants**: Use `@pytest.mark.parametrize`:
+
+    **Fix:**
+
+    For test_decision_outcome_variants, use `@pytest.mark.parametrize`:
 
     ```python
     @pytest.mark.parametrize("outcome,should_execute,reason", [
@@ -86,7 +71,7 @@
         # ...
     ```
 
-    **For test_complex_calltoolresult_content_types**: Split into 5 separate test functions:
+    For test_complex_calltoolresult_content_types, split into 5 separate test functions:
 
     ```python
     async def test_calltoolresult_text_content(persistence, test_agent):
@@ -110,7 +95,7 @@
         # Test 5 logic
     ```
 
-    **For test_error_handling_and_data_validation**: Split into 4+ separate test functions:
+    For test_error_handling_and_data_validation, split into 4+ separate test functions:
 
     ```python
     async def test_error_on_corrupted_json(tmp_path, test_agent):
@@ -137,4 +122,19 @@
     - Better coverage reporting (shows exactly which cases pass/fail)
     - Follows pytest best practices
   |||,
-}
+  properties=['python/modern-python-idioms'],
+  filesToRanges={
+    'adgn/tests/agent/persist/test_integration.py': [
+      [288, 351], // test_decision_outcome_variants with for loop
+      [355, 476], // test_complex_calltoolresult_content_types with 5 subtests
+      [533, 640], // test_error_handling_and_data_validation with 4+ subtests
+    ],
+  },
+  gap_note=|||
+    This pattern deserves a property like "pytest-one-concern-per-test": test functions
+    should test exactly one concern and use pytest parameterization for variations,
+    rather than using loops or bundling multiple independent tests. This is more specific
+    than general "python/modern-python-idioms" as it addresses test organization,
+    pytest best practices, test naming, and failure isolation in test suites.
+  |||,
+)

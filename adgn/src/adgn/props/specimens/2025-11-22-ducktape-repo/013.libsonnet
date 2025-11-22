@@ -1,30 +1,9 @@
-{
-  title: 'Remove docstring Args sections that restate obvious type information',
-  severity: 'minor',
-  category: 'documentation',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py',
-      lines: [142, 143],
-      context: 'create_agent function Args docstring',
-    },
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py',
-      lines: [170, 171],
-      context: 'delete_agent function Args docstring',
-    },
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py',
-      lines: [125, 126, 127],
-      context: 'approve function Args docstring',
-    },
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py',
-      lines: [141, 142, 143],
-      context: 'reject function Args docstring',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-013: Remove docstring Args sections that restate obvious type information
+
+I.issueOneOccurrence(
+  rationale=|||
     Many functions have Args sections in docstrings that simply restate information
     already obvious from type annotations:
 
@@ -57,9 +36,8 @@
     These Args sections provide no additional value beyond the type annotations and
     parameter names. Good documentation should explain WHY or HOW, not WHAT (which
     is already clear from the signature).
-  |||,
-  recommendation: |||
-    Remove Args sections that simply restate type information. Keep the one-line
+
+    Fix - remove Args sections that simply restate type information. Keep the one-line
     summary and Returns section:
 
     ```python
@@ -88,4 +66,15 @@
     In this case, `max_retries` is documented because it explains the retry behavior,
     not just the type.
   |||,
-}
+  properties=['no-useless-docs'],
+  filesToRanges={
+    'adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py': [
+      [142, 143], // create_agent Args
+      [170, 171], // delete_agent Args
+    ],
+    'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py': [
+      [125, 127], // approve Args
+      [141, 143], // reject Args
+    ],
+  },
+)

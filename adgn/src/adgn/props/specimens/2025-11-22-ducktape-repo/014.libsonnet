@@ -1,15 +1,9 @@
-{
-  title: 'Proposals list building should use list comprehension in runtime.py',
-  severity: 'minor',
-  category: 'pythonic',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/server/runtime.py',
-      lines: [267, 268, 269, 270, 271, 272, 273, 274],
-      context: 'Building proposals list in build_snapshot method',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-014: Proposals list building should use list comprehension in runtime.py
+
+I.issueOneOccurrence(
+  rationale=|||
     The `proposals` list is built imperatively using a for loop with `append()`:
 
     ```python
@@ -25,9 +19,8 @@
 
     This is non-idiomatic Python. List comprehensions are the Pythonic way to transform
     an iterable into a list.
-  |||,
-  recommendation: |||
-    Refactor to use a list comprehension:
+
+    Fix - refactor to use a list comprehension:
 
     ```python
     # Load proposals from persistence policy store
@@ -57,4 +50,10 @@
     - Manual list initialization and append
     - The imperative loop pattern
   |||,
-}
+  properties=['python/modern-python-idioms', 'no-oneoff-vars-and-trivial-wrappers'],
+  filesToRanges={
+    'adgn/src/adgn/agent/server/runtime.py': [
+      [267, 274], // proposals list building with for loop
+    ],
+  },
+)

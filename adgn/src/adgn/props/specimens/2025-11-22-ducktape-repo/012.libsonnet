@@ -1,15 +1,9 @@
-{
-  title: 'approvals_list should be built with list comprehensions, not imperative append',
-  severity: 'minor',
-  category: 'pythonic',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py',
-      lines: [64, 65, 71, 79, 80, 99, 107, 108],
-      context: 'Building approvals_list in get_approvals resource',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-012: approvals_list should be built with list comprehensions, not imperative append
+
+I.issueOneOccurrence(
+  rationale=|||
     The `approvals_list` is built imperatively using `append()` in two separate loops:
 
     ```python
@@ -32,9 +26,8 @@
 
     This is non-idiomatic Python. List comprehensions are more concise, readable, and
     Pythonic for building lists from iterables.
-  |||,
-  recommendation: |||
-    Refactor to use list comprehensions:
+
+    Fix - refactor to use list comprehensions:
 
     ```python
     # Pending approvals
@@ -72,4 +65,12 @@
 
     This eliminates manual counting (addressed in finding 010) and the imperative style.
   |||,
-}
+  properties=['python/modern-python-idioms'],
+  filesToRanges={
+    'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py': [
+      [64, 65],   // approvals_list initialization and pending loop
+      [71, 80],   // pending loop body
+      [99, 108],  // decided approvals loop
+    ],
+  },
+)

@@ -1,15 +1,9 @@
-{
-  title: '_register_resources contains identity mapping encoded as long if-else chain',
-  severity: 'minor',
-  category: 'maintainability',
-  locations: [
-    {
-      path: 'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py',
-      lines: [86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97],
-      context: 'ApprovalOutcome to ApprovalStatus mapping in get_approvals resource',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-011: _register_resources contains identity mapping encoded as long if-else chain
+
+I.issueOneOccurrence(
+  rationale=|||
     The `get_approvals` resource function in `_register_resources()` contains a verbose
     if-elif-else chain that maps `ApprovalOutcome` enum values to `ApprovalStatus` enum
     values with identical names:
@@ -31,12 +25,11 @@
     either:
     1. The two enums should be unified (ApprovalOutcome and ApprovalStatus are duplicates)
     2. Or the mapping should use the enum value directly: `ApprovalStatus(outcome.value)`
-  |||,
-  recommendation: |||
-    Either:
+
+    Fix options:
 
     **Option 1 (preferred)**: Unify the enums if they represent the same concept.
-    See finding 005 for a similar enum duplication issue.
+    See finding 024 for a similar enum duplication issue.
 
     **Option 2**: Use value-based conversion:
     ```python
@@ -57,4 +50,17 @@
     status = OUTCOME_TO_STATUS.get(record.decision.outcome, ApprovalStatus.REJECTED)
     ```
   |||,
-}
+  properties=['type-correctness-and-specificity', 'python/modern-python-idioms'],
+  filesToRanges={
+    'adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py': [
+      [86, 97], // if-elif-else chain for ApprovalOutcome to ApprovalStatus mapping
+    ],
+  },
+  gap_note=|||
+    This pattern deserves a property like "single-source-domain-types": when the same
+    domain concept is represented by multiple types requiring conversion between them,
+    they should be unified into a single authoritative type. This is distinct from
+    general "type-correctness-and-specificity" as it specifically addresses type
+    proliferation and unnecessary conversions in domain modeling.
+  |||,
+)

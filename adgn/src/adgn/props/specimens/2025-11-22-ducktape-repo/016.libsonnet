@@ -1,15 +1,9 @@
-{
-  title: 'ApprovalPolicyAdminServerStub should be a shared pytest fixture',
-  severity: 'minor',
-  category: 'test-quality',
-  locations: [
-    {
-      path: 'adgn/tests/agent/test_policy_validation_reload.py',
-      lines: [47, 48, 57, 58, 67, 68, 84, 85, 97, 98, 109, 110, 131, 132],
-      context: 'Inline stub creation in test functions',
-    },
-  ],
-  description: |||
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-016: ApprovalPolicyAdminServerStub should be a shared pytest fixture
+
+I.issueOneOccurrence(
+  rationale=|||
     Every test function in `test_policy_validation_reload.py` creates an
     `ApprovalPolicyAdminServerStub` instance inline using the same pattern:
 
@@ -25,9 +19,8 @@
     - **Harder to maintain**: Changes to stub initialization require updates in 7 places
     - **More verbose**: Each test has 2-3 extra lines of setup boilerplate
     - **Less focused**: Test intent is obscured by setup code
-  |||,
-  recommendation: |||
-    Create a pytest fixture that returns a context manager or async context manager:
+
+    Fix - create a pytest fixture that returns a context manager or async context manager:
 
     ```python
     from contextlib import asynccontextmanager
@@ -70,4 +63,23 @@
         await client.__aexit__(None, None, None)
     ```
   |||,
-}
+  properties=['no-oneoff-vars-and-trivial-wrappers'],
+  filesToRanges={
+    'adgn/tests/agent/test_policy_validation_reload.py': [
+      [47, 48],   // Test 1 stub creation
+      [57, 58],   // Test 2 stub creation
+      [67, 68],   // Test 3 stub creation
+      [84, 85],   // Test 4 stub creation
+      [97, 98],   // Test 5 stub creation
+      [109, 110], // Test 6 stub creation
+      [131, 132], // Test 7 stub creation
+    ],
+  },
+  gap_note=|||
+    This pattern deserves a property like "extract-test-fixtures": when test setup
+    code is duplicated across multiple test functions, it should be extracted into
+    pytest fixtures. This is more specific than general "no-oneoff-vars-and-trivial-wrappers"
+    as it addresses test organization, DRY principle in test suites, and pytest
+    best practices for sharing test setup/teardown logic.
+  |||,
+)
