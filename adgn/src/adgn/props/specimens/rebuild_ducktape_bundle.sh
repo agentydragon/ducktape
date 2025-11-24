@@ -17,8 +17,9 @@ for manifest in "$SCRIPT_DIR"/*/manifest.yaml; do
         continue
     fi
 
-    # Check if this is a ducktape specimen
-    if grep -q 'repo: ducktape' "$manifest" 2>/dev/null; then
+    # Check if this is a ducktape specimen (either github source or git-bundle)
+    if grep -q 'repo: ducktape' "$manifest" 2>/dev/null || \
+       grep -q 'vcs: git-bundle' "$manifest" 2>/dev/null; then
         ref=$(grep 'ref:' "$manifest" | head -1 | sed 's/.*ref: *//' | tr -d ' ')
         if [ -n "$ref" ]; then
             specimen_name=$(basename "$(dirname "$manifest")")
