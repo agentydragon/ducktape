@@ -4,23 +4,35 @@ This directory uses **git bundles** to store specimen snapshots efficiently and 
 
 ## Overview
 
-Specimens that reference commits from the ducktape repository are stored in a **shared bundle** (`ducktape-specimens.bundle`) rather than fetching from GitHub each time. This provides:
+Specimens that reference commits from the ducktape repository can be stored in a **shared bundle** (`ducktape-specimens.bundle`) rather than fetching from GitHub each time. This provides:
 
 - **Efficiency**: Share blob/tree objects across specimens (typically 200-500 KB for 10-20 commits)
 - **Immutability**: Binary format that's difficult to accidentally modify
 - **Reliability**: Specimens work even if commits are removed from branches or remote
 - **Verifiability**: `git bundle verify` checks integrity
 
+## Current Status
+
+**Migration in Progress**: The bundle infrastructure is complete, but not all specimens have been migrated yet.
+
+- ✅ Infrastructure ready (BundleSource model, extraction code, scripts)
+- ⏳ Ducktape specimens still using GitHub source (commits not available locally)
+- 📋 See `TODO_BUNDLE_MIGRATION.md` for migration status
+
+The system supports **mixed mode**: some specimens can use bundles while others use GitHub/git sources.
+
 ## Bundle Structure
 
 ```
 specimens/
-├── ducktape-specimens.bundle          # Shared bundle for all ducktape specimens
+├── ducktape-specimens.bundle          # Shared bundle (to be created)
 ├── rebuild_ducktape_bundle.sh         # Script to rebuild the bundle
+├── migrate_to_bundles.sh              # Script to convert manifests
+├── TODO_BUNDLE_MIGRATION.md           # Migration tracking
 ├── 2025-09-02-ducktape_wt/
-│   └── manifest.yaml                  # References bundle
+│   └── manifest.yaml                  # Currently: GitHub source
 └── 2025-09-03-ducktape-llm/
-    └── manifest.yaml                  # References same bundle
+    └── manifest.yaml                  # Currently: GitHub source
 ```
 
 ## Manifest Format

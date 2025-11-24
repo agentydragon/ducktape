@@ -1,6 +1,7 @@
 source:
-  vcs: git-bundle
-  path: ../ducktape-specimens.bundle
+  vcs: github
+  org: agentydragon
+  repo: ducktape
   ref: 0b573cb5f8163b988cd6586cf96f896d8e1c3f09
 
 scope:
