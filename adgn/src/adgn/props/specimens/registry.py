@@ -19,6 +19,7 @@ from urllib.parse import urlunparse
 
 import _jsonnet
 from platformdirs import user_cache_dir
+import pygit2
 import yaml
 from typing import Any, Callable, cast
 
@@ -441,25 +442,26 @@ class SpecimenRecord:
                 # For local specimens, materialize directly into mount_root (no extra subdir)
                 shutil.copytree(src, mount_root, dirs_exist_ok=True)
             elif isinstance(self.manifest.source, BundleSource):
-                # Extract specific commit from bundle file
+                # Extract specific commit from bundle file using pygit2
                 bundle_path = (self.manifest_path.parent / self.manifest.source.path).resolve()
                 if not bundle_path.exists():
                     raise FileNotFoundError(f"Bundle file not found: {bundle_path}")
 
-                # Clone from bundle into mount_root
-                subprocess.run(
-                    ["git", "clone", "--no-checkout", str(bundle_path), str(mount_root)],
-                    check=True,
-                    capture_output=True,
+                # Clone repository from bundle
+                repo = pygit2.clone_repository(
+                    str(bundle_path),
+                    str(mount_root),
+                    bare=False,
+                    checkout_branch=None,  # Don't checkout any branch
                 )
 
-                # Checkout the specific commit
-                subprocess.run(
-                    ["git", "checkout", self.manifest.source.ref],
-                    cwd=mount_root,
-                    check=True,
-                    capture_output=True,
-                )
+                # Get the specific commit
+                commit = repo.get(self.manifest.source.ref)
+                if commit is None:
+                    raise ValueError(f"Commit {self.manifest.source.ref} not found in bundle")
+
+                # Checkout the tree from this commit
+                repo.checkout_tree(commit.tree)
 
                 # Remove .git directory to keep it clean
                 git_dir = mount_root / ".git"
