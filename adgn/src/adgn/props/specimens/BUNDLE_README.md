@@ -29,7 +29,7 @@ Specimens using the bundle have manifests like:
 
 ```yaml
 source:
-  type: bundle
+  vcs: git-bundle
   path: ../ducktape-specimens.bundle
   ref: 0b573cb5f8163b988cd6586cf96f896d8e1c3f09
 
@@ -96,7 +96,7 @@ git fetch ducktape-specimens.bundle <commit-sha>
 
 ```yaml
 source:
-  type: bundle
+  vcs: git-bundle
   path: ../ducktape-specimens.bundle
   ref: <new-commit-sha>
 ```
@@ -120,7 +120,7 @@ git cat-file -e <new-commit-sha>  # verify it exists
 
 The bundle extraction is handled by `SpecimenRegistry.hydrated_copy()` in `registry.py`:
 
-- Detects `type: bundle` in manifest
+- Detects `vcs: git-bundle` in manifest
 - Extracts commit to temporary directory
 - Mounts as read-only workspace for evaluation
 

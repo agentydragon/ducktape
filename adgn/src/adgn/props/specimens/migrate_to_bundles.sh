@@ -41,7 +41,7 @@ for manifest in "$SCRIPT_DIR"/*/manifest.yaml; do
     /^source:/ {
         in_source = 1
         print "source:"
-        print "  vcs: bundle"
+        print "  vcs: git-bundle"
         print "  path: ../'$BUNDLE_NAME'"
         print "  ref: '$ref'"
         printed_new_source = 1

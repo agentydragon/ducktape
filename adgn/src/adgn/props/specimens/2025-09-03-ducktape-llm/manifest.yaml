@@ -1,8 +1,8 @@
 source:
-  vcs: github
-  org: agentydragon
-  repo: ducktape
+  vcs: git-bundle
+  path: ../ducktape-specimens.bundle
   ref: 4ad330138e1dd0de43f86ceb65e037663636e2f9
+
 scope:
   include:
     - "llm/adgn_llm/src/adgn_llm/git_commit_ai/**/*.py"

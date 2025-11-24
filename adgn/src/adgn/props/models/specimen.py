@@ -31,7 +31,7 @@ class BundleSource(BaseModel):
     This is useful for preserving specimen snapshots immutably, especially when commits
     may not be available on remote branches.
     """
-    vcs: Literal["bundle"]
+    vcs: Literal["git-bundle"]
     path: str  # Relative path to bundle file (typically ../shared-bundle.bundle)
     ref: str   # Commit SHA to extract from the bundle
 
