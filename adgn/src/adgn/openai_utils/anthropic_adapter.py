@@ -28,7 +28,11 @@ from adgn.openai_utils.model import (
     SystemMessage,
     UserMessage,
 )
-from openai.types.responses.response_usage import ResponseUsage
+from openai.types.responses.response_usage import (
+    InputTokensDetails,
+    OutputTokensDetails,
+    ResponseUsage,
+)
 
 
 @dataclass
@@ -154,10 +158,13 @@ class AnthropicAdapter:
                 ))
 
         # Create usage info
+        # Anthropic doesn't provide cached_tokens or reasoning_tokens, so we use 0
         usage = ResponseUsage(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
-            total_tokens=response.usage.input_tokens + response.usage.output_tokens
+            total_tokens=response.usage.input_tokens + response.usage.output_tokens,
+            input_tokens_details=InputTokensDetails(cached_tokens=0),
+            output_tokens_details=OutputTokensDetails(reasoning_tokens=0)
         )
 
         return ResponsesResult(
