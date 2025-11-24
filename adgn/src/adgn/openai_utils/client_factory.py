@@ -20,7 +20,7 @@ from openai import AsyncOpenAI
 
 from adgn.openai_utils.anthropic_adapter import AnthropicAdapter
 from adgn.openai_utils.http_logging import make_logged_async_openai, make_logger_logged_async_openai
-from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto
+from adgn.openai_utils.model import BoundOpenAIModel, LLMProvider
 from adgn.openai_utils.retry import RetryingOpenAIModel
 from adgn.openai_utils.types import ReasoningEffort
 
@@ -46,12 +46,14 @@ def build_client(
     log_http_path: Path | str | None = None,
     enable_debug_logging: bool = False,
     reasoning_effort: ReasoningEffort | None = None,
-) -> OpenAIModelProto:
-    """Create a typed, retrying Responses client for the given model.
+) -> LLMProvider:
+    """Create a provider-agnostic LLM client for the given model.
 
     Supports both OpenAI and Anthropic models:
-    - OpenAI: gpt-4, gpt-3.5-turbo, etc.
-    - Anthropic: claude-3-* models (requires ANTHROPIC_API_KEY env var)
+    - OpenAI: gpt-4, gpt-3.5-turbo, etc. (uses Responses API)
+    - Anthropic: claude-3-* models (uses Messages API, requires ANTHROPIC_API_KEY env var)
+
+    Returns a provider-specific implementation of the LLMProvider protocol.
 
     - Respects ADGN_OPENAI_HTTP_LOG if log_http_path is not provided
     - If enable_debug_logging=True, logs HTTP traffic to Python logger at DEBUG level

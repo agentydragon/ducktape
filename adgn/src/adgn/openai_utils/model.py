@@ -335,7 +335,7 @@ class OpenAIModel:
 class BoundOpenAIModel:
     """AsyncOpenAI adapter that binds a specific model and returns Pydantic results.
 
-    Implements the OpenAIModelProto protocol.
+    Implements the LLMProvider protocol using OpenAI's Responses API.
     """
 
     client: AsyncOpenAI
@@ -357,8 +357,18 @@ class BoundOpenAIModel:
 # ---------------------------------------------
 
 
-class OpenAIModelProto(Protocol):  # pragma: no cover - structural typing only
+class LLMProvider(Protocol):  # pragma: no cover - structural typing only
+    """Provider-agnostic LLM interface.
+
+    Different providers (OpenAI, Anthropic, etc.) implement this protocol by translating
+    to/from their native APIs. The request/result format is based on OpenAI's Responses API
+    but designed to be general enough for multiple providers.
+    """
     @property
     def model(self) -> str: ...
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...
+
+
+# Backward compatibility alias
+OpenAIModelProto = LLMProvider

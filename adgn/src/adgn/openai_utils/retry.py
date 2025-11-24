@@ -11,10 +11,10 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
-from .model import ResponsesRequest, ResponsesResult, convert_sdk_response
+from .model import LLMProvider, ResponsesRequest, ResponsesResult, convert_sdk_response
 
 if TYPE_CHECKING:
-    from .model import OpenAIModelProto
+    pass
 
 # Default retry policy: 5 attempts, exponential backoff with jitter (~0.5s..60s)
 _DEFAULT_ATTEMPTS = 10
@@ -75,9 +75,13 @@ async def chat_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ChatCo
 
 @dataclass
 class RetryingOpenAIModel:
-    """Retry-decorated wrapper around an OpenAIModel-like base implementing our protocol."""
+    """Retry-decorated wrapper around an LLMProvider.
 
-    base: OpenAIModelProto
+    NOTE: Currently only retries on OpenAI-specific exceptions. Provider-specific
+    retry logic should eventually be moved into each provider implementation.
+    """
+
+    base: LLMProvider
 
     @property
     def model(self) -> str:

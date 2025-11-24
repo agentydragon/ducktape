@@ -1,7 +1,14 @@
-"""Anthropic client adapter implementing OpenAIModelProto.
+"""Anthropic provider implementing LLMProvider protocol.
 
-This adapter translates between OpenAI's Responses API format and Anthropic's Messages API,
-allowing Anthropic models to be used seamlessly with the existing agent infrastructure.
+This provider translates between the common request/result format (based on OpenAI's
+Responses API) and Anthropic's Messages API, allowing Anthropic models to be used
+seamlessly with the existing agent infrastructure.
+
+Key translations:
+- SystemMessage -> system parameter (not in messages array)
+- FunctionCallItem/FunctionCallOutputItem <-> tool_use/tool_result blocks
+- ReasoningItem -> skipped (Anthropic doesn't support reasoning blocks)
+- Usage details -> placeholders for cached_tokens and reasoning_tokens (not provided by Anthropic)
 """
 
 from __future__ import annotations
@@ -37,7 +44,10 @@ from openai.types.responses.response_usage import (
 
 @dataclass
 class AnthropicAdapter:
-    """Adapter that implements OpenAIModelProto for Anthropic models."""
+    """Anthropic provider implementing LLMProvider protocol.
+
+    Translates between the common request/result format and Anthropic's native Messages API.
+    """
 
     client: AsyncAnthropic
     model: str
