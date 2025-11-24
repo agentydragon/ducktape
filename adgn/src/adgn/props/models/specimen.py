@@ -24,7 +24,19 @@ class LocalSource(BaseModel):
     root: str = "."
 
 
-Source = Annotated[GitSource | GitHubSource | LocalSource, Field(discriminator="vcs")]
+class BundleSource(BaseModel):
+    """Source from a git bundle file.
+
+    The bundle file contains one or more git commits stored efficiently in a single file.
+    This is useful for preserving specimen snapshots immutably, especially when commits
+    may not be available on remote branches.
+    """
+    vcs: Literal["bundle"]
+    path: str  # Relative path to bundle file (typically ../shared-bundle.bundle)
+    ref: str   # Commit SHA to extract from the bundle
+
+
+Source = Annotated[GitSource | GitHubSource | LocalSource | BundleSource, Field(discriminator="vcs")]
 
 
 class Scope(BaseModel):

@@ -23,7 +23,7 @@ import yaml
 from typing import Any, Callable, cast
 
 from ..models.issue import IssueCore, Occurrence, SpecimenIssuesLoadError
-from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
+from ..models.specimen import BundleSource, GitHubSource, GitSource, LocalSource, SpecimenDoc
 from ..prop_utils import pkg_dir
 
 logger = logging.getLogger(__name__)
@@ -440,6 +440,31 @@ class SpecimenRecord:
                 src = (self.manifest_path.parent / self.manifest.source.root).resolve()
                 # For local specimens, materialize directly into mount_root (no extra subdir)
                 shutil.copytree(src, mount_root, dirs_exist_ok=True)
+            elif isinstance(self.manifest.source, BundleSource):
+                # Extract specific commit from bundle file
+                bundle_path = (self.manifest_path.parent / self.manifest.source.path).resolve()
+                if not bundle_path.exists():
+                    raise FileNotFoundError(f"Bundle file not found: {bundle_path}")
+
+                # Clone from bundle into mount_root
+                subprocess.run(
+                    ["git", "clone", "--no-checkout", str(bundle_path), str(mount_root)],
+                    check=True,
+                    capture_output=True,
+                )
+
+                # Checkout the specific commit
+                subprocess.run(
+                    ["git", "checkout", self.manifest.source.ref],
+                    cwd=mount_root,
+                    check=True,
+                    capture_output=True,
+                )
+
+                # Remove .git directory to keep it clean
+                git_dir = mount_root / ".git"
+                if git_dir.exists():
+                    shutil.rmtree(git_dir)
             else:  # pragma: no cover - guarded by SpecimenDoc model
                 raise SystemExit(
                     f"Unsupported source type: {type(self.manifest.source)}",
