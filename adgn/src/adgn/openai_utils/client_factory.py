@@ -1,12 +1,13 @@
 """Factories for provider-agnostic LLM clients used across entrypoints.
 
 Goals
-- Single-ish construction point for OpenAI-backed clients used by CLIs/services
+- Single-ish construction point for OpenAI/Anthropic-backed clients used by CLIs/services
 - Optional HTTP logging via a small wrapper (single JSONL per process/run)
-- Return the provider-agnostic interface `ResponsesClient` consumed by agents
+- Return the provider-agnostic interface `OpenAIModelProto` consumed by agents
 
 Environment knobs
 - ADGN_OPENAI_HTTP_LOG: if set to a filepath, enable raw HTTP logging there
+- ANTHROPIC_API_KEY: Anthropic API key (required for claude-* models)
 """
 
 from __future__ import annotations
@@ -14,8 +15,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
+from adgn.openai_utils.anthropic_adapter import AnthropicAdapter
 from adgn.openai_utils.http_logging import make_logged_async_openai, make_logger_logged_async_openai
 from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto
 from adgn.openai_utils.retry import RetryingOpenAIModel
@@ -46,9 +49,20 @@ def build_client(
 ) -> OpenAIModelProto:
     """Create a typed, retrying Responses client for the given model.
 
+    Supports both OpenAI and Anthropic models:
+    - OpenAI: gpt-4, gpt-3.5-turbo, etc.
+    - Anthropic: claude-3-* models (requires ANTHROPIC_API_KEY env var)
+
     - Respects ADGN_OPENAI_HTTP_LOG if log_http_path is not provided
     - If enable_debug_logging=True, logs HTTP traffic to Python logger at DEBUG level
     """
+    # Detect Anthropic models by prefix
+    if model.startswith("claude-"):
+        # Create Anthropic client
+        anthropic_client = AsyncAnthropic()  # Reads ANTHROPIC_API_KEY from env
+        return AnthropicAdapter(client=anthropic_client, model=model)
+
+    # OpenAI models
     if enable_debug_logging:
         inner = make_logger_logged_async_openai()
     elif log_http_path is None:
