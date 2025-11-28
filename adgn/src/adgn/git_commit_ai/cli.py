@@ -523,6 +523,10 @@ def _make_stats_comment(cached: bool, diff: str, msg: str, elapsed_s: float) -> 
 async def _execute_git_commit(message: str, passthru: list[str]) -> None:
     """Execute git commit with the given message and passthru flags.
 
+    Uses subprocess intentionally - this tool is a wrapper around `git commit` and needs
+    to support all git commit flags transparently (--amend, --allow-empty, etc.).
+    Reimplementing in pygit2 would lose this compatibility.
+
     Args:
         message: Commit message
         passthru: Additional git commit flags to forward

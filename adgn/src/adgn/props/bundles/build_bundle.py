@@ -299,7 +299,8 @@ def main():
                 exclude=exclude,
             )
 
-        # Create bundle using git command (pygit2 doesn't support bundle creation)
+        # Create bundle using git subprocess - libgit2/pygit2 doesn't support bundle creation
+        # See: https://github.com/libgit2/pygit2/issues/722
         subprocess.run(["git", "bundle", "create", str(output_bundle), "--all"], cwd=bundle_repo_path, check=True)
 
         # Show result

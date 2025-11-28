@@ -9,7 +9,6 @@ import logging
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import time
@@ -21,6 +20,7 @@ import uuid
 import warnings
 
 import _jsonnet
+import pygit2
 from filelock import FileLock
 from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
@@ -270,11 +270,43 @@ def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
         return False
 
 
+def _checkout_detached(repo: pygit2.Repository, ref: str) -> None:
+    """Checkout a ref in detached HEAD mode using pygit2."""
+    # Resolve the ref to a commit
+    commit = repo.revparse_single(ref).peel(pygit2.Commit)
+    # Checkout the tree
+    repo.checkout_tree(commit.tree)
+    # Set HEAD to the commit (detached)
+    repo.set_head(commit.id)
+
+
+def _clone_from_bundle_subprocess(bundle_path: str, tmpdir: Path, ref: str) -> None:
+    """Clone from a git bundle file using subprocess.
+
+    pygit2/libgit2 doesn't support cloning from bundle files directly,
+    so we fall back to subprocess for this case.
+    """
+    import subprocess
+
+    subprocess.run(
+        ["git", "clone", bundle_path, str(tmpdir)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def _create_archive_from_git(
     url: str,
     ref: str,
     out_archive: Path,
-    gitconfig: Path | None,
+    gitconfig: Path | None,  # noqa: ARG001 - kept for API compatibility, pygit2 uses system git config
 ) -> bool:
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
 
@@ -283,80 +315,16 @@ def _create_archive_from_git(
         if url.startswith("file://"):
             file_path = url.removeprefix("file://")
             if file_path.endswith(".bundle"):
-                # For bundles, use subprocess since pygit2 doesn't handle bundles well
-                env = dict(**os.environ)
-                if gitconfig is not None:
-                    env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
-
-                # Clone from bundle using subprocess
-                subprocess.run(
-                    ["git", "clone", file_path, str(tmpdir)],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    env=env,
-                )
-                subprocess.run(
-                    ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
-                    check=True,
-                    env=env,
-                )
+                # Bundle files require subprocess - pygit2 doesn't support bundle cloning
+                _clone_from_bundle_subprocess(file_path, tmpdir, ref)
             else:
-                # Regular file:// repository - use standard approach with subprocess
-                # (pygit2 has issues with file:// URLs)
-                env = dict(**os.environ)
-                if gitconfig is not None:
-                    env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
-
-                subprocess.run(
-                    ["git", "init", str(tmpdir)],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    env=env,
-                )
-                subprocess.run(
-                    ["git", "-C", str(tmpdir), "remote", "add", "origin", url],
-                    check=True,
-                    env=env,
-                )
-                subprocess.run(
-                    ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
-                    check=True,
-                    env=env,
-                )
-                subprocess.run(
-                    ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
-                    check=True,
-                    env=env,
-                )
+                # Regular file:// repository - clone with pygit2
+                repo = pygit2.clone_repository(url, str(tmpdir))
+                _checkout_detached(repo, ref)
         else:
-            # For non-file URLs, fall back to subprocess for now
-            # (pygit2 network operations can be complex with auth)
-            env = dict(**os.environ)
-            if gitconfig is not None:
-                env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
-
-            subprocess.run(
-                ["git", "init", str(tmpdir)],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                env=env,
-            )
-            subprocess.run(
-                ["git", "-C", str(tmpdir), "remote", "add", "origin", url],
-                check=True,
-                env=env,
-            )
-            subprocess.run(
-                ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
-                check=True,
-                env=env,
-            )
-            subprocess.run(
-                ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
-                check=True,
-                env=env,
-            )
+            # For network URLs, use pygit2 clone
+            repo = pygit2.clone_repository(url, str(tmpdir))
+            _checkout_detached(repo, ref)
 
         # Drop VCS internals to keep archives small and writable on extract
         shutil.rmtree(tmpdir / ".git", ignore_errors=True)
