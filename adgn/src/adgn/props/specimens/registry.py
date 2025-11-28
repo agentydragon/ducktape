@@ -312,8 +312,8 @@ def _create_archive_from_git(
 
     try:
         # Bundle files require subprocess - pygit2 doesn't support bundle cloning
-        if url.startswith("file://") and url.removeprefix("file://").endswith(".bundle"):
-            _clone_from_bundle_subprocess(url.removeprefix("file://"), tmpdir, ref)
+        if url.startswith("file://") and (file_path := url.removeprefix("file://")).endswith(".bundle"):
+            _clone_from_bundle_subprocess(file_path, tmpdir, ref)
         else:
             # Regular repositories (file:// or network URLs) - use pygit2
             repo = pygit2.clone_repository(url, str(tmpdir))
