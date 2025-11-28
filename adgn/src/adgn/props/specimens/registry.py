@@ -311,18 +311,11 @@ def _create_archive_from_git(
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
 
     try:
-        # Check if URL points to a bundle file
-        if url.startswith("file://"):
-            file_path = url.removeprefix("file://")
-            if file_path.endswith(".bundle"):
-                # Bundle files require subprocess - pygit2 doesn't support bundle cloning
-                _clone_from_bundle_subprocess(file_path, tmpdir, ref)
-            else:
-                # Regular file:// repository - clone with pygit2
-                repo = pygit2.clone_repository(url, str(tmpdir))
-                _checkout_detached(repo, ref)
+        # Bundle files require subprocess - pygit2 doesn't support bundle cloning
+        if url.startswith("file://") and url.removeprefix("file://").endswith(".bundle"):
+            _clone_from_bundle_subprocess(url.removeprefix("file://"), tmpdir, ref)
         else:
-            # For network URLs, use pygit2 clone
+            # Regular repositories (file:// or network URLs) - use pygit2
             repo = pygit2.clone_repository(url, str(tmpdir))
             _checkout_detached(repo, ref)
 
