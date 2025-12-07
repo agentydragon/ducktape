@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
+from ..config import get_settings
 from ..models import AuthKey
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ async def validate_key(key: str, db_session: AsyncSession) -> AuthKey:
         raise KeyAuthError
 
     # Check if key is valid based on creation time
-    if not auth_key.is_valid(settings.auth.key_in_url.key_validity):
+    if not auth_key.is_valid(get_settings().auth.key_in_url.key_validity):
         logger.warning("Key is expired: %s...", key[:4])
         raise KeyAuthError
 

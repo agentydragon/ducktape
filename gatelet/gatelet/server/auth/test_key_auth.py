@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.auth.key_auth import KeyAuthError, validate_key
-from gatelet.server.config import settings
+from gatelet.server.config import get_settings
 from gatelet.server.models import AuthKey
 from gatelet.server.tests.utils import persist
 
@@ -54,7 +54,7 @@ async def test_validate_expired_key(db_session: AsyncSession):
     """Test validating an expired key."""
     # Create a key that was created beyond the validity period with unique value
     unique_id = uuid.uuid4().hex[:8]
-    expiry_period = settings.auth.key_in_url.key_validity
+    expiry_period = get_settings().auth.key_in_url.key_validity
     created_at = datetime.now() - expiry_period - timedelta(days=1)
 
     key = AuthKey(

@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from gatelet.server.config import settings
+from gatelet.server.config import get_settings
 from gatelet.server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
 from gatelet.server.models import (  # type: ignore[import] - Runtime-only import (SQLAlchemy models)
     AuthCRSession,
@@ -29,7 +29,7 @@ async def test_answer_challenge_success(client: AsyncClient, db_session: AsyncSe
     await client.get(f"/cr/{test_auth_key.id}")
     nonce = (await db_session.execute(select(AuthNonce).order_by(AuthNonce.id.desc()))).scalars().first()
     answer = str(
-        compute_correct_option(test_auth_key.key_value, nonce.nonce_value, settings.auth.challenge_response.num_options)
+        compute_correct_option(test_auth_key.key_value, nonce.nonce_value, get_settings().auth.challenge_response.num_options)
     )
     response = await client.get(f"/cr/{test_auth_key.id}/{nonce.nonce_value}/{answer}")
     assert response.status_code == HTTPStatus.FOUND

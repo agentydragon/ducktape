@@ -4,7 +4,7 @@ import re
 
 from httpx import AsyncClient
 
-from gatelet.server.config import settings
+from gatelet.server.config import get_settings
 
 
 def _extract_csrf(page_text: str) -> str:
@@ -24,7 +24,7 @@ async def _login(client: AsyncClient) -> str:
 async def test_view_logs(client: AsyncClient, tmp_path: Path, monkeypatch):
     log_file = tmp_path / "gatelet.log"
     log_file.write_text("line1\nline2\nline3\n", encoding="utf-8")
-    monkeypatch.setattr(settings.server, "log_file", str(log_file))
+    monkeypatch.setattr(get_settings().server, "log_file", str(log_file))
 
     session = await _login(client)
     response = await client.get("/admin/logs/", cookies={"admin_session": session})

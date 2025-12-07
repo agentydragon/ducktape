@@ -24,7 +24,7 @@ os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.pare
 # pylint: disable=wrong-import-position
 # Imports must follow environment setup so modules see configured GATELET_CONFIG
 from gatelet.server.app import app  # type: ignore[import] - Imports after env setup (required for config)
-from gatelet.server.config import settings  # type: ignore[import] - Imports after env setup (required for config)
+from gatelet.server.config import get_settings  # type: ignore[import] - Imports after env setup (required for config)
 from gatelet.server.database import (
     get_db_session,  # type: ignore[import] - Imports after env setup (required for config)
 )
@@ -46,7 +46,7 @@ def _postgres():
     # The service container provides PostgreSQL at localhost:5432
     if os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
         os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet"
-        settings.database.dsn = os.environ["DATABASE_URL"]
+        get_settings().database.dsn = os.environ["DATABASE_URL"]
         yield
         return
 
@@ -66,7 +66,7 @@ def _postgres():
     subprocess.check_call(["sudo", "-u", "postgres", str(pg_ctl), "-D", datadir, "-w", "-o", f"-p {port}", "start"])
     subprocess.check_call(["sudo", "-u", "postgres", str(createdb), "-p", port, "gatelet"])
     os.environ["DATABASE_URL"] = f"postgresql+asyncpg://postgres@localhost:{port}/gatelet"
-    settings.database.dsn = os.environ["DATABASE_URL"]
+    get_settings().database.dsn = os.environ["DATABASE_URL"]
     os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.parent / "gatelet.toml"))
     time.sleep(0.5)
     try:
