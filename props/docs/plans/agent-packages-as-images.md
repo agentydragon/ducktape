@@ -628,13 +628,16 @@ Revisit if extraction latency becomes a bottleneck.
 **Phase 2: Registry Infrastructure**
 
 - ✅ OCI registry container configured in devenv.nix (port 5050)
-- ✅ Registry proxy implemented with FastAPI
-- ✅ Postgres credential validation (Basic auth for admin, Bearer for agents)
+- ✅ Registry proxy implemented with FastAPI (props/registry_proxy/proxy.py)
+- ✅ Postgres credential validation via connection testing (\_validate_postgres_credentials)
+  - ✅ Basic auth validates admin user against postgres (line 96)
+  - ✅ Bearer token validates agent*{run_id}*{password} against postgres (line 128)
 - ✅ ACL enforcement (admin/PO/PI can push, critic/grader cannot)
 - ✅ Agent definitions tracking (writes to DB on manifest push)
 - ✅ Proxy OCI image BUILD targets (load/push)
 - ✅ Network isolation (props-internal for registry, props-agents for agent access)
-- ✅ Proxy container startup in devenv.nix
+- ✅ Proxy container startup in devenv.nix (auto-builds image, health checks, connects networks)
+- ✅ Deprecated tarball stubs deleted (commit 61aac4f1)
 
 **Phase 3: Agent Builds**
 
@@ -660,13 +663,87 @@ Revisit if extraction latency becomes a bottleneck.
 - ❌ Need to pass resolved digest to `AgentEnvironment`
 - **Blocker**: Agent launches will fail with "image_ref required" error
 
-**Tag Resolution System** (see design above)
+**Tag Resolution System Design**
 
-- ❌ Implement `resolve_tag_to_digest()` function
-- ❌ Update `CriticAgentEnvironment` constructor to accept `image_ref`
-- ❌ Update `GraderAgentEnvironment` constructor
-- ❌ Update `AgentRegistry.run_critic()` to resolve tags
-- ❌ Update test fixtures to use image refs
+Agents should be launchable by convenient tags (`critic:builtin`) while storing immutable digests in the database.
+
+**Function:** `resolve_image_ref(repository: str, ref: str) -> str`
+
+```python
+def resolve_image_ref(repository: str, ref: str) -> str:
+    """Resolve image reference to digest.
+
+    Args:
+        repository: Repository name (e.g., "critic", "grader")
+        ref: Tag or digest (e.g., "builtin", "sha256:abc...")
+
+    Returns:
+        Digest (sha256:...) - either the provided digest or resolved from tag
+
+    Raises:
+        ValueError: If tag doesn't exist or proxy returns error
+    """
+    # If already a digest, return as-is
+    if _is_digest(ref):
+        return ref
+
+    # Resolve tag via proxy HEAD request (admin auth)
+    # HEAD /v2/{repository}/manifests/{tag}
+    # Response header: Docker-Content-Digest: sha256:...
+
+    proxy_url = f"http://localhost:5050/v2/{repository}/manifests/{ref}"
+    headers = {"Accept": "application/vnd.oci.image.manifest.v1+json"}
+
+    # Use admin auth from environment (PGUSER/PGPASSWORD)
+    auth = (os.environ["PGUSER"], os.environ["PGPASSWORD"])
+
+    resp = requests.head(proxy_url, headers=headers, auth=auth)
+    if resp.status_code == 404:
+        raise ValueError(f"Image not found: {repository}:{ref}")
+    resp.raise_for_status()
+
+    digest = resp.headers.get("Docker-Content-Digest")
+    if not digest:
+        raise ValueError(f"Proxy didn't return digest for {repository}:{ref}")
+
+    return digest
+```
+
+**Usage in launch flow:**
+
+```python
+# props/core/agent_registry.py
+def run_critic(
+    snapshot: Snapshot,
+    image_ref: str = "builtin",  # Tag or digest
+    ...
+) -> CriticRun:
+    # Resolve tag to digest
+    image_digest = resolve_image_ref("critic", image_ref)
+
+    # Create run with digest (immutable reference)
+    run = CriticRun(image_digest=image_digest, ...)
+    session.add(run)
+    session.flush()
+
+    # Launch with resolved digest
+    env = CriticAgentEnvironment(
+        run_id=run.run_id,
+        image_digest=image_digest,  # New parameter
+        ...
+    )
+    await env.start()
+```
+
+**Implementation tasks:**
+
+- ❌ Add `resolve_image_ref()` to props/core/docker_env.py or new props/core/oci_utils.py
+- ❌ Update `CriticAgentEnvironment.__init__()` to accept `image_digest` parameter
+- ❌ Update `GraderAgentEnvironment.__init__()` to accept `image_digest` parameter
+- ❌ Update `PromptOptimizerEnvironment.__init__()` to accept `image_digest` parameter
+- ❌ Update `AgentRegistry.run_critic()` to call resolve_image_ref()
+- ❌ Update `AgentRegistry.run_grader()` to call resolve_image_ref()
+- ❌ Update test fixtures to pass `image_digest="sha256:test..."` or mock resolve_image_ref()
 
 **Runtime Testing**
 
