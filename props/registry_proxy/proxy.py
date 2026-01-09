@@ -25,7 +25,7 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from props.core.db.models import AgentRun, AgentType
+from props.core.db.models import AgentDefinition, AgentRun, AgentType
 from props.core.db.session import get_session_context
 
 logger = logging.getLogger(__name__)
@@ -203,9 +203,38 @@ async def _record_manifest_push(session: Session, repository: str, digest: str, 
         digest: Manifest digest (sha256:...)
         auth: Caller authentication context
     """
-    # TODO: Implement agent_definitions table tracking
-    # For now, just log
-    logger.info(f"Manifest push: {repository}@{digest} by {auth.caller_type} (run_id={auth.agent_run_id})")
+    # Map repository name to agent_type enum
+    # Repository names are agent types (e.g., "critic" -> AgentType.CRITIC)
+    repo_to_type = {
+        "critic": AgentType.CRITIC,
+        "grader": AgentType.GRADER,
+        "prompt-optimizer": AgentType.PROMPT_OPTIMIZER,
+        "prompt-improver": AgentType.PROMPT_IMPROVER,
+    }
+
+    agent_type = repo_to_type.get(repository)
+    if agent_type is None:
+        logger.warning(f"Unknown repository name: {repository}, skipping agent_definitions write")
+        return
+
+    # Check if definition already exists (idempotent)
+    existing = session.get(AgentDefinition, digest)
+    if existing:
+        logger.info(f"Agent definition {digest} already exists, skipping")
+        return
+
+    # Create new agent definition
+    definition = AgentDefinition(
+        digest=digest,
+        agent_type=agent_type,
+        created_by_agent_run_id=auth.agent_run_id,  # None for admin pushes
+        base_digest=None,  # TODO: Extract from manifest if available
+    )
+
+    session.add(definition)
+    session.commit()
+
+    logger.info(f"Recorded agent definition: {repository}@{digest} (type={agent_type}, created_by={auth.agent_run_id})")
 
 
 # FastAPI app
