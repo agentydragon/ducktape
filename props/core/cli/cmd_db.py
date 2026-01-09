@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import gzip
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
-import aiodocker
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -16,7 +14,7 @@ from rich.table import Table
 from props.core.db.config import DatabaseConfig, get_database_config
 from props.core.db.session import get_session, recreate_database
 from props.core.db.setup import ensure_database_exists
-from props.core.db.sync.sync import FullSyncResult, build_definition_images, sync_all
+from props.core.db.sync.sync import FullSyncResult, sync_all
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
@@ -53,14 +51,6 @@ def recreate_database_and_sync(*, use_staged: bool = False) -> FullSyncResult:
         return sync_all(session, use_staged=use_staged)
 
 
-async def build_all_definition_images(console: Console) -> None:
-    """Build Docker images for all agent definitions in the database."""
-    async with aiodocker.Docker() as docker:
-        with get_session() as session:
-            count = await build_definition_images(docker, session)
-    console.print(f"Built {count} agent definition images")
-
-
 def print_sync_result(console: Console, result: FullSyncResult) -> None:
     """Print sync result summary table.
 
@@ -76,7 +66,6 @@ def print_sync_result(console: Console, result: FullSyncResult) -> None:
     table.add_row("Snapshot files", result.snapshot_file_stats.summary_text)
     table.add_row("File sets", result.file_set_stats.summary_text)
     table.add_row("Model metadata", result.model_metadata_stats.summary_text)
-    table.add_row("Agent definitions", result.agent_definition_stats.summary_text)
     console.print(table)
 
 
@@ -95,7 +84,10 @@ def cmd_sync(
     print_sync_result(console, result)
 
     if build_images:
-        asyncio.run(build_all_definition_images(console))
+        console.print(
+            "\n[yellow]Warning:[/yellow] Agent definitions are now OCI images.\n"
+            "Use 'bazel run //props/core/agent_defs/critic:push' to build and push images."
+        )
 
 
 def cmd_db_recreate(
@@ -142,7 +134,10 @@ def cmd_db_recreate(
     print_sync_result(console, result)
 
     if build_images:
-        asyncio.run(build_all_definition_images(console))
+        console.print(
+            "\n[yellow]Warning:[/yellow] Agent definitions are now OCI images.\n"
+            "Use 'bazel run //props/core/agent_defs/critic:push' to build and push images."
+        )
 
 
 def get_default_backup_dir() -> Path:

@@ -49,8 +49,6 @@ from ._yaml import load_yaml_issues
 from .loader import discover_snapshots
 
 if TYPE_CHECKING:
-    import aiodocker
-
     from props.core.models.true_positive import LineRange
 
 # Agent definitions are stored in the props package under agent_defs/
@@ -976,52 +974,7 @@ CRITIC_BASED_DETECTORS = {
 }
 
 
-def sync_agent_definitions_to_db(session: Session, *, use_staged: bool = False) -> SyncStats:
-    """Sync repo-tracked agent definitions - DEPRECATED, no longer functional.
-
-    Agent definitions are now stored as OCI images in the registry.
-    The archive column has been removed from agent_definitions table.
-    Images are built and pushed to the registry externally, not via this sync.
-
-    This function now returns empty stats to maintain backward compatibility.
-
-    Args:
-        session: SQLAlchemy session
-        use_staged: Ignored (deprecated parameter)
-
-    Returns:
-        Empty statistics (no operations performed)
-    """
-    logger.warning(
-        "sync_agent_definitions_to_db() is deprecated. "
-        "Agent definitions are now OCI images managed via registry proxy. "
-        "Use 'docker build' + 'docker push' to registry instead."
-    )
-    return SyncStats(total=0, added=0, updated=0, deleted=0)
-
-
-async def build_definition_images(docker: aiodocker.Docker, session: Session) -> int:
-    """Build Docker images for all agent definitions - DEPRECATED, no longer functional.
-
-    Agent definitions are now stored as OCI images in the registry.
-    The archive column has been removed from agent_definitions table.
-    Images are built externally and pushed to the registry.
-
-    This function now returns 0 to maintain backward compatibility.
-
-    Args:
-        docker: Async Docker client (ignored)
-        session: SQLAlchemy session (ignored)
-
-    Returns:
-        0 (no operations performed)
-    """
-    logger.warning(
-        "build_definition_images() is deprecated. "
-        "Agent definitions are now OCI images. "
-        "Use 'docker build' + 'docker push' to registry instead."
-    )
-    return 0
+# Agent definition sync removed - definitions are now OCI images managed via registry
 
 
 # ============================================================================
@@ -1031,18 +984,22 @@ async def build_definition_images(docker: aiodocker.Docker, session: Session) ->
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing snapshots, issues, files, file sets, model metadata, and agent definitions."""
+    """Combined result from syncing snapshots, issues, files, file sets, and model metadata.
+
+    Note: Agent definitions are no longer synced - they are OCI images managed via registry.
+    """
 
     snapshot_stats: SyncStats
     issue_stats: SyncStats
     snapshot_file_stats: SyncStats
     file_set_stats: SyncStats
     model_metadata_stats: ModelMetadataSyncStats
-    agent_definition_stats: SyncStats
 
 
 def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
-    """Sync snapshots, issues, files, file sets, model metadata, and agent definitions.
+    """Sync snapshots, issues, files, file sets, and model metadata.
+
+    Note: Agent definitions are no longer synced - they are OCI images managed via registry.
 
     Discovers snapshots once and passes data to all sync operations.
     All sync operations happen within the provided database session for consistency.
@@ -1095,10 +1052,7 @@ def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
     model_metadata_stats = sync_model_metadata_with_session(session)
     print(f"  {model_metadata_stats.summary_text}")
 
-    # 6. Sync repo-tracked agent definitions
-    print("Syncing agent definitions...")
-    agent_definition_stats = sync_agent_definitions_to_db(session, use_staged=use_staged)
-    print(f"  {agent_definition_stats.summary_text}")
+    # Note: Agent definitions no longer synced (OCI images managed via registry)
 
     return FullSyncResult(
         snapshot_stats=snapshot_stats,
@@ -1106,5 +1060,4 @@ def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
         snapshot_file_stats=snapshot_file_stats,
         file_set_stats=file_set_stats,
         model_metadata_stats=model_metadata_stats,
-        agent_definition_stats=agent_definition_stats,
     )
