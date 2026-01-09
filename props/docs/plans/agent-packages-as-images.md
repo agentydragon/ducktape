@@ -737,12 +737,13 @@ def run_critic(
 
 **Implementation tasks:**
 
-- ❌ Add `resolve_image_ref()` to props/core/docker_env.py or new props/core/oci_utils.py
-- ❌ Update `CriticAgentEnvironment.__init__()` to accept `image_digest` parameter
-- ❌ Update `GraderAgentEnvironment.__init__()` to accept `image_digest` parameter
-- ❌ Update `PromptOptimizerEnvironment.__init__()` to accept `image_digest` parameter
-- ❌ Update `AgentRegistry.run_critic()` to call resolve_image_ref()
-- ❌ Update `AgentRegistry.run_grader()` to call resolve_image_ref()
+- ✅ Add `resolve_image_ref()` to props/core/oci_utils.py (commit 341d7161)
+- ✅ Update `CriticAgentEnvironment.__init__()` to accept `image_digest` parameter (commit 341d7161)
+- ✅ Update `GraderAgentEnvironment.__init__()` to accept `image_digest` parameter (commit 341d7161)
+- ✅ Update `PromptOptimizerEnvironment.__init__()` to accept `image_digest` parameter (commit 341d7161)
+- ✅ Update `AgentRegistry.run_critic()` to call resolve_image_ref() (commit 341d7161)
+- ✅ Update `AgentRegistry.run_grader()` to call resolve_image_ref() (commit 341d7161)
+- ✅ Deduplicated is_digest() function (moved to oci_utils, proxy imports it)
 - ❌ Update test fixtures to pass `image_digest="sha256:test..."` or mock resolve_image_ref()
 
 **Runtime Testing**
