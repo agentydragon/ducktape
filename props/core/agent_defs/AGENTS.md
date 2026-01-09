@@ -27,12 +27,28 @@ Agent packages are built as OCI images using Bazel and pushed to the local regis
 # Start the registry (from props directory)
 devenv up
 
-# Build and push critic image
+# Build and push agent images
 bazel run //props/core/agent_defs/critic:push
+bazel run //props/core/agent_defs/grader:push
+bazel run //props/core/agent_defs/prompt_optimizer:push
+bazel run //props/registry_proxy:push
 
 # Or load into local Docker for testing
 bazel run //props/core/agent_defs/critic:load
+bazel run //props/core/agent_defs/grader:load
+bazel run //props/core/agent_defs/prompt_optimizer:load
+bazel run //props/registry_proxy:load
 ```
+
+### Future Optimization: Common Base Image
+
+All agents currently use `python_slim` base with dependencies installed at runtime via Bazel's runfiles.
+Future optimization: Create a common base image with pre-installed Python packages (openai, pydantic, sqlalchemy, etc.),
+then layer only agent-specific code on top. This would:
+
+- Reduce image size duplication
+- Speed up builds (shared base layer cached)
+- Maintain security (base image updated once, all agents benefit)
 
 ### Registry URLs
 
