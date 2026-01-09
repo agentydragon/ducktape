@@ -207,8 +207,10 @@ async def _record_manifest_push(session: Session, repository: str, digest: str, 
     try:
         agent_type = AgentType(repository)
     except ValueError:
-        logger.warning(f"Unknown repository name: {repository}, skipping agent_definitions write")
-        return
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown repository name: {repository}. Must be a valid agent type: {[t.value for t in AgentType]}",
+        )
 
     # Check if definition already exists (idempotent)
     existing = session.get(AgentDefinition, digest)
