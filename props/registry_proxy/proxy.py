@@ -203,17 +203,10 @@ async def _record_manifest_push(session: Session, repository: str, digest: str, 
         digest: Manifest digest (sha256:...)
         auth: Caller authentication context
     """
-    # Map repository name to agent_type enum
-    # Repository names are agent types (e.g., "critic" -> AgentType.CRITIC)
-    repo_to_type = {
-        "critic": AgentType.CRITIC,
-        "grader": AgentType.GRADER,
-        "prompt-optimizer": AgentType.PROMPT_OPTIMIZER,
-        "prompt-improver": AgentType.PROMPT_IMPROVER,
-    }
-
-    agent_type = repo_to_type.get(repository)
-    if agent_type is None:
+    # Map repository name to agent_type enum (repository names match enum values)
+    try:
+        agent_type = AgentType(repository)
+    except ValueError:
         logger.warning(f"Unknown repository name: {repository}, skipping agent_definitions write")
         return
 
