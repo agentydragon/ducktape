@@ -77,16 +77,16 @@ def _validate_postgres_credentials(username: str, password: str) -> bool:
 def _parse_auth_header(authorization: str | None) -> AuthContext | None:
     """Parse authorization header and determine caller type.
 
-    Supports:
-    - Basic auth (validates against postgres)
-    - Bearer token with agent_{run_id}_{secret} pattern (validates password against postgres)
+    Supports Basic auth for both admin and agents (validates against postgres).
+    - Admin: Basic auth with postgres admin username
+    - Agents: Basic auth with agent_{run_id} username
 
     Returns None if auth is invalid.
     """
     if not authorization:
         return None
 
-    # Basic auth for admin (postgres user)
+    # Basic auth for both admin and agents
     if authorization.startswith("Basic "):
         try:
             encoded = authorization.removeprefix("Basic ")
@@ -98,39 +98,22 @@ def _parse_auth_header(authorization: str | None) -> AuthContext | None:
                 logger.warning(f"Invalid postgres credentials for user: {username}")
                 return None
 
-            return AuthContext(caller_type=CallerType.ADMIN, agent_run_id=None)
+            # Determine caller type based on username pattern
+            if username.startswith("agent_"):
+                # Agent user: extract run_id from username
+                try:
+                    agent_run_id = UUID(username.removeprefix("agent_"))
+                    return AuthContext(caller_type=CallerType.UNKNOWN, agent_run_id=agent_run_id)
+                except ValueError:
+                    logger.warning(f"Invalid UUID in agent username: {username}")
+                    return None
+            else:
+                # Admin user
+                return AuthContext(caller_type=CallerType.ADMIN, agent_run_id=None)
+
         except (ValueError, UnicodeDecodeError) as e:
             logger.warning(f"Failed to parse Basic auth: {e}")
             return None
-
-    # Bearer token for agents (format: agent_{agent_run_id}_{password})
-    if authorization.startswith("Bearer "):
-        token = authorization.removeprefix("Bearer ")
-        # Token format: agent_{agent_run_id}_{password}
-        if not token.startswith("agent_"):
-            return None
-
-        parts = token.split("_", 2)
-        if len(parts) < 3:
-            logger.warning("Bearer token missing password component")
-            return None
-
-        try:
-            agent_run_id = UUID(parts[1])
-        except ValueError:
-            logger.warning(f"Invalid UUID in agent token: {parts[1]}")
-            return None
-
-        # Validate agent credentials against postgres
-        # Agent temp users have username format: agent_{run_id}
-        username = f"agent_{agent_run_id}"
-        password = parts[2]
-
-        if not _validate_postgres_credentials(username, password):
-            logger.warning(f"Invalid credentials for agent: {username}")
-            return None
-
-        return AuthContext(caller_type=CallerType.UNKNOWN, agent_run_id=agent_run_id)
 
     return None
 

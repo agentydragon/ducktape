@@ -23,7 +23,7 @@ from openai_utils.types import ReasoningSummary
 from props.core.agent_handle import AgentHandle
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_setup import AgentEnvironment
-from props.core.agent_types import PromptOptimizerTypeConfig
+from props.core.agent_types import AgentType, PromptOptimizerTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.critic.exceptions import CriticExecutionError
@@ -537,7 +537,7 @@ async def run_prompt_optimizer(
     logger.info(f"Prompt optimizer agent_run_id: {agent_run_id}")
 
     # Resolve image reference to digest
-    image_digest = resolve_image_ref("prompt-optimizer", image_ref)
+    image_digest = resolve_image_ref(AgentType.PROMPT_OPTIMIZER, image_ref)
     logger.info(f"Resolved prompt-optimizer image {image_ref} → {image_digest}")
 
     # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)

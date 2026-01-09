@@ -25,22 +25,6 @@ REGISTRY_HOST = os.environ.get("PROPS_REGISTRY_HOST", "127.0.0.1")
 REGISTRY_PORT = os.environ.get("PROPS_REGISTRY_PORT", "5050")
 
 
-async def resolve_image_id(docker: aiodocker.Docker, *, image_ref: str) -> str:
-    """Resolve an image reference to a Docker image ID.
-
-    Args:
-        docker: Async Docker client
-        image_ref: OCI image reference (e.g., "localhost:5050/critic:latest")
-
-    Returns:
-        Docker image ID (sha256:...)
-
-    Raises:
-        ValueError: If image resolution fails
-    """
-    return await _resolve_image_ref(docker, image_ref)
-
-
 async def _resolve_image_ref(docker: aiodocker.Docker, image_ref: str) -> str:
     """Resolve an OCI image reference to a Docker image ID.
 

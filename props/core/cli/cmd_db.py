@@ -73,9 +73,6 @@ def cmd_sync(
     use_staged: bool = typer.Option(
         False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
     ),
-    build_images: bool = typer.Option(
-        False, "--build-images", help="Build Docker images for all agent definitions after sync"
-    ),
 ) -> None:
     """Sync snapshots, issues, files, file sets, model metadata, and agent definitions from source to DB."""
     console = Console()
@@ -83,20 +80,11 @@ def cmd_sync(
         result = sync_all(session, use_staged=use_staged)
     print_sync_result(console, result)
 
-    if build_images:
-        console.print(
-            "\n[yellow]Warning:[/yellow] Agent definitions are now OCI images.\n"
-            "Use 'bazel run //props/core/agent_defs/critic:push' to build and push images."
-        )
-
 
 def cmd_db_recreate(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
     use_staged: bool = typer.Option(
         False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
-    ),
-    build_images: bool = typer.Option(
-        False, "--build-images", help="Build Docker images for all agent definitions after sync"
     ),
 ) -> None:
     """Recreate database from scratch (destructive - drops all tables/views/policies).
@@ -106,7 +94,6 @@ def cmd_db_recreate(
     2. Drop all existing schema objects (tables, views, RLS policies, functions)
     3. Run Alembic migrations to recreate schema
     4. Sync all data from filesystem (snapshots, issues, files, file sets, model metadata, agent definitions)
-    5. (Optional) Build Docker images for all agent definitions
 
     Note: Temporary database users are created per-agent instead of a shared agent_user role.
           Schema creation (step 3) runs all Alembic migrations, which define tables, views, RLS, etc.
@@ -132,12 +119,6 @@ def cmd_db_recreate(
     console.print("✓ Database recreated:")
 
     print_sync_result(console, result)
-
-    if build_images:
-        console.print(
-            "\n[yellow]Warning:[/yellow] Agent definitions are now OCI images.\n"
-            "Use 'bazel run //props/core/agent_defs/critic:push' to build and push images."
-        )
 
 
 def get_default_backup_dir() -> Path:

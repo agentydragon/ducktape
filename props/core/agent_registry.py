@@ -182,7 +182,7 @@ class AgentRegistry:
         agent_run_id = uuid4()
 
         # Resolve image reference to digest
-        image_digest = resolve_image_ref("critic", image_ref)
+        image_digest = resolve_image_ref(AgentType.CRITIC, image_ref)
         logger.info(f"Resolved critic image {image_ref} → {image_digest}")
 
         # Phase 1: Write initial AgentRun to DB
@@ -357,7 +357,7 @@ class AgentRegistry:
         grader_run_id = uuid4()
 
         # Resolve image reference to digest
-        image_digest = resolve_image_ref("grader", image_ref)
+        image_digest = resolve_image_ref(AgentType.GRADER, image_ref)
         logger.info(f"Resolved grader image {image_ref} → {image_digest}")
 
         # Load critic run and prepare canonical issues

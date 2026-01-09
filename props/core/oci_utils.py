@@ -8,10 +8,22 @@ import re
 
 import requests
 
+from props.core.agent_types import AgentType
+
 logger = logging.getLogger(__name__)
 
 # Proxy URL for registry operations
 DEFAULT_PROXY_URL = os.environ.get("PROPS_REGISTRY_PROXY_URL", "http://localhost:5050")
+
+# Mapping from AgentType to repository name
+AGENT_TYPE_TO_REPOSITORY = {
+    AgentType.CRITIC: "critic",
+    AgentType.GRADER: "grader",
+    AgentType.SNAPSHOT_GRADER: "grader",  # Snapshot grader uses same image as grader
+    AgentType.PROMPT_OPTIMIZER: "prompt-optimizer",
+    AgentType.IMPROVEMENT: "improvement",
+    AgentType.FREEFORM: "freeform",
+}
 
 
 def is_digest(ref: str) -> bool:
@@ -26,11 +38,11 @@ def is_digest(ref: str) -> bool:
     return bool(re.match(r"^(sha256|sha384|sha512):[a-f0-9]+$", ref))
 
 
-def resolve_image_ref(repository: str, ref: str, *, proxy_url: str | None = None) -> str:
+def resolve_image_ref(agent_type: AgentType, ref: str, *, proxy_url: str | None = None) -> str:
     """Resolve image reference to digest.
 
     Args:
-        repository: Repository name (e.g., "critic", "grader")
+        agent_type: Agent type (determines repository name)
         ref: Tag or digest (e.g., "builtin", "sha256:abc...")
         proxy_url: Registry proxy URL (defaults to PROPS_REGISTRY_PROXY_URL env var or localhost:5050)
 
@@ -44,6 +56,11 @@ def resolve_image_ref(repository: str, ref: str, *, proxy_url: str | None = None
     if is_digest(ref):
         logger.debug(f"Reference {ref} is already a digest, returning as-is")
         return ref
+
+    # Map agent type to repository name
+    repository = AGENT_TYPE_TO_REPOSITORY.get(agent_type)
+    if repository is None:
+        raise ValueError(f"Unknown agent type: {agent_type}")
 
     # Resolve tag via proxy HEAD request (admin auth)
     proxy = proxy_url or DEFAULT_PROXY_URL

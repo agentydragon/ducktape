@@ -50,7 +50,7 @@ from props.core.db.temp_user_manager import TempUserManager
 from props.core.db_event_handler import DatabaseEventHandler
 from props.core.docker_env import DOCKER_MOUNT_PREFIX, PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from props.core.ids import DefinitionId
-from props.core.registry.images import resolve_image_id
+from props.core.registry.images import _resolve_image_ref
 
 
 def _make_container_name(definition_id: DefinitionId, agent_run_id: UUID) -> str:
@@ -228,7 +228,7 @@ class AgentEnvironment(ABC):
         # Resolve image from OCI reference
         if self._image_ref is None:
             raise ValueError("image_ref is required (tarball definitions no longer supported)")
-        self._image_id = await resolve_image_id(self._docker_client, image_ref=self._image_ref)
+        self._image_id = await _resolve_image_ref(self._docker_client, self._image_ref)
         logger.info(f"Using image {self._image_id[:19]} from image_ref {self._image_ref}")
 
         self._user_manager = TempUserManager(self._db_config.admin, self._agent_run_id)

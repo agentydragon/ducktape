@@ -432,15 +432,15 @@ After initial bootstrap, all pushes (including proxy updates) go through the pro
 The proxy:
 
 - [ ] Proxies OCI Distribution Protocol requests to the registry
-- [ ] Two auth modes (both validated against postgres):
-  - **Agent auth**: agent temp users, digest-only pushes
-  - **Admin auth**: postgres admin user, allows tag pushes for builtins
-- [ ] Enforces ACL (agent mode):
+- [ ] Basic auth for all callers (validated against postgres):
+  - **Admin**: postgres admin user, allows tag pushes for builtins
+  - **Agents**: agent\_{run_id} temp users, digest-only pushes
+- [ ] Enforces ACL based on caller type:
   - Only prompt-optimizer and prompt-improver agents can read/upload images
   - Critic/grader never touch registry - launch infrastructure (`agent_setup.py`) pulls for them
   - No DELETE operations (block all)
-  - No tag writes (block `PUT /v2/<name>/manifests/<tag>`, allow only `PUT /v2/<name>/manifests/sha256:...`)
-- [ ] Writes `agent_definitions` row on every manifest push (both agent and admin modes)
+  - No tag writes for agents (block `PUT /v2/<name>/manifests/<tag>`, allow only `PUT /v2/<name>/manifests/sha256:...`)
+- [ ] Writes `agent_definitions` row on every manifest push
 - [ ] Returns appropriate errors for blocked operations
 
 ### Phase 3: Schema and API Migration
@@ -630,8 +630,8 @@ Revisit if extraction latency becomes a bottleneck.
 - ✅ OCI registry container configured in devenv.nix (port 5050)
 - ✅ Registry proxy implemented with FastAPI (props/registry_proxy/proxy.py)
 - ✅ Postgres credential validation via connection testing (\_validate_postgres_credentials)
-  - ✅ Basic auth validates admin user against postgres (line 96)
-  - ✅ Bearer token validates agent*{run_id}*{password} against postgres (line 128)
+  - ✅ Basic auth validates both admin and agent users against postgres
+  - ✅ Agent users identified by agent\_{run_id} username pattern
 - ✅ ACL enforcement (admin/PO/PI can push, critic/grader cannot)
 - ✅ Agent definitions tracking (writes to DB on manifest push)
 - ✅ Proxy OCI image BUILD targets (load/push)
@@ -746,6 +746,24 @@ def run_critic(
 - ✅ Deduplicated is_digest() function (moved to oci_utils, proxy imports it)
 - ❌ Update test fixtures to pass `image_digest="sha256:test..."` or mock resolve_image_ref()
 
+**Critical: Missing Agent Environment Updates**
+
+- ❌ SnapshotGraderAgentEnvironment needs image_digest parameter
+
+  - File: props/core/grader/snapshot_grader_env.py
+  - Missing image_digest parameter in **init**()
+  - Needs to construct OCI ref: localhost:5050/grader@{digest}
+
+- ❌ ImprovementAgentEnvironment needs image_digest parameter
+  - File: props/core/prompt_improve/improve_agent.py
+  - Missing image_digest parameter in **init**()
+  - Needs to construct OCI ref: localhost:5050/improvement@{digest}
+
+**Test Updates**
+
+- ❌ Update test fixtures to pass image_digest or mock resolve_image_ref()
+  - All tests creating agent environments will fail without this
+
 **Runtime Testing**
 
 - ❌ Test `devenv up` starts all containers (postgres + registry + proxy)
@@ -754,12 +772,12 @@ def run_critic(
 - ❌ Run e2e tests (critic/grader/prompt-optimizer)
 - **Blocker**: Need running registry + launch integration
 
-**Agent Token Generation**
+**Agent Authentication for Registry**
 
-- ❌ Generate bearer tokens when creating temp DB users
-- ❌ Token format: `agent_{run_id}_{password}`
-- ❌ Pass tokens to agent containers via env vars
-- ❌ Configure Docker registry auth in containers
+- ❌ Configure Docker registry auth for agent containers
+  - Use Basic auth with agent\_{run_id} username
+  - Pass credentials via environment variables
+  - Configure dockerd or use HTTP auth headers
 
 **Additional Agent Builds** (Lower Priority)
 
