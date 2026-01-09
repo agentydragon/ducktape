@@ -613,3 +613,101 @@ Revisit if extraction latency becomes a bottleneck.
 - [crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane) - CLI for registry operations
 - [Docker Registry](https://docs.docker.com/registry/) - Reference registry implementation
 - Current implementation: `props/core/agent_defs/critic/BUILD.bazel`
+
+## Implementation Status (2026-01-09)
+
+### ✅ Completed
+
+**Phase 1: Schema Migration**
+
+- ✅ `agent_definitions` table migrated to digest-based primary key
+- ✅ `agent_runs.agent_definition_id` → `agent_runs.image_digest`
+- ✅ All tarball support removed (archive column, build functions)
+- ✅ 16 files updated across props/core codebase
+
+**Phase 2: Registry Infrastructure**
+
+- ✅ OCI registry container configured in devenv.nix (port 5050)
+- ✅ Registry proxy implemented with FastAPI
+- ✅ Postgres credential validation (Basic auth for admin, Bearer for agents)
+- ✅ ACL enforcement (admin/PO/PI can push, critic/grader cannot)
+- ✅ Agent definitions tracking (writes to DB on manifest push)
+- ✅ Proxy OCI image BUILD targets (load/push)
+- ✅ Network isolation (props-internal for registry, props-agents for agent access)
+- ✅ Proxy container startup in devenv.nix
+
+**Phase 3: Agent Builds**
+
+- ✅ Critic agent bazelized (BUILD.bazel with oci_image, oci_push)
+- ✅ Grader agent bazelized
+- ✅ Prompt-optimizer agent bazelized
+- ✅ All agents build successfully
+
+**Network Configuration**
+
+- ✅ `PROPS_NETWORK_NAME` updated to `props-agents`
+- ✅ Agent containers connect to props-agents network
+- ✅ Postgres accessible from both networks (props-internal + props-agents)
+- ✅ Proxy bridges both networks for ACL enforcement
+
+### 🚧 In Progress / Remaining Gaps
+
+**Critical: Agent Launch Integration**
+
+- ❌ Agent environments still use legacy `definition_id` parameter
+- ❌ Need to add `image_ref` parameter to environment constructors
+- ❌ `AgentRegistry` launch methods need tag resolution
+- ❌ Need to pass resolved digest to `AgentEnvironment`
+- **Blocker**: Agent launches will fail with "image_ref required" error
+
+**Tag Resolution System** (see design above)
+
+- ❌ Implement `resolve_tag_to_digest()` function
+- ❌ Update `CriticAgentEnvironment` constructor to accept `image_ref`
+- ❌ Update `GraderAgentEnvironment` constructor
+- ❌ Update `AgentRegistry.run_critic()` to resolve tags
+- ❌ Update test fixtures to use image refs
+
+**Runtime Testing**
+
+- ❌ Test `devenv up` starts all containers (postgres + registry + proxy)
+- ❌ Verify network isolation works
+- ❌ Test `bazel run //props/core/agent_defs/critic:push` succeeds
+- ❌ Run e2e tests (critic/grader/prompt-optimizer)
+- **Blocker**: Need running registry + launch integration
+
+**Agent Token Generation**
+
+- ❌ Generate bearer tokens when creating temp DB users
+- ❌ Token format: `agent_{run_id}_{password}`
+- ❌ Pass tokens to agent containers via env vars
+- ❌ Configure Docker registry auth in containers
+
+**Additional Agent Builds** (Lower Priority)
+
+- ❌ `contract_truthfulness/` (critic-based detector)
+- ❌ `dead_code/` (critic-based detector)
+- ❌ `flag_propagation/` (critic-based detector)
+- ❌ `high_recall_critic/` (critic-based detector)
+- ❌ `improvement/` (prompt improver agent)
+- ❌ `verbose_docs/` (unclear if agent)
+
+**Future Optimization**
+
+- ❌ Common base image with pre-installed Python packages
+- ❌ Would reduce image size duplication and speed up builds
+- **Note**: Documented in `props/core/agent_defs/AGENTS.md`
+
+### Estimated Completion
+
+- **Current**: ~70-75% complete
+- **Next critical task**: Agent launch integration (tag resolution + image_ref parameter)
+- **After that**: Runtime testing with full stack
+
+### Key Design Decisions Made
+
+1. **Network isolation enforced**: Two Docker networks prevent ACL bypass
+2. **Postgres validates all auth**: No hardcoded credentials, all validated against DB
+3. **Digest-only in database**: Tags convenient for launching, digests for immutability
+4. **Proxy auto-builds on devenv up**: No manual setup required
+5. **Migration path preserved**: Legacy `definition_id` can map to tags during transition
