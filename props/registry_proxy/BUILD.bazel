@@ -22,6 +22,7 @@ py_library(
         "//props/core",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//psycopg",
         "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],

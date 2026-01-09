@@ -108,9 +108,10 @@ in {
     # Check if proxy image exists, build it if not
     if ! docker image inspect props-registry-proxy:latest >/dev/null 2>&1; then
       echo "Proxy image not found, building..."
-      cd "$DEVENV_ROOT"
-      bazel run //props/registry_proxy:load || {
+      # devenv runs from props/, go up to repo root for Bazel
+      (cd .. && bazel run //props/registry_proxy:load) || {
         echo "ERROR: Failed to build proxy image"
+        echo "  Try manually: bazel run //props/registry_proxy:load"
         exit 1
       }
     fi
@@ -130,6 +131,21 @@ in {
     # Wait for container to start, then attach to props-agents network
     sleep 2
     docker network connect props-agents ${registryConfig.proxyContainerName} 2>/dev/null || true
+
+    # Wait for proxy to be healthy (check /v2/ endpoint)
+    echo "Waiting for proxy to be ready..."
+    for i in {1..30}; do
+      if curl -sf http://localhost:${registryConfig.proxyPort}/v2/ >/dev/null 2>&1; then
+        echo "Proxy is ready and responding"
+        break
+      fi
+      if [ $i -eq 30 ]; then
+        echo "ERROR: Proxy failed to start within 30 seconds"
+        echo "Check logs: docker logs ${registryConfig.proxyContainerName}"
+        exit 1
+      fi
+      sleep 1
+    done
 
     # Wait for proxy process
     wait $PROXY_PID
