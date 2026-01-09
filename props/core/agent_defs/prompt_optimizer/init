@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /app/prompt_optimizer_init

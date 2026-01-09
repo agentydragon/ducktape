@@ -1,0 +1,64 @@
+"""Grader agent OCI image built with Bazel.
+
+Build targets:
+    bazel run //props/core/agent_defs/grader:load  -- Load into local Docker
+    bazel run //props/core/agent_defs/grader:push  -- Push to local registry (localhost:5050)
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "grader_init",
+    srcs = ["init.py"],
+    main = "init.py",
+    deps = [
+        "//props/core",
+    ],
+)
+
+pkg_tar(
+    name = "app_tar",
+    srcs = [":grader_init"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+pkg_tar(
+    name = "init_tar",
+    srcs = ["init"],
+    mode = "0755",
+    package_dir = "/",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/init"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [
+        ":app_tar",
+        ":init_tar",
+    ],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["grader-agent:latest"],
+)
+
+# Push to local registry (localhost:5050, running via devenv)
+# Usage: bazel run //props/core/agent_defs/grader:push
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/grader",
+)
