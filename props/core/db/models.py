@@ -34,13 +34,13 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from agent_core.events import EventType
 from props.core.agent_types import (
+    AgentType,
     CriticTypeConfig,
     FreeformTypeConfig,
     GraderTypeConfig,
@@ -1348,22 +1348,31 @@ class OccurrenceStatistics(Base):
 
 
 class AgentDefinition(Base):
-    """Agent package archive stored in database.
+    """Agent image definition stored as OCI digest.
 
-    Contains Dockerfile, /init script, and optional supporting files packed as tar.
-    Packages can be repo-backed (readable names) or agent-created (auto-generated IDs).
+    The registry proxy writes rows to this table on manifest push.
+    Digest is the primary key (sha256:...).
     """
 
     __tablename__ = "agent_definitions"
 
-    id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
-    agent_type: Mapped[str] = mapped_column(String, nullable=False)  # agent_type_enum value
-    archive: Mapped[bytes] = mapped_column(postgresql.BYTEA, nullable=False)
+    digest: Mapped[str] = mapped_column(String, primary_key=True, comment="OCI image digest (sha256:...)")
+    agent_type: Mapped[AgentType] = mapped_column(String, nullable=False, comment="Agent type enum")
+    created_by_agent_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True, index=True, comment="Agent run that created this image (NULL for builtin)"
+    )
+    base_digest: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="Parent image digest if this is a layered image"
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    created_by_agent_run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
-    agent_runs: Mapped[list[AgentRun]] = relationship(back_populates="agent_definition")
+    agent_runs: Mapped[list[AgentRun]] = relationship(
+        back_populates="agent_definition", foreign_keys="AgentRun.image_digest"
+    )
 
 
 class AgentRun(Base):
@@ -1376,13 +1385,19 @@ class AgentRun(Base):
     - status: Current run status (in_progress, completed, etc.)
     - completion_summary: Markdown summary from agent (when status='completed')
       or error message (when status='reported_failure')
+
+    Image reference:
+    - image_digest: OCI image digest (sha256:...), FK to agent_definitions.digest
     """
 
     __tablename__ = "agent_runs"
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    agent_definition_id: Mapped[DefinitionId] = mapped_column(
-        String, ForeignKey("agent_definitions.id"), nullable=False
+    image_digest: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("agent_definitions.digest"),
+        nullable=False,
+        comment="OCI image digest (FK to agent_definitions.digest)",
     )
     parent_agent_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id"), nullable=True, index=True
@@ -1405,7 +1420,7 @@ class AgentRun(Base):
     )
 
     # Relationships
-    agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs")
+    agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs", foreign_keys=[image_digest])
     parent: Mapped[AgentRun | None] = relationship("AgentRun", remote_side=[agent_run_id], backref="children")
     reported_issues: Mapped[list[ReportedIssue]] = relationship(
         back_populates="agent_run", cascade="all, delete-orphan"

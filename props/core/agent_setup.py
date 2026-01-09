@@ -39,12 +39,10 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
 
 from agent_core.handler import BaseHandler
-from agent_pkg.host.builder import ensure_image_from_archive
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from net_util.docker import get_docker_network_gateway_async
 from net_util.net import pick_free_port, wait_for_port
-from props.core.agent_handle import load_definition_archive
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.db.config import DatabaseConfig
@@ -52,6 +50,7 @@ from props.core.db.temp_user_manager import TempUserManager
 from props.core.db_event_handler import DatabaseEventHandler
 from props.core.docker_env import DOCKER_MOUNT_PREFIX, PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from props.core.ids import DefinitionId
+from props.core.registry.images import resolve_image_id
 
 
 def _make_container_name(definition_id: DefinitionId, agent_run_id: UUID) -> str:
@@ -165,6 +164,7 @@ class AgentEnvironment(ABC):
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
         *,
+        image_ref: str | None = None,
         container_name: str | None = None,
         labels: dict[str, str] | None = None,
         auto_remove: bool = False,
@@ -174,6 +174,7 @@ class AgentEnvironment(ABC):
         self._docker_client = docker_client
         self._db_config = db_config
         self._workspace_manager = workspace_manager
+        self._image_ref = image_ref  # OCI image ref (takes precedence over definition_id)
         self._container_name = container_name
         self._labels = labels or {}
         self._auto_remove = auto_remove
@@ -224,10 +225,16 @@ class AgentEnvironment(ABC):
         Returns:
             PropertiesDockerCompositor with docker_exec tool available
         """
-        # Build image from definition archive (cached by content hash)
-        archive = load_definition_archive(self._definition_id)
-        self._image_id = await ensure_image_from_archive(self._docker_client, archive)
-        logger.info(f"Using image {self._image_id[:19]} for definition {self._definition_id}")
+        # Resolve image: use image_ref if provided, otherwise build from definition archive
+        self._image_id = await resolve_image_id(
+            self._docker_client,
+            image_ref=self._image_ref,
+            definition_id=self._definition_id if self._image_ref is None else None,
+        )
+        if self._image_ref:
+            logger.info(f"Using image {self._image_id[:19]} from image_ref {self._image_ref}")
+        else:
+            logger.info(f"Using image {self._image_id[:19]} built from definition {self._definition_id}")
 
         self._user_manager = TempUserManager(self._db_config.admin, self._agent_run_id)
         temp_creds = await self._user_manager.__aenter__()

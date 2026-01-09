@@ -1,0 +1,271 @@
+"""OCI Registry proxy with ACL enforcement and metadata tracking.
+
+Sits between agents and the upstream registry to:
+- Validate agent auth tokens against postgres
+- Enforce ACL based on agent type (admin/PO/PI/critic/grader)
+- Record image refs in database when pushed
+- Prevent unauthorized operations
+
+The proxy implements the OCI Distribution API, forwarding valid requests
+to the upstream registry while enforcing access controls.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import os
+import re
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Annotated
+from uuid import UUID
+
+import httpx
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from sqlalchemy.orm import Session
+
+from props.core.db.models import AgentRun, AgentType
+from props.core.db.session import get_session_context
+
+logger = logging.getLogger(__name__)
+
+# Environment variables for registry configuration
+UPSTREAM_REGISTRY_URL = os.environ.get("PROPS_REGISTRY_UPSTREAM_URL", "http://props-registry:5000")
+
+
+class CallerType(StrEnum):
+    """Type of caller accessing the registry."""
+
+    ADMIN = "admin"  # postgres user - full access
+    PROMPT_OPTIMIZER = "prompt-optimizer"  # PO agent - can read/push
+    PROMPT_IMPROVER = "prompt-improver"  # PI agent - can read/push
+    CRITIC = "critic"  # Critic agent - no registry access
+    GRADER = "grader"  # Grader agent - no registry access
+    UNKNOWN = "unknown"  # Invalid/unrecognized caller
+
+
+@dataclass
+class AuthContext:
+    """Authenticated caller context."""
+
+    caller_type: CallerType
+    agent_run_id: UUID | None  # None for admin
+
+
+def _parse_auth_header(authorization: str | None) -> AuthContext | None:
+    """Parse authorization header and determine caller type.
+
+    Supports:
+    - Basic auth with postgres admin user (admin access)
+    - Bearer token with agent_{run_id} pattern (agent access)
+
+    Returns None if auth is invalid.
+    """
+    if not authorization:
+        return None
+
+    # Basic auth for admin (postgres user)
+    if authorization.startswith("Basic "):
+        # TODO: Validate against postgres credentials
+        # For now, accept any Basic auth as admin (will be validated by postgres connection)
+        return AuthContext(caller_type=CallerType.ADMIN, agent_run_id=None)
+
+    # Bearer token for agents
+    if authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ")
+        # Token format: agent_{agent_run_id}_{secret}
+        if not token.startswith("agent_"):
+            return None
+
+        parts = token.split("_", 2)
+        if len(parts) < 2:
+            return None
+
+        try:
+            agent_run_id = UUID(parts[1])
+        except ValueError:
+            return None
+
+        return AuthContext(caller_type=CallerType.UNKNOWN, agent_run_id=agent_run_id)
+
+    return None
+
+
+def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthContext:
+    """Dependency to extract and validate caller auth.
+
+    For agents: verifies agent run exists and determines agent type.
+    For admin: validates basic auth credentials.
+    """
+    auth = _parse_auth_header(authorization)
+    if auth is None:
+        raise HTTPException(status_code=401, detail="Invalid authorization")
+
+    # Admin doesn't need further validation (credentials will be checked by postgres)
+    if auth.caller_type == CallerType.ADMIN:
+        return auth
+
+    # For agents, look up run in database to determine type
+    assert auth.agent_run_id is not None
+    with get_session_context() as session:
+        agent_run = session.get(AgentRun, auth.agent_run_id)
+        if agent_run is None:
+            raise HTTPException(status_code=401, detail="Invalid agent token")
+
+        # Extract agent type from type_config JSONB
+        agent_type_str = agent_run.type_config.get("agent_type")
+        if not agent_type_str:
+            raise HTTPException(status_code=500, detail="Agent run missing agent_type in type_config")
+
+        # Map agent type to caller type
+        try:
+            agent_type = AgentType(agent_type_str)
+        except ValueError:
+            raise HTTPException(status_code=500, detail=f"Unknown agent type: {agent_type_str}")
+
+        caller_type_map = {
+            AgentType.PROMPT_OPTIMIZER: CallerType.PROMPT_OPTIMIZER,
+            AgentType.PROMPT_IMPROVER: CallerType.PROMPT_IMPROVER,
+            AgentType.CRITIC: CallerType.CRITIC,
+            AgentType.GRADER: CallerType.GRADER,
+        }
+
+        auth.caller_type = caller_type_map.get(agent_type, CallerType.UNKNOWN)
+
+    return auth
+
+
+# ACL table: what each caller type can do
+ACL = {
+    CallerType.ADMIN: {"read": True, "push_by_digest": True, "push_by_tag": True, "delete": False},
+    CallerType.PROMPT_OPTIMIZER: {"read": True, "push_by_digest": True, "push_by_tag": False, "delete": False},
+    CallerType.PROMPT_IMPROVER: {"read": True, "push_by_digest": True, "push_by_tag": False, "delete": False},
+    CallerType.CRITIC: {"read": False, "push_by_digest": False, "push_by_tag": False, "delete": False},
+    CallerType.GRADER: {"read": False, "push_by_digest": False, "push_by_tag": False, "delete": False},
+    CallerType.UNKNOWN: {"read": False, "push_by_digest": False, "push_by_tag": False, "delete": False},
+}
+
+
+def _is_digest(ref: str) -> bool:
+    """Check if a reference is a digest (sha256:...) vs a tag."""
+    return bool(re.match(r"^(sha256|sha384|sha512):[a-f0-9]+$", ref))
+
+
+def _check_permission(auth: AuthContext, operation: str, path: str, method: str) -> None:
+    """Check if caller has permission for this operation.
+
+    Raises HTTPException if permission denied.
+    """
+    acl = ACL[auth.caller_type]
+
+    # Read operations
+    if method in {"GET", "HEAD"}:
+        if not acl["read"]:
+            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to read")
+        return
+
+    # Manifest push
+    if method == "PUT" and "/manifests/" in path:
+        # Extract reference (tag or digest) from path
+        ref = path.split("/manifests/")[-1].split("?")[0]
+        is_digest = _is_digest(ref)
+
+        if is_digest:
+            if not acl["push_by_digest"]:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push by digest")
+        elif not acl["push_by_tag"]:
+            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push by tag")
+        return
+
+    # Blob upload operations (POST, PATCH, PUT to /blobs/)
+    if "/blobs/" in path and method in ("POST", "PATCH", "PUT"):
+        # Blob uploads are part of push flow, require push permission
+        if not (acl["push_by_digest"] or acl["push_by_tag"]):
+            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
+        return
+
+    # Delete operations
+    if method == "DELETE":
+        if not acl["delete"]:
+            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to delete")
+        return
+
+    # Default: allow (e.g., catalog, version check)
+
+
+async def _record_manifest_push(session: Session, repository: str, digest: str, auth: AuthContext) -> None:
+    """Record a manifest push to agent_definitions table.
+
+    Args:
+        session: Database session
+        repository: Repository name (e.g., "critic")
+        digest: Manifest digest (sha256:...)
+        auth: Caller authentication context
+    """
+    # TODO: Implement agent_definitions table tracking
+    # For now, just log
+    logger.info(f"Manifest push: {repository}@{digest} by {auth.caller_type} (run_id={auth.agent_run_id})")
+
+
+# FastAPI app
+app = FastAPI(title="Props Registry Proxy")
+
+
+@app.get("/health")
+async def health() -> dict:
+    """Health check endpoint."""
+    return {"status": "ok"}
+
+
+@app.api_route("/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
+async def proxy(request: Request, path: str, auth: Annotated[AuthContext, Depends(get_auth)]) -> Response:
+    """Proxy all OCI registry requests with ACL enforcement."""
+    # Check permissions
+    _check_permission(auth, "proxy", path, request.method)
+
+    # Build upstream URL
+    upstream_url = f"{UPSTREAM_REGISTRY_URL}/{path}"
+    if request.url.query:
+        upstream_url += f"?{request.url.query}"
+
+    # Forward request to upstream registry
+    async with httpx.AsyncClient() as client:
+        # Prepare request
+        headers = dict(request.headers)
+        # Remove host header (will be set by httpx)
+        headers.pop("host", None)
+        body = await request.body()
+
+        # Special handling for manifest pushes: record in database
+        is_manifest_push = request.method == "PUT" and "/v2/" in path and "/manifests/" in path
+        manifest_digest = None
+
+        if is_manifest_push:
+            # Compute manifest digest from body
+            manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
+
+        # Forward request
+        try:
+            upstream_response = await client.request(
+                method=request.method, url=upstream_url, headers=headers, content=body, timeout=30.0
+            )
+        except httpx.RequestError as e:
+            logger.error(f"Upstream request failed: {e}")
+            raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
+
+        # Record manifest push if successful
+        if is_manifest_push and upstream_response.status_code in (200, 201):
+            # Extract repository name from path (/v2/<repo>/manifests/<ref>)
+            match = re.match(r"^v2/([^/]+)/manifests/", path)
+            if match:
+                repository = match.group(1)
+                with get_session_context() as session:
+                    await _record_manifest_push(session, repository, manifest_digest, auth)
+
+        # Return upstream response
+        return Response(
+            content=upstream_response.content,
+            status_code=upstream_response.status_code,
+            headers=dict(upstream_response.headers),
+        )

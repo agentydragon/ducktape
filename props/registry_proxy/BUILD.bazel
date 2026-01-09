@@ -1,0 +1,32 @@
+"""Registry proxy OCI image built with Bazel.
+
+The proxy enforces ACL and metadata tracking for agent image operations.
+
+Build targets:
+    bazel run //props/registry_proxy:proxy  -- Run proxy locally (development)
+
+Future OCI targets (TODO):
+    bazel run //props/registry_proxy:load   -- Load into local Docker
+    bazel run //props/registry_proxy:push   -- Push to local registry
+"""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "proxy_lib",
+    srcs = [
+        "__init__.py",
+        "proxy.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/core",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+# For local development: bazel run //props/registry_proxy:proxy
+# This is a placeholder until we create the full OCI image

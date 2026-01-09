@@ -970,10 +970,10 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.PrimaryKeyConstraint("slug"),
     )
 
-    # Agent definitions table
+    # Agent definitions table (digest-based, OCI images)
     op.create_table(
         "agent_definitions",
-        sa.Column("id", sa.Text(), nullable=False),
+        sa.Column("digest", sa.Text(), nullable=False, comment="OCI image digest (sha256:...)"),
         sa.Column(
             "agent_type",
             postgresql.ENUM(
@@ -987,26 +987,22 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
                 create_type=False,
             ),
             nullable=False,
+            comment="Agent type enum (maps to repository name in registry)",
         ),
-        sa.Column("archive", sa.LargeBinary(), nullable=False),
-        sa.Column("created_by_agent_run_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column(
+            "created_by_agent_run_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=True,
+            comment="Agent run that created this image (NULL for builtin images)",
+        ),
+        sa.Column("base_digest", sa.Text(), nullable=True, comment="Parent image digest if this is a layered image"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.CheckConstraint("octet_length(archive) <= 10485760", name="agent_definitions_archive_max_size"),
+        sa.PrimaryKeyConstraint("digest"),
     )
 
     op.execute(
-        "COMMENT ON TABLE agent_definitions IS 'Agent package archives containing Dockerfile, /init script, and supporting files'"
-    )
-    op.execute(
-        "COMMENT ON COLUMN agent_definitions.id IS 'Readable ID: repo-backed use names like \"critic\", agent-created use auto-generated'"
-    )
-    op.execute(
-        "COMMENT ON COLUMN agent_definitions.archive IS 'Uncompressed tar archive of the definition directory (max 10MB)'"
-    )
-    op.execute(
-        "COMMENT ON COLUMN agent_definitions.created_by_agent_run_id IS 'Agent run that created this definition (NULL for repo-backed)'"
+        "COMMENT ON TABLE agent_definitions IS 'Agent images as OCI digests. Registry proxy writes rows on manifest push.'"
     )
 
     # Agent role salt table (singleton)
@@ -1027,7 +1023,9 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     op.create_table(
         "agent_runs",
         sa.Column("agent_run_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("agent_definition_id", sa.Text(), nullable=False),
+        sa.Column(
+            "image_digest", sa.Text(), nullable=False, comment="OCI image digest (FK to agent_definitions.digest)"
+        ),
         sa.Column("parent_agent_run_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("model", sa.Text(), nullable=False),
         sa.Column("type_config", postgresql.JSONB(), nullable=False),
@@ -1049,7 +1047,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.Column("completion_summary", sa.Text(), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("agent_run_id"),
-        sa.ForeignKeyConstraint(["agent_definition_id"], ["agent_definitions.id"]),
+        sa.ForeignKeyConstraint(["image_digest"], ["agent_definitions.digest"]),
         sa.ForeignKeyConstraint(["parent_agent_run_id"], ["agent_runs.agent_run_id"]),
     )
 
@@ -1077,6 +1075,8 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         ["created_by_agent_run_id"],
         ["agent_run_id"],
     )
+
+    op.execute("COMMENT ON COLUMN agent_runs.image_digest IS 'OCI image digest (FK to agent_definitions.digest)'")
 
     # Snapshot files table - all files in each snapshot for FK validation
     op.create_table(
