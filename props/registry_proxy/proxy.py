@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from props.core.db.models import AgentDefinition, AgentRun, AgentType
 from props.core.db.session import get_session_context
+from props.core.oci_utils import is_digest
 
 logger = logging.getLogger(__name__)
 
@@ -184,11 +185,6 @@ CAN_PUSH = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMP
 CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
 
 
-def _is_digest(ref: str) -> bool:
-    """Check if a reference is a digest (sha256:...) vs a tag."""
-    return bool(re.match(r"^(sha256|sha384|sha512):[a-f0-9]+$", ref))
-
-
 def _check_permission(auth: AuthContext, operation: str, path: str, method: str) -> None:
     """Check if caller has permission for this operation.
 
@@ -206,7 +202,7 @@ def _check_permission(auth: AuthContext, operation: str, path: str, method: str)
             raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
         # Check if pushing by tag (requires additional permission)
         ref = path.split("/manifests/")[-1].split("?")[0]
-        if not _is_digest(ref) and auth.caller_type not in CAN_PUSH_TAGS:
+        if not is_digest(ref) and auth.caller_type not in CAN_PUSH_TAGS:
             raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push by tag")
         return
 

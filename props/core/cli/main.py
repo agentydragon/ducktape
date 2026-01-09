@@ -684,7 +684,7 @@ async def cmd_run(
 
         # Run critic via registry
         critic_run_id = await registry.run_critic(
-            definition_id=definition_id,
+            image_ref=definition_id,  # definition_id is actually an image ref
             example=example_spec,
             client=build_client(model),
             verbose=True,

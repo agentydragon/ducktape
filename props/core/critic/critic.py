@@ -22,6 +22,7 @@ from props.core.db.config import DatabaseConfig
 from props.core.display import short_uuid
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
+from props.core.registry.images import REGISTRY_HOST, REGISTRY_PORT
 
 
 class CriticAgentEnvironment(AgentEnvironment):
@@ -49,6 +50,7 @@ class CriticAgentEnvironment(AgentEnvironment):
             agent_run_id=run_id,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image_digest="sha256:abc...",  # OCI image digest
         ) as compositor:
             # Run critic agent
             ...
@@ -62,11 +64,16 @@ class CriticAgentEnvironment(AgentEnvironment):
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
         *,
+        image_digest: str,
         definition_id: DefinitionId = CRITIC_AGENT_DEFINITION_ID,
         container_name: str | None = None,
     ):
         # Store params needed by _make_mcp_server (before super().__init__ since it accesses them)
         self._example = example
+
+        # Construct full OCI reference from digest
+        # Format: localhost:5050/critic@sha256:abc...
+        image_ref = f"{REGISTRY_HOST}:{REGISTRY_PORT}/critic@{image_digest}"
 
         name = container_name or f"critic-{definition_id[:12]}-{short_uuid(agent_run_id)}"
 
@@ -76,6 +83,7 @@ class CriticAgentEnvironment(AgentEnvironment):
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image_ref=image_ref,
             container_name=name,
             labels={
                 "adgn.project": "props",

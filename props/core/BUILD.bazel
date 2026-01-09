@@ -40,6 +40,7 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pyyaml",
+        "@pypi//requests",
         "@pypi//rich",
         "@pypi//sqlalchemy",
         "@pypi//tiktoken",

@@ -36,7 +36,9 @@ from props.core.display import short_uuid
 from props.core.exceptions import AgentDidNotSubmitError
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
+from props.core.oci_utils import resolve_image_ref
 from props.core.prompt_optimize.budget_handler import BudgetEnforcementHandler
+from props.core.registry.images import REGISTRY_HOST, REGISTRY_PORT
 from props.core.splits import Split
 
 from .target_metric import TargetMetric
@@ -119,6 +121,8 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         workspace_manager: WorkspaceManager,
         registry: AgentRegistry,
         verbose: bool = False,
+        *,
+        image_digest: str,
     ):
         self._optimizer_run_id = optimizer_run_id
         self._optimizer_model = optimizer_model
@@ -131,12 +135,17 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         self._registry = registry
         self._verbose = verbose
 
+        # Construct full OCI reference from digest
+        # Format: localhost:5050/prompt-optimizer@sha256:abc...
+        image_ref = f"{REGISTRY_HOST}:{REGISTRY_PORT}/prompt-optimizer@{image_digest}"
+
         super().__init__(
             definition_id=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
             agent_run_id=optimizer_run_id,
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image_ref=image_ref,
             container_name=f"promptopt-{short_uuid(optimizer_run_id)}",
             labels={
                 "adgn.project": "props",
@@ -325,7 +334,7 @@ class PromptEvalServer(EnhancedFastMCP):
             # Execute critic run using registry
             try:
                 critic_run_id = await self._registry.run_critic(
-                    definition_id=payload.definition_id,
+                    image_ref=payload.definition_id,  # definition_id is actually an image ref
                     example=payload.example,
                     client=self._critic_client,
                     parent_run_id=self._optimizer_run_id,
@@ -513,6 +522,7 @@ async def run_prompt_optimizer(
     db_config: DatabaseConfig,
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
+    image_ref: str = "builtin",
 ) -> None:
     """Run prompt optimizer agent. Loops until budget exhausted or report_failure called."""
     # Get train snapshots from database
@@ -526,6 +536,10 @@ async def run_prompt_optimizer(
     agent_run_id = uuid4()
     logger.info(f"Prompt optimizer agent_run_id: {agent_run_id}")
 
+    # Resolve image reference to digest
+    image_digest = resolve_image_ref("prompt-optimizer", image_ref)
+    logger.info(f"Resolved prompt-optimizer image {image_ref} → {image_digest}")
+
     # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
     with get_session() as session:
         type_config = PromptOptimizerTypeConfig(
@@ -538,7 +552,7 @@ async def run_prompt_optimizer(
 
         agent_run = AgentRun(
             agent_run_id=agent_run_id,
-            image_digest=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
+            image_digest=image_digest,
             model=optimizer_client.model,
             type_config=type_config,
             status=AgentRunStatus.IN_PROGRESS,
@@ -569,6 +583,7 @@ async def run_prompt_optimizer(
         workspace_manager=workspace_manager,
         registry=registry,
         verbose=verbose,
+        image_digest=image_digest,
     )
     async with agent_env as comp:
         # comp is a PropertiesDockerCompositor with:
