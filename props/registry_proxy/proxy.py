@@ -12,6 +12,7 @@ to the upstream registry while enforcing access controls.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import logging
 import os
@@ -22,6 +23,7 @@ from typing import Annotated
 from uuid import UUID
 
 import httpx
+import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
@@ -30,8 +32,11 @@ from props.core.db.session import get_session_context
 
 logger = logging.getLogger(__name__)
 
-# Environment variables for registry configuration
+# Environment variables for registry and postgres configuration
 UPSTREAM_REGISTRY_URL = os.environ.get("PROPS_REGISTRY_UPSTREAM_URL", "http://props-registry:5000")
+PGHOST = os.environ.get("PGHOST", "props-postgres")
+PGPORT = os.environ.get("PGPORT", "5432")
+PGDATABASE = os.environ.get("PGDATABASE", "eval_results")
 
 
 class CallerType(StrEnum):
@@ -53,12 +58,27 @@ class AuthContext:
     agent_run_id: UUID | None  # None for admin
 
 
+def _validate_postgres_credentials(username: str, password: str) -> bool:
+    """Validate credentials by attempting postgres connection.
+
+    Returns True if credentials are valid, False otherwise.
+    """
+    try:
+        # Attempt connection with provided credentials
+        with psycopg.connect(
+            host=PGHOST, port=PGPORT, dbname=PGDATABASE, user=username, password=password, connect_timeout=5
+        ):
+            return True
+    except psycopg.OperationalError:
+        return False
+
+
 def _parse_auth_header(authorization: str | None) -> AuthContext | None:
     """Parse authorization header and determine caller type.
 
     Supports:
-    - Basic auth with postgres admin user (admin access)
-    - Bearer token with agent_{run_id} pattern (agent access)
+    - Basic auth (validates against postgres)
+    - Bearer token with agent_{run_id}_{secret} pattern (validates password against postgres)
 
     Returns None if auth is invalid.
     """
@@ -67,24 +87,46 @@ def _parse_auth_header(authorization: str | None) -> AuthContext | None:
 
     # Basic auth for admin (postgres user)
     if authorization.startswith("Basic "):
-        # TODO: Validate against postgres credentials
-        # For now, accept any Basic auth as admin (will be validated by postgres connection)
-        return AuthContext(caller_type=CallerType.ADMIN, agent_run_id=None)
+        try:
+            encoded = authorization.removeprefix("Basic ")
+            decoded = base64.b64decode(encoded).decode("utf-8")
+            username, password = decoded.split(":", 1)
 
-    # Bearer token for agents
+            # Validate credentials against postgres
+            if not _validate_postgres_credentials(username, password):
+                logger.warning(f"Invalid postgres credentials for user: {username}")
+                return None
+
+            return AuthContext(caller_type=CallerType.ADMIN, agent_run_id=None)
+        except (ValueError, UnicodeDecodeError) as e:
+            logger.warning(f"Failed to parse Basic auth: {e}")
+            return None
+
+    # Bearer token for agents (format: agent_{agent_run_id}_{password})
     if authorization.startswith("Bearer "):
         token = authorization.removeprefix("Bearer ")
-        # Token format: agent_{agent_run_id}_{secret}
+        # Token format: agent_{agent_run_id}_{password}
         if not token.startswith("agent_"):
             return None
 
         parts = token.split("_", 2)
-        if len(parts) < 2:
+        if len(parts) < 3:
+            logger.warning("Bearer token missing password component")
             return None
 
         try:
             agent_run_id = UUID(parts[1])
         except ValueError:
+            logger.warning(f"Invalid UUID in agent token: {parts[1]}")
+            return None
+
+        # Validate agent credentials against postgres
+        # Agent temp users have username format: agent_{run_id}
+        username = f"agent_{agent_run_id}"
+        password = parts[2]
+
+        if not _validate_postgres_credentials(username, password):
+            logger.warning(f"Invalid credentials for agent: {username}")
             return None
 
         return AuthContext(caller_type=CallerType.UNKNOWN, agent_run_id=agent_run_id)

@@ -102,28 +102,37 @@ in {
     # Stop and remove existing container if present
     docker rm -f ${registryConfig.proxyContainerName} 2>/dev/null || true
 
-    # Read password from state file for admin auth
+    # Read password from state file for database connection
     PG_PASSWORD=$(cat ${passwordFile})
 
-    # Run proxy container
-    # TODO: Replace with actual proxy image once implemented
-    # For now, this is a placeholder that will be replaced with:
-    # docker run --rm --name ${registryConfig.proxyContainerName} \
-    #   --network props-internal \
-    #   -p ${registryConfig.proxyPort}:${registryConfig.proxyContainerPort} \
-    #   -e PROPS_REGISTRY_UPSTREAM_URL=http://${registryConfig.registryContainerName}:${registryConfig.registryContainerPort} \
-    #   -e PGHOST=${pgConfig.containerName} -e PGPORT=${pgConfig.containerPort} \
-    #   -e PGUSER=${pgConfig.adminUser} -e PGPASSWORD="$PG_PASSWORD" \
-    #   -e PGDATABASE=${pgConfig.database} \
-    #   localhost:${registryConfig.registryPort}/registry-proxy:latest &
-    # PG_PID=$!
-    # sleep 2
-    # docker network connect props-agents ${registryConfig.proxyContainerName} 2>/dev/null || true
-    # wait $PG_PID
+    # Check if proxy image exists, build it if not
+    if ! docker image inspect props-registry-proxy:latest >/dev/null 2>&1; then
+      echo "Proxy image not found, building..."
+      cd "$DEVENV_ROOT"
+      bazel run //props/registry_proxy:load || {
+        echo "ERROR: Failed to build proxy image"
+        exit 1
+      }
+    fi
 
-    echo "Registry proxy placeholder - container not yet built"
-    echo "Will be enabled once //props/registry_proxy:push is run"
-    sleep infinity
+    # Run proxy container
+    docker run --rm --name ${registryConfig.proxyContainerName} \
+      --network props-internal \
+      -p ${registryConfig.proxyPort}:${registryConfig.proxyContainerPort} \
+      -e PROPS_REGISTRY_UPSTREAM_URL=http://${registryConfig.registryContainerName}:${registryConfig.registryContainerPort} \
+      -e PGHOST=${pgConfig.containerName} -e PGPORT=${pgConfig.containerPort} \
+      -e PGUSER=${pgConfig.adminUser} -e PGPASSWORD="$PG_PASSWORD" \
+      -e PGDATABASE=${pgConfig.database} \
+      props-registry-proxy:latest &
+
+    PROXY_PID=$!
+
+    # Wait for container to start, then attach to props-agents network
+    sleep 2
+    docker network connect props-agents ${registryConfig.proxyContainerName} 2>/dev/null || true
+
+    # Wait for proxy process
+    wait $PROXY_PID
   '';
 
   # Periodic database backup (every 6 hours, keeps 7 days)
