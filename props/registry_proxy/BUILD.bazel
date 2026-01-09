@@ -3,14 +3,13 @@
 The proxy enforces ACL and metadata tracking for agent image operations.
 
 Build targets:
-    bazel run //props/registry_proxy:proxy  -- Run proxy locally (development)
-
-Future OCI targets (TODO):
-    bazel run //props/registry_proxy:load   -- Load into local Docker
-    bazel run //props/registry_proxy:push   -- Push to local registry
+    bazel run //props/registry_proxy:load  -- Load into local Docker
+    bazel run //props/registry_proxy:push  -- Push to local registry (localhost:5050)
 """
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "proxy_lib",
@@ -28,5 +27,55 @@ py_library(
     ],
 )
 
-# For local development: bazel run //props/registry_proxy:proxy
-# This is a placeholder until we create the full OCI image
+py_binary(
+    name = "proxy_bin",
+    srcs = ["proxy.py"],
+    main = "proxy.py",
+    deps = [":proxy_lib"],
+)
+
+pkg_tar(
+    name = "app_tar",
+    srcs = [":proxy_bin"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+pkg_tar(
+    name = "entrypoint_tar",
+    srcs = ["entrypoint.sh"],
+    mode = "0755",
+    package_dir = "/",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/entrypoint.sh"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+        "PROPS_REGISTRY_UPSTREAM_URL": "http://props-registry:5000",
+    },
+    exposed_ports = ["5051/tcp"],
+    tars = [
+        ":app_tar",
+        ":entrypoint_tar",
+    ],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["props-registry-proxy:latest"],
+)
+
+# Push to local registry (localhost:5050, running via devenv)
+# Usage: bazel run //props/registry_proxy:push
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/registry-proxy",
+)

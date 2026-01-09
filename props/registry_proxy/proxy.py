@@ -136,15 +136,10 @@ def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthConte
     return auth
 
 
-# ACL table: what each caller type can do
-ACL = {
-    CallerType.ADMIN: {"read": True, "push_by_digest": True, "push_by_tag": True, "delete": False},
-    CallerType.PROMPT_OPTIMIZER: {"read": True, "push_by_digest": True, "push_by_tag": False, "delete": False},
-    CallerType.PROMPT_IMPROVER: {"read": True, "push_by_digest": True, "push_by_tag": False, "delete": False},
-    CallerType.CRITIC: {"read": False, "push_by_digest": False, "push_by_tag": False, "delete": False},
-    CallerType.GRADER: {"read": False, "push_by_digest": False, "push_by_tag": False, "delete": False},
-    CallerType.UNKNOWN: {"read": False, "push_by_digest": False, "push_by_tag": False, "delete": False},
-}
+# ACL: sets of caller types allowed for each operation
+CAN_READ = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
+CAN_PUSH = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
+CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
 
 
 def _is_digest(ref: str) -> bool:
@@ -157,39 +152,31 @@ def _check_permission(auth: AuthContext, operation: str, path: str, method: str)
 
     Raises HTTPException if permission denied.
     """
-    acl = ACL[auth.caller_type]
-
     # Read operations
     if method in {"GET", "HEAD"}:
-        if not acl["read"]:
+        if auth.caller_type not in CAN_READ:
             raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to read")
         return
 
     # Manifest push
     if method == "PUT" and "/manifests/" in path:
-        # Extract reference (tag or digest) from path
+        if auth.caller_type not in CAN_PUSH:
+            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
+        # Check if pushing by tag (requires additional permission)
         ref = path.split("/manifests/")[-1].split("?")[0]
-        is_digest = _is_digest(ref)
-
-        if is_digest:
-            if not acl["push_by_digest"]:
-                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push by digest")
-        elif not acl["push_by_tag"]:
+        if not _is_digest(ref) and auth.caller_type not in CAN_PUSH_TAGS:
             raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push by tag")
         return
 
     # Blob upload operations (POST, PATCH, PUT to /blobs/)
     if "/blobs/" in path and method in ("POST", "PATCH", "PUT"):
-        # Blob uploads are part of push flow, require push permission
-        if not (acl["push_by_digest"] or acl["push_by_tag"]):
+        if auth.caller_type not in CAN_PUSH:
             raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
         return
 
-    # Delete operations
+    # Delete always forbidden
     if method == "DELETE":
-        if not acl["delete"]:
-            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to delete")
-        return
+        raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to delete")
 
     # Default: allow (e.g., catalog, version check)
 
