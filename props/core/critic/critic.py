@@ -20,7 +20,6 @@ from props.core.critic.submit_server import CriticSubmitServer
 from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props.core.db.config import DatabaseConfig
 from props.core.display import short_uuid
-from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
 from props.core.registry.images import REGISTRY_HOST, REGISTRY_PORT
 
@@ -65,7 +64,6 @@ class CriticAgentEnvironment(AgentEnvironment):
         workspace_manager: WorkspaceManager,
         *,
         image_digest: str,
-        definition_id: DefinitionId = CRITIC_AGENT_DEFINITION_ID,
         container_name: str | None = None,
     ):
         # Store params needed by _make_mcp_server (before super().__init__ since it accesses them)
@@ -75,10 +73,10 @@ class CriticAgentEnvironment(AgentEnvironment):
         # Format: localhost:5050/critic@sha256:abc...
         image_ref = f"{REGISTRY_HOST}:{REGISTRY_PORT}/critic@{image_digest}"
 
-        name = container_name or f"critic-{definition_id[:12]}-{short_uuid(agent_run_id)}"
+        name = container_name or f"critic-{short_uuid(agent_run_id)}"
 
         super().__init__(
-            definition_id=definition_id,
+            definition_id=CRITIC_AGENT_DEFINITION_ID,
             agent_run_id=agent_run_id,
             docker_client=docker_client,
             db_config=db_config,
@@ -88,7 +86,7 @@ class CriticAgentEnvironment(AgentEnvironment):
             labels={
                 "adgn.project": "props",
                 "adgn.role": "critic",
-                "adgn.definition_id": definition_id,
+                "adgn.definition_id": CRITIC_AGENT_DEFINITION_ID,
                 "adgn.agent_run_id": str(agent_run_id),
             },
             auto_remove=True,
