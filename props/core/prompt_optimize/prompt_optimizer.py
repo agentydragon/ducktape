@@ -538,7 +538,7 @@ async def run_prompt_optimizer(
 
         agent_run = AgentRun(
             agent_run_id=agent_run_id,
-            agent_definition_id=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
+            image_digest=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
             model=optimizer_client.model,
             type_config=type_config,
             status=AgentRunStatus.IN_PROGRESS,

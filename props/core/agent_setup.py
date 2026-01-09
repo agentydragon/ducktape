@@ -225,16 +225,11 @@ class AgentEnvironment(ABC):
         Returns:
             PropertiesDockerCompositor with docker_exec tool available
         """
-        # Resolve image: use image_ref if provided, otherwise build from definition archive
-        self._image_id = await resolve_image_id(
-            self._docker_client,
-            image_ref=self._image_ref,
-            definition_id=self._definition_id if self._image_ref is None else None,
-        )
-        if self._image_ref:
-            logger.info(f"Using image {self._image_id[:19]} from image_ref {self._image_ref}")
-        else:
-            logger.info(f"Using image {self._image_id[:19]} built from definition {self._definition_id}")
+        # Resolve image from OCI reference
+        if self._image_ref is None:
+            raise ValueError("image_ref is required (tarball definitions no longer supported)")
+        self._image_id = await resolve_image_id(self._docker_client, image_ref=self._image_ref)
+        logger.info(f"Using image {self._image_id[:19]} from image_ref {self._image_ref}")
 
         self._user_manager = TempUserManager(self._db_config.admin, self._agent_run_id)
         temp_creds = await self._user_manager.__aenter__()

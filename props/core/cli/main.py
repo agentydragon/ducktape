@@ -139,7 +139,7 @@ def run_info_cmd() -> None:
         agent_run = get_current_agent_run(session)
         typer.echo("Agent Run Info:")
         typer.echo(f"  agent_run_id: {agent_run.agent_run_id}")
-        typer.echo(f"  definition_id: {agent_run.agent_definition_id}")
+        typer.echo(f"  image_digest: {agent_run.image_digest}")
         typer.echo(f"  model: {agent_run.model}")
         typer.echo(f"  status: {agent_run.status.value}")
         if agent_run.parent_agent_run_id:
@@ -272,14 +272,14 @@ async def prompt_improve_cmd(
             .all()
         )
 
-        # Build index: agent_definition_id -> set of ExampleSpec for examples that have grader runs
+        # Build index: image_digest -> set of ExampleSpec for examples that have grader runs
         # NOTE: Originally indexed by prompt_sha256, but prompts were replaced by agent_definitions
         definition_to_examples: dict[str, set[ExampleSpec]] = {}
         for cr in critic_runs:
             critic_config = cr.critic_config()
             example_spec = critic_config.example
             snapshot_slug = example_spec.snapshot_slug
-            definition_id = cr.agent_definition_id
+            definition_id = cr.image_digest
 
             # Check if this snapshot is in TRAIN split
             snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()

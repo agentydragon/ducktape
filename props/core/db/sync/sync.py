@@ -6,7 +6,6 @@ Includes model metadata sync (previously in sync_model_metadata.py).
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import io
 import logging
@@ -25,12 +24,9 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from agent_pkg.host.builder import ensure_image_from_archive
 from openai_utils.model_metadata import MODEL_METADATA
 from props.core.agent_pkg_utils import MANIFEST_FILE, validate_packed_agent_pkg
-from props.core.agent_types import AgentType
 from props.core.db.models import (
-    AgentDefinition,
     CriticScopeExpectedToRecall,
     FalsePositive,
     FalsePositiveOccurrenceORM,
@@ -45,7 +41,7 @@ from props.core.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props.core.db.session import get_session
-from props.core.ids import DefinitionId, SnapshotSlug
+from props.core.ids import SnapshotSlug
 from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
 from props.core.prop_utils import specimens_definitions_root
 
@@ -981,123 +977,51 @@ CRITIC_BASED_DETECTORS = {
 
 
 def sync_agent_definitions_to_db(session: Session, *, use_staged: bool = False) -> SyncStats:
-    """Sync repo-tracked agent definitions from agent_defs/ to database.
+    """Sync repo-tracked agent definitions - DEPRECATED, no longer functional.
 
-    Reads agent definitions from src/adgn/props/agent_defs/ directory.
-    Each subdirectory is an agent type (e.g., critic/, grader/).
-    Definition ID is the directory name.
+    Agent definitions are now stored as OCI images in the registry.
+    The archive column has been removed from agent_definitions table.
+    Images are built and pushed to the registry externally, not via this sync.
 
-    Uses MANIFEST files and git archive to pack only tracked files.
+    This function now returns empty stats to maintain backward compatibility.
 
     Args:
         session: SQLAlchemy session
-        use_staged: If True, read from staged files (index) instead of HEAD.
-                    Skips the dirty check. Useful for development.
+        use_staged: Ignored (deprecated parameter)
 
     Returns:
-        Statistics about what changed (total, added, updated, deleted)
-
-    Raises:
-        DirtyRepoError: If repo has uncommitted changes (unless use_staged).
+        Empty statistics (no operations performed)
     """
-    if not AGENT_DEFS_PATH.exists():
-        logger.warning(f"Agent definitions directory not found: {AGENT_DEFS_PATH}")
-        return SyncStats(total=0, added=0, updated=0, deleted=0)
-
-    # Find all definition directories (immediate children of agent_defs/, excluding common and __pycache__)
-    definition_dirs = [
-        d
-        for d in AGENT_DEFS_PATH.iterdir()
-        if d.is_dir() and not d.name.startswith(".") and d.name not in ("common", "__pycache__")
-    ]
-
-    # Get existing definitions from DB (only repo-backed ones - no created_by_agent_run_id)
-    existing = {
-        d.id: d for d in session.query(AgentDefinition).filter(AgentDefinition.created_by_agent_run_id.is_(None)).all()
-    }
-    source_ids = {DefinitionId(d.name) for d in definition_dirs}
-    db_ids = set(existing.keys())
-
-    # Track stats
-    added = 0
-    updated = 0
-    deleted = 0
-
-    # Delete orphaned definitions (in DB but not in source)
-    for def_id in db_ids - source_ids:
-        logger.info(f"Deleting orphaned agent definition: {def_id}")
-        session.delete(existing[def_id])
-        deleted += 1
-
-    # Add/update definitions from source
-    for definition_dir in definition_dirs:
-        def_id = DefinitionId(definition_dir.name)
-
-        # Pack archive using MANIFEST + git archive
-        archive = pack_repo_definition(definition_dir, use_staged=use_staged)
-
-        # Critic-based detectors use CRITIC agent_type (run with critic infra)
-        agent_type = AgentType.CRITIC if def_id in CRITIC_BASED_DETECTORS else def_id
-
-        if def_id not in db_ids:
-            # New definition - insert
-            logger.info(f"Adding agent definition: {def_id} (type={agent_type})")
-            definition = AgentDefinition(
-                id=def_id,
-                agent_type=agent_type,
-                archive=archive,
-                created_by_agent_run_id=None,  # Repo-backed
-            )
-            session.add(definition)
-            added += 1
-        else:
-            # Existing repo-backed definition - always update (cheap operation)
-            existing_def = existing[def_id]
-            logger.debug(f"Updating agent definition: {def_id} (type={agent_type})")
-            existing_def.archive = archive
-            existing_def.agent_type = agent_type
-            updated += 1
-
-        # Flush each definition individually to avoid memory issues with large archives
-        session.flush()
-
-    session.commit()
-    total = len(definition_dirs)
-    logger.info(f"Agent definitions synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
-    return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
+    logger.warning(
+        "sync_agent_definitions_to_db() is deprecated. "
+        "Agent definitions are now OCI images managed via registry proxy. "
+        "Use 'docker build' + 'docker push' to registry instead."
+    )
+    return SyncStats(total=0, added=0, updated=0, deleted=0)
 
 
 async def build_definition_images(docker: aiodocker.Docker, session: Session) -> int:
-    """Build Docker images for all agent definitions in the database.
+    """Build Docker images for all agent definitions - DEPRECATED, no longer functional.
 
-    Builds all images in parallel for faster sync.
+    Agent definitions are now stored as OCI images in the registry.
+    The archive column has been removed from agent_definitions table.
+    Images are built externally and pushed to the registry.
+
+    This function now returns 0 to maintain backward compatibility.
 
     Args:
-        docker: Async Docker client
-        session: SQLAlchemy session to query definitions
+        docker: Async Docker client (ignored)
+        session: SQLAlchemy session (ignored)
 
     Returns:
-        Number of images built
+        0 (no operations performed)
     """
-    # Fetch all definition data while session is open (avoid detached instance errors)
-    definitions = [(defn.id, defn.archive) for defn in session.query(AgentDefinition).all()]
-
-    if not definitions:
-        logger.info("No agent definitions to build")
-        return 0
-
-    logger.info(f"Building images for {len(definitions)} agent definitions in parallel...")
-
-    async def build_one(def_id: str, archive: bytes) -> tuple[str, str]:
-        image_id = await ensure_image_from_archive(docker, archive)
-        return def_id, image_id
-
-    results = await asyncio.gather(*[build_one(def_id, archive) for def_id, archive in definitions])
-
-    for def_id, image_id in results:
-        logger.info(f"  Built {def_id}: {image_id[:19]}")
-
-    return len(definitions)
+    logger.warning(
+        "build_definition_images() is deprecated. "
+        "Agent definitions are now OCI images. "
+        "Use 'docker build' + 'docker push' to registry instead."
+    )
+    return 0
 
 
 # ============================================================================

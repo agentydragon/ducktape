@@ -189,7 +189,7 @@ class AgentRegistry:
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,
-                agent_definition_id=definition_id,
+                image_digest=definition_id,
                 parent_agent_run_id=parent_run_id,
                 model=client.model,
                 type_config=type_config,
@@ -411,7 +411,7 @@ class AgentRegistry:
             session.add(
                 AgentRun(
                     agent_run_id=grader_run_id,
-                    agent_definition_id=GRADER_AGENT_DEFINITION_ID,
+                    image_digest=GRADER_AGENT_DEFINITION_ID,
                     parent_agent_run_id=parent_run_id,
                     model=client.model,
                     type_config=type_config,
@@ -561,7 +561,7 @@ class AgentRegistry:
             session.add(
                 AgentRun(
                     agent_run_id=grader_run_id,
-                    agent_definition_id=GRADER_AGENT_DEFINITION_ID,
+                    image_digest=GRADER_AGENT_DEFINITION_ID,
                     parent_agent_run_id=None,
                     model=client.model,
                     type_config=type_config,
@@ -697,7 +697,7 @@ class AgentRegistry:
                 return None
             return AgentRunView(
                 agent_run_id=db_run.agent_run_id,
-                definition_id=db_run.agent_definition_id,
+                definition_id=DefinitionId(db_run.image_digest),
                 model=db_run.model,
                 status=db_run.status,
                 created_at=db_run.created_at,
@@ -727,7 +727,7 @@ class AgentRegistry:
             return [
                 AgentRunView(
                     agent_run_id=r.agent_run_id,
-                    definition_id=r.agent_definition_id,
+                    definition_id=DefinitionId(r.image_digest),
                     model=r.model,
                     status=r.status,
                     created_at=r.created_at,

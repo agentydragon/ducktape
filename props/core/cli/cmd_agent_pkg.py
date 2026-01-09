@@ -11,15 +11,11 @@ Structure:
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Annotated
-from uuid import uuid4
 
 import typer
-from sqlalchemy import text
 
-from props.core.agent_pkg_utils import pack_agent_pkg, unpack_agent_pkg
 from props.core.agent_types import AgentType
 from props.core.db.models import AgentDefinition
 from props.core.db.session import get_session
@@ -34,43 +30,20 @@ def cmd_create(
     agent_type: Annotated[AgentType, typer.Option("--type", help="Agent type")] = AgentType.FREEFORM,
     force: Annotated[bool, typer.Option("--force", "-f", help="Overwrite existing package")] = False,
 ) -> None:
-    """Pack directory into tar archive and insert into agent_definitions table.
+    """DEPRECATED: Pack directory into tar archive - no longer functional.
 
-    Validates Dockerfile presence. /init is validated in the built image.
-    Auto-generates ID from type + UUID if not provided.
+    Agent definitions are now stored as OCI images in the registry.
+    Use 'docker build' + 'docker push' to create agent definitions instead.
+
+    The archive column has been removed from agent_definitions table.
     """
-    # Generate ID if not provided
-    if pkg_id is None:
-        pkg_id = f"{agent_type}_{uuid4().hex[:8]}"
-
-    # Pack and validate (raises NotADirectoryError/AgentPkgValidationError on failure)
-    archive = pack_agent_pkg(pkg_dir)
-    typer.echo(f"Packed {len(archive):,} bytes from {pkg_dir}")
-
-    # Insert into database
-    with get_session() as session:
-        existing = session.get(AgentDefinition, pkg_id)
-        if existing:
-            if force:
-                session.delete(existing)
-                session.flush()
-                typer.echo(f"Deleted existing package: {pkg_id}")
-            else:
-                typer.echo(f"Error: Package already exists: {pkg_id}", err=True)
-                typer.echo("Use --force to overwrite", err=True)
-                raise typer.Exit(1)
-
-        # Get agent run ID if running inside an agent context (None for admin users)
-        result = session.execute(text("SELECT current_agent_run_id()"))
-        agent_run_id = result.scalar()
-
-        definition = AgentDefinition(
-            id=pkg_id, agent_type=agent_type, archive=archive, created_by_agent_run_id=agent_run_id
-        )
-        session.add(definition)
-        session.commit()
-
-    typer.echo(f"Created agent package: {pkg_id}")
+    typer.echo(
+        "Error: 'props agent-pkg create' is deprecated.\n"
+        "Agent definitions are now OCI images managed via registry proxy.\n"
+        "Use 'docker build' + 'docker push' to registry instead.",
+        err=True,
+    )
+    raise typer.Exit(1)
 
 
 @app.command("fetch")
@@ -79,34 +52,27 @@ def cmd_fetch(
     target_dir: Annotated[Path, typer.Argument(help="Target directory to unpack to")],
     force: Annotated[bool, typer.Option("--force", "-f", help="Overwrite existing directory")] = False,
 ) -> None:
-    """Extract package from database and unpack to target directory."""
-    if target_dir.exists():
-        if force:
-            shutil.rmtree(target_dir)
-            typer.echo(f"Removed existing directory: {target_dir}")
-        else:
-            typer.echo(f"Error: Target directory already exists: {target_dir}", err=True)
-            typer.echo("Use --force to overwrite", err=True)
-            raise typer.Exit(1)
+    """DEPRECATED: Extract package from database - no longer functional.
 
-    with get_session() as session:
-        definition = session.get(AgentDefinition, pkg_id)
-        if not definition:
-            typer.echo(f"Error: Package not found: {pkg_id}", err=True)
-            raise typer.Exit(1)
+    Agent definitions are now stored as OCI images in the registry.
+    Use 'docker pull' to fetch images instead.
 
-        archive = definition.archive
-        agent_type = definition.agent_type
-
-    unpack_agent_pkg(archive, target_dir)
-    typer.echo(f"Unpacked {pkg_id} ({agent_type}) to {target_dir}")
+    The archive column has been removed from agent_definitions table.
+    """
+    typer.echo(
+        "Error: 'props agent-pkg fetch' is deprecated.\n"
+        "Agent definitions are now OCI images managed via registry proxy.\n"
+        "Use 'docker pull' from registry instead.",
+        err=True,
+    )
+    raise typer.Exit(1)
 
 
 @app.command("list")
 def cmd_list(
     agent_type: Annotated[AgentType | None, typer.Option("--type", help="Filter by agent type")] = None,
 ) -> None:
-    """List all agent packages in database."""
+    """List all agent definitions (OCI images) in database."""
     with get_session() as session:
         query = session.query(AgentDefinition)
         if agent_type:
@@ -114,22 +80,26 @@ def cmd_list(
         definitions = query.order_by(AgentDefinition.created_at.desc()).all()
 
         if not definitions:
-            typer.echo("No agent packages found")
+            typer.echo("No agent definitions found")
             return
 
-        typer.echo(f"Found {len(definitions)} agent packages:\n")
+        typer.echo(f"Found {len(definitions)} agent definitions:\n")
         for defn in definitions:
             created_by = f" (by {defn.created_by_agent_run_id})" if defn.created_by_agent_run_id else ""
-            typer.echo(f"  {defn.id} [{defn.agent_type}] {len(defn.archive):,} bytes{created_by}")
+            typer.echo(f"  {defn.digest} [{defn.agent_type}]{created_by}")
 
 
 @app.command("validate")
 def cmd_validate(pkg_dir: Annotated[Path, typer.Argument(help="Directory containing agent package")]) -> None:
-    """Validate agent package structure without inserting into database.
+    """DEPRECATED: Validate agent package - no longer functional.
 
-    Checks Dockerfile presence. /init is validated in the built image.
-    Exits with code 0 if valid, 1 if invalid.
+    Agent definitions are now OCI images in the registry.
+    Use 'docker build' to validate image builds instead.
     """
-    # Pack with validation (raises NotADirectoryError/AgentPkgValidationError on failure)
-    pack_agent_pkg(pkg_dir)
-    typer.echo(f"Valid agent package: {pkg_dir}")
+    typer.echo(
+        "Error: 'props agent-pkg validate' is deprecated.\n"
+        "Agent definitions are now OCI images.\n"
+        "Use 'docker build' to validate instead.",
+        err=True,
+    )
+    raise typer.Exit(1)

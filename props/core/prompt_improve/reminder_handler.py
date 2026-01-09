@@ -105,7 +105,7 @@ def check_termination_condition(
                 unnest(:files_hashes) AS files_hash
         ),
         candidate_defs AS (
-            SELECT id as agent_definition_id
+            SELECT digest as agent_definition_id
             FROM agent_definitions
             WHERE created_by_agent_run_id = :improvement_run_id
         ),

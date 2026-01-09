@@ -11,10 +11,6 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from agent_pkg.host.builder import ensure_image_from_archive
-from props.core.agent_handle import load_definition_archive
-from props.core.ids import DefinitionId
-
 if TYPE_CHECKING:
     import aiodocker
 
@@ -29,38 +25,20 @@ REGISTRY_HOST = os.environ.get("PROPS_REGISTRY_HOST", "127.0.0.1")
 REGISTRY_PORT = os.environ.get("PROPS_REGISTRY_PORT", "5050")
 
 
-async def resolve_image_id(
-    docker: aiodocker.Docker, *, image_ref: str | None = None, definition_id: DefinitionId | None = None
-) -> str:
-    """Resolve an image reference or definition ID to a Docker image ID.
-
-    Priority:
-    1. If image_ref is provided, pull/inspect that image
-    2. If definition_id is provided, build from tarball archive
+async def resolve_image_id(docker: aiodocker.Docker, *, image_ref: str) -> str:
+    """Resolve an image reference to a Docker image ID.
 
     Args:
         docker: Async Docker client
         image_ref: OCI image reference (e.g., "localhost:5050/critic:latest")
-        definition_id: Legacy definition ID to load archive from
 
     Returns:
         Docker image ID (sha256:...)
 
     Raises:
-        ValueError: If neither image_ref nor definition_id is provided, or if resolution fails
+        ValueError: If image resolution fails
     """
-    if image_ref is None and definition_id is None:
-        raise ValueError("Either image_ref or definition_id must be provided")
-
-    if image_ref is not None:
-        return await _resolve_image_ref(docker, image_ref)
-
-    # Legacy path: build from definition archive
-    assert definition_id is not None
-    archive = load_definition_archive(definition_id)
-    image_id = await ensure_image_from_archive(docker, archive)
-    logger.info(f"Built image {image_id[:19]} from definition {definition_id}")
-    return image_id
+    return await _resolve_image_ref(docker, image_ref)
 
 
 async def _resolve_image_ref(docker: aiodocker.Docker, image_ref: str) -> str:

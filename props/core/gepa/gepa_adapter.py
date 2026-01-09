@@ -234,7 +234,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
             if critic_run is None:
                 raise ValueError(f"AgentRun {critic_run_id} not found")
             critic_status = critic_run.status
-            critic_definition_id = critic_run.agent_definition_id
+            critic_definition_id = critic_run.image_digest
             critic_model = critic_run.model
 
         # Build trajectory if requested

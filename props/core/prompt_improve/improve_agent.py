@@ -163,7 +163,7 @@ async def run_improvement_agent(
     with get_session() as session:
         agent_run = AgentRun(
             agent_run_id=run_id,
-            agent_definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
+            image_digest=IMPROVEMENT_AGENT_DEFINITION_ID,
             model=model,
             type_config=type_config,
             status=AgentRunStatus.IN_PROGRESS,

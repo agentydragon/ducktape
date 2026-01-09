@@ -37,8 +37,6 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_pkg.host.init_runner import run_init_script
 from openai_utils.model import SystemMessage
 from openai_utils.types import ReasoningSummary
-from props.core.db.models import AgentDefinition
-from props.core.db.session import get_session
 from props.core.db_event_handler import DatabaseEventHandler
 from props.core.ids import DefinitionId
 
@@ -51,17 +49,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def load_definition_archive(definition_id: DefinitionId) -> bytes:
-    """Load agent definition archive from database.
-
-    Returns just the archive bytes since returning the ORM object would
-    cause DetachedInstanceError when accessed outside the session.
-    """
-    with get_session() as session:
-        definition = session.get(AgentDefinition, definition_id)
-        if not definition:
-            raise ValueError(f"Agent definition not found: {definition_id}")
-        return definition.archive
+# Note: load_definition_archive() removed - agent definitions are now OCI images.
+# Images are pulled from registry by AgentEnvironment, not loaded from database archives.
 
 
 @dataclass

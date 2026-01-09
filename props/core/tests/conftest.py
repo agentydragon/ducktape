@@ -303,7 +303,7 @@ def make_critic_run(
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
     completion_summary: str | None = None,
     agent_run_id: UUID | None = None,
-    agent_definition_id: str = CRITIC_AGENT_DEFINITION_ID,
+    image_digest: str = CRITIC_AGENT_DEFINITION_ID,
 ) -> AgentRun:
     """Build AgentRun for critic from Example (preferred pattern).
 
@@ -315,7 +315,7 @@ def make_critic_run(
         status: Run status (default: COMPLETED)
         completion_summary: Markdown summary (auto-provided for COMPLETED status if None)
         agent_run_id: Optional agent run ID (defaults to uuid4())
-        agent_definition_id: Agent definition ID (default: CRITIC_AGENT_DEFINITION_ID)
+        image_digest: Image digest (default: CRITIC_AGENT_DEFINITION_ID)
 
     Returns:
         AgentRun ORM model (not yet added to session)
@@ -346,7 +346,7 @@ def make_critic_run(
 
     return AgentRun(
         agent_run_id=agent_run_id,
-        agent_definition_id=agent_definition_id,
+        image_digest=image_digest,
         model=model,
         status=status,
         completion_summary=completion_summary,
@@ -361,7 +361,7 @@ def make_grader_run(
     model: str = "test-model",
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
     agent_run_id: UUID | None = None,
-    agent_definition_id: str = GRADER_AGENT_DEFINITION_ID,
+    image_digest: str = GRADER_AGENT_DEFINITION_ID,
 ) -> AgentRun:
     """Build AgentRun for grader from critic AgentRun (derives graded_agent_run_id).
 
@@ -371,7 +371,7 @@ def make_grader_run(
         model: Model name (default: "test-model")
         status: Run status (default: COMPLETED)
         agent_run_id: Optional agent run ID (defaults to uuid4())
-        agent_definition_id: Agent definition ID (default: GRADER_AGENT_DEFINITION_ID)
+        image_digest: Image digest (default: GRADER_AGENT_DEFINITION_ID)
 
     Returns:
         AgentRun ORM model (not yet added to session)
@@ -396,11 +396,7 @@ def make_grader_run(
     )
 
     return AgentRun(
-        agent_run_id=agent_run_id,
-        agent_definition_id=agent_definition_id,
-        model=model,
-        status=status,
-        type_config=type_config,
+        agent_run_id=agent_run_id, image_digest=image_digest, model=model, status=status, type_config=type_config
     )
 
 

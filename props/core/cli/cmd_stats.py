@@ -842,9 +842,9 @@ def cmd_stats(ctx: typer.Context) -> None:
     # Get definition metadata (created_at) from agent_definitions table
     definition_metadata: dict[str, AgentDefinition] = {}
     if definition_stats:
-        definitions = session.query(AgentDefinition).filter(AgentDefinition.id.in_(definition_stats.keys())).all()
+        definitions = session.query(AgentDefinition).filter(AgentDefinition.digest.in_(definition_stats.keys())).all()
         for d in definitions:
-            definition_metadata[d.id] = d
+            definition_metadata[d.digest] = d
 
     # Sort by created_at DESC
     sorted_definition_ids = sorted(

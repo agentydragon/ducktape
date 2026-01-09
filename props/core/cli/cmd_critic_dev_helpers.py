@@ -103,11 +103,11 @@ def show_run_status(parent_agent_run_id: UUID | None = None) -> None:
         console.print("\n[bold]Definitions with most max_turns_exceeded (top 5):[/bold]")
         mt = func.count().filter(AgentRun.status == AgentRunStatus.MAX_TURNS_EXCEEDED)
         pq = session.query(
-            AgentRun.agent_definition_id.label("definition_id"), mt.label("mt"), func.count().label("total")
+            AgentRun.image_digest.label("definition_id"), mt.label("mt"), func.count().label("total")
         ).filter(AgentRun.type_config["agent_type"].astext == AgentType.CRITIC)
         if descendant_ids is not None:
             pq = pq.filter(AgentRun.agent_run_id.in_(descendant_ids))
-        pq = pq.group_by(AgentRun.agent_definition_id).order_by(mt.desc()).limit(5)
+        pq = pq.group_by(AgentRun.image_digest).order_by(mt.desc()).limit(5)
         pcols: list[ColumnDef[Any, Any]] = [
             ColumnDef("Definition", lambda r: r.definition_id, width=20),
             ColumnDef("MaxTurns", lambda r: r.mt, str, justify="right"),
@@ -142,7 +142,7 @@ def show_execution_traces(limit: int = 5, parent_agent_run_id: UUID | None = Non
                 snapshot_slug = cr.type_config.example.snapshot_slug
             else:
                 raise ValueError(f"Expected CriticTypeConfig, got {type(cr.type_config)}")
-            definition_id = cr.agent_definition_id
+            definition_id = DefinitionId(cr.image_digest)
             tool_count = (
                 session.query(Event)
                 .filter(Event.agent_run_id == cr.agent_run_id, Event.event_type == "tool_call")
@@ -201,9 +201,7 @@ def show_grading_summary(agent_run_id: UUID) -> None:
 
         if agent_type == AgentType.CRITIC:
             cr = run
-            print(
-                f"Critic: {short_sha(str(cr.agent_run_id))} | Definition: {cr.agent_definition_id} | Model: {cr.model}"
-            )
+            print(f"Critic: {short_sha(str(cr.agent_run_id))} | Definition: {cr.image_digest} | Model: {cr.model}")
             if cr.status != AgentRunStatus.COMPLETED:
                 print(f"Status: {cr.status.value.upper()} (did not complete)")
                 return

@@ -76,7 +76,7 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
         )
         agent_run = AgentRun(
             agent_run_id=run_id,
-            agent_definition_id=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
+            image_digest=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
             model="test-model",
             status=AgentRunStatus.COMPLETED,
             type_config=type_config.model_dump(),

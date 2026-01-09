@@ -111,16 +111,18 @@ async def cmd_grade_validation(
                 key=lambda r: r.recall_stats.lcb95 if r.recall_stats and r.recall_stats.lcb95 else -1.0,
                 reverse=True,
             )
-            ordered_definition_ids = [r.critic_definition_id for r in valid_stats_sorted]
+            ordered_definition_ids = [DefinitionId(r.critic_definition_id) for r in valid_stats_sorted]
 
             # Also get any critic definitions not yet evaluated (not in perf stats)
             all_critic_defs = (
                 session.query(AgentDefinition).filter(AgentDefinition.agent_type == AgentType.CRITIC).all()
             )
-            unevaluated_defs = [d.id for d in all_critic_defs if d.id not in ordered_definition_ids]
+            unevaluated_defs = [
+                DefinitionId(d.digest) for d in all_critic_defs if d.digest not in ordered_definition_ids
+            ]
 
             # Combine: evaluated definitions first (in priority order), then unevaluated
-            all_definition_ids = ordered_definition_ids + unevaluated_defs
+            all_definition_ids: list[DefinitionId] = ordered_definition_ids + unevaluated_defs
 
             if not all_definition_ids:
                 raise typer.BadParameter("No critic definitions found in database - run 'props db sync' first")
@@ -136,12 +138,12 @@ async def cmd_grade_validation(
                 example_spec = example.to_example_spec()
                 for definition_id in all_definition_ids:
                     # Check if successful critic run exists for (example, definition)
-                    # Query AgentRun by agent_definition_id and type_config fields
+                    # Query AgentRun by image_digest and type_config fields
                     # Note: type_config['example'] is the full ExampleSpec JSON
                     critic_run = (
                         session.query(AgentRun)
                         .filter(
-                            AgentRun.agent_definition_id == definition_id,
+                            AgentRun.image_digest == definition_id,
                             AgentRun.type_config["example"]["snapshot_slug"].astext == example.snapshot_slug,
                             AgentRun.type_config["example"]["kind"].astext == example.example_kind.value,
                             AgentRun.status == AgentRunStatus.COMPLETED,
@@ -162,7 +164,7 @@ async def cmd_grade_validation(
                     successful_grader_exists = (
                         session.query(AgentRun)
                         .filter(
-                            AgentRun.agent_definition_id == GRADER_AGENT_DEFINITION_ID,
+                            AgentRun.image_digest == GRADER_AGENT_DEFINITION_ID,
                             AgentRun.type_config["graded_agent_run_id"].astext == str(critic_run.agent_run_id),
                             AgentRun.status == AgentRunStatus.COMPLETED,
                         )
