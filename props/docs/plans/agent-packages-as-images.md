@@ -373,6 +373,10 @@ Revisit if extraction latency becomes a bottleneck.
 **Lower Priority**
 
 - ❌ Common base image for Python packages (reduce duplication)
+- ❌ OCI helpers for agent authoring (see <oci-helpers-for-agents.md>)
+  - Python helpers: create_layer_tar, calculate_digest, get_registry_auth, get_registry_url
+  - Optional CLI wrappers: props oci create-layer, props oci digest, etc.
+  - Simplifies agent code from ~150 lines to ~40 lines for layer creation workflow
 - ✅ Documentation updates complete:
   - authoring_agents.md.j2: Updated image list (all 9 images with correct names)
   - agent_defs/AGENTS.md: Fixed agent list, added verbose_docs, corrected file references
