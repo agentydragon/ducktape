@@ -1,10 +1,14 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@proxy_config//:proxy_env.bzl", "PROXY_ENV")
+load("@pypi//:requirements.bzl", "all_whl_requirements")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
+load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
+load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -106,6 +110,53 @@ buildifier(
     name = "buildifier.check",
     lint_mode = "warn",
     mode = "diff",
+)
+
+# ==============================================================================
+# Gazelle - Python BUILD file generator
+# ==============================================================================
+# Usage:
+#   bazel run //:gazelle              # Update BUILD files
+#   bazel run //:gazelle -- --mode=diff  # Check consistency (pre-commit/CI)
+#   bazel run //:gazelle_python_manifest.update  # Update manifest after adding deps
+#
+# Repository-wide directives:
+# gazelle:python_extension enabled
+# gazelle:python_root .
+# gazelle:python_visibility //visibility:public
+# gazelle:python_generation_mode package
+#
+# Directories to exclude from gazelle processing
+# gazelle:exclude bazel-*
+# gazelle:exclude **/node_modules
+# gazelle:exclude **/third_party
+# gazelle:exclude k8s-old
+# ==============================================================================
+
+# Maps Python module names to pip package targets
+modules_mapping(
+    name = "modules_map",
+    include_stub_packages = True,
+    wheels = all_whl_requirements,
+)
+
+# Manifest for gazelle to resolve Python imports to Bazel targets
+# Run: bazel run //:gazelle_python_manifest.update
+gazelle_python_manifest(
+    name = "gazelle_python_manifest",
+    modules_mapping = ":modules_map",
+    pip_repository_name = "pypi",
+    requirements = "//:requirements_bazel.txt",
+)
+
+gazelle_binary(
+    name = "gazelle_binary",
+    languages = ["@rules_python_gazelle_plugin//python"],
+)
+
+gazelle(
+    name = "gazelle",
+    gazelle = ":gazelle_binary",
 )
 
 # NOTE: Alejandra (Nix formatter) handled via pre-commit, not Bazel

@@ -1,0 +1,6 @@
+# Gazelle Python manifest - auto-generated, do not edit manually
+# Run: bazel run //:gazelle_python_manifest.update
+manifest:
+  modules_mapping: {}
+  pip_repository:
+    name: pypi

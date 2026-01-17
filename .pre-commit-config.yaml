@@ -68,6 +68,19 @@ repos:
     hooks:
       - id: buildifier-lint
 
+  # Gazelle - Python BUILD file generator
+  # Runs in diff mode to show if BUILD files need updating
+  # NOTE: Currently informational only (|| true) during gradual migration
+  # TODO: Remove '|| true' once all packages are gazelle-compatible
+  - repo: local
+    hooks:
+      - id: gazelle
+        name: gazelle (python BUILD files)
+        entry: bash -c 'bazelisk run //:gazelle -- --mode=diff || true'
+        language: system
+        files: "\\.(py|bzl)$|BUILD(\\.bazel)?$"
+        pass_filenames: false
+
   # Nix formatter - requires alejandra in PATH
   # Dev: via .envrc (nix -p alejandra)
   # CI: via cachix/install-nix-action + nix profile install

@@ -226,6 +226,22 @@ common --registry=https://bcr.bazel.build
 """
 
     # Write proxy config to dedicated file
+    # NO_PROXY must exclude external domains like googleapis.com so Go module
+    # fetching uses the proxy (which can resolve DNS). The shell environment
+    # may have *.googleapis.com in no_proxy which would bypass proxy and fail.
+    repo_no_proxy = "localhost,127.0.0.1"
+    repo_env_config = f"""
+# Propagate proxy env vars into repository rules (for Go module fetching, etc.)
+common --repo_env=HTTPS_PROXY={local_proxy}
+common --repo_env=HTTP_PROXY={local_proxy}
+common --repo_env=https_proxy={local_proxy}
+common --repo_env=http_proxy={local_proxy}
+common --repo_env=NO_PROXY={repo_no_proxy}
+common --repo_env=no_proxy={repo_no_proxy}
+"""
+    if BAZEL_COMBINED_CA.exists():
+        repo_env_config += f"common --repo_env=SSL_CERT_FILE={BAZEL_COMBINED_CA}\n"
+
     proxy_rc = f"""\
 # Bazel proxy configuration for Claude Code web (auto-generated)
 # JVM proxy settings for Bazel server (BCR access, etc.)
@@ -239,7 +255,7 @@ build --action_env=HTTPS_PROXY={local_proxy}
 build --action_env=HTTP_PROXY={local_proxy}
 build --action_env=https_proxy={local_proxy}
 build --action_env=http_proxy={local_proxy}
-{
+{repo_env_config}{
         ""
         if not BAZEL_COMBINED_CA.exists()
         else f'''

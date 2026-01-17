@@ -1,3 +1,5 @@
+# gazelle:exclude setup.py
+
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
@@ -10,10 +12,10 @@ py_library(
 py_test(
     name = "test_early_bailout",
     srcs = ["test_early_bailout.py"],
-    imports = ["."],
+    imports = ["."],  # keep - allows importing flake8_early_bailout directly
     deps = [
         ":flake8_early_bailout",
-        "@pypi//pytest",
+        "@pypi//pytest",  # keep
     ],
 )
 

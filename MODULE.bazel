@@ -8,6 +8,10 @@ bazel_dep(name = "rules_python", version = "1.4.1")
 bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
 bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
 
+# Gazelle - BUILD file generator for Python
+bazel_dep(name = "gazelle", version = "0.43.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "rules_python_gazelle_plugin", version = "1.4.1")
+
 # NOTE: Using newer version with archive_override for ape module to use native ELF
 # instead of APE binaries (which require binfmt_misc not available in containers).
 bazel_dep(name = "aspect_rules_lint", version = "1.13.0")
