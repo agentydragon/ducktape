@@ -211,63 +211,64 @@ def _write_bazel_config() -> None:
         return
 
     local_proxy = f"http://localhost:{BAZEL_PROXY_PORT}"
+    repo_no_proxy = "localhost,127.0.0.1"
+
+    # Build config as list of lines for cleaner formatting
+    lines = [
+        "# Bazel proxy configuration for Claude Code web (auto-generated)",
+        "# JVM proxy settings for Bazel server (BCR access, etc.)",
+        "startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1",
+        f"startup --host_jvm_args=-Dhttps.proxyPort={BAZEL_PROXY_PORT}",
+        f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={BAZEL_TRUSTSTORE}",
+        "startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit",
+        "",
+        "# Propagate proxy env vars into sandbox actions (for pip, uv, etc.)",
+        f"build --action_env=HTTPS_PROXY={local_proxy}",
+        f"build --action_env=HTTP_PROXY={local_proxy}",
+        f"build --action_env=https_proxy={local_proxy}",
+        f"build --action_env=http_proxy={local_proxy}",
+        "",
+        "# Propagate proxy env vars into repository rules (for Go module fetching, etc.)",
+        "# NO_PROXY excludes external domains so Go uses proxy (which resolves DNS)",
+        f"common --repo_env=HTTPS_PROXY={local_proxy}",
+        f"common --repo_env=HTTP_PROXY={local_proxy}",
+        f"common --repo_env=https_proxy={local_proxy}",
+        f"common --repo_env=http_proxy={local_proxy}",
+        f"common --repo_env=NO_PROXY={repo_no_proxy}",
+        f"common --repo_env=no_proxy={repo_no_proxy}",
+    ]
+
+    if BAZEL_COMBINED_CA.exists():
+        lines.append(f"common --repo_env=SSL_CERT_FILE={BAZEL_COMBINED_CA}")
+        lines.append("")
+        lines.append("# Propagate Node.js CA bundle into sandbox (for npm, puppeteer, etc.)")
+        lines.append(f"build --action_env=NODE_EXTRA_CA_CERTS={BAZEL_COMBINED_CA}")
+
+    lines.extend(
+        [
+            "",
+            "# Use local execution instead of sandbox (sandbox has /dev/null issues in CC web)",
+            "build --spawn_strategy=local",
+            "test --spawn_strategy=local",
+        ]
+    )
 
     # Check for local registry (contains patched ape module for native ELF support)
     local_registry = _get_local_registry_path()
-    registry_config = ""
     if local_registry:
         log.info("Found local registry at %s (patched ape for native ELF)", local_registry)
-        registry_config = f"""
-# Local registry with patched ape module (native ELF instead of APE binaries)
-# This avoids binfmt_misc requirement in Claude Code web containers
-# Note: Local registry is checked first, then BCR as fallback
-common --registry=file://{local_registry}
-common --registry=https://bcr.bazel.build
-"""
+        lines.extend(
+            [
+                "",
+                "# Local registry with patched ape module (native ELF instead of APE binaries)",
+                "# This avoids binfmt_misc requirement in Claude Code web containers",
+                "# Note: Local registry is checked first, then BCR as fallback",
+                f"common --registry=file://{local_registry}",
+                "common --registry=https://bcr.bazel.build",
+            ]
+        )
 
-    # Write proxy config to dedicated file
-    # NO_PROXY must exclude external domains like googleapis.com so Go module
-    # fetching uses the proxy (which can resolve DNS). The shell environment
-    # may have *.googleapis.com in no_proxy which would bypass proxy and fail.
-    repo_no_proxy = "localhost,127.0.0.1"
-    repo_env_config = f"""
-# Propagate proxy env vars into repository rules (for Go module fetching, etc.)
-common --repo_env=HTTPS_PROXY={local_proxy}
-common --repo_env=HTTP_PROXY={local_proxy}
-common --repo_env=https_proxy={local_proxy}
-common --repo_env=http_proxy={local_proxy}
-common --repo_env=NO_PROXY={repo_no_proxy}
-common --repo_env=no_proxy={repo_no_proxy}
-"""
-    if BAZEL_COMBINED_CA.exists():
-        repo_env_config += f"common --repo_env=SSL_CERT_FILE={BAZEL_COMBINED_CA}\n"
-
-    proxy_rc = f"""\
-# Bazel proxy configuration for Claude Code web (auto-generated)
-# JVM proxy settings for Bazel server (BCR access, etc.)
-startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1
-startup --host_jvm_args=-Dhttps.proxyPort={BAZEL_PROXY_PORT}
-startup --host_jvm_args=-Djavax.net.ssl.trustStore={BAZEL_TRUSTSTORE}
-startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
-
-# Propagate proxy env vars into sandbox actions (for pip, uv, etc.)
-build --action_env=HTTPS_PROXY={local_proxy}
-build --action_env=HTTP_PROXY={local_proxy}
-build --action_env=https_proxy={local_proxy}
-build --action_env=http_proxy={local_proxy}
-{repo_env_config}{
-        ""
-        if not BAZEL_COMBINED_CA.exists()
-        else f'''
-# Propagate Node.js CA bundle into sandbox (for npm, puppeteer, etc.)
-build --action_env=NODE_EXTRA_CA_CERTS={BAZEL_COMBINED_CA}
-'''
-    }
-# Use local execution instead of sandbox (sandbox has /dev/null issues in CC web)
-build --spawn_strategy=local
-test --spawn_strategy=local
-{registry_config}"""
-    BAZEL_PROXY_RC.write_text(proxy_rc)
+    BAZEL_PROXY_RC.write_text("\n".join(lines) + "\n")
     log.info("Wrote proxy config to %s", BAZEL_PROXY_RC)
 
     # Add try-import to user bazelrc (idempotent)
