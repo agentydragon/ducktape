@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest_bazel
+
 from ducktape_llm_common.claude_linter_v2.linters.python_ast import PythonASTAnalyzer
 
 TEST_FILE = Path("/tmp/test.py")
@@ -228,6 +230,7 @@ def foo(
         assert len(violations) == 1
         assert violations[0].rule == "syntax"
         assert "syntax error" in violations[0].message.lower()
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

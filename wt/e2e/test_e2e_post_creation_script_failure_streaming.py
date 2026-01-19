@@ -34,5 +34,6 @@ def test_post_creation_script_failure_is_streamed_and_nonzero(failing_env, wtcli
     wt_path = Path(repo) / "worktrees" / name
     assert wt_path.exists()
 
+
 if __name__ == "__main__":
     pytest_bazel.main()

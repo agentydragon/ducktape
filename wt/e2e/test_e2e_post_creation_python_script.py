@@ -4,6 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 from wt.testing.conftest import kill_daemon_at_wt_dir
 
@@ -98,6 +99,7 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, stdi
     else:
         # Closed mode (/dev/null) also succeeds; marker should still be present.
         assert marker.exists(), ".py_post_create_ran not created in closed-stdin mode"
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -33,14 +33,7 @@ class AuthForwardingProxy:
     5. Bidirectional tunneling of encrypted data (no inspection)
     """
 
-    def __init__(
-        self,
-        listen_port: int,
-        upstream_host: str,
-        upstream_port: int,
-        username: str,
-        password: str,
-    ):
+    def __init__(self, listen_port: int, upstream_host: str, upstream_port: int, username: str, password: str):
         self.listen_port = listen_port
         self.upstream_host = upstream_host
         self.upstream_port = upstream_port

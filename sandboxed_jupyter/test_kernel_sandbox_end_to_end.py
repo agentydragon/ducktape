@@ -5,9 +5,9 @@ import shutil
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 from ._markers import REQUIRES_SANDBOX_EXEC
-import pytest_bazel
 
 # Run these stdio-handshake tests in a dedicated xdist group to avoid flakiness
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell, pytest.mark.xdist_group("sj_stdio")]
@@ -59,6 +59,7 @@ net: {{ mode: loopback }}
         result = await client.call_tool("append_execute_code_cell", {"cell_source": "print('OK')"})
         assert result is not None
         assert "OK" in str(result)
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

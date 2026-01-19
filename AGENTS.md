@@ -222,6 +222,7 @@ pytest-asyncio is configured in **auto mode** via `pytest_configure(config)` hoo
 **Note**: There's also a root `//:conftest` py_library target available, but most tests use their package-level conftest.py which already configures auto mode. No special Bazel dependency is needed - package conftest.py files are automatically discovered by pytest when included in test `srcs`.
 
 For async fixtures, use:
+
 ```python
 @pytest.fixture
 async def my_fixture():

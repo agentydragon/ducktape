@@ -52,9 +52,9 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 TEST_BACKEND_SERVER_NAME = "backend"
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from agent_core_testing.fixtures import *  # noqa: F401, F403
-from agent_core_testing.responses import *  # noqa: F401, F403
-from mcp_infra.testing.fixtures import *  # noqa: F401, F403
+from agent_core_testing.fixtures import *  # noqa: E402, F403
+from agent_core_testing.responses import *  # noqa: E402, F403
+from mcp_infra.testing.fixtures import *  # noqa: E402, F403
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:

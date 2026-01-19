@@ -19,9 +19,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy
-import pytest_bazel
 
 
 @dataclass

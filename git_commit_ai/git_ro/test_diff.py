@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import pytest_bazel
+
 from git_commit_ai.git_ro.formatting import ListSlice, TextSlice
 from git_commit_ai.git_ro.server import DiffFormat, DiffInput, TextPage
-import pytest_bazel
 
 
 async def test_git_diff_patch_first_page(typed_git_ro) -> None:
@@ -58,6 +59,7 @@ async def test_git_diff_patch_second_page(typed_git_ro) -> None:
     assert isinstance(union2, TextPage)
     assert union2.total_chars == union1.total_chars
     assert union2.body != union1.body
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -3,10 +3,10 @@
 import json
 
 import pytest
+import pytest_bazel
 from click.testing import CliRunner
 
 from ducktape_llm_common.claude_linter_v2.cli import cli
-import pytest_bazel
 
 
 @pytest.fixture
@@ -133,6 +133,7 @@ def test_check_invalid_category(runner):
     assert result.exit_code == 1
     assert "Unknown category: invalid_category" in result.output
     assert "Valid categories:" in result.output
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

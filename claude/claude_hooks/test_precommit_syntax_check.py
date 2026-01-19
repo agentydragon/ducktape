@@ -3,11 +3,12 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest_bazel
+
 from claude_hooks.actions import PostToolFeedbackToClaude
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
 from claude_hooks.tool_models import WriteInput
-import pytest_bazel
 
 
 def test_python_syntax_error_skips_precommit(tmp_path):
@@ -49,6 +50,7 @@ def test_python_syntax_error_skips_precommit(tmp_path):
     # Verify syntax error feedback with exact string
     assert isinstance(result, PostToolFeedbackToClaude)
     assert result.feedback_to_claude == "⚠️ Fix SyntaxError in broken.py:1:8: '(' was never closed."
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

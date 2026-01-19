@@ -2,10 +2,11 @@
 
 import subprocess
 
+import pytest_bazel
+
 from ducktape_llm_common.claude_code_api import StopRequest
 from ducktape_llm_common.claude_linter_v2.config.models import StopHookConfig
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
-import pytest_bazel
 
 
 def _enable_quality_gate(handler: HookHandler) -> None:
@@ -142,6 +143,7 @@ except:
     assert str(bad_file) in response_dict["reason"]
     assert str(node_file) in response_dict["reason"]
     assert "Do not use bare `except`" in response_dict["reason"]
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

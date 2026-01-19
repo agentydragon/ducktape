@@ -2,10 +2,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 import yaml
 
 from sandboxed_jupyter.sandboxer import build_sandboxer_command
-import pytest_bazel
 
 
 @pytest.mark.macos
@@ -115,6 +115,7 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
     assert "HELLO_ECHO" in cp_echo.stdout
     assert cp_pipe.returncode == 0
     assert "hello" in cp_pipe.stdout
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

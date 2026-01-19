@@ -20,6 +20,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.option.asyncio_mode = "auto"
     config.option.asyncio_default_fixture_loop_scope = "function"
 
+
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright
 

@@ -4,10 +4,10 @@ import os
 import sys
 
 import pytest
+import pytest_bazel
 
 from mcp_infra._markers import REQUIRES_SANDBOX_EXEC
 from mcp_infra.seatbelt.runner import run_sandboxed_async
-import pytest_bazel
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
@@ -28,6 +28,7 @@ async def test_basic_env_and_python(allow_all_policy, cmd, set_env, passthrough,
     assert res.exit_code == 0
     out = res.stdout or b""
     assert expect_substring in out
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

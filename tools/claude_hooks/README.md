@@ -224,6 +224,7 @@ This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.att
 **Solution**: Use TCP socket (`inet_http_server`) instead of Unix socket. The supervisor_setup module now configures supervisor to listen on `127.0.0.1:19001` by default. This avoids the 9p filesystem limitation entirely.
 
 Configuration via environment variable:
+
 - `CLAUDE_HOOKS_SUPERVISOR_PORT`: Override TCP port (default: 19001)
 
 ## Development

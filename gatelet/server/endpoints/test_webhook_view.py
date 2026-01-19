@@ -3,13 +3,13 @@
 import re
 from http import HTTPStatus
 
+import pytest_bazel
 from hamcrest import all_of, assert_that, contains_string, is_not
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.models import WebhookIntegration, WebhookPayload
 from gatelet.server.tests.utils import persist
-import pytest_bazel
 
 
 def _extract_csrf(page_text: str) -> str:
@@ -154,6 +154,7 @@ async def test_disabled_payloads_visible_admin(client: AsyncClient, db_session: 
     response = await client.get("/admin/webhooks/", cookies={"session_token": session_cookie})
     assert response.status_code == HTTPStatus.OK
     assert integration.name in response.text
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

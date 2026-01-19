@@ -20,7 +20,6 @@ import shutil
 import socket
 import ssl
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -283,14 +282,6 @@ def _build_auth_proxy_command(https_proxy: str) -> str:
     )
 
 
-def _get_proxy_environment() -> dict[str, str]:
-    """Get environment variables for proxy service.
-
-    Returns empty dict since claude-auth-proxy entry point has all imports.
-    """
-    return {}
-
-
 def _wait_for_proxy(timeout_seconds: float = 5.0) -> bool:
     """Wait for proxy to start listening, return True if successful."""
     proxy_port = _get_bazel_proxy_port()
@@ -333,7 +324,6 @@ def ensure_proxy_running() -> bool:
     supervisor_setup.start()
 
     command = _build_auth_proxy_command(https_proxy)
-    environment = _get_proxy_environment()
 
     # Check if service is running
     if supervisor_setup.is_service_running(BAZEL_PROXY_SERVICE):
@@ -346,9 +336,7 @@ def ensure_proxy_running() -> bool:
         # Update credentials and restart
         logger.info("Updating proxy with new credentials...")
         creds_file.write_text(https_proxy)
-        supervisor_setup.update_service(
-            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=environment
-        )
+        supervisor_setup.update_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment={})
         if not _wait_for_proxy():
             raise ProxyServiceError("Proxy did not restart with new credentials")
         logger.info("Proxy credentials refreshed")
@@ -358,9 +346,7 @@ def ensure_proxy_running() -> bool:
     proxy_port = _get_bazel_proxy_port()
     logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
     creds_file.write_text(https_proxy)
-    supervisor_setup.add_service(
-        name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=environment
-    )
+    supervisor_setup.add_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment={})
     if not _wait_for_proxy():
         raise ProxyServiceError("Bazel proxy did not start listening in time")
     logger.info("Bazel proxy started successfully")

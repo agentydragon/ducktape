@@ -80,7 +80,7 @@ def parse_build_file_for_target(build_file: Path, test_file: Path) -> dict | Non
         rel_path_str = test_filename
 
     # Find all py_test blocks
-    py_test_pattern = r'py_test\s*\([^)]*?srcs\s*=\s*\[[^\]]*?\][^)]*?\)'
+    py_test_pattern = r"py_test\s*\([^)]*?srcs\s*=\s*\[[^\]]*?\][^)]*?\)"
 
     for match in re.finditer(py_test_pattern, content, re.DOTALL):
         block = match.group(0)
@@ -168,20 +168,14 @@ def check_file(file_path: Path) -> CheckResult:
     if build_file:
         target_info = parse_build_file_for_target(build_file, file_path)
         if target_info and "main" in target_info:
-            return CheckResult(
-                file_path, True, f"uses custom main={target_info['main']}"
-            )
+            return CheckResult(file_path, True, f"uses custom main={target_info['main']}")
 
     # Check if using pytest.main() directly (custom runner)
     if "pytest.main(" in content:
         return CheckResult(file_path, True, "uses pytest.main() (custom runner)")
 
     # Missing entry point!
-    return CheckResult(
-        file_path,
-        False,
-        "has test functions but missing pytest_bazel.main() entry point",
-    )
+    return CheckResult(file_path, False, "has test functions but missing pytest_bazel.main() entry point")
 
 
 def find_all_test_files(repo_root: Path) -> list[Path]:
@@ -204,23 +198,12 @@ def find_all_test_files(repo_root: Path) -> list[Path]:
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Check that py_test files have pytest_bazel.main() entry points"
-    )
+    parser = argparse.ArgumentParser(description="Check that py_test files have pytest_bazel.main() entry points")
     parser.add_argument(
-        "files",
-        nargs="*",
-        type=Path,
-        help="Test files to check (default: check files from stdin or --all)",
+        "files", nargs="*", type=Path, help="Test files to check (default: check files from stdin or --all)"
     )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Check all test_*.py files in repository",
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Show all results including passes"
-    )
+    parser.add_argument("--all", action="store_true", help="Check all test_*.py files in repository")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show all results including passes")
 
     args = parser.parse_args()
 
@@ -257,9 +240,7 @@ def main() -> int:
     # Summary
     if failed:
         print(f"\n{len(failed)} file(s) missing pytest_bazel.main()", file=sys.stderr)
-        print(
-            "\nTo fix, add this to the end of each failing test file:", file=sys.stderr
-        )
+        print("\nTo fix, add this to the end of each failing test file:", file=sys.stderr)
         print("  import pytest_bazel", file=sys.stderr)
         print('  if __name__ == "__main__":', file=sys.stderr)
         print("      pytest_bazel.main()", file=sys.stderr)

@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pygit2
+import pytest_bazel
 
 from .cli import stage_tracked_changes
 from .testing.git_repo_utils import RepoHelper
-import pytest_bazel
 
 
 def test_stage_all_includes_modified_files(temp_repo: RepoHelper) -> None:
@@ -83,6 +83,7 @@ def test_stage_all_handles_mixed_changes(temp_repo: RepoHelper) -> None:
     # Untracked file should remain untracked
     assert status["untracked.txt"] & pygit2.GIT_STATUS_WT_NEW
     assert not (status["untracked.txt"] & pygit2.GIT_STATUS_INDEX_NEW)
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

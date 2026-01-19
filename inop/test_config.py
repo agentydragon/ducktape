@@ -1,9 +1,9 @@
 """Tests for configuration management."""
 
+import pytest_bazel
 import yaml
 
 from inop.config import OptimizerConfig
-import pytest_bazel
 
 
 def test_config_from_file(tmp_path):
@@ -29,6 +29,7 @@ def test_config_from_file(tmp_path):
     config = OptimizerConfig.from_file(config_path)
     assert config.rollouts.max_parallel == 4
     assert "*.log" in config.exclude_patterns
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

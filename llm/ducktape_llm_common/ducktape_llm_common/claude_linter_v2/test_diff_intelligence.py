@@ -3,6 +3,8 @@
 from collections import defaultdict
 from pathlib import Path
 
+import pytest_bazel
+
 from ducktape_llm_common.claude_code_api import EditOperation, EditToolCall, MultiEditToolCall
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
 from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
@@ -12,7 +14,6 @@ from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
 )
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import ParsedDiff, parse_tool_response
-import pytest_bazel
 
 TEST_FILE = Path("/test.py")
 
@@ -170,6 +171,7 @@ class TestDiffIntelligence:
         assert "Line 10: Bare except" in formatted
         assert "Issues near your changes:" in formatted
         assert "Line 8 (2 lines away): Trailing whitespace" in formatted
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

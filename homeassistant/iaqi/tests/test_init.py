@@ -3,7 +3,6 @@
 from unittest.mock import patch
 
 import pytest_bazel
-
 from custom_components.indoor_aqi import DOMAIN, async_setup_entry, async_unload_entry
 from hamcrest import assert_that, has_entries
 from pytest_homeassistant_custom_component.common import MockConfigEntry

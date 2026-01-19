@@ -1,7 +1,8 @@
+import pytest_bazel
+
 from mcp_infra._markers import REQUIRES_SANDBOX_EXEC
 from mcp_infra.seatbelt.model import SBPLPolicy
 from mcp_infra.seatbelt.runner import run_sandboxed_async
-import pytest_bazel
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
@@ -12,6 +13,7 @@ async def test_exec_allow_all_runs_echo(allow_all_policy: SBPLPolicy):
     res = await run_sandboxed_async(allow_all_policy, ["/bin/sh", "-c", "echo ALLOW_ALL_OK"])
     assert res.exit_code == 0
     assert res.stdout == b"ALLOW_ALL_OK\n"
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

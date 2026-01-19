@@ -4,12 +4,12 @@ from importlib import resources
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 # Ensure detectors register themselves via module imports
 import py_detectors.__main__  # noqa: F401
 from py_detectors.registry import all_detectors, run_all
 from tests.fixture_utils import copy_fixture
-import pytest_bazel
 
 
 def _discover_fixtures(base_package: str) -> list[tuple[str, str]]:

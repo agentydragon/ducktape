@@ -3,12 +3,13 @@
 from collections import defaultdict
 from pathlib import Path
 
+import pytest_bazel
+
 from ducktape_llm_common.claude_code_api import EditOperation, EditToolCall, MultiEditToolCall
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
 from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategory
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import parse_tool_response
-import pytest_bazel
 
 TEST_FILE = Path("/test.py")
 
@@ -183,6 +184,7 @@ class TestDiffIntelligenceEdgeCases:
         assert "Line 30:" in formatted
         assert "... and 7 more" in formatted
         assert "Line 40:" not in formatted  # Should be truncated
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

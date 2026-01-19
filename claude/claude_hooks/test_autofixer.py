@@ -3,13 +3,13 @@
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that, contains_string
 
 from claude_hooks.actions import PostToolFeedbackToClaude
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.precommit_autofix import NoChanges, PreCommitAutoFixerHook, extract_file_path
 from claude_hooks.tool_models import EditInput, WriteInput
-import pytest_bazel
 
 
 @pytest.mark.parametrize(
@@ -143,6 +143,7 @@ def test_execute_precommit_failure(autofixer_hook, integration_env):
 
     # Should not block Claude on internal errors
     assert result.to_protocol() == {}
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

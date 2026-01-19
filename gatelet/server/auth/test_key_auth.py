@@ -4,12 +4,12 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
+import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.auth.key_auth import KeyAuthError, validate_key
 from gatelet.server.models import AuthKey
 from gatelet.server.tests.utils import persist
-import pytest_bazel
 
 # Explicit test value - tests should not depend on production config
 TEST_KEY_VALIDITY = timedelta(days=365)
@@ -67,6 +67,7 @@ async def test_validate_expired_key(db_session: AsyncSession):
     # Validate key
     with pytest.raises(KeyAuthError):
         await validate_key(key.key_value, db_session, TEST_KEY_VALIDITY)
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

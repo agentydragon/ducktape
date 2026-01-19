@@ -41,5 +41,6 @@ def test_manual_delete_of_old_worktree_does_not_break_new_create(real_temp_repo,
     r3 = wt_cli.status(timeout=timedelta(seconds=20.0))
     assert r3.returncode == 0
 
+
 if __name__ == "__main__":
     pytest_bazel.main()

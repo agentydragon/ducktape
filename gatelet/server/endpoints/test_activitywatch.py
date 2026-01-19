@@ -1,7 +1,8 @@
+import pytest_bazel
+
 from gatelet.server.config import ActivityWatchSettings
 from gatelet.server.endpoints import activitywatch
 from gatelet.server.tests import activitywatch_sample as sample
-import pytest_bazel
 
 EPS = 0.01
 
@@ -38,6 +39,7 @@ async def test_fetch_recent_activity(monkeypatch):
     assert abs(result["afk"].total_seconds() / 60 - 0.5) < EPS
     assert result["app"][0][0] == "ExampleBrowser"
     assert result["url"][0][0] == "https://example.com"
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -4,10 +4,10 @@ import json
 import subprocess
 
 import pytest
+import pytest_bazel
 
 from claude_hooks.actions import PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
-import pytest_bazel
 
 
 def test_environment_setup(integration_env):
@@ -160,6 +160,7 @@ def test_workflow_simulation(integration_env):
 
     python_files = list(integration_env.project_dir.rglob("*.py"))
     assert len(python_files) >= 2
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

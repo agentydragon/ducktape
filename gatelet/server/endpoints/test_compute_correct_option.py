@@ -1,9 +1,9 @@
 import hashlib
 
 import pytest
+import pytest_bazel
 
 from gatelet.server.endpoints.challenge import compute_correct_option
-import pytest_bazel
 
 
 def test_requires_power_of_two():
@@ -21,6 +21,7 @@ def test_uses_last_byte():
     nonce = "nonce"
     expected = hashlib.sha256(f"{key}{nonce}".encode()).digest()[-1] % 16
     assert compute_correct_option(key, nonce, 16) == expected
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -3,11 +3,11 @@
 import subprocess
 
 import pytest
+import pytest_bazel
 
 from ducktape_llm_common.claude_code_api import StopRequest
 from ducktape_llm_common.claude_linter_v2.config.models import StopHookConfig
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
-import pytest_bazel
 
 
 @pytest.fixture
@@ -146,6 +146,7 @@ def test_violation_tracker_deduplication(handler, session_id, tmp_path):
     # Should only have one violation
     unfixed = handler.violation_tracker.get_unfixed_violations(session_id)
     assert len(unfixed) == 1
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

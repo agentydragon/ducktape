@@ -29,8 +29,7 @@ def main() -> int:
 
     # Configure logging
     logging.basicConfig(
-        level=getattr(logging, args.log_level.upper()),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        level=getattr(logging, args.log_level.upper()), format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
 
     # Create and start proxy

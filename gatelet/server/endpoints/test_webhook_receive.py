@@ -2,6 +2,7 @@
 
 from http import HTTPStatus
 
+import pytest_bazel
 from hamcrest import anything, assert_that, equal_to, has_entries, has_properties, is_, none
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -9,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.models import WebhookIntegration, WebhookPayload
 from gatelet.server.tests.utils import persist
-import pytest_bazel
 
 
 async def test_receive_webhook_no_auth(client: AsyncClient, db_session: AsyncSession):
@@ -136,6 +136,7 @@ async def test_receive_webhook_invalid_json(client: AsyncClient, db_session: Asy
         f"/webhook/{integration.name}", content="not-json", headers={"Content-Type": "application/json"}
     )
     assert_that(response.status_code, equal_to(HTTPStatus.BAD_REQUEST))
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

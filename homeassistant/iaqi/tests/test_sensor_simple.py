@@ -1,7 +1,6 @@
 """Basic tests for the Indoor AQI sensor component."""
 
 import pytest_bazel
-
 from custom_components.indoor_aqi.sensor import compute_iaqi
 from hamcrest import assert_that, close_to
 

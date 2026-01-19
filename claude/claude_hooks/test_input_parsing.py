@@ -14,11 +14,11 @@ Notes about hook behavior observed during testing:
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 from claude_hooks.tool_models import BashInput, GlobInput, GrepInput, GrepOutputMode, LSInput, TaskInput
 
 from .test_helpers import assert_tool_input_parsing, load_test_json
-import pytest_bazel
 
 
 @pytest.mark.parametrize(
@@ -61,6 +61,7 @@ def test_tool_input_parsing(tool_name, scenario, expected_tool_input):
     """Test that tool JSON is parsed correctly with proper types."""
     raw_json = load_test_json(tool_name, scenario)
     assert_tool_input_parsing(raw_json, expected_tool_input, f"{tool_name}/{scenario}")
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

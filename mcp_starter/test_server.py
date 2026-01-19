@@ -1,9 +1,9 @@
 """Unit tests for MCP Starter Template server."""
 
+import pytest_bazel
 from fastmcp.client import Client as FastMCPClient
 
 from adgn_mcp_starter.server import create_mcp_server
-import pytest_bazel
 
 
 def test_server_creation() -> None:
@@ -48,6 +48,7 @@ async def test_generate_sample_image_tool(mcp_client: FastMCPClient) -> None:
     assert img is not None
     assert getattr(img, "mimeType", None) == "image/png"
     assert len(getattr(img, "data", "")) > 0
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

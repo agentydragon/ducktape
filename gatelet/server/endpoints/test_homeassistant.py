@@ -1,9 +1,9 @@
 import re
 from http import HTTPStatus
 
+import pytest_bazel
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-import pytest_bazel
 
 
 async def test_home_page(client: AsyncClient, test_auth_key):
@@ -35,6 +35,7 @@ async def test_entities_page_admin_links(client: AsyncClient, db_session: AsyncS
     resp = await client.get("/admin/ha/", cookies={"session_token": session_cookie})
     assert resp.status_code == HTTPStatus.OK
     assert "homeassistant.local:8123" in resp.text
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

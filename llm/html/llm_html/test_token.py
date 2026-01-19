@@ -8,11 +8,11 @@ deterministic.
 from datetime import datetime
 
 import pytest
+import pytest_bazel
 from pydantic import BaseModel, Field
 
 from .server import TIMEZONE
 from .token_scheme import TokenScheme, VerificationError
-import pytest_bazel
 
 SECRET = b"hunter2"
 

@@ -161,5 +161,6 @@ class TestShellIntegrationEdgeCases:
         assert result.returncode == 0
         assert "Environment test completed" in result.stdout
 
+
 if __name__ == "__main__":
     pytest_bazel.main()

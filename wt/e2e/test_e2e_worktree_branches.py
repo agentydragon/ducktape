@@ -2,9 +2,9 @@ import os
 
 import pygit2
 import pytest
+import pytest_bazel
 
 from wt.testing.git_helpers import add_worktree
-import pytest_bazel
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -49,6 +49,7 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
     repo_b = pygit2.Repository(wt_b)
     assert repo_a.head.shorthand == "test/aaaaa"
     assert repo_b.head.shorthand == "test/bbbbb"
+
 
 if __name__ == "__main__":
     pytest_bazel.main()

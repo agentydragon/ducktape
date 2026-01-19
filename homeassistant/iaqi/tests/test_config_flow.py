@@ -1,7 +1,6 @@
 """Test the Indoor AQI config flow."""
 
 import pytest_bazel
-
 from custom_components.indoor_aqi import DOMAIN
 from hamcrest import assert_that, contains_string, equal_to, has_entries
 from pytest_homeassistant_custom_component.common import MockConfigEntry

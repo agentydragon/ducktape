@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import pygit2
 import pytest
+import pytest_bazel
 
 from git_commit_ai.cli import build_cache_key
-import pytest_bazel
 
 
 def test_cache_key_includes_amend_status():

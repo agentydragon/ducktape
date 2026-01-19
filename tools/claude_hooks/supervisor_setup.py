@@ -183,9 +183,7 @@ def _write_config() -> None:
     (supervisor_dir / "conf.d").mkdir(parents=True, exist_ok=True)
 
 
-def _write_service_config(
-    name: str, command: str, directory: Path, environment: dict[str, str] | None = None
-) -> Path:
+def _write_service_config(name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> Path:
     """Build and write service config for supervisor.
 
     Returns the path to the written config file.

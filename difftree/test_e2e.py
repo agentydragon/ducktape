@@ -1,10 +1,11 @@
 from pathlib import Path
 
+import pytest_bazel
+
 from difftree.config import SortMode
 from difftree.conftest import create_file, git_add_commit
 from difftree.parser import parse_unified_diff
 from difftree.tree import build_tree, sort_tree
-import pytest_bazel
 
 
 def test_e2e_git_diff_unstaged(temp_git_repo: Path, run_git):
@@ -70,6 +71,7 @@ def test_e2e_staged_changes(temp_git_repo: Path, run_git):
 
     result = run_git("diff", "--cached")
     assert "file1.py" in result.stdout
+
 
 if __name__ == "__main__":
     pytest_bazel.main()
