@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+import pytest_bazel
 from fastmcp.mcp_config import MCPConfig
 from hamcrest import assert_that, has_item
 from hamcrest.core.base_matcher import BaseMatcher
@@ -75,3 +76,7 @@ async def test_notifications_handler_in_container_inserts_system_message(
         await asyncio.wait_for(container.session.run("check"), timeout=30)
     finally:
         await container.close()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

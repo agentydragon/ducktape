@@ -217,7 +217,6 @@ py_test(
     srcs = [
         "conftest.py",
         "e2e/conftest.py",
-        "e2e/pytest_runner_e2e.py",
         "e2e/test_abort.py",
         "e2e/test_approvals.py",
         "e2e/test_notifications_handler.py",
@@ -225,7 +224,6 @@ py_test(
         "e2e/test_ui.py",
     ],
     imports = [".."],
-    main = "e2e/pytest_runner_e2e.py",
     tags = ["manual"],
     deps = _TEST_DEPS + ["@pypi//playwright"],
 )

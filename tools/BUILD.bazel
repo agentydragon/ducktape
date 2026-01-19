@@ -1,0 +1,28 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+
+# Guard against missing pytest_bazel.main() calls in test files
+py_binary(
+    name = "check_pytest_main",
+    srcs = ["check_pytest_main.py"],
+    visibility = ["//visibility:public"],
+)
+
+# Validate all test files in repository
+py_test(
+    name = "validate_pytest_main",
+    srcs = ["check_pytest_main.py"],
+    args = ["--all"],
+    data = glob(
+        [
+            "**/*.py",
+            "**/BUILD.bazel",
+        ],
+        exclude = ["bazel-*/**"],
+    ),
+    main = "check_pytest_main.py",
+    tags = [
+        "lint",
+        "manual",  # Run explicitly, not in wildcard test patterns
+    ],
+    visibility = ["//visibility:public"],
+)

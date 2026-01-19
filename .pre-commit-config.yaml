@@ -238,3 +238,15 @@ repos:
         language: system
         files: ^cluster/(k8s/.*sealed.*\.yaml|terraform/00-persistent-auth/)
         pass_filenames: false
+
+  # Python test validation
+  - repo: local
+    hooks:
+      # Check that py_test files have pytest_bazel.main() entry points
+      # Prevents silent test failures where tests import as modules without executing
+      - id: check-pytest-main
+        name: Check pytest_bazel.main() in test files
+        entry: bazelisk run //tools:check_pytest_main --
+        language: system
+        files: ^.*test_.*\.py$
+        pass_filenames: true

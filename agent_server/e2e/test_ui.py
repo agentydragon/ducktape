@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from agent_core_testing.responses import DecoratorMock
 from agent_server.mcp.ui.server import EndTurnInput, SendMessageInput
@@ -76,3 +77,7 @@ def test_ui_create_chat_and_restore(e2e_page, run_server):
 
     # Cleanup
     s2.stop()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

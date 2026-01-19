@@ -4,6 +4,7 @@ import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
+import pytest_bazel
 
 from agent_core_testing.openai_mock import make_mock
 
@@ -65,3 +66,7 @@ def test_ui_abort_sampling(e2e_page, run_server, responses_factory):
     assert expect_none.count() == 0
 
     s.stop()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

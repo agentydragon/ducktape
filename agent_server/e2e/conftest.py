@@ -14,6 +14,12 @@ from agent_server.testing.helpers import ServerHandle, start_uvicorn_app
 # Auto-apply e2e marker to all tests in this directory
 pytestmark = [pytest.mark.e2e]
 
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode for e2e tests."""
+    config.option.asyncio_mode = "auto"
+    config.option.asyncio_default_fixture_loop_scope = "function"
+
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright
 

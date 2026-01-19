@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+import pytest_bazel
 
 from agent_core_testing.responses import DecoratorMock
 from agent_server.mcp.approval_policy.engine import CreateProposalArgs
@@ -67,3 +68,7 @@ async def test_policy_proposal_reject_updates_ui(e2e_page, run_server, policy_al
     e2e_page.page.get_by_text("Open Proposals (1)").wait_for(state="detached", timeout=10000)
 
     s.stop()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

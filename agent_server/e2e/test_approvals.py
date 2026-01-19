@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+import pytest_bazel
 
 from agent_core_testing.responses import EchoMock
 from agent_core_testing.steps import EmptyArgs
@@ -57,3 +58,7 @@ def test_approvals_delivery_and_user_approve(e2e_page, run_server):
     e2e_page.wait_for_text("Status: finished")
 
     s.stop()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

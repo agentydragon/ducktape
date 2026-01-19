@@ -38,6 +38,15 @@ from gatelet.server.tests.utils import persist
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode and other test settings."""
+    config.option.asyncio_mode = "auto"
+    config.option.asyncio_default_fixture_loop_scope = "function"
+
+    # Disable anyio plugin which can conflict with pytest-asyncio
+    config.pluginmanager.set_blocked("anyio")
+
+
 def _build_database_url(driver: str = "asyncpg") -> str:
     """Build DATABASE_URL from standard PG* environment variables.
 

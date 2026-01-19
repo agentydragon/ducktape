@@ -6,11 +6,25 @@ without pytest_bazel.main() import the test file as a module and exit 0
 without running any tests.
 
 Usage:
-    # Check specific files (pre-commit mode)
-    tools/check_pytest_main.py test_foo.py test_bar.py
+    # Via Bazel (recommended, uses caching)
+    bazel run //tools:check_pytest_main -- --all
 
-    # Check all test files in repo (CI mode)
+    # Via pre-commit (checks changed files)
+    pre-commit run check-pytest-main
+
+    # Direct invocation
+    tools/check_pytest_main.py test_foo.py test_bar.py
     tools/check_pytest_main.py --all
+
+Detection method:
+    Parses BUILD.bazel files with regex to find custom main= parameters.
+    Works in all environments: workspace, Bazel sandbox, CI, GitHub Actions.
+    No Bazel server or query dependencies needed.
+
+TODO: Add XML analysis safety net that checks JUnit XML test results
+      after Bazel test execution to detect tests that collected 0 tests.
+      This would catch cases where pytest_bazel.main() was added but
+      never actually executed.
 
 Exit codes:
     0: All checks passed
