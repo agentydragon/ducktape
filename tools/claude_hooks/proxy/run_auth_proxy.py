@@ -9,6 +9,7 @@ import argparse
 import logging
 import signal
 import sys
+from types import FrameType
 
 from tools.claude_hooks.proxy.auth_forwarding_proxy import AuthForwardingProxy
 
@@ -42,7 +43,7 @@ def main() -> int:
     )
 
     # Handle shutdown signals
-    def shutdown_handler(signum: int, frame) -> None:  # type: ignore[no-untyped-def]
+    def shutdown_handler(signum: int, frame: FrameType | None) -> None:
         logger.info("Received signal %d, shutting down...", signum)
         proxy.stop()
         sys.exit(0)

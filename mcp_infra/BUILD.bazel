@@ -62,7 +62,8 @@ py_test(
     deps = [
         ":test_support",
         "@pypi//pydantic",  # imports TypeAdapter, ValidationError
-        "@pypi//pytest",  # imports pytest
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

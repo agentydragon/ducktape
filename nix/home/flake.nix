@@ -5,6 +5,9 @@
     # NixOS 25.11 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
+    # Unstable for packages that need frequent updates (e.g., claude-code)
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
+
     # Home Manager tracking 25.11 release
     home-manager = {
       url = "github:nix-community/home-manager/release-25.11";
@@ -30,6 +33,7 @@
   outputs = {
     self,
     nixpkgs,
+    nixpkgs-unstable,
     home-manager,
     nix-colors,
     claude-code-router,
@@ -47,6 +51,11 @@
       extraModules ? [],
     }: let
       pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
+      };
+
+      pkgsUnstable = import nixpkgs-unstable {
         inherit system;
         config.allowUnfree = true;
       };
@@ -77,6 +86,7 @@
                   solarizedLight
                   solarizedDark
                   terminalFont
+                  pkgsUnstable
                   ;
                 nixGLPackages = nixGL.packages.${system};
               };

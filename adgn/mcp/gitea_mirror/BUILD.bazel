@@ -31,6 +31,7 @@ py_test(
     ],
     deps = [
         ":gitea_mirror_lib",
+        "//mcp_infra/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

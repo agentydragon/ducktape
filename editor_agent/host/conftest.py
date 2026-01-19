@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from agent_core_testing.docker import *  # noqa: F403
+from mcp_infra.testing.fixtures import *  # noqa: F403
 from agent_pkg.host.builder import ensure_image
 from editor_agent.host.cli import _DOCKERFILE, _REPO_ROOT
 

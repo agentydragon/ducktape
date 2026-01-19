@@ -63,6 +63,7 @@ py_test(
     deps = [
         ":editor_agent_host",
         "//agent_core_testing",
+        "//mcp_infra/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
@@ -80,6 +81,7 @@ py_test(
     deps = [
         ":editor_agent_host",
         "//agent_core_testing",
+        "//mcp_infra/testing",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -96,6 +98,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":editor_agent_host",
+        "//mcp_infra/testing",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

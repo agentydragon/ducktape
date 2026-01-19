@@ -1,6 +1,7 @@
 {
   config,
   pkgs,
+  pkgsUnstable,
   lib,
   ...
 }: let
@@ -50,7 +51,7 @@
 in {
   programs.claude-code = {
     enable = true;
-    package = pkgs.claude-code;
+    package = pkgsUnstable.claude-code; # Use unstable for faster updates
 
     commands = commands;
 
