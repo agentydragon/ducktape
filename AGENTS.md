@@ -213,6 +213,21 @@ Without this, Bazel runs the test file directly as a script, which imports and e
 
 Also add `@pypi//pytest_bazel` to the test's deps in BUILD.bazel.
 
+#### pytest-asyncio auto mode
+
+pytest-asyncio is configured in **auto mode** via `conftest.py`, which automatically detects and runs `async def test_*()` functions without requiring explicit `@pytest.mark.asyncio` decorators.
+
+**Do NOT add** `@pytest.mark.asyncio` decorators to new async tests - they are unnecessary and redundant with auto mode.
+
+For async fixtures, use:
+```python
+@pytest.fixture
+async def my_fixture():
+    # async setup
+    yield value
+    # async teardown
+```
+
 ### Deployment
 
 ```bash
