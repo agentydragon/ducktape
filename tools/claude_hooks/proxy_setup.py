@@ -20,6 +20,7 @@ import shutil
 import socket
 import ssl
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -267,9 +268,9 @@ def _build_auth_proxy_command(https_proxy: str) -> str:
     username = proxy.username
     password = proxy.password
 
-    # Use python -m to run the proxy script
+    # Use sys.executable to run the proxy script with the current Python interpreter
     return (
-        f"python -m tools.claude_hooks.run_auth_proxy "
+        f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy "
         f"--listen-port {proxy_port} "
         f"--upstream-host {upstream_host} "
         f"--upstream-port {upstream_port} "

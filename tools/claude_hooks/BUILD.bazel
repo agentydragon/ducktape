@@ -5,8 +5,8 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "auth_proxy",
     srcs = [
-        "auth_forwarding_proxy.py",
-        "run_auth_proxy.py",
+        "proxy/auth_forwarding_proxy.py",
+        "proxy/run_auth_proxy.py",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],

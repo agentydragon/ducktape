@@ -10,7 +10,7 @@ import logging
 import signal
 import sys
 
-from tools.claude_hooks.auth_forwarding_proxy import AuthForwardingProxy
+from tools.claude_hooks.proxy.auth_forwarding_proxy import AuthForwardingProxy
 
 logger = logging.getLogger(__name__)
 
