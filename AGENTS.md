@@ -215,9 +215,11 @@ Also add `@pypi//pytest_bazel` to the test's deps in BUILD.bazel.
 
 #### pytest-asyncio auto mode
 
-pytest-asyncio is configured in **auto mode** via `conftest.py`, which automatically detects and runs `async def test_*()` functions without requiring explicit `@pytest.mark.asyncio` decorators.
+pytest-asyncio is configured in **auto mode** via `pytest_configure(config)` hooks in package-level `conftest.py` files (e.g., `agent_core/conftest.py`, `mcp_infra/conftest.py`, `props/core/conftest.py`). This automatically detects and runs `async def test_*()` functions without requiring explicit `@pytest.mark.asyncio` decorators.
 
 **Do NOT add** `@pytest.mark.asyncio` decorators to new async tests - they are unnecessary and redundant with auto mode.
+
+**Note**: There's also a root `//:conftest` py_library target available, but most tests use their package-level conftest.py which already configures auto mode. No special Bazel dependency is needed - package conftest.py files are automatically discovered by pytest when included in test `srcs`.
 
 For async fixtures, use:
 ```python
