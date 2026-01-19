@@ -251,3 +251,9 @@ rfc3987-syntax = { git = "https://github.com/agentydragon/rfc3987-syntax", branc
 # Without this, setuptools discovers all 40+ top-level dirs as packages
 [tool.setuptools]
 packages = []
+
+[tool.pytest.ini_options]
+# pytest-asyncio auto mode: automatically detect and run async test functions
+# without requiring explicit @pytest.mark.asyncio decorators
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
