@@ -29,7 +29,7 @@ from mako.template import Template
 
 from tools.claude_hooks import supervisor_setup
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
-from tools.claude_hooks.proxy_credentials import build_upstream_uri, parse_proxy_url
+from tools.claude_hooks.proxy_credentials import parse_proxy_url
 from tools.claude_hooks.resources import CONFIG_FILES
 
 logger = logging.getLogger(__name__)
@@ -252,14 +252,30 @@ def _create_java_truststore() -> None:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 
-def _build_pproxy_command(https_proxy: str) -> str:
-    """Build pproxy command with credentials embedded in upstream URI."""
+def _build_auth_proxy_command(https_proxy: str) -> str:
+    """Build command to run custom auth-forwarding proxy."""
     proxy = parse_proxy_url(https_proxy)
-    upstream_uri = build_upstream_uri(proxy)
     proxy_port = _get_bazel_proxy_port()
 
-    # pproxy CLI: -l = listen, -r = remote upstream
-    return f"pproxy -l http://127.0.0.1:{proxy_port}/ -r {upstream_uri}/"
+    if not proxy.hostname:
+        raise ProxyServiceError("No upstream proxy host in https_proxy")
+    if not proxy.username or not proxy.password:
+        raise ProxyServiceError("No credentials in https_proxy URL")
+
+    upstream_host = proxy.hostname
+    upstream_port = proxy.port or 80
+    username = proxy.username
+    password = proxy.password
+
+    # Use python -m to run the proxy script
+    return (
+        f"python -m tools.claude_hooks.run_auth_proxy "
+        f"--listen-port {proxy_port} "
+        f"--upstream-host {upstream_host} "
+        f"--upstream-port {upstream_port} "
+        f"--username {username} "
+        f"--password {password}"
+    )
 
 
 def _wait_for_proxy(timeout_seconds: float = 5.0) -> bool:
@@ -303,7 +319,7 @@ def ensure_proxy_running() -> bool:
     # Ensure supervisor is running
     supervisor_setup.start()
 
-    command = _build_pproxy_command(https_proxy)
+    command = _build_auth_proxy_command(https_proxy)
 
     # Check if service is running
     if supervisor_setup.is_service_running(BAZEL_PROXY_SERVICE):
@@ -324,7 +340,7 @@ def ensure_proxy_running() -> bool:
 
     # Start proxy service
     proxy_port = _get_bazel_proxy_port()
-    logger.info("Starting pproxy on port %d via supervisor", proxy_port)
+    logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
     creds_file.write_text(https_proxy)
     supervisor_setup.add_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir)
     if not _wait_for_proxy():
