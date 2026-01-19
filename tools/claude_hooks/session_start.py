@@ -208,6 +208,7 @@ def emit_session_context(collector: LogCollector) -> None:
         "  - TLS-inspecting proxy (custom CA configured)",
         "  - No overlay filesystem (use vfs for containers)",
         "  - Network via proxy only (no direct DNS)",
+        "  - 9p filesystem (no hard links on Unix sockets)",
     ]
 
     if collector.errors:
