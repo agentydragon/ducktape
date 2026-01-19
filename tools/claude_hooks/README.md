@@ -169,9 +169,10 @@ Supervisor files (in `~/.config/supervisor/`):
 
 - `supervisord.conf` - Supervisor main configuration
 - `supervisord.{log,pid}` - Supervisor daemon state
-- `supervisor.sock` - Supervisor control socket
 - `conf.d/bazel-proxy.conf` - Proxy service configuration
 - `bazel-proxy.{log,err.log}` - Proxy stdout/stderr logs
+
+Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file).
 
 Setup files (in `~/.cache/bazel-proxy/`, created by `proxy_setup.py`):
 
@@ -216,26 +217,14 @@ This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.att
 
 ### 9p filesystem doesn't support Unix socket hard links
 
-**Affects**: Claude Code web gVisor sandbox (root `/` is 9p, only `/dev/shm` is tmpfs)
+**Affects**: Claude Code web gVisor sandbox (root `/` is 9p)
 
-**Symptoms**: Supervisor hangs on startup with infinite loop, or socket operations fail with `errno 95: EOPNOTSUPP`
+**Root cause**: Supervisord uses hard links for atomic Unix socket creation (`link()` syscall). The 9p filesystem doesn't support hard linking Unix domain sockets, returning `EOPNOTSUPP` (errno 95). When the hard link fails, supervisord misinterprets this as a stale socket and enters an infinite retry loop.
 
-**Root cause**: Supervisord uses hard links for atomic socket creation (`link()` syscall). The 9p filesystem doesn't support hard linking Unix domain sockets. When the hard link fails, supervisord misinterprets this as a stale socket and enters an infinite retry loop.
+**Solution**: Use TCP socket (`inet_http_server`) instead of Unix socket. The supervisor_setup module now configures supervisor to listen on `127.0.0.1:19001` by default. This avoids the 9p filesystem limitation entirely.
 
-**gVisor sandbox filesystem layout** (from `mount`):
-
-```
-/              9p      (home, /tmp, ~/.config - all on 9p)
-/dev/shm       tmpfs   (only tmpfs available)
-```
-
-**Workaround**: Set `CLAUDE_HOOKS_SUPERVISOR_DIR` to a tmpfs path:
-
-```bash
-export CLAUDE_HOOKS_SUPERVISOR_DIR=/dev/shm/supervisor
-```
-
-The session start hook should use this to place supervisor sockets on tmpfs instead of the default `~/.config/supervisor/` which is on 9p.
+Configuration via environment variable:
+- `CLAUDE_HOOKS_SUPERVISOR_PORT`: Override TCP port (default: 19001)
 
 ## Development
 

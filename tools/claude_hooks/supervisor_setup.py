@@ -6,6 +6,10 @@ Provides a centralized process manager for:
 
 Configuration via environment variables (for testing):
 - CLAUDE_HOOKS_SUPERVISOR_DIR: Override supervisor directory
+- CLAUDE_HOOKS_SUPERVISOR_PORT: Override supervisor TCP port (default: 19001)
+
+Uses TCP socket (inet_http_server) instead of Unix socket to avoid 9p filesystem
+limitations in gVisor sandbox where hard linking Unix sockets fails with EOPNOTSUPP.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ import configparser
 import logging
 import os
 import shlex
+import socket
 import subprocess
 import sys
 import textwrap
@@ -23,9 +28,12 @@ from pathlib import Path
 from typing import Literal, cast
 
 from pydantic import BaseModel
-from supervisor.xmlrpc import Faults, SupervisorTransport
+from supervisor.xmlrpc import Faults
 
 from tools.claude_hooks.errors import ProxyServiceError, SupervisorError
+
+# Default port for supervisor's inet_http_server (localhost only)
+_DEFAULT_SUPERVISOR_PORT = 19001
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +72,16 @@ def _get_supervisor_conf() -> Path:
     return _get_supervisor_dir() / "supervisord.conf"
 
 
-def _get_supervisor_sock() -> Path:
-    # IMPORTANT: Socket directory must support hard linking Unix domain sockets.
-    # In gVisor sandbox, root / is 9p which returns EOPNOTSUPP (errno 95) for socket
-    # hard links, causing supervisord to hang. Only /dev/shm is tmpfs.
-    # Set CLAUDE_HOOKS_SUPERVISOR_DIR=/dev/shm/supervisor in gVisor environments.
-    return _get_supervisor_dir() / "supervisor.sock"
+def _get_supervisor_port() -> int:
+    """Get supervisor TCP port, allowing override via env var."""
+    if env_port := os.environ.get("CLAUDE_HOOKS_SUPERVISOR_PORT"):
+        return int(env_port)
+    return _DEFAULT_SUPERVISOR_PORT
+
+
+def _get_supervisor_url() -> str:
+    """Get supervisor HTTP URL for XML-RPC."""
+    return f"http://127.0.0.1:{_get_supervisor_port()}"
 
 
 def _get_supervisor_log() -> Path:
@@ -91,11 +103,8 @@ class SupervisorClient:
     """Typed wrapper around supervisor XML-RPC client."""
 
     def __init__(self) -> None:
-        sock = _get_supervisor_sock()
-        if not sock.exists():
-            raise ConnectionError(f"Supervisor socket not found: {sock}")
-        transport = SupervisorTransport(None, None, f"unix://{sock}")
-        self._proxy = xmlrpc.client.ServerProxy("http://127.0.0.1", transport=transport)
+        url = _get_supervisor_url()
+        self._proxy = xmlrpc.client.ServerProxy(url)
 
     def get_state(self) -> SupervisorState:
         """Get supervisor daemon state."""
@@ -142,14 +151,17 @@ def _write_config() -> None:
     """Write supervisor configuration file."""
     supervisor_dir = _get_supervisor_dir()
     supervisor_conf = _get_supervisor_conf()
-    supervisor_sock = _get_supervisor_sock()
+    supervisor_port = _get_supervisor_port()
+    supervisor_url = _get_supervisor_url()
     supervisor_log = _get_supervisor_log()
     supervisor_pidfile = _get_supervisor_pidfile()
 
     supervisor_dir.mkdir(parents=True, exist_ok=True)
 
     config = configparser.ConfigParser()
-    config["unix_http_server"] = {"file": str(supervisor_sock)}
+    # Use TCP socket instead of Unix socket to avoid 9p filesystem limitations
+    # in gVisor sandbox (hard linking Unix sockets fails with EOPNOTSUPP)
+    config["inet_http_server"] = {"port": f"127.0.0.1:{supervisor_port}"}
     config["supervisord"] = {
         "logfile": str(supervisor_log),
         "pidfile": str(supervisor_pidfile),
@@ -160,7 +172,7 @@ def _write_config() -> None:
     config["rpcinterface:supervisor"] = {
         "supervisor.rpcinterface_factory": "supervisor.rpcinterface:make_main_rpcinterface"
     }
-    config["supervisorctl"] = {"serverurl": f"unix://{supervisor_sock}"}
+    config["supervisorctl"] = {"serverurl": supervisor_url}
     config["include"] = {"files": f"{supervisor_dir}/conf.d/*.conf"}
 
     with supervisor_conf.open("w") as f:
@@ -193,14 +205,20 @@ def _build_service_config(
     return config
 
 
+def _is_port_in_use(port: int) -> bool:
+    """Check if a TCP port is in use on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
 def is_running() -> bool:
     """Check if supervisord is running."""
-    sock = _get_supervisor_sock()
+    port = _get_supervisor_port()
     pidfile = _get_supervisor_pidfile()
 
-    # Quick check: socket must exist
-    if not sock.exists():
-        logger.debug("Supervisor socket does not exist: %s", sock)
+    # Quick check: port must be listening
+    if not _is_port_in_use(port):
+        logger.debug("Supervisor port %d not listening", port)
         return False
 
     # Check pidfile and if process is alive
@@ -223,17 +241,12 @@ def is_running() -> bool:
 
 
 def _cleanup_stale_supervisor_files() -> None:
-    """Clean up stale supervisor socket and pidfile.
+    """Clean up stale supervisor pidfile.
 
     Called before starting supervisord when is_running() returns False
-    but the socket/pidfile still exist (stale state).
+    but the pidfile still exists (stale state).
     """
-    sock = _get_supervisor_sock()
     pidfile = _get_supervisor_pidfile()
-
-    if sock.exists():
-        logger.info("Removing stale supervisor socket: %s", sock)
-        sock.unlink()
 
     if pidfile.exists():
         logger.info("Removing stale supervisor pidfile: %s", pidfile)
@@ -244,12 +257,12 @@ def _dump_supervisor_debug_info() -> str:
     """Gather comprehensive debug info for supervisor startup failures."""
     lines = []
     supervisor_log = _get_supervisor_log()
-    sock = _get_supervisor_sock()
+    port = _get_supervisor_port()
     pidfile = _get_supervisor_pidfile()
 
     # State of key files
     lines.append("=== Supervisor state ===")
-    lines.append(f"Socket exists: {sock.exists()}")
+    lines.append(f"Port {port} listening: {_is_port_in_use(port)}")
     lines.append(f"Pidfile exists: {pidfile.exists()}")
 
     if pidfile.exists():
