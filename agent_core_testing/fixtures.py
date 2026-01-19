@@ -28,7 +28,7 @@ from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutpu
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core.tool_provider import ToolProvider, ToolResult
+from agent_core.tool_provider import ToolProvider
 from agent_core_testing.echo_server import make_echo_server
 from agent_core_testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_core_testing.responses import ResponsesFactory
@@ -256,18 +256,6 @@ def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
         return ToolCall(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id_gen())
 
     return _make
-
-
-def make_tool_result(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolResult:
-    """Create a ToolResult for tests."""
-    return ToolResult(content=[], structured_content=structured_content or {}, is_error=is_error)
-
-
-def make_tool_call_output(
-    call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False
-) -> ToolCallOutput:
-    """Create a ToolCallOutput for tests."""
-    return ToolCallOutput(call_id=call_id, result=make_tool_result(structured_content, is_error))
 
 
 # ---- Live OpenAI fixture ----

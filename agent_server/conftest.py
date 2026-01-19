@@ -136,26 +136,6 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
         await comp.mount_inproc(MCPMountPrefix(name), srv)
 
 
-@pytest.fixture  # type: ignore[no-redef]
-def make_buffered_client():
-    """Async helper to open a Compositor + Client with NotificationsBuffer.
-
-    Yields (client, compositor, buffer) so tests can read buffered notifications
-    or pass buffer.poll into handlers.
-    """
-
-    @asynccontextmanager
-    async def _open(servers: McpServerSpecs):
-        # Pass explicit version to avoid importlib.metadata.version() lookup
-        async with Compositor(version="1.0.0-test") as comp:
-            await _mount_servers(comp, servers)
-            buf = NotificationsBuffer(compositor=comp)
-            async with Client(comp, message_handler=buf.handler) as sess:
-                yield sess, comp, buf
-
-    return _open
-
-
 @pytest.fixture
 async def approval_policy_server(sqlite_persistence, async_docker_client) -> PolicyEngine:
     """PolicyEngine fixture that owns .reader, .proposer and .approver sub-servers."""
@@ -402,7 +382,7 @@ def make_call_result() -> Callable[[dict[str, Any] | None, bool], mcp.types.Call
     return _make
 
 
-@pytest.fixture  # type: ignore[no-redef]
+@pytest.fixture
 def make_tool_call_output(
     make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
 ) -> Callable[[str, dict[str, Any] | None, bool], ToolCallOutput]:
