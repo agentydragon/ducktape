@@ -214,6 +214,25 @@ ctx.actions.run_shell(
 
 This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.attr.env)` to merge `--action_env` with rule-specific env.
 
+### 9p filesystem doesn't support Unix socket hard links
+
+**Affects**: Docker/VM shared folders using 9p filesystem (common in Claude Code web gVisor sandbox)
+
+**Symptoms**: Supervisor hangs on startup with infinite loop, or socket operations fail with `errno 95: EOPNOTSUPP`
+
+**Root cause**: Supervisord uses hard links for atomic socket creation (`link()` syscall). The 9p filesystem (used for host-container file sharing) doesn't support hard linking Unix domain sockets. When the hard link fails, supervisord misinterprets this as a stale socket and enters an infinite retry loop.
+
+**Workaround**: The supervisor socket directory (`~/.config/supervisor/`) must be on a filesystem that supports full Unix socket operations. In gVisor environments, tmpfs works correctly:
+
+```bash
+# Verify current filesystem
+df -T ~/.config/supervisor/
+
+# If on 9p, supervisor sockets won't work - needs tmpfs or similar
+```
+
+**Why this matters for gVisor**: Claude Code web runs on gVisor with 9p filesystem for persistent storage. Background: gVisor's 9p implementation passes most operations to the host filesystem, but hard links on Unix sockets are not supported by the 9p protocol.
+
 ## Development
 
 ```bash

@@ -65,6 +65,11 @@ def _get_supervisor_conf() -> Path:
 
 
 def _get_supervisor_sock() -> Path:
+    # IMPORTANT: The socket directory must be on a filesystem that supports hard linking
+    # Unix domain sockets. Supervisord uses hard links for atomic socket creation.
+    # 9p filesystem (used in gVisor/Docker shared folders) returns EOPNOTSUPP (errno 95)
+    # for hard links on sockets, causing supervisord to hang in an infinite retry loop.
+    # Use tmpfs for the supervisor directory in gVisor environments.
     return _get_supervisor_dir() / "supervisor.sock"
 
 

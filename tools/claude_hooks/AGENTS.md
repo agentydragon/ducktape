@@ -5,6 +5,7 @@
 - **Session start log**: `~/.cache/claude-code-web/session-start.log`
 - **Supervisor logs**: `~/.config/supervisor/supervisord.log` (supervisor daemon), `~/.config/supervisor/bazel-proxy.{log,err.log}` (proxy service)
 - **gVisor environment**: Claude Code web runs on gVisor, not real Linux. Some syscalls behave differently.
+- **9p filesystem limitation**: The gVisor sandbox uses 9p filesystem for persistent storage, which doesn't support hard linking Unix domain sockets. Supervisord relies on hard links for atomic socket creation - if the supervisor socket is on 9p, it will hang in an infinite loop. The socket directory must be on tmpfs.
 
 ## Debugging Commands
 
