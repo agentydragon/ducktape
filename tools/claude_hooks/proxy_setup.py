@@ -254,7 +254,11 @@ def _create_java_truststore() -> None:
 
 
 def _build_auth_proxy_command(https_proxy: str) -> str:
-    """Build command to run custom auth-forwarding proxy."""
+    """Build command to run custom auth-forwarding proxy.
+
+    Uses the claude-auth-proxy console script entry point, which is installed
+    alongside claude-session-start when the claude_hooks wheel is installed.
+    """
     proxy = parse_proxy_url(https_proxy)
     proxy_port = _get_bazel_proxy_port()
 
@@ -268,15 +272,23 @@ def _build_auth_proxy_command(https_proxy: str) -> str:
     username = proxy.username
     password = proxy.password
 
-    # Use sys.executable to run the proxy script with the current Python interpreter
+    # Use the claude-auth-proxy entry point (installed by wheel)
     return (
-        f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy "
+        f"claude-auth-proxy "
         f"--listen-port {proxy_port} "
         f"--upstream-host {upstream_host} "
         f"--upstream-port {upstream_port} "
         f"--username {username} "
         f"--password {password}"
     )
+
+
+def _get_proxy_environment() -> dict[str, str]:
+    """Get environment variables for proxy service.
+
+    Returns empty dict since claude-auth-proxy entry point has all imports.
+    """
+    return {}
 
 
 def _wait_for_proxy(timeout_seconds: float = 5.0) -> bool:
@@ -321,6 +333,7 @@ def ensure_proxy_running() -> bool:
     supervisor_setup.start()
 
     command = _build_auth_proxy_command(https_proxy)
+    environment = _get_proxy_environment()
 
     # Check if service is running
     if supervisor_setup.is_service_running(BAZEL_PROXY_SERVICE):
@@ -333,7 +346,9 @@ def ensure_proxy_running() -> bool:
         # Update credentials and restart
         logger.info("Updating proxy with new credentials...")
         creds_file.write_text(https_proxy)
-        supervisor_setup.update_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir)
+        supervisor_setup.update_service(
+            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=environment
+        )
         if not _wait_for_proxy():
             raise ProxyServiceError("Proxy did not restart with new credentials")
         logger.info("Proxy credentials refreshed")
@@ -343,7 +358,9 @@ def ensure_proxy_running() -> bool:
     proxy_port = _get_bazel_proxy_port()
     logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
     creds_file.write_text(https_proxy)
-    supervisor_setup.add_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir)
+    supervisor_setup.add_service(
+        name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=environment
+    )
     if not _wait_for_proxy():
         raise ProxyServiceError("Bazel proxy did not start listening in time")
     logger.info("Bazel proxy started successfully")

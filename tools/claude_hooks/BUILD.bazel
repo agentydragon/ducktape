@@ -60,6 +60,7 @@ py_wheel(
             "claude-session-start = tools.claude_hooks.session_start:main",
             "bazel = tools.claude_hooks.bazel_wrapper:main",
             "bazelisk = tools.claude_hooks.bazel_wrapper:main",
+            "claude-auth-proxy = tools.claude_hooks.proxy.run_auth_proxy:main",
         ],
     },
     python_requires = ">=3.13",
