@@ -360,6 +360,7 @@ def add_service(name: str, command: str, directory: Path, environment: dict[str,
         raise SupervisorError(f"supervisord not running, cannot add service {name}")
 
     service_conf = _get_supervisor_dir() / "conf.d" / f"{name}.conf"
+    service_conf.parent.mkdir(parents=True, exist_ok=True)
     config = _build_service_config(name, command, directory, environment)
 
     with service_conf.open("w") as f:
@@ -440,6 +441,7 @@ def update_service(name: str, command: str, directory: Path, environment: dict[s
         raise SupervisorError(f"supervisord not running, cannot update service {name}")
 
     service_conf = _get_supervisor_dir() / "conf.d" / f"{name}.conf"
+    service_conf.parent.mkdir(parents=True, exist_ok=True)
     config = _build_service_config(name, command, directory, environment)
 
     with service_conf.open("w") as f:
