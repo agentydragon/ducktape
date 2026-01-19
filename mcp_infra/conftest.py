@@ -13,6 +13,11 @@ from agent_core_testing.fixtures import *  # noqa: F401, F403
 from mcp_infra.testing.fixtures import *  # noqa: F401, F403
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode."""
+    config.option.asyncio_mode = "auto"
+
+
 def pytest_runtest_setup(item: pytest.Item) -> None:
     """Skip Docker tests when Docker daemon is not available or images are missing."""
     if item.get_closest_marker("requires_docker") is None:

@@ -12,6 +12,7 @@ load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@proxy_config//:proxy_env.bzl", "PROXY_ENV")
+load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
 
@@ -30,6 +31,14 @@ exports_files([
     "requirements_bazel.txt",
     "ruff.toml",
 ])
+
+# Root conftest.py for shared pytest configuration
+# Tests can depend on this for pytest-asyncio auto mode and common markers
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    deps = ["@pypi//pytest"],
+)
 
 # ESLint configuration as js_library
 # This makes the config and its npm dependencies available to the ESLint aspect

@@ -18,6 +18,11 @@ from agent_core_testing.responses import *  # noqa: F401, F403
 from mcp_infra.testing.fixtures import *  # noqa: F401, F403
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode."""
+    config.option.asyncio_mode = "auto"
+
+
 @pytest.fixture
 def text_content():
     """Helper to create TextContent blocks for tests."""

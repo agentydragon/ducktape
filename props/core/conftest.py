@@ -5,6 +5,8 @@ for pytest auto-discovery. Tests anywhere in props/core/ will have access
 to these fixtures.
 """
 
+import pytest
+
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core_testing.fixtures import *  # noqa: F401, F403
 from agent_core_testing.responses import *  # noqa: F401, F403
@@ -68,3 +70,8 @@ from props.testing.fixtures import (  # noqa: E402, F401  # noqa: E402, F401
 
 # Re-export mocks for direct imports
 from props.testing.mocks import PropsMock  # noqa: E402, F401
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode."""
+    config.option.asyncio_mode = "auto"
