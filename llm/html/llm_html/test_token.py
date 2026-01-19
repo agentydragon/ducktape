@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from .server import TIMEZONE
 from .token_scheme import TokenScheme, VerificationError
+import pytest_bazel
 
 SECRET = b"hunter2"
 
@@ -92,3 +93,7 @@ def test_tokens_from_past_still_verify():
 
     # Should verify successfully
     token_scheme.verify_token(past_token)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

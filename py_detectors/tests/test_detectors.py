@@ -9,6 +9,7 @@ import pytest
 import py_detectors.__main__  # noqa: F401
 from py_detectors.registry import all_detectors, run_all
 from tests.fixture_utils import copy_fixture
+import pytest_bazel
 
 
 def _discover_fixtures(base_package: str) -> list[tuple[str, str]]:
@@ -58,3 +59,7 @@ def test_detectors_bad(tmp_path: Path, fixture_file: str, detector: str):
 def test_detectors_ok(tmp_path: Path, fixture_file: str, detector: str):
     detections = _run_case(tmp_path, "tests.fixtures.ok", fixture_file, detector)
     assert not detections, f"unexpected detections for {detector}: {detections}"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+import pytest_bazel
 from fastapi.testclient import TestClient
 
 from .server import app
@@ -40,3 +41,7 @@ def test_each_tag_exactly_once(client, mock_token_scheme, mock_token_bits):
         expected_tag = f"᚛{i}:{expected_bit}᚜"
         count = html_content.count(expected_tag)
         assert count == 1, f"Tag {expected_tag} found {count}x, not 1x"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
