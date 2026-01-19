@@ -8,6 +8,7 @@ from hamcrest import all_of, assert_that, contains_string, has_entries
 from ducktape_llm_common.claude_code_api import StopRequest
 from ducktape_llm_common.claude_linter_v2.config.models import StopHookConfig
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
+import pytest_bazel
 
 
 @pytest.fixture
@@ -143,3 +144,6 @@ def test_stop_hook_quality_gate_disabled(handler, session_id, tmp_path):
         "decision": None,
         "reason": None,
     }
+
+if __name__ == "__main__":
+    pytest_bazel.main()

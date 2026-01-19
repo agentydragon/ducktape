@@ -5,6 +5,7 @@ from pathlib import Path
 from httpx import AsyncClient
 
 from gatelet.server.config import Settings
+import pytest_bazel
 
 
 def _extract_csrf(page_text: str) -> str:
@@ -32,3 +33,6 @@ async def test_view_logs(client: AsyncClient, test_settings: Settings):
     assert response.status_code == HTTPStatus.OK
     assert "line3" in response.text
     assert "line1" in response.text
+
+if __name__ == "__main__":
+    pytest_bazel.main()

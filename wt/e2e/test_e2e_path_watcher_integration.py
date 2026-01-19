@@ -10,6 +10,7 @@ import pytest
 from wt.testing.data import WATCHER_DEBOUNCE_SECS
 from wt.testing.git_helpers import worktree_exists
 from wt.testing.utils import wait_until
+import pytest_bazel
 
 
 def _status(wt_cli) -> str:
@@ -159,3 +160,6 @@ def test_path_watcher_multiple_worktrees(wt_cli, real_config, pygit2_repo):
 
         assert _wait_until_removed(wt_cli, name), f"Worktree {name} still present in status after removal"
         print(f"After removing {name}, remaining should be: {remaining}")
+
+if __name__ == "__main__":
+    pytest_bazel.main()

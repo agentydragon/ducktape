@@ -7,6 +7,7 @@ Tests the layered architecture:
 """
 
 from claude_hooks.actions import (
+import pytest_bazel
     NotificationAck,
     PostToolContinue,
     PostToolFeedbackToClaude,
@@ -191,3 +192,6 @@ def test_pre_compact_handle_returns_empty_dict():
 
 def test_pre_compact_handle_with_hide_from_transcript():
     assert PreCompactHandle(hide_from_transcript=True).to_protocol() == {"suppressOutput": True}
+
+if __name__ == "__main__":
+    pytest_bazel.main()

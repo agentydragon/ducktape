@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy
+import pytest_bazel
 
 
 @dataclass
@@ -264,3 +265,6 @@ class TestForwardingProxy:
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+if __name__ == "__main__":
+    pytest_bazel.main()

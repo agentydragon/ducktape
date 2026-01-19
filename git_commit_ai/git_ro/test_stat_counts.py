@@ -4,6 +4,7 @@ import pygit2
 
 from git_commit_ai.git_ro.formatting import ListSlice, TextSlice
 from git_commit_ai.git_ro.server import DiffFormat, DiffInput, GitRoServer
+import pytest_bazel
 
 
 async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
@@ -52,3 +53,6 @@ async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
         assert len(file_items) == 1, "Expected exactly one file.txt in stat items"
         file_item = file_items[0]
         assert (int(file_item.additions), int(file_item.deletions)) == (2, 0)
+
+if __name__ == "__main__":
+    pytest_bazel.main()

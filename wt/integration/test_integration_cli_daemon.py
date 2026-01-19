@@ -39,6 +39,7 @@ import pytest
 
 from wt.shared.git_utils import GitRunOptions, git_run
 from wt.testing.asserts import assert_output_contains
+import pytest_bazel
 
 # from ..conftest import kill_daemon_at_wt_dir
 
@@ -282,3 +283,6 @@ class TestRealGitOperations:
         git_run(["checkout", "-f"], cwd=wt_path)
         assert (wt_path / "foo" / "bar" / "baz.txt").exists()
         assert not (wt_path / "top.txt").exists()
+
+if __name__ == "__main__":
+    pytest_bazel.main()

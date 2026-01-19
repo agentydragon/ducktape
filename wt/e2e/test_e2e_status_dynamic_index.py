@@ -4,6 +4,7 @@ import pytest
 
 from wt.testing.git_helpers import worktree_exists
 from wt.testing.utils import wait_until
+import pytest_bazel
 
 pytestmark = pytest.mark.timeout(20)
 
@@ -40,3 +41,6 @@ def test_worktree_add_then_remove_reflected_in_status(wt_cli, pygit2_repo, real_
         timeout_seconds=10.0,
         interval_seconds=0.2,
     ), "deleted worktree still present in status output"
+
+if __name__ == "__main__":
+    pytest_bazel.main()

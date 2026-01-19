@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from git_commit_ai.git_ro.formatting import ListSlice, TextSlice
 from git_commit_ai.git_ro.server import ChangedFilesPage, DiffFormat, DiffStatPage, ShowInput, TextPage
+import pytest_bazel
 
 
 async def test_git_show_name_status(typed_git_ro) -> None:
@@ -41,3 +42,6 @@ async def test_git_show_patch(typed_git_ro) -> None:
     )
     assert isinstance(pt_union, TextPage)
     assert isinstance(pt_union.body, str)
+
+if __name__ == "__main__":
+    pytest_bazel.main()

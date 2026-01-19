@@ -7,6 +7,7 @@ from hamcrest import assert_that, has_properties
 from difftree.config import SortMode
 from difftree.parser import FileChange
 from difftree.tree import TreeNode, build_tree, sort_tree
+import pytest_bazel
 
 
 def _sorted_child_names(changes: list[FileChange], sort_by: SortMode, reverse: bool = True) -> list[str]:
@@ -100,3 +101,6 @@ def test_tree_node_total_changes():
 
     node2 = TreeNode(name="test2", is_file=True, additions=0, deletions=0)
     assert node2.total_changes == 0
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ducktape_llm_common.claude_linter_v2.linters.python_ruff import PythonRuffLinter
+import pytest_bazel
 
 TEST_FILE = Path("/tmp/test.py")
 
@@ -217,3 +218,6 @@ def hello():
         assert "--stdin-filename" in call_args
         filename_index = call_args.index("--stdin-filename")
         assert call_args[filename_index + 1] == "/path/to/file.py"
+
+if __name__ == "__main__":
+    pytest_bazel.main()

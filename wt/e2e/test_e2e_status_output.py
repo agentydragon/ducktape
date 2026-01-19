@@ -11,6 +11,7 @@ import pytest
 
 from wt.testing.asserts import assert_output_contains, extract_status_rows, status_row_ok
 from wt.testing.utils import wait_until
+import pytest_bazel
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -58,3 +59,6 @@ def test_status_lists_multiple_worktrees(real_temp_repo, wt_cli):
         raise AssertionError(
             f"Status did not reach clean/running with hex commit for both worktrees.\nLast output:\n{last['out']}"
         )
+
+if __name__ == "__main__":
+    pytest_bazel.main()

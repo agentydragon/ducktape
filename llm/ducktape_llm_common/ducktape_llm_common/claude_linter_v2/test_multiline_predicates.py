@@ -208,6 +208,7 @@ def check_test_file(ctx):
 import json
 import re
 from datetime import datetime, timedelta
+import pytest_bazel
 
 def check_recent_activity(ctx):
     # Check if activity is within last hour
@@ -276,3 +277,6 @@ def safe_git_commands(ctx):
             tool="Bash", args={"command": "git status"}, session_id=TEST_SESSION_ID, timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate_git, context_git) is True
+
+if __name__ == "__main__":
+    pytest_bazel.main()

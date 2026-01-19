@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from claude_hooks.inputs import PostToolInput, PreToolInput, UserPromptSubmitInput
 from claude_hooks.tool_models import BashInput, EditInput, WriteInput
+import pytest_bazel
 
 
 def test_edit_input_valid():
@@ -93,3 +94,6 @@ def test_user_prompt_submit_input():
     input_obj = UserPromptSubmitInput.model_validate(data)
     assert input_obj.prompt == "Write a function"
     assert input_obj.session_id == session_id
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import partial
 
 from git_commit_ai.editor import SCISSORS_MARK, render_editor_content
+import pytest_bazel
 
 # Test helper - stats args are irrelevant for these tests
 _render = partial(render_editor_content, cached=False, elapsed_s=0.0)
@@ -148,3 +149,6 @@ def test_staged_files_not_duplicated_in_unstaged_section(temp_repo, git_repo, sn
     assert "# Changes not staged for commit:" not in content, (
         "Unstaged section should not exist when all changes are staged"
     )
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -182,6 +182,7 @@ __version__ = "1.0.0"
         code = """
 from .module1 import *
 from .module2 import Class1
+import pytest_bazel
 __all__ = ['Class1']
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=True)
@@ -227,3 +228,6 @@ def foo(
         assert len(violations) == 1
         assert violations[0].rule == "syntax"
         assert "syntax error" in violations[0].message.lower()
+
+if __name__ == "__main__":
+    pytest_bazel.main()

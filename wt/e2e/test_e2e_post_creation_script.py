@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from wt.testing.conftest import kill_daemon_at_wt_dir
+import pytest_bazel
 
 
 @pytest.fixture
@@ -37,3 +38,6 @@ def test_post_creation_script_runs(real_env_with_post_script, wtcli):
     wt_path = Path(repo) / "worktrees" / name
     assert wt_path.exists()
     assert (wt_path / ".post_create_ran").exists()
+
+if __name__ == "__main__":
+    pytest_bazel.main()

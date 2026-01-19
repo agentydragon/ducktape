@@ -80,6 +80,7 @@ class Github:
         body = """
 from types import SimpleNamespace
 from datetime import timedelta, datetime
+import pytest_bazel
 class Github:
     def __init__(self, *args, **kwargs):
         pass
@@ -213,3 +214,6 @@ def github_pr_env(real_temp_repo, config_factory, tmp_path, write_pr_fixtures, w
         write_pr_fixtures=write_pr_fixtures,
         wt_cli=wt_cli,
     )
+
+if __name__ == "__main__":
+    pytest_bazel.main()

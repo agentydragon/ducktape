@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gatelet.server.config import Settings
 from gatelet.server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
 from gatelet.server.models import AuthCRSession, AuthKey, AuthNonce
+import pytest_bazel
 
 
 async def test_start_challenge_creates_nonce(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):
@@ -54,3 +55,6 @@ async def test_challenge_template_contains_code(client: AsyncClient, test_auth_k
 
     page_text = html.unescape(response.text)
     assert COMPUTE_OPTION_SOURCE in page_text
+
+if __name__ == "__main__":
+    pytest_bazel.main()

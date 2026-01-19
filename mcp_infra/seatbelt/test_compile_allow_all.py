@@ -1,6 +1,7 @@
 from mcp_infra._markers import REQUIRES_SANDBOX_EXEC
 from mcp_infra.seatbelt.compile import compile_sbpl
 from mcp_infra.seatbelt.model import (
+import pytest_bazel
     DefaultBehavior,
     FileOp,
     FileRule,
@@ -62,3 +63,6 @@ def test_compile_allow_all_effectively_no_sandbox():
 
     # Sanity: should not contain any deny lines in this configuration
     assert "(deny" not in sb
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -3,6 +3,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 
 @pytest.fixture
@@ -32,3 +33,6 @@ def test_post_creation_script_failure_is_streamed_and_nonzero(failing_env, wtcli
     assert "Post-creation script failed" in (result.stdout or "") + (result.stderr or "")
     wt_path = Path(repo) / "worktrees" / name
     assert wt_path.exists()
+
+if __name__ == "__main__":
+    pytest_bazel.main()

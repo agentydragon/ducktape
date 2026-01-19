@@ -13,6 +13,7 @@ from difftree.conftest import make_diff_tree, render_to_string
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
+import pytest_bazel
 
 
 def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
@@ -524,3 +525,6 @@ def test_deletion_bar_alignment():
 
     # All positions should be the same (deletion bars are left-aligned, start at same column)
     assert len(set(positions)) == 1, f"Deletion bars not aligned: positions={positions}, lines={file_lines}"
+
+if __name__ == "__main__":
+    pytest_bazel.main()

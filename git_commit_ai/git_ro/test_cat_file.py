@@ -4,6 +4,7 @@ import pytest
 
 from git_commit_ai.git_ro.formatting import TextSlice
 from git_commit_ai.git_ro.server import CatFileInput, TextPage
+import pytest_bazel
 
 
 async def test_cat_file_rev_path(typed_git_ro) -> None:
@@ -133,3 +134,6 @@ async def test_bare_filename_error_message(typed_git_ro) -> None:
     """Helpful error when using bare filename instead of full path."""
     with pytest.raises(FileNotFoundError, match="Path must be relative to repository root"):
         await typed_git_ro.cat_file(CatFileInput(object="HEAD:README", slice=TextSlice(offset_chars=0, max_chars=100)))
+
+if __name__ == "__main__":
+    pytest_bazel.main()

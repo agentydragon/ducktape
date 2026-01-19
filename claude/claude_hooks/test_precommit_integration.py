@@ -10,6 +10,7 @@ from claude_hooks.actions import PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
 from claude_hooks.tool_models import WriteInput
+import pytest_bazel
 
 
 def _create_write_hook_input(file_path: Path, content: str, cwd: Path) -> PostToolInput:
@@ -142,3 +143,6 @@ def test_precommit_crash_shows_formatted_output(precommit_repo, hook_context, co
     assert "Logs:" in result.feedback_to_claude
     assert "Look for invocation ID:" in result.feedback_to_claude
     assert "Traceback:" in result.feedback_to_claude
+
+if __name__ == "__main__":
+    pytest_bazel.main()

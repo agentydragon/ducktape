@@ -16,6 +16,7 @@ from gatelet.server.auth.handlers import (
 )
 from gatelet.server.config import Settings
 from gatelet.server.models import AuthCRSession, AuthKey
+import pytest_bazel
 
 
 async def test_key_path_auth_context():
@@ -143,3 +144,6 @@ async def test_session_auth_expired(db_session: AsyncSession, test_settings: Set
     # Test with expired session
     with pytest.raises(AuthHandlerError):
         await session_auth(session.session_token, db_session, test_settings)
+
+if __name__ == "__main__":
+    pytest_bazel.main()

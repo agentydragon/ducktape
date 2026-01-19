@@ -49,6 +49,7 @@ import pytest
 
 from wt.testing.git_helpers import add_and_commit
 from wt.testing.utils import wait_until
+import pytest_bazel
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
 
@@ -223,3 +224,6 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env, wt_cli):
         new_pid = int(pid_file.read_text().strip())
         if new_pid == pid:
             pytest.fail("PID file not cleaned up after daemon kill")
+
+if __name__ == "__main__":
+    pytest_bazel.main()

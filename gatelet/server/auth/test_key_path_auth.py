@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gatelet.server.auth.handlers import AuthHandlerError, key_path_auth
 from gatelet.server.config import Settings
 from gatelet.server.models import AuthKey
+import pytest_bazel
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -38,3 +39,6 @@ async def test_key_path_auth_invalid(db_session: AsyncSession, test_settings: Se
     # Use a key that doesn't exist
     with pytest.raises(AuthHandlerError):
         await key_path_auth("nonexistent-key", db_session, test_settings)
+
+if __name__ == "__main__":
+    pytest_bazel.main()

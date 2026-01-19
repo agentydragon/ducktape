@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 
 from gmail_archiver.planners.anthropic import AnthropicReceipt, parse_anthropic
+import pytest_bazel
 
 SAMPLE_RECEIPT_FULL = """
 Anthropic, PBC
@@ -129,3 +130,6 @@ class TestAnthropicParser:
 
         receipt = parse_anthropic(msg)
         assert receipt.receipt_number == expected_receipt
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -18,6 +18,7 @@ exit code semantics, and process boundary interactions.
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 # Global constants for paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -159,3 +160,6 @@ class TestShellIntegrationEdgeCases:
         result = shell_runner.run_script(env_test_script, cwd=test_config.main_repo)
         assert result.returncode == 0
         assert "Environment test completed" in result.stdout
+
+if __name__ == "__main__":
+    pytest_bazel.main()

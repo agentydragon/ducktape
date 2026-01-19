@@ -9,6 +9,7 @@ import pytest
 from wt.cli import app
 from wt.shared.protocol import CommitInfo, StatusResult
 from wt.testing.asserts import assert_output_contains
+import pytest_bazel
 
 
 @pytest.fixture
@@ -109,3 +110,6 @@ class TestCLIOutputFormat:
         result = cli_runner_with_env(status_response, [], mock_get_status)
         assert result.exit_code == 0
         assert_output_contains(result.output, "unknown")
+
+if __name__ == "__main__":
+    pytest_bazel.main()

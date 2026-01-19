@@ -3,6 +3,7 @@
 from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig, RuleConfig
 from ducktape_llm_common.claude_linter_v2.config.loader import ConfigLoader
 from ducktape_llm_common.claude_linter_v2.rule_registry import RuleRegistry
+import pytest_bazel
 
 
 def test_modular_config_creation():
@@ -160,3 +161,6 @@ blocks_pre_hook = false
     assert hasattr_config is not None
     assert hasattr_config.enabled is False
     assert hasattr_config.blocks_pre_hook is False
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -6,6 +6,7 @@ from mcp_infra._markers import REQUIRES_SANDBOX_EXEC
 from mcp_infra.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from mcp_infra.seatbelt.runner import run_sandboxed_async
 from mcp_infra.seatbelt.validate import make_runtime_context, validate
+import pytest_bazel
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
@@ -87,3 +88,6 @@ async def test_default_deny_with_explicit_dyld_roots_succeeds():
     res = await run_sandboxed_async(pol, ["/bin/echo", "OK"])
     assert res.exit_code == 0
     assert res.stdout == b"OK\n"
+
+if __name__ == "__main__":
+    pytest_bazel.main()

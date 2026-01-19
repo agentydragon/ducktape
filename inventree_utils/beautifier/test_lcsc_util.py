@@ -1,6 +1,7 @@
 import pytest
 
 from inventree_utils.beautifier.lcsc_util import parse_url_for_lcsc_id
+import pytest_bazel
 
 
 @pytest.mark.parametrize(
@@ -20,3 +21,6 @@ def test_parse_url_for_lcsc_id_valid_forms(url: str):
     expected_id = "C123456"
     if parsed_id != expected_id:
         assert parsed_id == expected_id
+
+if __name__ == "__main__":
+    pytest_bazel.main()

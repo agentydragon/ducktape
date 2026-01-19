@@ -116,6 +116,7 @@ class TestPythonFormatter:
 import sys
 from typing import List
 import json
+import pytest_bazel
 
 def foo():
     return json.dumps({})
@@ -222,3 +223,6 @@ def foo():
             timeout=30,
             check=False,
         )
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from sandboxed_jupyter.sandboxer import build_sandboxer_command
+import pytest_bazel
 
 
 def test_sandboxer_cli_allow_all_runs_echo(tmp_path: Path, require_sandbox_exec):
@@ -32,3 +33,6 @@ def test_sandboxer_cli_allow_all_runs_echo(tmp_path: Path, require_sandbox_exec)
 
     assert cp.returncode == 0
     assert "SANDBOXER_OK" in cp.stdout
+
+if __name__ == "__main__":
+    pytest_bazel.main()

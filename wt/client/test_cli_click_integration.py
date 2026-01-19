@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from wt.cli import app
 from wt.shared.protocol import WorktreeID, WorktreeInfo, WorktreeListResult
 from wt.testing.asserts import assert_output_contains
+import pytest_bazel
 
 
 @pytest.mark.integration
@@ -83,3 +84,6 @@ class TestNewCLIIntegration:
 
         assert result.exit_code == 0
         assert_output_contains(result.output, "test-worktree")
+
+if __name__ == "__main__":
+    pytest_bazel.main()
