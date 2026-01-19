@@ -183,11 +183,17 @@ def _write_config() -> None:
     (supervisor_dir / "conf.d").mkdir(parents=True, exist_ok=True)
 
 
-def _build_service_config(
+def _write_service_config(
     name: str, command: str, directory: Path, environment: dict[str, str] | None = None
-) -> configparser.ConfigParser:
-    """Build service config for supervisor."""
+) -> Path:
+    """Build and write service config for supervisor.
+
+    Returns the path to the written config file.
+    """
     supervisor_dir = _get_supervisor_dir()
+    service_conf = supervisor_dir / "conf.d" / f"{name}.conf"
+    service_conf.parent.mkdir(parents=True, exist_ok=True)
+
     config = configparser.ConfigParser()
     section = f"program:{name}"
     config[section] = {
@@ -202,7 +208,10 @@ def _build_service_config(
         env_parts = [f"{k}={shlex.quote(v)}" for k, v in environment.items()]
         config[section]["environment"] = ",".join(env_parts)
 
-    return config
+    with service_conf.open("w") as f:
+        config.write(f)
+    logger.info("Wrote service config: %s", service_conf)
+    return service_conf
 
 
 def _is_port_in_use(port: int) -> bool:
@@ -359,13 +368,7 @@ def add_service(name: str, command: str, directory: Path, environment: dict[str,
     if not is_running():
         raise SupervisorError(f"supervisord not running, cannot add service {name}")
 
-    service_conf = _get_supervisor_dir() / "conf.d" / f"{name}.conf"
-    service_conf.parent.mkdir(parents=True, exist_ok=True)
-    config = _build_service_config(name, command, directory, environment)
-
-    with service_conf.open("w") as f:
-        config.write(f)
-    logger.info("Wrote service config: %s", service_conf)
+    _write_service_config(name, command, directory, environment)
 
     # Reload supervisor config via XML-RPC
     try:
@@ -440,13 +443,7 @@ def update_service(name: str, command: str, directory: Path, environment: dict[s
     if not is_running():
         raise SupervisorError(f"supervisord not running, cannot update service {name}")
 
-    service_conf = _get_supervisor_dir() / "conf.d" / f"{name}.conf"
-    service_conf.parent.mkdir(parents=True, exist_ok=True)
-    config = _build_service_config(name, command, directory, environment)
-
-    with service_conf.open("w") as f:
-        config.write(f)
-    logger.info("Updated service config: %s", service_conf)
+    _write_service_config(name, command, directory, environment)
 
     client = _get_supervisor_client()
 
