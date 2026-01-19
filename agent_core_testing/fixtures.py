@@ -35,6 +35,8 @@ from agent_core_testing.responses import ResponsesFactory
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import ResponsesResult
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -247,15 +249,11 @@ def call_id_gen() -> Callable[[], str]:
 
 @pytest.fixture
 def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
-    """Factory for ToolCall events with auto call_id generation.
+    """Factory for ToolCall events with auto call_id generation."""
 
-    Note: Uses simple string concatenation for tool names. Downstream tests
-    should use their own naming helpers (e.g., build_mcp_function) if needed.
-    """
-
-    def _make(server: str, tool: str, args: dict[str, Any] | None = None) -> ToolCall:
+    def _make(server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> ToolCall:
         args_json = json.dumps(args) if args is not None else None
-        return ToolCall(name=f"{server}_{tool}", args_json=args_json, call_id=call_id_gen())
+        return ToolCall(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id_gen())
 
     return _make
 

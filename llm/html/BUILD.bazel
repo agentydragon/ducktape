@@ -32,6 +32,7 @@ py_library(
         "@pypi//markdown",
         "@pypi//markdownify",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//tabulate",
         "@pypi//tiktoken",
         "@pypi//types_markdown",

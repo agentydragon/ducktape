@@ -140,7 +140,10 @@ py_test(
     name = "test_layer_isolation",
     srcs = ["test_layer_isolation.py"],
     imports = ["../../.."],
-    deps = ["@pypi//pytest"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 # Integration tests - require postgres

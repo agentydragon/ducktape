@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from collections.abc import Awaitable, Callable
@@ -14,14 +13,11 @@ import mcp.types
 import pytest
 from fastapi.testclient import TestClient
 from fastmcp.client import Client
-from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
-from agent_core.handler import FinishOnTextMessageHandler
-from agent_core_testing.fixtures import RecordingHandler
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.persist.events import EventRecord
@@ -39,12 +35,10 @@ from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.flat_tool import FlatTool
 from mcp_infra.mcp_types import McpServerSpecs
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
-from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import OpenAIModelProto
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -142,7 +136,7 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
         await comp.mount_inproc(MCPMountPrefix(name), srv)
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[no-redef]
 def make_buffered_client():
     """Async helper to open a Compositor + Client with NotificationsBuffer.
 
@@ -363,53 +357,7 @@ def agent_test_client(agent_app_client):
     return client
 
 
-# ---- Recording handler fixture -----------------------------------------------
-
-
-@pytest.fixture
-def recording_handler() -> RecordingHandler:
-    """Fresh RecordingHandler for capturing agent events during tests."""
-    return RecordingHandler()
-
-
-@pytest.fixture
-def test_handlers(recording_handler: RecordingHandler) -> list:
-    """Standard handler list for agent tests.
-
-    Includes:
-    - FinishOnTextMessageHandler: Abort loop on text messages (test mocks often return text)
-    - RecordingHandler: Capture events for assertions
-    """
-
-    return [FinishOnTextMessageHandler(), recording_handler]
-
-
 # ---- Server fixtures for tool error and parallel tests ------------------------
-
-
-class ValidationServer(EnhancedFastMCP):
-    """EnhancedFastMCP server with a tool that validates input strictly."""
-
-    # Tool attribute (assigned in __init__)
-    send_message_tool: FlatTool[Any, Any]
-
-    def __init__(self):
-        super().__init__("validator")
-
-        def send_message(input: SendMessageInput) -> dict[str, Any]:
-            """Send a message with mime type validation."""
-            # Reject text/plain to test error handling
-            if input.mime == "text/plain":
-                raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
-            return {"ok": True, "message": input.content}
-
-        self.send_message_tool = self.flat_model()(send_message)
-
-
-@pytest.fixture
-def validation_server() -> ValidationServer:
-    """ValidationServer with typed tool access."""
-    return ValidationServer()
 
 
 class _FailInput(OpenAIStrictModeBaseModel):
@@ -435,24 +383,6 @@ def failing_server() -> EnhancedFastMCP:
     return mcp
 
 
-@pytest.fixture
-def slow_server() -> FastMCP:
-    """FastMCP server with two slow async tools for parallel call testing."""
-    mcp = FastMCP("dummy")
-
-    @mcp.tool()
-    async def slow() -> dict[str, Any]:
-        await asyncio.sleep(0.30)
-        return {"ok": True, "tool": "slow", "args": {}}
-
-    @mcp.tool()
-    async def slow2() -> dict[str, Any]:
-        await asyncio.sleep(0.30)
-        return {"ok": True, "tool": "slow2", "args": {}}
-
-    return mcp
-
-
 # ---- UI reducer/history test fixtures ----------------------------------------
 
 
@@ -460,29 +390,6 @@ def slow_server() -> FastMCP:
 def fresh_ui_state():
     """Fresh UI state for reducer tests."""
     return new_state()
-
-
-@pytest.fixture
-def call_id_gen() -> Callable[[], str]:
-    """Lightweight call_id generator for tests."""
-    counter = {"count": 0}
-
-    def _gen() -> str:
-        counter["count"] += 1
-        return f"test_call:{counter['count']}"
-
-    return _gen
-
-
-@pytest.fixture
-def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
-    """Factory for ToolCall events with auto call_id generation."""
-
-    def _make(server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> ToolCall:
-        args_json = json.dumps(args) if args is not None else None
-        return ToolCall(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id_gen())
-
-    return _make
 
 
 @pytest.fixture
@@ -495,7 +402,7 @@ def make_call_result() -> Callable[[dict[str, Any] | None, bool], mcp.types.Call
     return _make
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[no-redef]
 def make_tool_call_output(
     make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
 ) -> Callable[[str, dict[str, Any] | None, bool], ToolCallOutput]:
