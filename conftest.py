@@ -15,6 +15,9 @@ import pytest
 
 def pytest_configure(config: pytest.Config) -> None:
     """Register all common test markers."""
+    # Enable pytest-asyncio auto mode for all tests
+    config.option.asyncio_mode = "auto"
+
     # Test categories
     config.addinivalue_line("markers", "unit: fast unit tests")
     config.addinivalue_line("markers", "integration: integration tests")
