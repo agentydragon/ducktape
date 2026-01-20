@@ -24,17 +24,23 @@ from cryptography.x509.oid import NameOID
 
 
 def generate_mock_ca() -> tuple[bytes, bytes]:
-    """Generate a self-signed CA cert with 'Anthropic' in subject.
+    """Generate a self-signed CA cert matching Anthropic's real CA format.
+
+    The real Anthropic CA has:
+    - Subject: O=Anthropic, CN=sandbox-egress-production TLS Inspection CA
+    - Self-signed (issuer = subject)
+    - RSA 2048-bit key
+    - 10-year validity
 
     Returns (cert_pem, key_pem) tuple.
     """
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
+    # Match the real Anthropic CA certificate format
     subject = issuer = x509.Name(
         [
-            x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Mock Anthropic TLS Inspection"),
-            x509.NameAttribute(NameOID.COMMON_NAME, "Mock Anthropic CA"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Anthropic"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "sandbox-egress-production TLS Inspection CA"),
         ]
     )
 
@@ -45,7 +51,7 @@ def generate_mock_ca() -> tuple[bytes, bytes]:
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.now(UTC))
-        .not_valid_after(datetime.now(UTC) + timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=3650))  # 10 years like real CA
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         .sign(key, hashes.SHA256())
     )
@@ -59,6 +65,12 @@ def generate_mock_ca() -> tuple[bytes, bytes]:
 
 def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -> tuple[bytes, bytes]:
     """Generate a server certificate signed by the CA for a specific hostname.
+
+    Matches real Anthropic proxy behavior:
+    - Subject CN = target hostname
+    - Issuer = Anthropic CA
+    - 24h validity (real proxy caches and rotates multiple certs per hostname)
+    - SAN with DNS name
 
     Returns (cert_pem, key_pem) tuple.
     """

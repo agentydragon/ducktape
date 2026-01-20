@@ -108,16 +108,64 @@ def _find_system_file(candidates: list[Path], description: str) -> Path:
     raise FileNotFoundError(f"Could not find {description}")
 
 
-def _extract_proxy_ca() -> None:
-    """Extract the TLS inspection CA certificate from the proxy.
+def _is_anthropic_tls_inspection_ca(cert: x509.Certificate) -> bool:
+    """Check if a certificate is an Anthropic TLS Inspection CA.
 
-    Uses our local proxy (localhost:18081) which handles auth to upstream.
-    Connects through HTTP CONNECT tunnel, then performs TLS handshake to get certs.
+    The real Anthropic CA has:
+    - Subject O=Anthropic
+    - Subject CN contains "TLS Inspection CA"
+    """
+    org = _get_cert_attr(cert.subject, x509.oid.NameOID.ORGANIZATION_NAME)
+    cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
+    return org == "Anthropic" and "TLS Inspection CA" in cn
+
+
+def _try_load_ca_from_filesystem() -> bool:
+    """Try to load CA from pre-installed filesystem location.
+
+    Claude Code web containers have the CA pre-installed at:
+    /usr/local/share/ca-certificates/swp-ca-production.crt
+
+    Returns True if CA was loaded successfully, False otherwise.
+    """
+    ca_path = os.environ.get("ANTHROPIC_CA_PATH")
+    ca_file = Path(ca_path) if ca_path else ANTHROPIC_CA_PREINSTALLED
+
+    if not ca_file.exists():
+        return False
+
+    try:
+        ca_pem = ca_file.read_text()
+        # Verify it's a valid PEM certificate with expected subject
+        cert = x509.load_pem_x509_certificate(ca_pem.encode())
+        if not _is_anthropic_tls_inspection_ca(cert):
+            logger.warning("CA at %s is not an Anthropic TLS Inspection CA", ca_file)
+            return False
+
+        logger.info("Loaded Anthropic CA from filesystem: %s", ca_file)
+        _get_bazel_ca_file().write_text(ca_pem)
+        return True
+    except (OSError, ValueError) as e:
+        logger.warning("Failed to load CA from %s: %s", ca_file, e)
+        return False
+
+
+def _extract_proxy_ca() -> None:
+    """Extract the TLS inspection CA certificate.
+
+    First tries to load from the pre-installed filesystem location (faster, no network).
+    Falls back to extracting from the TLS chain via proxy connection.
+
     Uses Python 3.13+ ssl.SSLSocket.get_unverified_chain() for cert chain access.
 
     Raises:
         CaExtractionError: If CA could not be extracted.
     """
+    # Prefer filesystem (pre-installed on Claude Code web containers)
+    if _try_load_ca_from_filesystem():
+        return
+
+    # Fall back to extracting from TLS chain
     proxy_port = _get_bazel_proxy_port()
     logger.info("Extracting TLS inspection CA via local proxy localhost:%d", proxy_port)
 
@@ -158,15 +206,12 @@ def _extract_proxy_ca() -> None:
             raise CaExtractionError("No certificates in chain")
 
         # Find the Anthropic TLS inspection CA in the chain
-        # We look for "Anthropic" in the SUBJECT (not issuer) - the CA has "Anthropic"
-        # in its subject, while leaf certs only have "Anthropic" in their issuer.
+        # Match on subject: O=Anthropic AND CN contains "TLS Inspection CA"
         for i, der_bytes in enumerate(cert_chain_der):
             cert = x509.load_der_x509_certificate(der_bytes)
-            subject_cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
-            org = _get_cert_attr(cert.subject, x509.oid.NameOID.ORGANIZATION_NAME)
-
-            if "Anthropic" in subject_cn or "Anthropic" in org:
-                logger.info("Found Anthropic TLS inspection CA at position %d: %s", i, subject_cn)
+            if _is_anthropic_tls_inspection_ca(cert):
+                cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
+                logger.info("Found Anthropic TLS inspection CA at position %d: %s", i, cn)
                 pem_cert = cert.public_bytes(Encoding.PEM).decode()
                 _get_bazel_ca_file().write_text(pem_cert)
                 return
