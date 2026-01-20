@@ -30,6 +30,15 @@ from typing import Literal, cast
 from pydantic import BaseModel
 from supervisor.xmlrpc import Faults
 
+try:
+    import supervisor.supervisord  # Validate module is available
+except ImportError as _import_error:
+    # Will raise detailed error in start() if actually used
+    supervisor.supervisord = None  # type: ignore[attr-defined,assignment]
+    _SUPERVISOR_IMPORT_ERROR = _import_error
+else:
+    _SUPERVISOR_IMPORT_ERROR = None
+
 from tools.claude_hooks.errors import ProxyServiceError, SupervisorError
 
 # Default port for supervisor's inet_http_server (localhost only)
@@ -322,18 +331,62 @@ def start() -> None:
     if not supervisor_conf.exists():
         _write_config()
 
+    # Validate that supervisor module is available
+    if _SUPERVISOR_IMPORT_ERROR:
+        raise SupervisorError(
+            f"supervisor module not available: {_SUPERVISOR_IMPORT_ERROR}"
+        ) from _SUPERVISOR_IMPORT_ERROR
+
+    # Validate config file is readable
+    if not supervisor_conf.is_file():
+        raise SupervisorError(f"Config file not found or not a file: {supervisor_conf}")
+    try:
+        config_parser = configparser.ConfigParser()
+        config_parser.read(supervisor_conf)
+        if not config_parser.has_section("supervisord"):
+            raise SupervisorError(f"Invalid config: missing [supervisord] section in {supervisor_conf}")
+    except Exception as e:
+        raise SupervisorError(f"Invalid config file {supervisor_conf}: {e}") from e
+
     # Start supervisord using Python module to ensure it's on the right Python path
     # Use Popen with start_new_session to fully detach the daemon process
     # Log stderr to supervisor log for debugging startup failures
     supervisor_log = _get_supervisor_log()
-    with supervisor_log.open("a") as log_file:
-        subprocess.Popen(
-            [sys.executable, "-m", "supervisor.supervisord", "-c", supervisor_conf],
-            stdout=log_file,
-            stderr=log_file,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+    supervisor_dir = _get_supervisor_dir()
+    supervisor_port = _get_supervisor_port()
+
+    # Log what we're about to execute
+    cmd = [sys.executable, "-m", "supervisor.supervisord", "-c", str(supervisor_conf)]
+    logger.info("Starting supervisor with command: %s", " ".join(cmd))
+    logger.info("  config: %s", supervisor_conf)
+    logger.info("  log: %s", supervisor_log)
+    logger.info("  port: %d", supervisor_port)
+    logger.info("  dir: %s", supervisor_dir)
+
+    try:
+        with supervisor_log.open("a") as log_file:
+            process = subprocess.Popen(
+                cmd,
+                stdout=log_file,
+                stderr=log_file,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                cwd=str(supervisor_dir),  # Ensure we're in a valid directory
+            )
+            # Give it a tiny bit to check if it crashes immediately
+            time.sleep(0.1)
+            returncode = process.poll()
+            if returncode is not None:
+                # Process exited immediately - read log for details
+                log_content = supervisor_log.read_text() if supervisor_log.exists() else "(log not found)"
+                raise SupervisorError(
+                    f"supervisord exited immediately with code {returncode}\n"
+                    f"Command: {' '.join(cmd)}\n"
+                    f"Log: {log_content[-1000:]}"  # Last 1KB of log
+                )
+            logger.info("supervisord process spawned (pid=%s)", process.pid)
+    except OSError as e:
+        raise SupervisorError(f"Failed to spawn supervisord: {e}") from e
 
     # Wait for supervisor to be ready (up to 5 seconds)
     for i in range(20):
