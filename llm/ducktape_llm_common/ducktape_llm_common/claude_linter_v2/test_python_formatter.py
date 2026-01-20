@@ -1,5 +1,6 @@
 """Tests for Python code formatter."""
 
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,9 +19,10 @@ class TestPythonFormatter:
     def test_check_available_tools(self, mock_run):
         """Test detection of available formatting tools."""
 
-        # Mock ruff available, black not available
+        # Mock ruff available (via python -m ruff), black not available
         def side_effect(cmd, **kwargs):
-            if cmd[0] == "ruff":
+            # ruff is invoked as [sys.executable, "-m", "ruff", "--version"]
+            if "-m" in cmd and "ruff" in cmd:
                 return MagicMock(returncode=0, stdout="ruff 0.1.0\n")
             raise FileNotFoundError
 
@@ -45,9 +47,9 @@ class TestPythonFormatter:
         assert result == formatted_code
         assert changes == ["Applied ruff formatting"]
 
-        # Verify ruff was called correctly
+        # Verify ruff was called correctly (via python -m ruff)
         mock_run.assert_called_with(
-            ["ruff", "format", "--stdin-filename", TEST_FILE, "-"],
+            [sys.executable, "-m", "ruff", "format", "--stdin-filename", TEST_FILE, "-"],
             input=input_code,
             capture_output=True,
             text=True,
@@ -216,9 +218,9 @@ def foo():
 
         formatter.format_code(code, file_path=file_path)
 
-        # Verify file path was passed to ruff
+        # Verify file path was passed to ruff (via python -m ruff)
         mock_run.assert_called_with(
-            ["ruff", "format", "--stdin-filename", file_path, "-"],
+            [sys.executable, "-m", "ruff", "format", "--stdin-filename", file_path, "-"],
             input=code,
             capture_output=True,
             text=True,
