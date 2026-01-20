@@ -250,12 +250,6 @@
             <span class="ml-1"><RunIdLink id={run.parent_agent_run_id} /></span>
           </div>
         {/if}
-        {#if run.completion_summary}
-          <div class="col-span-full flex items-start gap-1">
-            <span class="text-gray-500 shrink-0">Summary:</span>
-            <span class="prose prose-sm max-w-none inline"><SvelteMarkdown source={run.completion_summary} /></span>
-          </div>
-        {/if}
       </div>
     </div>
 

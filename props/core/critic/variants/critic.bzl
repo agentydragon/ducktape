@@ -1,5 +1,9 @@
 """Shared Bazel rules for building critic agent variants.
 
+TODO: Migrate these variants to the new in-container agent loop model.
+Currently they use the old /init entrypoint with app_tar. The new model
+uses a main.py entrypoint with main_tar (see //props/core/critic:image).
+
 Each critic variant differs only in its agent.md file. This macro
 reduces duplication by generating all standard targets from a single
 variant-specific markdown file.
@@ -8,8 +12,11 @@ variant-specific markdown file.
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
+
 def critic_variant(name, agent_md):
-    """Build a critic variant image with custom agent.md.
+    """Build a critic variant image with custom agent.md (legacy architecture).
+
+    TODO: Migrate to new in-container agent loop model.
 
     Generates standard targets for building and publishing a critic variant:
     - :<name> - OCI image
@@ -38,7 +45,7 @@ def critic_variant(name, agent_md):
         strip_prefix = name + "_md",
     )
 
-    # Build OCI image
+    # Build OCI image (legacy architecture with /init entrypoint)
     oci_image(
         name = name,
         base = "@python_slim_linux_amd64",
@@ -49,7 +56,7 @@ def critic_variant(name, agent_md):
         },
         tars = [
             "//props/core/cli:app_tar",
-            "//props/core/agent_defs:critic_dev_init_tar",
+            ":critic_dev_init_tar",
             ":" + name + "_agent_md_tar",
         ],
         workdir = "/workspace",

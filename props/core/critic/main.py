@@ -188,8 +188,8 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
                 for occ in occurrences:
                     _validate_occurrence(occ)
 
-            agent_run.status = AgentRunStatus.COMPLETED
-            agent_run.completion_summary = args.summary
+            # Note: Agent cannot update its own status due to RLS.
+            # Status is set by host scaffold (agent_registry) after container exits.
 
         exit_state.should_exit = True
         exit_state.exit_code = 0
@@ -212,8 +212,8 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
             if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
                 raise ValueError(f"Agent run {agent_run_id} already reported failure")
 
-            agent_run.status = AgentRunStatus.REPORTED_FAILURE
-            agent_run.completion_summary = args.message
+            # Note: Agent cannot update its own status due to RLS.
+            # Status is set by host scaffold (agent_registry) after container exits.
 
         exit_state.should_exit = True
         exit_state.exit_code = 1

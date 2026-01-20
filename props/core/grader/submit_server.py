@@ -83,10 +83,10 @@ class GraderSubmitServer(EnhancedFastMCP):
                         f"{pending_count} edges still pending. Complete all grading edges before submitting."
                     )
 
-                agent_run.status = AgentRunStatus.COMPLETED
-                agent_run.completion_summary = input.summary
-                session.commit()
-                logger.info("Grader run %s completed", self._grader_run_id)
+                # Note: Agent cannot update its own status due to RLS.
+                # Status is set by host scaffold (agent_registry) after container exits.
+
+                logger.info("Grader run %s validated successfully", self._grader_run_id)
 
         self.submit_tool = self.flat_model()(submit)
 
@@ -98,12 +98,11 @@ class GraderSubmitServer(EnhancedFastMCP):
 
             This marks the run as failed and stores the error message.
             """
-            with get_session() as session:
-                agent_run = self._get_modifiable_run(session)
-                agent_run.status = AgentRunStatus.REPORTED_FAILURE
-                agent_run.completion_summary = input.message
-                session.commit()
-                logger.info("Grader run %s reported failure: %s", self._grader_run_id, input.message)
+            # Note: Agent cannot update its own status due to RLS.
+            # Status is set by host scaffold (agent_registry) after container exits.
+            # The report_failure tool signals intention; actual status change is external.
+
+            logger.info("Grader run %s reported failure: %s", self._grader_run_id, input.message)
 
         self.report_failure_tool = self.flat_model()(report_failure)
 

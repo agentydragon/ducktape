@@ -66,19 +66,13 @@ def query_test_data(synced_test_db):
         assert len(valid_examples) >= 2, "Need at least 2 valid examples from git fixtures"
 
         # Create critic runs using factory (uses attached Example objects directly)
-        critic_run_train = make_critic_run(
-            example=train_examples[0], completion_summary="Test completion summary for train"
-        )
+        critic_run_train = make_critic_run(example=train_examples[0])
         session.add(critic_run_train)
 
-        critic_run_valid_1 = make_critic_run(
-            example=valid_examples[0], completion_summary="Test completion summary for valid-1"
-        )
+        critic_run_valid_1 = make_critic_run(example=valid_examples[0])
         session.add(critic_run_valid_1)
 
-        critic_run_valid_2 = make_critic_run(
-            example=valid_examples[1], completion_summary="Test completion summary for valid-2"
-        )
+        critic_run_valid_2 = make_critic_run(example=valid_examples[1])
         session.add(critic_run_valid_2)
 
         session.flush()

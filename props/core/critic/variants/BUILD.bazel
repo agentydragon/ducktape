@@ -1,0 +1,49 @@
+"""Critic agent variants (legacy architecture).
+
+TODO: Migrate these variants to the new in-container agent loop model.
+Currently they use the old /init entrypoint. The new model uses main.py.
+
+Build targets:
+    bazel run //props/core/critic/variants:contract_truthfulness_push
+    bazel run //props/core/critic/variants:dead_code_push
+    bazel run //props/core/critic/variants:flag_propagation_push
+    bazel run //props/core/critic/variants:high_recall_push
+    bazel run //props/core/critic/variants:verbose_docs_push
+"""
+
+load(":critic.bzl", "critic_variant")
+load(":init_tar.bzl", "init_script_tar")
+
+# Shared init script for legacy critic variants
+init_script_tar(
+    name = "critic_dev_init_tar",
+    script = "init",
+)
+
+# Critic variant OCI images (legacy architecture)
+# Each uses the same base but different agent.md policy document
+
+critic_variant(
+    name = "contract_truthfulness",
+    agent_md = "contract_truthfulness.md",
+)
+
+critic_variant(
+    name = "dead_code",
+    agent_md = "dead_code.md",
+)
+
+critic_variant(
+    name = "flag_propagation",
+    agent_md = "flag_propagation.md",
+)
+
+critic_variant(
+    name = "high_recall",
+    agent_md = "high_recall_critic.md",
+)
+
+critic_variant(
+    name = "verbose_docs",
+    agent_md = "verbose_docs.md",
+)

@@ -495,12 +495,6 @@ async def cmd_run_grader(
             typer.echo(f"Status: {grader_run.status.value}")
             typer.echo("")
 
-            # Display completion_summary if available
-            if grader_run.completion_summary:
-                typer.echo("Summary:")
-                typer.echo(grader_run.completion_summary)
-                typer.echo("")
-
             # Display recall metrics from grading_edges
             if grader_run.status == AgentRunStatus.COMPLETED:
                 # TODO: Deduplicate recall calculation into db/grading.py helper function

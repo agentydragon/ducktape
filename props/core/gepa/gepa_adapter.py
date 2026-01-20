@@ -230,9 +230,8 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         if capture_traces:
             critique_payload_db: DBCriticSubmitPayload | None = None
             if critic_status == AgentRunStatus.COMPLETED:
-                with get_session() as payload_session:
-                    run = payload_session.get(AgentRun, critic_run_id)
-                    critique_payload_db = DBCriticSubmitPayload(notes_md=run.completion_summary) if run else None
+                # Notes are no longer stored; empty payload indicates successful completion
+                critique_payload_db = DBCriticSubmitPayload(notes_md=None)
 
             filtered_events = _filter_reflection_events(critic_run_id)
             trajectory = CriticTrajectory(

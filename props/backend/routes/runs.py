@@ -170,7 +170,6 @@ class AgentRunDetail(BaseModel):
     parent_agent_run_id: UUID | None
     model: str
     status: AgentRunStatus
-    completion_summary: str | None
     container_exit_code: int | None
     created_at: datetime
     updated_at: datetime
@@ -213,7 +212,6 @@ class WsStatusMessage(BaseModel):
 
     type: Literal["status"] = "status"
     status: AgentRunStatus
-    completion_summary: str | None
     container_exit_code: int | None
 
 
@@ -637,7 +635,6 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             parent_agent_run_id=run.parent_agent_run_id,
             model=run.model,
             status=run.status,
-            completion_summary=run.completion_summary,
             container_exit_code=run.container_exit_code,
             created_at=run.created_at,
             updated_at=run.updated_at,
@@ -677,7 +674,6 @@ async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
     def _make_status_msg(run: AgentRun) -> WsStatusMessage:
         return WsStatusMessage(
             status=run.status,
-            completion_summary=run.completion_summary,
             container_exit_code=run.container_exit_code,
         )
 

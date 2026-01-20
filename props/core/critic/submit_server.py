@@ -120,9 +120,8 @@ class CriticSubmitServer(EnhancedFastMCP):
                     for occ in occurrences:
                         self._validate_occurrence(occ)
 
-                agent_run.status = AgentRunStatus.COMPLETED
-                agent_run.completion_summary = input.summary
-                session.commit()
+                # Note: Agent cannot update its own status due to RLS.
+                # Status is set by host scaffold (agent_registry) after container exits.
 
                 logger.info(
                     "Agent run %s completed: %d issues, %d occurrences",
@@ -152,9 +151,8 @@ class CriticSubmitServer(EnhancedFastMCP):
                 if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
                     raise ToolError(f"Agent run {self._agent_run_id} already reported failure")
 
-                agent_run.status = AgentRunStatus.REPORTED_FAILURE
-                agent_run.completion_summary = input.message
-                session.commit()
+                # Note: Agent cannot update its own status due to RLS.
+                # Status is set by host scaffold (agent_registry) after container exits.
 
                 logger.info("Agent run %s reported failure: %s", self._agent_run_id, input.message)
 

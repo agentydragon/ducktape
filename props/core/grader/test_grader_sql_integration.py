@@ -445,9 +445,6 @@ async def test_grader_report_failure_basic(grader_submit_server, test_grader_run
         grader_run = session.get(AgentRun, test_grader_run)
         assert grader_run is not None
         assert grader_run.status == AgentRunStatus.REPORTED_FAILURE
-        assert (
-            grader_run.completion_summary == "Cannot grade: critic output is malformed and contains no parseable issues"
-        )
 
 
 async def test_grader_report_failure_prevents_subsequent_submit(

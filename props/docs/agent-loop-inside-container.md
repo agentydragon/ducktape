@@ -49,12 +49,22 @@ AgentEnvironment (simplified)
 
 ### Container Interface
 
-| Aspect     | Decision                                           |
-| ---------- | -------------------------------------------------- |
-| Entrypoint | Standard Dockerfile `CMD` (not `/init` convention) |
-| Completion | Exit code 0 = success, non-zero = failure          |
-| Abort      | Host hard-kills container (`docker kill`)          |
-| Logs       | Capture and store container logs (see below)       |
+| Aspect     | Decision                                                                        |
+| ---------- | ------------------------------------------------------------------------------- |
+| Entrypoint | Standard Dockerfile `CMD` (not `/init` convention)                              |
+| Completion | Exit code 0 = success, non-zero = failure                                       |
+| Status     | Host determines status (agents cannot update their own status due to RLS)       |
+| Abort      | Host hard-kills container (`docker kill`) on timeout                            |
+| Logs       | Capture and store container logs (see below)                                    |
+| Lifecycle  | Host records `started_at`, `ended_at`, `container_exit_code` in `agent_runs`    |
+
+**Status determination (outside container):**
+- Agents cannot update their own `agent_runs.status` column due to Row Level Security (no UPDATE policy)
+- Host determines final status after container exits based on:
+  - Exit code 0 + issues reported → `COMPLETED` (for critics)
+  - Exit code 0 + all grading edges complete → `COMPLETED` (for graders)
+  - Exit code != 0, timeout, or validation failed → `REPORTED_FAILURE`
+- Submit/report_failure tools perform validation but don't change status; they signal intent via exit code
 
 ### LLM Proxy
 
@@ -76,6 +86,31 @@ AgentEnvironment (simplified)
 - No streaming (simplifies logging)
 - Auth via Postgres temp user lookup (not separate token table)
 - Logs full request/response to new `llm_requests` table
+
+### Resource Limits
+
+| Aspect          | Decision                                                                      |
+| --------------- | ----------------------------------------------------------------------------- |
+| Token budget    | `agent_runs.budget_tokens` - max tokens for agent + all child agents          |
+| Timeout         | `agent_runs.timeout_seconds` - max wall-clock time before container is killed |
+| Budget enforce  | LLM proxy checks budget before each request; rejects if exceeded              |
+| Timeout enforce | `agent_registry` uses `asyncio.wait_for()` to kill container on timeout       |
+| Lifecycle       | `agent_runs.started_at` and `ended_at` record container execution window      |
+
+**Budget enforcement by proxy:**
+
+1. On each LLM request, proxy queries `llm_run_costs` view to get current token usage
+2. Sum usage for agent + all child agents (via `parent_agent_run_id` tree)
+3. Compare against `agent_runs.budget_tokens` limit
+4. Reject request with 429 if budget exceeded
+5. Child agents inherit remaining budget from parent
+
+**Timeout enforcement by agent_registry:**
+
+1. Record `started_at` when creating AgentRun
+2. Wrap container execution in `asyncio.wait_for(coro, timeout=timeout_seconds)`
+3. If timeout fires, container is killed (run_loop_agent's finally block cleans up)
+4. Record `ended_at` and set status to `REPORTED_FAILURE`
 
 ### Tool Execution
 
@@ -184,9 +219,13 @@ PromptEvalServer (FastMCP)              MCPToolProvider
 
 **New columns on `agent_runs`:**
 
-- `container_stdout` (TEXT) - captured stdout
-- `container_stderr` (TEXT) - captured stderr
-- Or possibly a separate `agent_logs` table if logs get large
+- `container_exit_code` (INTEGER) - container exit code (NULL if still running)
+- `budget_tokens` (INTEGER) - max tokens allowed (including child agents); enforced by proxy
+- `timeout_seconds` (INTEGER) - max seconds before agent is killed; enforced by agent_registry
+- `started_at` (TIMESTAMP) - when container started executing
+- `ended_at` (TIMESTAMP) - when container finished (success or failure)
+
+Container logs stored in separate `container_logs` table (not inline on agent_runs).
 
 ### Security
 
@@ -502,10 +541,12 @@ Features:
 
 ### Cost Budget Propagation
 
-**Decision:** LLM proxy queries `agent_runs.parent_agent_run_id` to compute budget tree.
+**Decision:** LLM proxy queries `agent_runs.parent_agent_run_id` to compute budget tree, enforced via `budget_tokens` column.
 
-- Parent spawns child → child's cost counts against parent's budget
-- Proxy sums costs up the parent chain on each request
+- `agent_runs.budget_tokens` column stores the token limit for each agent run
+- Parent spawns child → child's cost counts against parent's remaining budget
+- Proxy sums costs up the parent chain on each request via `llm_run_costs` view
+- Rejects request with 429 if sum exceeds any ancestor's `budget_tokens` limit
 - No special token encoding needed - just query the table
 - Track token counts (input_tokens, output_tokens) as reported by OpenAI Responses API
 - Dollar cost computed via view joining `llm_requests` with model pricing table

@@ -1368,8 +1368,15 @@ class AgentRun(Base):
 
     Status tracking:
     - status: Current run status (in_progress, completed, etc.)
-    - completion_summary: Markdown summary from agent (when status='completed')
-      or error message (when status='reported_failure')
+    - container_exit_code: Exit code from container (NULL if still running)
+
+    Resource limits (set at launch time):
+    - budget_tokens: Max tokens allowed (including child agents). Enforced by proxy.
+    - timeout_seconds: Max seconds before agent is killed. Enforced by agent_registry.
+
+    Container lifecycle timestamps:
+    - started_at: When container started executing
+    - ended_at: When container finished (success or failure)
 
     Image reference:
     - image_digest: OCI image digest (sha256:...), FK to agent_definitions.digest
@@ -1394,15 +1401,29 @@ class AgentRun(Base):
         server_default="in_progress",
         comment="Run status: in_progress, completed, max_turns_exceeded, context_length_exceeded, or reported_failure",
     )
-    completion_summary: Mapped[str | None] = mapped_column(
-        Text,
+
+    # Resource limits (set at launch time)
+    budget_tokens: Mapped[int | None] = mapped_column(
         nullable=True,
-        comment="Markdown summary from agent on submit, or error message on report_failure",
+        comment="Max tokens allowed for this agent (including child agents). Enforced by proxy.",
+    )
+    timeout_seconds: Mapped[int | None] = mapped_column(
+        nullable=True,
+        comment="Max seconds before agent is killed. Enforced by agent_registry.",
+    )
+
+    # Container lifecycle timestamps
+    started_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP, nullable=True, comment="When container started executing"
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP, nullable=True, comment="When container finished (success or failure)"
     )
     container_exit_code: Mapped[int | None] = mapped_column(
         nullable=True,
         comment="Container exit code (NULL if still running or not container-based)",
     )
+
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()

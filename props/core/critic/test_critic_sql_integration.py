@@ -54,7 +54,6 @@ async def test_critic_sql_basic_workflow(test_critic_run, temp_engine, submit_se
         critic_run = session.get(AgentRun, test_critic_run)
         assert critic_run is not None
         assert critic_run.status == AgentRunStatus.COMPLETED
-        assert critic_run.completion_summary == "Found 1 dead code issue"
 
         # Verify reported issue exists
         issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="dead-code-utils").one()

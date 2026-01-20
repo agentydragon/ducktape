@@ -10,10 +10,22 @@ The registry uses the in-container agent loop model:
 4. Container exits 0 on success, non-zero on failure
 
 Host scaffold responsibilities:
-1. Create AgentRun in database with type config
-2. Start container via run_loop_agent()
-3. Wait for container exit
-4. Check database status (agent updates it via submit/report_failure)
+1. Create AgentRun in database with type config, resource limits, started_at
+2. Start container via run_loop_agent() with timeout enforcement
+3. Wait for container exit (or kill on timeout)
+4. Determine final status based on exit code and work completed
+   (agents cannot update their own status due to RLS)
+5. Set ended_at and container_exit_code
+
+Status determination (outside container):
+- Exit code 0 + issues reported → COMPLETED (for critics)
+- Exit code 0 + all grading edges completed → COMPLETED (for graders)
+- Exit code != 0 or validation failed → REPORTED_FAILURE
+- Timeout → REPORTED_FAILURE
+
+Resource limits:
+- timeout_seconds: Host kills container after timeout; enforced by agent_registry
+- budget_tokens: Proxy enforces token budget across agent and subagents
 
 Usage:
     registry = AgentRegistry(docker_client, db_config, llm_proxy_url)
@@ -22,6 +34,8 @@ Usage:
             image_ref="critic",
             example=example,
             model="gpt-4o",
+            timeout_seconds=3600,
+            budget_tokens=100000,
         )
         # Check status from DB
         with get_session() as session:
@@ -41,9 +55,11 @@ from uuid import UUID, uuid4
 
 import aiodocker
 
+from sqlalchemy import text
+
 from props.core.agent_types import AgentType, CriticTypeConfig, GraderTypeConfig, SnapshotGraderTypeConfig
 from props.core.db.config import DatabaseConfig
-from props.core.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, Snapshot
+from props.core.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, ReportedIssue, Snapshot
 from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.grader.persistence import orm_fp_to_db, orm_tp_to_db
@@ -121,6 +137,8 @@ class AgentRegistry:
         example: ExampleSpec,
         model: str,
         parent_run_id: UUID | None = None,
+        timeout_seconds: int | None = None,
+        budget_tokens: int | None = None,
     ) -> UUID:
         """Run a critic agent. Acquires semaphore slot.
 
@@ -131,6 +149,8 @@ class AgentRegistry:
             example: Example specification (snapshot + scope)
             model: Model name for LLM calls (e.g., "gpt-4o")
             parent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
+            timeout_seconds: Max seconds before container is killed (default: no limit)
+            budget_tokens: Max tokens for this agent (enforced by proxy)
 
         Returns:
             Agent run ID (query DB for status)
@@ -141,6 +161,8 @@ class AgentRegistry:
                 example=example,
                 model=model,
                 parent_run_id=parent_run_id,
+                timeout_seconds=timeout_seconds,
+                budget_tokens=budget_tokens,
             )
 
     async def _run_critic_impl(
@@ -150,17 +172,21 @@ class AgentRegistry:
         example: ExampleSpec,
         model: str,
         parent_run_id: UUID | None,
+        timeout_seconds: int | None,
+        budget_tokens: int | None,
     ) -> UUID:
         """Internal critic execution (semaphore already acquired)."""
         snapshot_slug = example.snapshot_slug
         agent_run_id = uuid4()
+        timed_out = False
 
         # Resolve image reference to digest, then build full OCI reference
         image_digest = resolve_image_ref(AgentType.CRITIC, image_ref)
         image = build_oci_reference(AgentType.CRITIC, image_digest)
         logger.info("Resolved critic image %s → %s", image_ref, image_digest)
 
-        # Write initial AgentRun to DB
+        # Write initial AgentRun to DB with resource limits and started_at
+        started_at = datetime.utcnow()
         with get_session() as session:
             type_config = CriticTypeConfig(example=example)
 
@@ -171,6 +197,9 @@ class AgentRegistry:
                 model=model,
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
+                timeout_seconds=timeout_seconds,
+                budget_tokens=budget_tokens,
+                started_at=started_at,
             )
             session.add(agent_run)
             session.commit()
@@ -180,9 +209,10 @@ class AgentRegistry:
         async with self._lock:
             self._active[agent_run_id] = ActiveRun(task=None)
 
+        result: ContainerResult | None = None
         try:
-            # Run agent container
-            result = await run_loop_agent(
+            # Run agent container with optional timeout
+            container_coro = run_loop_agent(
                 self._docker_client,
                 agent_run_id,
                 self._db_config,
@@ -191,28 +221,50 @@ class AgentRegistry:
                 container_name=f"critic-{short_uuid(agent_run_id)}",
             )
 
+            if timeout_seconds is not None:
+                try:
+                    result = await asyncio.wait_for(container_coro, timeout=timeout_seconds)
+                except asyncio.TimeoutError:
+                    logger.error("Critic container timed out after %d seconds", timeout_seconds)
+                    timed_out = True
+                    # Container will be cleaned up by run_loop_agent's finally block
+            else:
+                result = await container_coro
+
             # Container has exited - check status
-            if result.exit_code != 0:
+            if result is not None and result.exit_code != 0:
                 logger.warning(
                     "Critic container exited with code %d: %s",
                     result.exit_code,
                     result.stderr[:500] if result.stderr else "(no stderr)",
                 )
 
-            # Get final status from DB (agent updates via submit/report_failure)
+            # Determine final status based on exit code and work completed
+            # (agents cannot update their own status due to RLS)
+            ended_at = datetime.utcnow()
             with get_session() as session:
                 run = session.get(AgentRun, agent_run_id)
                 if run is None:
                     raise RuntimeError(f"Agent run {agent_run_id} not found in database")
 
-                run.container_exit_code = result.exit_code
-                final_status = run.status
-                if final_status == AgentRunStatus.IN_PROGRESS:
-                    # Agent didn't call submit or report_failure
-                    if result.exit_code == 0:
-                        logger.warning("Critic exited 0 but didn't submit - marking as failed")
+                run.ended_at = ended_at
+                if result is not None:
+                    run.container_exit_code = result.exit_code
+
+                if timed_out:
                     final_status = AgentRunStatus.REPORTED_FAILURE
-                    run.status = final_status
+                elif result is not None and result.exit_code == 0:
+                    # Check if issues were reported (indicates successful submit)
+                    issues_count = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).count()
+                    if issues_count > 0:
+                        final_status = AgentRunStatus.COMPLETED
+                    else:
+                        logger.warning("Critic exited 0 but reported no issues - marking as failed")
+                        final_status = AgentRunStatus.REPORTED_FAILURE
+                else:
+                    final_status = AgentRunStatus.REPORTED_FAILURE
+
+                run.status = final_status
                 session.commit()
 
             logger.info("Critic run completed: agent_run_id=%s, status=%s", agent_run_id, final_status)
@@ -230,6 +282,8 @@ class AgentRegistry:
         critic_run_id: UUID,
         model: str,
         parent_run_id: UUID | None = None,
+        timeout_seconds: int | None = None,
+        budget_tokens: int | None = None,
     ) -> UUID:
         """Run a one-off grader on a critic run. Acquires semaphore slot.
 
@@ -240,6 +294,8 @@ class AgentRegistry:
             critic_run_id: ID of the critic run to grade
             model: Model name for LLM calls (e.g., "gpt-4o")
             parent_run_id: Optional parent agent run ID
+            timeout_seconds: Max seconds before container is killed (default: no limit)
+            budget_tokens: Max tokens for this agent (enforced by proxy)
 
         Returns:
             Grader run ID (query DB for status)
@@ -249,6 +305,8 @@ class AgentRegistry:
                 critic_run_id=critic_run_id,
                 model=model,
                 parent_run_id=parent_run_id,
+                timeout_seconds=timeout_seconds,
+                budget_tokens=budget_tokens,
             )
 
     async def _run_grader_impl(
@@ -257,9 +315,12 @@ class AgentRegistry:
         critic_run_id: UUID,
         model: str,
         parent_run_id: UUID | None,
+        timeout_seconds: int | None,
+        budget_tokens: int | None,
     ) -> UUID:
         """Internal one-off grader execution (semaphore already acquired)."""
         grader_run_id = uuid4()
+        timed_out = False
 
         # Always use builtin grader image
         image_digest = resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
@@ -267,6 +328,7 @@ class AgentRegistry:
         logger.info("Using builtin grader image: %s", image_digest)
 
         # Load critic run and prepare canonical issues
+        started_at = datetime.utcnow()
         with get_session() as session:
             critic_run = session.get(AgentRun, critic_run_id)
             if critic_run is None:
@@ -326,7 +388,7 @@ class AgentRegistry:
                 graded_agent_run_id=critic_run_id, canonical_issues_snapshot=canonical_snapshot.model_dump()
             ).model_dump(mode="json")
 
-            # Write initial grader run
+            # Write initial grader run with resource limits and started_at
             session.add(
                 AgentRun(
                     agent_run_id=grader_run_id,
@@ -335,6 +397,9 @@ class AgentRegistry:
                     model=model,
                     type_config=type_config,
                     status=AgentRunStatus.IN_PROGRESS,
+                    timeout_seconds=timeout_seconds,
+                    budget_tokens=budget_tokens,
+                    started_at=started_at,
                 )
             )
             session.commit()
@@ -344,9 +409,10 @@ class AgentRegistry:
         async with self._lock:
             self._active[grader_run_id] = ActiveRun(task=None)
 
+        result: ContainerResult | None = None
         try:
-            # Run agent container
-            result = await run_loop_agent(
+            # Run agent container with optional timeout
+            container_coro = run_loop_agent(
                 self._docker_client,
                 grader_run_id,
                 self._db_config,
@@ -355,28 +421,55 @@ class AgentRegistry:
                 container_name=f"grader-{short_uuid(grader_run_id)}",
             )
 
+            if timeout_seconds is not None:
+                try:
+                    result = await asyncio.wait_for(container_coro, timeout=timeout_seconds)
+                except asyncio.TimeoutError:
+                    logger.error("Grader container timed out after %d seconds", timeout_seconds)
+                    timed_out = True
+            else:
+                result = await container_coro
+
             # Container has exited - check status
-            if result.exit_code != 0:
+            if result is not None and result.exit_code != 0:
                 logger.warning(
                     "Grader container exited with code %d: %s",
                     result.exit_code,
                     result.stderr[:500] if result.stderr else "(no stderr)",
                 )
 
-            # Get final status from DB (agent updates via submit/report_failure)
+            # Determine final status based on exit code and work completed
+            # (agents cannot update their own status due to RLS)
+            ended_at = datetime.utcnow()
             with get_session() as session:
                 run = session.get(AgentRun, grader_run_id)
                 if run is None:
                     raise RuntimeError(f"Agent run {grader_run_id} not found in database")
 
-                run.container_exit_code = result.exit_code
-                final_status = run.status
-                if final_status == AgentRunStatus.IN_PROGRESS:
-                    # Agent didn't call submit or report_failure
-                    if result.exit_code == 0:
-                        logger.warning("Grader exited 0 but didn't submit - marking as failed")
+                run.ended_at = ended_at
+                if result is not None:
+                    run.container_exit_code = result.exit_code
+
+                if timed_out:
                     final_status = AgentRunStatus.REPORTED_FAILURE
-                    run.status = final_status
+                elif result is not None and result.exit_code == 0:
+                    # Check if all grading edges are complete (no pending edges)
+                    pending_count = session.execute(
+                        text("SELECT COUNT(*) FROM grading_pending WHERE critique_run_id = :critic_run_id"),
+                        {"critic_run_id": critic_run_id},
+                    ).scalar()
+
+                    if pending_count == 0:
+                        final_status = AgentRunStatus.COMPLETED
+                    else:
+                        logger.warning(
+                            "Grader exited 0 but %d edges still pending - marking as failed", pending_count
+                        )
+                        final_status = AgentRunStatus.REPORTED_FAILURE
+                else:
+                    final_status = AgentRunStatus.REPORTED_FAILURE
+
+                run.status = final_status
                 session.commit()
 
             logger.info("Grader run completed: agent_run_id=%s, status=%s", grader_run_id, final_status)
@@ -395,6 +488,7 @@ class AgentRegistry:
         *,
         snapshot_slug: SnapshotSlug,
         model: str,
+        budget_tokens: int | None = None,
     ) -> UUID:
         """Run a snapshot grader daemon. Blocks until shutdown or fatal error.
 
@@ -405,17 +499,30 @@ class AgentRegistry:
 
         Always uses builtin grader-daemon image for evaluation consistency.
 
+        Note: Daemons are expected to run indefinitely; timeout_seconds is not supported.
+
         Args:
             snapshot_slug: Snapshot this daemon is responsible for
             model: Model name for LLM calls (e.g., "gpt-4o")
+            budget_tokens: Max tokens for this agent (enforced by proxy)
 
         Returns:
             Daemon run ID (query DB for status)
         """
         async with self._semaphore:
-            return await self._run_snapshot_grader_impl(snapshot_slug=snapshot_slug, model=model)
+            return await self._run_snapshot_grader_impl(
+                snapshot_slug=snapshot_slug,
+                model=model,
+                budget_tokens=budget_tokens,
+            )
 
-    async def _run_snapshot_grader_impl(self, *, snapshot_slug: SnapshotSlug, model: str) -> UUID:
+    async def _run_snapshot_grader_impl(
+        self,
+        *,
+        snapshot_slug: SnapshotSlug,
+        model: str,
+        budget_tokens: int | None,
+    ) -> UUID:
         """Internal snapshot grader daemon execution."""
         grader_run_id = uuid4()
 
@@ -425,6 +532,7 @@ class AgentRegistry:
         logger.info("Using builtin snapshot_grader image: %s", image_digest)
 
         # Verify snapshot exists
+        started_at = datetime.utcnow()
         with get_session() as session:
             snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one_or_none()
             if snapshot is None:
@@ -432,7 +540,8 @@ class AgentRegistry:
 
             type_config = SnapshotGraderTypeConfig(snapshot_slug=snapshot_slug).model_dump(mode="json")
 
-            # Create initial daemon run
+            # Create initial daemon run with resource limits and started_at
+            # Note: timeout_seconds not supported for daemons (they run indefinitely)
             session.add(
                 AgentRun(
                     agent_run_id=grader_run_id,
@@ -441,6 +550,8 @@ class AgentRegistry:
                     model=model,
                     type_config=type_config,
                     status=AgentRunStatus.IN_PROGRESS,
+                    budget_tokens=budget_tokens,
+                    started_at=started_at,
                 )
             )
             session.commit()
@@ -452,6 +563,7 @@ class AgentRegistry:
 
         try:
             # Run daemon container (it handles its own reconciliation loop)
+            # No timeout - daemons are expected to run indefinitely
             result = await run_loop_agent(
                 self._docker_client,
                 grader_run_id,
@@ -469,18 +581,18 @@ class AgentRegistry:
                 result.stderr[:500] if result.stderr else "(no stderr)",
             )
 
-            # Get final status from DB
+            # Determine final status (daemons should never exit successfully)
+            ended_at = datetime.utcnow()
             with get_session() as session:
                 run = session.get(AgentRun, grader_run_id)
                 if run is None:
                     raise RuntimeError(f"Agent run {grader_run_id} not found in database")
 
+                run.ended_at = ended_at
                 run.container_exit_code = result.exit_code
-                final_status = run.status
-                if final_status == AgentRunStatus.IN_PROGRESS:
-                    # Daemon exited without updating status - always a failure
-                    final_status = AgentRunStatus.REPORTED_FAILURE
-                    run.status = final_status
+                # Daemons should run indefinitely - any exit is a failure
+                final_status = AgentRunStatus.REPORTED_FAILURE
+                run.status = final_status
                 session.commit()
 
             logger.error("Grader daemon terminated: agent_run_id=%s, status=%s", grader_run_id, final_status)
