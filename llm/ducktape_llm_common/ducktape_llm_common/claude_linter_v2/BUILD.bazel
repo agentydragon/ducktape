@@ -91,6 +91,7 @@ py_test(
     deps = [
         ":claude_linter_v2",
         "@pypi//click",
+        "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
