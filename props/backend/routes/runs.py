@@ -171,6 +171,7 @@ class AgentRunDetail(BaseModel):
     model: str
     status: AgentRunStatus
     completion_summary: str | None
+    container_exit_code: int | None
     created_at: datetime
     updated_at: datetime
     type_config: TypeConfig
@@ -213,6 +214,7 @@ class WsStatusMessage(BaseModel):
     type: Literal["status"] = "status"
     status: AgentRunStatus
     completion_summary: str | None
+    container_exit_code: int | None
 
 
 class WsCompleteMessage(BaseModel):
@@ -636,6 +638,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             model=run.model,
             status=run.status,
             completion_summary=run.completion_summary,
+            container_exit_code=run.container_exit_code,
             created_at=run.created_at,
             updated_at=run.updated_at,
             type_config=run.type_config,
@@ -672,7 +675,11 @@ async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
     _ws_connections[run_id].add(websocket)
 
     def _make_status_msg(run: AgentRun) -> WsStatusMessage:
-        return WsStatusMessage(status=run.status, completion_summary=run.completion_summary)
+        return WsStatusMessage(
+            status=run.status,
+            completion_summary=run.completion_summary,
+            container_exit_code=run.container_exit_code,
+        )
 
     try:
         # Send initial status

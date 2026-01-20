@@ -19,17 +19,6 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 # =============================================================================
 
 py_library(
-    name = "token_budget_handler",
-    srcs = ["token_budget_handler.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//agent_core",
-        "//openai_utils",
-    ],
-)
-
-py_library(
     name = "reminder_handler",
     srcs = ["reminder_handler.py"],
     imports = ["../../.."],

@@ -1397,7 +1397,11 @@ class AgentRun(Base):
     completion_summary: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
-        comment="Markdown summary from agent when status='completed', or error message when status='reported_failure'",
+        comment="Markdown summary from agent on submit, or error message on report_failure",
+    )
+    container_exit_code: Mapped[int | None] = mapped_column(
+        nullable=True,
+        comment="Container exit code (NULL if still running or not container-based)",
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

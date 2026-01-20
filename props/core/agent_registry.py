@@ -205,6 +205,7 @@ class AgentRegistry:
                 if run is None:
                     raise RuntimeError(f"Agent run {agent_run_id} not found in database")
 
+                run.container_exit_code = result.exit_code
                 final_status = run.status
                 if final_status == AgentRunStatus.IN_PROGRESS:
                     # Agent didn't call submit or report_failure
@@ -212,8 +213,7 @@ class AgentRegistry:
                         logger.warning("Critic exited 0 but didn't submit - marking as failed")
                     final_status = AgentRunStatus.REPORTED_FAILURE
                     run.status = final_status
-                    run.completion_summary = f"Container exited with code {result.exit_code} without submitting"
-                    session.commit()
+                session.commit()
 
             logger.info("Critic run completed: agent_run_id=%s, status=%s", agent_run_id, final_status)
 
@@ -369,6 +369,7 @@ class AgentRegistry:
                 if run is None:
                     raise RuntimeError(f"Agent run {grader_run_id} not found in database")
 
+                run.container_exit_code = result.exit_code
                 final_status = run.status
                 if final_status == AgentRunStatus.IN_PROGRESS:
                     # Agent didn't call submit or report_failure
@@ -376,8 +377,7 @@ class AgentRegistry:
                         logger.warning("Grader exited 0 but didn't submit - marking as failed")
                     final_status = AgentRunStatus.REPORTED_FAILURE
                     run.status = final_status
-                    run.completion_summary = f"Container exited with code {result.exit_code} without submitting"
-                    session.commit()
+                session.commit()
 
             logger.info("Grader run completed: agent_run_id=%s, status=%s", grader_run_id, final_status)
 
@@ -462,12 +462,12 @@ class AgentRegistry:
             )
 
             # Container has exited - check status
-            if result.exit_code != 0:
-                logger.warning(
-                    "Grader daemon container exited with code %d: %s",
-                    result.exit_code,
-                    result.stderr[:500] if result.stderr else "(no stderr)",
-                )
+            # Grader daemons should run indefinitely - any exit is unexpected
+            logger.error(
+                "Grader daemon exited unexpectedly: exit_code=%d, stderr=%s",
+                result.exit_code,
+                result.stderr[:500] if result.stderr else "(no stderr)",
+            )
 
             # Get final status from DB
             with get_session() as session:
@@ -475,18 +475,15 @@ class AgentRegistry:
                 if run is None:
                     raise RuntimeError(f"Agent run {grader_run_id} not found in database")
 
+                run.container_exit_code = result.exit_code
                 final_status = run.status
                 if final_status == AgentRunStatus.IN_PROGRESS:
-                    # Daemon exited without updating status
-                    final_status = (
-                        AgentRunStatus.COMPLETED if result.exit_code == 0 else AgentRunStatus.REPORTED_FAILURE
-                    )
+                    # Daemon exited without updating status - always a failure
+                    final_status = AgentRunStatus.REPORTED_FAILURE
                     run.status = final_status
-                    if result.exit_code != 0:
-                        run.completion_summary = f"Container exited with code {result.exit_code}"
-                    session.commit()
+                session.commit()
 
-            logger.info("Grader daemon exited: agent_run_id=%s, status=%s", grader_run_id, final_status)
+            logger.error("Grader daemon terminated: agent_run_id=%s, status=%s", grader_run_id, final_status)
 
         finally:
             # Remove from active tracking

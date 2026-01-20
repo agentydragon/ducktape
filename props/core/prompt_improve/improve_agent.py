@@ -172,22 +172,18 @@ async def run_improvement_agent(
             agent_run = session.get(AgentRun, run_id)
             if agent_run:
                 agent_run.status = final_status
+                agent_run.container_exit_code = result.exit_code
                 session.commit()
                 logger.info(f"Updated agent_run status to {final_status.value}")
 
-        # Determine outcome based on completion_summary (written by container)
+        # Determine outcome
         outcome: ImprovementOutcome
-        with get_session() as session:
-            agent_run = session.get(AgentRun, run_id)
-            completion_summary = agent_run.completion_summary if agent_run else None
-
         if result.exit_code == 0:
-            # Success - parse TerminationSuccess from completion_summary if available
-            # For now, just return a generic success (container writes details to DB)
+            # Success - for now just return exhausted (container writes details to DB)
             outcome = OutcomeExhausted()  # TODO: Parse actual success details from DB
         else:
             outcome = OutcomeUnexpectedTermination(
-                message=completion_summary or f"Container exited with code {result.exit_code}"
+                message=f"Container exited with code {result.exit_code}"
             )
 
         logger.info(f"Improvement agent completed: kind={outcome.kind}")
