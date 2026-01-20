@@ -5,6 +5,7 @@ This module defines the BaseHandler interface and core handlers.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from typing import Literal
 
@@ -21,6 +22,7 @@ __all__ = [
     "CaptureTextHandler",
     "ContinueDecision",
     "FinishOnTextMessageHandler",
+    "LoggingHandler",
     "RedirectOnTextMessageHandler",
     "SequenceHandler",
 ]
@@ -284,3 +286,17 @@ class RedirectOnTextMessageHandler(BaseHandler):
             self._text_detected = False
             return InjectItems(items=[UserMessage.text(self._reminder)])
         return NoAction()
+
+
+class LoggingHandler(BaseHandler):
+    """Handler that logs errors for debugging.
+
+    Re-raises exceptions after logging to maintain fail-fast behavior.
+    """
+
+    def __init__(self, logger: logging.Logger | None = None):
+        self._logger = logger or logging.getLogger(__name__)
+
+    def on_error(self, exc: Exception) -> None:
+        self._logger.error("Agent error: %s", exc)
+        raise exc

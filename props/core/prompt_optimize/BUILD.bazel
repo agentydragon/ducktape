@@ -1,6 +1,82 @@
-"""Prompt optimizer module - per-file targets."""
+"""Prompt optimizer agent - implementation and container image.
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+Build targets:
+    bazel run //props/core/prompt_optimize:load  -- Load into local Docker
+    bazel run //props/core/prompt_optimize:push  -- Push to local registry (localhost:5050)
+
+The container runs an agent loop that:
+1. Queries LLM via proxy (OPENAI_BASE_URL)
+2. Coordinates critic evaluations and improvements
+3. Optimizes prompts based on target metrics
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# =============================================================================
+# In-container agent loop
+# =============================================================================
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "loop",
+    srcs = ["loop.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":tools",
+        "//agent_core",
+        "//agent_core:direct_provider",
+        "//agent_core:mcp_provider",
+        "//mcp_infra/exec:direct",
+        "//openai_utils",
+        "//props/core:loop_utils",
+        "@pypi//fastmcp",
+    ],
+)
+
+# =============================================================================
+# In-container agent main entry point
+# =============================================================================
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":loop",
+        "//agent_pkg/runtime",
+        "//props/core:loop_utils",
+    ],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [":main_lib"],
+)
+
+pkg_tar(
+    name = "main_tar",
+    srcs = [":main"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
 
 # =============================================================================
 # Library targets
@@ -33,22 +109,20 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":budget_handler",
         ":target_metric",
         "//agent_core",
         "//mcp_infra",
         "//openai_utils",
-        "//props/core:agent_handle",
         "//props/core:agent_registry",
-        "//props/core:agent_setup",
         "//props/core:agent_types",
         "//props/core:agent_workspace",
         "//props/core:display",
         "//props/core:exceptions",
         "//props/core:ids",
+        "//props/core:loop_agent_env",
+        "//props/core:mcp_http_server",
         "//props/core:oci_utils",
         "//props/core:splits",
-        "//props/core/cli:common_options",
         "//props/core/critic:exceptions",
         "//props/core/db:agent_definition_ids",
         "//props/core/db:config",
@@ -95,4 +169,33 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+# =============================================================================
+# Container image
+# =============================================================================
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/main"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":main_tar"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["prompt-optimizer-agent:latest"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/prompt-optimizer",
 )

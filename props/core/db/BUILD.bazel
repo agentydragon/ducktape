@@ -22,6 +22,17 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
+py_library(
+    name = "snapshot_io",
+    srcs = ["snapshot_io.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":models",
+        ":session",
+    ],
+)
+
 # =============================================================================
 # Core models (depend on config, snapshots, external modules)
 # =============================================================================
@@ -45,16 +56,16 @@ py_library(
     ],
 )
 
+# Session management - no migration dependencies
+# Use this for code that only needs to connect and query
 py_library(
     name = "session",
     srcs = ["session.py"],
-    data = ["//props/core/db/migrations"],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":config",
         ":models",
-        "@pypi//alembic",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
     ],
@@ -71,17 +82,6 @@ py_library(
         "//props/core:splits",
         "//props/core/models:examples",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "snapshot_io",
-    srcs = ["snapshot_io.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":models",
-        ":session",
     ],
 )
 
@@ -128,6 +128,8 @@ py_library(
     ],
 )
 
+# Schema setup (requires migrations) - depends on session for get_engine()
+# Use this for host-side code that needs recreate_database()
 py_library(
     name = "setup",
     srcs = ["setup.py"],
@@ -135,6 +137,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":models",
         ":session",
         "@pypi//alembic",
         "@pypi//psycopg2_binary",

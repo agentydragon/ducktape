@@ -1,8 +1,9 @@
-"""Database setup and initialization (RLS policies, views).
+"""Database setup and schema management (requires migrations).
 
-Extracted from session.py to separate concerns:
-- session.py: Connection management (init_db, get_session)
-- setup.py: Database schema and security setup (recreate_database, RLS, views)
+Provides schema creation and migration functions. Depends on alembic and migrations.
+
+- session.py: Connection management (init_db, get_session) - no migration deps
+- setup.py: Schema setup (recreate_database, ensure_database_exists) - has migration deps
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from psycopg2 import sql
 from sqlalchemy import Engine, create_engine, inspect, text
 
 from props.core.db.models import Base
+from props.core.db.session import get_engine
 
 if TYPE_CHECKING:
     from props.core.db.config import DatabaseConfig
@@ -80,14 +82,13 @@ def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, d
     engine.dispose()
 
 
-def recreate_database(engine: Engine) -> None:
+def recreate_database() -> None:
     """Recreate database from scratch (drop all + schema + RLS).
 
     This is destructive: drops all existing tables, views, and policies.
-
-    Args:
-        engine: SQLAlchemy engine (must be connected as postgres superuser)
+    Uses the engine from session.get_engine() (must be initialized via init_db first).
     """
+    engine = get_engine()
     logger.info("Recreating database from scratch...")
     _drop_all(engine)
     _create_schema(engine)

@@ -13,14 +13,14 @@ Your database access is scoped by Row-Level Security based on your `type_config`
 
 - `examples` — Only rows matching your `allowed_examples`
 - `true_positives`, `false_positives` — Only for snapshots in your allowed examples
-- `agent_runs`, `events` — Only runs on your allowed examples
+- `agent_runs`, `llm_requests` — Only runs on your allowed examples
 - `agent_definitions` — Only your baseline definitions (read) + any you create (read/write)
 
 **What you CANNOT see:**
 
 - Examples outside your `allowed_examples`
 - Ground truth for other snapshots
-- Runs/events for other examples
+- Runs/LLM requests for other examples
 
 Query your config to see your allowed scope:
 
@@ -38,15 +38,42 @@ WHERE agent_run_id = current_agent_run_id();
 | -------------------- | ---------------------------------------------------------------------------- |
 | Your run context     | SQL: `type_config` from `agent_runs` table                                   |
 | Training data        | SQL: CriticRun, GraderRun, TruePositive queries (scoped to allowed_examples) |
-| Execution traces     | SQL: `events` table (scoped to allowed_examples)                             |
+| LLM request logs     | SQL: `llm_requests` table (scoped to allowed_examples)                       |
+| Cost breakdown       | SQL: `run_costs` view                                                    |
 | Baseline definitions | From `type_config.baseline_definition_ids`                                   |
 
-| Output                  | Method                                                                    |
-| ----------------------- | ------------------------------------------------------------------------- |
-| Create improved package | CLI: `props agent-pkg create /workspace/improved/`                        |
-| Run evaluations         | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
-| View metrics            | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples`     |
-| Report failures         | CLI: `props critic-dev report-failure "message"`                          |
+| Output                  | Method                                                       |
+| ----------------------- | ------------------------------------------------------------ |
+| Create improved package | CLI: `props agent-pkg create /workspace/improved/`           |
+| Run critic              | Tool: `run_critic(definition_id, example, max_turns)`        |
+| Get grading results     | Tool: `wait_until_graded(critic_run_id)` (preferred)         |
+| Run grader manually     | Tool: `run_grader(critic_run_id)` (deprecated)               |
+| View metrics            | SQL: Query `recall_by_definition_split_kind` and other views |
+| Report failures         | Tool: `report_failure(message)`                              |
+
+## Analyzing Child Agent Runs
+
+All LLM requests from agents you launch are logged in `llm_requests`. Use psql to analyze:
+
+```sql
+-- Get all LLM calls from a critic run
+SELECT model, created_at, latency_ms,
+       response_body->'usage' AS usage
+FROM llm_requests
+WHERE agent_run_id = '<critic_run_id>'
+ORDER BY created_at;
+
+-- Get full request/response for debugging
+SELECT request_body, response_body
+FROM llm_requests
+WHERE agent_run_id = '<critic_run_id>'
+ORDER BY created_at;
+
+-- Cost breakdown per agent run
+SELECT agent_run_id, model, cost_usd, input_tokens, output_tokens
+FROM run_costs
+WHERE agent_run_id = '<critic_run_id>';
+```
 
 ## Starting Point
 
@@ -76,7 +103,7 @@ Gives you `baseline_definition_ids` and `allowed_examples`.
 ### 2. Analyze & Diagnose
 
 - Query grader results: Which TPs had low `found_credit`?
-- Query `events` table: Did critic read right files? Use right tools? Get stuck?
+- Query `llm_requests`: Did critic read right files? Use right tools? Get stuck?
 
 ### 3. Design Improvement
 

@@ -36,16 +36,12 @@ def make_critic_run(
     example: Example,
     model: str = "test-model",
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
-    completion_summary: str | None = None,
     agent_run_id: UUID | None = None,
     image_digest: str = CRITIC_IMAGE_REF,
 ) -> AgentRun:
     """Build AgentRun for critic from Example."""
     if agent_run_id is None:
         agent_run_id = uuid4()
-
-    if completion_summary is None and status == AgentRunStatus.COMPLETED:
-        completion_summary = "Test completion summary"
 
     example_spec = example.to_example_spec()
     type_config = CriticTypeConfig(example=example_spec)
@@ -55,7 +51,6 @@ def make_critic_run(
         image_digest=image_digest,
         model=model,
         status=status,
-        completion_summary=completion_summary,
         type_config=type_config,
     )
 

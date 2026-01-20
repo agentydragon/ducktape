@@ -14,11 +14,12 @@ import typer
 from sqlalchemy import func
 
 from cli_util.decorators import async_run
-from openai_utils.client_factory import build_client
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType
-from props.core.agent_workspace import WorkspaceManager
 from props.core.cli import common_options as opt
+
+# Default timeout: 1 hour per agent
+DEFAULT_TIMEOUT_SECONDS = 3600
 from props.core.cli.resources import get_database_config
 from props.core.db.agent_definition_ids import GRADER_IMAGE_REF
 from props.core.db.examples import Example
@@ -51,7 +52,9 @@ async def cmd_grade_validation(
     grader_model: str = opt.OPT_GRADER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
     max_parallel: int = opt.OPT_MAX_PARALLEL,
-    verbose: bool = opt.OPT_VERBOSE,
+    timeout: int = typer.Option(
+        DEFAULT_TIMEOUT_SECONDS, "--timeout", help="Timeout in seconds per agent (default: 1 hour)"
+    ),
 ) -> None:
     """Grade validation set: ensure complete critic and grader coverage across all definitions.
 
@@ -69,14 +72,8 @@ async def cmd_grade_validation(
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
-    registry = AgentRegistry(
-        docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager, max_parallel=max_parallel
-    )
+    registry = AgentRegistry(docker_client=docker_client, db_config=db_config, max_parallel=max_parallel)
     try:
-        critic_client = build_client(critic_model)
-        grader_client = build_client(grader_model)
-
         # Phase 1: Find all work items (snapshot, scope, prompt) combinations
         with get_session() as session:
             # Query validation examples directly (same logic as stats/datapoints)
@@ -215,7 +212,12 @@ async def cmd_grade_validation(
                 try:
                     # Run critic using registry
                     critic_run_id = await registry.run_critic(
-                        image_ref=image_digest, example=example, client=critic_client, verbose=verbose, max_turns=100
+                        image_ref=image_digest,
+                        example=example,
+                        model=critic_model,
+                        timeout_seconds=timeout,
+                        parent_run_id=None,
+                        budget_usd=None,
                     )
 
                     # Check if critic succeeded - if not, skip grading
@@ -226,16 +228,14 @@ async def cmd_grade_validation(
 
                     if status != AgentRunStatus.COMPLETED:
                         # Critic failed (max_turns_exceeded or context_length_exceeded)
-                        if not verbose:
-                            typer.echo(
-                                f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status}: {snapshot_slug} x {image_digest}"
-                            )
+                        typer.echo(
+                            f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status}: {snapshot_slug} x {image_digest}"
+                        )
                         return (status, False, False, None)
 
-                    if not verbose:
-                        typer.echo(
-                            f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {image_digest} → {short_uuid(critic_run_id)}"
-                        )
+                    typer.echo(
+                        f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {image_digest} → {short_uuid(critic_run_id)}"
+                    )
                 except Exception as e:
                     typer.echo(
                         f"[W{worker_id} {item_index}/{total_items}] ✗ Critic failed {snapshot_slug} x {image_digest}: {e}\n"
@@ -247,7 +247,11 @@ async def cmd_grade_validation(
             # Step 2: Run grader
             try:
                 grader_run_id = await registry.run_grader(
-                    critic_run_id=critic_run_id, client=grader_client, verbose=verbose, max_turns=200
+                    critic_run_id=critic_run_id,
+                    model=grader_model,
+                    timeout_seconds=timeout,
+                    parent_run_id=None,
+                    budget_usd=None,
                 )
 
                 # Fetch recall for progress message (direct query to grading_edges)
@@ -275,11 +279,10 @@ async def cmd_grade_validation(
                     else:
                         result_str = f"status={grader_run.status.value}"
 
-                    if not verbose:
-                        typer.echo(
-                            f"[W{worker_id} {item_index}/{total_items}] ✓ Graded {short_uuid(critic_run_id)} → {short_uuid(grader_run_id)} "
-                            f"({result_str})"
-                        )
+                    typer.echo(
+                        f"[W{worker_id} {item_index}/{total_items}] ✓ Graded {short_uuid(critic_run_id)} → {short_uuid(grader_run_id)} "
+                        f"({result_str})"
+                    )
             except Exception as e:
                 typer.echo(
                     f"[W{worker_id} {item_index}/{total_items}] ✗ Grader failed {short_uuid(critic_run_id)}: {e}\n"

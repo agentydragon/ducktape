@@ -71,6 +71,31 @@ services:
       timeout: 5s
       retries: 5
 
+  llm-proxy:
+    image: props-llm-proxy:latest
+    container_name: props-llm-proxy
+    ports:
+      - "5052:5052"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_UPSTREAM_URL: https://api.openai.com
+      PGHOST: props-postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ${PGPASSWORD}
+      PGDATABASE: eval_results
+    networks:
+      - props-internal
+      - props-agents
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5052/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   props_eval_results_data:
   props_registry_data:

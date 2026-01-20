@@ -12,12 +12,10 @@ from uuid import UUID
 from rich.console import Console
 from sqlalchemy import func, text
 
-from agent_core.events import ApiRequest, AssistantText, Response, ToolCall, ToolCallOutput, UserText
-from openai_utils.model import ReasoningItem
 from props.core.agent_types import AgentType, CriticTypeConfig
-from props.core.db.models import AgentRun, AgentRunStatus, Event, GradingEdge
+from props.core.db.models import AgentRun, AgentRunStatus, GradingEdge, LLMRequest
 from props.core.db.session import get_session
-from props.core.display import ColumnDef, build_table_from_schema, ellipticize, print_table_with_footer, short_sha
+from props.core.display import ColumnDef, build_table_from_schema, short_sha
 from props.core.ids import SnapshotSlug
 
 
@@ -29,24 +27,7 @@ class CriticRunSummary:
     snapshot_slug: SnapshotSlug
     image_digest: str
     status: str
-    tool_count: int
-
-
-def _fmt_event(event: Event) -> tuple[str, str] | None:
-    """Format event payload for display. Returns (type, content) or None to skip."""
-    p = event.payload
-    if isinstance(p, ApiRequest | Response):
-        return None
-    if isinstance(p, ToolCall):
-        return (event.event_type, f"{p.name} | {ellipticize(p.args_json or '{}', 100)}")
-    if isinstance(p, ToolCallOutput):
-        c = str(p.result.structured_content or p.result.content or "").replace("\n", " ")
-        return (f"{event.event_type} ({'ERROR' if p.result.is_error else 'OK'})", ellipticize(c, 50))
-    if isinstance(p, ReasoningItem):
-        return (event.event_type, ellipticize(" | ".join(i.text for i in p.summary), 100))
-    if isinstance(p, AssistantText | UserText):
-        return (event.event_type, ellipticize(p.text, 100))
-    return (event.event_type, ellipticize(str(p), 100))
+    llm_request_count: int
 
 
 def _get_descendant_run_ids(session, root_agent_run_id: UUID) -> list[UUID]:
@@ -142,13 +123,11 @@ def show_execution_traces(limit: int = 5, parent_agent_run_id: UUID | None = Non
                 snapshot_slug = cr.type_config.example.snapshot_slug
             else:
                 raise ValueError(f"Expected CriticTypeConfig, got {type(cr.type_config)}")
-            tool_count = (
-                session.query(Event)
-                .filter(Event.agent_run_id == cr.agent_run_id, Event.event_type == "tool_call")
-                .count()
-            )
+            llm_request_count = session.query(LLMRequest).filter(LLMRequest.agent_run_id == cr.agent_run_id).count()
             summaries.append(
-                CriticRunSummary(cr.agent_run_id, snapshot_slug, cr.image_digest, str(cr.status.value), tool_count)
+                CriticRunSummary(
+                    cr.agent_run_id, snapshot_slug, cr.image_digest, str(cr.status.value), llm_request_count
+                )
             )
 
         console.print(f"\n[bold]Recent critic runs (last {limit}):[/bold]")
@@ -157,35 +136,9 @@ def show_execution_traces(limit: int = 5, parent_agent_run_id: UUID | None = Non
             ColumnDef("Snapshot", lambda r: r.snapshot_slug, width=25),
             ColumnDef("Definition", lambda r: r.image_digest, width=20),
             ColumnDef("Status", lambda r: r.status, width=15),
-            ColumnDef("Tools", lambda r: r.tool_count, str, justify="right", width=6),
+            ColumnDef("Requests", lambda r: r.llm_request_count, str, justify="right", width=8),
         ]
         console.print(build_table_from_schema(summaries, cols))
-
-        if summaries:
-            s = summaries[0]
-            console.print(f"\n[bold]Trace for {short_sha(str(s.run_id))}:[/bold]")
-            cr_detail = session.get(AgentRun, s.run_id)
-            if cr_detail:
-                events = (
-                    session.query(Event)
-                    .filter(Event.agent_run_id == cr_detail.agent_run_id)
-                    .order_by(Event.sequence_num)
-                    .limit(100)
-                    .all()
-                )
-                console.print(
-                    f"Snapshot: {s.snapshot_slug} | Definition: {s.image_digest} | Status: {s.status} | Tools: {s.tool_count}\n"
-                )
-                rows = [(i, t, c) for i, (t, c) in enumerate(filter(None, (_fmt_event(e) for e in events)), 1)]
-                ecols: list[ColumnDef[Any, Any]] = [
-                    ColumnDef("#", lambda r: r[0], str, justify="right", width=3),
-                    ColumnDef("Type", lambda r: r[1], width=12),
-                    ColumnDef("Content", lambda r: r[2], width=80),
-                ]
-                total_events = session.query(Event).filter(Event.agent_run_id == cr_detail.agent_run_id).count()
-                print_table_with_footer(
-                    console, rows, ecols, show_header=True, total_count=total_events, item_name="events"
-                )
 
 
 def show_grading_summary(agent_run_id: UUID) -> None:

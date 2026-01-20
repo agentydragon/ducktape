@@ -414,3 +414,11 @@ async def proxy(request: Request, path: str, auth: Annotated[AuthContext, Depend
             status_code=upstream_response.status_code,
             headers=dict(upstream_response.headers),
         )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.environ.get("PORT", "5051"))
+    log_level = os.environ.get("LOG_LEVEL", "info")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level=log_level)

@@ -40,7 +40,7 @@ py_library(
         "//props/core/models:types",
         # props.core/prompt_improve modules
         "//props/core/prompt_improve:improve_agent",
-        "//props/core/prompt_improve:reminder_handler",
+        "//props/core/prompt_improve:loop",
         # props.core/prompt_optimize modules
         "//props/core/prompt_optimize:prompt_optimizer",
         "//props/core/prompt_optimize:target_metric",

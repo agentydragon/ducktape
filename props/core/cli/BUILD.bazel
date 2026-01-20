@@ -72,20 +72,6 @@ py_library(
 )
 
 py_library(
-    name = "cmd_analyze_exec",
-    srcs = ["cmd_analyze_exec.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_library(
     name = "cmd_classify_noops",
     srcs = ["cmd_classify_noops.py"],
     imports = ["../../.."],
@@ -96,31 +82,6 @@ py_library(
         "//props/core/db:models",
         "//props/core/db:session",
         "//props/core/noop_classifier:classifier",
-        "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_library(
-    name = "cmd_critic_agent",
-    srcs = ["cmd_critic_agent.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":shared",
-        "//agent_pkg/runtime",
-        "//cli_util",
-        "//props/core:agent_helpers",
-        "//props/core:agent_registry",
-        "//props/core:agent_types",
-        "//props/core:display",
-        "//props/core:ids",
-        "//props/core/db:config",
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "//props/core/models:examples",
-        "@pypi//aiodocker",
         "@pypi//rich",
         "@pypi//sqlalchemy",
         "@pypi//typer",
@@ -278,28 +239,6 @@ py_library(
 )
 
 py_library(
-    name = "cmd_speak_with_dead",
-    srcs = ["cmd_speak_with_dead.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":common_options",
-        "//agent_core",
-        "//agent_core:mcp_provider",
-        "//cli_util",
-        "//mcp_infra",
-        "//mcp_infra/display",
-        "//openai_utils",
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "@pypi//fastmcp",
-        "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_library(
     name = "cmd_stats",
     srcs = ["cmd_stats.py"],
     imports = ["../../.."],
@@ -331,9 +270,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cmd_agent_pkg",
-        ":cmd_analyze_exec",
         ":cmd_classify_noops",
-        ":cmd_critic_agent",
         ":cmd_critic_dev",
         ":cmd_db",
         ":cmd_gepa",
@@ -341,7 +278,6 @@ py_library(
         ":cmd_grader_agent",
         ":cmd_gt",
         ":cmd_snapshot",
-        ":cmd_speak_with_dead",
         ":cmd_stats",
         ":common_options",
         ":shared",
@@ -361,7 +297,7 @@ py_library(
         "//props/core/db:session",
         "//props/core/models:examples",
         "//props/core/prompt_improve:improve_agent",
-        "//props/core/prompt_improve:reminder_handler",
+        "//props/core/prompt_improve:loop",
         "//props/core/prompt_optimize:prompt_optimizer",
         "//props/core/prompt_optimize:target_metric",
         "@pypi//aiodocker",

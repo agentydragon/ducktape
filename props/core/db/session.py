@@ -1,7 +1,10 @@
-"""Database session management.
+"""Database session management (no migration dependencies).
 
 Uses SQLAlchemy's scoped_session for thread-local session management with lazy
-engine initialization.
+engine initialization. This module has minimal dependencies and is suitable for
+in-container agent code that only needs to connect and query.
+
+For schema creation/migration, use setup.py which has recreate_database().
 
 Usage pattern:
     # Just use get_session() - database auto-initializes on first use:
@@ -12,7 +15,6 @@ Usage pattern:
     # For tests that need explicit control:
     dispose_db()          # Reset state
     init_db(test_config)  # Initialize with specific config
-    recreate_database()   # Drop all + create schema
 
 Limitations:
     - Cannot have multiple database connections in the same process
@@ -22,12 +24,6 @@ Thread safety:
     - scoped_session provides thread-local sessions automatically
     - Engine initialization uses a lock for one-time setup
     - Multiple threads can call get_session() concurrently
-
-Design rationale:
-    - Auto-init: No explicit setup required for normal use
-    - Connection pooling: Single engine = efficient connection reuse
-    - Simplicity: No dependency injection, works well for evaluation harness use case
-    - Test-friendly: dispose_db() + init_db(config) for test isolation
 """
 
 from __future__ import annotations
@@ -36,30 +32,26 @@ import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Any
 
-from alembic import command
-from alembic.config import Config
-from alembic.migration import MigrationContext
-from alembic.script import ScriptDirectory
 from psycopg2.extras import register_composite
-from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import ConnectionPoolEntry
 
 from props.core.db.config import DatabaseConfig, get_database_config
-from props.core.db.models import Base
+from props.core.db.models import Base  # noqa: F401 - re-exported for convenience
 
 logger = logging.getLogger(__name__)
 
 # Module-level state
-_engine = None
+_engine: Engine | None = None
 _session_factory = scoped_session(sessionmaker())
 _init_lock = threading.Lock()
 
 
-def _get_engine(config: DatabaseConfig | None = None):
+def _get_engine(config: DatabaseConfig | None = None) -> Engine:
     """Get or create the database engine (lazy initialization).
 
     Thread-safe: uses a lock to ensure only one initialization happens.
@@ -125,6 +117,11 @@ def _check_connection_internal(timeout_secs: int = 2) -> None:
         test_engine.dispose()
 
 
+def get_engine() -> Engine:
+    """Get the current database engine (initializes if needed)."""
+    return _get_engine()
+
+
 def dispose_db() -> None:
     """Dispose of the current database connection.
 
@@ -183,118 +180,6 @@ def check_connection(timeout_secs: int = 2) -> None:
     if _engine is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
     _check_connection_internal(timeout_secs)
-
-
-def recreate_database() -> None:
-    """Recreate database from scratch (drop all + schema + RLS).
-
-    This is destructive: drops all existing tables, views, and policies.
-    Temporary database users are created per-agent as needed (not global roles).
-
-    Must call init_db() first to establish connection as postgres superuser.
-
-    Raises:
-        RuntimeError: If database not initialized (call init_db() first)
-    """
-    if _engine is None:
-        raise RuntimeError("Database not initialized. Call init_db() first.")
-
-    logger.info("Recreating database from scratch...")
-    _drop_all()
-    _create_schema()
-    logger.info("Database recreation complete")
-
-
-def _drop_all() -> None:
-    """Drop all database objects by dropping and recreating the public schema."""
-    if _engine is None:
-        raise RuntimeError("Database not initialized.")
-
-    # Check if any of our tables exist
-    inspector = inspect(_engine)
-    existing_tables = set(inspector.get_table_names())
-    our_tables = {table.name for table in Base.metadata.tables.values()}
-
-    logger.debug(f"_drop_all: existing_tables={existing_tables}, our_tables={our_tables}")
-
-    if our_tables & existing_tables:
-        logger.info("Dropping entire public schema and recreating...")
-        with _engine.begin() as conn:
-            # Drop and recreate public schema (drops everything: tables, views, functions, types, policies)
-            conn.execute(text("DROP SCHEMA public CASCADE"))
-            conn.execute(text("CREATE SCHEMA public"))
-            # Restore default permissions on schema
-            conn.execute(text("GRANT ALL ON SCHEMA public TO postgres"))
-            conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
-        logger.info("Public schema dropped and recreated")
-    else:
-        logger.debug("No tables to drop - schema is clean")
-
-
-def _create_schema() -> None:
-    """Create schema via Alembic migrations.
-
-    Runs Alembic migrations to create tables, RLS policies, views, and grants.
-    Used for test databases (production uses setup.py).
-    """
-    if _engine is None:
-        raise RuntimeError("Database not initialized.")
-
-    # Debug: Check what tables exist BEFORE running migrations
-    inspector = inspect(_engine)
-    existing_tables_before = set(inspector.get_table_names())
-    logger.debug(f"_create_schema BEFORE migration: existing_tables={existing_tables_before}")
-
-    # Check if alembic_version exists
-    with _engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'alembic_version')")
-        )
-        has_alembic_before = result.scalar()
-        logger.debug(f"_create_schema BEFORE migration: alembic_version exists={has_alembic_before}")
-
-        if has_alembic_before:
-            result = conn.execute(text("SELECT version_num FROM alembic_version"))
-            version = result.scalar()
-            logger.debug(f"_create_schema BEFORE migration: current revision={version}")
-
-    # Run Alembic migrations to create all schema objects
-    logger.info("Running Alembic migrations...")
-
-    # Enable verbose Alembic logging
-    logging.getLogger("alembic").setLevel(logging.DEBUG)
-
-    config = Config()
-    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-
-    # Check what migrations exist
-    migrations_dir = Path(__file__).parent / "migrations" / "versions"
-    migration_files = list(migrations_dir.glob("*.py"))
-    logger.debug(f"Found {len(migration_files)} migration files: {[f.name for f in migration_files]}")
-
-    with _engine.begin() as conn:
-        config.attributes["connection"] = conn
-
-        # Check current revision BEFORE upgrade
-        script = ScriptDirectory.from_config(config)
-        context = MigrationContext.configure(conn)
-        current_rev = context.get_current_revision()
-        logger.debug(f"Current Alembic revision BEFORE upgrade: {current_rev}")
-        logger.debug(f"Target revision (head): {script.get_current_head()}")
-
-        command.upgrade(config, "head")
-
-        # Check current revision AFTER upgrade
-        context = MigrationContext.configure(conn)
-        current_rev_after = context.get_current_revision()
-        logger.debug(f"Current Alembic revision AFTER upgrade: {current_rev_after}")
-
-    # Debug: Check what tables exist AFTER running migrations
-    inspector = inspect(_engine)
-    existing_tables_after = set(inspector.get_table_names())
-    logger.debug(f"_create_schema AFTER migration: existing_tables={existing_tables_after}")
-
-    logger.info("Schema creation complete (via migrations)")
 
 
 @contextmanager

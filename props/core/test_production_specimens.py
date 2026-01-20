@@ -28,8 +28,8 @@ from sqlalchemy import create_engine, text
 
 from props.core.db.config import DatabaseConfig, get_database_config
 from props.core.db.models import Snapshot
-from props.core.db.session import dispose_db, get_session, init_db, recreate_database
-from props.core.db.setup import ensure_database_exists
+from props.core.db.session import dispose_db, get_session, init_db
+from props.core.db.setup import ensure_database_exists, recreate_database
 from props.core.db.sync.sync import sync_all
 from props.core.splits import Split
 

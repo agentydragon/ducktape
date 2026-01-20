@@ -29,19 +29,15 @@ from props.core.agent_helpers import get_current_agent_run
 # cmd_gepa imported lazily below (gepa is optional)
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType
-from props.core.agent_workspace import WorkspaceManager
 from props.core.cli import common_options as opt
 from props.core.cli.cmd_agent_pkg import app as agent_pkg_app
-from props.core.cli.cmd_analyze_exec import cmd_analyze_exec
 from props.core.cli.cmd_classify_noops import cmd_classify_noops
-from props.core.cli.cmd_critic_agent import app as critic_agent_app
 from props.core.cli.cmd_critic_dev import app as critic_dev_app
 from props.core.cli.cmd_db import db_app
 from props.core.cli.cmd_grade_validation import cmd_grade_validation
 from props.core.cli.cmd_grader_agent import app as grader_agent_app
 from props.core.cli.cmd_gt import gt_app
 from props.core.cli.cmd_snapshot import snapshot_app
-from props.core.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from props.core.cli.cmd_stats import stats_app
 from props.core.cli.shared import make_example_from_files
 from props.core.db.config import get_database_config
@@ -63,7 +59,7 @@ from props.core.prompt_improve.improve_agent import (
     OutcomeUnexpectedTermination,
     run_improvement_agent,
 )
-from props.core.prompt_improve.reminder_handler import TerminationSuccess
+from props.core.prompt_improve.loop import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
 from props.core.splits import Split
@@ -80,7 +76,6 @@ app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(agent_pkg_app, name="agent-pkg")
 
 # Agent-type CLI subcommands (dual-use: human operators + container agents)
-app.add_typer(critic_agent_app, name="critic-agent")
 app.add_typer(grader_agent_app, name="grader-agent")
 app.add_typer(critic_dev_app, name="critic-dev")
 
@@ -180,10 +175,10 @@ async def prompt_optimize(
         ),
     ],
     budget: float = typer.Option(50.0, "--budget", help="$ budget for optimization"),
+    timeout: int = typer.Option(7200, "--timeout", help="Timeout in seconds for optimizer agent (default: 2 hours)"),
     optimizer_model: str = opt.OPT_OPTIMIZER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
     grader_model: str = opt.OPT_GRADER_MODEL,
-    verbose: bool = opt.OPT_VERBOSE,
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     docker_client = aiodocker.Docker()
@@ -197,7 +192,7 @@ async def prompt_optimize(
             docker_client=docker_client,
             target_metric=target_metric,
             db_config=db_config,
-            verbose=verbose,
+            timeout_seconds=timeout,
         )
     finally:
         await docker_client.close()
@@ -208,10 +203,10 @@ async def prompt_optimize(
 async def prompt_improve_cmd(
     n_examples: int = typer.Option(10, "--n-examples", "-n", help="Number of training examples to analyze"),
     token_budget: int = typer.Option(200_000, "--token-budget", "-t", help="Maximum token budget"),
+    timeout: int = typer.Option(7200, "--timeout", help="Timeout in seconds for improvement agent (default: 2 hours)"),
     model: str = opt.OPT_OPTIMIZER_MODEL,
     prompt_sha256: str | None = opt.OPT_PROMPT_SHA256,
     out_dir: Path | None = opt.OPT_OUT_DIR,
-    verbose: bool = opt.OPT_VERBOSE,
 ) -> None:
     """Run prompt improvement agent on training examples.
 
@@ -412,13 +407,12 @@ async def prompt_improve_cmd(
             client=openai_client,
             critic_client=openai_client,
             grader_client=openai_client,
+            timeout_seconds=timeout,
             output_dir=out_dir,
-            verbose=verbose,
         )
     except Exception as e:
         console.print(f"\n[red]Error:[/red] {e}")
-        if verbose:
-            logger.exception("Improvement agent failed")
+        logger.exception("Improvement agent failed")
         raise typer.Exit(1)
     finally:
         await docker_client.close()
@@ -465,7 +459,9 @@ async def prompt_improve_cmd(
 @app.command("run-grader")
 @async_run
 async def cmd_run_grader(
-    critic_run_id: UUID = opt.ARG_CRITIC_RUN_ID, model: str = opt.OPT_MODEL, verbose: bool = opt.OPT_VERBOSE
+    critic_run_id: UUID = opt.ARG_CRITIC_RUN_ID,
+    model: str = opt.OPT_MODEL,
+    timeout: int = typer.Option(3600, "--timeout", help="Timeout in seconds (default: 1 hour)"),
 ) -> None:
     """Grade a critic run by database ID against canonical findings.
 
@@ -473,13 +469,12 @@ async def cmd_run_grader(
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
 
-    registry = AgentRegistry(docker_client, db_config, workspace_manager)
+    registry = AgentRegistry(docker_client, db_config)
     try:
         # Run grader via registry
         grader_run_id = await registry.run_grader(
-            critic_run_id=critic_run_id, client=build_client(model), verbose=verbose, max_turns=200
+            critic_run_id=critic_run_id, model=model, timeout_seconds=timeout, parent_run_id=None, budget_usd=None
         )
 
         with get_session() as session:
@@ -498,12 +493,6 @@ async def cmd_run_grader(
             typer.echo(f"Snapshot: {snapshot_slug}")
             typer.echo(f"Status: {grader_run.status.value}")
             typer.echo("")
-
-            # Display completion_summary if available
-            if grader_run.completion_summary:
-                typer.echo("Summary:")
-                typer.echo(grader_run.completion_summary)
-                typer.echo("")
 
             # Display recall metrics from grading_edges
             if grader_run.status == AgentRunStatus.COMPLETED:
@@ -531,7 +520,9 @@ async def cmd_run_grader(
 @app.command("grade-missing")
 @async_run
 async def cmd_grade_missing(
-    grader_model: str = opt.OPT_GRADER_MODEL, max_parallel: int = opt.OPT_MAX_PARALLEL, verbose: bool = opt.OPT_VERBOSE
+    grader_model: str = opt.OPT_GRADER_MODEL,
+    max_parallel: int = opt.OPT_MAX_PARALLEL,
+    timeout: int = typer.Option(3600, "--timeout", help="Timeout in seconds per grader (default: 1 hour)"),
 ) -> None:
     """Grade all critiques missing grader runs for the specified model.
 
@@ -540,10 +531,9 @@ async def cmd_grade_missing(
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
 
     # Registry with caller-specified max_parallel
-    registry = AgentRegistry(docker_client, db_config, workspace_manager, max_parallel=max_parallel)
+    registry = AgentRegistry(docker_client, db_config, max_parallel=max_parallel)
     try:
         # Find critic run IDs missing grader runs for this model
         with get_session() as session:
@@ -586,10 +576,13 @@ async def cmd_grade_missing(
             """Grade one critic run, returns (critic_run_id, success)"""
             try:
                 grader_run_id = await registry.run_grader(
-                    critic_run_id=critic_run_id, client=build_client(grader_model), verbose=verbose, max_turns=200
+                    critic_run_id=critic_run_id,
+                    model=grader_model,
+                    timeout_seconds=timeout,
+                    parent_run_id=None,
+                    budget_usd=None,
                 )
-                if not verbose:
-                    typer.echo(f"✓ Graded critic run {critic_run_id} → grader_run {grader_run_id}")
+                typer.echo(f"✓ Graded critic run {critic_run_id} → grader_run {grader_run_id}")
                 return (critic_run_id, True)
             except Exception as e:
                 typer.echo(f"✗ Failed to grade critic run {critic_run_id}: {e}", err=True)
@@ -618,17 +611,11 @@ except ImportError:
 # Stats command group
 app.add_typer(stats_app, name="stats")
 
-# Analyze exec commands
-app.command("analyze-exec")(cmd_analyze_exec)
-
 # Classify no-op commands
 app.command("classify-noops")(cmd_classify_noops)
 
 # Grade validation set command
 app.command("grade-validation")(cmd_grade_validation)
-
-# Speak with dead command
-app.command("speak-with-dead")(cmd_speak_with_dead)
 
 
 # ---------- Shared helpers for run ----------
@@ -645,7 +632,7 @@ async def cmd_run(
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
     model: str = opt.OPT_MODEL,
-    max_lines: int = opt.OPT_MAX_LINES,
+    timeout: int = typer.Option(3600, "--timeout", help="Timeout in seconds (default: 1 hour)"),
 ) -> None:
     """Run critic agent on a snapshot with DB persistence.
 
@@ -657,9 +644,8 @@ async def cmd_run(
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
 
-    registry = AgentRegistry(docker_client, db_config, workspace_manager)
+    registry = AgentRegistry(docker_client, db_config)
     try:
         # Get available files from database (no hydration)
         with get_session() as session:
@@ -674,10 +660,10 @@ async def cmd_run(
         critic_run_id = await registry.run_critic(
             image_ref=definition_id,  # definition_id is actually an image ref
             example=example_spec,
-            client=build_client(model),
-            verbose=True,
-            max_lines=max_lines,
-            max_turns=100,
+            model=model,
+            timeout_seconds=timeout,
+            parent_run_id=None,
+            budget_usd=None,
         )
 
         # Print results

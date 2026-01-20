@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
 from props.core.prompt_optimize.target_metric import TargetMetric
 
@@ -133,7 +134,7 @@ class SnapshotGraderTypeConfig(BaseModel):
     """
 
     agent_type: Literal[AgentType.SNAPSHOT_GRADER] = AgentType.SNAPSHOT_GRADER
-    snapshot_slug: str = Field(description="Snapshot this daemon is responsible for")
+    snapshot_slug: SnapshotSlug = Field(description="Snapshot this daemon is responsible for")
 
 
 # Discriminated union for type-specific config

@@ -18,11 +18,10 @@ import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
-from agent_core.events import ApiRequest, SystemText, ToolCall
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully
 from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
-from props.core.db.models import AgentRun, AgentRunStatus, Event
+from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
 from props.testing.mocks import PropsMock
 
@@ -56,20 +55,6 @@ async def test_critic_http_mode_zero_issues(test_registry, test_snapshot, all_fi
         assert run.critic_config().example.snapshot_slug == test_snapshot
         assert run.status == AgentRunStatus.COMPLETED
         assert len(run.reported_issues) == 0
-
-        # Verify events were persisted
-        events = session.query(Event).filter_by(agent_run_id=critic_run_id).order_by(Event.sequence_num).all()
-        assert len(events) > 0, "Expected at least one event to be persisted"
-
-        api_request_events = [e for e in events if isinstance(e.payload, ApiRequest)]
-        assert len(api_request_events) >= 1, "Expected at least one api_request event"
-
-        tool_call_events = [e for e in events if isinstance(e.payload, ToolCall)]
-        assert len(tool_call_events) >= 1, "Expected at least one tool_call event"
-
-        system_text_events = [e for e in events if isinstance(e.payload, SystemText)]
-        assert len(system_text_events) == 1, "Expected exactly one system_text event"
-        assert system_text_events[0].sequence_num == 0, "System text should be first event (sequence 0)"
 
 
 @pytest.mark.requires_docker

@@ -23,7 +23,7 @@ from props.core.db.examples import Example
 from props.core.db.models import AgentRun
 from props.core.db.session import get_session
 from props.core.prompt_improve.improve_agent import run_improvement_agent
-from props.core.prompt_improve.reminder_handler import BlockingStatus
+from props.core.prompt_improve.loop import BlockingStatus
 from props.testing.mocks import PropsMock
 
 # Define the improved agent.md content used across tests
