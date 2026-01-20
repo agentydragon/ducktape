@@ -11,7 +11,8 @@
   config,
   lib,
   ...
-}: {
+}:
+{
   # Force system CC toolchain for Rust proc-macro compatibility
   home.file.".bazelrc".text = lib.mkAfter ''
     build --action_env=CC=/usr/bin/gcc

@@ -11,10 +11,12 @@
   lib,
   pkgs,
   ...
-}: let
+}:
+let
   # Import the single source of truth for heavy packages
   heavyPkgs = import ../home/heavy-packages.nix;
-in {
+in
+{
   options.programs.heavyPackages = {
     enable = lib.mkEnableOption "heavy creative and CAD packages (GIMP, Krita, FreeCAD, Inkscape, etc.)";
   };

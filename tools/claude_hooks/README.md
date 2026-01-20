@@ -14,9 +14,9 @@ The hook runs at the start of each Claude Code web session and:
 ### Proxy Setup (via `proxy_setup.py`)
 
 1. Starts supervisord for process management
-2. Extracts the TLS inspection CA from the proxy via Python 3.13+ ssl APIs
-3. Creates a Java truststore with the CA using keytool
-4. Registers the proxy with supervisor at `127.0.0.1:18081`
+2. Registers proxy with supervisor at `127.0.0.1:18081`
+3. Extracts the TLS inspection CA from the proxy via Python 3.13+ ssl APIs
+4. Creates a Java truststore with the CA using keytool
 5. Creates combined CA bundle (system CAs + proxy CA)
 6. Writes bazelrc to `~/.cache/bazel-proxy/bazelrc`
 
@@ -25,17 +25,22 @@ The hook runs at the start of each Claude Code web session and:
 7. Downloads and installs Bazelisk
 8. Creates wrapper script at `~/.cache/bazel-proxy/bin/bazel`
 
-### Development Tools (via `binary_tools.py`)
+### Git Hooks
 
-9. Installs cluster tools (opentofu, tflint, flux, kustomize, kubeseal, helm)
-10. Installs dev tools (alejandra for Nix formatting)
-11. Installs nix (for nix eval, flake operations)
+9. Installs git pre-commit hooks via pre-commit framework
+
+### Development Tools
+
+10. Installs cluster tools (opentofu, tflint) via `binary_tools.py`
+11. Installs nix via `nix_setup.py` (for nix eval, flake operations, nixfmt)
+
+Note: flux, kustomize, kubeseal, helm are now Bazel-managed via `@multitool//tools/*`.
+Nix formatting uses `nix run nixpkgs#nixfmt` via the NixOS/nixfmt pre-commit hook.
 
 ### Environment Configuration
 
 12. Configures podman for gVisor compatibility
 13. Sets up environment variables in `CLAUDE_ENV_FILE`
-14. Installs git pre-commit hooks
 
 See `.claude/settings.json` for hook configuration.
 

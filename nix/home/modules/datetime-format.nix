@@ -4,7 +4,8 @@
   lib,
   enableGui,
   ...
-}: {
+}:
+{
   config = lib.mkIf enableGui {
     # Ubuntu Unity datetime indicator customization
     # Sets ISO 8601 format with seconds: YYYY-MM-DD HH:MM:SS

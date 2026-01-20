@@ -12,7 +12,8 @@
   pkgs,
   lib,
   ...
-}: {
+}:
+{
   imports = [
     ../home.nix
   ];
@@ -22,7 +23,11 @@
 
   # Disable screensaver and screen blanking (for VM)
   dconf.settings = {
-    "org/gnome/desktop/session" = {idle-delay = lib.hm.gvariant.mkUint32 0;}; # 0 = never
-    "org/gnome/desktop/screensaver" = {lock-enabled = false;};
+    "org/gnome/desktop/session" = {
+      idle-delay = lib.hm.gvariant.mkUint32 0;
+    }; # 0 = never
+    "org/gnome/desktop/screensaver" = {
+      lock-enabled = false;
+    };
   };
 }

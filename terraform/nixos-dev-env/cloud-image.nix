@@ -5,8 +5,9 @@
   lib,
   modulesPath,
   ...
-}: {
-  imports = [];
+}:
+{
+  imports = [ ];
 
   # Enable cloud-init
   services.cloud-init = {
@@ -58,7 +59,10 @@
   security.sudo.enable = true;
 
   # Enable flakes and nix-command (needed for modern Nix/home-manager)
-  nix.settings.experimental-features = ["nix-command" "flakes"];
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
 
   # Set NixOS release
   system.stateVersion = "24.11";

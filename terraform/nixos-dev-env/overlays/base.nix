@@ -4,6 +4,7 @@
   config,
   pkgs,
   ...
-}: {
+}:
+{
   # Base configuration is sufficient - no additional packages or services needed
 }

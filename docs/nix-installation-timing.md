@@ -1,5 +1,9 @@
 # Nix Installation Timing Report
 
+> **Historical Note**: This document captures analysis from January 2026 that informed
+> the current architecture. The session hook now uses `uv tool install` to install
+> `claude_hooks` as a pre-built wheel, avoiding the cold-start issues documented here.
+
 **Environment**: Claude Code Web (gVisor sandbox)
 **Date**: 2026-01-08
 **Nix Version**: 2.33.0
@@ -24,11 +28,11 @@ All tools installed using `nix profile install nixpkgs#<tool>`. Times include do
 
 ### First Tool Installation (Cold Start)
 
-The first `nix profile install` must fetch and unpack the nixpkgs git repository (~50MB) before evaluating derivations. This is a one-time cost.
+The first `nix profile install` or `nix run` must fetch and unpack the nixpkgs git repository (~50MB) before evaluating derivations. This is a one-time cost.
 
-| Tool      | Download | Unpacked | Time     | Notes                           |
-| --------- | -------- | -------- | -------- | ------------------------------- |
-| alejandra | 9.6 MB   | 43.2 MB  | **117s** | Includes nixpkgs metadata fetch |
+| Tool       | Download | Unpacked | Time     | Notes                           |
+| ---------- | -------- | -------- | -------- | ------------------------------- |
+| nix runner | ~50 MB   | ~150 MB  | **117s** | Includes nixpkgs metadata fetch |
 
 ### Second Tool Installation (Warm-up)
 
@@ -59,7 +63,9 @@ The session hook uses direct binary downloads for some tools. Here's a compariso
 | kubeseal  | ~1s, 48 MB      | N/A                | Binary     |
 | kustomize | ~1s, 14 MB      | N/A                | Binary     |
 | helm      | ~2s, 55 MB      | N/A                | Binary     |
-| alejandra | N/A             | ~3s, 9 MB          | Nix (only) |
+| nixfmt    | N/A             | ~3s, 150 MB        | Nix (only) |
+
+**Note**: Nix formatter (nixfmt) runs via `nix run nixpkgs#nixfmt` in pre-commit hook.
 
 **Tradeoffs**:
 
@@ -68,7 +74,7 @@ The session hook uses direct binary downloads for some tools. Here's a compariso
 
 ## Cold Start Cost Summary
 
-For a fresh nix installation installing just alejandra:
+For a fresh nix installation with first `nix run` invocation:
 
 | Phase                  | Time      |
 | ---------------------- | --------- |
@@ -83,7 +89,7 @@ For subsequent tools after cold start: **3-6s each**
 | Configuration              | Total Storage |
 | -------------------------- | ------------- |
 | Nix base only              | ~98 MB        |
-| Nix + alejandra + deps     | ~315 MB       |
+| Nix + nixfmt + deps        | ~350 MB       |
 | Nix + 4 tools              | ~480 MB       |
 | Binary downloads (6 tools) | ~190 MB       |
 
@@ -99,11 +105,11 @@ For subsequent tools after cold start: **3-6s each**
 
 ### Recommended Strategy for Claude Code Web
 
-| Tool Type      | Strategy                     | Time |
-| -------------- | ---------------------------- | ---- |
-| Go/Rust CLIs   | Direct binary download       | 1-2s |
-| Node tools     | npm/npx                      | 2-5s |
-| Python tools   | pip/pipx                     | 2-5s |
-| Nix-only tools | **Skip or find alternative** | -    |
+| Tool Type     | Strategy                     | Time  |
+| ------------- | ---------------------------- | ----- |
+| Go/Rust CLIs  | Direct binary download       | 1-2s  |
+| Node tools    | npm/npx                      | 2-5s  |
+| Python tools  | pip/pipx                     | 2-5s  |
+| Nix formatter | `nix run` (no timeout limit) | ~120s |
 
-For alejandra specifically: either skip nix formatting in Claude Web sessions, or find/build a standalone binary.
+For nixfmt: the pre-commit hook runs `nix run nixpkgs#nixfmt` which downloads nixpkgs on first run. This happens during pre-commit execution (no session hook timeout), so the cold start delay is acceptable.

@@ -5,7 +5,8 @@
   lib,
   username,
   ...
-}: {
+}:
+{
   imports = [
     ../../modules/gui.nix
     ../../modules/vm-unattended.nix
@@ -24,7 +25,7 @@
       # "ssh-ed25519 AAAA... user@host"
     ];
     # Allow user to read system logs without sudo
-    extraGroups = ["systemd-journal"];
+    extraGroups = [ "systemd-journal" ];
   };
   boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
 }

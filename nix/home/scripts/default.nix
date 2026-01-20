@@ -6,7 +6,8 @@
   pkgs,
   lib,
   ...
-}: let
+}:
+let
   # Duplicate file finder (finds files with same md5sum in a directory)
   duplicity = pkgs.writeShellScriptBin "duplicity" ''
     if [ $# -lt 1 ]; then
@@ -56,7 +57,8 @@
   set_light_theme = pkgs.writeShellScriptBin "set_light_theme" ''
     switch_gnome_terminal_profile --profile='Solarized Light'
   '';
-in {
+in
+{
   home.packages = [
     duplicity
     git-purge-file

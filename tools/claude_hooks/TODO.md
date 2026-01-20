@@ -4,14 +4,13 @@
 
 **Problem**: Installing nix on Claude Code web times out because downloading nixpkgs takes >2 minutes (session start hook timeout).
 
-**Current Workaround**: Binary tools (alejandra, cluster tools) are installed via direct binary downloads in `binary_tools.py`. Nix is still installed for `nix eval` and flake operations, but tool installation via `nix profile install` is avoided.
+**Current Workaround**: The `claude_hooks` package is installed via `uv tool install` from a pre-built wheel (published to GitHub releases), avoiding Python dependency installation during session start. Terraform tools (opentofu, tflint) are installed via direct binary downloads in `binary_tools.py`. Nix is installed separately for `nix eval`, flake operations, and `nix run nixpkgs#nixfmt` (used by pre-commit hook).
 
-**Potential Solutions** (if we want to use nix for more tools):
+**Potential Solutions:** See <docs/nix-speed-options.md> for detailed analysis. Summary:
 
-- Investigate if flakes have optimizations to avoid downloading all of nixpkgs
-- Check if there's a way to use a minimal/shallow nixpkgs fetch
-- Consider pre-cached nix store or binary cache closer to Claude Code web infra
-- Look into `nix profile install` with `--no-eval-cache` or similar flags
+- **Pre-built nix store tarball** (recommended) - CI builds closure, publishes tarball, session hook unpacks
+- **Pre-computed store paths** - CI records paths, session hook does `nix copy`
+- **Generate binary_tools.py from flake** - Keep binary downloads, automate version sync
 
 ## Supervisor Health Check Eventlistener
 

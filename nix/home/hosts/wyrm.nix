@@ -7,7 +7,8 @@
   pkgs,
   lib,
   ...
-}: {
+}:
+{
   imports = [
     ../home.nix
     ../opencode
@@ -21,8 +22,12 @@
 
   # Disable screensaver and screen blanking (for VM/wyrm)
   dconf.settings = {
-    "org/gnome/desktop/session" = {idle-delay = lib.hm.gvariant.mkUint32 0;}; # 0 = never
-    "org/gnome/desktop/screensaver" = {lock-enabled = false;};
+    "org/gnome/desktop/session" = {
+      idle-delay = lib.hm.gvariant.mkUint32 0;
+    }; # 0 = never
+    "org/gnome/desktop/screensaver" = {
+      lock-enabled = false;
+    };
   };
 
   # Wyrm-specific pip configuration for tankshare storage
@@ -49,5 +54,5 @@
   '';
 
   # Allow Claude Code to read Bazel output directory (test logs, etc.)
-  programs.claude-code.extraAllowedReadDirs = ["/wyrmhdd/bazel"];
+  programs.claude-code.extraAllowedReadDirs = [ "/wyrmhdd/bazel" ];
 }

@@ -16,9 +16,9 @@
   dconf.settings = {
     # Unbind default GNOME screenshot keys for Flameshot
     "org/gnome/shell/keybindings" = {
-      show-screenshot-ui = []; # Was PrnSc
-      screenshot = []; # Was Shift+PrnSc
-      screenshot-window = []; # Was Alt+PrnSc
+      show-screenshot-ui = [ ]; # Was PrnSc
+      screenshot = [ ]; # Was Shift+PrnSc
+      screenshot-window = [ ]; # Was Alt+PrnSc
     };
 
     # Flameshot custom keybinding

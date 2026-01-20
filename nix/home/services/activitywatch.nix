@@ -4,17 +4,18 @@
   pkgs,
   enableGui,
   ...
-}: {
+}:
+{
   config = lib.mkIf enableGui {
     # Install ActivityWatch from nixpkgs
-    home.packages = [pkgs.activitywatch];
+    home.packages = [ pkgs.activitywatch ];
 
     # SSH tunnel to VPS for ActivityWatch server connection
     systemd.user.services.aw-tunnel = {
       Unit = {
         Description = "ActivityWatch SSH tunnel to VPS";
-        After = ["network-online.target"];
-        Wants = ["network-online.target"];
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
       };
       Service = {
         ExecStart = "${pkgs.openssh}/bin/ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -L 5600:localhost:5600 agentydragon@agentydragon.com";
@@ -22,7 +23,7 @@
         RestartSec = "5";
       };
       Install = {
-        WantedBy = ["default.target"];
+        WantedBy = [ "default.target" ];
       };
     };
 

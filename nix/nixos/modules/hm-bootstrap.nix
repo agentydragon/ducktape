@@ -7,14 +7,21 @@
   username,
   homeManagerHost,
   ...
-}: {
+}:
+{
   systemd.services.home-manager-init = {
     description = "Initial home-manager setup";
-    after = ["network-online.target" "nix-daemon.service"];
-    wants = ["network-online.target"];
-    requires = ["nix-daemon.service"];
-    wantedBy = ["multi-user.target"];
-    path = [pkgs.nix pkgs.git];
+    after = [
+      "network-online.target"
+      "nix-daemon.service"
+    ];
+    wants = [ "network-online.target" ];
+    requires = [ "nix-daemon.service" ];
+    wantedBy = [ "multi-user.target" ];
+    path = [
+      pkgs.nix
+      pkgs.git
+    ];
     unitConfig = {
       ConditionPathExists = "!/home/${username}/.home-manager-init-done";
     };

@@ -374,23 +374,44 @@ def add_service(name: str, command: str, directory: Path, environment: dict[str,
         added, changed, removed = client.reload_config()
         logger.info("Reloaded config: added=%s, changed=%s, removed=%s", added, changed, removed)
 
-        client.add_process_group(name)
-        logger.info("Added and started service: %s", name)
-    except xmlrpc.client.Fault as e:
-        # addProcessGroup raises ALREADY_ADDED if service exists, which is fine
-        if e.faultCode == Faults.ALREADY_ADDED:
-            logger.info("Service %s already running", name)
-            return
-        raise ProxyServiceError(f"Failed to add service {name}: {e}") from e
+        # Retry add_process_group with small delays to handle supervisor timing race
+        # (supervisor may report config as added but not be ready to accept add_process_group)
+        last_error: xmlrpc.client.Fault | None = None
+        for attempt in range(3):
+            try:
+                client.add_process_group(name)
+                logger.info("Added and started service: %s", name)
+                # Verify the service was actually registered
+                time.sleep(0.1)  # Brief delay for supervisor to update state
+                try:
+                    info = client.get_process_info(name)
+                    logger.info("Service %s verified: state=%s", name, info.statename)
+                except xmlrpc.client.Fault as verify_err:
+                    logger.warning("Service %s added but not found in verification: %s", name, verify_err)
+                return
+            except xmlrpc.client.Fault as e:
+                if e.faultCode == Faults.ALREADY_ADDED:
+                    logger.info("Service %s already running", name)
+                    return
+                if e.faultCode == Faults.BAD_NAME and attempt < 2:
+                    # Supervisor may not be ready yet, retry after small delay
+                    time.sleep(0.2)
+                    last_error = e
+                    continue
+                raise ProxyServiceError(f"Failed to add service {name}: {e}") from e
+        if last_error:
+            raise ProxyServiceError(f"Failed to add service {name} after retries: {last_error}") from last_error
     except (ConnectionError, OSError) as e:
         raise ProxyServiceError(f"Failed to communicate with supervisor: {e}") from e
 
 
-def is_service_running(service_name: str) -> bool:
+def is_service_running(service_name: str, wait_for_start: bool = True, timeout: float = 5.0) -> bool:
     """Check if a specific service is running under supervisor.
 
     Args:
         service_name: Name of the service to check
+        wait_for_start: If True, wait for service to transition from STARTING to RUNNING
+        timeout: Maximum time to wait for STARTING->RUNNING transition
 
     Returns:
         True if service is running, False otherwise
@@ -400,8 +421,22 @@ def is_service_running(service_name: str) -> bool:
 
     try:
         client = _get_supervisor_client()
-        info = client.get_process_info(service_name)
-        return info.statename == "RUNNING"
+        deadline = time.time() + timeout if wait_for_start else time.time()
+        last_state = None
+
+        while True:
+            info = client.get_process_info(service_name)
+            if info.statename != last_state:
+                logger.info("Service %s: state=%s", service_name, info.statename)
+                last_state = info.statename
+            if info.statename == "RUNNING":
+                return True
+            if info.statename == "STARTING" and time.time() < deadline:
+                time.sleep(0.2)
+                continue
+            # Service exists but not running (STOPPED, EXITED, FATAL, BACKOFF, etc.)
+            return False
+
     except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
         logger.warning("Service check failed for %s: %s", service_name, e)
         return False

@@ -6,7 +6,8 @@
 {
   lib,
   pkgs,
-}: let
+}:
+let
   # 8-char commit SHA from GitHub release tag
   shortSha = "023784bf";
 
@@ -17,24 +18,24 @@
     hash = "sha256-Wcz5SA/6yW1RM/uWQwvrk4e39GCVpY0kgusc6mUcuAc=";
   };
 in
-  pkgs.python3Packages.buildPythonApplication {
-    pname = "headscale-cleanup";
-    version = "latest";
-    format = "wheel";
+pkgs.python3Packages.buildPythonApplication {
+  pname = "headscale-cleanup";
+  version = "latest";
+  format = "wheel";
 
-    src = wheelSrc;
+  src = wheelSrc;
 
-    propagatedBuildInputs = with pkgs.python3Packages; [
-      typer
-    ];
+  propagatedBuildInputs = with pkgs.python3Packages; [
+    typer
+  ];
 
-    # Disable checks - wheel is tested in CI
-    doCheck = false;
+  # Disable checks - wheel is tested in CI
+  doCheck = false;
 
-    meta = {
-      description = "CLI tool for cleaning up stale Headscale nodes";
-      homepage = "https://github.com/agentydragon/ducktape";
-      license = lib.licenses.agpl3Only;
-      mainProgram = "headscale-cleanup";
-    };
-  }
+  meta = {
+    description = "CLI tool for cleaning up stale Headscale nodes";
+    homepage = "https://github.com/agentydragon/ducktape";
+    license = lib.licenses.agpl3Only;
+    mainProgram = "headscale-cleanup";
+  };
+}

@@ -143,10 +143,6 @@ buildifier(
     mode = "diff",
 )
 
-# NOTE: Alejandra (Nix formatter) handled via pre-commit, not Bazel
-# Nix formatters don't integrate well with aspect_rules_lint's unified format workflow
-# See .pre-commit-config.yaml for alejandra configuration
-
 # Ducktape wheel - bundles CLI tools for distribution
 py_package(
     name = "ducktape_pkg",

@@ -21,7 +21,8 @@
   lib,
   username,
   ...
-}: {
+}:
+{
   imports = [
     ./hardware-configuration.nix
     ../../modules/gui.nix
@@ -81,7 +82,7 @@
   users.users.${username} = {
     shell = pkgs.zsh;
     # Allow reading system logs without sudo (systemd-journal group)
-    extraGroups = ["systemd-journal"];
+    extraGroups = [ "systemd-journal" ];
   };
 
   # Allow reading kernel logs without sudo

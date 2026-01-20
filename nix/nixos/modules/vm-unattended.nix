@@ -5,7 +5,8 @@
   lib,
   username,
   ...
-}: {
+}:
+{
   # Empty password for VM auto-login - set with `passwd` if needed
   users.users.${username}.initialHashedPassword = "";
 

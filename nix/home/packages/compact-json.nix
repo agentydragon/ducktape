@@ -16,7 +16,7 @@ python3Packages.buildPythonPackage rec {
     hash = "sha256-3CABSGlb4EuRrEXNPNpTGqAX+yVgm2a5lhoAjbJernc=";
   };
 
-  build-system = [python3Packages.poetry-core];
+  build-system = [ python3Packages.poetry-core ];
 
   dependencies = with python3Packages; [
     wcwidth
@@ -27,7 +27,7 @@ python3Packages.buildPythonPackage rec {
   # No tests in PyPI distribution
   doCheck = false;
 
-  pythonImportsCheck = ["compact_json"];
+  pythonImportsCheck = [ "compact_json" ];
 
   meta = {
     description = "A JSON formatter that produces compact but human-readable output";

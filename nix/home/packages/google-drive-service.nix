@@ -3,7 +3,8 @@
   lib,
   pkgs,
   ...
-}: let
+}:
+let
   cfg = config.services.google-drive;
 
   google-drive = pkgs.stdenv.mkDerivation rec {
@@ -11,16 +12,18 @@
     version = "112.0.3";
 
     # Impure fetch from private git repo (uses credential helper)
-    src = "${builtins.fetchGit {
-      url = "https://git.k3s.agentydragon.com/agentydragon/google-drive";
-      ref = "main";
-    }}/${version}.zip";
+    src = "${
+      builtins.fetchGit {
+        url = "https://git.k3s.agentydragon.com/agentydragon/google-drive";
+        ref = "main";
+      }
+    }/${version}.zip";
 
     nativeBuildInputs = [
       pkgs.unzip
       pkgs.autoPatchelfHook
     ];
-    buildInputs = [pkgs.fuse];
+    buildInputs = [ pkgs.fuse ];
 
     dontBuild = true;
 
@@ -50,18 +53,19 @@
       platforms = platforms.linux;
     };
   };
-in {
+in
+{
   options.services.google-drive = {
     enable = lib.mkEnableOption "Google Drive File Stream service";
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [google-drive];
+    home.packages = [ google-drive ];
 
     systemd.user.services.google-drive = {
       Unit = {
         Description = "Google Drive service";
-        After = ["network.target"];
+        After = [ "network.target" ];
       };
       Service = {
         Type = "simple";
@@ -71,7 +75,7 @@ in {
         StandardError = "journal";
       };
       Install = {
-        WantedBy = ["default.target"];
+        WantedBy = [ "default.target" ];
       };
     };
 

@@ -83,11 +83,12 @@ let
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
   # ducktape - CLI tools collection (git-commit-ai, difftree)
-  ducktape = pkgs.callPackage ./packages/ducktape.nix {};
+  ducktape = pkgs.callPackage ./packages/ducktape.nix { };
 
   # headscale-cleanup - Headscale node management tool
-  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {};
-in {
+  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix { };
+in
+{
   imports = [
     # TODO: Re-enable google-drive-service once the git repo is accessible
     # Disabled during 25.11 migration due to 504 error from https://git.k3s.agentydragon.com/agentydragon/google-drive
@@ -155,7 +156,7 @@ in {
 
   programs.git = {
     enable = true;
-    package = pkgs.git.override {withLibsecret = true;};
+    package = pkgs.git.override { withLibsecret = true; };
     lfs.enable = true;
 
     # Global gitignore file (migrated from dotfiles/config/git/ignore)
@@ -305,11 +306,12 @@ in {
   '';
 
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
-  home.packages = with pkgs;
+  home.packages =
+    with pkgs;
     [
       # Python development environment
-      (python3.withPackages (ps:
-        with ps; [
+      (python3.withPackages (
+        ps: with ps; [
           autopep8
           pydeps
           black
@@ -317,7 +319,8 @@ in {
           pandas
           torch
           numpy
-        ]))
+        ]
+      ))
 
       pkgs.pyright
 
@@ -368,7 +371,7 @@ in {
       # Development tools
       direnv
       devenv
-      alejandra # Nix formatter
+      nixfmt-rfc-style # Nix formatter (RFC 166 style)
       rclone # Cloud storage mounting/sync
       opencode # AI coding agent for terminal
 
@@ -581,7 +584,9 @@ in {
       };
 
       # Terminal shortcut (Ctrl+Alt+T)
-      "org/gnome/settings-daemon/plugins/media-keys" = {terminal = ["<Primary><Alt>t"];};
+      "org/gnome/settings-daemon/plugins/media-keys" = {
+        terminal = [ "<Primary><Alt>t" ];
+      };
 
       # GNOME Night Light
       "org/gnome/settings-daemon/plugins/color" = {
@@ -590,7 +595,9 @@ in {
       };
 
       # ISO 8601 datetime format in panel, e.g.: "Wed 2023-11-15 22:49"
-      "org/gnome/shell/extensions/panel-date-format" = {format = "%a %Y-%m-%d %H:%M";};
+      "org/gnome/shell/extensions/panel-date-format" = {
+        format = "%a %Y-%m-%d %H:%M";
+      };
 
       # Legacy datetime indicator (for older WMs/Unity?)
       "com/canonical/indicator/datetime" = {
@@ -599,7 +606,9 @@ in {
         show-week-numbers = true;
       };
 
-      "org/gnome/terminal/legacy" = {default-show-menubar = false;};
+      "org/gnome/terminal/legacy" = {
+        default-show-menubar = false;
+      };
 
       "org/gnome/shell" = {
         # Enable user extensions
@@ -671,7 +680,10 @@ in {
 
     autosuggestion = {
       enable = true;
-      strategy = ["history" "completion"];
+      strategy = [
+        "history"
+        "completion"
+      ];
       highlight = "fg=244";
     };
 
@@ -749,7 +761,7 @@ in {
     enable = true;
     enableBashIntegration = true;
     enableZshIntegration = true;
-    flags = ["--disable-up-arrow"];
+    flags = [ "--disable-up-arrow" ];
     # zsh and bash have no fancy history config, Atuin handles it
   };
 
@@ -766,7 +778,7 @@ in {
     enable = true;
     enableBashIntegration = false; # Disabled for bash - disorients Claude/Codex assistants
     enableZshIntegration = false; # Disabled - using custom conditional integration below
-    options = ["--cmd cd"];
+    options = [ "--cmd cd" ];
   };
 
   # Eza - modern ls replacement
@@ -909,7 +921,7 @@ in {
   '';
 
   # Warn if legacy .npm-global directory exists (should be removed in favor of pnpm)
-  home.activation.warnLegacyNpmGlobal = lib.hm.dag.entryAfter ["writeBoundary"] ''
+  home.activation.warnLegacyNpmGlobal = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     [[ -d "$HOME/.npm-global" ]] && echo "⚠️  WARNING: Remove legacy ~/.npm-global directory (replaced by pnpm)"
   '';
 

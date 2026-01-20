@@ -1,8 +1,0 @@
-# Nix formatting tools
-
-# Alejandra binary from multitool
-alias(
-    name = "alejandra",
-    actual = "@multitool//tools/alejandra",
-    visibility = ["//visibility:public"],
-)

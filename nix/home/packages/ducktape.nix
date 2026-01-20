@@ -6,8 +6,9 @@
 {
   lib,
   pkgs,
-}: let
-  compact-json = pkgs.callPackage ./compact-json.nix {};
+}:
+let
+  compact-json = pkgs.callPackage ./compact-json.nix { };
 
   # 8-char commit SHA from GitHub release tag
   shortSha = "24303c05";
@@ -70,4 +71,4 @@
     };
   };
 in
-  ducktape
+ducktape

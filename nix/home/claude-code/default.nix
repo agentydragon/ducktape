@@ -4,7 +4,8 @@
   pkgsUnstable,
   lib,
   ...
-}: let
+}:
+let
   cfg = config.programs.claude-code;
 
   # Helper to generate Read/Grep/Glob permissions for directories
@@ -12,12 +13,18 @@
   # Pattern syntax: https://code.claude.com/docs/en/settings
   #   - Supports glob patterns: ** for recursive, * for wildcard
   #   - Supports ~ for home directory expansion
-  mkReadPerms = dirs:
-    lib.flatten (map (
+  mkReadPerms =
+    dirs:
+    lib.flatten (
+      map (
         dir:
-          map (tool: "${tool}(${dir}/**)") ["Read" "Grep" "Glob"]
-      )
-      dirs);
+        map (tool: "${tool}(${dir}/**)") [
+          "Read"
+          "Grep"
+          "Glob"
+        ]
+      ) dirs
+    );
 
   # Directories where Read/Grep/Glob are always allowed without prompting
   # /code contains all git repos organized by host (github.com, gitlab.com, etc.)
@@ -26,36 +33,30 @@
     "~/.claude" # Claude Code session history, settings, commands
     "/code" # Primary code location (canonical git repos by host)
     "/home/agentydragon/code" # Convenience symlinks + some direct projects
-  ] ++ cfg.extraAllowedReadDirs;
+  ]
+  ++ cfg.extraAllowedReadDirs;
 
   # System inspection command permissions (auto-allow for read-only commands)
-  inspectionPerms = import ./inspection-permissions.nix {inherit lib;};
+  inspectionPerms = import ./inspection-permissions.nix { inherit lib; };
 
   # Auto-discover all .md files in commands/ directory
   commandsDir = ./commands;
   commandFiles = builtins.readDir commandsDir;
-  commands =
-    lib.mapAttrs' (
-      name: type:
-        lib.nameValuePair
-        (lib.removeSuffix ".md" name)
-        (commandsDir + "/${name}")
-    ) (lib.filterAttrs (
-        name: type:
-          type == "regular" && lib.hasSuffix ".md" name
-      )
-      commandFiles);
+  commands = lib.mapAttrs' (
+    name: type: lib.nameValuePair (lib.removeSuffix ".md" name) (commandsDir + "/${name}")
+  ) (lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".md" name) commandFiles);
 
   # Skills directory for Claude Code
   # Skills are model-invoked capabilities that Claude automatically uses based on context
   # Each skill is a subdirectory containing SKILL.md and optional supporting files
   skillsDir = ./skills;
-in {
+in
+{
   options.programs.claude-code.extraAllowedReadDirs = lib.mkOption {
     type = lib.types.listOf lib.types.str;
-    default = [];
+    default = [ ];
     description = "Additional directories to auto-allow for Read/Grep/Glob operations";
-    example = ["/wyrmhdd/bazel"];
+    example = [ "/wyrmhdd/bazel" ];
   };
 
   config.programs.claude-code = {
@@ -102,25 +103,24 @@ in {
       };
 
       permissions = {
-        allow =
-          [
-            "Read"
-            "Edit"
-            "Write"
-            "MultiEdit"
-            "Search"
-            "Task"
-            "Bash(git status:*)"
-            "Bash(git diff:*)"
-            "Bash(git stash show:*)"
-            "Bash(git stash list:*)"
-            "WebFetch"
-            "WebSearch"
-          ]
-          ++ mkReadPerms alwaysAllowedReadDirs
-          ++ inspectionPerms.permissions;
+        allow = [
+          "Read"
+          "Edit"
+          "Write"
+          "MultiEdit"
+          "Search"
+          "Task"
+          "Bash(git status:*)"
+          "Bash(git diff:*)"
+          "Bash(git stash show:*)"
+          "Bash(git stash list:*)"
+          "WebFetch"
+          "WebSearch"
+        ]
+        ++ mkReadPerms alwaysAllowedReadDirs
+        ++ inspectionPerms.permissions;
         # ask = ["Bash(*)"];  - use Bash without parens to allow all commands
-        deny = [];
+        deny = [ ];
         defaultMode = "default";
       };
     };
@@ -128,24 +128,17 @@ in {
 
   # Deploy skills to ~/.claude/skills/
   # Skills are stored in nix/home/claude-code/skills/ and symlinked for declarative management
-  config.home.file =
-    {
-      ".claude/statusline.py" = {
-        source = ./statusline.py;
-        executable = true;
-      };
+  config.home.file = {
+    ".claude/statusline.py" = {
+      source = ./statusline.py;
+      executable = true;
+    };
+  }
+  // lib.mapAttrs' (
+    skillName: skillType:
+    lib.nameValuePair ".claude/skills/${skillName}" {
+      source = skillsDir + "/${skillName}";
+      recursive = true;
     }
-    // lib.mapAttrs' (
-      skillName: skillType:
-        lib.nameValuePair
-        ".claude/skills/${skillName}"
-        {
-          source = skillsDir + "/${skillName}";
-          recursive = true;
-        }
-    ) (lib.filterAttrs (
-        name: type:
-          type == "directory"
-      )
-      (builtins.readDir skillsDir));
+  ) (lib.filterAttrs (name: type: type == "directory") (builtins.readDir skillsDir));
 }

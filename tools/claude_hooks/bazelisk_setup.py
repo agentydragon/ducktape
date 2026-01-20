@@ -143,7 +143,7 @@ def install_wrapper() -> Path:
     # and invokes the bazel_wrapper module. Using -m ensures the package is found
     # whether installed via wheel or running from source with PYTHONPATH.
     wrapper_script = f"""#!/bin/sh
-exec "{sys.executable}" -m claude_hooks.bazel_wrapper "$@"
+exec "{sys.executable}" -m tools.claude_hooks.bazel_wrapper "$@"
 """
     wrapper_path.write_text(wrapper_script)
     wrapper_path.chmod(0o755)

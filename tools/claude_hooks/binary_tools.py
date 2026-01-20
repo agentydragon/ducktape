@@ -41,7 +41,10 @@ class Tool:
             self.binary = self.name
 
 
-# Cluster tools for pre-commit hooks (terraform, k8s, etc.)
+# Cluster tools for pre-commit hooks (terraform tools only)
+# Note: flux, kustomize, kubeseal, helm are now Bazel-managed via @multitool//tools/*
+# and invoked through bazelisk run //cluster/scripts:* in pre-commit hooks.
+# Only terraform-related tools are needed here since pre-commit-terraform uses system binaries.
 CLUSTER_TOOLS = [
     Tool(
         name="opentofu",
@@ -55,41 +58,6 @@ CLUSTER_TOOLS = [
         url_builder=lambda v,
         a: f"https://github.com/terraform-linters/tflint/releases/download/v{v}/tflint_linux_{a}.zip",
     ),
-    Tool(
-        name="flux",
-        version="2.4.0",
-        url_builder=lambda v, a: f"https://github.com/fluxcd/flux2/releases/download/v{v}/flux_{v}_linux_{a}.tar.gz",
-    ),
-    Tool(
-        name="kustomize",
-        version="5.5.0",
-        url_builder=lambda v,
-        a: f"https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv{v}/kustomize_v{v}_linux_{a}.tar.gz",
-    ),
-    Tool(
-        name="kubeseal",
-        version="0.27.3",
-        url_builder=lambda v,
-        a: f"https://github.com/bitnami-labs/sealed-secrets/releases/download/v{v}/kubeseal-{v}-linux-{a}.tar.gz",
-    ),
-    Tool(name="helm", version="3.16.4", url_builder=lambda v, a: f"https://get.helm.sh/helm-v{v}-linux-{a}.tar.gz"),
-]
-
-
-def _alejandra_arch(arch: str) -> str:
-    """Convert normalized arch to alejandra's naming convention."""
-    return "x86_64" if arch == "amd64" else "aarch64"
-
-
-# Development tools
-DEV_TOOLS = [
-    Tool(
-        name="alejandra",
-        version="4.0.0",
-        url_builder=lambda v,
-        a: f"https://github.com/kamadorueda/alejandra/releases/download/{v}/alejandra-{_alejandra_arch(a)}-unknown-linux-musl",
-        is_archive=False,
-    )
 ]
 
 
@@ -198,19 +166,9 @@ def install_cluster_tools() -> None:
     install_tools(CLUSTER_TOOLS)
 
 
-def install_dev_tools() -> None:
-    """Install development tools (alejandra, etc.)."""
-    install_tools(DEV_TOOLS)
-
-
 def get_cluster_tools_status() -> str:
     """Get status string for cluster tools."""
     return _get_tools_status(CLUSTER_TOOLS)
-
-
-def get_dev_tools_status() -> str:
-    """Get status string for dev tools."""
-    return _get_tools_status(DEV_TOOLS)
 
 
 def _get_tools_status(tools: list[Tool]) -> str:

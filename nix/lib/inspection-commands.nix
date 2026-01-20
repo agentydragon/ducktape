@@ -99,141 +99,214 @@
     # GPU information - ONLY query subcommands
     {
       cmd = "nvidia-smi";
-      args = ["" "-q" "-L" "pmon" "dmon"];
+      args = [
+        ""
+        "-q"
+        "-L"
+        "pmon"
+        "dmon"
+      ];
     }
     # ACPI information - ONLY query flags (not -W which modifies wakeup)
     {
       cmd = "acpitool";
-      args = ["" "-B" "-a" "-t" "-f" "-e"];
+      args = [
+        ""
+        "-B"
+        "-a"
+        "-t"
+        "-f"
+        "-e"
+      ];
     }
     # Last login information - ONLY no-args (avoids -C clear flag)
     {
       cmd = "lastlog";
-      args = [""];
+      args = [ "" ];
     }
     # System information - ONLY read-only subcommands
     {
       cmd = "hostnamectl";
-      args = ["status"];
+      args = [ "status" ];
     }
     {
       cmd = "timedatectl";
-      args = ["status" "show" "timesync-status"];
+      args = [
+        "status"
+        "show"
+        "timesync-status"
+      ];
     }
     {
       cmd = "localectl";
-      args = ["status"];
+      args = [ "status" ];
     }
     {
       cmd = "loginctl";
-      args = ["list-sessions" "list-users"];
+      args = [
+        "list-sessions"
+        "list-users"
+      ];
     }
     {
       cmd = "bootctl";
-      args = ["status" "list"];
+      args = [
+        "status"
+        "list"
+      ];
     }
     # Firmware - ONLY query subcommands
     {
       cmd = "fwupdmgr";
-      args = ["get-devices" "get-updates" "get-history" "get-plugins" "security"];
+      args = [
+        "get-devices"
+        "get-updates"
+        "get-history"
+        "get-plugins"
+        "security"
+      ];
     }
     # IPMI - ONLY read-only subcommands
     {
       cmd = "ipmitool";
-      args = ["sensor list" "sdr list" "fru print" "mc info" "lan print" "chassis status"];
+      args = [
+        "sensor list"
+        "sdr list"
+        "fru print"
+        "mc info"
+        "lan print"
+        "chassis status"
+      ];
     }
     # Disk partitioning - ONLY read-only list modes
     {
       cmd = "fdisk";
-      args = ["-l"];
+      args = [ "-l" ];
     }
     {
       cmd = "parted";
-      args = ["-l"];
+      args = [ "-l" ];
     }
     # NVMe info - ONLY read operations
     {
       cmd = "nvme";
-      args = ["list"];
+      args = [ "list" ];
     }
     # Network information - ONLY show/list operations
     {
       cmd = "ip";
-      args = ["addr show" "-s addr show" "route show" "-s route show" "link show" "-s link show" "neighbor show" "netns list"];
+      args = [
+        "addr show"
+        "-s addr show"
+        "route show"
+        "-s route show"
+        "link show"
+        "-s link show"
+        "neighbor show"
+        "netns list"
+      ];
     }
     # Service information - ONLY safe subcommands
     {
       cmd = "systemctl";
-      args = ["list-units" "list-unit-files" "list-timers" "list-sockets"];
+      args = [
+        "list-units"
+        "list-unit-files"
+        "list-timers"
+        "list-sockets"
+      ];
     }
     # File systems - ONLY read commands
     {
       cmd = "zfs";
-      args = ["list"];
+      args = [ "list" ];
     }
     {
       cmd = "zpool";
-      args = ["status" "list"];
+      args = [
+        "status"
+        "list"
+      ];
     }
     {
       cmd = "btrfs";
-      args = ["filesystem show" "device stats"];
+      args = [
+        "filesystem show"
+        "device stats"
+      ];
     }
     # Package managers - ONLY list modes
     {
       cmd = "apt";
-      args = ["list"];
+      args = [ "list" ];
     }
     {
       cmd = "dpkg";
-      args = ["-l"];
+      args = [ "-l" ];
     }
     {
       cmd = "snap";
-      args = ["list"];
+      args = [ "list" ];
     }
     {
       cmd = "flatpak";
-      args = ["list"];
+      args = [ "list" ];
     }
     # System control - ONLY read modes
     {
       cmd = "sysctl";
-      args = ["-a" "-N"];
+      args = [
+        "-a"
+        "-N"
+      ];
     }
     # Firewall - ONLY list/show modes
     {
       cmd = "firewall-cmd";
-      args = ["--list-all"];
+      args = [ "--list-all" ];
     }
     {
       cmd = "iptables";
-      args = ["-L" "-S"];
+      args = [
+        "-L"
+        "-S"
+      ];
     }
     {
       cmd = "ip6tables";
-      args = ["-L" "-S"];
+      args = [
+        "-L"
+        "-S"
+      ];
     }
     {
       cmd = "nft";
-      args = ["list ruleset"];
+      args = [ "list ruleset" ];
     }
     # Container/VM - ONLY read-only info
     {
       cmd = "docker";
-      args = ["ps" "images" "info" "version"];
+      args = [
+        "ps"
+        "images"
+        "info"
+        "version"
+      ];
     }
     {
       cmd = "podman";
-      args = ["ps" "images"];
+      args = [
+        "ps"
+        "images"
+      ];
     }
     {
       cmd = "virsh";
-      args = ["list"];
+      args = [ "list" ];
     }
     {
       cmd = "qm";
-      args = ["list"];
+      args = [ "list" ];
     }
   ];
 
@@ -244,37 +317,57 @@
     # Session/user info - needs session/user ID
     {
       cmd = "loginctl";
-      prefixes = ["show-session" "show-user" "session-status" "user-status"];
+      prefixes = [
+        "show-session"
+        "show-user"
+        "session-status"
+        "user-status"
+      ];
     }
     # SMART disk info - needs device path
     {
       cmd = "smartctl";
-      prefixes = ["-a" "-H" "-i" "-l"];
+      prefixes = [
+        "-a"
+        "-H"
+        "-i"
+        "-l"
+      ];
     }
     # NVMe info - needs device path
     {
       cmd = "nvme";
-      prefixes = ["smart-log" "id-ctrl" "id-ns"];
+      prefixes = [
+        "smart-log"
+        "id-ctrl"
+        "id-ns"
+      ];
     }
     # Service status - needs service name
     {
       cmd = "systemctl";
-      prefixes = ["status" "show"];
+      prefixes = [
+        "status"
+        "show"
+      ];
     }
     # System control - read specific variable
     {
       cmd = "sysctl";
-      prefixes = ["-n"];
+      prefixes = [ "-n" ];
     }
     # Proxmox - needs path argument
     {
       cmd = "pvesh";
-      prefixes = ["get"];
+      prefixes = [ "get" ];
     }
     # Performance monitoring - needs args
     {
       cmd = "perf";
-      prefixes = ["stat" "top"];
+      prefixes = [
+        "stat"
+        "top"
+      ];
     }
   ];
 
@@ -284,27 +377,27 @@
   logViewingCommands = [
     {
       cmd = "tail";
-      args = ["-f /var/log/*"];
+      args = [ "-f /var/log/*" ];
     }
     {
       cmd = "head";
-      args = ["/var/log/*"];
+      args = [ "/var/log/*" ];
     }
     {
       cmd = "cat";
-      args = ["/var/log/*"];
+      args = [ "/var/log/*" ];
     }
     {
       cmd = "less";
-      args = ["/var/log/*"];
+      args = [ "/var/log/*" ];
     }
     {
       cmd = "zcat";
-      args = ["/var/log/*.gz"];
+      args = [ "/var/log/*.gz" ];
     }
     {
       cmd = "bzcat";
-      args = ["/var/log/*.bz2"];
+      args = [ "/var/log/*.bz2" ];
     }
   ];
 }

@@ -8,12 +8,15 @@
   solarizedDark,
   terminalFont,
   ...
-}: let
+}:
+let
   solarizedLightScheme = solarizedLight;
   solarizedDarkScheme = solarizedDark;
-in {
+in
+{
   # Install Night Theme Switcher extension and theme switching utility
-  home.packages = with pkgs;
+  home.packages =
+    with pkgs;
     [
       # Required system libraries (always needed for other tools)
       gobject-introspection
@@ -46,70 +49,72 @@ in {
     enable = true;
     showMenubar = false;
 
-    profile = let
-      # Helper function to build a terminal palette from a color scheme
-      mkTerminalPalette = scheme: [
-        "#${scheme.palette.base01}" # black
-        "#${scheme.palette.base08}" # red
-        "#${scheme.palette.base0B}" # green
-        "#${scheme.palette.base09}" # yellow/orange
-        "#${scheme.palette.base0D}" # blue
-        "#${scheme.palette.base0E}" # magenta
-        "#${scheme.palette.base0C}" # cyan
-        "#${scheme.palette.base06}" # white
-        "#${scheme.palette.base00}" # bright black
-        "#${scheme.palette.base08}" # bright red
-        "#${scheme.palette.base0B}" # bright green
-        "#${scheme.palette.base0A}" # bright yellow
-        "#${scheme.palette.base0D}" # bright blue
-        "#${scheme.palette.base0F}" # bright magenta (violet)
-        "#${scheme.palette.base0C}" # bright cyan
-        "#${scheme.palette.base07}" # bright white
-      ];
+    profile =
+      let
+        # Helper function to build a terminal palette from a color scheme
+        mkTerminalPalette = scheme: [
+          "#${scheme.palette.base01}" # black
+          "#${scheme.palette.base08}" # red
+          "#${scheme.palette.base0B}" # green
+          "#${scheme.palette.base09}" # yellow/orange
+          "#${scheme.palette.base0D}" # blue
+          "#${scheme.palette.base0E}" # magenta
+          "#${scheme.palette.base0C}" # cyan
+          "#${scheme.palette.base06}" # white
+          "#${scheme.palette.base00}" # bright black
+          "#${scheme.palette.base08}" # bright red
+          "#${scheme.palette.base0B}" # bright green
+          "#${scheme.palette.base0A}" # bright yellow
+          "#${scheme.palette.base0D}" # bright blue
+          "#${scheme.palette.base0F}" # bright magenta (violet)
+          "#${scheme.palette.base0C}" # bright cyan
+          "#${scheme.palette.base07}" # bright white
+        ];
 
-      # Base profile definitions
-      baseProfiles = {
-        # Solarized Light profile
-        "b1dcc9dd-5262-4d8d-a863-c897e6d979b9" = {
-          visibleName = "Solarized Light";
-          default = true;
-          colors = {
-            foregroundColor = "#${solarizedLightScheme.palette.base05}";
-            backgroundColor = "#${solarizedLightScheme.palette.base07}";
-            boldColor = "#${solarizedLightScheme.palette.base04}";
-            palette = mkTerminalPalette solarizedLightScheme;
-            cursor = {
-              foreground = "#${solarizedLightScheme.palette.base07}";
-              background = "#${solarizedLightScheme.palette.base05}";
+        # Base profile definitions
+        baseProfiles = {
+          # Solarized Light profile
+          "b1dcc9dd-5262-4d8d-a863-c897e6d979b9" = {
+            visibleName = "Solarized Light";
+            default = true;
+            colors = {
+              foregroundColor = "#${solarizedLightScheme.palette.base05}";
+              backgroundColor = "#${solarizedLightScheme.palette.base07}";
+              boldColor = "#${solarizedLightScheme.palette.base04}";
+              palette = mkTerminalPalette solarizedLightScheme;
+              cursor = {
+                foreground = "#${solarizedLightScheme.palette.base07}";
+                background = "#${solarizedLightScheme.palette.base05}";
+              };
+            };
+          };
+
+          # Solarized Dark profile
+          "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
+            visibleName = "Solarized Dark";
+            colors = {
+              foregroundColor = "#${solarizedDarkScheme.palette.base05}";
+              backgroundColor = "#${solarizedDarkScheme.palette.base00}";
+              boldColor = "#${solarizedDarkScheme.palette.base06}";
+              palette = mkTerminalPalette solarizedDarkScheme;
+              cursor = {
+                foreground = "#${solarizedDarkScheme.palette.base00}";
+                background = "#${solarizedDarkScheme.palette.base05}";
+              };
             };
           };
         };
-
-        # Solarized Dark profile
-        "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
-          visibleName = "Solarized Dark";
-          colors = {
-            foregroundColor = "#${solarizedDarkScheme.palette.base05}";
-            backgroundColor = "#${solarizedDarkScheme.palette.base00}";
-            boldColor = "#${solarizedDarkScheme.palette.base06}";
-            palette = mkTerminalPalette solarizedDarkScheme;
-            cursor = {
-              foreground = "#${solarizedDarkScheme.palette.base00}";
-              background = "#${solarizedDarkScheme.palette.base05}";
-            };
-          };
-        };
-      };
-      fontString = "${terminalFont.family} ${builtins.toString terminalFont.size}";
-      # Apply common settings to every profile: scroll-on-output=false and shared font
-    in
-      builtins.mapAttrs (_: profile:
+        fontString = "${terminalFont.family} ${builtins.toString terminalFont.size}";
+        # Apply common settings to every profile: scroll-on-output=false and shared font
+      in
+      builtins.mapAttrs (
+        _: profile:
         profile
         // {
           scrollOnOutput = false;
           font = fontString;
-        })
-      baseProfiles;
+        }
+      ) baseProfiles;
   };
 
   # Bat configuration with Solarized themes

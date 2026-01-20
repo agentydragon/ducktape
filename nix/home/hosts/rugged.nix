@@ -11,8 +11,9 @@
   pkgs,
   lib,
   ...
-}: {
-  imports = [../home.nix];
+}:
+{
+  imports = [ ../home.nix ];
 
   home.stateVersion = "25.11";
 }

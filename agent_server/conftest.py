@@ -31,7 +31,6 @@ from agent_server.server.app import create_app
 from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
 from agent_server.testing.approval_policy_testdata import fetch_policy, make_policy
-from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
@@ -49,6 +48,11 @@ TEST_BACKEND_SERVER_NAME = "backend"
 from agent_core_testing.fixtures import *  # noqa: E402, F403
 from agent_core_testing.responses import *  # noqa: E402, F403
 from mcp_infra.testing.fixtures import *  # noqa: E402, F403
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode."""
+    config.option.asyncio_mode = "auto"
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:

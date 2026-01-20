@@ -4,7 +4,8 @@
   pkgs,
   enableGui,
   ...
-}: let
+}:
+let
   # Python script with dependencies
   login-event-webhook-reporter = pkgs.python3.pkgs.buildPythonApplication {
     pname = "login-event-webhook-reporter";
@@ -37,22 +38,23 @@
       platforms = pkgs.lib.platforms.linux;
     };
   };
-in {
+in
+{
   config = lib.mkIf enableGui {
-    home.packages = [login-event-webhook-reporter];
+    home.packages = [ login-event-webhook-reporter ];
 
     systemd.user.services.login_event_webhook_reporter = {
       Unit = {
         Description = "Login Event Webhook Reporter";
-        After = ["graphical-session.target"];
-        Wants = ["graphical-session.target"];
+        After = [ "graphical-session.target" ];
+        Wants = [ "graphical-session.target" ];
       };
       Service = {
         ExecStart = "${login-event-webhook-reporter}/bin/login_event_webhook_reporter";
         Restart = "on-failure";
       };
       Install = {
-        WantedBy = ["graphical-session.target"];
+        WantedBy = [ "graphical-session.target" ];
       };
     };
   };

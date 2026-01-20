@@ -196,6 +196,26 @@ bazel build --config=rust-check //finance/...  # Rust linting
 - Framework: pytest with pytest-asyncio
 - Fixtures for shared setup
 
+**IMPORTANT: Running tests and Python code**
+
+Always use Bazel to run tests and Python code, not direct pytest or Python invocations:
+
+```bash
+# Run tests (CORRECT)
+bazel test //path/to:test_target
+bazel test //...  # Run all tests
+
+# Run Python code (CORRECT)
+bazel run //path/to:binary_target
+
+# Do NOT use these (INCORRECT - they may not have correct paths/deps):
+# pytest path/to/test_*.py
+# python -m path.to.module
+# direnv exec . python -m ...
+```
+
+Bazel properly sets up PYTHONPATH, dependencies, and the test environment. Direct pytest/python invocations may fail to find modules or have incorrect configurations.
+
 #### pytest and Bazel
 
 **CRITICAL**: All `py_test` targets MUST have a `pytest_bazel.main()` entry point:

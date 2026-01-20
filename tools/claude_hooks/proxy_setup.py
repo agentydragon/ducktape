@@ -76,6 +76,10 @@ def _get_bazel_proxy_rc() -> Path:
 # Pre-installed Anthropic CA on Claude Code web containers
 ANTHROPIC_CA_PREINSTALLED = Path("/usr/local/share/ca-certificates/swp-ca-production.crt")
 
+# Expected CA certificate attributes for Anthropic TLS inspection CA
+ANTHROPIC_CA_ORG = "Anthropic"
+ANTHROPIC_CA_CN_SUBSTRING = "TLS Inspection CA"
+
 # Java truststore password (standard default)
 TRUSTSTORE_PASSWORD = "changeit"
 
@@ -117,7 +121,7 @@ def _is_anthropic_tls_inspection_ca(cert: x509.Certificate) -> bool:
     """
     org = _get_cert_attr(cert.subject, x509.oid.NameOID.ORGANIZATION_NAME)
     cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
-    return org == "Anthropic" and "TLS Inspection CA" in cn
+    return org == ANTHROPIC_CA_ORG and ANTHROPIC_CA_CN_SUBSTRING in cn
 
 
 def _try_load_ca_from_filesystem() -> bool:
@@ -298,6 +302,19 @@ def _create_java_truststore() -> None:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 
+def _get_proxy_service_env() -> dict[str, str]:
+    """Get environment variables to pass to the proxy service.
+
+    In tests (when CLAUDE_AUTH_PROXY_CMD is set), we need to pass PYTHONPATH
+    so the proxy subprocess can find the module.
+    """
+    env: dict[str, str] = {}
+    # Pass PYTHONPATH if set (needed for Bazel tests where python -m is used)
+    if pythonpath := os.environ.get("PYTHONPATH"):
+        env["PYTHONPATH"] = pythonpath
+    return env
+
+
 def _build_auth_proxy_command(https_proxy: str) -> str:
     """Build command to run custom auth-forwarding proxy.
 
@@ -384,7 +401,9 @@ def ensure_proxy_running() -> bool:
         # Update credentials and restart
         logger.info("Updating proxy with new credentials...")
         creds_file.write_text(https_proxy)
-        supervisor_setup.update_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment={})
+        supervisor_setup.update_service(
+            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+        )
         if not _wait_for_proxy():
             raise ProxyServiceError("Proxy did not restart with new credentials")
         logger.info("Proxy credentials refreshed")
@@ -394,7 +413,9 @@ def ensure_proxy_running() -> bool:
     proxy_port = _get_bazel_proxy_port()
     logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
     creds_file.write_text(https_proxy)
-    supervisor_setup.add_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment={})
+    supervisor_setup.add_service(
+        name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+    )
     if not _wait_for_proxy():
         raise ProxyServiceError("Bazel proxy did not start listening in time")
     logger.info("Bazel proxy started successfully")

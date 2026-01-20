@@ -15,7 +15,8 @@
   pkgs,
   lib,
   ...
-}: let
+}:
+let
   # OpenCode configuration as JSON
   # Docs: https://opencode.ai/docs/providers/
   opencodeConfig = {
@@ -72,7 +73,8 @@
       };
     };
   };
-in {
+in
+{
   # Write opencode.json to ~/.config/opencode/
   xdg.configFile."opencode/opencode.json" = {
     text = builtins.toJSON opencodeConfig;

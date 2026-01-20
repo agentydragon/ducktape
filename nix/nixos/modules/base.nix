@@ -6,7 +6,8 @@
   hostname,
   username,
   ...
-}: {
+}:
+{
   # Boot (UEFI with systemd-boot)
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
@@ -18,8 +19,14 @@
   # Nix settings - enable flakes
   nix = {
     settings = {
-      experimental-features = ["nix-command" "flakes"];
-      trusted-users = [username "root"];
+      experimental-features = [
+        "nix-command"
+        "flakes"
+      ];
+      trusted-users = [
+        username
+        "root"
+      ];
       auto-optimise-store = true;
     };
   };
@@ -32,7 +39,12 @@
     isNormalUser = true;
     home = "/home/${username}";
     description = username;
-    extraGroups = ["wheel" "networkmanager" "video" "audio"];
+    extraGroups = [
+      "wheel"
+      "networkmanager"
+      "video"
+      "audio"
+    ];
   };
 
   # Sudo requires password by default (security)

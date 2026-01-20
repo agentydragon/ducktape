@@ -4,7 +4,8 @@
   lib,
   config,
   ...
-}: let
+}:
+let
   codexSettings = {
     model = "gpt-5.1-codex";
     features = {
@@ -16,7 +17,9 @@
     };
     shell_environment_policy = {
       "inherit" = "all";
-      "set" = {CODEX_AGENT = "1";};
+      "set" = {
+        CODEX_AGENT = "1";
+      };
     };
     sandbox_mode = "workspace-write";
     sandbox_workspace_write = {
@@ -35,25 +38,23 @@
     };
   };
 
-  tomlFormat = pkgs.formats.toml {};
+  tomlFormat = pkgs.formats.toml { };
   baseConfigFile = tomlFormat.generate "codex-config.nix-base" codexSettings;
 
   useXdgDirectories = config.home.preferXdgDirectories;
   xdgConfigHomeRelative = lib.removePrefix "${config.home.homeDirectory}/" config.xdg.configHome;
-  codexHomeRelative =
-    if useXdgDirectories
-    then "${xdgConfigHomeRelative}/codex"
-    else ".codex";
+  codexHomeRelative = if useXdgDirectories then "${xdgConfigHomeRelative}/codex" else ".codex";
   codexHomeAbsolute =
-    if useXdgDirectories
-    then "${config.xdg.configHome}/codex"
-    else "${config.home.homeDirectory}/.codex";
+    if useXdgDirectories then
+      "${config.xdg.configHome}/codex"
+    else
+      "${config.home.homeDirectory}/.codex";
 
   baseFileRelative = "${codexHomeRelative}/config.nix-base.toml";
   baseFileAbsolute = "${codexHomeAbsolute}/config.nix-base.toml";
   liveFileAbsolute = "${codexHomeAbsolute}/config.toml";
 
-  pythonMerge = pkgs.python3.withPackages (ps: [ps."tomli-w"]);
+  pythonMerge = pkgs.python3.withPackages (ps: [ ps."tomli-w" ]);
 
   mergeScript = ''
     set -euo pipefail
@@ -70,7 +71,8 @@
 
     BASE="$BASE" LIVE="$LIVE" ${pythonMerge}/bin/python ${./merge.py}
   '';
-in {
+in
+{
   programs.codex = {
     enable = true;
     package = pkgs.codex;
@@ -80,7 +82,7 @@ in {
 
   home = {
     file."${baseFileRelative}".source = baseConfigFile;
-    activation.codexConfig = lib.hm.dag.entryAfter ["writeBoundary"] mergeScript;
+    activation.codexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] mergeScript;
     sessionVariables = lib.mkIf useXdgDirectories {
       CODEX_HOME = "${config.xdg.configHome}/codex";
     };

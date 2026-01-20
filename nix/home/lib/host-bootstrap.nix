@@ -1,5 +1,6 @@
 # Common host bootstrapping functionality
-{lib}: rec {
+{ lib }:
+rec {
   # Creates the self-bootstrapping flake configuration for a host
   mkHostFlake = hostname: ''
     {
@@ -24,9 +25,10 @@
   '';
 
   # Creates the standard host configuration pattern
-  mkHostConfig = hostname: hostSpecificConfig:
+  mkHostConfig =
+    hostname: hostSpecificConfig:
     {
-      imports = [../home.nix];
+      imports = [ ../home.nix ];
 
       # This host creates its own flake pointer
       xdg.configFile."home-manager/flake.nix".text = mkHostFlake hostname;

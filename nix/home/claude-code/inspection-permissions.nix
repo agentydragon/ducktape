@@ -2,7 +2,8 @@
 #
 # Imports from the SSOT (nix/lib/inspection-commands.nix) and generates
 # Bash permission strings for Claude Code's settings.permissions.allow list.
-{lib}: let
+{ lib }:
+let
   inspectionCommands = import ../../lib/inspection-commands.nix;
 
   # Helper to generate Bash permission strings from command names
@@ -19,21 +20,18 @@
   # Convert structured subcommands to string format for Claude Code permissions
   # Flatten { cmd, args = [list] } into individual "cmd arg" strings
   # Empty string arg ("") means command with no arguments (exact match)
-  sudoSpecificSubcommandsExact = lib.flatten (map (e:
-    map (arg: "${e.cmd}${
-      if arg == ""
-      then ""
-      else " ${arg}"
-    }")
-    e.args)
-  inspectionCommands.sudoExactSubcommands);
+  sudoSpecificSubcommandsExact = lib.flatten (
+    map (
+      e: map (arg: "${e.cmd}${if arg == "" then "" else " ${arg}"}") e.args
+    ) inspectionCommands.sudoExactSubcommands
+  );
 
   # Flatten { cmd, prefixes = [list] } into "cmd prefix" strings for wildcard matching
-  sudoSpecificSubcommandsWildcard = lib.flatten (map (e:
-    map (prefix: "${e.cmd} ${prefix}")
-    e.prefixes)
-  inspectionCommands.sudoWildcardSubcommands);
-in {
+  sudoSpecificSubcommandsWildcard = lib.flatten (
+    map (e: map (prefix: "${e.cmd} ${prefix}") e.prefixes) inspectionCommands.sudoWildcardSubcommands
+  );
+in
+{
   # All inspection-related permissions for Claude Code
   # Note: logViewingCommands intentionally omitted from Claude Code permissions
   # Claude Code uses prefix matching only, so we cannot restrict to specific paths.

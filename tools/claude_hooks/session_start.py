@@ -427,11 +427,11 @@ def run_web_mode(hook_input: HookInput) -> None:
 
     install_git_precommit_hook(project_dir)
 
-    # Install dev tools (alejandra for .nix formatting)
-    logger.info("Installing dev tools (alejandra)...")
-    binary_tools.install_dev_tools()
+    # Install cluster tools (opentofu, tflint) for pre-commit-terraform hooks
+    logger.info("Installing cluster tools...")
+    binary_tools.install_cluster_tools()
 
-    # Install nix (for nix eval, etc. - alejandra is now installed via binary download)
+    # Install nix (for nix eval, flake operations, and nixfmt via pre-commit)
     logger.info("Installing nix...")
     nix_store_bin: Path | None = None
     try:
@@ -505,7 +505,6 @@ def run_web_mode(hook_input: HookInput) -> None:
     logger.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), proxy_setup.get_status(), node_ca_status
     )
-    logger.info("Dev tools: %s", binary_tools.get_dev_tools_status())
     logger.info("Nix: %s", get_nix_status())
 
     supervisor_setup.emit_usage_guidance()

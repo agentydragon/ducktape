@@ -180,24 +180,6 @@
       }
     ]
   },
-  "alejandra": {
-    "binaries": [
-      {
-        "kind": "file",
-        "url": "https://github.com/kamadorueda/alejandra/releases/download/4.0.0/alejandra-x86_64-unknown-linux-musl",
-        "sha256": "a23b9d47cba945805c6169541046de890e94e07a5aa416c86dee15bca2da6216",
-        "os": "linux",
-        "cpu": "x86_64"
-      },
-      {
-        "kind": "file",
-        "url": "https://github.com/kamadorueda/alejandra/releases/download/4.0.0/alejandra-aarch64-unknown-linux-musl",
-        "sha256": "a30b0d54ee3f0d6633d0398b50258408d2cc31646a9c8c4ba3ee4ebf2cebd8c8",
-        "os": "linux",
-        "cpu": "arm64"
-      }
-    ]
-  },
   "ruff": {
     "binaries": [
       {

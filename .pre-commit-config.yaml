@@ -92,19 +92,15 @@ repos:
   # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
   # correctly and uses a single mypy.ini config.
 
-  # Nix formatter - requires alejandra in PATH
-  # Dev: via .envrc (nix -p alejandra)
-  # CI: via cachix/install-nix-action + nix profile install
-  # Claude Web: via session hook nix_setup
-  # TODO: Switch to nixfmt (RFC style) once it has better tooling support
+  # Nix formatter (RFC 166 style) - uses nix run nixpkgs#nixfmt
+  # Requires nix with flakes enabled (installed by session hook or system)
+  - repo: https://github.com/NixOS/nixfmt
+    rev: v1.2.0
+    hooks:
+      - id: nixfmt-nix
+
   - repo: local
     hooks:
-      - id: alejandra
-        name: alejandra (nix formatter)
-        entry: alejandra --quiet
-        language: system
-        files: \.nix$
-
       # Buildifier linting via Bazel (hermetic buildifier binary)
       # Formatting handled by bazel-format below
       - id: buildifier-lint

@@ -13,6 +13,7 @@ import os
 import signal
 import socket
 import ssl
+import sys
 import threading
 import time
 from collections.abc import Generator
@@ -43,11 +44,12 @@ def mock_ca_cert() -> tuple[bytes, bytes]:
     """
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
+    # Must match _is_anthropic_tls_inspection_ca(): org == "Anthropic" AND "TLS Inspection CA" in cn
     subject = issuer = x509.Name(
         [
             x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Mock Anthropic TLS Inspection"),
-            x509.NameAttribute(NameOID.COMMON_NAME, "Mock Anthropic CA"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Anthropic"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "Mock TLS Inspection CA"),
         ]
     )
 
@@ -227,13 +229,22 @@ def isolated_env(tmp_path: Path, mock_tls_proxy: MockTLSProxy, monkeypatch: pyte
     bazel_proxy_dir = tmp_path / "bazel-proxy"
     bazel_proxy_dir.mkdir()
 
-    # Use a different port for the local proxy to avoid conflicts
+    # Use different ports for the local proxy and supervisor to avoid conflicts
     test_proxy_port = pick_free_port()
+    supervisor_port = pick_free_port()
 
     # Set environment variables for DI (read by getter functions in the modules)
     monkeypatch.setenv("CLAUDE_HOOKS_SUPERVISOR_DIR", str(supervisor_dir))
+    monkeypatch.setenv("CLAUDE_HOOKS_SUPERVISOR_PORT", str(supervisor_port))
     monkeypatch.setenv("CLAUDE_HOOKS_BAZEL_PROXY_DIR", str(bazel_proxy_dir))
     monkeypatch.setenv("CLAUDE_HOOKS_BAZEL_PROXY_PORT", str(test_proxy_port))
+
+    # Set CLAUDE_AUTH_PROXY_CMD so proxy_setup can run the proxy in Bazel sandbox
+    monkeypatch.setenv("CLAUDE_AUTH_PROXY_CMD", f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy")
+
+    # Set PYTHONPATH so the subprocess can find the module (Bazel sets up sys.path but not PYTHONPATH)
+    pythonpath = os.pathsep.join(sys.path)
+    monkeypatch.setenv("PYTHONPATH", pythonpath)
 
     # Set https_proxy env var pointing to mock proxy
     proxy_url = f"http://testuser:testpass@127.0.0.1:{mock_tls_proxy.port}"
@@ -248,23 +259,36 @@ def isolated_env(tmp_path: Path, mock_tls_proxy: MockTLSProxy, monkeypatch: pyte
     )
 
 
+def _stop_supervisor_by_pidfile(pidfile: Path) -> None:
+    """Stop supervisor process by reading and killing from pidfile."""
+    if not pidfile.exists():
+        return
+    try:
+        pid = int(pidfile.read_text().strip())
+        os.kill(pid, signal.SIGTERM)
+        time.sleep(0.5)
+        # Force kill if still running
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+        time.sleep(0.2)
+    except (ValueError, ProcessLookupError, OSError):
+        pass
+    # Clean up pidfile
+    with contextlib.suppress(OSError):
+        pidfile.unlink()
+
+
 @pytest.fixture(autouse=True)
 def cleanup_supervisor(isolated_env: IsolatedEnv) -> Generator[None]:
-    """Fixture that ensures supervisor is stopped after test."""
+    """Fixture that ensures supervisor is stopped before and after test."""
+    # Clean up BEFORE test to handle stale supervisor from previous runs
+    pidfile = isolated_env.supervisor_dir / "supervisord.pid"
+    _stop_supervisor_by_pidfile(pidfile)
+
     yield
 
-    # Kill any supervisor processes using our pidfile
-    pidfile = isolated_env.supervisor_dir / "supervisord.pid"
-    if pidfile.exists():
-        try:
-            pid = int(pidfile.read_text().strip())
-            os.kill(pid, signal.SIGTERM)
-            time.sleep(0.5)
-            # Force kill if still running
-            with contextlib.suppress(ProcessLookupError):
-                os.kill(pid, signal.SIGKILL)
-        except (ValueError, ProcessLookupError, OSError):
-            pass
+    # Clean up AFTER test
+    _stop_supervisor_by_pidfile(pidfile)
 
 
 def _wait_for_port(port: int, timeout: float = 5.0) -> bool:
@@ -324,7 +348,7 @@ class TestProxySetup:
         cert = x509.load_pem_x509_certificate(ca_content.encode())
         cn_value = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         cn = cn_value if isinstance(cn_value, str) else cn_value.decode()
-        assert "Anthropic" in cn, f"Expected 'Anthropic' in CN, got: {cn}"
+        assert "TLS Inspection CA" in cn, f"Expected 'TLS Inspection CA' in CN, got: {cn}"
 
     def test_credential_rotation(self, isolated_env: IsolatedEnv) -> None:
         """Test that credential changes trigger proxy restart."""
@@ -395,21 +419,19 @@ class TestSupervisorSetup:
         # Add initial service
         supervisor_setup.add_service(name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir)
 
-        # Get initial start time
+        # Get initial PID
         client = supervisor_setup._get_supervisor_client()
         initial_info = client.get_process_info("test-service")
-        initial_start = initial_info.start
-
-        time.sleep(0.5)  # Ensure measurable time difference
+        initial_pid = initial_info.pid
 
         # Update with different command
         supervisor_setup.update_service(
             name="test-service", command="sleep 7200", directory=isolated_env.supervisor_dir
         )
 
-        # Verify restarted
+        # Verify restarted (PID should have changed since process was stopped and restarted)
         new_info = client.get_process_info("test-service")
-        assert new_info.start > initial_start, "Service should have been restarted"
+        assert new_info.pid != initial_pid, f"Service should have been restarted (PID unchanged: {initial_pid})"
 
 
 class TestRobustness:

@@ -8,7 +8,8 @@
   terminalFont,
   nixGLPackages,
   ...
-}: let
+}:
+let
   lightScheme = solarizedLight;
   darkScheme = solarizedDark;
   fontFamily = terminalFont.family;
@@ -19,178 +20,171 @@
   weztermPkg = config.lib.nixGL.wrap pkgs.wezterm;
   ghosttyPkg = config.lib.nixGL.wrap pkgs.ghostty;
 
-  mkKittyTheme = scheme: isLight: let
-    p = scheme.palette;
-    colors =
-      if isLight
-      then [
-        p.base01
-        p.base08
-        p.base0B
-        p.base0A
-        p.base0D
-        p.base0E
-        p.base0C
-        p.base07
-        p.base00
-        p.base09
-        p.base02
-        p.base03
-        p.base04
-        p.base0F
-        p.base05
-        p.base06
-      ]
-      else [
-        p.base01
-        p.base08
-        p.base0B
-        p.base0A
-        p.base0D
-        p.base0E
-        p.base0C
-        p.base06
-        p.base00
-        p.base09
-        p.base02
-        p.base03
-        p.base04
-        p.base0F
-        p.base05
-        p.base07
-      ];
-    colorLines = lib.concatStringsSep "
+  mkKittyTheme =
+    scheme: isLight:
+    let
+      p = scheme.palette;
+      colors =
+        if isLight then
+          [
+            p.base01
+            p.base08
+            p.base0B
+            p.base0A
+            p.base0D
+            p.base0E
+            p.base0C
+            p.base07
+            p.base00
+            p.base09
+            p.base02
+            p.base03
+            p.base04
+            p.base0F
+            p.base05
+            p.base06
+          ]
+        else
+          [
+            p.base01
+            p.base08
+            p.base0B
+            p.base0A
+            p.base0D
+            p.base0E
+            p.base0C
+            p.base06
+            p.base00
+            p.base09
+            p.base02
+            p.base03
+            p.base04
+            p.base0F
+            p.base05
+            p.base07
+          ];
+      colorLines = lib.concatStringsSep "
 " (lib.imap0 (idx: hex: "color${toString idx} #${hex}") colors);
-    selectionFg =
-      if isLight
-      then p.base07
-      else p.base06;
-  in ''
-    background #${p.base00}
-    foreground #${p.base05}
-    selection_background #${p.base01}
-    selection_foreground #${selectionFg}
-    cursor #${p.base05}
-    ${colorLines}
-  '';
+      selectionFg = if isLight then p.base07 else p.base06;
+    in
+    ''
+      background #${p.base00}
+      foreground #${p.base05}
+      selection_background #${p.base01}
+      selection_foreground #${selectionFg}
+      cursor #${p.base05}
+      ${colorLines}
+    '';
 
-  mkColorList = colors:
-    "{ "
-    + lib.concatStringsSep ", " (builtins.map (hex: "\"#${hex}\"") colors)
-    + " }";
+  mkColorList =
+    colors: "{ " + lib.concatStringsSep ", " (builtins.map (hex: "\"#${hex}\"") colors) + " }";
 
-  mkWeztermScheme = scheme: isLight: let
-    p = scheme.palette;
-    ansi = [
-      p.base02
-      p.base08
-      p.base0B
-      p.base0A
-      p.base0D
-      p.base0E
-      p.base0C
-      (
-        if isLight
-        then p.base07
-        else p.base05
-      )
-    ];
-    brights = [
-      p.base03
-      p.base08
-      p.base0B
-      p.base0A
-      p.base0D
-      p.base0E
-      p.base0C
-      (
-        if isLight
-        then p.base06
-        else p.base07
-      )
-    ];
-    selectionFg =
-      if isLight
-      then p.base05
-      else p.base06;
-  in ''
-    {
-      foreground = "#${p.base05}";
-      background = "#${p.base00}";
-      cursor_bg = "#${p.base05}";
-      cursor_fg = "#${p.base00}";
-      cursor_border = "#${p.base05}";
-      selection_bg = "#${p.base02}";
-      selection_fg = "#${selectionFg}";
-      scrollbar_thumb = "#${p.base02}";
-      split = "#${p.base01}";
-      ansi = ${mkColorList ansi};
-      brights = ${mkColorList brights};
-    }
-  '';
+  mkWeztermScheme =
+    scheme: isLight:
+    let
+      p = scheme.palette;
+      ansi = [
+        p.base02
+        p.base08
+        p.base0B
+        p.base0A
+        p.base0D
+        p.base0E
+        p.base0C
+        (if isLight then p.base07 else p.base05)
+      ];
+      brights = [
+        p.base03
+        p.base08
+        p.base0B
+        p.base0A
+        p.base0D
+        p.base0E
+        p.base0C
+        (if isLight then p.base06 else p.base07)
+      ];
+      selectionFg = if isLight then p.base05 else p.base06;
+    in
+    ''
+      {
+        foreground = "#${p.base05}";
+        background = "#${p.base00}";
+        cursor_bg = "#${p.base05}";
+        cursor_fg = "#${p.base00}";
+        cursor_border = "#${p.base05}";
+        selection_bg = "#${p.base02}";
+        selection_fg = "#${selectionFg}";
+        scrollbar_thumb = "#${p.base02}";
+        split = "#${p.base01}";
+        ansi = ${mkColorList ansi};
+        brights = ${mkColorList brights};
+      }
+    '';
 
   kittyApplyScript = ./scripts/kitty-apply-theme.sh;
   kittyWatcherScript = ./scripts/kitty-theme-watcher.sh;
-  weztermConfig = let
-    darkSchemeLua = mkWeztermScheme darkScheme false;
-    lightSchemeLua = mkWeztermScheme lightScheme true;
-  in ''
-    local wezterm = require 'wezterm'
-    local act = wezterm.action
+  weztermConfig =
+    let
+      darkSchemeLua = mkWeztermScheme darkScheme false;
+      lightSchemeLua = mkWeztermScheme lightScheme true;
+    in
+    ''
+      local wezterm = require 'wezterm'
+      local act = wezterm.action
 
-    local function scheme_for_appearance(appearance)
-      if appearance:find 'Dark' then
-        return 'Solarized (dark)'
+      local function scheme_for_appearance(appearance)
+        if appearance:find 'Dark' then
+          return 'Solarized (dark)'
+        end
+        return 'Solarized (light)'
       end
-      return 'Solarized (light)'
-    end
 
-      local config = {
-        check_for_updates = false,
-        enable_scroll_bar = true,
-        hide_tab_bar_if_only_one_tab = false,
-        use_fancy_tab_bar = false,
-        scroll_to_bottom_on_input = true,
-        font = wezterm.font '${fontFamily}',
-        font_size = ${fontSizeStr},
-        color_schemes = {
-          ["Solarized (dark)"] = ${darkSchemeLua},
-          ["Solarized (light)"] = ${lightSchemeLua},
+        local config = {
+          check_for_updates = false,
+          enable_scroll_bar = true,
+          hide_tab_bar_if_only_one_tab = false,
+          use_fancy_tab_bar = false,
+          scroll_to_bottom_on_input = true,
+          font = wezterm.font '${fontFamily}',
+          font_size = ${fontSizeStr},
+          color_schemes = {
+            ["Solarized (dark)"] = ${darkSchemeLua},
+            ["Solarized (light)"] = ${lightSchemeLua},
+          },
+          keys = {
+            { key = "t", mods = "CTRL|SHIFT", action = act.SpawnTab "CurrentPaneDomain" },
+            { key = "n", mods = "CTRL|SHIFT", action = act.SpawnWindow },
+            { key = "w", mods = "CTRL|SHIFT", action = act.CloseCurrentTab { confirm = false } },
+            { key = "PageUp", mods = "CTRL", action = act.ActivateTabRelative(-1) },
+            { key = "PageDown", mods = "CTRL", action = act.ActivateTabRelative(1) },
+            { key = "PageUp", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
+            { key = "PageDown", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
+            { key = "PageUp", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
+            { key = "PageDown", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
+            { key = "c", mods = "CTRL|SHIFT", action = act.CopyTo "ClipboardAndPrimarySelection" },
+            { key = "v", mods = "CTRL|SHIFT", action = act.PasteFrom "Clipboard" },
+            { key = "f", mods = "CTRL|SHIFT", action = act.Search "CurrentSelectionOrEmptyString" },
         },
-        keys = {
-          { key = "t", mods = "CTRL|SHIFT", action = act.SpawnTab "CurrentPaneDomain" },
-          { key = "n", mods = "CTRL|SHIFT", action = act.SpawnWindow },
-          { key = "w", mods = "CTRL|SHIFT", action = act.CloseCurrentTab { confirm = false } },
-          { key = "PageUp", mods = "CTRL", action = act.ActivateTabRelative(-1) },
-          { key = "PageDown", mods = "CTRL", action = act.ActivateTabRelative(1) },
-          { key = "PageUp", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
-          { key = "PageDown", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
-          { key = "PageUp", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
-          { key = "PageDown", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
-          { key = "c", mods = "CTRL|SHIFT", action = act.CopyTo "ClipboardAndPrimarySelection" },
-          { key = "v", mods = "CTRL|SHIFT", action = act.PasteFrom "Clipboard" },
-          { key = "f", mods = "CTRL|SHIFT", action = act.Search "CurrentSelectionOrEmptyString" },
-      },
-    }
+      }
 
-    if wezterm.gui then
-      config.color_scheme = scheme_for_appearance(wezterm.gui.get_appearance())
-    else
-      config.color_scheme = 'Solarized (dark)'
-    end
-
-    wezterm.on('window-config-reloaded', function(window)
-      local overrides = window:get_config_overrides() or {}
-      local appearance = window:get_appearance()
-      local scheme = scheme_for_appearance(appearance)
-      if overrides.color_scheme ~= scheme then
-        overrides.color_scheme = scheme
-        window:set_config_overrides(overrides)
+      if wezterm.gui then
+        config.color_scheme = scheme_for_appearance(wezterm.gui.get_appearance())
+      else
+        config.color_scheme = 'Solarized (dark)'
       end
-    end)
 
-    return config
-  '';
+      wezterm.on('window-config-reloaded', function(window)
+        local overrides = window:get_config_overrides() or {}
+        local appearance = window:get_appearance()
+        local scheme = scheme_for_appearance(appearance)
+        if overrides.color_scheme ~= scheme then
+          overrides.color_scheme = scheme
+          window:set_config_overrides(overrides)
+        end
+      end)
+
+      return config
+    '';
   ghosttyConfigText = ''
     theme = dark:Builtin Solarized Dark,light:Builtin Solarized Light
     scrollbar = system
@@ -209,7 +203,8 @@
     keybind = ctrl+shift+v=paste_from_clipboard
     keybind = ctrl+shift+f=search
   '';
-in {
+in
+{
   config = lib.mkIf enableGui {
     targets.genericLinux.nixGL.packages = nixGLPackages;
 
@@ -264,15 +259,15 @@ in {
     systemd.user.services."kitty-theme-watcher" = {
       Unit = {
         Description = "Sync kitty theme with GNOME color preference";
-        After = ["graphical-session.target"];
-        PartOf = ["graphical-session.target"];
+        After = [ "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
       };
       Service = {
         ExecStart = "${pkgs.bash}/bin/bash ${config.xdg.configHome}/kitty/bin/kitty-theme-watcher.sh";
         Restart = "on-failure";
       };
       Install = {
-        WantedBy = ["graphical-session.target"];
+        WantedBy = [ "graphical-session.target" ];
       };
     };
 

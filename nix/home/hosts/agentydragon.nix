@@ -7,7 +7,8 @@
   pkgs,
   lib,
   ...
-}: {
+}:
+{
   imports = [
     ../home.nix
     ../modules/popos-bazel.nix

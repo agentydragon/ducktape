@@ -9,8 +9,8 @@
 # - Used for creative/productivity work (not essential for development)
 # - Better shared system-wide on NixOS to save space
 {
-  heavyPackages = pkgs:
-    with pkgs; [
+  heavyPackages =
+    pkgs: with pkgs; [
       # Creative/CAD
       freecad
       openscad

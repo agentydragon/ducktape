@@ -5,13 +5,14 @@
   pkgs,
   lib,
   ...
-}: {
+}:
+{
   # ~/.config/crush/crush.json
   xdg.configFile."crush/crush.json".text = builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";
-    mcp = {};
+    mcp = { };
     options = {
-      context_paths = [];
+      context_paths = [ ];
       diff = {
         external_command = "git diff --no-index --histogram --minimal --word-diff=porcelain -U3 -- a {old} -- b {new}";
         parse_mode = "git_word_porcelain";

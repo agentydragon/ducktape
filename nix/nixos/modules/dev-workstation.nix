@@ -5,7 +5,8 @@
   lib,
   username,
   ...
-}: {
+}:
+{
   # System packages (GUI apps, tools that need system-level integration)
   environment.systemPackages = with pkgs; [
     gnome-terminal
@@ -19,7 +20,7 @@
   };
 
   # Add user to docker group
-  users.users.${username}.extraGroups = ["docker"];
+  users.users.${username}.extraGroups = [ "docker" ];
 
   # Tailscale VPN
   services.tailscale.enable = true;

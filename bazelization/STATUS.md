@@ -18,7 +18,7 @@ The end-state is a **fully Bazel-managed repository** where:
   - JS/TS: eslint (done), prettier (done), svelte-check (done)
   - Bazel: buildifier (done)
   - YAML: yamllint (done)
-  - Nix: alejandra (done)
+  - Nix: nixfmt (via pre-commit, not Bazel)
 - No separate pre-commit framework; git hook calls `bazel lint` directly
 
 ### Docker Images via rules_oci
@@ -51,7 +51,7 @@ The end-state is a **fully Bazel-managed repository** where:
 Unified Bazel build system for all Python packages:
 
 - Single `bazel build //...` and `bazel test //...` commands
-- `rules_python` for Python 3.12+
+- `rules_python` for Python 3.13
 - Session start hooks set up Bazel proxy for Claude Code web
 
 ## Current Status (January 2026)
@@ -225,10 +225,9 @@ pre-commit install
 1. Safety checks: `no-commit-to-branch`, `check-merge-conflict`
 2. Syntax validation: `check-ast`, `check-yaml`, `check-toml`
 3. Ansible syntax check (for `ansible/*.yml` files)
-4. Bazel lint via `tools/hooks/lint-staged.sh`:
-   - Gets staged Python files
-   - Uses `bazel query attr('srcs', ...)` to find targets
-   - Runs `bazel lint` on affected packages
+4. Bazel format/lint via `bazel-format` local hook:
+   - Runs `bazelisk run //tools/format --` on staged files
+   - Handles Python, JS/TS, Markdown, YAML, JSON, Shell, Starlark
 
 **Requirements:**
 
@@ -251,10 +250,11 @@ git commit → pre-commit framework → hooks from .pre-commit-config.yaml → p
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "PYTHONPATH=claude_web_hooks/src python3 -m claude_web_hooks.session_start"
+            "command": "uv tool install --upgrade 'claude_hooks @ https://github.com/...claude_hooks-*.whl' && claude-session-start"
           }
         ]
       }
@@ -262,6 +262,8 @@ git commit → pre-commit framework → hooks from .pre-commit-config.yaml → p
   }
 }
 ```
+
+The `claude_hooks` wheel is built from `//tools/claude_hooks` and published to GitHub releases.
 
 **What it does:**
 
@@ -283,7 +285,7 @@ claude_web_hooks/
 ├── src/claude_web_hooks/
 │   ├── session_start.py      # Entry point
 │   ├── bazelisk_setup.py     # Bazelisk + wrapper installation
-│   ├── bazel_proxy_setup.py  # Proxy, CA, truststore setup
+│   ├── proxy_setup.py  # Proxy, CA, truststore setup
 │   └── proxy.py              # Async proxy server (stdlib only)
 ```
 
@@ -307,7 +309,7 @@ Claude Code web start
   → SessionStart hook
   → session_start.py main()
   → bazelisk_setup.install_bazelisk()
-  → bazel_proxy_setup.setup_bazel_proxy()
+  → proxy_setup.setup_bazel_proxy()
     → _update_proxy_credentials()
     → _start_proxy_server()
     → _extract_proxy_ca()
@@ -331,10 +333,10 @@ This allows BUILD files to use proxy env vars without hardcoding.
 
 The proxy config is set in two places:
 
-| Location                                 | Purpose                        | Set By                                    |
-| ---------------------------------------- | ------------------------------ | ----------------------------------------- |
-| `~/.cache/bazel-proxy/bin/bazel` wrapper | For Bazelisk downloading Bazel | `bazelisk_setup.install_wrapper()`        |
-| `~/.cache/bazel-proxy/bazelrc`           | For build actions (pip, uv)    | `bazel_proxy_setup._write_bazel_config()` |
+| Location                                 | Purpose                        | Set By                              |
+| ---------------------------------------- | ------------------------------ | ----------------------------------- |
+| `~/.cache/bazel-proxy/bin/bazel` wrapper | For Bazelisk downloading Bazel | `bazelisk_setup.install_wrapper()`  |
+| `~/.cache/bazel-proxy/bazelrc`           | For build actions (pip, uv)    | `proxy_setup._write_bazel_config()` |
 
 The module extension detects proxy config by checking if `~/.cache/bazel-proxy/combined_ca.pem` exists
 (created by session hook), rather than reading environment variables.
@@ -394,7 +396,7 @@ BUILD.bazel files
 
 **Key settings:**
 
-- `target-version = "py312"` - Python 3.12+ modern syntax
+- `target-version = "py313"` - Python 3.13 modern syntax
 - `line-length = 120` - Wider lines than PEP 8 default
 - Enabled rule categories: E, F, PLC/PLE/PLR/PLW, UP, FA, FURB, I, B, COM, C4, PT, SIM, N, RUF
 
@@ -655,7 +657,7 @@ Root `pyproject.toml` contains:
 | mypy         | `mypy.ini` (root)                 | `bazel build --config=typecheck //...` via rules_mypy |
 | buildifier   | `tools/lint/BUILD.bazel`          | `bazel run //tools/lint:buildifier`                   |
 | yamllint     | `.yamllint.yaml`                  | `bazel test //ansible:yamllint_test`                  |
-| alejandra    | Nix files                         | `bazel test //:alejandra_test`                        |
+| nixfmt       | Nix files                         | Pre-commit hook (`nix run nixpkgs#nixfmt`)            |
 | ESLint       | `props/frontend/eslint.config.js` | `bazel lint //...` via aspect_rules_lint              |
 | Prettier     | `props/frontend/.prettierrc`      | `bazel test //props/frontend:prettier_test`           |
 | svelte-check | `props/frontend/tsconfig.json`    | `bazel test //props/frontend:svelte_check_test`       |
@@ -684,7 +686,7 @@ The pre-commit framework manages all git hooks. Install with `pre-commit install
 | `ruff-format`          | Formatting            | `bazel lint //...`                              | ✅ Migrated        |
 | `mypy` (12 configs)    | Type checking         | `bazel build --config=typecheck`                | ✅ Migrated        |
 | `buildifier`           | BUILD formatting      | `bazel run //tools/lint:buildifier`             | ✅ Migrated        |
-| `alejandra`            | Nix formatting        | `bazel test //:alejandra_test`                  | ✅ Migrated        |
+| `nixfmt-nix`           | Nix formatting        | Pre-commit hook (`nix run nixpkgs#nixfmt`)      | Keep in pre-commit |
 | `eslint`               | JS/TS linting         | `bazel lint //...`                              | ✅ Migrated        |
 | `prettier`             | JS/TS formatting      | `bazel test //props/frontend:prettier_test`     | ✅ Migrated        |
 | `svelte-check`         | Svelte types          | `bazel test //props/frontend:svelte_check_test` | ✅ Migrated        |
