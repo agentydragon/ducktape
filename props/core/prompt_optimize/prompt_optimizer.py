@@ -107,7 +107,8 @@ class RunCriticInput(OpenAIStrictModeBaseModel):
         description="Agent package ID (from 'props agent-pkg create' or 'critic' for baseline)"
     )
     example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
-    max_turns: int = Field(ge=200, le=200, description="Maximum sampling turns (fixed at 200)")
+    timeout_seconds: int = Field(description="Max seconds before container is killed")
+    budget_usd: float | None = Field(description="Max USD cost for this agent (enforced by proxy)")
 
 
 class RunCriticOutput(OpenAIStrictModeBaseModel):
@@ -121,7 +122,8 @@ class RunCriticOutput(OpenAIStrictModeBaseModel):
 
 class RunGraderInput(OpenAIStrictModeBaseModel):
     critic_run_id: UUID = Field(description="agent_run_id of the critic agent run to grade (from run_critic output)")
-    max_turns: int = Field(ge=200, le=200, description="Maximum sampling turns (fixed at 200)")
+    timeout_seconds: int = Field(description="Max seconds before container is killed")
+    budget_usd: float | None = Field(description="Max USD cost for this agent (enforced by proxy)")
 
 
 class RunGraderOutput(OpenAIStrictModeBaseModel):
@@ -176,7 +178,6 @@ class PromptEvalServer(EnhancedFastMCP):
         optimizer_state: PromptOptimizerState,
         target_metric: TargetMetric,
         optimizer_run_id: UUID,
-        verbose: bool = False,
     ):
         super().__init__(
             "prompt_eval",
@@ -198,7 +199,6 @@ class PromptEvalServer(EnhancedFastMCP):
         self._optimizer_state = optimizer_state
         self._target_metric = target_metric
         self._optimizer_run_id = optimizer_run_id
-        self._verbose = verbose
 
         # Note: Agent run ID is available via current_agent_run_id() SQL function
         # which extracts it from the database username pattern (agent_{uuid}).
@@ -279,10 +279,10 @@ class PromptEvalServer(EnhancedFastMCP):
                 critic_run_id = await self._registry.run_critic(
                     image_ref=payload.definition_id,  # definition_id is actually an image ref
                     example=payload.example,
-                    client=self._critic_client,
+                    model=self._critic_client.model,
+                    timeout_seconds=payload.timeout_seconds,
                     parent_run_id=self._optimizer_run_id,
-                    verbose=self._verbose,
-                    max_turns=payload.max_turns,
+                    budget_usd=payload.budget_usd,
                 )
             except CriticExecutionError as e:
                 raise ToolError(
@@ -300,7 +300,7 @@ class PromptEvalServer(EnhancedFastMCP):
 
             if status == AgentRunStatus.MAX_TURNS_EXCEEDED:
                 raise ToolError(
-                    f"Critic agent exceeded maximum turns ({payload.max_turns}).\n\n"
+                    f"Critic agent exceeded maximum turns.\n\n"
                     f"{_AGENT_STUCK_ADVICE}\n"
                     f"{_trace_advice_for_run(critic_run_id)}"
                 )
@@ -331,19 +331,17 @@ class PromptEvalServer(EnhancedFastMCP):
             try:
                 grader_run_id = await self._registry.run_grader(
                     critic_run_id=payload.critic_run_id,
-                    client=self._grader_client,
+                    model=self._grader_client.model,
+                    timeout_seconds=payload.timeout_seconds,
                     parent_run_id=self._optimizer_run_id,
-                    verbose=self._verbose,
-                    max_turns=payload.max_turns,
+                    budget_usd=payload.budget_usd,
                 )
             except AgentDidNotSubmitError as e:
                 raise ToolError(
                     f"{e}\n\n{_AGENT_STUCK_ADVICE}\n{_trace_advice_for_run(e.agent_run_id, is_grader=True)}"
                 ) from e
             except MaxTurnsExceededError as e:
-                raise ToolError(
-                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n{_AGENT_STUCK_ADVICE}"
-                ) from e
+                raise ToolError(f"Grader agent exceeded maximum turns: {e}\n\n{_AGENT_STUCK_ADVICE}") from e
 
             # Verify grader run succeeded
             # Note: grader_run_id is always UUID here - the except block always raises
@@ -577,10 +575,9 @@ async def run_prompt_optimizer(
     docker_client: aiodocker.Docker,
     target_metric: TargetMetric,
     db_config: DatabaseConfig,
-    verbose: bool = False,
+    timeout_seconds: int,
     image_ref: str = BUILTIN_TAG,
     llm_proxy_url: str = DEFAULT_LLM_PROXY_URL,
-    timeout_seconds: int | None = None,
 ) -> None:
     """Run prompt optimizer agent with in-container agent loop.
 
@@ -644,7 +641,6 @@ async def run_prompt_optimizer(
         optimizer_state=optimizer_state,
         target_metric=target_metric,
         optimizer_run_id=agent_run_id,
-        verbose=verbose,
     )
 
     try:
@@ -672,7 +668,7 @@ async def run_prompt_optimizer(
                 logger.error(f"Container timed out after {timeout_seconds} seconds")
             else:
                 logger.info(f"Container exited with code {result.exit_code}")
-            if verbose and result.stderr:
+            if result.stderr:
                 logger.info(f"Container stderr:\n{result.stderr}")
 
         # Update status based on exit code

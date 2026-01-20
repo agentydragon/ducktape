@@ -70,10 +70,9 @@ async def run_improvement_agent(
     client: OpenAIModelProto,
     critic_client: OpenAIModelProto,
     grader_client: OpenAIModelProto,
+    timeout_seconds: int,
     output_dir: Path | None = None,
-    verbose: bool = False,
     llm_proxy_url: str = DEFAULT_LLM_PROXY_URL,
-    timeout_seconds: int | None = None,
 ) -> ImprovementResult:
     """Run improvement agent with in-container agent loop.
 
@@ -139,7 +138,6 @@ async def run_improvement_agent(
         optimizer_state=optimizer_state,
         target_metric=TargetMetric.TARGETED,
         optimizer_run_id=run_id,
-        verbose=verbose,
     )
 
     try:
@@ -167,7 +165,7 @@ async def run_improvement_agent(
                 logger.error(f"Container timed out after {timeout_seconds} seconds")
             else:
                 logger.info(f"Container exited with code {result.exit_code}")
-            if verbose and result.stderr:
+            if result.stderr:
                 logger.info(f"Container stderr:\n{result.stderr}")
 
         # Update status based on exit code

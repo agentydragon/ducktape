@@ -1,7 +1,6 @@
 """E2E test fixtures (agent runners, registries) for props tests."""
 
 from collections.abc import Callable
-from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID
 
@@ -12,7 +11,6 @@ from agent_core_testing.openai_mock import FakeOpenAIModel
 from agent_core_testing.steps import Step
 from openai_utils.model import ResponsesResult
 from props.core.agent_registry import AgentRegistry
-from props.core.agent_workspace import WorkspaceManager
 from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
@@ -23,11 +21,8 @@ from props.core.prompt_improve.loop import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
 
-
-@pytest.fixture
-def test_workspace_manager(tmp_path: Path) -> WorkspaceManager:
-    """Shared WorkspaceManager fixture for agent tests."""
-    return WorkspaceManager(tmp_path)
+# Default timeout for tests (10 minutes)
+TEST_TIMEOUT_SECONDS = 600
 
 
 @pytest.fixture
@@ -53,7 +48,7 @@ def make_openai_client() -> Callable[[list[ResponsesResult]], FakeOpenAIModel]:
 
 
 @pytest.fixture
-def run_critic_with_steps(synced_test_db, test_snapshot, make_step_runner, async_docker_client, test_workspace_manager):
+def run_critic_with_steps(synced_test_db, test_snapshot, make_step_runner, async_docker_client):
     """Factory fixture for running critic with custom steps."""
 
     async def _run(
@@ -61,18 +56,21 @@ def run_critic_with_steps(synced_test_db, test_snapshot, make_step_runner, async
         *,
         image_ref: str = CRITIC_IMAGE_REF,
         example: ExampleSpec | None = None,
-        max_turns: int = 100,
+        model: str = "gpt-4o",
     ) -> tuple[UUID, AgentRunStatus, object]:
         if example is None:
             example = WholeSnapshotExample(snapshot_slug=test_snapshot)
 
         runner = make_step_runner(steps=steps)
-        registry = AgentRegistry(
-            docker_client=async_docker_client, db_config=synced_test_db, workspace_manager=test_workspace_manager
-        )
+        registry = AgentRegistry(docker_client=async_docker_client, db_config=synced_test_db)
         try:
             critic_run_id = await registry.run_critic(
-                image_ref=image_ref, example=example, client=runner, max_turns=max_turns
+                image_ref=image_ref,
+                example=example,
+                model=model,
+                timeout_seconds=TEST_TIMEOUT_SECONDS,
+                parent_run_id=None,
+                budget_usd=None,
             )
             with get_session() as session:
                 critic_run = session.get(AgentRun, critic_run_id)
@@ -86,11 +84,9 @@ def run_critic_with_steps(synced_test_db, test_snapshot, make_step_runner, async
 
 
 @pytest_asyncio.fixture
-async def test_registry(synced_test_db, async_docker_client, test_workspace_manager):
+async def test_registry(synced_test_db, async_docker_client):
     """Provide AgentRegistry for tests, handling cleanup."""
-    registry = AgentRegistry(
-        docker_client=async_docker_client, db_config=synced_test_db, workspace_manager=test_workspace_manager
-    )
+    registry = AgentRegistry(docker_client=async_docker_client, db_config=synced_test_db)
     yield registry
     await registry.close()
 
@@ -119,6 +115,7 @@ def run_prompt_optimizer_with_steps(synced_test_db, make_step_runner, make_opena
             docker_client=async_docker_client,
             target_metric=target_metric,
             db_config=synced_test_db,
+            timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
     return _run
@@ -168,6 +165,7 @@ def run_improvement_agent_with_steps(
                 client=runner,
                 critic_client=noop_openai_client,
                 grader_client=noop_openai_client,
+                timeout_seconds=TEST_TIMEOUT_SECONDS,
             )
 
     return _run

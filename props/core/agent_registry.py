@@ -135,9 +135,9 @@ class AgentRegistry:
         image_ref: str,
         example: ExampleSpec,
         model: str,
-        parent_run_id: UUID | None = None,
-        timeout_seconds: int | None = None,
-        budget_usd: float | None = None,
+        timeout_seconds: int,
+        parent_run_id: UUID | None,
+        budget_usd: float | None,
     ) -> UUID:
         """Run a critic agent. Acquires semaphore slot.
 
@@ -147,8 +147,8 @@ class AgentRegistry:
             image_ref: Image reference (tag or digest) - REQUIRED for explicit version control
             example: Example specification (snapshot + scope)
             model: Model name for LLM calls (e.g., "gpt-4o")
+            timeout_seconds: Max seconds before container is killed
             parent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
-            timeout_seconds: Max seconds before container is killed (default: no limit)
             budget_usd: Max USD cost for this agent (enforced by proxy)
 
         Returns:
@@ -170,8 +170,8 @@ class AgentRegistry:
         image_ref: str,
         example: ExampleSpec,
         model: str,
+        timeout_seconds: int,
         parent_run_id: UUID | None,
-        timeout_seconds: int | None,
         budget_usd: float | None,
     ) -> UUID:
         """Internal critic execution (semaphore already acquired)."""
@@ -274,9 +274,9 @@ class AgentRegistry:
         *,
         critic_run_id: UUID,
         model: str,
-        parent_run_id: UUID | None = None,
-        timeout_seconds: int | None = None,
-        budget_usd: float | None = None,
+        timeout_seconds: int,
+        parent_run_id: UUID | None,
+        budget_usd: float | None,
     ) -> UUID:
         """Run a one-off grader on a critic run. Acquires semaphore slot.
 
@@ -286,8 +286,8 @@ class AgentRegistry:
         Args:
             critic_run_id: ID of the critic run to grade
             model: Model name for LLM calls (e.g., "gpt-4o")
+            timeout_seconds: Max seconds before container is killed
             parent_run_id: Optional parent agent run ID
-            timeout_seconds: Max seconds before container is killed (default: no limit)
             budget_usd: Max USD cost for this agent (enforced by proxy)
 
         Returns:
@@ -307,8 +307,8 @@ class AgentRegistry:
         *,
         critic_run_id: UUID,
         model: str,
+        timeout_seconds: int,
         parent_run_id: UUID | None,
-        timeout_seconds: int | None,
         budget_usd: float | None,
     ) -> UUID:
         """Internal one-off grader execution (semaphore already acquired)."""

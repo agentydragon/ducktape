@@ -16,7 +16,6 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from openai_utils.client_factory import build_client
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
@@ -456,16 +455,22 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
 
     Registry semaphore limits actual concurrency.
     """
+    # Default timeout: 1 hour per agent
+    timeout_seconds = 3600
+
     try:
-        critic_client = build_client(job.critic_model)
-        grader_client = build_client(job.grader_model)
 
         async def run_one(example: ExampleSpec) -> bool:
             """Run critic + grader for one example. Returns True on success."""
             try:
                 logger.info(f"[Job {job.job_id}] Running critic on {example.snapshot_slug}")
                 critic_run_id = await registry.run_critic(
-                    image_ref=job.image_digest, example=example, client=critic_client, max_turns=100
+                    image_ref=job.image_digest,
+                    example=example,
+                    model=job.critic_model,
+                    timeout_seconds=timeout_seconds,
+                    parent_run_id=None,
+                    budget_usd=None,
                 )
 
                 # Check critic status
@@ -478,7 +483,13 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
 
                 # Run grader
                 logger.info(f"[Job {job.job_id}] Running grader on critic {critic_run_id}")
-                await registry.run_grader(critic_run_id=critic_run_id, client=grader_client, max_turns=200)
+                await registry.run_grader(
+                    critic_run_id=critic_run_id,
+                    model=job.grader_model,
+                    timeout_seconds=timeout_seconds,
+                    parent_run_id=None,
+                    budget_usd=None,
+                )
                 return True
 
             except Exception:

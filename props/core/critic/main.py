@@ -80,6 +80,30 @@ class ReportFailureArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(..., description="Description of why the critique could not be completed")
 
+
+# --- Tool response models ---
+
+
+class LocationInfo(BaseModel):
+    file: str
+    start_line: int | None
+    end_line: int | None
+
+
+class OccurrenceInfo(BaseModel):
+    locations: list[LocationInfo]
+
+
+class IssueInfo(BaseModel):
+    issue_id: str
+    rationale: str
+    occurrences: list[OccurrenceInfo]
+
+
+class ListIssuesResponse(BaseModel):
+    issues: list[IssueInfo]
+
+
 logger = logging.getLogger(__name__)
 
 WORKSPACE = Path("/workspace")
@@ -164,29 +188,32 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
 
     @provider.tool
     def list_issues() -> str:
-        """List all issues reported in this critique run. Shows issue IDs, rationales, and occurrence counts."""
+        """List all issues reported in this critique run. Returns JSON with issue IDs, rationales, and occurrences."""
         with get_session() as session:
             agent_run_id = get_current_agent_run_id(session)
             issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
 
-            if not issues:
-                return "No issues reported yet."
-
-            lines = [f"Issues reported ({len(issues)}):"]
+            issue_infos = []
             for issue in issues:
                 occurrences = (
                     session.query(ReportedIssueOccurrence)
                     .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
                     .all()
                 )
-                lines.append(f"  {issue.issue_id}")
-                lines.append(f"    Rationale: {issue.rationale}")
-                lines.append(f"    Occurrences: {len(occurrences)}")
-                for occ in occurrences:
-                    locs = ", ".join(f"{loc.file}:{loc.start_line or '?'}-{loc.end_line or '?'}" for loc in occ.locations)
-                    lines.append(f"      - {locs}")
+                occurrence_infos = [
+                    OccurrenceInfo(
+                        locations=[
+                            LocationInfo(file=loc.file, start_line=loc.start_line, end_line=loc.end_line)
+                            for loc in occ.locations
+                        ]
+                    )
+                    for occ in occurrences
+                ]
+                issue_infos.append(
+                    IssueInfo(issue_id=issue.issue_id, rationale=issue.rationale, occurrences=occurrence_infos)
+                )
 
-            return "\n".join(lines)
+            return ListIssuesResponse(issues=issue_infos).model_dump_json()
 
     @provider.tool
     def submit(args: SubmitArgs) -> str:
