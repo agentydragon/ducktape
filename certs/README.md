@@ -69,7 +69,9 @@ cert = ssl_sock.getpeercert(binary_form=True)
 print(ssl.DER_cert_to_PEM_cert(cert))
 ```
 
-The proxy intercepts HTTPS connections and re-signs them with short-lived certificates (typically 24h validity) issued by the TLS Inspection CA.
+The proxy intercepts HTTPS connections and re-signs them with short-lived certificates
+(typically 24h validity) issued by the TLS Inspection CA. Certificates are **cached**
+and reused across connections - see <certificate-caching-evidence.md> for details.
 
 ## Environment Variables
 
