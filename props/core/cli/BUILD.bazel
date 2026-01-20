@@ -335,7 +335,7 @@ py_library(
         "//props/core/db:session",
         "//props/core/models:examples",
         "//props/core/prompt_improve:improve_agent",
-        "//props/core/prompt_improve:reminder_handler",
+        "//props/core/prompt_improve:loop",
         "//props/core/prompt_optimize:prompt_optimizer",
         "//props/core/prompt_optimize:target_metric",
         "@pypi//aiodocker",

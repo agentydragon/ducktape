@@ -19,7 +19,7 @@ from props.core.db.session import get_session
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec, WholeSnapshotExample
 from props.core.prompt_improve.improve_agent import run_improvement_agent
-from props.core.prompt_improve.reminder_handler import TerminationSuccess
+from props.core.prompt_improve.loop import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
 

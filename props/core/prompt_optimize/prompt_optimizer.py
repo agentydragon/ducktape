@@ -10,7 +10,6 @@ New architecture (in-container agent loop):
 import asyncio
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -26,7 +25,6 @@ from openai_utils.model import OpenAIModelProto
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType, PromptOptimizerTypeConfig
-from props.core.agent_workspace import WorkspaceManager
 from props.core.critic.exceptions import CriticExecutionError
 from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
@@ -178,8 +176,6 @@ class PromptEvalServer(EnhancedFastMCP):
         optimizer_state: PromptOptimizerState,
         target_metric: TargetMetric,
         optimizer_run_id: UUID,
-        workspace_root: Path,
-        budget_limit: float,
         verbose: bool = False,
     ):
         super().__init__(
@@ -202,8 +198,6 @@ class PromptEvalServer(EnhancedFastMCP):
         self._optimizer_state = optimizer_state
         self._target_metric = target_metric
         self._optimizer_run_id = optimizer_run_id
-        self._workspace_root = workspace_root
-        self._budget_limit = budget_limit
         self._verbose = verbose
 
         # Note: Agent run ID is available via current_agent_run_id() SQL function
@@ -634,7 +628,6 @@ async def run_prompt_optimizer(
     logger.info(f"Created prompt optimizer AgentRun: {agent_run_id}")
 
     # Create registry for critic/grader runs initiated by the optimizer
-    workspace_manager = WorkspaceManager.from_env()
     registry = AgentRegistry(
         docker_client=docker_client,
         db_config=db_config,
@@ -650,8 +643,6 @@ async def run_prompt_optimizer(
         optimizer_state=optimizer_state,
         target_metric=target_metric,
         optimizer_run_id=agent_run_id,
-        workspace_root=Path("/workspace"),  # Container-side path
-        budget_limit=budget,
         verbose=verbose,
     )
 

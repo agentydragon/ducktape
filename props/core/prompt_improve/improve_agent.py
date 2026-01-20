@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import tempfile
-from pathlib import Path
+from pathlib import Path  # Used for output_dir
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
@@ -29,7 +29,7 @@ from props.core.loop_agent_env import run_loop_agent
 from props.core.mcp_http_server import serve_mcp_http
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
-from props.core.prompt_improve.reminder_handler import TerminationSuccess
+from props.core.prompt_improve.loop import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import PromptEvalServer, PromptOptimizerState
 from props.core.prompt_optimize.target_metric import TargetMetric
 
@@ -138,8 +138,6 @@ async def run_improvement_agent(
         optimizer_state=optimizer_state,
         target_metric=TargetMetric.TARGETED,
         optimizer_run_id=run_id,
-        workspace_root=Path("/workspace"),  # Container-side path
-        budget_limit=float("inf"),  # Improvement uses token budget, not dollar budget
         verbose=verbose,
     )
 
