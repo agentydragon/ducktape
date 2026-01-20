@@ -51,8 +51,9 @@ from props.core.grader.tools import (
     LocationInfo,
     PendingEdge,
     ReportFailureArgs,
-    ShowGTArgs,
+    ShowFPArgs,
     ShowIssueArgs,
+    ShowTPArgs,
     SubmitArgs,
     TPRef,
 )
@@ -140,24 +141,21 @@ def create_grader_tool_provider(
     def show_issue(args: ShowIssueArgs) -> IssueDetails:
         """Show details of a critique issue including its locations."""
         with get_session() as session:
-            query = session.query(ReportedIssue).filter_by(issue_id=args.issue_id)
-            if args.run:
-                query = query.filter_by(agent_run_id=args.run)
-
-            issue = query.first()
+            issue = session.query(ReportedIssue).filter_by(agent_run_id=args.run, issue_id=args.issue_id).first()
             if not issue:
-                raise ValueError(f"Issue not found: {args.issue_id}")
+                raise ValueError(f"Issue not found: {args.run}/{args.issue_id}")
 
             occs = (
                 session.query(ReportedIssueOccurrence)
-                .filter_by(agent_run_id=issue.agent_run_id, reported_issue_id=issue.issue_id)
+                .filter_by(agent_run_id=args.run, reported_issue_id=args.issue_id)
                 .all()
             )
 
-            locations = []
-            for occ in occs:
-                for loc in occ.locations or []:
-                    locations.append(LocationInfo(file=loc.file, start_line=loc.start_line, end_line=loc.end_line))
+            locations = [
+                LocationInfo(file=loc.file, start_line=loc.start_line, end_line=loc.end_line)
+                for occ in occs
+                for loc in occ.locations or []
+            ]
 
             return IssueDetails(
                 issue_id=issue.issue_id,
@@ -167,41 +165,44 @@ def create_grader_tool_provider(
             )
 
     @provider.tool
-    def show_gt(args: ShowGTArgs) -> GTDetails:
-        """Show details of a ground truth occurrence."""
+    def show_tp(args: ShowTPArgs) -> GTDetails:
+        """Show details of a true positive occurrence."""
         with get_session() as session:
-            match args.gt_ref:
-                case TPRef(tp_id=tp_id, occurrence_id=occ_id):
-                    tp = session.query(TruePositive).filter_by(snapshot_slug=snapshot_slug, tp_id=tp_id).first()
-                    if not tp:
-                        raise ValueError(f"TP not found: {tp_id}")
+            tp = session.query(TruePositive).filter_by(snapshot_slug=snapshot_slug, tp_id=args.tp_id).first()
+            if not tp:
+                raise ValueError(f"TP not found: {args.tp_id}")
 
-                    occ = (
-                        session.query(TruePositiveOccurrenceORM)
-                        .filter_by(snapshot_slug=snapshot_slug, tp_id=tp_id, occurrence_id=occ_id)
-                        .first()
-                    )
-                    if not occ:
-                        raise ValueError(f"TP occurrence not found: {tp_id}/{occ_id}")
+            occ = (
+                session.query(TruePositiveOccurrenceORM)
+                .filter_by(snapshot_slug=snapshot_slug, tp_id=args.tp_id, occurrence_id=args.occurrence_id)
+                .first()
+            )
+            if not occ:
+                raise ValueError(f"TP occurrence not found: {args.tp_id}/{args.occurrence_id}")
 
-                    files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
-                    return GTDetails(gt_ref=args.gt_ref, rationale=tp.rationale, files=files_dict, note=occ.note)
+            files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
+            gt_ref = TPRef(tp_id=args.tp_id, occurrence_id=args.occurrence_id)
+            return GTDetails(gt_ref=gt_ref, rationale=tp.rationale, files=files_dict, note=occ.note)
 
-                case FPRef(fp_id=fp_id, occurrence_id=occ_id):
-                    fp = session.query(FalsePositive).filter_by(snapshot_slug=snapshot_slug, fp_id=fp_id).first()
-                    if not fp:
-                        raise ValueError(f"FP not found: {fp_id}")
+    @provider.tool
+    def show_fp(args: ShowFPArgs) -> GTDetails:
+        """Show details of a false positive occurrence."""
+        with get_session() as session:
+            fp = session.query(FalsePositive).filter_by(snapshot_slug=snapshot_slug, fp_id=args.fp_id).first()
+            if not fp:
+                raise ValueError(f"FP not found: {args.fp_id}")
 
-                    occ = (
-                        session.query(FalsePositiveOccurrenceORM)
-                        .filter_by(snapshot_slug=snapshot_slug, fp_id=fp_id, occurrence_id=occ_id)
-                        .first()
-                    )
-                    if not occ:
-                        raise ValueError(f"FP occurrence not found: {fp_id}/{occ_id}")
+            occ = (
+                session.query(FalsePositiveOccurrenceORM)
+                .filter_by(snapshot_slug=snapshot_slug, fp_id=args.fp_id, occurrence_id=args.occurrence_id)
+                .first()
+            )
+            if not occ:
+                raise ValueError(f"FP occurrence not found: {args.fp_id}/{args.occurrence_id}")
 
-                    files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
-                    return GTDetails(gt_ref=args.gt_ref, rationale=fp.rationale, files=files_dict, note=occ.note)
+            files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
+            gt_ref = FPRef(fp_id=args.fp_id, occurrence_id=args.occurrence_id)
+            return GTDetails(gt_ref=gt_ref, rationale=fp.rationale, files=files_dict, note=occ.note)
 
     @provider.tool
     def insert_edges(args: InsertEdgesArgs) -> str:
@@ -211,13 +212,6 @@ def create_grader_tool_provider(
         Use credit=0 for non-matches, >0 for matches based on quality.
         """
         with get_session() as session:
-            critique_run_id = args.run
-            if critique_run_id is None:
-                issue = session.query(ReportedIssue).filter_by(issue_id=args.issue_id).first()
-                if issue is None:
-                    raise ValueError(f"Critique issue not found: {args.issue_id}")
-                critique_run_id = issue.agent_run_id
-
             for edge_spec in args.edges:
                 match edge_spec.gt_ref:
                     case TPRef(tp_id=tp_id, occurrence_id=tp_occ):
@@ -226,7 +220,7 @@ def create_grader_tool_provider(
                         tp_id, tp_occ = None, None
 
                 edge = GradingEdge(
-                    critique_run_id=critique_run_id,
+                    critique_run_id=args.run,
                     critique_issue_id=args.issue_id,
                     snapshot_slug=snapshot_slug,
                     tp_id=tp_id,
@@ -239,7 +233,7 @@ def create_grader_tool_provider(
                 )
                 session.add(edge)
 
-        return f"Created {len(args.edges)} edges for {args.issue_id}"
+        return f"Created {len(args.edges)} edges for {args.run}/{args.issue_id}"
 
     @provider.tool
     def fill_remaining(args: FillRemainingArgs) -> str:
@@ -250,10 +244,10 @@ def create_grader_tool_provider(
         """
         with get_session() as session:
             query = select(GradingPending).where(
-                GradingPending.snapshot_slug == snapshot_slug, GradingPending.critique_issue_id == args.issue_id
+                GradingPending.snapshot_slug == snapshot_slug,
+                GradingPending.critique_run_id == args.run,
+                GradingPending.critique_issue_id == args.issue_id,
             )
-            if args.run:
-                query = query.where(GradingPending.critique_run_id == args.run)
 
             pending = list(session.scalars(query))
 
@@ -275,21 +269,19 @@ def create_grader_tool_provider(
                 )
                 session.add(edge)
 
-        return f"Filled {len(pending)} edges with credit=0 for {args.issue_id}"
+        return f"Filled {len(pending)} edges with credit=0 for {args.run}/{args.issue_id}"
 
     @provider.tool
     def delete_edges(args: DeleteEdgesArgs) -> str:
         """Delete all grading edges for an issue. Use to redo grading."""
         with get_session() as session:
-            query = session.query(GradingEdge).filter_by(
-                critique_issue_id=args.issue_id, grader_run_id=grader_run_id
+            count = (
+                session.query(GradingEdge)
+                .filter_by(critique_run_id=args.run, critique_issue_id=args.issue_id, grader_run_id=grader_run_id)
+                .delete()
             )
-            if args.run:
-                query = query.filter_by(critique_run_id=args.run)
 
-            count = query.delete()
-
-        return f"Deleted {count} edges for {args.issue_id}"
+        return f"Deleted {count} edges for {args.run}/{args.issue_id}"
 
     # Only add submit tool for one-off mode
     if mode == GraderMode.ONE_OFF:

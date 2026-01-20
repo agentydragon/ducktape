@@ -1371,7 +1371,7 @@ class AgentRun(Base):
     - container_exit_code: Exit code from container (NULL if still running)
 
     Resource limits (set at launch time):
-    - budget_tokens: Max tokens allowed (including child agents). Enforced by proxy.
+    - budget_usd: Max USD cost allowed (including child agents). Enforced by proxy.
     - timeout_seconds: Max seconds before agent is killed. Enforced by agent_registry.
 
     Container lifecycle timestamps:
@@ -1403,9 +1403,9 @@ class AgentRun(Base):
     )
 
     # Resource limits (set at launch time)
-    budget_tokens: Mapped[int | None] = mapped_column(
+    budget_usd: Mapped[float | None] = mapped_column(
         nullable=True,
-        comment="Max tokens allowed for this agent (including child agents). Enforced by proxy.",
+        comment="Max USD cost allowed for this agent (including child agents). Enforced by proxy.",
     )
     timeout_seconds: Mapped[int | None] = mapped_column(
         nullable=True,

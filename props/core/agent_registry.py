@@ -25,7 +25,7 @@ Status determination (outside container):
 
 Resource limits:
 - timeout_seconds: Host kills container after timeout; enforced by agent_registry
-- budget_tokens: Proxy enforces token budget across agent and subagents
+- budget_usd: Proxy enforces USD cost budget across agent and subagents
 
 Usage:
     registry = AgentRegistry(docker_client, db_config, llm_proxy_url)
@@ -35,7 +35,7 @@ Usage:
             example=example,
             model="gpt-4o",
             timeout_seconds=3600,
-            budget_tokens=100000,
+            budget_usd=10.0,
         )
         # Check status from DB
         with get_session() as session:
@@ -138,7 +138,7 @@ class AgentRegistry:
         model: str,
         parent_run_id: UUID | None = None,
         timeout_seconds: int | None = None,
-        budget_tokens: int | None = None,
+        budget_usd: float | None = None,
     ) -> UUID:
         """Run a critic agent. Acquires semaphore slot.
 
@@ -150,7 +150,7 @@ class AgentRegistry:
             model: Model name for LLM calls (e.g., "gpt-4o")
             parent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
             timeout_seconds: Max seconds before container is killed (default: no limit)
-            budget_tokens: Max tokens for this agent (enforced by proxy)
+            budget_usd: Max USD cost for this agent (enforced by proxy)
 
         Returns:
             Agent run ID (query DB for status)
@@ -162,7 +162,7 @@ class AgentRegistry:
                 model=model,
                 parent_run_id=parent_run_id,
                 timeout_seconds=timeout_seconds,
-                budget_tokens=budget_tokens,
+                budget_usd=budget_usd,
             )
 
     async def _run_critic_impl(
@@ -173,7 +173,7 @@ class AgentRegistry:
         model: str,
         parent_run_id: UUID | None,
         timeout_seconds: int | None,
-        budget_tokens: int | None,
+        budget_usd: float | None,
     ) -> UUID:
         """Internal critic execution (semaphore already acquired)."""
         snapshot_slug = example.snapshot_slug
@@ -198,7 +198,7 @@ class AgentRegistry:
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
                 timeout_seconds=timeout_seconds,
-                budget_tokens=budget_tokens,
+                budget_usd=budget_usd,
                 started_at=started_at,
             )
             session.add(agent_run)
@@ -283,7 +283,7 @@ class AgentRegistry:
         model: str,
         parent_run_id: UUID | None = None,
         timeout_seconds: int | None = None,
-        budget_tokens: int | None = None,
+        budget_usd: float | None = None,
     ) -> UUID:
         """Run a one-off grader on a critic run. Acquires semaphore slot.
 
@@ -295,7 +295,7 @@ class AgentRegistry:
             model: Model name for LLM calls (e.g., "gpt-4o")
             parent_run_id: Optional parent agent run ID
             timeout_seconds: Max seconds before container is killed (default: no limit)
-            budget_tokens: Max tokens for this agent (enforced by proxy)
+            budget_usd: Max USD cost for this agent (enforced by proxy)
 
         Returns:
             Grader run ID (query DB for status)
@@ -306,7 +306,7 @@ class AgentRegistry:
                 model=model,
                 parent_run_id=parent_run_id,
                 timeout_seconds=timeout_seconds,
-                budget_tokens=budget_tokens,
+                budget_usd=budget_usd,
             )
 
     async def _run_grader_impl(
@@ -316,7 +316,7 @@ class AgentRegistry:
         model: str,
         parent_run_id: UUID | None,
         timeout_seconds: int | None,
-        budget_tokens: int | None,
+        budget_usd: float | None,
     ) -> UUID:
         """Internal one-off grader execution (semaphore already acquired)."""
         grader_run_id = uuid4()
@@ -398,7 +398,7 @@ class AgentRegistry:
                     type_config=type_config,
                     status=AgentRunStatus.IN_PROGRESS,
                     timeout_seconds=timeout_seconds,
-                    budget_tokens=budget_tokens,
+                    budget_usd=budget_usd,
                     started_at=started_at,
                 )
             )
@@ -488,7 +488,7 @@ class AgentRegistry:
         *,
         snapshot_slug: SnapshotSlug,
         model: str,
-        budget_tokens: int | None = None,
+        budget_usd: float | None = None,
     ) -> UUID:
         """Run a snapshot grader daemon. Blocks until shutdown or fatal error.
 
@@ -504,7 +504,7 @@ class AgentRegistry:
         Args:
             snapshot_slug: Snapshot this daemon is responsible for
             model: Model name for LLM calls (e.g., "gpt-4o")
-            budget_tokens: Max tokens for this agent (enforced by proxy)
+            budget_usd: Max USD cost for this agent (enforced by proxy)
 
         Returns:
             Daemon run ID (query DB for status)
@@ -513,7 +513,7 @@ class AgentRegistry:
             return await self._run_snapshot_grader_impl(
                 snapshot_slug=snapshot_slug,
                 model=model,
-                budget_tokens=budget_tokens,
+                budget_usd=budget_usd,
             )
 
     async def _run_snapshot_grader_impl(
@@ -521,7 +521,7 @@ class AgentRegistry:
         *,
         snapshot_slug: SnapshotSlug,
         model: str,
-        budget_tokens: int | None,
+        budget_usd: float | None,
     ) -> UUID:
         """Internal snapshot grader daemon execution."""
         grader_run_id = uuid4()
@@ -550,7 +550,7 @@ class AgentRegistry:
                     model=model,
                     type_config=type_config,
                     status=AgentRunStatus.IN_PROGRESS,
-                    budget_tokens=budget_tokens,
+                    budget_usd=budget_usd,
                     started_at=started_at,
                 )
             )

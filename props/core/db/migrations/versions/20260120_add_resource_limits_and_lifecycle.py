@@ -19,10 +19,10 @@ def upgrade() -> None:
     op.add_column(
         "agent_runs",
         sa.Column(
-            "budget_tokens",
-            sa.Integer(),
+            "budget_usd",
+            sa.Float(),
             nullable=True,
-            comment="Max tokens allowed for this agent (including child agents). Enforced by proxy.",
+            comment="Max USD cost allowed for this agent (including child agents). Enforced by proxy.",
         ),
     )
     op.add_column(
@@ -76,4 +76,4 @@ def downgrade() -> None:
 
     # Drop resource limit columns
     op.drop_column("agent_runs", "timeout_seconds")
-    op.drop_column("agent_runs", "budget_tokens")
+    op.drop_column("agent_runs", "budget_usd")

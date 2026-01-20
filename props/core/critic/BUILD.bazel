@@ -27,7 +27,6 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":tools",
         "//agent_core:agent",
         "//agent_core:direct_provider",
         "//agent_core:handler",
@@ -41,6 +40,7 @@ py_library(
         "//props/core/db:snapshots",
         "@pypi//jinja2",
         "@pypi//openai",
+        "@pypi//pydantic",
     ],
 )
 
@@ -64,16 +64,6 @@ pkg_tar(
 # =============================================================================
 # Library targets
 # =============================================================================
-
-py_library(
-    name = "tools",
-    srcs = ["tools.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "@pypi//pydantic",
-    ],
-)
 
 py_library(
     name = "exceptions",

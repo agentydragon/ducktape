@@ -91,7 +91,7 @@ AgentEnvironment (simplified)
 
 | Aspect          | Decision                                                                      |
 | --------------- | ----------------------------------------------------------------------------- |
-| Token budget    | `agent_runs.budget_tokens` - max tokens for agent + all child agents          |
+| USD budget      | `agent_runs.budget_usd` - max USD cost for agent + all child agents           |
 | Timeout         | `agent_runs.timeout_seconds` - max wall-clock time before container is killed |
 | Budget enforce  | LLM proxy checks budget before each request; rejects if exceeded              |
 | Timeout enforce | `agent_registry` uses `asyncio.wait_for()` to kill container on timeout       |
@@ -99,11 +99,14 @@ AgentEnvironment (simplified)
 
 **Budget enforcement by proxy:**
 
-1. On each LLM request, proxy queries `llm_run_costs` view to get current token usage
-2. Sum usage for agent + all child agents (via `parent_agent_run_id` tree)
-3. Compare against `agent_runs.budget_tokens` limit
+1. On each LLM request, proxy queries `llm_run_costs` view to get current USD cost
+2. Sum cost for agent + all child agents (via `parent_agent_run_id` tree)
+3. Compare against `agent_runs.budget_usd` limit
 4. Reject request with 429 if budget exceeded
 5. Child agents inherit remaining budget from parent
+
+Note: USD cost accounts for model pricing differences, cached input token discounts, etc.
+The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing table.
 
 **Timeout enforcement by agent_registry:**
 
@@ -220,7 +223,7 @@ PromptEvalServer (FastMCP)              MCPToolProvider
 **New columns on `agent_runs`:**
 
 - `container_exit_code` (INTEGER) - container exit code (NULL if still running)
-- `budget_tokens` (INTEGER) - max tokens allowed (including child agents); enforced by proxy
+- `budget_usd` (FLOAT) - max USD cost allowed (including child agents); enforced by proxy
 - `timeout_seconds` (INTEGER) - max seconds before agent is killed; enforced by agent_registry
 - `started_at` (TIMESTAMP) - when container started executing
 - `ended_at` (TIMESTAMP) - when container finished (success or failure)
@@ -541,15 +544,15 @@ Features:
 
 ### Cost Budget Propagation
 
-**Decision:** LLM proxy queries `agent_runs.parent_agent_run_id` to compute budget tree, enforced via `budget_tokens` column.
+**Decision:** LLM proxy queries `agent_runs.parent_agent_run_id` to compute budget tree, enforced via `budget_usd` column.
 
-- `agent_runs.budget_tokens` column stores the token limit for each agent run
+- `agent_runs.budget_usd` column stores the USD cost limit for each agent run
 - Parent spawns child → child's cost counts against parent's remaining budget
 - Proxy sums costs up the parent chain on each request via `llm_run_costs` view
-- Rejects request with 429 if sum exceeds any ancestor's `budget_tokens` limit
+- Rejects request with 429 if sum exceeds any ancestor's `budget_usd` limit
 - No special token encoding needed - just query the table
-- Track token counts (input_tokens, output_tokens) as reported by OpenAI Responses API
-- Dollar cost computed via view joining `llm_requests` with model pricing table
+- USD cost computed via view joining `llm_requests` with `model_metadata` pricing table
+- Accounts for model pricing, cached input tokens (cheaper), output tokens (more expensive)
 
 ### Exec Tool Implementation
 

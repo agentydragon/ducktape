@@ -20,6 +20,8 @@ from pathlib import Path
 from jinja2 import Environment
 from openai import AsyncOpenAI
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
@@ -28,17 +30,55 @@ from mcp_infra.exec.direct import DirectExecArgs, run_direct_exec
 from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import BoundOpenAIModel, SystemMessage
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run, get_current_agent_run_id, get_scope_description
-from props.core.critic.tools import (
-    DeleteIssueArgs,
-    InsertIssueArgs,
-    InsertOccurrenceArgs,
-    InsertOccurrenceMultiArgs,
-    ReportFailureArgs,
-    SubmitArgs,
-)
 from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
 from props.core.db.snapshots import DBLocationAnchor
+
+
+# --- Tool argument models ---
+
+
+class InsertIssueArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    issue_id: str = Field(..., description="Unique identifier for this issue (kebab-case slug)")
+    rationale: str = Field(..., description="Explanation of why this is an issue")
+
+
+class InsertOccurrenceArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    issue_id: str = Field(..., description="ID of the issue this occurrence belongs to")
+    file: str = Field(..., description="File path relative to workspace root")
+    start_line: int | None = Field(None, description="Starting line number")
+    end_line: int | None = Field(None, description="Ending line number")
+
+
+class LocationSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    file: str
+    start_line: int | None = None
+    end_line: int | None = None
+
+
+class InsertOccurrenceMultiArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    issue_id: str = Field(..., description="ID of the issue this occurrence belongs to")
+    locations: list[LocationSpec] = Field(..., description="List of locations for this occurrence")
+
+
+class DeleteIssueArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    issue_id: str = Field(..., description="ID of the issue to delete")
+
+
+class SubmitArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    issues_count: int = Field(..., description="Total number of issues reported")
+    summary: str = Field(..., description="Brief summary of the code review findings")
+
+
+class ReportFailureArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(..., description="Description of why the critique could not be completed")
 
 logger = logging.getLogger(__name__)
 
