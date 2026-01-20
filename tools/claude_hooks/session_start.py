@@ -6,6 +6,7 @@ CLI mode: Loads direnv environment.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.resources
 import json
 import logging
@@ -22,7 +23,16 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from tools.claude_hooks import bazelisk_setup, binary_tools, nix_setup, proxy_setup, supervisor_setup
+from tools import env_utils
+from tools.claude_hooks import (
+    bazelisk_setup,
+    binary_tools,
+    env_file,
+    nix_setup,
+    podman_service,
+    proxy_setup,
+    supervisor_setup,
+)
 from tools.claude_hooks.errors import DirenvError, ProjectNotFoundError
 
 CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
@@ -386,6 +396,148 @@ def setup_logging() -> LogCollector:
     return collector
 
 
+# ============================================================================
+# Async helpers
+# ============================================================================
+
+
+async def run_in_thread(func, *args):
+    """Run blocking function in thread pool."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, func, *args)
+
+
+# ============================================================================
+# Web mode: async setup with parallelization
+# ============================================================================
+
+
+async def run_web_mode_async(hook_input: HookInput) -> None:
+    """Web mode with parallelized operations.
+
+    Uses asyncio to parallelize independent installations (git hook, cluster
+    tools, nix) while maintaining correct sequencing for dependent operations.
+
+    Writes CLAUDE_ENV_FILE once at the end with all collected environment
+    variables.
+    """
+    collector = setup_logging()
+
+    logger.info("Session start hook")
+    logger.info("Hook: %s", __file__)
+    logger.info("Log:  %s", LOG_FILE)
+    logger.info("Hook input: %s", hook_input.model_dump_json())
+    logger.info("Full environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
+    logger.info("Setting up dev environment...")
+    logger.info(format_environment_summary())
+
+    # Get required environment variables (fail early if missing)
+    env_file_path = env_utils.get_required_env_path("CLAUDE_ENV_FILE")
+
+    # Detect project directory
+    project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
+    project_dir: Path
+    if project_dir_str:
+        logger.info("CLAUDE_PROJECT_DIR provided: %s", project_dir_str)
+        project_dir = Path(project_dir_str)
+    else:
+        logger.warning("CLAUDE_PROJECT_DIR not provided (fallback to PWD)")
+        pwd = Path.cwd()
+        if (pwd / ".git").exists():
+            project_dir = pwd
+            os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
+            logger.info("Project: %s", project_dir)
+        else:
+            raise ProjectNotFoundError("Cannot detect project root (no .git, CLAUDE_PROJECT_DIR not set)")
+
+    # Sequential: Bazel proxy (needed by other operations)
+    proxy_setup.setup_bazel_proxy()
+
+    # Sequential: Bazelisk (needed early)
+    if not os.environ.get("CLAUDE_HOOKS_SKIP_BAZELISK"):
+        bazelisk_setup.install_bazelisk()
+        bazelisk_setup.install_wrapper()
+    else:
+        logger.info("Skipping bazelisk installation (CLAUDE_HOOKS_SKIP_BAZELISK set)")
+
+    # PARALLEL: Independent installations
+    logger.info("Starting parallel installations...")
+    git_task = asyncio.create_task(run_in_thread(install_git_precommit_hook, project_dir))
+    cluster_task = asyncio.create_task(run_in_thread(binary_tools.install_cluster_tools))
+    nix_task = asyncio.create_task(run_in_thread(nix_setup.install_nix))
+
+    # Await tasks with individual error handling
+    try:
+        await git_task
+    except Exception as e:
+        logger.warning("Failed to install git pre-commit: %s", e)
+
+    try:
+        await cluster_task
+    except Exception as e:
+        logger.warning("Failed to install cluster tools: %s", e)
+
+    nix_store_bin: Path | None = None
+    try:
+        nix_store_bin = await nix_task
+    except Exception as e:
+        logger.warning("Failed to install nix: %s", e)
+
+    # Sequential: Podman configuration and service
+    docker_host = None
+    if not os.environ.get("CLAUDE_HOOKS_SKIP_PODMAN"):
+        logger.info("Configuring podman for e2e testing...")
+        setup_podman_storage()
+        emit_podman_guidance()
+
+        try:
+            podman_socket = await run_in_thread(podman_service.start_podman_service)
+            docker_host = f"unix://{podman_socket}"
+            logger.info(f"Podman service started: DOCKER_HOST={docker_host}")
+        except Exception as e:
+            logger.warning("Failed to start podman service: %s", e)
+    else:
+        logger.info("Skipping podman setup (CLAUDE_HOOKS_SKIP_PODMAN set)")
+
+    # Generate timestamp
+    hook_timestamp = datetime.now()
+    TIMESTAMP_FILE.write_text(f"{hook_timestamp.isoformat()}\n")
+    logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
+
+    # Collect environment variables
+    combined_ca = proxy_setup._get_bazel_combined_ca()
+    if not combined_ca.exists():
+        raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
+
+    nix_paths = nix_setup.get_nix_paths(nix_store_bin) if nix_store_bin else []
+
+    env_vars = env_file.EnvVars(
+        proxy_port=proxy_setup._get_bazel_proxy_port(),
+        repo_root=project_dir,
+        combined_ca=combined_ca,
+        bazel_wrapper_dir=bazelisk_setup._get_wrapper_path().parent,
+        nix_paths=nix_paths,
+        docker_host=docker_host,
+        hook_timestamp=hook_timestamp,
+    )
+
+    # Write environment file ONCE
+    env_file.write_env_file(env_file_path, env_vars)
+    logger.info("Wrote environment to %s", env_file_path)
+
+    # Emit status
+    node_ca_status = "custom CA" if combined_ca.exists() else "system"
+    logger.info(
+        "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), proxy_setup.get_status(), node_ca_status
+    )
+    logger.info("Nix: %s", get_nix_status())
+    if docker_host:
+        logger.info("Podman: %s", podman_service.get_status())
+
+    supervisor_setup.emit_usage_guidance()
+    emit_session_context(collector)
+
+
 def run_web_mode(hook_input: HookInput) -> None:
     """Web mode: set up Bazel proxy, git hooks, and development environment."""
     collector = setup_logging()
@@ -524,7 +676,7 @@ def main() -> None:
         raise
 
     if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
-        run_web_mode(hook_input)
+        asyncio.run(run_web_mode_async(hook_input))
     else:
         run_cli_mode(hook_input)
 

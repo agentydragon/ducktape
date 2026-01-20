@@ -1,4 +1,11 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Shared utilities for environment variable handling
+py_library(
+    name = "env_utils",
+    srcs = ["env_utils.py"],
+    visibility = ["//visibility:public"],
+)
 
 # Guard against missing pytest_bazel.main() calls in test files
 py_binary(

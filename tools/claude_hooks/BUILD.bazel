@@ -18,8 +18,10 @@ py_library(
         "bazel_wrapper.py",
         "bazelisk_setup.py",
         "binary_tools.py",
+        "env_file.py",
         "errors.py",
         "nix_setup.py",
+        "podman_service.py",
         "proxy_credentials.py",
         "proxy_setup.py",
         "resources.py",
@@ -38,6 +40,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":auth_proxy",
+        "//tools:env_utils",
         "@pypi//cryptography",
         "@pypi//mako",
         "@pypi//pydantic",
