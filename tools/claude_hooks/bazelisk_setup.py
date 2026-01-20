@@ -178,7 +178,7 @@ def get_env_script(
     exports = {
         "BAZELISK_PATH": _get_bazelisk_path(),
         "BAZEL_LOCAL_PROXY": local_proxy,
-        "BAZEL_SYSTEM_BAZELRC_PATH": proxy_setup._get_bazel_proxy_rc(),
+        "BAZEL_PROXY_BAZELRC": proxy_setup._get_bazel_proxy_rc(),  # Wrapper injects as --bazelrc
         "DUCKTAPE_REPO_ROOT": repo_root,
         "DUCKTAPE_SESSION_START_HOOK_TS": hook_timestamp.isoformat(),
         # Props e2e test configuration (podman + host networking)

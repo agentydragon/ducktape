@@ -74,9 +74,9 @@ def main() -> None:
         os.environ[var] = require_env("BAZEL_LOCAL_PROXY")
 
     bazelisk_path = require_env("BAZELISK_PATH")
-    bazelrc_path = require_env("BAZEL_SYSTEM_BAZELRC_PATH")
+    bazelrc_path = require_env("BAZEL_PROXY_BAZELRC")
 
-    # Inject --bazelrc to load proxy configuration (JVM options for TLS, etc.)
+    # Inject --bazelrc as startup option (before command) for proxy/TLS configuration
     args = [bazelisk_path, f"--bazelrc={bazelrc_path}", *sys.argv[1:]]
     os.execvp(bazelisk_path, args)
 
