@@ -580,6 +580,7 @@ async def run_prompt_optimizer(
     verbose: bool = False,
     image_ref: str = BUILTIN_TAG,
     llm_proxy_url: str = DEFAULT_LLM_PROXY_URL,
+    timeout_seconds: int | None = None,
 ) -> None:
     """Run prompt optimizer agent with in-container agent loop.
 
@@ -663,14 +664,24 @@ async def run_prompt_optimizer(
                     "MCP_SERVER_TOKEN": mcp_handle.token,
                 },
                 container_name=f"promptopt-{short_uuid(agent_run_id)}",
+                timeout_seconds=timeout_seconds,
             )
 
-            logger.info(f"Container exited with code {result.exit_code}")
+            timed_out = result.exit_code == -1
+            if timed_out:
+                logger.error(f"Container timed out after {timeout_seconds} seconds")
+            else:
+                logger.info(f"Container exited with code {result.exit_code}")
             if verbose and result.stderr:
                 logger.info(f"Container stderr:\n{result.stderr}")
 
         # Update status based on exit code
-        final_status = AgentRunStatus.COMPLETED if result.exit_code == 0 else AgentRunStatus.REPORTED_FAILURE
+        if timed_out:
+            final_status = AgentRunStatus.TIMED_OUT
+        elif result.exit_code == 0:
+            final_status = AgentRunStatus.COMPLETED
+        else:
+            final_status = AgentRunStatus.REPORTED_FAILURE
         with get_session() as session:
             agent_run = session.get(AgentRun, agent_run_id)
             if agent_run:

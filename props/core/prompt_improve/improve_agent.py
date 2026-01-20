@@ -73,6 +73,7 @@ async def run_improvement_agent(
     output_dir: Path | None = None,
     verbose: bool = False,
     llm_proxy_url: str = DEFAULT_LLM_PROXY_URL,
+    timeout_seconds: int | None = None,
 ) -> ImprovementResult:
     """Run improvement agent with in-container agent loop.
 
@@ -158,25 +159,39 @@ async def run_improvement_agent(
                     "MCP_SERVER_TOKEN": mcp_handle.token,
                 },
                 container_name=f"improve-{short_uuid(run_id)}",
+                timeout_seconds=timeout_seconds,
             )
 
-            logger.info(f"Container exited with code {result.exit_code}")
+            timed_out = result.exit_code == -1
+            if timed_out:
+                logger.error(f"Container timed out after {timeout_seconds} seconds")
+            else:
+                logger.info(f"Container exited with code {result.exit_code}")
             if verbose and result.stderr:
                 logger.info(f"Container stderr:\n{result.stderr}")
 
         # Update status based on exit code
-        final_status = AgentRunStatus.COMPLETED if result.exit_code == 0 else AgentRunStatus.REPORTED_FAILURE
+        if timed_out:
+            final_status = AgentRunStatus.TIMED_OUT
+        elif result.exit_code == 0:
+            final_status = AgentRunStatus.COMPLETED
+        else:
+            final_status = AgentRunStatus.REPORTED_FAILURE
         with get_session() as session:
             agent_run = session.get(AgentRun, run_id)
             if agent_run:
                 agent_run.status = final_status
-                agent_run.container_exit_code = result.exit_code
+                agent_run.container_exit_code = result.exit_code if not timed_out else None
                 session.commit()
                 logger.info(f"Updated agent_run status to {final_status.value}")
 
         # Determine outcome
         outcome: ImprovementOutcome
-        if result.exit_code == 0:
+        if timed_out:
+            outcome = OutcomeUnexpectedTermination(
+                message=f"Container timed out after {timeout_seconds} seconds"
+            )
+        elif result.exit_code == 0:
             # Success - for now just return exhausted (container writes details to DB)
             outcome = OutcomeExhausted()  # TODO: Parse actual success details from DB
         else:

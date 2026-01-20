@@ -151,6 +151,7 @@ class AgentRunStatus(StrEnum):
     COMPLETED = "completed"
     MAX_TURNS_EXCEEDED = "max_turns_exceeded"
     CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
+    TIMED_OUT = "timed_out"
     REPORTED_FAILURE = "reported_failure"
 
 

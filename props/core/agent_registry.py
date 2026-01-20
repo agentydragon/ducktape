@@ -245,7 +245,7 @@ class AgentRegistry:
                 run.container_exit_code = result.exit_code if not timed_out else None
 
                 if timed_out:
-                    final_status = AgentRunStatus.REPORTED_FAILURE
+                    final_status = AgentRunStatus.TIMED_OUT
                 elif result.exit_code == 0:
                     # Check if issues were reported (indicates successful submit)
                     issues_count = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).count()
@@ -439,7 +439,7 @@ class AgentRegistry:
                 run.container_exit_code = result.exit_code if not timed_out else None
 
                 if timed_out:
-                    final_status = AgentRunStatus.REPORTED_FAILURE
+                    final_status = AgentRunStatus.TIMED_OUT
                 elif result.exit_code == 0:
                     # Check if all grading edges are complete (no pending edges)
                     pending_count = session.execute(
