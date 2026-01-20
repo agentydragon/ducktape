@@ -1,11 +1,4 @@
-"""Agent package utilities for validating packages.
-
-This module provides:
-- validate_packed_agent_pkg: Validate a packed archive has required files
-
-For repo-backed packages synced to DB, see db/sync/_sync.py which uses
-MANIFEST files and git archive for clean packing.
-"""
+"""Agent package utilities for validating packages."""
 
 from __future__ import annotations
 
@@ -14,7 +7,6 @@ import tarfile
 
 # Required files in agent package tar (build context)
 DOCKERFILE_FILE = "Dockerfile"
-MANIFEST_FILE = "MANIFEST"
 
 
 class AgentPkgValidationError(Exception):

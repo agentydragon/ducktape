@@ -168,7 +168,6 @@ tools/local_registry/**
 *.mako
 *.ambr
 *.tanapaste
-MANIFEST
 
 # Git hooks and server-side hooks
 hooks/pre-commit
