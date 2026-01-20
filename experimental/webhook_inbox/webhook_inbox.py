@@ -15,6 +15,7 @@ import sys
 import time
 import zlib
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -32,7 +33,9 @@ PAGE_SIZE = int(os.getenv("PAGE_SIZE", "50"))
 TZ = "America/Los_Angeles"
 PAC = ZoneInfo(TZ)
 
-templates = Jinja2Templates(directory="templates")
+# Use path relative to this module for Bazel compatibility
+_MODULE_DIR = Path(__file__).parent
+templates = Jinja2Templates(directory=str(_MODULE_DIR / "templates"))
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 # Configure logging (avoid double config when uvicorn already set it up)
