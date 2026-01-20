@@ -22,6 +22,17 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
+py_library(
+    name = "snapshot_io",
+    srcs = ["snapshot_io.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":models",
+        ":session",
+    ],
+)
+
 # =============================================================================
 # Core models (depend on config, snapshots, external modules)
 # =============================================================================
@@ -71,17 +82,6 @@ py_library(
         "//props/core:splits",
         "//props/core/models:examples",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "snapshot_io",
-    srcs = ["snapshot_io.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":models",
-        ":session",
     ],
 )
 

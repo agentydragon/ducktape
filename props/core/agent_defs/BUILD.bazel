@@ -11,18 +11,6 @@ init_script_tar(
     script = "init",
 )
 
-# Init script for critic agent
-init_script_tar(
-    name = "critic_agent_init_tar",
-    script = "critic_init",
-)
-
-# Init script for grader agent
-init_script_tar(
-    name = "grader_agent_init_tar",
-    script = "grader_init",
-)
-
 # Critic variant OCI images
 # Targets: :contract_truthfulness, :contract_truthfulness_load, :contract_truthfulness_push
 critic_variant(

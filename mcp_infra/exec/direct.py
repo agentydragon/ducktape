@@ -28,7 +28,7 @@ async def run_direct_exec(input: DirectExecArgs, *, default_cwd: Path | None = N
     """Execute a command locally (no sandbox).
 
     Standalone function for direct command execution. Used by DirectExecServer
-    and can be called directly for in-process agent loops.
+    and can be called directly for in-container agent loops.
 
     Args:
         input: Exec arguments (command, timeout, etc.)

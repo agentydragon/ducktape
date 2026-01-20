@@ -1,6 +1,110 @@
 """Grader module - per-file targets."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# =============================================================================
+# In-container agent loop
+# =============================================================================
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "loop",
+    srcs = ["loop.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":drift_handler",
+        ":tools",
+        "//agent_core",
+        "//agent_core:direct_provider",
+        "//mcp_infra/exec:direct",
+        "//openai_utils",
+        "//props/core:agent_helpers",
+        "//props/core:ids",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+# =============================================================================
+# In-container agent main entry points
+# =============================================================================
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":loop",
+        "//props/core:agent_helpers",
+        "//props/core/db:session",
+        "@pypi//jinja2",
+    ],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [":main_lib"],
+)
+
+pkg_tar(
+    name = "main_tar",
+    srcs = [":main"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "daemon_main_lib",
+    srcs = ["daemon_main.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":drift_handler",
+        ":loop",
+        "//props/core:agent_helpers",
+        "//props/core:ids",
+        "//props/core/db:session",
+        "@pypi//asyncpg",
+        "@pypi//jinja2",
+    ],
+)
+
+py_binary(
+    name = "daemon_main",
+    srcs = ["daemon_main.py"],
+    main = "daemon_main.py",
+    visibility = ["//visibility:public"],
+    deps = [":daemon_main_lib"],
+)
+
+pkg_tar(
+    name = "daemon_main_tar",
+    srcs = [":daemon_main"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
 
 # =============================================================================
 # Library targets
@@ -19,24 +123,6 @@ py_library(
         "//props/core/db:session",
         "@pypi//fastmcp",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "grader",
-    srcs = ["grader.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":submit_server",
-        "//mcp_infra",
-        "//props/core:agent_setup",
-        "//props/core:agent_workspace",
-        "//props/core:display",
-        "//props/core:ids",
-        "//props/core/db:config",
-        "@pypi//aiodocker",
-        "@pypi//fastmcp",
     ],
 )
 
@@ -87,24 +173,6 @@ py_library(
         "//props/core:ids",
         "//props/core/db:models",
         "//props/core/db:session",
-    ],
-)
-
-py_library(
-    name = "snapshot_grader_env",
-    srcs = ["snapshot_grader_env.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":submit_server",
-        "//mcp_infra",
-        "//props/core:agent_setup",
-        "//props/core:agent_workspace",
-        "//props/core:display",
-        "//props/core:ids",
-        "//props/core/db:config",
-        "@pypi//aiodocker",
-        "@pypi//fastmcp",
     ],
 )
 
@@ -161,7 +229,7 @@ py_test(
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
-        ":grader",
+        ":submit_server",
         "//props/core/db:models",
         "//props/core/db:session",
         "//props/testing",
@@ -180,7 +248,7 @@ py_test(
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
-        ":grader",
+        ":submit_server",
         "//props/core/db:models",
         "//props/core/db:session",
         "//props/testing",
@@ -198,7 +266,7 @@ py_test(
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
-        ":grader",
+        ":submit_server",
         "//props/core/db:models",
         "//props/core/db:session",
         "//props/testing",
@@ -226,7 +294,7 @@ py_test(
         "requires_postgres",
     ],
     deps = [
-        ":grader",
+        ":submit_server",
         "//agent_core",
         "//agent_core_testing",
         "//props/core/db:models",

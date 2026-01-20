@@ -38,7 +38,6 @@ from agent_core.mcp_provider import MCPToolProvider
 from agent_pkg.host.init_runner import run_init_script
 from openai_utils.model import SystemMessage
 from openai_utils.types import ReasoningSummary
-from props.core.db_event_handler import DatabaseEventHandler
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -114,7 +113,7 @@ class AgentHandle:
             model_client: OpenAI-compatible model client
             mcp_client: FastMCP client connected to compositor
             compositor: MCP compositor with mounted Docker runtime server (has .runtime attribute)
-            handlers: Additional handlers beyond the default (DatabaseEventHandler)
+            handlers: Additional handlers for the agent loop
             dynamic_instructions: Optional callable that returns dynamic instructions string
             parallel_tool_calls: Whether to allow parallel tool calls (default False)
             reasoning_summary: Optional reasoning summary mode for the agent
@@ -124,6 +123,9 @@ class AgentHandle:
 
         Raises:
             InitFailedError: If init script fails
+
+        Note:
+            LLM requests are logged by the proxy to llm_requests table, not via handlers.
         """
         # TODO: For conversational sub-agents (agent that returns text to parent),
         # add CaptureTextHandler here. Currently all agents use RedirectOnTextMessageHandler
@@ -131,7 +133,7 @@ class AgentHandle:
         agent = await Agent.create(
             tool_provider=MCPToolProvider(mcp_client),
             client=model_client,
-            handlers=[DatabaseEventHandler(agent_run_id=agent_run_id), *handlers],
+            handlers=list(handlers),
             tool_policy=AllowAnyToolOrTextMessage(),
             dynamic_instructions=dynamic_instructions,
             parallel_tool_calls=parallel_tool_calls,

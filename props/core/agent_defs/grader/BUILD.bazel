@@ -1,23 +1,40 @@
-"""Grader agent OCI image built with Bazel.
+"""Grader agent OCI images built with Bazel.
+
+Two images for different grader modes:
+- grader: One-off grader that grades a single critic run
+- grader_daemon: Persistent daemon that grades all critiques for a snapshot
 
 Build targets:
-    bazel run //props/core/agent_defs/grader:load  -- Load into local Docker
-    bazel run //props/core/agent_defs/grader:push  -- Push to local registry (localhost:5050)
+    bazel run //props/core/agent_defs/grader:load         -- Load one-off grader
+    bazel run //props/core/agent_defs/grader:push         -- Push one-off grader
+    bazel run //props/core/agent_defs/grader:daemon_load  -- Load daemon grader
+    bazel run //props/core/agent_defs/grader:daemon_push  -- Push daemon grader
+
+The containers run an agent loop that:
+1. Fetches snapshot to /workspace
+2. Renders system prompt from template
+3. Queries LLM via proxy (OPENAI_BASE_URL)
+4. Executes grader tools (list_pending, insert_edges, submit, etc.)
+5. One-off: exits 0 on successful submit
+6. Daemon: sleeps on pg_notify, wakes to grade new critiques
 """
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 
+# =============================================================================
+# One-off grader (grades single critic run)
+# =============================================================================
+
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    entrypoint = ["/init"],
+    cmd = ["/app/main"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
     tars = [
-        "//props/core/cli:app_tar",
-        "//props/core/agent_defs:grader_agent_init_tar",
+        "//props/core/grader:main_tar",
     ],
     workdir = "/workspace",
 )
@@ -33,4 +50,35 @@ oci_push(
     image = ":image",
     remote_tags = ["latest"],
     repository = "localhost:5050/grader",
+)
+
+# =============================================================================
+# Daemon grader (grades all critiques for a snapshot, persistent)
+# =============================================================================
+
+oci_image(
+    name = "daemon_image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/daemon_main"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [
+        "//props/core/grader:daemon_main_tar",
+    ],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "daemon_load",
+    image = ":daemon_image",
+    repo_tags = ["snapshot_grader:latest"],
+)
+
+oci_push(
+    name = "daemon_push",
+    image = ":daemon_image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/snapshot_grader",
 )

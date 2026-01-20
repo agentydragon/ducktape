@@ -15,14 +15,12 @@ Does NOT test:
 
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
 import pytest_bazel
 
 from props.core.db import query_builders as qb
 from props.core.db.examples import Example
-from props.core.db.models import Event, FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
+from props.core.db.models import FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
 from props.core.db.session import get_session
 from props.core.splits import Split
 from props.testing.fixtures import make_critic_run, make_grader_run
@@ -96,25 +94,7 @@ def query_test_data(synced_test_db):
         session.add(grader_run_valid_2)
 
         session.flush()
-
-        # Create event records for one agent_run_id (for event query tests)
-        agent_run_id = critic_run_train.agent_run_id
-        now = datetime.now()
-        event_specs = [
-            (0, "tool_call", {"name": "Read", "args_json": '{"file_path": "test.py"}', "call_id": "call-1"}),
-            (1, "function_call_output", {"call_id": "call-1", "result": {"isError": False}}),
-            (2, "tool_call", {"name": "Grep", "args_json": '{"pattern": "foo"}', "call_id": "call-2"}),
-            (3, "function_call_output", {"call_id": "call-2", "result": {"isError": True}}),
-        ]
-        for seq_num, evt_type, payload in event_specs:
-            session.add(
-                Event(
-                    agent_run_id=agent_run_id, sequence_num=seq_num, event_type=evt_type, timestamp=now, payload=payload
-                )
-            )
-
         session.commit()
-        return agent_run_id  # Return for use in event query tests
 
 
 class TestQueryBuilders:

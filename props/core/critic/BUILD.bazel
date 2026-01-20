@@ -1,10 +1,65 @@
 """Critic module - per-file targets."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# =============================================================================
+# In-container agent main entry point
+# =============================================================================
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":tools",
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+        "//props/core:agent_helpers",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "@pypi//jinja2",
+        "@pypi//openai",
+    ],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [":main_lib"],
+)
+
+pkg_tar(
+    name = "main_tar",
+    srcs = [":main"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
 
 # =============================================================================
 # Library targets
 # =============================================================================
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
 
 py_library(
     name = "exceptions",
@@ -27,24 +82,6 @@ py_library(
         "//props/core/db:session",
         "//props/core/db:snapshots",
         "//props/core/models:examples",
-        "@pypi//fastmcp",
-    ],
-)
-
-py_library(
-    name = "critic",
-    srcs = ["critic.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":submit_server",
-        "//mcp_infra",
-        "//props/core:agent_setup",
-        "//props/core:agent_workspace",
-        "//props/core:display",
-        "//props/core/db:config",
-        "//props/core/models:examples",
-        "@pypi//aiodocker",
         "@pypi//fastmcp",
     ],
 )
@@ -72,7 +109,7 @@ py_test(
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
-        ":critic",
+        ":submit_server",
         "//props/core/db:models",
         "//props/core/db:session",
         "//props/testing",
@@ -91,7 +128,7 @@ py_test(
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
-        ":critic",
+        ":submit_server",
         "//props/core/db:models",
         "//props/core/db:session",
         "//props/testing",
@@ -119,7 +156,7 @@ py_test(
         "requires_postgres",
     ],
     deps = [
-        ":critic",
+        ":submit_server",
         "//agent_core",
         "//agent_core_testing",
         "//props/core/db:models",

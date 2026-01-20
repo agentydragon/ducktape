@@ -22,15 +22,42 @@ The only requirement: Dockerfile must produce an image with executable `/init`.
 | Input                              | Method                                             |
 | ---------------------------------- | -------------------------------------------------- |
 | Training data (examples, TPs, FPs) | SQL: Query via `get_session()`                     |
-| Historical runs & metrics          | SQL: `critic_runs`, `grader_runs`, aggregate views |
-| Execution traces                   | SQL: `events` table                                |
+| Historical runs & metrics          | SQL: `agent_runs`, aggregate views                 |
+| LLM request logs                   | SQL: `llm_requests` table (full request/response)  |
+| Cost breakdown                     | SQL: `llm_run_costs` view                          |
 
-| Output                | Method                                                                    |
-| --------------------- | ------------------------------------------------------------------------- |
-| Fetch/create packages | CLI: `props agent-pkg fetch/create`                                       |
-| Run evaluations       | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
-| View metrics          | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples`     |
-| Report failures       | CLI: `props critic-dev report-failure "message"`                          |
+| Output                | Method                                                        |
+| --------------------- | ------------------------------------------------------------- |
+| Fetch/create packages | CLI: `props agent-pkg fetch/create`                           |
+| Run critic            | Tool: `run_critic(definition_id, example, max_turns)`         |
+| Get grading results   | Tool: `wait_until_graded(critic_run_id)` (preferred)          |
+| Run grader manually   | Tool: `run_grader(critic_run_id)` (deprecated)                |
+| View metrics          | SQL: Query `recall_by_definition_split_kind` and other views  |
+| Report failures       | Tool: `report_failure(message)`                               |
+
+## Analyzing Child Agent Runs
+
+All LLM requests from agents you launch are logged in `llm_requests`. Use psql to analyze:
+
+```sql
+-- Get all LLM calls from a critic run
+SELECT model, created_at, latency_ms,
+       response_body->'usage' AS usage
+FROM llm_requests
+WHERE agent_run_id = '<critic_run_id>'
+ORDER BY created_at;
+
+-- Get full request/response for debugging
+SELECT request_body, response_body
+FROM llm_requests
+WHERE agent_run_id = '<critic_run_id>'
+ORDER BY created_at;
+
+-- Cost breakdown per agent run
+SELECT agent_run_id, model, cost_usd, input_tokens, output_tokens
+FROM llm_run_costs
+WHERE agent_run_id = '<critic_run_id>';
+```
 
 ## Starting Point
 
@@ -87,7 +114,7 @@ props agent-pkg create /workspace/my_critic/
    - Study rationales — what types of issues matter?
 
 2. **Diagnose failures:**
-   - Read execution traces from `events` table
+   - Query `llm_requests` to analyze child agent behavior
    - Identify patterns: wrong files read? missed analysis steps? false positives?
 
 3. **Iterate:**

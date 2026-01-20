@@ -21,12 +21,11 @@ from props.core.agent_types import AgentType
 from props.core.db.examples import Example
 from props.core.db.models import (
     AgentRun,
-    Event,
     FalsePositive,
     FalsePositiveOccurrenceORM,
+    LLMRunCost,
     OccurrenceCredit,
     OccurrenceRangeORM,
-    RunCost,
     Snapshot,
     TruePositive,
     TruePositiveOccurrenceORM,
@@ -63,7 +62,7 @@ def compile_to_sql_with_placeholders(query: Select) -> str:
         SQL string with placeholders like :agent_run_id, :snapshot_slug
 
     Example:
-        >>> q = select(Event).where(Event.agent_run_id == bindparam('agent_run_id'))
+        >>> q = select(AgentRun).where(AgentRun.agent_run_id == bindparam('agent_run_id'))
         >>> compile_to_sql_with_placeholders(q)
         'SELECT ... WHERE agent_run_id = :agent_run_id'
     """
@@ -328,7 +327,7 @@ def po_run_costs(po_run_id: UUID) -> Select:
         po_run_id: Prompt optimization agent run UUID (agent_run_id)
 
     Returns:
-        Query selecting transcript details with cost/token metrics from run_costs view
+        Query selecting transcript details with cost/token metrics from llm_run_costs view
     """
     # CTE for PO transcripts (all child agent runs + the PO agent's own run)
     # Child runs have parent_agent_run_id = po_run_id
@@ -349,24 +348,23 @@ def po_run_costs(po_run_id: UUID) -> Select:
 
     po_runs = union_all(child_runs, po_agent_run).cte("po_runs")
 
-    # Main query joining with run_costs view (mapped as RunCost ORM model)
-    # Note: RunCost.agent_run_id references agent_run_id
+    # Main query joining with llm_run_costs view (LLM requests logged by proxy)
     return (
         select(
             po_runs.c.agent_run_id,
             po_runs.c.snapshot_slug,
             po_runs.c.run_type,
-            RunCost.model,
-            func.sum(RunCost.cost_usd).label("cost_usd"),
-            func.sum(RunCost.input_tokens).label("input_tokens"),
-            func.sum(RunCost.cached_tokens).label("cached_tokens"),
-            func.sum(RunCost.output_tokens).label("output_tokens"),
+            LLMRunCost.model,
+            func.sum(LLMRunCost.cost_usd).label("cost_usd"),
+            func.sum(LLMRunCost.input_tokens).label("input_tokens"),
+            func.sum(LLMRunCost.cached_input_tokens).label("cached_tokens"),
+            func.sum(LLMRunCost.output_tokens).label("output_tokens"),
             po_runs.c.created_at,
         )
         .select_from(po_runs)
-        .join(RunCost, po_runs.c.agent_run_id == RunCost.agent_run_id)
+        .join(LLMRunCost, po_runs.c.agent_run_id == LLMRunCost.agent_run_id)
         .group_by(
-            po_runs.c.agent_run_id, po_runs.c.snapshot_slug, po_runs.c.run_type, RunCost.model, po_runs.c.created_at
+            po_runs.c.agent_run_id, po_runs.c.snapshot_slug, po_runs.c.run_type, LLMRunCost.model, po_runs.c.created_at
         )
         .order_by(po_runs.c.created_at.desc())
     )
@@ -411,28 +409,6 @@ def blocked_valid_grader_runs() -> Select:
     )
 
 
-# TODO: Consider removing - compiled but never rendered in template
-def blocked_valid_events() -> Select:
-    """Example query that returns 0 rows due to RLS (valid split blocked).
-
-    Uses AgentRun with JSONB filtering to find critic runs for valid split.
-
-    Returns:
-        Query attempting to count events for valid split critic agent runs
-    """
-    valid_agent_run_ids = (
-        select(AgentRun.agent_run_id)
-        .where(
-            AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-            AgentRun.type_config["example"]["snapshot_slug"].astext.in_(
-                select(Snapshot.slug).where(Snapshot.split == Split.VALID)
-            ),
-        )
-        .scalar_subquery()
-    )
-
-    # Events reference agent_run_id
-    return select(func.count()).select_from(Event).where(Event.agent_run_id.in_(valid_agent_run_ids))
 
 
 # ============================================================================

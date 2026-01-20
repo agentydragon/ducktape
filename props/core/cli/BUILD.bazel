@@ -103,31 +103,6 @@ py_library(
 )
 
 py_library(
-    name = "cmd_critic_agent",
-    srcs = ["cmd_critic_agent.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":shared",
-        "//agent_pkg/runtime",
-        "//cli_util",
-        "//props/core:agent_helpers",
-        "//props/core:agent_registry",
-        "//props/core:agent_types",
-        "//props/core:display",
-        "//props/core:ids",
-        "//props/core/db:config",
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "//props/core/models:examples",
-        "@pypi//aiodocker",
-        "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_library(
     name = "cmd_critic_dev",
     srcs = ["cmd_critic_dev.py"],
     imports = ["../../.."],
@@ -333,7 +308,6 @@ py_library(
         ":cmd_agent_pkg",
         ":cmd_analyze_exec",
         ":cmd_classify_noops",
-        ":cmd_critic_agent",
         ":cmd_critic_dev",
         ":cmd_db",
         ":cmd_gepa",

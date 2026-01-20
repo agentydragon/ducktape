@@ -1,4 +1,11 @@
-"""Improvement agent: creates definitions to beat baseline on allowed examples."""
+"""Improvement agent: creates definitions to beat baseline on allowed examples.
+
+New architecture (in-container agent loop):
+- Agent loop runs inside the container via CMD entrypoint
+- Host serves PromptEvalServer via HTTP for orchestration tools (run_critic, run_grader)
+- Container connects to host MCP server via MCP_SERVER_URL/MCP_SERVER_TOKEN
+- Container exits 0 on success (submit), non-zero on failure (report_failure)
+"""
 
 from __future__ import annotations
 
@@ -9,31 +16,20 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 import aiodocker
-from fastmcp.client import Client
-from fastmcp.server.auth import AuthProvider
 from pydantic import BaseModel, Field
 
-from agent_core.handler import AbortIf
-from agent_core.turn_limit import MaxTurnsHandler
-from mcp_infra.display.rich_display import CompactDisplayHandler
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from openai_utils.model import OpenAIModelProto
-from openai_utils.types import ReasoningSummary
-from props.core.agent_handle import AgentHandle
 from props.core.agent_registry import AgentRegistry
-from props.core.agent_setup import AgentEnvironment
 from props.core.agent_types import AgentType, ImprovementTypeConfig
-from props.core.agent_workspace import WorkspaceManager
-from props.core.cli.common_options import DEFAULT_MAX_LINES
-from props.core.db.agent_definition_ids import IMPROVEMENT_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
 from props.core.display import short_uuid
+from props.core.loop_agent_env import run_loop_agent
+from props.core.mcp_http_server import serve_mcp_http
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
-from props.core.prompt_improve.reminder_handler import ImprovementReminderHandler, TerminationSuccess
-from props.core.prompt_improve.token_budget_handler import TokenBudgetHandler
+from props.core.prompt_improve.reminder_handler import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import PromptEvalServer, PromptOptimizerState
 from props.core.prompt_optimize.target_metric import TargetMetric
 
@@ -60,70 +56,8 @@ class ImprovementResult(BaseModel):
     outcome: ImprovementOutcome
 
 
-class ImprovementAgentEnvironment(AgentEnvironment):
-    prompt_eval_server: PromptEvalServer
-    agent_state: PromptOptimizerState
-
-    def __init__(
-        self,
-        docker_client: aiodocker.Docker,
-        improvement_run_id: UUID,
-        baseline_image_refs: list[str],
-        allowed_examples: list[ExampleSpec],
-        improvement_model: str,
-        critic_client: OpenAIModelProto,
-        grader_client: OpenAIModelProto,
-        db_config: DatabaseConfig,
-        workspace_manager: WorkspaceManager,
-        registry: AgentRegistry,
-        verbose: bool = False,
-        *,
-        image: str,
-    ):
-        type_config = ImprovementTypeConfig(
-            baseline_image_refs=baseline_image_refs,
-            allowed_examples=allowed_examples,
-            improvement_model=improvement_model,
-            critic_model=critic_client.model,
-            grader_model=grader_client.model,
-        )
-        self._type_config = type_config
-
-        self._critic_client = critic_client
-        self._grader_client = grader_client
-        self._registry = registry
-        self._verbose = verbose
-        self.agent_state = PromptOptimizerState()
-
-        super().__init__(
-            agent_run_id=improvement_run_id,
-            docker_client=docker_client,
-            db_config=db_config,
-            workspace_manager=workspace_manager,
-            image=image,
-            container_name=f"improve-{short_uuid(improvement_run_id)}",
-            labels={"adgn.project": "props", "adgn.role": "improve", "adgn.agent_run_id": str(improvement_run_id)},
-            auto_remove=True,
-        )
-
-    @property
-    def type_config(self) -> ImprovementTypeConfig:
-        return self._type_config
-
-    def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
-        server = PromptEvalServer(
-            critic_client=self._critic_client,
-            grader_client=self._grader_client,
-            registry=self._registry,
-            optimizer_state=self.agent_state,
-            target_metric=TargetMetric.TARGETED,
-            optimizer_run_id=self._agent_run_id,
-            workspace_root=self.workspace_root,
-            budget_limit=float("inf"),
-            verbose=self._verbose,
-        )
-        self.prompt_eval_server = server
-        return server
+# Default LLM proxy URL (same as agent_registry default)
+DEFAULT_LLM_PROXY_URL = "http://props-llm-proxy:5052"
 
 
 async def run_improvement_agent(
@@ -138,10 +72,16 @@ async def run_improvement_agent(
     grader_client: OpenAIModelProto,
     output_dir: Path | None = None,
     verbose: bool = False,
+    llm_proxy_url: str = DEFAULT_LLM_PROXY_URL,
 ) -> ImprovementResult:
-    """Run improvement agent to optimize prompts.
+    """Run improvement agent with in-container agent loop.
 
-    Always uses builtin improvement image for consistency."""
+    New architecture:
+    - Agent loop runs inside the container (not on host)
+    - Host serves PromptEvalServer via HTTP for orchestration tools
+    - Container connects to host MCP server via MCP_SERVER_URL/MCP_SERVER_TOKEN
+    - Container exits 0 on success, non-zero on failure
+    """
     if not examples:
         raise ValueError("examples must not be empty")
 
@@ -182,84 +122,76 @@ async def run_improvement_agent(
         session.add(agent_run)
         session.commit()
 
-    workspace_manager = WorkspaceManager.from_env()
-    registry = AgentRegistry(docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager)
-    agent_env = ImprovementAgentEnvironment(
+    # Create registry for critic/grader runs initiated by the improvement agent
+    registry = AgentRegistry(
         docker_client=docker_client,
-        improvement_run_id=run_id,
-        baseline_image_refs=baseline_image_refs,
-        allowed_examples=examples,
-        improvement_model=model,
+        db_config=db_config,
+        llm_proxy_url=llm_proxy_url,
+    )
+
+    # Create PromptEvalServer with orchestration tools
+    optimizer_state = PromptOptimizerState()
+    prompt_eval_server = PromptEvalServer(
         critic_client=critic_client,
         grader_client=grader_client,
-        db_config=db_config,
-        workspace_manager=workspace_manager,
         registry=registry,
+        optimizer_state=optimizer_state,
+        target_metric=TargetMetric.TARGETED,
+        optimizer_run_id=run_id,
+        workspace_root=Path("/workspace"),  # Container-side path
+        budget_limit=float("inf"),  # Improvement uses token budget, not dollar budget
         verbose=verbose,
-        image=image,
     )
 
     try:
-        async with agent_env as comp:
-            token_handler = TokenBudgetHandler(max_tokens=token_budget)
-            reminder_handler = ImprovementReminderHandler(
-                improvement_run_id=run_id, type_config=type_config, db_config=db_config
+        # Serve PromptEvalServer via HTTP for container to connect
+        with serve_mcp_http(prompt_eval_server) as mcp_handle:
+            logger.info(f"MCP server available at {mcp_handle.url}")
+
+            # Run the container with in-container agent loop
+            result = await run_loop_agent(
+                docker_client=docker_client,
+                agent_run_id=run_id,
+                db_config=db_config,
+                image=image,
+                llm_proxy_url=llm_proxy_url,
+                extra_env={
+                    "MCP_SERVER_URL": mcp_handle.url,
+                    "MCP_SERVER_TOKEN": mcp_handle.token,
+                },
+                container_name=f"improve-{short_uuid(run_id)}",
             )
 
-            handlers: list = []
-            if verbose:
-                display_handler = await CompactDisplayHandler.from_compositor(
-                    comp, max_lines=DEFAULT_MAX_LINES, prefix=f"[IMPROVE {str(run_id)[:8]}] "
-                )
-                handlers.append(display_handler)
-            handlers.extend(
-                [
-                    reminder_handler,
-                    AbortIf(should_abort=lambda: agent_env.agent_state.error is not None),
-                    token_handler,
-                    MaxTurnsHandler(max_turns=200),
-                ]
+            logger.info(f"Container exited with code {result.exit_code}")
+            if verbose and result.stderr:
+                logger.info(f"Container stderr:\n{result.stderr}")
+
+        # Update status based on exit code
+        final_status = AgentRunStatus.COMPLETED if result.exit_code == 0 else AgentRunStatus.REPORTED_FAILURE
+        with get_session() as session:
+            agent_run = session.get(AgentRun, run_id)
+            if agent_run:
+                agent_run.status = final_status
+                session.commit()
+                logger.info(f"Updated agent_run status to {final_status.value}")
+
+        # Determine outcome based on completion_summary (written by container)
+        outcome: ImprovementOutcome
+        with get_session() as session:
+            agent_run = session.get(AgentRun, run_id)
+            completion_summary = agent_run.completion_summary if agent_run else None
+
+        if result.exit_code == 0:
+            # Success - parse TerminationSuccess from completion_summary if available
+            # For now, just return a generic success (container writes details to DB)
+            outcome = OutcomeExhausted()  # TODO: Parse actual success details from DB
+        else:
+            outcome = OutcomeUnexpectedTermination(
+                message=completion_summary or f"Container exited with code {result.exit_code}"
             )
 
-            async with Client(comp) as mcp_client:
-                # Create AgentHandle - reads system prompt from container via MCP, runs init
-                handle = await AgentHandle.create(
-                    agent_run_id=run_id,
-                    image_digest=IMPROVEMENT_IMAGE_REF,
-                    model_client=client,
-                    mcp_client=mcp_client,
-                    compositor=comp,
-                    handlers=handlers,
-                    parallel_tool_calls=True,
-                    reasoning_summary=ReasoningSummary.DETAILED,
-                )
+        logger.info(f"Improvement agent completed: kind={outcome.kind}")
+        return ImprovementResult(tokens_used=0, run_id=run_id, outcome=outcome)  # TODO: Track tokens
 
-                logger.info("Starting agent loop")
-                await handle.run()
-                logger.info("Agent loop completed")
-
-            tokens_used = token_handler.cumulative_tokens
-            last_result = reminder_handler.last_result
-
-            outcome: ImprovementOutcome
-            if isinstance(last_result, TerminationSuccess):
-                logger.info(
-                    f"Improvement succeeded: definition '{last_result.definition_id}' "
-                    f"with {last_result.total_credit:.1f} issues "
-                    f"beats baseline avg {last_result.baseline_avg:.1f} (run_id={run_id})"
-                )
-                outcome = last_result
-            elif token_handler.percentage_used >= 1.0:
-                outcome = OutcomeExhausted()
-            elif agent_env.agent_state.error is not None:
-                outcome = OutcomeUnexpectedTermination(message=f"Agent reported failure: {agent_env.agent_state.error}")
-            else:
-                outcome = OutcomeUnexpectedTermination(
-                    message=f"Agent terminated with {token_handler.percentage_used:.1%} "
-                    f"budget used without beating baseline or exhaustion"
-                )
-
-            logger.info(f"Improvement agent completed: kind={outcome.kind}, tokens={tokens_used:,}/{token_budget:,}")
-            return ImprovementResult(tokens_used=tokens_used, run_id=run_id, outcome=outcome)
     finally:
         await registry.close()

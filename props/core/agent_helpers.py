@@ -41,8 +41,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from props.core.db.snapshot_io import fetch_snapshot_to_path
 from props.core.db.models import AgentRun, FileSet
+from props.core.db.snapshot_io import fetch_snapshot_to_path
 from props.core.db.session import get_session
 from props.core.models.examples import WholeSnapshotExample
 
