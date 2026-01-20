@@ -269,9 +269,6 @@ def _validate_occurrence(occ: ReportedIssueOccurrence) -> None:
         raise ValueError(f"Occurrence {occ.id} must have at least one location")
 
     for i, loc in enumerate(occ.locations):
-        if not isinstance(loc, DBLocationAnchor):
-            raise ValueError(f"Location {i} must be a DBLocationAnchor, got {type(loc)}")
-
         if loc.start_line is not None:
             if loc.start_line <= 0:
                 raise ValueError(f"Location {i}: start_line must be > 0, got {loc.start_line}")

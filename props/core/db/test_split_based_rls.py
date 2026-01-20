@@ -2,12 +2,12 @@
 
 Verifies that prompt optimizer users (temporary users created via
 TempUserManager) can only access TRAIN split sensitive data
-(true_positives, false_positives, agent_runs, etc.), not TEST or VALID.
+(true_positives, false_positives, agent_runs, llm_requests, etc.), not TEST or VALID.
 
 **Note on snapshots table**: The snapshots table contains only metadata (slug, split,
 source info) which is not sensitive. All agents can see all snapshots. Actual data
-access control is enforced on examples, true_positives, false_positives, and agent_runs
-tables.
+access control is enforced on examples, true_positives, false_positives, agent_runs,
+and llm_requests tables.
 
 This is distinct from run-based isolation (see clustering/test_rls_isolation.py),
 which isolates concurrent runs within the same split.
@@ -41,7 +41,7 @@ from props.core.agent_types import PromptOptimizerTypeConfig
 from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.examples import Example
-from props.core.db.models import AgentRun, AgentRunStatus, FalsePositive, Snapshot, TruePositive
+from props.core.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
 from props.core.db.session import get_session
 from props.core.db.temp_user_manager import TempUserCredentials, TempUserManager
 from props.core.prompt_optimize.target_metric import TargetMetric
@@ -292,3 +292,83 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
     )
 
     assert len(valid_runs) == 0, "prompt optimizer user should NOT see valid split critic_runs via RLS"
+
+
+async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
+    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
+):
+    """Prompt optimizer users CANNOT see VALID split LLM requests (RLS policy blocks).
+
+    This prevents learning from validation failures - the optimizer cannot inspect
+    what LLM calls the critic made during validation runs.
+
+    Uses test-fixtures/valid1 (VALID split) from git fixtures.
+    """
+    valid_agent_run_id = uuid4()
+
+    # Setup: Use admin_user to write test data
+    with get_session() as session:
+        # Query git fixture example (VALID split)
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
+        assert example, "test-validation fixture not found"
+
+        # Create a critic run for the valid specimen
+        valid_run = make_critic_run(example=example, agent_run_id=valid_agent_run_id, status=AgentRunStatus.COMPLETED)
+        session.add(valid_run)
+        session.flush()
+
+        # Add an LLM request for this run
+        llm_request = LLMRequest(
+            agent_run_id=valid_agent_run_id,
+            model="gpt-4o",
+            request_body={"messages": [{"role": "user", "content": "test"}]},
+        )
+        session.add(llm_request)
+        session.commit()
+
+    # Verify: Connect as prompt optimizer temp user and verify RLS blocks requests
+    valid_requests = prompt_optimizer_session.query(LLMRequest).filter(LLMRequest.agent_run_id == valid_agent_run_id).all()
+
+    assert len(valid_requests) == 0, "prompt optimizer user should NOT see valid split llm_requests via RLS"
+
+
+async def test_prompt_optimizer_can_see_train_split_llm_requests(
+    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
+):
+    """Prompt optimizer users CAN see TRAIN split LLM requests (RLS policy allows).
+
+    The optimizer can inspect training run details to understand failures and improve prompts.
+
+    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
+    """
+    train_agent_run_id = uuid4()
+
+    # Setup: Use admin_user to write test data
+    with get_session() as session:
+        # Query git fixture example (TRAIN split)
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
+        assert example, "test-trivial fixture not found"
+
+        # Create a critic run for the train specimen
+        train_run = make_critic_run(example=example, agent_run_id=train_agent_run_id, status=AgentRunStatus.COMPLETED)
+        session.add(train_run)
+        session.flush()
+
+        # Add an LLM request for this run
+        llm_request = LLMRequest(
+            agent_run_id=train_agent_run_id,
+            model="gpt-4o",
+            request_body={"messages": [{"role": "user", "content": "test"}]},
+        )
+        session.add(llm_request)
+        session.commit()
+
+    # Verify: Connect as prompt optimizer temp user and verify can see train split requests
+    train_requests = prompt_optimizer_session.query(LLMRequest).filter(LLMRequest.agent_run_id == train_agent_run_id).all()
+
+    assert len(train_requests) == 1, "prompt optimizer user should see train split llm_requests via RLS"
+    assert train_requests[0].model == "gpt-4o"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

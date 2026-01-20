@@ -1,7 +1,7 @@
 """Drift detection handler for snapshot grader daemon.
 
 Checks grading_pending before each sample, aborts when no drift (grading complete).
-Drains notification queue and injects context about GT changes during work.
+Drains notification queue and injects context about grading_pending changes during work.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def format_notifications(notifs: list[GradingPendingNotification]) -> str:
     """Format notification payloads for injection into agent context."""
     if not notifs:
         return ""
-    return "GT changes detected:\n" + json.dumps([n.model_dump() for n in notifs], indent=2)
+    return "Grading pending changes:\n" + json.dumps([n.model_dump() for n in notifs], indent=2)
 
 
 class GraderDriftHandler(BaseHandler):

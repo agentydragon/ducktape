@@ -10,7 +10,6 @@ import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from props.core.critic.submit_server import CriticSubmitServer
 from props.core.db.examples import Example
 from props.core.db.models import AgentRunStatus
 from props.core.db.session import get_session
@@ -98,18 +97,4 @@ def insert_occurrence(conn: Connection, issue_id: str, locations: list[DBLocatio
             VALUES (current_agent_run_id(), :issue_id, CAST(:locations AS jsonb))
         """),
         {"issue_id": issue_id, "locations": locations_json},
-    )
-
-
-@pytest_asyncio.fixture
-async def submit_server(test_critic_run, test_snapshot, all_files_scope):
-    """Create a critic submit server for testing.
-
-    Returns:
-        CriticSubmitServer instance for the test critic run
-    """
-    return CriticSubmitServer(
-        agent_run_id=test_critic_run,
-        snapshot_slug=test_snapshot,
-        example=all_files_scope,  # all_files_scope is a WholeSnapshotExample
     )
