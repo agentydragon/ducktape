@@ -1,5 +1,25 @@
-"""Grader module - per-file targets."""
+"""Grader agent - implementation and container images.
 
+Two images for different grader modes:
+- grader: One-off grader that grades a single critic run
+- grader_daemon: Persistent daemon that grades all critiques for a snapshot
+
+Build targets:
+    bazel run //props/core/grader:load         -- Load one-off grader
+    bazel run //props/core/grader:push         -- Push one-off grader
+    bazel run //props/core/grader:daemon_load  -- Load daemon grader
+    bazel run //props/core/grader:daemon_push  -- Push daemon grader
+
+The containers run an agent loop that:
+1. Fetches snapshot to /workspace
+2. Renders system prompt from template
+3. Queries LLM via proxy (OPENAI_BASE_URL)
+4. Executes grader tools (list_pending, insert_edges, submit, etc.)
+5. One-off: exits 0 on successful submit
+6. Daemon: sleeps on pg_notify, wakes to grade new critiques
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -305,4 +325,60 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+# =============================================================================
+# Container images
+# =============================================================================
+
+# One-off grader (grades single critic run)
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/main"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":main_tar"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["grader-agent:latest"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/grader",
+)
+
+# Daemon grader (grades all critiques for a snapshot, persistent)
+oci_image(
+    name = "daemon_image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/daemon_main"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":daemon_main_tar"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "daemon_load",
+    image = ":daemon_image",
+    repo_tags = ["snapshot_grader:latest"],
+)
+
+oci_push(
+    name = "daemon_push",
+    image = ":daemon_image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/snapshot_grader",
 )

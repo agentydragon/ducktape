@@ -1,5 +1,16 @@
-"""Prompt optimizer module - per-file targets."""
+"""Prompt optimizer agent - implementation and container image.
 
+Build targets:
+    bazel run //props/core/prompt_optimize:load  -- Load into local Docker
+    bazel run //props/core/prompt_optimize:push  -- Push to local registry (localhost:5050)
+
+The container runs an agent loop that:
+1. Queries LLM via proxy (OPENAI_BASE_URL)
+2. Coordinates critic evaluations and improvements
+3. Optimizes prompts based on target metrics
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -158,4 +169,33 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+# =============================================================================
+# Container image
+# =============================================================================
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/main"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":main_tar"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["prompt-optimizer-agent:latest"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/prompt-optimizer",
 )

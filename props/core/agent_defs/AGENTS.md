@@ -1,6 +1,12 @@
 # Agent Packages
 
-This directory contains agent packages deployed as OCI images to containers.
+This directory contains shared resources for agent packages. Agent implementations and
+container images are now located alongside their implementation code:
+
+- `//props/core/critic` - Critic agent
+- `//props/core/grader` - Grader agent
+- `//props/core/prompt_improve` - Improvement agent
+- `//props/core/prompt_optimize` - Prompt optimizer agent
 
 ## Agent-Facing Documentation
 
@@ -10,12 +16,10 @@ This directory contains agent packages deployed as OCI images to containers.
 
 @../docs/authoring_agents.md.j2
 
-## Agent Types
+## Shared Resources
 
-**Primary agents:** `critic/`, `grader/`, `improvement/`, `prompt_optimizer/`
-
-**Critic-based detectors:** `contract_truthfulness/`, `dead_code/`, `flag_propagation/`,
-`high_recall_critic/`, `verbose_docs/` — share the same init bootstrap.
+**Policy documents:** `contract_truthfulness.md`, `dead_code.md`, `flag_propagation.md`,
+`high_recall_critic.md`, `verbose_docs.md` — shared prompt fragments.
 
 ## OCI Image Packaging
 
@@ -28,17 +32,17 @@ Agent packages are built as OCI images using Bazel and pushed to the local regis
 devenv up
 
 # Build and push agent images
-bazel run //props/core/agent_defs/critic:push
-bazel run //props/core/agent_defs/grader:push
-bazel run //props/core/agent_defs/improvement:push
-bazel run //props/core/agent_defs/prompt_optimizer:push
+bazel run //props/core/critic:push
+bazel run //props/core/grader:push
+bazel run //props/core/prompt_improve:push
+bazel run //props/core/prompt_optimize:push
 bazel run //props/registry_proxy:push
 
 # Or load into local Docker for testing
-bazel run //props/core/agent_defs/critic:load
-bazel run //props/core/agent_defs/grader:load
-bazel run //props/core/agent_defs/improvement:load
-bazel run //props/core/agent_defs/prompt_optimizer:load
+bazel run //props/core/critic:load
+bazel run //props/core/grader:load
+bazel run //props/core/prompt_improve:load
+bazel run //props/core/prompt_optimize:load
 bazel run //props/registry_proxy:load
 ```
 
@@ -93,12 +97,12 @@ Critic and grader agents have no registry access - images are pulled for them by
 
 ```bash
 # Build OCI image
-bazel build //props/core/agent_defs/critic:image
+bazel build //props/core/critic:image
 
 # Load and test locally
-bazel run //props/core/agent_defs/critic:load
+bazel run //props/core/critic:load
 docker run --rm critic-agent:latest
 
 # Push to registry
-bazel run //props/core/agent_defs/critic:push
+bazel run //props/core/critic:push
 ```
