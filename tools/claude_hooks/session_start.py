@@ -359,7 +359,7 @@ def emit_podman_guidance() -> None:
 
 
 def setup_logging() -> LogCollector:
-    """Configure module logger with stdout, file, and collector handlers.
+    """Configure root logger so all modules in tools.claude_hooks get handlers.
 
     Returns LogCollector for use in emit_session_context.
     """
@@ -369,18 +369,19 @@ def setup_logging() -> LogCollector:
     collector = LogCollector()
     collector.setFormatter(formatter)
 
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
+    # Configure root logger so all child loggers (proxy_setup, bazelisk_setup, etc.) inherit
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
 
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(formatter)
-    logger.addHandler(stdout_handler)
+    root_logger.addHandler(stdout_handler)
 
     file_handler = logging.FileHandler(LOG_FILE, mode="a")
     file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    root_logger.addHandler(file_handler)
 
-    logger.addHandler(collector)
+    root_logger.addHandler(collector)
 
     return collector
 
@@ -414,14 +415,15 @@ def run_web_mode(hook_input: HookInput) -> None:
         else:
             raise ProjectNotFoundError("Cannot detect project root (no .git, CLAUDE_PROJECT_DIR not set)")
 
-    # Install Bazelisk
-    bazelisk_setup.install_bazelisk()
-
-    # Set up Bazel proxy
+    # Set up Bazel proxy (creates combined CA bundle for TLS-inspecting proxy)
     proxy_setup.setup_bazel_proxy()
 
-    # Install bazel wrapper
-    bazelisk_setup.install_wrapper()
+    # Install Bazelisk and wrapper (skip in some tests to avoid cross-host redirect issues)
+    if not os.environ.get("CLAUDE_HOOKS_SKIP_BAZELISK"):
+        bazelisk_setup.install_bazelisk()
+        bazelisk_setup.install_wrapper()
+    else:
+        logger.info("Skipping bazelisk installation (CLAUDE_HOOKS_SKIP_BAZELISK set)")
 
     install_git_precommit_hook(project_dir)
 
@@ -437,10 +439,13 @@ def run_web_mode(hook_input: HookInput) -> None:
     except (OSError, subprocess.SubprocessError) as e:
         logger.warning("Failed to install nix: %s", e)
 
-    # Configure podman for gVisor compatibility
-    logger.info("Configuring podman for e2e testing...")
-    setup_podman_storage()
-    emit_podman_guidance()
+    # Configure podman for gVisor compatibility (skip in Bazel tests)
+    if not os.environ.get("CLAUDE_HOOKS_SKIP_PODMAN"):
+        logger.info("Configuring podman for e2e testing...")
+        setup_podman_storage()
+        emit_podman_guidance()
+    else:
+        logger.info("Skipping podman setup (CLAUDE_HOOKS_SKIP_PODMAN set)")
 
     # Export debug timestamp
     hook_timestamp = datetime.now()

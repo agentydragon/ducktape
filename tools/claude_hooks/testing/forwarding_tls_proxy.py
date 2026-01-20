@@ -238,10 +238,11 @@ class ForwardingTLSProxy:
             server_ssl = server_ctx.wrap_socket(server_sock, server_hostname=target_host)
 
             # Generate server cert for this hostname and wrap client connection
+            # Include CA cert in chain so clients can extract it via get_unverified_chain()
             server_cert_pem, server_key_pem = self._get_server_cert(target_host)
 
             client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem)
+            _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem, self._ca_cert_pem)
             client_ssl = client_ctx.wrap_socket(client_sock, server_side=True)
 
             # Bidirectional forward
@@ -284,15 +285,22 @@ class ForwardingTLSProxy:
             pass
 
 
-def _load_cert_chain_from_bytes(ctx: ssl.SSLContext, cert_pem: bytes, key_pem: bytes) -> None:
+def _load_cert_chain_from_bytes(
+    ctx: ssl.SSLContext, cert_pem: bytes, key_pem: bytes, ca_cert_pem: bytes | None = None
+) -> None:
     """Load cert chain from PEM bytes by writing to temp files.
 
     Python's ssl module doesn't have load_cert_chain_from_bytes, so we
     write temp files and call load_cert_chain.
+
+    If ca_cert_pem is provided, it's appended to the cert file to send
+    the full chain (required for get_unverified_chain() to return the CA).
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         cert_path = Path(tmpdir) / "cert.pem"
         key_path = Path(tmpdir) / "key.pem"
-        cert_path.write_bytes(cert_pem)
+        # Include CA cert in chain so clients see the full chain
+        chain = cert_pem + (b"\n" + ca_cert_pem if ca_cert_pem else b"")
+        cert_path.write_bytes(chain)
         key_path.write_bytes(key_pem)
         ctx.load_cert_chain(str(cert_path), str(key_path))

@@ -7,6 +7,7 @@ with a ForwardingTLSProxy simulating Anthropic's TLS-inspecting proxy.
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import os
 import shutil
@@ -14,6 +15,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,6 +93,10 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
             "XDG_CONFIG_HOME": str(isolated_dirs.config),
             # Disable nix installation (speeds up tests, avoids network)
             "CLAUDE_HOOKS_SKIP_NIX": "1",
+            # Disable podman setup (requires claude_hooks wheel install)
+            "CLAUDE_HOOKS_SKIP_PODMAN": "1",
+            # Use python -m for proxy in tests (console script not available in Bazel)
+            "CLAUDE_AUTH_PROXY_CMD": f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy",
         }
     )
     return env
@@ -111,14 +117,41 @@ def make_hook_input(project_dir: Path, source: str = "startup") -> str:
 
 
 def _cleanup_supervisor(config_dir: Path) -> None:
-    """Kill any lingering supervisor processes."""
+    """Kill any lingering supervisor processes and wait for port to be free."""
     pidfile = config_dir / "supervisor" / "supervisord.pid"
     if pidfile.exists():
         try:
             pid = int(pidfile.read_text().strip())
+            # Send SIGTERM first
             os.kill(pid, signal.SIGTERM)
+            # Wait for process to die (up to 2 seconds)
+            for _ in range(20):
+                time.sleep(0.1)
+                try:
+                    os.kill(pid, 0)  # Check if process exists
+                except ProcessLookupError:
+                    break  # Process is gone
+            else:
+                # Force kill if still running
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGKILL)
         except (ValueError, ProcessLookupError, OSError):
             pass
+        # Clean up pidfile
+        with contextlib.suppress(OSError):
+            pidfile.unlink()
+
+    # Wait for supervisor port (19001) to be free
+    for _ in range(20):
+        time.sleep(0.1)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(("127.0.0.1", 19001))
+            sock.close()
+            break  # Port is free
+        except OSError:
+            sock.close()
+            continue
 
 
 def run_session_start_hook(
@@ -141,7 +174,8 @@ def run_session_start_hook(
 def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
     """Cleanup supervisor after each test."""
     yield
-    _cleanup_supervisor(isolated_dirs.config)
+    # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
+    _cleanup_supervisor(isolated_dirs.home / ".config")
 
 
 class TestFullSessionStartHook:
@@ -155,14 +189,16 @@ class TestFullSessionStartHook:
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
         # Verify key artifacts created
-        cache = isolated_dirs.cache / "bazel-proxy"
-        assert (cache / "bazelrc").exists(), "bazelrc not created"
-        assert (cache / "anthropic_ca.pem").exists(), "CA not extracted"
-        assert (cache / "bin" / "bazel").exists(), "bazel wrapper not created"
+        # Note: proxy_setup uses Path.home()/.cache, not XDG_CACHE_HOME
+        bazel_proxy_dir = isolated_dirs.home / ".cache" / "bazel-proxy"
+        assert (bazel_proxy_dir / "bazelrc").exists(), "bazelrc not created"
+        assert (bazel_proxy_dir / "anthropic_ca.pem").exists(), "CA not extracted"
+        assert (bazel_proxy_dir / "bin" / "bazel").exists(), "bazel wrapper not created"
 
         # Verify supervisor started
-        config = isolated_dirs.config / "supervisor"
-        assert (config / "supervisord.pid").exists(), "supervisor not started"
+        # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
+        supervisor_dir = isolated_dirs.home / ".config" / "supervisor"
+        assert (supervisor_dir / "supervisord.pid").exists(), "supervisor not started"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not shutil.which("bazel") and not shutil.which("bazelisk"), reason="bazel/bazelisk required")
@@ -190,10 +226,11 @@ genrule(
         )
 
         # Run bazel build with the configured environment
-        cache = isolated_dirs.cache / "bazel-proxy"
+        # Note: proxy_setup uses Path.home()/.cache, not XDG_CACHE_HOME
+        bazel_proxy_dir = isolated_dirs.home / ".cache" / "bazel-proxy"
         build_env = hook_env.copy()
-        build_env["PATH"] = f"{cache / 'bin'}:{build_env.get('PATH', '')}"
-        build_env["BAZEL_SYSTEM_BAZELRC_PATH"] = str(cache / "bazelrc")
+        build_env["PATH"] = f"{bazel_proxy_dir / 'bin'}:{build_env.get('PATH', '')}"
+        build_env["BAZEL_SYSTEM_BAZELRC_PATH"] = str(bazel_proxy_dir / "bazelrc")
 
         result = subprocess.run(
             ["bazel", "build", "//:hello"],
@@ -210,19 +247,28 @@ genrule(
     def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: dict[str, str]) -> None:
         """Verify hook recovers from stale supervisor socket."""
         # Create stale socket/pidfile
-        config = isolated_dirs.config / "supervisor"
-        config.mkdir(parents=True, exist_ok=True)
-        (config / "supervisor.sock").touch()
-        (config / "supervisord.pid").write_text("99999")  # Non-existent PID
+        # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
+        supervisor_dir = isolated_dirs.home / ".config" / "supervisor"
+        supervisor_dir.mkdir(parents=True, exist_ok=True)
+        (supervisor_dir / "supervisor.sock").touch()
+        (supervisor_dir / "supervisord.pid").write_text("99999")  # Non-existent PID
 
-        result = run_session_start_hook(isolated_dirs.project, hook_env)
+        # Skip bazelisk download - this test focuses on stale socket recovery
+        # and ForwardingTLSProxy doesn't handle cross-host redirects (github -> objects.githubusercontent)
+        env = hook_env.copy()
+        env["CLAUDE_HOOKS_SKIP_BAZELISK"] = "1"
+        result = run_session_start_hook(isolated_dirs.project, env)
 
         assert result.returncode == 0, f"Hook failed with stale socket:\nstderr: {result.stderr}"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     def test_resume_event(self, isolated_dirs: IsolatedDirs, hook_env: dict[str, str]) -> None:
         """Test that resume events also work correctly."""
-        result = run_session_start_hook(isolated_dirs.project, hook_env, source="resume")
+        # Skip bazelisk download - this test focuses on resume event handling
+        # and ForwardingTLSProxy doesn't handle cross-host redirects (github -> objects.githubusercontent)
+        env = hook_env.copy()
+        env["CLAUDE_HOOKS_SKIP_BAZELISK"] = "1"
+        result = run_session_start_hook(isolated_dirs.project, env, source="resume")
 
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
 
@@ -262,9 +308,6 @@ class TestForwardingProxy:
         finally:
             sock.close()
 
-
-if __name__ == "__main__":
-    sys.exit(pytest.main([__file__, "-v"]))
 
 if __name__ == "__main__":
     pytest_bazel.main()

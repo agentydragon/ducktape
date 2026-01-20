@@ -158,13 +158,14 @@ def _extract_proxy_ca() -> None:
             raise CaExtractionError("No certificates in chain")
 
         # Find the Anthropic TLS inspection CA in the chain
+        # We look for "Anthropic" in the SUBJECT (not issuer) - the CA has "Anthropic"
+        # in its subject, while leaf certs only have "Anthropic" in their issuer.
         for i, der_bytes in enumerate(cert_chain_der):
             cert = x509.load_der_x509_certificate(der_bytes)
             subject_cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
-            issuer_cn = _get_cert_attr(cert.issuer, x509.oid.NameOID.COMMON_NAME)
             org = _get_cert_attr(cert.subject, x509.oid.NameOID.ORGANIZATION_NAME)
 
-            if "Anthropic" in subject_cn or "Anthropic" in issuer_cn or "Anthropic" in org:
+            if "Anthropic" in subject_cn or "Anthropic" in org:
                 logger.info("Found Anthropic TLS inspection CA at position %d: %s", i, subject_cn)
                 pem_cert = cert.public_bytes(Encoding.PEM).decode()
                 _get_bazel_ca_file().write_text(pem_cert)
@@ -255,8 +256,8 @@ def _create_java_truststore() -> None:
 def _build_auth_proxy_command(https_proxy: str) -> str:
     """Build command to run custom auth-forwarding proxy.
 
-    Uses the claude-auth-proxy console script entry point, which is installed
-    alongside claude-session-start when the claude_hooks wheel is installed.
+    Uses claude-auth-proxy console script by default (installed via uv tool install).
+    Tests can override via CLAUDE_AUTH_PROXY_CMD env var to use python -m invocation.
     """
     proxy = parse_proxy_url(https_proxy)
     proxy_port = _get_bazel_proxy_port()
@@ -271,9 +272,11 @@ def _build_auth_proxy_command(https_proxy: str) -> str:
     username = proxy.username
     password = proxy.password
 
-    # Use the claude-auth-proxy entry point (installed by wheel)
+    # Allow override for testing (Bazel tests set this to python -m path)
+    cmd = os.environ.get("CLAUDE_AUTH_PROXY_CMD", "claude-auth-proxy")
+
     return (
-        f"claude-auth-proxy "
+        f"{cmd} "
         f"--listen-port {proxy_port} "
         f"--upstream-host {upstream_host} "
         f"--upstream-port {upstream_port} "
