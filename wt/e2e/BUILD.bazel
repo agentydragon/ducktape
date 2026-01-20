@@ -1,8 +1,21 @@
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/testing",
+        "@pypi//pytest",
+    ],
+)
 
 py_test(
     name = "test_e2e",
     srcs = [
+        "conftest.py",
         "test_e2e_copy_dirty_state.py",
         "test_e2e_github_pr_display_real.py",
         "test_e2e_github_pr_display_variants.py",
@@ -19,7 +32,7 @@ py_test(
     ],
     main = "test_e2e_copy_dirty_state.py",
     deps = [
-        "//wt/testing",
+        ":conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

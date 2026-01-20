@@ -80,6 +80,7 @@ py_test(
     tags = ["no-mypy"],  # see comment on inop library
     deps = [
         ":inop",
+        "//agent_core_testing",
         "@pypi//pathspec",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

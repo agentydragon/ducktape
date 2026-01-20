@@ -22,12 +22,27 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_client",
-    srcs = ["test_cli_click_integration.py"],
-    main = "test_cli_click_integration.py",
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
     deps = [
         "//wt/testing",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = [
+        "conftest.py",
+        "test_cli_click_integration.py",
+    ],
+    main = "test_cli_click_integration.py",
+    deps = [
+        ":conftest",
         "@pypi//click",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

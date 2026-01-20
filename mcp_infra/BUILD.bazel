@@ -50,6 +50,7 @@ py_library(
         "//mcp_infra/resources",
         "//mcp_infra/stubs",
         "//mcp_infra/testing",
+        "@pypi//docker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

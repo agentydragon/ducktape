@@ -271,11 +271,8 @@ def extract_call_output[T: BaseModel](req: ResponsesRequest, call: FunctionCallI
     if not isinstance(output, str):
         raise ValueError(f"Expected string output for call_id={call.call_id}, got list")
 
-    output_data = json.loads(output)
-    structured = output_data.get("structuredContent")
-    if structured is None:
-        raise ValueError(f"No structuredContent in output for call_id={call.call_id}")
-    return TypeAdapter(output_type).validate_python(structured)
+    # OpenAI format returns the structured content directly (not wrapped).
+    return TypeAdapter(output_type).validate_python(json.loads(output))
 
 
 def tool_roundtrip[T: BaseModel](

@@ -1,15 +1,28 @@
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/testing",
+        "@pypi//pytest",
+    ],
+)
 
 py_test(
     name = "test_integration",
     srcs = [
+        "conftest.py",
         "test_integration_cli_daemon.py",
         "test_integration_cli_output_format.py",
         "test_integration_shell.py",
     ],
     main = "test_integration_cli_daemon.py",
     deps = [
-        "//wt/testing",
+        ":conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

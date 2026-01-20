@@ -4,6 +4,24 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 # =============================================================================
+# Test support
+# =============================================================================
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core_testing",
+        "//mcp_infra/testing",
+        "//props/testing",
+        "@pypi//pytest",
+    ],
+)
+
+# =============================================================================
 # Leaf modules (no props.core deps)
 # =============================================================================
 

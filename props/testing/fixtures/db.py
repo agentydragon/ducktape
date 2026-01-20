@@ -67,7 +67,7 @@ def block_production_config_in_tests(monkeypatch: pytest.MonkeyPatch) -> Callabl
         # Called from production code - allow it
         return original(*args, **kwargs)
 
-    monkeypatch.setattr("props_core.db.config.get_database_config", _block_from_tests)
+    monkeypatch.setattr("props.core.db.config.get_database_config", _block_from_tests)
 
     # Return original for test_db fixture to use
     return original

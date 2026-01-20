@@ -135,6 +135,19 @@ py_library(
 # Tests
 # =============================================================================
 
+# Test support
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:conftest",
+        "@pypi//pytest",
+    ],
+)
+
 # Static analysis test - no postgres needed
 py_test(
     name = "test_layer_isolation",
@@ -158,15 +171,18 @@ _POSTGRES_TEST_TAGS = [
 
 py_test(
     name = "test_agent_queries",
-    srcs = ["test_agent_queries.py"],
+    srcs = [
+        "conftest.py",
+        "test_agent_queries.py",
+    ],
     env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
+        ":conftest",
         ":models",
         ":query_builders",
         ":session",
-        "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -175,14 +191,17 @@ py_test(
 
 py_test(
     name = "test_failed_critic_runs_as_zero_recall",
-    srcs = ["test_failed_critic_runs_as_zero_recall.py"],
+    srcs = [
+        "conftest.py",
+        "test_failed_critic_runs_as_zero_recall.py",
+    ],
     env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
+        ":conftest",
         ":models",
         ":session",
-        "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -191,11 +210,15 @@ py_test(
 
 py_test(
     name = "test_pydantic_column_null",
-    srcs = ["test_pydantic_column_null.py"],
+    srcs = [
+        "conftest.py",
+        "test_pydantic_column_null.py",
+    ],
     env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
+        ":conftest",
         ":models",
         ":session",
         "@pypi//pydantic",
@@ -207,16 +230,19 @@ py_test(
 
 py_test(
     name = "test_split_based_rls",
-    srcs = ["test_split_based_rls.py"],
+    srcs = [
+        "conftest.py",
+        "test_split_based_rls.py",
+    ],
     env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
+        ":conftest",
         ":models",
         ":session",
         ":temp_user_manager",
         "//agent_core",
-        "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
@@ -226,14 +252,17 @@ py_test(
 
 py_test(
     name = "test_view_extracts_grade_fields",
-    srcs = ["test_view_extracts_grade_fields.py"],
+    srcs = [
+        "conftest.py",
+        "test_view_extracts_grade_fields.py",
+    ],
     env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
+        ":conftest",
         ":models",
         ":session",
-        "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

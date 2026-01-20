@@ -40,15 +40,28 @@ py_library(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/testing",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_server",
     srcs = [
+        "conftest.py",
         "handlers/test_status_handler.py",
         "test_worktree_service.py",
     ],
     main = "test_worktree_service.py",
     deps = [
-        "//wt/testing",
+        ":conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
