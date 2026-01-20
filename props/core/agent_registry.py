@@ -54,7 +54,6 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import aiodocker
-
 from sqlalchemy import text
 
 from props.core.agent_types import AgentType, CriticTypeConfig, GraderTypeConfig, SnapshotGraderTypeConfig
@@ -212,27 +211,22 @@ class AgentRegistry:
         result: ContainerResult | None = None
         try:
             # Run agent container with optional timeout
-            container_coro = run_loop_agent(
+            result = await run_loop_agent(
                 self._docker_client,
                 agent_run_id,
                 self._db_config,
                 image=image,
                 llm_proxy_url=self._llm_proxy_url,
                 container_name=f"critic-{short_uuid(agent_run_id)}",
+                timeout_seconds=timeout_seconds,
             )
 
-            if timeout_seconds is not None:
-                try:
-                    result = await asyncio.wait_for(container_coro, timeout=timeout_seconds)
-                except asyncio.TimeoutError:
-                    logger.error("Critic container timed out after %d seconds", timeout_seconds)
-                    timed_out = True
-                    # Container will be cleaned up by run_loop_agent's finally block
-            else:
-                result = await container_coro
+            # Check for timeout (exit_code=-1 sentinel)
+            if result.exit_code == -1:
+                timed_out = True
 
             # Container has exited - check status
-            if result is not None and result.exit_code != 0:
+            if not timed_out and result.exit_code != 0:
                 logger.warning(
                     "Critic container exited with code %d: %s",
                     result.exit_code,
@@ -248,12 +242,11 @@ class AgentRegistry:
                     raise RuntimeError(f"Agent run {agent_run_id} not found in database")
 
                 run.ended_at = ended_at
-                if result is not None:
-                    run.container_exit_code = result.exit_code
+                run.container_exit_code = result.exit_code if not timed_out else None
 
                 if timed_out:
                     final_status = AgentRunStatus.REPORTED_FAILURE
-                elif result is not None and result.exit_code == 0:
+                elif result.exit_code == 0:
                     # Check if issues were reported (indicates successful submit)
                     issues_count = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).count()
                     if issues_count > 0:
@@ -412,26 +405,22 @@ class AgentRegistry:
         result: ContainerResult | None = None
         try:
             # Run agent container with optional timeout
-            container_coro = run_loop_agent(
+            result = await run_loop_agent(
                 self._docker_client,
                 grader_run_id,
                 self._db_config,
                 image=image,
                 llm_proxy_url=self._llm_proxy_url,
                 container_name=f"grader-{short_uuid(grader_run_id)}",
+                timeout_seconds=timeout_seconds,
             )
 
-            if timeout_seconds is not None:
-                try:
-                    result = await asyncio.wait_for(container_coro, timeout=timeout_seconds)
-                except asyncio.TimeoutError:
-                    logger.error("Grader container timed out after %d seconds", timeout_seconds)
-                    timed_out = True
-            else:
-                result = await container_coro
+            # Check for timeout (exit_code=-1 sentinel)
+            if result.exit_code == -1:
+                timed_out = True
 
             # Container has exited - check status
-            if result is not None and result.exit_code != 0:
+            if not timed_out and result.exit_code != 0:
                 logger.warning(
                     "Grader container exited with code %d: %s",
                     result.exit_code,
@@ -447,12 +436,11 @@ class AgentRegistry:
                     raise RuntimeError(f"Agent run {grader_run_id} not found in database")
 
                 run.ended_at = ended_at
-                if result is not None:
-                    run.container_exit_code = result.exit_code
+                run.container_exit_code = result.exit_code if not timed_out else None
 
                 if timed_out:
                     final_status = AgentRunStatus.REPORTED_FAILURE
-                elif result is not None and result.exit_code == 0:
+                elif result.exit_code == 0:
                     # Check if all grading edges are complete (no pending edges)
                     pending_count = session.execute(
                         text("SELECT COUNT(*) FROM grading_pending WHERE critique_run_id = :critic_run_id"),

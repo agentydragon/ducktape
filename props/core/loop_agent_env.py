@@ -18,6 +18,7 @@ Host scaffold responsibilities:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -53,6 +54,7 @@ async def run_loop_agent(
     llm_proxy_url: str,
     extra_env: dict[str, str] | None = None,
     container_name: str | None = None,
+    timeout_seconds: int | None = None,
 ) -> ContainerResult:
     """Run an agent container with in-container agent loop.
 
@@ -73,9 +75,10 @@ async def run_loop_agent(
         llm_proxy_url: URL of the LLM proxy (e.g., "http://props-llm-proxy:5052")
         extra_env: Additional environment variables for the container
         container_name: Optional container name (defaults to agent-{short_uuid})
+        timeout_seconds: Max seconds before container is killed (default: no limit)
 
     Returns:
-        ContainerResult with exit_code, stdout, stderr
+        ContainerResult with exit_code, stdout, stderr (exit_code=-1 on timeout)
 
     Example:
         result = await run_loop_agent(
@@ -138,10 +141,26 @@ async def run_loop_agent(
             await container.start()
             logger.info("Started container %s", name)
 
-            # Wait for container to exit
-            exit_info = await container.wait()
-            exit_code = exit_info.get("StatusCode", 1)
-            logger.info("Container %s exited with code %d", name, exit_code)
+            # Wait for container to exit (with optional timeout)
+            timed_out = False
+            try:
+                if timeout_seconds is not None:
+                    exit_info = await asyncio.wait_for(container.wait(), timeout=timeout_seconds)
+                else:
+                    exit_info = await container.wait()
+                exit_code = exit_info.get("StatusCode", 1)
+            except TimeoutError:
+                logger.error("Container %s timed out after %d seconds", name, timeout_seconds)
+                timed_out = True
+                exit_code = -1  # Sentinel for timeout
+                # Kill the container
+                try:
+                    await container.kill()
+                except Exception as e:
+                    logger.warning("Failed to kill timed-out container: %s", e)
+
+            if not timed_out:
+                logger.info("Container %s exited with code %d", name, exit_code)
 
             # Capture logs
             stdout_logs = await container.log(stdout=True, stderr=False)
