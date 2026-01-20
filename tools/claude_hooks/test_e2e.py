@@ -180,8 +180,7 @@ def run_session_start_hook(
 def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
     """Cleanup supervisor after each test."""
     yield
-    # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
-    _cleanup_supervisor(isolated_dirs.home / ".config")
+    _cleanup_supervisor(isolated_dirs.config)
 
 
 class TestFullSessionStartHook:
@@ -198,16 +197,14 @@ class TestFullSessionStartHook:
 
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
-        # Verify key artifacts created
-        # Note: proxy_setup uses Path.home()/.cache, not XDG_CACHE_HOME
-        bazel_proxy_dir = isolated_dirs.home / ".cache" / "bazel-proxy"
+        # Verify key artifacts created (uses XDG_CACHE_HOME via platformdirs)
+        bazel_proxy_dir = isolated_dirs.cache / "bazel-proxy"
         assert (bazel_proxy_dir / "bazelrc").exists(), "bazelrc not created"
         assert (bazel_proxy_dir / "anthropic_ca.pem").exists(), "CA not extracted"
         # Note: bazel wrapper is skipped in this test (CLAUDE_HOOKS_SKIP_BAZELISK=1)
 
-        # Verify supervisor started
-        # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
-        supervisor_dir = isolated_dirs.home / ".config" / "supervisor"
+        # Verify supervisor started (uses XDG_CONFIG_HOME via platformdirs)
+        supervisor_dir = isolated_dirs.config / "supervisor"
         assert (supervisor_dir / "supervisord.pid").exists(), "supervisor not started"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
@@ -240,8 +237,7 @@ genrule(
         )
 
         # Run bazel build in a shell that sources the env file (like Claude Code would)
-        # Note: proxy_setup uses Path.home()/.cache, not XDG_CACHE_HOME
-        bazel_proxy_dir = isolated_dirs.home / ".cache" / "bazel-proxy"
+        bazel_proxy_dir = isolated_dirs.cache / "bazel-proxy"
         build_env = hook_env.copy()
         build_env["BAZEL_SYSTEM_BAZELRC_PATH"] = str(bazel_proxy_dir / "bazelrc")
 
@@ -266,8 +262,7 @@ genrule(
     def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: dict[str, str]) -> None:
         """Verify hook recovers from stale supervisor socket."""
         # Create stale socket/pidfile
-        # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
-        supervisor_dir = isolated_dirs.home / ".config" / "supervisor"
+        supervisor_dir = isolated_dirs.config / "supervisor"
         supervisor_dir.mkdir(parents=True, exist_ok=True)
         (supervisor_dir / "supervisor.sock").touch()
         (supervisor_dir / "supervisord.pid").write_text("99999")  # Non-existent PID

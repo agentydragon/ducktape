@@ -27,7 +27,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 from mako.template import Template
 
-from tools.claude_hooks import supervisor_setup
+from tools.claude_hooks import paths, supervisor_setup
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from tools.claude_hooks.proxy_credentials import parse_proxy_url
 from tools.claude_hooks.resources import CONFIG_FILES
@@ -42,35 +42,28 @@ def _get_bazel_proxy_port() -> int:
     return 18081
 
 
-def _get_bazel_proxy_dir() -> Path:
-    """Get bazel proxy directory, allowing override via env var."""
-    if env_dir := os.environ.get("CLAUDE_HOOKS_BAZEL_PROXY_DIR"):
-        return Path(env_dir)
-    return Path.home() / ".cache" / "bazel-proxy"
-
-
 # Bazel proxy configuration
 BAZEL_PROXY_SERVICE = "bazel-proxy"  # supervisor service name
 
 
 def _get_bazel_creds_file() -> Path:
-    return _get_bazel_proxy_dir() / "upstream_proxy"
+    return paths.get_bazel_proxy_dir() / "upstream_proxy"
 
 
 def _get_bazel_ca_file() -> Path:
-    return _get_bazel_proxy_dir() / "anthropic_ca.pem"
+    return paths.get_bazel_proxy_dir() / "anthropic_ca.pem"
 
 
 def _get_bazel_combined_ca() -> Path:
-    return _get_bazel_proxy_dir() / "combined_ca.pem"
+    return paths.get_bazel_proxy_dir() / "combined_ca.pem"
 
 
 def _get_bazel_truststore() -> Path:
-    return _get_bazel_proxy_dir() / "cacerts.jks"
+    return paths.get_bazel_proxy_dir() / "cacerts.jks"
 
 
 def _get_bazel_proxy_rc() -> Path:
-    return _get_bazel_proxy_dir() / "bazelrc"
+    return paths.get_bazel_proxy_dir() / "bazelrc"
 
 
 # Pre-installed Anthropic CA on Claude Code web containers
@@ -380,7 +373,7 @@ def ensure_proxy_running() -> bool:
     if not https_proxy:
         raise ProxyServiceError("No https_proxy environment variable set")
 
-    proxy_dir = _get_bazel_proxy_dir()
+    proxy_dir = paths.get_bazel_proxy_dir()
     creds_file = _get_bazel_creds_file()
 
     proxy_dir.mkdir(parents=True, exist_ok=True)

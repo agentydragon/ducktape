@@ -168,5 +168,7 @@ split-on-trailing-comma = false
 "prompts/scans/scan_*.py" = ["N802"]
 # Lazy import for orchestration-only dependency (adgn.definition_builder not in container)
 "props/core/db/sync/sync.py" = ["PLC0415"]
+# Lazy import to avoid loading heavy deps (cryptography, platformdirs) at module level
+"tools/claude_hooks/bazel_wrapper.py" = ["PLC0415"]
 # sys.path manipulation must happen before pytest import
 "agent_server/tests/pytest_runner.py" = ["E402"]

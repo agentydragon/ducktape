@@ -20,6 +20,7 @@ py_library(
         "binary_tools.py",
         "errors.py",
         "nix_setup.py",
+        "paths.py",
         "proxy_credentials.py",
         "proxy_setup.py",
         "resources.py",
@@ -40,6 +41,7 @@ py_library(
         ":auth_proxy",
         "@pypi//cryptography",
         "@pypi//mako",
+        "@pypi//platformdirs",
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//supervisor",
@@ -67,6 +69,7 @@ py_wheel(
     requires = [
         "cryptography",
         "mako",
+        "platformdirs",
         "pydantic",
         "pyjwt",
         "supervisor",

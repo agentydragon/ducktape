@@ -8,8 +8,8 @@ import logging
 import os
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
-from tools.claude_hooks import proxy_setup
 from tools.claude_hooks.errors import BazelProxyError, MissingEnvVarError
 from tools.claude_hooks.proxy_credentials import check_credential_expiry
 
@@ -24,14 +24,8 @@ def require_env(name: str) -> str:
     return value
 
 
-def ensure_services_running() -> None:
-    """Ensure supervisor and proxy are running, starting them if needed."""
-    proxy_setup.ensure_proxy_running()
-
-
-def warn_if_credentials_expiring() -> None:
+def _warn_if_credentials_expiring(creds_file: Path) -> None:
     """Check JWT expiry and log warning if concerning."""
-    creds_file = proxy_setup._get_bazel_creds_file()
     if not creds_file.exists():
         return
 
@@ -50,7 +44,7 @@ def warn_if_credentials_expiring() -> None:
         logger.info("JWT valid for %.0f min", minutes_remaining)
 
 
-def log_recovery_instructions(repo_path: str) -> None:
+def _log_recovery_instructions(repo_path: str) -> None:
     """Log instructions for manual recovery."""
     logger.info("To restart: cd %s && python3 -m claude_hooks.session_start", repo_path)
     logger.info("Logs: ~/.config/supervisor/bazel-proxy.{log,err.log}")
@@ -58,16 +52,20 @@ def log_recovery_instructions(repo_path: str) -> None:
 
 def main() -> None:
     """Main entry point."""
+    # Import here to avoid loading heavy deps (cryptography, platformdirs) at module level.
+    # This allows pre-commit hooks to import the module without those deps installed.
+    from tools.claude_hooks import proxy_setup
+
     logging.basicConfig(
         level=logging.INFO, format="[bazel-proxy] %(message)s", handlers=[logging.StreamHandler(sys.stderr)]
     )
 
     try:
-        ensure_services_running()
-        warn_if_credentials_expiring()
+        proxy_setup.ensure_proxy_running()
+        _warn_if_credentials_expiring(proxy_setup._get_bazel_creds_file())
     except BazelProxyError as e:
         logger.error("%s", e)
-        log_recovery_instructions(require_env("DUCKTAPE_REPO_ROOT"))
+        _log_recovery_instructions(require_env("DUCKTAPE_REPO_ROOT"))
         raise SystemExit(1) from e
 
     for var in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"]:

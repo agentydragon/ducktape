@@ -30,6 +30,7 @@ from typing import Literal, cast
 from pydantic import BaseModel
 from supervisor.xmlrpc import Faults
 
+from tools.claude_hooks import paths
 from tools.claude_hooks.errors import ProxyServiceError, SupervisorError
 
 # Default port for supervisor's inet_http_server (localhost only)
@@ -60,16 +61,9 @@ class ProcessInfo(BaseModel):
     description: str
 
 
-def _get_supervisor_dir() -> Path:
-    """Get supervisor directory, allowing override via env var."""
-    if env_dir := os.environ.get("CLAUDE_HOOKS_SUPERVISOR_DIR"):
-        return Path(env_dir)
-    return Path.home() / ".config" / "supervisor"
-
-
 # Default paths (functions to allow testing with env var overrides)
 def _get_supervisor_conf() -> Path:
-    return _get_supervisor_dir() / "supervisord.conf"
+    return paths.get_supervisor_dir() / "supervisord.conf"
 
 
 def _get_supervisor_port() -> int:
@@ -85,11 +79,11 @@ def _get_supervisor_url() -> str:
 
 
 def _get_supervisor_log() -> Path:
-    return _get_supervisor_dir() / "supervisord.log"
+    return paths.get_supervisor_dir() / "supervisord.log"
 
 
 def _get_supervisor_pidfile() -> Path:
-    return _get_supervisor_dir() / "supervisord.pid"
+    return paths.get_supervisor_dir() / "supervisord.pid"
 
 
 class SupervisorState(BaseModel):
@@ -149,7 +143,7 @@ def _get_supervisor_client() -> SupervisorClient:
 
 def _write_config() -> None:
     """Write supervisor configuration file."""
-    supervisor_dir = _get_supervisor_dir()
+    supervisor_dir = paths.get_supervisor_dir()
     supervisor_conf = _get_supervisor_conf()
     supervisor_port = _get_supervisor_port()
     supervisor_url = _get_supervisor_url()
@@ -188,7 +182,7 @@ def _write_service_config(name: str, command: str, directory: Path, environment:
 
     Returns the path to the written config file.
     """
-    supervisor_dir = _get_supervisor_dir()
+    supervisor_dir = paths.get_supervisor_dir()
     service_conf = supervisor_dir / "conf.d" / f"{name}.conf"
     service_conf.parent.mkdir(parents=True, exist_ok=True)
 
@@ -519,7 +513,7 @@ def get_status() -> str:
 
 def emit_usage_guidance() -> None:
     """Emit supervisor usage guidance (visible to agent)."""
-    supervisor_dir = _get_supervisor_dir()
+    supervisor_dir = paths.get_supervisor_dir()
     supervisor_conf = _get_supervisor_conf()
     guidance = textwrap.dedent(
         f"""\

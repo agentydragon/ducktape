@@ -22,12 +22,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from tools.claude_hooks import bazelisk_setup, binary_tools, nix_setup, proxy_setup, supervisor_setup
+from tools.claude_hooks import bazelisk_setup, binary_tools, nix_setup, paths, proxy_setup, supervisor_setup
 from tools.claude_hooks.errors import DirenvError, ProjectNotFoundError
-
-CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
-LOG_FILE = CACHE_DIR / "session-start.log"
-TIMESTAMP_FILE = CACHE_DIR / "session-hook-last-run"
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +215,7 @@ def emit_session_context(collector: LogCollector) -> None:
         lines.append("Warnings:")
         lines.extend(f"  - {msg}" for msg in collector.warnings)
 
-    lines.append(f"Full log: {LOG_FILE}")
+    lines.append(f"Full log: {paths.get_hook_log_file()}")
 
     print("\n".join(lines))
     sys.stdout.flush()
@@ -363,7 +359,9 @@ def setup_logging() -> LogCollector:
 
     Returns LogCollector for use in emit_session_context.
     """
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_dir = paths.get_hook_cache_dir()
+    log_file = paths.get_hook_log_file()
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
     collector = LogCollector()
@@ -377,7 +375,7 @@ def setup_logging() -> LogCollector:
     stdout_handler.setFormatter(formatter)
     root_logger.addHandler(stdout_handler)
 
-    file_handler = logging.FileHandler(LOG_FILE, mode="a")
+    file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
@@ -392,7 +390,7 @@ def run_web_mode(hook_input: HookInput) -> None:
 
     logger.info("Session start hook")
     logger.info("Hook: %s", __file__)
-    logger.info("Log:  %s", LOG_FILE)
+    logger.info("Log:  %s", paths.get_hook_log_file())
     logger.info("Hook input: %s", hook_input.model_dump_json())
 
     logger.info("Full environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
@@ -451,7 +449,7 @@ def run_web_mode(hook_input: HookInput) -> None:
     hook_timestamp = datetime.now()
     hook_timestamp_str = hook_timestamp.isoformat()
     os.environ["DUCKTAPE_SESSION_START_HOOK_TS"] = hook_timestamp_str
-    TIMESTAMP_FILE.write_text(f"{hook_timestamp_str}\n")
+    paths.get_hook_timestamp_file().write_text(f"{hook_timestamp_str}\n")
     logger.info("Session start hook timestamp: %s", hook_timestamp_str)
 
     # Configure PATH for bash sessions
