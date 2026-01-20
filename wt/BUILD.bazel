@@ -43,6 +43,7 @@ py_binary(
     name = "wt-cli",
     srcs = ["__main__.py"],
     main = "__main__.py",
+    visibility = ["//wt:__subpackages__"],
     deps = [":cli"],
 )
 

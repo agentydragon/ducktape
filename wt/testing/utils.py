@@ -5,7 +5,20 @@ import subprocess
 from collections.abc import Callable
 from datetime import timedelta
 
+from python.runfiles import runfiles
 from tenacity import RetryError, Retrying, stop_after_delay, wait_fixed
+
+_RUNFILES = runfiles.Create()
+
+
+def _get_wt_cli_path() -> str:
+    """Get path to wt-cli binary via Bazel runfiles."""
+    if _RUNFILES is None:
+        raise RuntimeError("Runfiles not available - must run under Bazel")
+    path = _RUNFILES.Rlocation("_main/wt/wt-cli")
+    if path is None:
+        raise RuntimeError("wt-cli binary not found in runfiles")
+    return path
 
 
 def add_project_root_to_env(env: dict) -> None:
@@ -15,7 +28,7 @@ def add_project_root_to_env(env: dict) -> None:
 
 def run_cli_command(args, cwd=None, env=None, timeout: timedelta = timedelta(seconds=60.0), stdin=None):
     """Run the actual CLI command as subprocess."""
-    cmd = ["python3", "-m", "wt.cli", *args]
+    cmd = [_get_wt_cli_path(), *args]
     if env is None:
         env = os.environ.copy()
     add_project_root_to_env(env)

@@ -15,6 +15,7 @@ py_library(
         "repo_factory.py",
         "utils.py",
     ],
+    data = ["//wt:wt-cli"],
     imports = ["../.."],
     visibility = ["//wt:__subpackages__"],
     deps = [
@@ -28,5 +29,6 @@ py_library(
         "@pypi//tenacity",
         "@pypi//typer",
         "@pypi//types_pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

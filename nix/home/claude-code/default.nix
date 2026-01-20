@@ -5,6 +5,8 @@
   lib,
   ...
 }: let
+  cfg = config.programs.claude-code;
+
   # Helper to generate Read/Grep/Glob permissions for directories
   # Allows recursive access to all files in specified directories
   # Pattern syntax: https://code.claude.com/docs/en/settings
@@ -24,7 +26,7 @@
     "~/.claude" # Claude Code session history, settings, commands
     "/code" # Primary code location (canonical git repos by host)
     "/home/agentydragon/code" # Convenience symlinks + some direct projects
-  ];
+  ] ++ cfg.extraAllowedReadDirs;
 
   # System inspection command permissions (auto-allow for read-only commands)
   inspectionPerms = import ./inspection-permissions.nix {inherit lib;};
@@ -49,7 +51,14 @@
   # Each skill is a subdirectory containing SKILL.md and optional supporting files
   skillsDir = ./skills;
 in {
-  programs.claude-code = {
+  options.programs.claude-code.extraAllowedReadDirs = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [];
+    description = "Additional directories to auto-allow for Read/Grep/Glob operations";
+    example = ["/wyrmhdd/bazel"];
+  };
+
+  config.programs.claude-code = {
     enable = true;
     package = pkgsUnstable.claude-code; # Use unstable for faster updates
 
@@ -119,7 +128,7 @@ in {
 
   # Deploy skills to ~/.claude/skills/
   # Skills are stored in nix/home/claude-code/skills/ and symlinked for declarative management
-  home.file =
+  config.home.file =
     {
       ".claude/statusline.py" = {
         source = ./statusline.py;

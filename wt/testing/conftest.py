@@ -310,14 +310,7 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
 
     # Attempt graceful shutdown via CLI (succeeds even if daemon already gone)
     try:
-        result = subprocess.run(
-            ["python3", "-m", "wt.cli", "sh", "kill-daemon"],
-            capture_output=True,
-            text=True,
-            timeout=5.0,
-            check=False,
-            env=env,
-        )
+        result = run_cli_command(["sh", "kill-daemon"], env=env, timeout=timedelta(seconds=5))
     except Exception as e:
         # Don't attempt any PID-based killing here; surface error
         raise AssertionError(f"kill-daemon invocation failed for {wt_dir}: {e}") from e

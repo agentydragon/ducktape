@@ -47,4 +47,7 @@
   home.file.".bazelrc".text = lib.mkBefore ''
     startup --output_user_root=/wyrmhdd/bazel
   '';
+
+  # Allow Claude Code to read Bazel output directory (test logs, etc.)
+  programs.claude-code.extraAllowedReadDirs = ["/wyrmhdd/bazel"];
 }
