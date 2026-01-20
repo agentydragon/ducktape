@@ -2,6 +2,7 @@
 #
 # Creates a GitHub release with commit SHA in tag/filename for content-addressable URLs.
 # Automatically cleans up old releases (keeps last 10).
+# Optionally creates a stable "latest" release that always points to the most recent build.
 name: Python Wheel Release
 
 on:
@@ -29,6 +30,11 @@ on:
         type: string
       apt_packages:
         description: "Space-separated list of apt packages to install (optional)"
+        required: false
+        type: string
+        default: ""
+      latest_release_tag:
+        description: "Optional stable tag for a 'latest' release (e.g., 'claude-hooks-latest-devel'). If provided, creates/updates this release with the same wheel."
         required: false
         type: string
         default: ""
@@ -100,12 +106,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Keep last 10 releases with this package prefix
+          # Keep last 10 releases with this package prefix (excluding latest tag)
           gh release list --limit 100 \
             | grep "^${{ inputs.package_name }}-" \
+            | grep -v "^${{ inputs.latest_release_tag || 'NOMATCH' }}" \
             | tail -n +11 \
             | cut -f1 \
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
+
+      - name: Update latest release
+        if: inputs.latest_release_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.latest_release_tag }}"
+
+          # Delete existing release if it exists (we'll recreate it)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+
+          # Create the latest release
+          gh release create "$TAG" \
+            --title "${{ inputs.package_name }} (latest)" \
+            --notes "$(cat <<'EOF'
+          ${{ inputs.release_body }}
+
+          **This is a rolling release that always points to the latest build.**
+
+          Latest commit: ${{ github.sha }}
+          Branch: ${{ github.ref_name }}
+          EOF
+          )" \
+            dist/*.whl
 
       - name: Save Bazel cache
         if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'

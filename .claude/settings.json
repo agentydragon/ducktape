@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool install --upgrade 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-c903d782/claude_hooks-0.1.0-py3-none-any.whl' && claude-session-start"
+            "command": "WHEEL_URL='https://github.com/agentydragon/ducktape/releases/download/claude-hooks-c903d782/claude_hooks-0.1.0-py3-none-any.whl'; INSTALLED_URL=$(cat ~/.local/share/uv/tools/claude-hooks/lib/python*/site-packages/claude_hooks-*.dist-info/direct_url.json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"url\",\"\"))' 2>/dev/null); [ \"$INSTALLED_URL\" = \"$WHEEL_URL\" ] || uv tool install --upgrade \"claude_hooks @ $WHEEL_URL\"; claude-session-start"
           }
         ]
       }

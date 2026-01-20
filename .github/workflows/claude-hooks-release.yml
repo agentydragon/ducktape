@@ -19,6 +19,8 @@ jobs:
       wheel_name: claude_hooks
       bazel_target: //tools/claude_hooks:claude_hooks_wheel
       wheel_path: bazel-bin/tools/claude_hooks
+      # Create branch-specific "latest" releases for stable URLs
+      latest_release_tag: ${{ github.ref_name == 'devel' && 'claude-hooks-latest-devel' || (github.ref_name == 'main' && 'claude-hooks-latest-main' || '') }}
       release_body: |
         claude_hooks wheel for Claude Code web environments.
 
