@@ -37,27 +37,12 @@ jobs:
         with:
           tflint_version: v0.53.0
 
-      - name: Setup Flux CLI
-        uses: fluxcd/flux2/action@main
-
-      - name: Install cluster validation tools
+      # kubeconform for kubeconform-precommit-hook (not hermetic via Bazel)
+      # Other tools (kustomize, flux, helm, kubeseal) are hermetic via @multitool
+      - name: Install kubeconform
         run: |
-          # Tools without official actions - download binaries
-          # kubeconform: Kubernetes manifest validation
           curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp
           sudo install /tmp/kubeconform /usr/local/bin/
-
-          # kustomize: Kubernetes configuration management
-          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz | tar xz -C /tmp
-          sudo install /tmp/kustomize /usr/local/bin/
-
-          # kubeseal: Sealed Secrets CLI (for validate-sealed-secrets hook)
-          curl -sL https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-amd64.tar.gz | tar xz -C /tmp
-          sudo install /tmp/kubeseal /usr/local/bin/
-
-          # helm: Kubernetes package manager (for helm-template-dry-run hook)
-          curl -sL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp
-          sudo install /tmp/linux-amd64/helm /usr/local/bin/
 
       # Nix for nixfmt-nix pre-commit hook (runs: nix run nixpkgs#nixfmt)
       - name: Install Nix
