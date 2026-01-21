@@ -67,9 +67,7 @@ def make_critic_mock_with_issue() -> PropsMock:
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.docker_exec_roundtrip(
-            ["critique", "insert-issue", "test-issue-001", "Test issue"]
-        )
+        result = yield from m.docker_exec_roundtrip(["critique", "insert-issue", "test-issue-001", "Test issue"])
         assert_that(result, exited_successfully())
         result = yield from m.docker_exec_roundtrip(
             ["critique", "insert-occurrence", "test-issue-001", "subtract.py", "-s", "1", "-e", "5"]

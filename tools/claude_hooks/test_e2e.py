@@ -186,15 +186,7 @@ def run_session_start_hook(
         # Run via python -m (Bazel test mode)
         cmd = [sys.executable, "-m", "tools.claude_hooks.session_start"]
 
-    return subprocess.run(
-        cmd,
-        check=False,
-        input=hook_input,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=300,
-    )
+    return subprocess.run(cmd, check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
 
 
 @pytest.fixture(autouse=True)
