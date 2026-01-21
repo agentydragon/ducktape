@@ -1,0 +1,7 @@
+"""Simple test targets for e2e testing."""
+
+genrule(
+    name = "hello",
+    outs = ["hello.txt"],
+    cmd = "echo hello > $@",
+)

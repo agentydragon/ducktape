@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from tools.claude_hooks.testing import shell_helpers
 from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy
 
 
@@ -180,8 +181,8 @@ def run_session_start_hook(
 def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
     """Cleanup supervisor after each test."""
     yield
-    # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
-    _cleanup_supervisor(isolated_dirs.home / ".config")
+    # platformdirs respects XDG_CONFIG_HOME
+    _cleanup_supervisor(isolated_dirs.config / "claude-hooks")
 
 
 class TestFullSessionStartHook:
@@ -199,15 +200,15 @@ class TestFullSessionStartHook:
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
         # Verify key artifacts created
-        # Note: proxy_setup uses Path.home()/.cache, not XDG_CACHE_HOME
-        bazel_proxy_dir = isolated_dirs.home / ".cache" / "bazel-proxy"
+        # platformdirs respects XDG_CACHE_HOME
+        bazel_proxy_dir = isolated_dirs.cache / "claude-hooks" / "bazel-proxy"
         assert (bazel_proxy_dir / "bazelrc").exists(), "bazelrc not created"
         assert (bazel_proxy_dir / "anthropic_ca.pem").exists(), "CA not extracted"
         # Note: bazel wrapper is skipped in this test (CLAUDE_HOOKS_SKIP_BAZELISK=1)
 
         # Verify supervisor started
-        # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
-        supervisor_dir = isolated_dirs.home / ".config" / "supervisor"
+        # platformdirs respects XDG_CONFIG_HOME
+        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
         assert (supervisor_dir / "supervisord.pid").exists(), "supervisor not started"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
@@ -221,27 +222,17 @@ class TestFullSessionStartHook:
         result = run_session_start_hook(isolated_dirs.project, env)
         assert result.returncode == 0, f"Hook failed: {result.stderr}"
 
-        # Create test workspace
-        workspace = isolated_dirs.project
-        (workspace / "MODULE.bazel").write_text(
-            """
-module(name = "test")
-bazel_dep(name = "rules_python", version = "0.27.1")
-"""
-        )
-        (workspace / "BUILD.bazel").write_text(
-            """
-genrule(
-    name = "hello",
-    outs = ["hello.txt"],
-    cmd = "echo hello > $@",
-)
-"""
-        )
+        # Copy testdata workspace to test location
+        # This is a minimal bzlmod workspace with no external dependencies, so the mock
+        # ForwardingTLSProxy (which can't do real DNS/forwarding) isn't a blocker.
+        test_file_dir = Path(__file__).parent
+        testdata_workspace = test_file_dir / "testdata" / "test_workspace"
+        workspace = isolated_dirs.project / "test_workspace"
+        shutil.copytree(testdata_workspace, workspace)
 
         # Run bazel build in a shell that sources the env file (like Claude Code would)
-        # Note: proxy_setup uses Path.home()/.cache, not XDG_CACHE_HOME
-        bazel_proxy_dir = isolated_dirs.home / ".cache" / "bazel-proxy"
+        # platformdirs respects XDG_CACHE_HOME
+        bazel_proxy_dir = isolated_dirs.cache / "claude-hooks" / "bazel-proxy"
         build_env = hook_env.copy()
         build_env["BAZEL_SYSTEM_BAZELRC_PATH"] = str(bazel_proxy_dir / "bazelrc")
 
@@ -250,15 +241,14 @@ genrule(
         for var in ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"]:
             build_env.pop(var, None)
 
-        # Source the env file and run bazel, just like Claude Code does
-        result = subprocess.run(
-            ["bash", "-c", f"source {isolated_dirs.env_file} && bazel build //:hello"],
-            check=False,
+        # Use shared helper to run bazel through env file (mimics Claude Code behavior)
+        result = shell_helpers.run_with_env_file(
+            command="bazel build //:hello",
+            env_file=isolated_dirs.env_file,
             cwd=workspace,
-            capture_output=True,
-            text=True,
-            env=build_env,
+            check=False,
             timeout=300,
+            env=build_env,
         )
         assert result.returncode == 0, f"Bazel build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
@@ -266,8 +256,8 @@ genrule(
     def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: dict[str, str]) -> None:
         """Verify hook recovers from stale supervisor socket."""
         # Create stale socket/pidfile
-        # Note: supervisor_setup uses Path.home()/.config, not XDG_CONFIG_HOME
-        supervisor_dir = isolated_dirs.home / ".config" / "supervisor"
+        # platformdirs respects XDG_CONFIG_HOME
+        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
         supervisor_dir.mkdir(parents=True, exist_ok=True)
         (supervisor_dir / "supervisor.sock").touch()
         (supervisor_dir / "supervisord.pid").write_text("99999")  # Non-existent PID

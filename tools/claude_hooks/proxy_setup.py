@@ -21,18 +21,71 @@ import socket
 import ssl
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 from mako.template import Template
 
-from tools.claude_hooks import supervisor_setup
+from tools.claude_hooks import paths, supervisor_setup
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from tools.claude_hooks.proxy_credentials import parse_proxy_url
 from tools.claude_hooks.resources import CONFIG_FILES
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProxySetup:
+    """Result of bazel proxy setup."""
+
+    port: int
+    combined_ca: Path
+    supervisor: supervisor_setup.SupervisorClient
+
+    @property
+    def status(self) -> str:
+        """Get human-readable proxy status."""
+        if not _get_bazel_truststore().exists():
+            return "not configured"
+        if self.supervisor.is_service_running(BAZEL_PROXY_SERVICE, wait_for_start=False):
+            return f"running (port {self.port})"
+        return f"configured (not running)"
+
+    @property
+    def ca_status(self) -> str:
+        """Get CA bundle status."""
+        return "custom CA" if self.combined_ca.exists() else "system"
+
+    @property
+    def guidance(self) -> str:
+        """Get proxy configuration guidance."""
+        import textwrap
+
+        if not _get_https_proxy():
+            return ""
+
+        info = self.supervisor.get_service_info(BAZEL_PROXY_SERVICE)
+        service_status = info.statename if info else "UNKNOWN"
+        ca_info = f"Custom CA bundle: {self.combined_ca}" if self.combined_ca.exists() else "Using system CA bundle"
+
+        return textwrap.dedent(
+            f"""\
+            Bazel Proxy Configuration
+            =========================
+            Local proxy port: {self.port}
+            Service status: {service_status}
+            {ca_info}
+
+            The proxy handles:
+            - Authentication forwarding to upstream proxy
+            - TLS inspection CA certificate management
+            - Java truststore configuration for Bazel
+
+            Environment variables are automatically configured in CLAUDE_ENV_FILE.
+            """
+        )
 
 
 def _get_bazel_proxy_port() -> int:
@@ -42,35 +95,28 @@ def _get_bazel_proxy_port() -> int:
     return 18081
 
 
-def _get_bazel_proxy_dir() -> Path:
-    """Get bazel proxy directory, allowing override via env var."""
-    if env_dir := os.environ.get("CLAUDE_HOOKS_BAZEL_PROXY_DIR"):
-        return Path(env_dir)
-    return Path.home() / ".cache" / "bazel-proxy"
-
-
 # Bazel proxy configuration
 BAZEL_PROXY_SERVICE = "bazel-proxy"  # supervisor service name
 
 
 def _get_bazel_creds_file() -> Path:
-    return _get_bazel_proxy_dir() / "upstream_proxy"
+    return paths.get_bazel_proxy_dir() / "upstream_proxy"
 
 
 def _get_bazel_ca_file() -> Path:
-    return _get_bazel_proxy_dir() / "anthropic_ca.pem"
+    return paths.get_bazel_proxy_dir() / "anthropic_ca.pem"
 
 
 def _get_bazel_combined_ca() -> Path:
-    return _get_bazel_proxy_dir() / "combined_ca.pem"
+    return paths.get_bazel_proxy_dir() / "combined_ca.pem"
 
 
 def _get_bazel_truststore() -> Path:
-    return _get_bazel_proxy_dir() / "cacerts.jks"
+    return paths.get_bazel_proxy_dir() / "cacerts.jks"
 
 
 def _get_bazel_proxy_rc() -> Path:
-    return _get_bazel_proxy_dir() / "bazelrc"
+    return paths.get_bazel_proxy_dir() / "bazelrc"
 
 
 # Pre-installed Anthropic CA on Claude Code web containers
@@ -363,11 +409,13 @@ def _wait_for_proxy(timeout_seconds: float = 5.0) -> bool:
     return False
 
 
-def ensure_proxy_running() -> bool:
+def ensure_proxy_running(supervisor: supervisor_setup.SupervisorClient) -> bool:
     """Ensure proxy is running with current credentials, starting or updating as needed.
 
+    Args:
+        supervisor: Supervisor client for managing services
+
     Handles all proxy service management:
-    - Starts supervisor if not running
     - Starts proxy service if not running
     - Updates credentials and restarts if they've changed
 
@@ -380,18 +428,15 @@ def ensure_proxy_running() -> bool:
     if not https_proxy:
         raise ProxyServiceError("No https_proxy environment variable set")
 
-    proxy_dir = _get_bazel_proxy_dir()
+    proxy_dir = paths.get_bazel_proxy_dir()
     creds_file = _get_bazel_creds_file()
 
     proxy_dir.mkdir(parents=True, exist_ok=True)
 
-    # Ensure supervisor is running
-    supervisor_setup.start()
-
     command = _build_auth_proxy_command(https_proxy)
 
     # Check if service is running
-    if supervisor_setup.is_service_running(BAZEL_PROXY_SERVICE):
+    if supervisor.is_service_running(BAZEL_PROXY_SERVICE):
         # Check if credentials changed
         if creds_file.exists():
             cached = creds_file.read_text().strip()
@@ -401,7 +446,7 @@ def ensure_proxy_running() -> bool:
         # Update credentials and restart
         logger.info("Updating proxy with new credentials...")
         creds_file.write_text(https_proxy)
-        supervisor_setup.update_service(
+        supervisor.update_service(
             name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
         )
         if not _wait_for_proxy():
@@ -413,7 +458,7 @@ def ensure_proxy_running() -> bool:
     proxy_port = _get_bazel_proxy_port()
     logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
     creds_file.write_text(https_proxy)
-    supervisor_setup.add_service(
+    supervisor.add_service(
         name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
     )
     if not _wait_for_proxy():
@@ -503,7 +548,7 @@ def _create_combined_ca_bundle() -> None:
     logger.info("Created combined CA bundle at %s", combined_ca)
 
 
-def setup_bazel_proxy() -> None:
+def setup_bazel_proxy(supervisor: supervisor_setup.SupervisorClient) -> ProxySetup:
     """Set up the complete Bazel proxy environment for TLS-inspecting proxies.
 
     This is needed when running behind Anthropic's TLS-inspecting proxy
@@ -516,15 +561,21 @@ def setup_bazel_proxy() -> None:
 
     Note: Proxy env for Bazel rules is handled by the module extension in
     tools/proxy_config/defs.bzl which reads BAZEL_PROXY_PORT env var.
+
+    Returns:
+        ProxySetup with port, CA path, and status information
     """
+    port = _get_bazel_proxy_port()
+    combined_ca = _get_bazel_combined_ca()
+
     if not _get_https_proxy():
         logger.info("No https_proxy set, Bazel proxy setup not needed")
-        return
+        return ProxySetup(port=port, combined_ca=combined_ca, supervisor=supervisor)
 
     logger.info("Setting up Bazel proxy for TLS-inspecting proxy...")
 
     # Step 1: Start local proxy first (needed for CA extraction)
-    ensure_proxy_running()
+    ensure_proxy_running(supervisor)
 
     # Step 2: Extract the TLS inspection CA (via local proxy)
     _extract_proxy_ca()
@@ -539,17 +590,9 @@ def setup_bazel_proxy() -> None:
     _write_bazel_config()
 
     logger.info("Bazel proxy setup complete")
+    return ProxySetup(port=port, combined_ca=combined_ca, supervisor=supervisor)
 
 
 def is_configured() -> bool:
     """Check if Bazel proxy is configured."""
     return _get_bazel_truststore().exists()
-
-
-def get_status() -> str:
-    """Get human-readable proxy status."""
-    if not _get_bazel_truststore().exists():
-        return "not configured"
-    if supervisor_setup.is_service_running(BAZEL_PROXY_SERVICE):
-        return f"running (port {_get_bazel_proxy_port()})"
-    return "configured but not running"

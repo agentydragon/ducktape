@@ -1,0 +1,9 @@
+"""Minimal test workspace for e2e testing.
+
+No external dependencies to avoid network requirements.
+"""
+
+module(
+    name = "test_workspace",
+    version = "0.0.0",
+)

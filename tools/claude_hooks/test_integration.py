@@ -316,13 +316,14 @@ class TestProxySetup:
     ) -> None:
         """Test that setup_bazel_proxy starts supervisor and proxy service."""
         # Run the proxy setup
-        proxy_setup.ensure_proxy_running()
+        supervisor_result = supervisor_setup.start()
+        proxy_setup.ensure_proxy_running(supervisor_result.client)
 
         # Verify supervisor is running
         assert supervisor_setup.is_running(), "Supervisor should be running"
 
         # Verify proxy service is running
-        assert supervisor_setup.is_service_running("bazel-proxy"), "bazel-proxy service should be running"
+        assert supervisor_result.client.is_service_running("bazel-proxy"), "bazel-proxy service should be running"
 
         # Verify we can connect to the local proxy port
         assert _wait_for_port(isolated_env.proxy_port, timeout=5), "Proxy should be listening"
@@ -361,7 +362,7 @@ class TestProxySetup:
         original_creds = creds_file.read_text()
 
         # Get initial process info
-        client = supervisor_setup._get_supervisor_client()
+        client = supervisor_setup.SupervisorClient()
         initial_info = client.get_process_info("bazel-proxy")
         initial_start_time = initial_info.start
 
@@ -370,7 +371,7 @@ class TestProxySetup:
         os.environ["https_proxy"] = new_proxy_url
 
         # Call ensure_proxy_running - should detect change and restart
-        refreshed = proxy_setup.ensure_proxy_running()
+        refreshed = proxy_setup.ensure_proxy_running(client)
 
         # Verify it detected the change
         assert refreshed, "Should have detected credential change"
@@ -404,33 +405,32 @@ class TestSupervisorSetup:
 
     def test_add_and_check_service(self, isolated_env: IsolatedEnv) -> None:
         """Test adding a service to supervisor."""
-        supervisor_setup.start()
+        supervisor_result = supervisor_setup.start()
 
         # Add a simple service (sleep command)
-        supervisor_setup.add_service(name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir)
+        supervisor_result.client.add_service(name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir)
 
         # Check it's running
-        assert supervisor_setup.is_service_running("test-service")
+        assert supervisor_result.client.is_service_running("test-service")
 
     def test_update_service(self, isolated_env: IsolatedEnv) -> None:
         """Test updating a service config."""
-        supervisor_setup.start()
+        supervisor_result = supervisor_setup.start()
 
         # Add initial service
-        supervisor_setup.add_service(name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir)
+        supervisor_result.client.add_service(name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir)
 
         # Get initial PID
-        client = supervisor_setup._get_supervisor_client()
-        initial_info = client.get_process_info("test-service")
+        initial_info = supervisor_result.client.get_process_info("test-service")
         initial_pid = initial_info.pid
 
         # Update with different command
-        supervisor_setup.update_service(
+        supervisor_result.client.update_service(
             name="test-service", command="sleep 7200", directory=isolated_env.supervisor_dir
         )
 
         # Verify restarted (PID should have changed since process was stopped and restarted)
-        new_info = client.get_process_info("test-service")
+        new_info = supervisor_result.client.get_process_info("test-service")
         assert new_info.pid != initial_pid, f"Service should have been restarted (PID unchanged: {initial_pid})"
 
 

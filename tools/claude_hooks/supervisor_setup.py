@@ -24,30 +24,58 @@ import sys
 import textwrap
 import time
 import xmlrpc.client
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 from pydantic import BaseModel
 from supervisor.xmlrpc import Faults
 
-try:
-    import supervisor.supervisord  # Validate module is available
-except ImportError as _import_error:
-    # Will raise detailed error in start() if actually used
-    supervisor.supervisord = None  # type: ignore[attr-defined,assignment]
-    _SUPERVISOR_IMPORT_ERROR = _import_error
-else:
-    _SUPERVISOR_IMPORT_ERROR = None
-
+from tools.claude_hooks import paths
 from tools.claude_hooks.errors import ProxyServiceError, SupervisorError
+
+
+@dataclass
+class SupervisorSetup:
+    """Result of supervisor setup."""
+
+    client: SupervisorClient
+
+    @property
+    def guidance(self) -> str:
+        """Get supervisor usage guidance."""
+        supervisor_dir = paths.get_supervisor_dir()
+        supervisor_conf = _get_supervisor_conf()
+        return textwrap.dedent(
+            f"""\
+            Supervisor
+            ==========
+            Supervisor manages background processes (bazel proxy, etc.).
+            See: supervisorctl -c {supervisor_conf} status
+            Service configs: {supervisor_dir}/conf.d/
+            Logs: {supervisor_dir}/
+            """
+        )
 
 # Default port for supervisor's inet_http_server (localhost only)
 _DEFAULT_SUPERVISOR_PORT = 19001
 
 logger = logging.getLogger(__name__)
 
+
 # Supervisor process state names (see https://supervisord.org/subprocess.html#process-states)
-ProcessState = Literal["STOPPED", "STARTING", "RUNNING", "BACKOFF", "STOPPING", "EXITED", "FATAL", "UNKNOWN"]
+class ProcessState(StrEnum):
+    """Supervisor process states."""
+
+    STOPPED = "STOPPED"  # Process stopped or never started
+    STARTING = "STARTING"  # Process is starting
+    RUNNING = "RUNNING"  # Process is running
+    BACKOFF = "BACKOFF"  # Process exited too quickly after starting
+    STOPPING = "STOPPING"  # Process is stopping
+    EXITED = "EXITED"  # Process exited from RUNNING state
+    FATAL = "FATAL"  # Process could not be started
+    UNKNOWN = "UNKNOWN"  # Unknown state (programming error)
 
 
 class ProcessInfo(BaseModel):
@@ -69,16 +97,9 @@ class ProcessInfo(BaseModel):
     description: str
 
 
-def _get_supervisor_dir() -> Path:
-    """Get supervisor directory, allowing override via env var."""
-    if env_dir := os.environ.get("CLAUDE_HOOKS_SUPERVISOR_DIR"):
-        return Path(env_dir)
-    return Path.home() / ".config" / "supervisor"
-
-
 # Default paths (functions to allow testing with env var overrides)
 def _get_supervisor_conf() -> Path:
-    return _get_supervisor_dir() / "supervisord.conf"
+    return paths.get_supervisor_dir() / "supervisord.conf"
 
 
 def _get_supervisor_port() -> int:
@@ -94,11 +115,11 @@ def _get_supervisor_url() -> str:
 
 
 def _get_supervisor_log() -> Path:
-    return _get_supervisor_dir() / "supervisord.log"
+    return paths.get_supervisor_dir() / "supervisord.log"
 
 
 def _get_supervisor_pidfile() -> Path:
-    return _get_supervisor_dir() / "supervisord.pid"
+    return paths.get_supervisor_dir() / "supervisord.pid"
 
 
 class SupervisorState(BaseModel):
@@ -150,15 +171,164 @@ class SupervisorClient:
         """Stop a process. Returns True on success."""
         return bool(self._proxy.supervisor.stopProcess(name, wait))
 
+    def add_service(self, name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> None:
+        """Add a service to supervisor (idempotent - safe to call multiple times).
 
-def _get_supervisor_client() -> SupervisorClient:
-    """Get typed XML-RPC client for supervisor."""
-    return SupervisorClient()
+        Args:
+            name: Service name (used in supervisorctl commands)
+            command: Command to run
+            directory: Working directory
+            environment: Environment variables (optional)
+
+        Raises:
+            SupervisorError: If supervisor is not running.
+            ProxyServiceError: If service cannot be added.
+        """
+        if not is_running():
+            raise SupervisorError(f"supervisord not running, cannot add service {name}")
+
+        # Check if service already exists
+        try:
+            info = self.get_process_info(name)
+            logger.info("Service %s already exists (state=%s)", name, info.statename)
+            return
+        except xmlrpc.client.Fault as e:
+            if e.faultCode != Faults.BAD_NAME:
+                # Some other error - not "service doesn't exist"
+                raise ProxyServiceError(f"Failed to check service {name}: {e}") from e
+            # Service doesn't exist yet, proceed to add it
+
+        _write_service_config(name, command, directory, environment)
+
+        # Reload supervisor config via XML-RPC
+        try:
+            added, changed, removed = self.reload_config()
+            logger.info("Reloaded config: added=%s, changed=%s, removed=%s", added, changed, removed)
+
+            # Retry add_process_group with small delays to handle supervisor timing race
+            last_error: xmlrpc.client.Fault | None = None
+            for attempt in range(3):
+                try:
+                    self.add_process_group(name)
+                    logger.info("Added and started service: %s", name)
+                    # Verify the service was actually registered
+                    time.sleep(0.1)  # Brief delay for supervisor to update state
+                    try:
+                        info = self.get_process_info(name)
+                        logger.info("Service %s verified: state=%s", name, info.statename)
+                    except xmlrpc.client.Fault as verify_err:
+                        logger.warning("Service %s added but not found in verification: %s", name, verify_err)
+                    return
+                except xmlrpc.client.Fault as e:
+                    if e.faultCode == Faults.ALREADY_ADDED:
+                        logger.info("Service %s already running", name)
+                        return
+                    if e.faultCode == Faults.BAD_NAME and attempt < 2:
+                        # Supervisor may not be ready yet, retry after small delay
+                        time.sleep(0.2)
+                        last_error = e
+                        continue
+                    raise ProxyServiceError(f"Failed to add service {name}: {e}") from e
+            if last_error:
+                raise ProxyServiceError(f"Failed to add service {name} after retries: {last_error}") from last_error
+        except (ConnectionError, OSError) as e:
+            raise ProxyServiceError(f"Failed to communicate with supervisor: {e}") from e
+
+    def is_service_running(self, service_name: str, wait_for_start: bool = True, timeout: float = 5.0) -> bool:
+        """Check if a specific service is running under supervisor.
+
+        Args:
+            service_name: Name of the service to check
+            wait_for_start: If True, wait for service to transition from STARTING to RUNNING
+            timeout: Maximum time to wait for STARTING->RUNNING transition
+
+        Returns:
+            True if service is running, False otherwise
+        """
+        if not is_running():
+            return False
+
+        try:
+            deadline = time.time() + timeout if wait_for_start else time.time()
+            last_state = None
+
+            while True:
+                info = self.get_process_info(service_name)
+                if info.statename != last_state:
+                    logger.info("Service %s: state=%s", service_name, info.statename)
+                    last_state = info.statename
+                if info.statename == ProcessState.RUNNING:
+                    return True
+                if info.statename == ProcessState.STARTING and time.time() < deadline:
+                    time.sleep(0.2)
+                    continue
+                # Service exists but not running (STOPPED, EXITED, FATAL, BACKOFF, etc.)
+                return False
+
+        except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
+            logger.warning("Service check failed for %s: %s", service_name, e)
+            return False
+
+    def restart_service(self, service_name: str) -> None:
+        """Restart a specific service under supervisor.
+
+        Raises:
+            SupervisorError: If supervisor is not running.
+            ProxyServiceError: If service cannot be restarted.
+        """
+        if not is_running():
+            raise SupervisorError("supervisord not running")
+
+        try:
+            try:
+                self.stop_process(service_name)
+            except xmlrpc.client.Fault as e:
+                # BAD_NAME means service doesn't exist, NOT_RUNNING means already stopped
+                if e.faultCode not in (Faults.BAD_NAME, Faults.NOT_RUNNING):
+                    raise
+            time.sleep(0.3)
+            self.start_process(service_name)
+            logger.info("Restarted service: %s", service_name)
+        except (xmlrpc.client.Fault, ConnectionError, OSError) as e:
+            raise ProxyServiceError(f"Failed to restart {service_name}: {e}") from e
+
+    def update_service(self, name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> None:
+        """Update an existing service's config and restart it.
+
+        Rewrites the config file, reloads supervisor, removes the old process group,
+        and adds the new one. This ensures the new command takes effect.
+        """
+        if not is_running():
+            raise SupervisorError(f"supervisord not running, cannot update service {name}")
+
+        _write_service_config(name, command, directory, environment)
+
+        # Stop the running process
+        try:
+            self.stop_process(name)
+        except xmlrpc.client.Fault as e:
+            if e.faultCode not in (Faults.BAD_NAME, Faults.NOT_RUNNING):
+                raise
+
+        # Reread config files
+        self.reload_config()
+
+        # Remove old process group (unloads old config)
+        try:
+            self.remove_process_group(name)
+        except xmlrpc.client.Fault as e:
+            # STILL_RUNNING shouldn't happen after stop, BAD_NAME means not loaded
+            if e.faultCode != Faults.BAD_NAME:
+                raise
+
+        # Add new process group (loads new config)
+        self.add_process_group(name)
+        logger.info("Updated service: %s", name)
 
 
 def _write_config() -> None:
     """Write supervisor configuration file."""
-    supervisor_dir = _get_supervisor_dir()
+    supervisor_dir = paths.get_supervisor_dir()
     supervisor_conf = _get_supervisor_conf()
     supervisor_port = _get_supervisor_port()
     supervisor_url = _get_supervisor_url()
@@ -197,7 +367,7 @@ def _write_service_config(name: str, command: str, directory: Path, environment:
 
     Returns the path to the written config file.
     """
-    supervisor_dir = _get_supervisor_dir()
+    supervisor_dir = paths.get_supervisor_dir()
     service_conf = supervisor_dir / "conf.d" / f"{name}.conf"
     service_conf.parent.mkdir(parents=True, exist_ok=True)
 
@@ -248,7 +418,7 @@ def is_running() -> bool:
             return False
 
     try:
-        client = _get_supervisor_client()
+        client = SupervisorClient()
         client.get_state()
         return True
     except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
@@ -310,7 +480,7 @@ def _dump_supervisor_debug_info() -> str:
     return "\n".join(lines)
 
 
-def start() -> None:
+def start() -> SupervisorSetup:
     """Start supervisord if not already running.
 
     Raises:
@@ -318,7 +488,7 @@ def start() -> None:
     """
     if is_running():
         logger.info("supervisord already running")
-        return
+        return SupervisorSetup(client=SupervisorClient())
 
     logger.info("Starting supervisord...")
 
@@ -330,12 +500,6 @@ def start() -> None:
     # Ensure config exists
     if not supervisor_conf.exists():
         _write_config()
-
-    # Validate that supervisor module is available
-    if _SUPERVISOR_IMPORT_ERROR:
-        raise SupervisorError(
-            f"supervisor module not available: {_SUPERVISOR_IMPORT_ERROR}"
-        ) from _SUPERVISOR_IMPORT_ERROR
 
     # Validate config file is readable
     if not supervisor_conf.is_file():
@@ -352,7 +516,7 @@ def start() -> None:
     # Use Popen with start_new_session to fully detach the daemon process
     # Log stderr to supervisor log for debugging startup failures
     supervisor_log = _get_supervisor_log()
-    supervisor_dir = _get_supervisor_dir()
+    supervisor_dir = paths.get_supervisor_dir()
     supervisor_port = _get_supervisor_port()
 
     # Log what we're about to execute
@@ -364,27 +528,26 @@ def start() -> None:
     logger.info("  dir: %s", supervisor_dir)
 
     try:
-        with supervisor_log.open("a") as log_file:
-            process = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=log_file,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-                cwd=str(supervisor_dir),  # Ensure we're in a valid directory
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=supervisor_dir,
+        )
+        # Give it a tiny bit to check if it crashes immediately
+        time.sleep(0.1)
+        returncode = process.poll()
+        if returncode is not None:
+            # Process exited immediately - read log for details
+            log_content = supervisor_log.read_text() if supervisor_log.exists() else "(log not found)"
+            raise SupervisorError(
+                f"supervisord exited immediately with code {returncode}\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"Log: {log_content[-1000:]}"
             )
-            # Give it a tiny bit to check if it crashes immediately
-            time.sleep(0.1)
-            returncode = process.poll()
-            if returncode is not None:
-                # Process exited immediately - read log for details
-                log_content = supervisor_log.read_text() if supervisor_log.exists() else "(log not found)"
-                raise SupervisorError(
-                    f"supervisord exited immediately with code {returncode}\n"
-                    f"Command: {' '.join(cmd)}\n"
-                    f"Log: {log_content[-1000:]}"  # Last 1KB of log
-                )
-            logger.info("supervisord process spawned (pid=%s)", process.pid)
+        logger.info("supervisord process spawned (pid=%s)", process.pid)
     except OSError as e:
         raise SupervisorError(f"Failed to spawn supervisord: {e}") from e
 
@@ -393,7 +556,7 @@ def start() -> None:
         time.sleep(0.25)
         if is_running():
             logger.info("supervisord started successfully")
-            return
+            return SupervisorSetup(client=SupervisorClient())
         if i % 4 == 3:  # Log every second
             logger.debug("Waiting for supervisord... (%d/20)", i + 1)
 
@@ -403,185 +566,4 @@ def start() -> None:
     raise SupervisorError(f"supervisord did not start in time\n{debug_info}")
 
 
-def add_service(name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> None:
-    """Add a service to supervisor.
 
-    Args:
-        name: Service name (used in supervisorctl commands)
-        command: Command to run
-        directory: Working directory
-        environment: Environment variables (optional)
-
-    Raises:
-        SupervisorError: If supervisor is not running.
-        ProxyServiceError: If service cannot be added.
-    """
-    if not is_running():
-        raise SupervisorError(f"supervisord not running, cannot add service {name}")
-
-    _write_service_config(name, command, directory, environment)
-
-    # Reload supervisor config via XML-RPC
-    try:
-        client = _get_supervisor_client()
-        added, changed, removed = client.reload_config()
-        logger.info("Reloaded config: added=%s, changed=%s, removed=%s", added, changed, removed)
-
-        # Retry add_process_group with small delays to handle supervisor timing race
-        # (supervisor may report config as added but not be ready to accept add_process_group)
-        last_error: xmlrpc.client.Fault | None = None
-        for attempt in range(3):
-            try:
-                client.add_process_group(name)
-                logger.info("Added and started service: %s", name)
-                # Verify the service was actually registered
-                time.sleep(0.1)  # Brief delay for supervisor to update state
-                try:
-                    info = client.get_process_info(name)
-                    logger.info("Service %s verified: state=%s", name, info.statename)
-                except xmlrpc.client.Fault as verify_err:
-                    logger.warning("Service %s added but not found in verification: %s", name, verify_err)
-                return
-            except xmlrpc.client.Fault as e:
-                if e.faultCode == Faults.ALREADY_ADDED:
-                    logger.info("Service %s already running", name)
-                    return
-                if e.faultCode == Faults.BAD_NAME and attempt < 2:
-                    # Supervisor may not be ready yet, retry after small delay
-                    time.sleep(0.2)
-                    last_error = e
-                    continue
-                raise ProxyServiceError(f"Failed to add service {name}: {e}") from e
-        if last_error:
-            raise ProxyServiceError(f"Failed to add service {name} after retries: {last_error}") from last_error
-    except (ConnectionError, OSError) as e:
-        raise ProxyServiceError(f"Failed to communicate with supervisor: {e}") from e
-
-
-def is_service_running(service_name: str, wait_for_start: bool = True, timeout: float = 5.0) -> bool:
-    """Check if a specific service is running under supervisor.
-
-    Args:
-        service_name: Name of the service to check
-        wait_for_start: If True, wait for service to transition from STARTING to RUNNING
-        timeout: Maximum time to wait for STARTING->RUNNING transition
-
-    Returns:
-        True if service is running, False otherwise
-    """
-    if not is_running():
-        return False
-
-    try:
-        client = _get_supervisor_client()
-        deadline = time.time() + timeout if wait_for_start else time.time()
-        last_state = None
-
-        while True:
-            info = client.get_process_info(service_name)
-            if info.statename != last_state:
-                logger.info("Service %s: state=%s", service_name, info.statename)
-                last_state = info.statename
-            if info.statename == "RUNNING":
-                return True
-            if info.statename == "STARTING" and time.time() < deadline:
-                time.sleep(0.2)
-                continue
-            # Service exists but not running (STOPPED, EXITED, FATAL, BACKOFF, etc.)
-            return False
-
-    except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
-        logger.warning("Service check failed for %s: %s", service_name, e)
-        return False
-
-
-def restart_service(service_name: str) -> None:
-    """Restart a specific service under supervisor.
-
-    Raises:
-        SupervisorError: If supervisor is not running.
-        ProxyServiceError: If service cannot be restarted.
-    """
-    if not is_running():
-        raise SupervisorError("supervisord not running")
-
-    try:
-        client = _get_supervisor_client()
-        try:
-            client.stop_process(service_name)
-        except xmlrpc.client.Fault as e:
-            # BAD_NAME means service doesn't exist, NOT_RUNNING means already stopped
-            if e.faultCode not in (Faults.BAD_NAME, Faults.NOT_RUNNING):
-                raise
-        time.sleep(0.3)
-        client.start_process(service_name)
-        logger.info("Restarted service: %s", service_name)
-    except (xmlrpc.client.Fault, ConnectionError, OSError) as e:
-        raise ProxyServiceError(f"Failed to restart {service_name}: {e}") from e
-
-
-def update_service(name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> None:
-    """Update an existing service's config and restart it.
-
-    Rewrites the config file, reloads supervisor, removes the old process group,
-    and adds the new one. This ensures the new command takes effect.
-    """
-    if not is_running():
-        raise SupervisorError(f"supervisord not running, cannot update service {name}")
-
-    _write_service_config(name, command, directory, environment)
-
-    client = _get_supervisor_client()
-
-    # Stop the running process
-    try:
-        client.stop_process(name)
-    except xmlrpc.client.Fault as e:
-        if e.faultCode not in (Faults.BAD_NAME, Faults.NOT_RUNNING):
-            raise
-
-    # Reread config files
-    client.reload_config()
-
-    # Remove old process group (unloads old config)
-    try:
-        client.remove_process_group(name)
-    except xmlrpc.client.Fault as e:
-        # STILL_RUNNING shouldn't happen after stop, BAD_NAME means not loaded
-        if e.faultCode != Faults.BAD_NAME:
-            raise
-
-    # Add new process group (loads new config and starts)
-    client.add_process_group(name)
-    logger.info("Updated and restarted service: %s", name)
-
-
-def get_status() -> str:
-    """Get human-readable supervisor status."""
-    if not is_running():
-        return "not running"
-
-    try:
-        client = _get_supervisor_client()
-        all_info = client.get_all_process_info()
-        running = sum(1 for info in all_info if info.statename == "RUNNING")
-        return f"running ({running} services)"
-    except (ConnectionError, OSError, xmlrpc.client.Fault):
-        return "error"
-
-
-def emit_usage_guidance() -> None:
-    """Emit supervisor usage guidance (visible to agent)."""
-    supervisor_dir = _get_supervisor_dir()
-    supervisor_conf = _get_supervisor_conf()
-    guidance = textwrap.dedent(
-        f"""\
-        Supervisor
-        ==========
-        Supervisor manages background processes (bazel proxy, etc.).
-        See: supervisorctl -c {supervisor_conf} status
-        Service configs: {supervisor_dir}/conf.d/
-        Logs: {supervisor_dir}/
-        """
-    )
-    print(guidance)

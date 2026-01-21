@@ -10,3 +10,11 @@ py_library(
         "@pypi//cryptography",
     ],
 )
+
+py_library(
+    name = "shell_helpers",
+    testonly = True,
+    srcs = ["shell_helpers.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+)

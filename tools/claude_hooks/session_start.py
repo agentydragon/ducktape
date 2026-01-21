@@ -16,6 +16,7 @@ import subprocess
 import sys
 import textwrap
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -29,15 +30,55 @@ from tools.claude_hooks import (
     binary_tools,
     env_file,
     nix_setup,
+    paths,
     podman_service,
     proxy_setup,
     supervisor_setup,
 )
-from tools.claude_hooks.errors import DirenvError, ProjectNotFoundError
+from tools.claude_hooks.errors import DirenvError
 
-CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
-LOG_FILE = CACHE_DIR / "session-start.log"
-TIMESTAMP_FILE = CACHE_DIR / "session-hook-last-run"
+
+@dataclass
+class PodmanSetup:
+    """Result of podman setup."""
+
+    socket_url: str
+    supervisor: supervisor_setup.SupervisorClient
+
+    @property
+    def guidance(self) -> str:
+        """Get podman usage guidance for gVisor sandbox."""
+        status = "running" if self.supervisor.is_service_running("podman", wait_for_start=False) else "not running"
+        return textwrap.dedent(
+            f"""\
+            Podman in gVisor Sandbox
+            ========================
+            Podman is configured with gVisor-specific workarounds.
+            Running under supervisor (status: {status}). DOCKER_HOST={self.socket_url}
+
+            Required Container Flags
+            ------------------------
+            All containers MUST use `--annotation run.oci.keep_original_groups=1`.
+            This bypasses /proc/self/setgroups which is unavailable in gVisor.
+            Otherwise they will fail with:
+              "crun: error opening file `/proc/self/setgroups`: No such file or directory"
+
+            Use fully qualified image names (docker.io/library/...)
+
+            Configuration Applied:
+            ----------------------
+            - VFS storage (/etc/containers/storage.conf)
+            - userns = "host"
+            - --network=host
+            """
+        )
+
+
+from tools.claude_hooks.supervisor_setup import SupervisorSetup
+
+
+LOG_FILE = paths.get_cache_dir() / "session-start.log"
+TIMESTAMP_FILE = paths.get_cache_dir() / "session-hook-last-run"
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +115,7 @@ def find_envrc(start_dir: Path) -> Path | None:
     return None
 
 
-def run_cli_mode(hook_input: HookInput) -> None:
+async def run_cli_mode(hook_input: HookInput) -> None:
     """CLI mode: load direnv environment."""
     # Find .envrc (walk up from cwd)
     envrc = find_envrc(hook_input.cwd)
@@ -91,17 +132,25 @@ def run_cli_mode(hook_input: HookInput) -> None:
 
     # Use direnv to export the environment
     try:
-        result = subprocess.run(
-            ["direnv", "export", "bash"], check=False, cwd=envrc.parent, capture_output=True, text=True, timeout=30
+        result = await asyncio.create_subprocess_exec(
+            "direnv",
+            "export",
+            "bash",
+            cwd=envrc.parent,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
+        stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=30)
     except FileNotFoundError:
         print("direnv: not installed, skipping", file=sys.stderr)
         return
-    except subprocess.TimeoutExpired as e:
+    except TimeoutError as e:
         raise DirenvError("direnv export timed out") from e
 
     if result.returncode != 0:
-        raise DirenvError(f"direnv export failed: {result.stderr}")
+        raise DirenvError(f"direnv export failed: {stderr.decode()}")
+
+    stdout_str = stdout.decode()
 
     # direnv export bash outputs shell commands like:
     # export VAR="value"; export VAR2="value2";
@@ -111,11 +160,11 @@ def run_cli_mode(hook_input: HookInput) -> None:
         return
 
     # Write the exports to CLAUDE_ENV_FILE
-    if result.stdout.strip():
-        Path(env_file).write_text(result.stdout)
+    if stdout_str.strip():
+        Path(env_file).write_text(stdout_str)
         # Print direnv-style export banner (summarize changes)
         exports = []
-        for part in result.stdout.split("export "):
+        for part in stdout_str.split("export "):
             if "=" in part:
                 var = part.split("=")[0].strip()
                 if var:
@@ -313,67 +362,12 @@ class LogCollector(logging.handlers.MemoryHandler):
         return [self.format(r) for r in self.buffer if r.levelno >= logging.ERROR]
 
 
-def setup_podman_storage() -> None:
-    """Configure podman for gVisor compatibility.
-
-    gVisor sandbox has restrictions that require specific podman configuration:
-    1. VFS storage driver (no overlay filesystem support)
-    2. System-level config (/etc/containers) since running as root
-    3. Explicit runroot and graphroot paths
-    4. Host user namespace (userns = "host")
-    """
-    podman_config: Traversable = importlib.resources.files("tools.claude_hooks.config.podman")
-
-    # Storage configuration (system-level since running as root)
-    storage_conf = Path("/etc/containers/storage.conf")
-    storage_conf.parent.mkdir(parents=True, exist_ok=True)
-    storage_conf.write_text(podman_config.joinpath("storage.conf").read_text())
-
-    # Container runtime configuration
-    containers_conf = Path("/etc/containers/containers.conf")
-    containers_conf.write_text(podman_config.joinpath("containers.conf").read_text())
-
-    # Ensure storage directories exist
-    Path("/run/containers/storage").mkdir(parents=True, exist_ok=True)
-    Path("/var/lib/containers/storage").mkdir(parents=True, exist_ok=True)
-
-    logger.info("Configured podman for gVisor: VFS storage, host userns")
-
-
-def emit_podman_guidance() -> None:
-    """Emit podman usage guidance for gVisor sandbox (visible to agent)."""
-    guidance = textwrap.dedent(
-        """\
-        Podman in gVisor Sandbox
-        ========================
-        Podman is configured with gVisor-specific workarounds.
-
-        Required Container Flags
-        ------------------------
-        All containers MUST use `--annotation run.oci.keep_original_groups=1`.
-        This bypasses /proc/self/setgroups which is unavailable in gVisor.
-        Otherwise they will fail with:
-          "crun: error opening file `/proc/self/setgroups`: No such file or directory"
-
-        Use fully qualified image names (docker.io/library/...)
-
-        Configuration Applied:
-        ----------------------
-        - VFS storage (/etc/containers/storage.conf)
-        - userns = "host"
-        - --network=host
-        """
-    )
-    print(guidance)
-    sys.stdout.flush()
-
-
 def setup_logging() -> LogCollector:
     """Configure root logger so all modules in tools.claude_hooks get handlers.
 
     Returns LogCollector for use in emit_session_context.
     """
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    paths.get_cache_dir().mkdir(parents=True, exist_ok=True)
 
     formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
     collector = LogCollector()
@@ -412,7 +406,7 @@ async def run_in_thread(func, *args):
 # ============================================================================
 
 
-async def run_web_mode_async(hook_input: HookInput) -> None:
+async def run_web_mode(hook_input: HookInput) -> None:
     """Web mode with parallelized operations.
 
     Uses asyncio to parallelize independent installations (git hook, cluster
@@ -434,70 +428,80 @@ async def run_web_mode_async(hook_input: HookInput) -> None:
     # Get required environment variables (fail early if missing)
     env_file_path = env_utils.get_required_env_path("CLAUDE_ENV_FILE")
 
-    # Detect project directory
-    project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
-    project_dir: Path
-    if project_dir_str:
-        logger.info("CLAUDE_PROJECT_DIR provided: %s", project_dir_str)
-        project_dir = Path(project_dir_str)
-    else:
-        logger.warning("CLAUDE_PROJECT_DIR not provided (fallback to PWD)")
-        pwd = Path.cwd()
-        if (pwd / ".git").exists():
-            project_dir = pwd
-            os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
-            logger.info("Project: %s", project_dir)
-        else:
-            raise ProjectNotFoundError("Cannot detect project root (no .git, CLAUDE_PROJECT_DIR not set)")
+    # Get required project directory
+    project_dir = env_utils.get_required_env_path("CLAUDE_PROJECT_DIR")
+    logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
 
-    # Sequential: Bazel proxy (needed by other operations)
-    proxy_setup.setup_bazel_proxy()
+    # Start supervisor (required by proxy and podman)
+    supervisor_task = asyncio.create_task(run_in_thread(supervisor_setup.start))
 
-    # Sequential: Bazelisk (needed early)
-    if not os.environ.get("CLAUDE_HOOKS_SKIP_BAZELISK"):
-        bazelisk_setup.install_bazelisk()
-        bazelisk_setup.install_wrapper()
-    else:
-        logger.info("Skipping bazelisk installation (CLAUDE_HOOKS_SKIP_BAZELISK set)")
+    # Wrappers that depend on supervisor being ready
+    # TODO: Handle upstream dependency failures more gracefully.
+    # Currently, when supervisor_task fails, all downstream tasks (proxy, podman)
+    # re-raise the same exception, resulting in N copies of the upstream error.
+    # Consider: skip downstream tasks silently or return a sentinel value instead
+    # of re-raising, so only the original upstream error surfaces once.
+    async def setup_proxy_with_supervisor() -> proxy_setup.ProxySetup:
+        """Set up bazel proxy (depends on supervisor)."""
+        await supervisor_task
+        if exc := supervisor_task.exception():
+            raise exc
+        supervisor_result = supervisor_task.result()
+        return proxy_setup.setup_bazel_proxy(supervisor_result.client)
 
-    # PARALLEL: Independent installations
+    async def setup_podman_with_supervisor() -> PodmanSetup:
+        """Set up podman (depends on supervisor)."""
+        await supervisor_task
+        if exc := supervisor_task.exception():
+            raise exc
+
+        if os.environ.get("CLAUDE_HOOKS_SKIP_PODMAN"):
+            logger.info("Skipping podman setup (CLAUDE_HOOKS_SKIP_PODMAN set)")
+            raise RuntimeError("Podman setup skipped via CLAUDE_HOOKS_SKIP_PODMAN")
+
+        supervisor_result = supervisor_task.result()
+        socket_url = podman_service.setup_podman(supervisor_result.client)
+        return PodmanSetup(socket_url=socket_url, supervisor=supervisor_result.client)
+
+    def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup | None:
+        """Install bazelisk and wrapper."""
+        if os.environ.get("CLAUDE_HOOKS_SKIP_BAZELISK"):
+            logger.info("Skipping bazelisk installation (CLAUDE_HOOKS_SKIP_BAZELISK set)")
+            return None
+        return bazelisk_setup.install_bazelisk_and_wrapper()
+
+    # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     logger.info("Starting parallel installations...")
-    git_task = asyncio.create_task(run_in_thread(install_git_precommit_hook, project_dir))
-    cluster_task = asyncio.create_task(run_in_thread(binary_tools.install_cluster_tools))
-    nix_task = asyncio.create_task(run_in_thread(nix_setup.install_nix))
+    proxy_result, podman_result, git_result, cluster_result, nix_result, bazelisk_result = await asyncio.gather(
+        setup_proxy_with_supervisor(),
+        setup_podman_with_supervisor(),
+        run_in_thread(install_git_precommit_hook, project_dir),
+        run_in_thread(binary_tools.install_cluster_tools),
+        run_in_thread(nix_setup.install_nix),
+        run_in_thread(install_bazelisk_wrapper),
+        return_exceptions=True,
+    )
 
-    # Await tasks with individual error handling
-    try:
-        await git_task
-    except Exception as e:
-        logger.warning("Failed to install git pre-commit: %s", e)
+    # Log failures
+    if isinstance(proxy_result, Exception):
+        logger.warning("Failed to setup proxy: %s", proxy_result)
+    if isinstance(git_result, Exception):
+        logger.warning("Failed to install git pre-commit: %s", git_result)
+    if isinstance(cluster_result, Exception):
+        logger.warning("Failed to install cluster tools: %s", cluster_result)
+    if isinstance(bazelisk_result, Exception):
+        logger.warning("Failed to install bazelisk: %s", bazelisk_result)
 
-    try:
-        await cluster_task
-    except Exception as e:
-        logger.warning("Failed to install cluster tools: %s", e)
+    # Extract artifacts
+    nix_store_bin: Path | None = None if isinstance(nix_result, Exception) else nix_result
+    if isinstance(nix_result, Exception):
+        logger.warning("Failed to install nix: %s", nix_result)
 
-    nix_store_bin: Path | None = None
-    try:
-        nix_store_bin = await nix_task
-    except Exception as e:
-        logger.warning("Failed to install nix: %s", e)
-
-    # Sequential: Podman configuration and service
-    docker_host = None
-    if not os.environ.get("CLAUDE_HOOKS_SKIP_PODMAN"):
-        logger.info("Configuring podman for e2e testing...")
-        setup_podman_storage()
-        emit_podman_guidance()
-
-        try:
-            podman_socket = await run_in_thread(podman_service.start_podman_service)
-            docker_host = f"unix://{podman_socket}"
-            logger.info(f"Podman service started: DOCKER_HOST={docker_host}")
-        except Exception as e:
-            logger.warning("Failed to start podman service: %s", e)
+    docker_host: str | None = None
+    if isinstance(podman_result, Exception):
+        logger.warning("Failed to configure podman: %s", podman_result)
     else:
-        logger.info("Skipping podman setup (CLAUDE_HOOKS_SKIP_PODMAN set)")
+        docker_host = podman_result.socket_url
 
     # Generate timestamp
     hook_timestamp = datetime.now()
@@ -526,146 +530,34 @@ async def run_web_mode_async(hook_input: HookInput) -> None:
     logger.info("Wrote environment to %s", env_file_path)
 
     # Emit status
-    node_ca_status = "custom CA" if combined_ca.exists() else "system"
+    bazel_status = bazelisk_result.status if not isinstance(bazelisk_result, Exception) else "not installed"
+    proxy_status = proxy_result.status if not isinstance(proxy_result, Exception) else "failed"
+    ca_status = proxy_result.ca_status if not isinstance(proxy_result, Exception) else "unknown"
     logger.info(
-        "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), proxy_setup.get_status(), node_ca_status
+        "Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_status, ca_status
     )
     logger.info("Nix: %s", get_nix_status())
-    if docker_host:
-        logger.info("Podman: %s", podman_service.get_status())
+    if not isinstance(podman_result, Exception):
+        podman_status = "running" if podman_result.supervisor.is_service_running("podman", wait_for_start=False) else "not running"
+        logger.info("Podman: %s", podman_status)
 
-    supervisor_setup.emit_usage_guidance()
+    # Emit all collected guidance
+    if not isinstance(supervisor_task.result(), Exception):
+        print(supervisor_task.result().guidance)
+        sys.stdout.flush()
+    if not isinstance(proxy_result, Exception):
+        proxy_guidance = proxy_result.guidance
+        if proxy_guidance:
+            print(proxy_guidance)
+            sys.stdout.flush()
+    if not isinstance(podman_result, Exception):
+        print(podman_result.guidance)
+        sys.stdout.flush()
+
     emit_session_context(collector)
 
 
-def run_web_mode(hook_input: HookInput) -> None:
-    """Web mode: set up Bazel proxy, git hooks, and development environment."""
-    collector = setup_logging()
-
-    logger.info("Session start hook")
-    logger.info("Hook: %s", __file__)
-    logger.info("Log:  %s", LOG_FILE)
-    logger.info("Hook input: %s", hook_input.model_dump_json())
-
-    logger.info("Full environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
-    logger.info("Setting up dev environment...")
-    logger.info(format_environment_summary())
-
-    # Detect project directory
-    project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
-    project_dir: Path
-    if project_dir_str:
-        logger.info("CLAUDE_PROJECT_DIR provided: %s", project_dir_str)
-        project_dir = Path(project_dir_str)
-    else:
-        logger.warning("CLAUDE_PROJECT_DIR not provided (fallback to PWD)")
-        pwd = Path.cwd()
-        if (pwd / ".git").exists():
-            project_dir = pwd
-            os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
-            logger.info("Project: %s", project_dir)
-        else:
-            raise ProjectNotFoundError("Cannot detect project root (no .git, CLAUDE_PROJECT_DIR not set)")
-
-    # Set up Bazel proxy (creates combined CA bundle for TLS-inspecting proxy)
-    proxy_setup.setup_bazel_proxy()
-
-    # Install Bazelisk and wrapper (skip in some tests to avoid cross-host redirect issues)
-    if not os.environ.get("CLAUDE_HOOKS_SKIP_BAZELISK"):
-        bazelisk_setup.install_bazelisk()
-        bazelisk_setup.install_wrapper()
-    else:
-        logger.info("Skipping bazelisk installation (CLAUDE_HOOKS_SKIP_BAZELISK set)")
-
-    install_git_precommit_hook(project_dir)
-
-    # Install cluster tools (opentofu, tflint) for pre-commit-terraform hooks
-    logger.info("Installing cluster tools...")
-    binary_tools.install_cluster_tools()
-
-    # Install nix (for nix eval, flake operations, and nixfmt via pre-commit)
-    logger.info("Installing nix...")
-    nix_store_bin: Path | None = None
-    try:
-        nix_store_bin = nix_setup.install_nix()
-    except (OSError, subprocess.SubprocessError) as e:
-        logger.warning("Failed to install nix: %s", e)
-
-    # Configure podman for gVisor compatibility (skip in Bazel tests)
-    if not os.environ.get("CLAUDE_HOOKS_SKIP_PODMAN"):
-        logger.info("Configuring podman for e2e testing...")
-        setup_podman_storage()
-        emit_podman_guidance()
-    else:
-        logger.info("Skipping podman setup (CLAUDE_HOOKS_SKIP_PODMAN set)")
-
-    # Export debug timestamp
-    hook_timestamp = datetime.now()
-    hook_timestamp_str = hook_timestamp.isoformat()
-    os.environ["DUCKTAPE_SESSION_START_HOOK_TS"] = hook_timestamp_str
-    TIMESTAMP_FILE.write_text(f"{hook_timestamp_str}\n")
-    logger.info("Session start hook timestamp: %s", hook_timestamp_str)
-
-    # Configure PATH for bash sessions
-    logger.info("Configuring bazel availability for bash sessions...")
-    env_file_str = os.environ.get("CLAUDE_ENV_FILE")
-    if env_file_str:
-        env_path = Path(env_file_str)
-
-        # Generate consolidated env script with all settings
-        # Combined CA bundle must exist at this point (created by setup_bazel_proxy)
-        combined_ca = proxy_setup._get_bazel_combined_ca()
-        if not combined_ca.exists():
-            raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
-        nix_paths = nix_setup.get_nix_paths(nix_store_bin) if nix_store_bin else []
-
-        env_content = bazelisk_setup.get_env_script(
-            proxy_port=proxy_setup._get_bazel_proxy_port(),
-            repo_root=project_dir,
-            hook_timestamp=hook_timestamp,
-            combined_ca=combined_ca,
-            nix_paths=nix_paths,
-        )
-
-        env_path.write_text(env_content)
-        logger.info("Wrote PATH exports to %s", env_path)
-    else:
-        # Fallback: symlink bazel to ~/.local/bin
-        logger.warning("CLAUDE_ENV_FILE not provided, using symlink fallback")
-        local_bin = Path.home() / ".local" / "bin"
-        current_path = os.environ.get("PATH", "")
-        if str(local_bin) not in current_path:
-            logger.warning("~/.local/bin not in PATH - bazel may not be available")
-
-        local_bin.mkdir(parents=True, exist_ok=True)
-        bazel_symlink = local_bin / "bazel"
-        bazel_wrapper = bazelisk_setup._get_wrapper_path()
-
-        if bazel_symlink.exists() or bazel_symlink.is_symlink():
-            if bazel_symlink.is_symlink() and bazel_symlink.resolve() == bazel_wrapper.resolve():
-                logger.info("Bazel symlink already configured")
-            else:
-                logger.warning("Replacing existing bazel with symlink")
-                bazel_symlink.unlink()
-                bazel_symlink.symlink_to(bazel_wrapper)
-        else:
-            bazel_symlink.symlink_to(bazel_wrapper)
-            logger.info("Created bazel symlink: %s -> %s", bazel_symlink, bazel_wrapper)
-
-    # Compact summary for stdout
-    node_ca_status = "custom CA" if proxy_setup._get_bazel_combined_ca().exists() else "system"
-    logger.info(
-        "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), proxy_setup.get_status(), node_ca_status
-    )
-    logger.info("Nix: %s", get_nix_status())
-
-    supervisor_setup.emit_usage_guidance()
-
-    # Emit context for Claude Code
-    emit_session_context(collector)
-
-
-def main() -> None:
+async def main() -> None:
     """Unified entry point: dispatch to web or CLI mode based on environment."""
     raw_input = sys.stdin.read()
     try:
@@ -676,14 +568,14 @@ def main() -> None:
         raise
 
     if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
-        asyncio.run(run_web_mode_async(hook_input))
+        await run_web_mode(hook_input)
     else:
-        run_cli_mode(hook_input)
+        await run_cli_mode(hook_input)
 
 
 if __name__ == "__main__":
     try:
-        main()
+        asyncio.run(main())
     except Exception as e:
         # Can't rely on log here since setup may have failed
         print(f"Hook failed: {e}", file=sys.stderr)

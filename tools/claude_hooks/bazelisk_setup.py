@@ -17,12 +17,13 @@ import stat
 import subprocess
 import sys
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from mako.template import Template
 
-from tools.claude_hooks import proxy_setup
+from tools.claude_hooks import paths, proxy_setup
 from tools.claude_hooks.resources import CONFIG_FILES
 
 logger = logging.getLogger(__name__)
@@ -30,14 +31,36 @@ logger = logging.getLogger(__name__)
 BAZELISK_VERSION = "1.25.0"
 
 
+@dataclass
+class BazeliskSetup:
+    """Result of bazelisk installation."""
+
+    bazelisk_path: Path
+    wrapper_path: Path
+
+    @property
+    def status(self) -> str:
+        """Get status string for logging."""
+        version = get_bazelisk_version()
+        if not version:
+            return "not installed"
+
+        bazel_on_path = shutil.which("bazel")
+        if bazel_on_path and Path(bazel_on_path).resolve() == self.wrapper_path.resolve():
+            return f"{version} ({self.wrapper_path})"
+        if self.wrapper_path.exists():
+            return f"{version} (wrapper exists but not on PATH)"
+        return f"{version} (no wrapper)"
+
+
 def _get_bazelisk_path() -> Path:
     """Get the bazelisk binary path."""
-    return proxy_setup._get_bazel_proxy_dir() / "bazelisk"
+    return paths.get_bazel_proxy_dir() / "bazelisk"
 
 
 def _get_wrapper_dir() -> Path:
     """Get the wrapper directory (added to PATH)."""
-    return proxy_setup._get_bazel_proxy_dir() / "bin"
+    return paths.get_bazel_proxy_dir() / "bin"
 
 
 def _get_wrapper_path() -> Path:
@@ -201,16 +224,12 @@ def get_env_script(
     return result
 
 
-def get_status() -> str:
-    """Get status string for logging."""
-    version = get_bazelisk_version()
-    if not version:
-        return "not installed"
+def install_bazelisk_and_wrapper() -> BazeliskSetup:
+    """Install bazelisk and wrapper script.
 
-    wrapper_path = _get_wrapper_path()
-    bazel_on_path = shutil.which("bazel")
-    if bazel_on_path and Path(bazel_on_path).resolve() == wrapper_path.resolve():
-        return f"{version} ({wrapper_path})"
-    if wrapper_path.exists():
-        return f"{version} (wrapper exists but not on PATH)"
-    return f"{version} (no wrapper)"
+    Returns:
+        BazeliskSetup with paths and status information
+    """
+    bazelisk_path = install_bazelisk()
+    wrapper_path = install_wrapper()
+    return BazeliskSetup(bazelisk_path=bazelisk_path, wrapper_path=wrapper_path)

@@ -8,13 +8,11 @@ import shutil
 import urllib.request
 from pathlib import Path
 
+from tools.claude_hooks import paths
 from tools.claude_hooks.resources import CONFIG_FILES
 from tools.claude_hooks.streaming import run_streaming
 
 logger = logging.getLogger(__name__)
-
-# Shared cache directory for Claude Code web hooks
-HOOK_CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 
 
 def find_nix_bin() -> Path | None:
@@ -46,8 +44,9 @@ def setup_nix_path(nix_store_bin: Path) -> None:
 
 def _write_nix_conf() -> Path:
     """Write nix.conf to shared cache directory, return path."""
-    HOOK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    nix_conf_path = HOOK_CACHE_DIR / "nix.conf"
+    cache_dir = paths.get_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    nix_conf_path = cache_dir / "nix.conf"
 
     nix_conf_content = CONFIG_FILES.joinpath("nix.conf").read_text()
     nix_conf_path.write_text(nix_conf_content)

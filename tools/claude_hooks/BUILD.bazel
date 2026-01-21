@@ -21,6 +21,7 @@ py_library(
         "env_file.py",
         "errors.py",
         "nix_setup.py",
+        "paths.py",
         "podman_service.py",
         "proxy_credentials.py",
         "proxy_setup.py",
@@ -43,6 +44,7 @@ py_library(
         "//tools:env_utils",
         "@pypi//cryptography",
         "@pypi//mako",
+        "@pypi//platformdirs",
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//supervisor",
@@ -70,6 +72,7 @@ py_wheel(
     requires = [
         "cryptography",
         "mako",
+        "platformdirs",
         "pydantic",
         "pyjwt",
         "supervisor",
@@ -118,10 +121,14 @@ py_test(
 py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
+    data = glob(
+        ["testdata/**/*"],
+        exclude_directories = 0,
+    ) + glob(["testdata/**/.bazelversion"]),
     imports = ["../.."],
     tags = [
         "e2e",
-        "external",  # Requires network access
+        "external",  # Requires network access (but now works without it!)
     ],
     deps = [
         ":claude_hooks",
