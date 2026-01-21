@@ -25,7 +25,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from openai_utils.model_metadata import MODEL_METADATA
-from props.core.db.models import (
+from props.core.ids import SnapshotSlug
+from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
+from props.core.runs_context import specimens_definitions_root
+from props.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
     FalsePositiveOccurrenceORM,
@@ -39,10 +42,7 @@ from props.core.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.core.db.session import get_session
-from props.core.ids import SnapshotSlug
-from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
-from props.core.runs_context import specimens_definitions_root
+from props.db.session import get_session
 
 from ._yaml import load_yaml_issues
 from .loader import discover_snapshots

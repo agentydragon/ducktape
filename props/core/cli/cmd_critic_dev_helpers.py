@@ -15,10 +15,10 @@ from sqlalchemy import func, text
 from agent_core.events import ApiRequest, AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from openai_utils.model import ReasoningItem
 from props.core.agent_types import AgentType, CriticTypeConfig
-from props.core.db.models import AgentRun, AgentRunStatus, Event, GradingEdge
-from props.core.db.session import get_session
 from props.core.display import ColumnDef, build_table_from_schema, ellipticize, print_table_with_footer, short_sha
 from props.core.ids import SnapshotSlug
+from props.db.models import AgentRun, AgentRunStatus, Event, GradingEdge
+from props.db.session import get_session
 
 
 @dataclass

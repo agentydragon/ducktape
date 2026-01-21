@@ -4,8 +4,8 @@ Each snapshot is explicitly assigned to 'train', 'valid', or 'test' in its manif
 The split assignment is the single source of truth for snapshot classification.
 
 Query splits via database ORM:
-    from props.core.db.session import get_session
-    from props.core.db.models import Snapshot
+    from props.db.session import get_session
+    from props.db.models import Snapshot
 
     with get_session() as session:
         snapshot = session.query(Snapshot).filter_by(slug=slug).one()

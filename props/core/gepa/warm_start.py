@@ -36,10 +36,10 @@ from collections import defaultdict
 
 from sqlalchemy import text
 
-from props.core.db.examples import Example
-from props.core.db.session import get_session
 from props.core.ids import SnapshotSlug
 from props.core.splits import Split
+from props.db.examples import Example
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 

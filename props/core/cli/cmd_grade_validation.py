@@ -18,21 +18,19 @@ from props.core.agent_types import AgentType
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli import common_options as opt
 from props.core.cli.resources import get_database_config
-from props.core.db.examples import Example
-from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, Snapshot
-from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.splits import Split
+from props.db.examples import Example
+from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, Snapshot
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
 
 @async_run
 async def cmd_grade_validation(
-    critic_model: str = opt.OPT_CRITIC_MODEL,
-    max_parallel: int = opt.OPT_MAX_PARALLEL,
-    verbose: bool = opt.OPT_VERBOSE,
+    critic_model: str = opt.OPT_CRITIC_MODEL, max_parallel: int = opt.OPT_MAX_PARALLEL, verbose: bool = opt.OPT_VERBOSE
 ) -> None:
     """Grade validation set: ensure complete critic coverage across all definitions.
 
@@ -143,11 +141,7 @@ async def cmd_grade_validation(
         typer.echo(f"\n=== Processing {need_critic} items with {max_parallel} workers ===\n")
 
         async def process_one(
-            example: ExampleSpec,
-            image_digest: str,
-            worker_id: int,
-            item_index: int,
-            total_items: int,
+            example: ExampleSpec, image_digest: str, worker_id: int, item_index: int, total_items: int
         ) -> tuple[str, bool, UUID | None]:
             """Process one work item: run critic.
             Returns (status, success, critic_run_id)."""

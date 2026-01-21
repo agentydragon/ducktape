@@ -11,10 +11,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from props.core.db.config import DatabaseConfig, get_database_config
-from props.core.db.session import get_session, recreate_database
-from props.core.db.setup import ensure_database_exists
-from props.core.db.sync.sync import FullSyncResult, sync_all
+from props.db.config import DatabaseConfig, get_database_config
+from props.db.session import get_session, recreate_database
+from props.db.setup import ensure_database_exists
+from props.db.sync.sync import FullSyncResult, sync_all
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")

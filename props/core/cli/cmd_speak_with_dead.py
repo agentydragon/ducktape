@@ -20,8 +20,8 @@ from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.client_factory import build_client
 from openai_utils.model import AssistantMessage, FunctionCallItem, ReasoningItem, UserMessage
 from props.core.cli.common_options import OPT_MAX_LINES
-from props.core.db.models import AgentRun
-from props.core.db.session import get_session
+from props.db.models import AgentRun
+from props.db.session import get_session
 
 
 def _find_agent_run_by_prefix(prefix: str) -> UUID:

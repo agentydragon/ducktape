@@ -23,7 +23,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from props.core.db.config import DbConnectionConfig
+from props.db.config import DbConnectionConfig
 
 logger = logging.getLogger(__name__)
 

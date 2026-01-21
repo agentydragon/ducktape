@@ -28,9 +28,9 @@ import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from props.core.db.models import AgentDefinition, AgentRun, AgentType
-from props.core.db.session import get_session
 from props.core.oci_utils import is_digest
+from props.db.models import AgentDefinition, AgentRun, AgentType
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 

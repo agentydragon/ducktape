@@ -11,12 +11,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from props.core.critic.submit_server import CriticSubmitServer
-from props.core.db.examples import Example
-from props.core.db.models import AgentRunStatus
-from props.core.db.session import get_session
-from props.core.db.snapshots import DBLocationAnchor
-from props.core.db.temp_user_manager import TempUserManager
 from props.core.models.examples import WholeSnapshotExample
+from props.db.examples import Example
+from props.db.models import AgentRunStatus
+from props.db.session import get_session
+from props.db.snapshots import DBLocationAnchor
+from props.db.temp_user_manager import TempUserManager
 from props.testing.fixtures import make_critic_run
 
 if TYPE_CHECKING:

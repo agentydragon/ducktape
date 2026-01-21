@@ -15,8 +15,8 @@ from rich.table import Table
 from sqlalchemy import select
 
 from agent_core.events import ToolCall
-from props.core.db.models import Event
-from props.core.db.session import get_session
+from props.db.models import Event
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 

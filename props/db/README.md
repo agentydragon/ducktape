@@ -74,7 +74,7 @@ not by different roles or username patterns.
 
 ```bash
 # Run database tests via Bazel
-bazel test //props/core/db/...
+bazel test //props/db/...
 ```
 
 **Important**: Tests use fixtures that **only affect eval_results_test**. Production data is never touched.

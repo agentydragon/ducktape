@@ -14,11 +14,11 @@ import pytest_bazel
 from fastmcp.exceptions import ToolError
 from sqlalchemy import create_engine, text
 
-from props.core.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
-from props.core.db.session import get_session
-from props.core.db.temp_user_manager import TempUserManager
 from props.core.grader.conftest import make_test_grader_run
 from props.core.grader.submit_server import GraderSubmitServer
+from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
+from props.db.session import get_session
+from props.db.temp_user_manager import TempUserManager
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

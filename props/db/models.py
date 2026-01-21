@@ -45,11 +45,11 @@ from props.core.agent_types import (
     SnapshotGraderTypeConfig,
     TypeConfig,
 )
-from props.core.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
 from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.models.snapshot import BundleFilter, Source
 from props.core.splits import Split
+from props.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
 
 T = TypeVar("T", bound=BaseModel)
 

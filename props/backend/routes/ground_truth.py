@@ -12,7 +12,10 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
-from props.core.db.models import (
+from props.core.ids import SnapshotSlug
+from props.core.models.true_positive import LineRange
+from props.core.splits import Split
+from props.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
     FileSet,
@@ -23,10 +26,7 @@ from props.core.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.core.db.session import get_session
-from props.core.ids import SnapshotSlug
-from props.core.models.true_positive import LineRange
-from props.core.splits import Split
+from props.db.session import get_session
 
 router = APIRouter()
 

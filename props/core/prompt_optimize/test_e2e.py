@@ -22,13 +22,13 @@ from hamcrest import all_of, assert_that
 
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully, stdout_contains
-from props.core.db.config import DatabaseConfig
-from props.core.db.examples import Example
-from props.core.db.models import AgentRun, AgentRunStatus
-from props.core.db.session import get_session
 from props.core.models.examples import ExampleKind
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
+from props.db.config import DatabaseConfig
+from props.db.examples import Example
+from props.db.models import AgentRun, AgentRunStatus
+from props.db.session import get_session
 from props.testing.mocks import PropsMock
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
@@ -67,9 +67,7 @@ def make_critic_mock_with_issue() -> PropsMock:
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.docker_exec_roundtrip(
-            ["critique", "insert-issue", "test-issue-001", "Test issue"]
-        )
+        result = yield from m.docker_exec_roundtrip(["critique", "insert-issue", "test-issue-001", "Test issue"])
         assert_that(result, exited_successfully())
         result = yield from m.docker_exec_roundtrip(
             ["critique", "insert-occurrence", "test-issue-001", "subtract.py", "-s", "1", "-e", "5"]

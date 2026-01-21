@@ -16,10 +16,10 @@ from alembic.config import Config
 from psycopg2 import sql
 from sqlalchemy import Engine, create_engine, inspect, text
 
-from props.core.db.models import Base
+from props.db.models import Base
 
 if TYPE_CHECKING:
-    from props.core.db.config import DatabaseConfig
+    from props.db.config import DatabaseConfig
 
 logger = logging.getLogger(__name__)
 

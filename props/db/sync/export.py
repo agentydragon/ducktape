@@ -12,7 +12,8 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from props.core.db.models import (
+from props.core.ids import SnapshotSlug
+from props.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
     FalsePositiveOccurrenceORM,
@@ -22,7 +23,6 @@ from props.core.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.core.ids import SnapshotSlug
 
 
 class LiteralStr(str):

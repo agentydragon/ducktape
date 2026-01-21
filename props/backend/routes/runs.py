@@ -24,12 +24,12 @@ from openai_utils.model import ReasoningItem
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
-from props.core.db.examples import Example
-from props.core.db.models import AgentRun, AgentRunStatus, Event, FileSetMember, GradingEdge, GradingTarget, Snapshot
-from props.core.db.session import get_session
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
 from props.core.splits import Split
+from props.db.examples import Example
+from props.db.models import AgentRun, AgentRunStatus, Event, FileSetMember, GradingEdge, GradingTarget, Snapshot
+from props.db.session import get_session
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

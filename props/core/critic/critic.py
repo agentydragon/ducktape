@@ -17,9 +17,9 @@ from mcp_infra.enhanced.server import EnhancedFastMCP
 from props.core.agent_setup import AgentEnvironment
 from props.core.agent_workspace import WorkspaceManager
 from props.core.critic.submit_server import CriticSubmitServer
-from props.core.db.config import DatabaseConfig
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleSpec
+from props.db.config import DatabaseConfig
 
 
 class CriticAgentEnvironment(AgentEnvironment):

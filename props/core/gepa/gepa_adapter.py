@@ -57,14 +57,14 @@ from agent_core.events import REFLECTION_EVENT_TYPES, EventType
 from openai_utils.model import OpenAIModelProto
 from props.core.agent_types import AgentType
 from props.core.agent_workspace import WorkspaceManager
-from props.core.db.config import DatabaseConfig
-from props.core.db.examples import Example, get_examples_for_split
-from props.core.db.models import AgentRun, AgentRunStatus, Event, RecallByDefinitionExample
-from props.core.db.session import get_session
-from props.core.db.snapshots import DBCriticSubmitPayload
 from props.core.display import short_sha
 from props.core.gepa.warm_start import build_historical_gepa_state
 from props.core.splits import Split
+from props.db.config import DatabaseConfig
+from props.db.examples import Example, get_examples_for_split
+from props.db.models import AgentRun, AgentRunStatus, Event, RecallByDefinitionExample
+from props.db.session import get_session
+from props.db.snapshots import DBCriticSubmitPayload
 
 logger = logging.getLogger(__name__)
 

@@ -46,10 +46,6 @@ from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.critic.critic import CriticAgentEnvironment
 from props.core.critic.exceptions import CriticExecutionError
-from props.core.db.agent_definition_ids import GRADER_IMAGE_REF
-from props.core.db.config import DatabaseConfig
-from props.core.db.models import AgentRun, AgentRunStatus, Snapshot
-from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.exceptions import AgentDidNotSubmitError
 from props.core.grader.daemon import GraderDaemonScaffold
@@ -58,6 +54,10 @@ from props.core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
+from props.db.agent_definition_ids import GRADER_IMAGE_REF
+from props.db.config import DatabaseConfig
+from props.db.models import AgentRun, AgentRunStatus, Snapshot
+from props.db.session import get_session
 
 if TYPE_CHECKING:
     pass

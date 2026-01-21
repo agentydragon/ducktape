@@ -10,8 +10,8 @@ import io
 import tarfile
 from pathlib import Path
 
-from props.core.db.models import Snapshot
-from props.core.db.session import get_session
+from props.db.models import Snapshot
+from props.db.session import get_session
 
 
 def fetch_snapshot_to_path(slug: str, output: Path) -> None:

@@ -20,8 +20,8 @@ from agent_core.events import AssistantText
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, ForbidAllTools, InjectItems, LoopDecision, NoAction
 from openai_utils.model import UserMessage
-from props.core.db import query_builders as qb
-from props.core.db.session import get_session
+from props.db import query_builders as qb
+from props.db.session import get_session
 
 if TYPE_CHECKING:
     from agent_core.agent import Agent

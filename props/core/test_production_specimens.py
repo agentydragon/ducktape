@@ -26,12 +26,12 @@ import pytest_bazel
 from hamcrest import assert_that, greater_than_or_equal_to
 from sqlalchemy import create_engine, text
 
-from props.core.db.config import DatabaseConfig, get_database_config
-from props.core.db.models import Snapshot
-from props.core.db.session import dispose_db, get_session, init_db, recreate_database
-from props.core.db.setup import ensure_database_exists
-from props.core.db.sync.sync import sync_all
 from props.core.splits import Split
+from props.db.config import DatabaseConfig, get_database_config
+from props.db.models import Snapshot
+from props.db.session import dispose_db, get_session, init_db, recreate_database
+from props.db.setup import ensure_database_exists
+from props.db.sync.sync import sync_all
 
 pytestmark = [pytest.mark.requires_production_specimens, pytest.mark.integration]
 

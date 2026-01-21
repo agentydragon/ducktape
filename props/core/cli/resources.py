@@ -21,7 +21,7 @@ Usage in commands:
 
 from __future__ import annotations
 
-from ..db.config import DatabaseConfig, get_database_config as _get_database_config
+from props.db.config import DatabaseConfig, get_database_config as _get_database_config
 
 
 def get_database_config() -> DatabaseConfig:

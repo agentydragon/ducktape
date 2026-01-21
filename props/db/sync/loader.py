@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from ...models.snapshot import SnapshotDoc, SnapshotSlug
+from props.core.models.snapshot import SnapshotDoc, SnapshotSlug
 
 
 def _derive_slug_from_path(snapshot_dir: Path, specimens_dir: Path) -> str | None:

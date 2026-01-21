@@ -15,8 +15,8 @@ py_library(
         "//mcp_infra",
         "//mcp_infra/enhanced",
         "//openai_utils",
-        "//props/core/db:models",
-        "//props/core/db:session",
+        "//props/db:models",
+        "//props/db:session",
         "@pypi//fastmcp",
         "@pypi//sqlalchemy",
     ],
@@ -28,8 +28,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core/db:models",
-        "//props/core/db:snapshots",
+        "//props/db:models",
+        "//props/db:snapshots",
     ],
 )
 
@@ -41,7 +41,7 @@ py_library(
     deps = [
         "//agent_core",
         "//openai_utils",
-        "//props/core/db:session",
+        "//props/db:session",
         "@pypi//sqlalchemy",
     ],
 )
@@ -54,7 +54,7 @@ py_library(
     deps = [
         ":drift_handler",
         "//props/core:ids",
-        "//props/core/db:config",
+        "//props/db:config",
         "@pypi//asyncpg",
     ],
 )
@@ -67,8 +67,8 @@ py_library(
     deps = [
         "//props/core:agent_registry",
         "//props/core:ids",
-        "//props/core/db:models",
-        "//props/core/db:session",
+        "//props/db:models",
+        "//props/db:session",
     ],
 )
 
@@ -84,7 +84,7 @@ py_library(
         "//props/core:agent_workspace",
         "//props/core:display",
         "//props/core:ids",
-        "//props/core/db:config",
+        "//props/db:config",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
     ],
@@ -97,8 +97,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_pkg/runtime",
-        "//props/core/db:models",
-        "//props/core/db:session",
+        "//props/db:models",
+        "//props/db:session",
         "@pypi//sqlalchemy",
     ],
 )
@@ -112,11 +112,28 @@ py_library(
         ":persistence",
         "//props/core:agent_types",
         "//props/core:ids",
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "//props/core/db:snapshots",
         "//props/core/models:examples",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshots",
         "@pypi//canonicaljson",
+    ],
+)
+
+# =============================================================================
+# Test support
+# =============================================================================
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:models",
+        "//props/db:session",
+        "@pypi//pytest",
     ],
 )
 
@@ -135,17 +152,15 @@ _POSTGRES_TEST_TAGS = [
 
 py_test(
     name = "test_grader_sql_integration",
-    srcs = [
-        "conftest.py",
-        "test_grader_sql_integration.py",
-    ],
+    srcs = ["test_grader_sql_integration.py"],
     env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
-        ":grader",
-        "//props/core/db:models",
-        "//props/core/db:session",
+        ":conftest",
+        ":submit_server",
+        "//props/db:models",
+        "//props/db:session",
         "//props/testing",
         "@pypi//fastmcp",
         "@pypi//pytest",
@@ -162,9 +177,10 @@ py_test(
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
-        ":grader",
-        "//props/core/db:models",
-        "//props/core/db:session",
+        ":conftest",
+        ":submit_server",
+        "//props/db:models",
+        "//props/db:session",
         "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -180,9 +196,10 @@ py_test(
     imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
-        ":grader",
-        "//props/core/db:models",
-        "//props/core/db:session",
+        ":conftest",
+        ":submit_server",
+        "//props/db:models",
+        "//props/db:session",
         "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

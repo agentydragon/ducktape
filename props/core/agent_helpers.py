@@ -12,15 +12,15 @@ Database access: Just use get_session() directly - it auto-initializes from PG* 
 Usage:
 
     # Get agent run ID (from database - extracts from username pattern)
-    from props.core.db.session import get_session
+    from props.db.session import get_session
     from props.core.agent_helpers import get_current_agent_run_id
 
     with get_session() as session:
         agent_run_id = get_current_agent_run_id(session)
 
     # Database access (auto-initializes on first use)
-    from props.core.db.session import get_session
-    from props.core.db.models import Snapshot
+    from props.db.session import get_session
+    from props.db.models import Snapshot
 
     with get_session() as session:
         snapshots = session.query(Snapshot).filter_by(split='train').all()
@@ -41,10 +41,10 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from props.core.db.models import AgentRun, FileSet
-from props.core.db.session import get_session
-from props.core.db.snapshot_io import fetch_snapshot_to_path
 from props.core.models.examples import WholeSnapshotExample
+from props.db.models import AgentRun, FileSet
+from props.db.session import get_session
+from props.db.snapshot_io import fetch_snapshot_to_path
 
 logger = logging.getLogger(__name__)
 

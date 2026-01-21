@@ -18,12 +18,12 @@ from hamcrest import assert_that
 
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully
-from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
-from props.core.db.examples import Example
-from props.core.db.models import AgentRun
-from props.core.db.session import get_session
 from props.core.prompt_improve.improve_agent import run_improvement_agent
 from props.core.prompt_improve.reminder_handler import BlockingStatus
+from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.db.examples import Example
+from props.db.models import AgentRun
+from props.db.session import get_session
 from props.testing.mocks import PropsMock
 
 # Define the improved agent.md content used across tests
@@ -40,7 +40,7 @@ Be thorough and systematic in your analysis."""
 # Define the init script content
 INIT_SCRIPT = """#!/usr/bin/env python3
 import sys
-from props.core.db.session import get_session
+from props.db.session import get_session
 from sqlalchemy import text
 
 with get_session() as session:

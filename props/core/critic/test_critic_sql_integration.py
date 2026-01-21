@@ -16,11 +16,11 @@ from sqlalchemy import text
 
 from props.core.critic.conftest import insert_issue, insert_occurrence
 from props.core.critic.submit_server import CriticSubmitInput
-from props.core.db.examples import Example
-from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
-from props.core.db.session import get_session
-from props.core.db.snapshots import DBLocationAnchor
 from props.core.ids import SnapshotSlug
+from props.db.examples import Example
+from props.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
+from props.db.session import get_session
+from props.db.snapshots import DBLocationAnchor
 from props.testing.fixtures import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

@@ -12,7 +12,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from props.core.db.models import AgentRunStatus, StatsWithCI
+from props.db.models import AgentRunStatus, StatsWithCI
 
 # Display constants
 SHORT_UUID_LENGTH = 8

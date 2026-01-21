@@ -6,10 +6,10 @@ from uuid import UUID
 
 import pytest
 
-from props.core.db.examples import Example
-from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue
-from props.core.db.session import get_session
 from props.core.models.examples import WholeSnapshotExample
+from props.db.examples import Example
+from props.db.models import AgentRun, AgentRunStatus, ReportedIssue
+from props.db.session import get_session
 from props.testing.fixtures import make_critic_run, make_grader_run
 
 

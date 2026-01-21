@@ -12,9 +12,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ...ids import SnapshotSlug
-from ...models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
-from ...models.types import Rationale
+from props.core.ids import SnapshotSlug
+from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
+from props.core.models.types import Rationale
+
 from ._models import FalsePositive, TruePositive
 
 

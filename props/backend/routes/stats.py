@@ -9,8 +9,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from props.core.agent_types import AgentType
-from props.core.db.examples import Example, count_available_examples_by_scope_all
-from props.core.db.models import (
+from props.core.ids import SnapshotSlug
+from props.core.models.examples import ExampleKind
+from props.core.splits import Split
+from props.db.examples import Example, count_available_examples_by_scope_all
+from props.db.models import (
     AgentDefinition,
     AgentRunStatus,
     FileSetMember,
@@ -19,10 +22,7 @@ from props.core.db.models import (
     Snapshot,
     StatsWithCI,
 )
-from props.core.db.session import get_session
-from props.core.ids import SnapshotSlug
-from props.core.models.examples import ExampleKind
-from props.core.splits import Split
+from props.db.session import get_session
 
 router = APIRouter()
 

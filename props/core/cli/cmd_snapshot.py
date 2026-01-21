@@ -11,11 +11,11 @@ from typer_di import TyperDI
 
 from cli_util.decorators import async_run
 from props.core.cli import common_options as opt
-from props.core.db.models import Snapshot
-from props.core.db.session import get_session
-from props.core.db.snapshot_io import fetch_snapshot_to_path
-from props.core.db.sync.export import _format_files
 from props.core.ids import SnapshotSlug
+from props.db.models import Snapshot
+from props.db.session import get_session
+from props.db.snapshot_io import fetch_snapshot_to_path
+from props.db.sync.export import _format_files
 
 # Snapshot subcommand group
 snapshot_app = TyperDI(help="Snapshot commands")

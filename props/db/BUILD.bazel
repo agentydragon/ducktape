@@ -9,7 +9,7 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     # Note: TempUserCredentials import is TYPE_CHECKING only - no runtime dep needed
 )
@@ -17,7 +17,7 @@ py_library(
 py_library(
     name = "snapshots",
     srcs = ["snapshots.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -29,7 +29,7 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":config",
@@ -48,8 +48,8 @@ py_library(
 py_library(
     name = "session",
     srcs = ["session.py"],
-    data = ["//props/core/db/migrations"],
-    imports = ["../../.."],
+    data = ["//props/db/migrations"],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":config",
@@ -63,7 +63,7 @@ py_library(
 py_library(
     name = "examples",
     srcs = ["examples.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":models",
@@ -77,7 +77,7 @@ py_library(
 py_library(
     name = "snapshot_io",
     srcs = ["snapshot_io.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":models",
@@ -92,7 +92,7 @@ py_library(
 py_library(
     name = "agent_definition_ids",
     srcs = ["agent_definition_ids.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":session",
@@ -103,7 +103,7 @@ py_library(
 py_library(
     name = "query_builders",
     srcs = ["query_builders.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":examples",
@@ -120,7 +120,7 @@ py_library(
 py_library(
     name = "temp_user_manager",
     srcs = ["temp_user_manager.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":config",
@@ -131,8 +131,8 @@ py_library(
 py_library(
     name = "setup",
     srcs = ["setup.py"],
-    data = ["//props/core/db/migrations"],
-    imports = ["../../.."],
+    data = ["//props/db/migrations"],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":session",
@@ -151,7 +151,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:conftest",
@@ -163,7 +163,7 @@ py_library(
 py_test(
     name = "test_layer_isolation",
     srcs = ["test_layer_isolation.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     deps = [
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -187,7 +187,7 @@ py_test(
         "test_agent_queries.py",
     ],
     env = _POSTGRES_TEST_ENV,
-    imports = ["../../.."],
+    imports = ["../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
         ":conftest",
@@ -207,7 +207,7 @@ py_test(
         "test_failed_critic_runs_as_zero_recall.py",
     ],
     env = _POSTGRES_TEST_ENV,
-    imports = ["../../.."],
+    imports = ["../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
         ":conftest",
@@ -226,7 +226,7 @@ py_test(
         "test_pydantic_column_null.py",
     ],
     env = _POSTGRES_TEST_ENV,
-    imports = ["../../.."],
+    imports = ["../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
         ":conftest",
@@ -246,7 +246,7 @@ py_test(
         "test_split_based_rls.py",
     ],
     env = _POSTGRES_TEST_ENV,
-    imports = ["../../.."],
+    imports = ["../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
         ":conftest",
@@ -268,7 +268,7 @@ py_test(
         "test_view_extracts_grade_fields.py",
     ],
     env = _POSTGRES_TEST_ENV,
-    imports = ["../../.."],
+    imports = ["../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
         ":conftest",

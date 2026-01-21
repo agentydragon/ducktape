@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from props.core.db.examples import Example
-from props.core.db.session import get_session
 from props.core.gepa.warm_start import build_historical_gepa_state
+from props.db.examples import Example
+from props.db.session import get_session
 from props.testing.fixtures import get_tp_occurrences_for_snapshot, make_critic_and_grader_run
 
 pytestmark = pytest.mark.skip(reason="GEPA warm-start broken: needs migration from prompts to agent_definitions")

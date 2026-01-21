@@ -16,11 +16,11 @@ from fastmcp.server.auth import AuthProvider
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
-from props.core.db.session import get_session
-from props.core.db.snapshots import DBLocationAnchor
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
+from props.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
+from props.db.session import get_session
+from props.db.snapshots import DBLocationAnchor
 
 logger = logging.getLogger(__name__)
 

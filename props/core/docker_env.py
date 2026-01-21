@@ -15,7 +15,7 @@ from mcp_infra.constants import WORKING_DIR
 from mcp_infra.exec.docker.container_session import BindMount, ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
-from props.core.db.config import DbConnectionConfig
+from props.db.config import DbConnectionConfig
 
 logger = logging.getLogger(__name__)
 

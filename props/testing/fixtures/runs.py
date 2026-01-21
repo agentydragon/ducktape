@@ -7,10 +7,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from props.core.agent_types import CriticTypeConfig, GraderTypeConfig
-from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF, GRADER_IMAGE_REF
-from props.core.db.config import DatabaseConfig
-from props.core.db.examples import Example
-from props.core.db.models import (
+from props.db.agent_definition_ids import CRITIC_IMAGE_REF, GRADER_IMAGE_REF
+from props.db.config import DatabaseConfig
+from props.db.examples import Example
+from props.db.models import (
     AgentRun,
     AgentRunStatus,
     CanonicalIssuesSnapshot,
@@ -19,8 +19,8 @@ from props.core.db.models import (
     ReportedIssueOccurrence,
     Snapshot,
 )
-from props.core.db.session import get_session
-from props.core.db.snapshots import DBLocationAnchor
+from props.db.session import get_session
+from props.db.snapshots import DBLocationAnchor
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind
 from props.core.models.types import Rationale

@@ -41,10 +41,6 @@ from props.core.cli.cmd_snapshot import snapshot_app
 from props.core.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from props.core.cli.cmd_stats import stats_app
 from props.core.cli.shared import make_example_from_files
-from props.core.db.config import get_database_config
-from props.core.db.models import AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, ReportedIssue, Snapshot
-from props.core.db.query_builders import query_recall_by_example
-from props.core.db.session import get_session, init_db
 from props.core.display import fmt_pct, short_sha
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -57,6 +53,10 @@ from props.core.prompt_improve.reminder_handler import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
 from props.core.splits import Split
+from props.db.config import get_database_config
+from props.db.models import AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, ReportedIssue, Snapshot
+from props.db.query_builders import query_recall_by_example
+from props.db.session import get_session, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +183,6 @@ async def prompt_optimize(
             budget=budget,
             optimizer_client=build_client(optimizer_model),
             critic_client=build_client(critic_model),
-            grader_client=build_client(grader_model),
             docker_client=docker_client,
             target_metric=target_metric,
             db_config=db_config,

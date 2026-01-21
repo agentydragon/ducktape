@@ -14,7 +14,7 @@ from sqlalchemy import text
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from openai_utils.model import UserMessage
-from props.core.db.session import get_session
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 

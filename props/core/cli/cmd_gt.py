@@ -8,9 +8,9 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from props.core.db.session import get_session
-from props.core.db.sync.export import export_snapshot_issues
 from props.core.ids import SnapshotSlug
+from props.db.session import get_session
+from props.db.sync.export import export_snapshot_issues
 
 # Ground truth subcommand group
 gt_app = typer.Typer(help="Ground truth management commands")

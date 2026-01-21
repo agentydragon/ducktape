@@ -52,7 +52,7 @@ bazel build //props/frontend:bundle
 
 ## Key Dependencies
 
-- **Backend:** FastAPI, SQLAlchemy, props.core.db, props.core.agent_registry
+- **Backend:** FastAPI, SQLAlchemy, props.db, props.core.agent_registry
 - **Frontend:** Svelte 5, Tailwind, openapi-fetch
 
 ## Props Integration
@@ -60,7 +60,7 @@ bazel build //props/frontend:bundle
 Backend imports from `props.core` package:
 
 - `props.core.agent_registry.AgentRegistry` - Run critic/grader agents
-- `props.core.db.models` - ORM models, views
-- `props.core.db.config` - Database connection
+- `props.db.models` - ORM models, views
+- `props.db.config` - Database connection
 
 Shared database is managed by Docker Compose (see `props/compose.yaml`).

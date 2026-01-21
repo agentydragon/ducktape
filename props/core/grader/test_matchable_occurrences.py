@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import text
 
-from props.core.db.session import get_session
+from props.db.session import get_session
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

@@ -24,12 +24,12 @@ from agent_core_testing.responses import PlayGen, tool_roundtrip
 from agent_core_testing.steps import exited_successfully, stdout_contains
 from mcp_infra.naming import MCPMountPrefix
 from openai_utils.model import ResponsesRequest
-from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
-from props.core.db.models import AgentDefinition
-from props.core.db.session import get_session
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.core.prompt_optimize.prompt_optimizer import RunCriticInput, RunCriticOutput, run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
+from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.db.models import AgentDefinition
+from props.db.session import get_session
 from props.testing.mocks import PropsMock
 
 
@@ -266,7 +266,7 @@ def make_custom_critic_mock(random_token: str) -> PropsMock:
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 @pytest.mark.slow
-async def test_po_builds_custom_critic(synced_test_db, async_docker_client, noop_openai_client):
+async def test_po_builds_custom_critic(synced_test_db, async_docker_client):
     """Test PO agent builds custom critic image via MCP tool integration.
 
     This is ONE integrated e2e test where:
@@ -295,7 +295,6 @@ async def test_po_builds_custom_critic(synced_test_db, async_docker_client, noop
         budget=1.0,
         optimizer_client=po_builder_mock,
         critic_client=custom_critic_mock,  # Used when MCP tool launches critics
-        grader_client=noop_openai_client,
         docker_client=async_docker_client,
         target_metric=TargetMetric.WHOLE_REPO,
         db_config=synced_test_db,

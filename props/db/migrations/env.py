@@ -3,8 +3,8 @@ from logging.config import fileConfig
 from alembic import context
 
 # Import models for autogenerate support
-from props.core.db.config import get_database_config
-from props.core.db.models import Base
+from props.db.config import get_database_config
+from props.db.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -69,7 +69,7 @@ def run_migrations_online() -> None:
         raise RuntimeError(
             "No connection provided to env.py. "
             "Alembic migrations must be run programmatically via session.py, not via CLI. "
-            "Use: from props.core.db.session import init_db, recreate_database; init_db(); recreate_database()"
+            "Use: from props.db.session import init_db, recreate_database; init_db(); recreate_database()"
         )
 
     # Configure context with the provided connection

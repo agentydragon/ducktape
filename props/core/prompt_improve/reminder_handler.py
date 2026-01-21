@@ -16,10 +16,10 @@ from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from openai_utils.model import UserMessage
 from props.core.agent_types import ImprovementTypeConfig
-from props.core.db.config import DatabaseConfig
-from props.core.db.session import get_session
 from props.core.ids import DefinitionId
 from props.core.models.examples import SingleFileSetExample
+from props.db.config import DatabaseConfig
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 

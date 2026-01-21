@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from props.core.db.examples import Example
-from props.core.db.models import Snapshot
-from props.core.db.session import get_session
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
+from props.db.examples import Example
+from props.db.models import Snapshot
+from props.db.session import get_session
 
 
 def test_generate_examples_train_split(synced_test_db):

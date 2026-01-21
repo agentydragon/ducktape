@@ -10,12 +10,12 @@ from uuid import UUID
 import canonicaljson
 
 from props.core.agent_types import AgentType
-from props.core.db.models import AgentRun, CanonicalIssuesSnapshot, FileSet, Snapshot as DBSnapshot
-from props.core.db.session import Session, get_session
-from props.core.db.snapshots import DBKnownFalsePositive, DBTruePositiveIssue
 from props.core.grader.persistence import orm_fp_to_db, orm_tp_to_db
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
+from props.db.models import AgentRun, CanonicalIssuesSnapshot, FileSet, Snapshot as DBSnapshot
+from props.db.session import Session, get_session
+from props.db.snapshots import DBKnownFalsePositive, DBTruePositiveIssue
 
 
 def resolve_scope_files(example_spec: ExampleSpec, session: Session) -> set[Path]:

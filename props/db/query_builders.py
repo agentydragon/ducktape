@@ -18,8 +18,11 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from props.core.agent_types import AgentType
-from props.core.db.examples import Example
-from props.core.db.models import (
+from props.core.ids import SnapshotSlug
+from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
+from props.core.splits import Split
+from props.db.examples import Example
+from props.db.models import (
     AgentRun,
     Event,
     FalsePositive,
@@ -31,9 +34,6 @@ from props.core.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.core.ids import SnapshotSlug
-from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
-from props.core.splits import Split
 
 
 def compile_to_sql(query: Select, *, literal_binds: bool = True) -> str:

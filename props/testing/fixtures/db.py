@@ -11,10 +11,10 @@ import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from props.core.db.config import DatabaseConfig, get_database_config
-from props.core.db.session import dispose_db, get_session, init_db, recreate_database
-from props.core.db.setup import ensure_database_exists
-from props.core.db.sync.sync import sync_all
+from props.db.config import DatabaseConfig, get_database_config
+from props.db.session import dispose_db, get_session, init_db, recreate_database
+from props.db.setup import ensure_database_exists
+from props.db.sync.sync import sync_all
 
 # Path to test specimens (git-tracked fixtures)
 TEST_FIXTURES_PATH = Path(__file__).parent / "testdata" / "specimens"
@@ -67,7 +67,7 @@ def block_production_config_in_tests(monkeypatch: pytest.MonkeyPatch) -> Callabl
         # Called from production code - allow it
         return original(*args, **kwargs)
 
-    monkeypatch.setattr("props.core.db.config.get_database_config", _block_from_tests)
+    monkeypatch.setattr("props.db.config.get_database_config", _block_from_tests)
 
     # Return original for test_db fixture to use
     return original

@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...ids import SnapshotSlug
-from ...models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
-from ...models.types import Rationale
+from props.core.ids import SnapshotSlug
+from props.core.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
+from props.core.models.types import Rationale
 
 
 @dataclass

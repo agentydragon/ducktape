@@ -2,9 +2,9 @@
 
 import pytest
 
-from props.core.db.config import DatabaseConfig
-from props.core.db.models import FileSet, FileSetMember
-from props.core.db.session import get_session
+from props.db.config import DatabaseConfig
+from props.db.models import FileSet, FileSetMember
+from props.db.session import get_session
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import SingleFileSetExample, WholeSnapshotExample
 

@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy.orm import Session
 
-from props.core.db.examples import Example
-from props.core.db.models import FalsePositiveOccurrenceORM, TruePositiveOccurrenceORM
+from props.db.examples import Example
+from props.db.models import FalsePositiveOccurrenceORM, TruePositiveOccurrenceORM
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 

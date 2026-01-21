@@ -13,8 +13,8 @@ from typing import Annotated
 import typer
 
 from props.core.agent_types import AgentType
-from props.core.db.models import AgentDefinition
-from props.core.db.session import get_session
+from props.db.models import AgentDefinition
+from props.db.session import get_session
 
 app = typer.Typer(name="agent-pkg", help="Agent package management commands", add_completion=False)
 

@@ -17,9 +17,9 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from props.core.db.models import AgentRun, AgentRunStatus, Snapshot
-from props.core.db.session import get_session
 from props.core.ids import SnapshotSlug
+from props.db.models import AgentRun, AgentRunStatus, Snapshot
+from props.db.session import get_session
 
 if TYPE_CHECKING:
     from openai_utils.model import OpenAIModelProto

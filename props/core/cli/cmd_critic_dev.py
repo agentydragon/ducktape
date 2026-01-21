@@ -21,11 +21,11 @@ from props.core.agent_helpers import get_current_agent_run, get_current_agent_ru
 from props.core.agent_types import AgentType
 from props.core.cli.cmd_critic_dev_helpers import show_execution_traces, show_grading_summary, show_run_status
 from props.core.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
-from props.core.db.session import get_session
 from props.core.display import ColumnDef, build_table_from_schema
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.prompt_optimize.prompt_optimizer import ReportFailureInput, RunCriticInput
 from props.core.splits import Split
+from props.db.session import get_session
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
 

@@ -26,11 +26,6 @@ from props.core.agent_types import AgentType, PromptOptimizerTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.critic.exceptions import CriticExecutionError
-from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
-from props.core.db.config import DatabaseConfig
-from props.core.db.examples import Example
-from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, Snapshot
-from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.exceptions import AgentDidNotSubmitError
 from props.core.ids import DefinitionId, SnapshotSlug
@@ -38,6 +33,11 @@ from props.core.models.examples import ExampleSpec, SingleFileSetExample
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 from props.core.prompt_optimize.budget_handler import BudgetEnforcementHandler
 from props.core.splits import Split
+from props.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
+from props.db.config import DatabaseConfig
+from props.db.examples import Example
+from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, Snapshot
+from props.db.session import get_session
 
 from .target_metric import TargetMetric
 

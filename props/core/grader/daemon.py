@@ -16,9 +16,9 @@ from typing import Any
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
 
-from props.core.db.config import DatabaseConfig
 from props.core.grader.drift_handler import GraderDriftHandler, check_grading_pending
 from props.core.ids import SnapshotSlug
+from props.db.config import DatabaseConfig
 
 logger = logging.getLogger(__name__)
 

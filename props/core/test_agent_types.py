@@ -16,9 +16,9 @@ from props.core.agent_types import (
     PromptOptimizerTypeConfig,
     TypeConfig,
 )
-from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import WholeSnapshotExample
+from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 
 
 @pytest.fixture

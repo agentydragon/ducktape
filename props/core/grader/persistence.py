@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from props.core.db.models import FalsePositive, OccurrenceRangeORM, TruePositive
-from props.core.db.snapshots import (
+from props.db.models import FalsePositive, OccurrenceRangeORM, TruePositive
+from props.db.snapshots import (
     DBFalsePositiveOccurrence,
     DBKnownFalsePositive,
     DBLineRange,

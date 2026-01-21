@@ -371,8 +371,8 @@ async def run_critic(snapshot_slug: str, example: Example) -> AgentRunResult:
 
 Writing events (remove):
 
-- `props/core/db_event_handler.py` - `DatabaseEventHandler` class
-- `props/core/db/models.py` - `Event` model class
+- `props/db_event_handler.py` - `DatabaseEventHandler` class
+- `props/db/models.py` - `Event` model class
 
 Reading events (update to use `llm_requests` or remove):
 
@@ -391,8 +391,8 @@ Schema/views (drop):
 Tests (update):
 
 - `props/core/critic/test_e2e.py` - event assertions
-- `props/core/db/test_split_based_rls.py` - event RLS tests
-- `props/core/db/test_agent_queries.py` - event creation tests
+- `props/db/test_split_based_rls.py` - event RLS tests
+- `props/db/test_agent_queries.py` - event creation tests
 - `props/testing/fixtures/db.py` - event fixtures
 
 Documentation:

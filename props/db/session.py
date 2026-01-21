@@ -48,8 +48,8 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import ConnectionPoolEntry
 
-from props.core.db.config import DatabaseConfig, get_database_config
-from props.core.db.models import Base
+from props.db.config import DatabaseConfig, get_database_config
+from props.db.models import Base
 
 logger = logging.getLogger(__name__)
 

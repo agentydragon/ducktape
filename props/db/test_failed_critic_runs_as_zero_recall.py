@@ -4,11 +4,11 @@ import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
-from props.core.db.examples import Example
-from props.core.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
 from props.core.models.examples import ExampleKind, SingleFileSetExample
 from props.core.splits import Split
+from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.db.examples import Example
+from props.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
 from props.testing.fixtures import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
     make_critic_run,

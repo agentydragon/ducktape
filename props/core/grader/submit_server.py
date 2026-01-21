@@ -19,8 +19,8 @@ from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from props.core.db.models import AgentRun, AgentRunStatus
-from props.core.db.session import get_session
+from props.db.models import AgentRun, AgentRunStatus
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 

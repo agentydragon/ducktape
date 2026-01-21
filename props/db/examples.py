@@ -15,10 +15,10 @@ from __future__ import annotations
 from sqlalchemy import Enum, Integer, String, func
 from sqlalchemy.orm import Mapped, Query, Session, mapped_column, relationship
 
-from props.core.db.models import Base, Snapshot, SnapshotSlugColumn
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
+from props.db.models import Base, Snapshot, SnapshotSlugColumn
 
 # =============================================================================
 # Example Model

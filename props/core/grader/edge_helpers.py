@@ -20,8 +20,8 @@ from uuid import UUID
 from sqlalchemy import delete, select, text
 
 from agent_pkg.runtime.mcp import mcp_client_from_env
-from props.core.db.models import AgentRun, GradingEdge, GradingPending, ReportedIssue
-from props.core.db.session import get_session
+from props.db.models import AgentRun, GradingEdge, GradingPending, ReportedIssue
+from props.db.session import get_session
 
 
 def get_pending_edges(

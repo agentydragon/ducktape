@@ -13,9 +13,9 @@ from agent_core_testing.steps import Step
 from openai_utils.model import ResponsesResult
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_workspace import WorkspaceManager
-from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
-from props.core.db.models import AgentRun, AgentRunStatus
-from props.core.db.session import get_session
+from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.db.models import AgentRun, AgentRunStatus
+from props.db.session import get_session
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec, WholeSnapshotExample
 from props.core.prompt_improve.improve_agent import run_improvement_agent
@@ -103,19 +103,16 @@ def run_prompt_optimizer_with_steps(synced_test_db, make_step_runner, make_opena
         steps: list[Step],
         *,
         critic_steps: list[Step] | None = None,
-        grader_steps: list[Step] | None = None,
         budget: float = 1.0,
         target_metric: TargetMetric = TargetMetric.WHOLE_REPO,
     ) -> None:
         runner = make_step_runner(steps=steps)
         critic_client = make_step_runner(steps=critic_steps) if critic_steps else make_openai_client([])
-        grader_client = make_step_runner(steps=grader_steps) if grader_steps else make_openai_client([])
 
         await run_prompt_optimizer(
             budget=budget,
             optimizer_client=runner,
             critic_client=critic_client,
-            grader_client=grader_client,
             docker_client=async_docker_client,
             target_metric=target_metric,
             db_config=synced_test_db,

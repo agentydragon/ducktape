@@ -25,10 +25,6 @@ from props.core.agent_setup import AgentEnvironment
 from props.core.agent_types import AgentType, ImprovementTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
-from props.core.db.agent_definition_ids import IMPROVEMENT_IMAGE_REF
-from props.core.db.config import DatabaseConfig
-from props.core.db.models import AgentRun, AgentRunStatus
-from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
@@ -36,6 +32,10 @@ from props.core.prompt_improve.reminder_handler import ImprovementReminderHandle
 from props.core.prompt_improve.token_budget_handler import TokenBudgetHandler
 from props.core.prompt_optimize.prompt_optimizer import PromptEvalServer, PromptOptimizerState
 from props.core.prompt_optimize.target_metric import TargetMetric
+from props.db.agent_definition_ids import IMPROVEMENT_IMAGE_REF
+from props.db.config import DatabaseConfig
+from props.db.models import AgentRun, AgentRunStatus
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,6 @@ class ImprovementAgentEnvironment(AgentEnvironment):
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
         server = PromptEvalServer(
             critic_client=self._critic_client,
-            grader_client=self._grader_client,
             registry=self._registry,
             optimizer_state=self.agent_state,
             target_metric=TargetMetric.TARGETED,

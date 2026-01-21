@@ -9,8 +9,8 @@ from uuid import UUID
 from agent_core.events import ApiRequest, AssistantText, Response, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
 from openai_utils.model import ReasoningItem
-from props.core.db.models import Event
-from props.core.db.session import get_session
+from props.db.models import Event
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 

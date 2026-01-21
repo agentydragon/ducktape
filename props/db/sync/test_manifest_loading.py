@@ -14,8 +14,8 @@ import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
-from props.core.db.sync.loader import discover_snapshots
 from props.core.ids import SnapshotSlug
+from props.db.sync.loader import discover_snapshots
 
 
 def test_load_git_fixtures(test_specimens_base: Path) -> None:

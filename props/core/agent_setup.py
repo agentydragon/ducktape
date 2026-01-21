@@ -44,11 +44,11 @@ from net_util.docker import get_docker_network_gateway_async
 from net_util.net import pick_free_port, wait_for_port
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
-from props.core.db.config import DatabaseConfig
-from props.core.db.temp_user_manager import TempUserManager
 from props.core.db_event_handler import DatabaseEventHandler
 from props.core.docker_env import DOCKER_MOUNT_PREFIX, PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from props.core.registry.images import _resolve_image_ref
+from props.db.config import DatabaseConfig
+from props.db.temp_user_manager import TempUserManager
 
 
 def _make_container_name(agent_run_id: UUID) -> str:

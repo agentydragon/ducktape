@@ -17,20 +17,6 @@ from rich.table import Table
 from sqlalchemy import func
 
 from props.core.agent_types import AgentType, CriticTypeConfig
-from props.core.db.examples import count_available_examples_by_scope_all, count_available_examples_for_split
-from props.core.db.models import (
-    AgentDefinition,
-    AgentRun,
-    AgentRunStatus,
-    Event,
-    OccurrenceCredit,
-    OccurrenceStatistics,
-    RecallByDefinitionSplitKind,
-    RecallByExample,
-    Snapshot,
-)
-from props.core.db.query_builders import query_recall_by_example
-from props.core.db.session import get_session
 from props.core.display import (
     SHORT_SHA_LENGTH,
     ColumnDef,
@@ -42,6 +28,20 @@ from props.core.display import (
 from props.core.grader.staleness import identify_stale_runs
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
+from props.db.examples import count_available_examples_by_scope_all, count_available_examples_for_split
+from props.db.models import (
+    AgentDefinition,
+    AgentRun,
+    AgentRunStatus,
+    Event,
+    OccurrenceCredit,
+    OccurrenceStatistics,
+    RecallByDefinitionSplitKind,
+    RecallByExample,
+    Snapshot,
+)
+from props.db.query_builders import query_recall_by_example
+from props.db.session import get_session
 
 # Stats subcommand group
 stats_app = typer.Typer(help="Statistics and metrics commands")

@@ -15,9 +15,9 @@ from agent_pkg.runtime.mcp import mcp_client_from_env
 from agent_pkg.runtime.output import WORKSPACE, render_agent_prompt
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run_id, get_scope_description
 from props.core.critic.submit_server import CriticSubmitInput
-from props.core.db.models import ReportedIssue, ReportedIssueOccurrence
-from props.core.db.session import get_session
-from props.core.db.snapshots import DBLocationAnchor
+from props.db.models import ReportedIssue, ReportedIssueOccurrence
+from props.db.session import get_session
+from props.db.snapshots import DBLocationAnchor
 
 HELP_TEXT = """Critic agent commands for reporting code review findings.
 

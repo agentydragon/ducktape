@@ -9,8 +9,8 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "_models",
     srcs = ["_models.py"],
-    imports = ["../../../.."],
-    visibility = ["//props/core/db:__subpackages__"],
+    imports = ["../../.."],
+    visibility = ["//props/db:__subpackages__"],
     deps = [
         "//props/core:ids",
         "//props/core/models:true_positive",
@@ -21,8 +21,8 @@ py_library(
 py_library(
     name = "_yaml_models",
     srcs = ["_yaml_models.py"],
-    imports = ["../../../.."],
-    visibility = ["//props/core/db:__subpackages__"],
+    imports = ["../../.."],
+    visibility = ["//props/db:__subpackages__"],
     deps = [
         ":_models",
         "//props/core:ids",
@@ -35,8 +35,8 @@ py_library(
 py_library(
     name = "_yaml",
     srcs = ["_yaml.py"],
-    imports = ["../../../.."],
-    visibility = ["//props/core/db:__subpackages__"],
+    imports = ["../../.."],
+    visibility = ["//props/db:__subpackages__"],
     deps = [
         ":_models",
         ":_yaml_models",
@@ -48,7 +48,7 @@ py_library(
 py_library(
     name = "loader",
     srcs = ["loader.py"],
-    imports = ["../../../.."],
+    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core/models:snapshot",
@@ -59,11 +59,11 @@ py_library(
 py_library(
     name = "export",
     srcs = ["export.py"],
-    imports = ["../../../.."],
+    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
-        "//props/core/db:models",
+        "//props/db:models",
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
     ],
@@ -72,7 +72,7 @@ py_library(
 py_library(
     name = "sync",
     srcs = ["sync.py"],
-    imports = ["../../../.."],
+    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":_yaml",
@@ -80,9 +80,9 @@ py_library(
         "//openai_utils",
         "//props/core:ids",
         "//props/core:runs_context",
-        "//props/core/db:models",
-        "//props/core/db:session",
         "//props/core/models:snapshot",
+        "//props/db:models",
+        "//props/db:session",
         "@pypi//pygit2",
         "@pypi//sqlalchemy",
     ],
@@ -105,12 +105,12 @@ py_test(
     name = "test_example_generation",
     srcs = ["test_example_generation.py"],
     env = _POSTGRES_TEST_ENV,
-    imports = ["../../../.."],
+    imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
         ":sync",
-        "//props/core/db:examples",
-        "//props/core/db:session",
+        "//props/db:examples",
+        "//props/db:session",
         "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -122,12 +122,12 @@ py_test(
     name = "test_manifest_loading",
     srcs = ["test_manifest_loading.py"],
     env = _POSTGRES_TEST_ENV,
-    imports = ["../../../.."],
+    imports = ["../../.."],
     tags = _POSTGRES_TEST_TAGS,
     deps = [
         ":loader",
         ":sync",
-        "//props/core/db:session",
+        "//props/db:session",
         "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -502,7 +502,7 @@ async def start_agent_loop(agent_id: UUID):
 ### SQLAlchemy Models (DRY via Mixin)
 
 ```python
-# props/core/db/models.py
+# props/db/models.py
 
 class Agent(Base):
     """Hub table for all agents."""

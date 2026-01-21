@@ -5,11 +5,11 @@ from uuid import uuid4
 import pytest_bazel
 from sqlalchemy import text
 
-from props.core.db.config import DatabaseConfig
-from props.core.db.examples import Example
-from props.core.db.models import AgentRunStatus, GradingEdge, TruePositive
-from props.core.db.session import get_session
 from props.core.ids import SnapshotSlug
+from props.db.config import DatabaseConfig
+from props.db.examples import Example
+from props.db.models import AgentRunStatus, GradingEdge, TruePositive
+from props.db.session import get_session
 from props.testing.fixtures import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
     make_critic_run,
