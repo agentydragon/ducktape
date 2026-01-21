@@ -73,6 +73,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
             f'export NODE_EXTRA_CA_CERTS="{vars.combined_ca}"',
             f'export REQUESTS_CA_BUNDLE="{vars.combined_ca}"',
             f'export CURL_CA_BUNDLE="{vars.combined_ca}"',
+            f'export SSL_CERT_FILE="{vars.combined_ca}"',
         ]
     )
 

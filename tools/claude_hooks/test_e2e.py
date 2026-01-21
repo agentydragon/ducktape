@@ -294,11 +294,29 @@ class TestFullSessionStartHook:
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
 
 
+def _is_root() -> bool:
+    """Check if running as root user."""
+    return os.geteuid() == 0
+
+
+def _can_install_podman() -> bool:
+    """Check if podman can be installed or is already available.
+
+    Returns True if:
+    - podman is already installed, OR
+    - apt-get is available (hook will auto-install)
+    """
+    if shutil.which("podman"):
+        return True
+    return bool(shutil.which("apt-get"))
+
+
 class TestPodmanIntegration:
     """E2E tests for podman integration with session start hook.
 
     These tests verify that podman is properly configured and can run containers
-    after the session start hook runs. They require podman to be installed.
+    after the session start hook runs. They require podman to be installed and
+    root access (for writing to /run/podman and /etc/containers).
     """
 
     @pytest.fixture
@@ -346,6 +364,8 @@ class TestPodmanIntegration:
         return env
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
+    @pytest.mark.skipif(not _is_root(), reason="requires root for /run/podman and /etc/containers")
+    @pytest.mark.skipif(not _can_install_podman(), reason="requires podman or apt-get")
     def test_podman_service_starts(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
         """Verify podman service starts after session start hook.
 
@@ -366,6 +386,8 @@ class TestPodmanIntegration:
         assert "unix:///run/podman/podman.sock" in env_content, "DOCKER_HOST not pointing to podman socket"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
+    @pytest.mark.skipif(not _is_root(), reason="requires root for /run/podman and /etc/containers")
+    @pytest.mark.skipif(not _can_install_podman(), reason="requires podman or apt-get")
     def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
         """Verify podman can run a container after session start hook.
 
@@ -377,19 +399,13 @@ class TestPodmanIntegration:
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
         # Verify we can run podman hello-world
-        # Use --annotation for gVisor compatibility (documented in hook guidance)
-        podman_result = subprocess.run(
-            [
-                "podman",
-                "run",
-                "--rm",
-                "--annotation",
-                "run.oci.keep_original_groups=1",
-                "docker.io/library/hello-world",
-            ],
+        # The gVisor annotation is auto-applied via containers.conf
+        # Run through env file to pick up SSL_CERT_FILE for TLS proxy CA
+        podman_result = shell_helpers.run_with_env_file(
+            command="podman run --rm docker.io/library/hello-world",
+            env_file=isolated_dirs.env_file,
+            cwd=isolated_dirs.project,
             check=False,
-            capture_output=True,
-            text=True,
             timeout=120,
             env=podman_hook_env,
         )

@@ -53,19 +53,13 @@ class PodmanSetup:
             Podman is configured with gVisor-specific workarounds.
             Running under supervisor (status: {self.status}). DOCKER_HOST={self.socket_url}
 
-            Required Container Flags
-            ------------------------
-            All containers MUST use `--annotation run.oci.keep_original_groups=1`.
-            This bypasses /proc/self/setgroups which is unavailable in gVisor.
-            Otherwise they will fail with:
-              "crun: error opening file `/proc/self/setgroups`: No such file or directory"
-
             Use fully qualified image names (docker.io/library/...)
 
             Configuration Applied:
             ----------------------
             - VFS storage (/etc/containers/storage.conf)
             - userns = "host"
+            - run.oci.keep_original_groups=1 annotation (auto-applied)
             - --network=host
             """
         )
