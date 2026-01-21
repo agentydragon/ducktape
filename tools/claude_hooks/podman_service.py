@@ -214,6 +214,11 @@ def setup_podman_storage() -> dict[str, str]:
     return _get_podman_env_vars()
 
 
+def _get_socket_path() -> Path:
+    """Get podman socket path (in isolated directory)."""
+    return get_podman_dir() / "podman.sock"
+
+
 def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
     """Set up podman storage and start service.
 
@@ -234,7 +239,7 @@ def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
         logger.info("Skipping podman setup (%s set)", SKIP_ENV_VAR)
         raise SkipError("Podman", SKIP_ENV_VAR)
 
-    socket_path = Path("/run/podman/podman.sock")
+    socket_path = _get_socket_path()
     socket_url = f"unix://{socket_path}"
 
     # Check if podman service is already running (idempotent case)
@@ -297,8 +302,7 @@ def start_podman_service(supervisor: SupervisorClient, env_vars: dict[str, str])
     """
     logger.info("Starting podman system service...")
 
-    # Podman socket path (rootful since we're running as root)
-    socket_path = Path("/run/podman/podman.sock")
+    socket_path = _get_socket_path()
     socket_url = f"unix://{socket_path}"
     socket_path.parent.mkdir(parents=True, exist_ok=True)
 

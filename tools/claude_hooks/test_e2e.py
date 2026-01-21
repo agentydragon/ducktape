@@ -294,29 +294,21 @@ class TestFullSessionStartHook:
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
 
 
-def _is_root() -> bool:
-    """Check if running as root user."""
-    return os.geteuid() == 0
+def _can_use_podman() -> bool:
+    """Check if podman is available for use.
 
-
-def _can_install_podman() -> bool:
-    """Check if podman can be installed or is already available.
-
-    Returns True if:
-    - podman is already installed, OR
-    - apt-get is available (hook will auto-install)
+    Returns True if podman is already installed.
+    Installing via apt-get requires root, which we want to avoid.
     """
-    if shutil.which("podman"):
-        return True
-    return bool(shutil.which("apt-get"))
+    return bool(shutil.which("podman"))
 
 
 class TestPodmanIntegration:
     """E2E tests for podman integration with session start hook.
 
     These tests verify that podman is properly configured and can run containers
-    after the session start hook runs. They require podman to be installed and
-    root access (for creating /run/podman socket). Config uses isolated paths.
+    after the session start hook runs. Config and socket use isolated paths
+    (~/.cache/claude-hooks/podman/).
     """
 
     @pytest.fixture
@@ -364,38 +356,26 @@ class TestPodmanIntegration:
         return env
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
-    @pytest.mark.skipif(not _is_root(), reason="requires root for /run/podman socket")
-    @pytest.mark.skipif(not _can_install_podman(), reason="requires podman or apt-get")
+    @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
     def test_podman_service_starts(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
-        """Verify podman service starts after session start hook.
-
-        The hook will auto-install podman if not present, so no skipif for podman.
-        Requires root/sudo for apt install and creating /run/podman socket.
-        Config uses isolated paths (~/.cache/claude-hooks/podman/).
-        """
+        """Verify podman service starts after session start hook."""
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
 
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
-        # Verify podman socket exists
-        socket_path = Path("/run/podman/podman.sock")
+        # Verify podman socket exists in isolated directory
+        socket_path = isolated_dirs.cache / "claude-hooks" / "podman" / "podman.sock"
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
         # Verify DOCKER_HOST is set in env file
         env_content = isolated_dirs.env_file.read_text()
         assert "DOCKER_HOST" in env_content, "DOCKER_HOST not set in env file"
-        assert "unix:///run/podman/podman.sock" in env_content, "DOCKER_HOST not pointing to podman socket"
+        assert str(socket_path) in env_content, f"DOCKER_HOST not pointing to podman socket at {socket_path}"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
-    @pytest.mark.skipif(not _is_root(), reason="requires root for /run/podman socket")
-    @pytest.mark.skipif(not _can_install_podman(), reason="requires podman or apt-get")
+    @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
     def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
-        """Verify podman can run a container after session start hook.
-
-        This is the key verification that the hook properly set up podman.
-        The hook will auto-install podman if not present.
-        Requires root/sudo for socket and network access for pulling images.
-        """
+        """Verify podman can run a container after session start hook."""
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 

@@ -73,8 +73,7 @@ jobs:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
-  # Podman integration tests - runs separately since they require sudo
-  # The session start hook will auto-install podman if not present
+  # Podman integration tests - GitHub Actions runners have podman pre-installed
   podman-test:
     name: Podman Integration Tests
     runs-on: ubuntu-latest
@@ -95,14 +94,9 @@ jobs:
       - name: Run Podman integration tests
         run: |
           # Run the e2e tests with podman enabled
-          # GitHub Actions uses user 'runner' (not root) but has passwordless sudo
-          # Tests require root for:
-          # - apt install podman (if not present, hook will auto-install)
-          # - Writing to /run/podman (socket)
-          # Note: Config uses isolated paths (~/.cache/claude-hooks/podman/)
-          # so no conflict with system podman storage
-          sudo -E env "PATH=$PATH" "HOME=$HOME" "JAVA_HOME=$JAVA_HOME" \
-            bazel test //tools/claude_hooks:test_e2e \
+          # Config and socket use isolated paths (~/.cache/claude-hooks/podman/)
+          # so no conflict with system podman and no root required
+          bazel test //tools/claude_hooks:test_e2e \
             --test_output=all \
             --nocache_test_results \
             --test_env=CI=true \
@@ -110,11 +104,11 @@ jobs:
             --test_env=JAVA_HOME \
             --test_filter='TestPodmanIntegration'
 
-      - name: Verify podman was installed and used
+      - name: Verify podman is available
         run: |
-          # Verify podman exists (was installed by hook)
+          # Verify podman exists (either pre-installed or installed by hook)
           which podman && podman --version
-          echo "Podman installation verified"
+          echo "Podman available"
 
       - uses: ./.github/actions/collect-test-logs
         if: failure()
