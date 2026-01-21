@@ -1,31 +1,23 @@
-"""Test Indoor AQI setup.
-
-NOTE: These tests are skipped because pytest_homeassistant_custom_component
-doesn't work correctly with Bazel's test environment. The plugin requires
-HA modules not be imported before it patches them, and HA's integration
-loader can't find custom components in Bazel's runfiles structure.
-"""
+"""Test Indoor AQI setup."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that, has_entries
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-pytestmark = pytest.mark.skip(reason="pytest_homeassistant_custom_component incompatible with Bazel")
-
 DOMAIN = "indoor_aqi"
 
 
 async def test_setup_component(hass: HomeAssistant):
     """Test setting up the Indoor AQI component."""
-    # Lazy imports to avoid loading homeassistant modules before pytest plugin patches them
+    # Import inside test function to avoid loading HA modules before
+    # pytest_homeassistant_custom_component can patch them
     from homeassistant.setup import async_setup_component  # noqa: PLC0415
 
     # Define a basic YAML config
@@ -56,7 +48,6 @@ async def test_setup_component(hass: HomeAssistant):
 
 async def test_setup_entry(hass: HomeAssistant):
     """Test setting up a config entry."""
-    # Lazy imports to avoid loading homeassistant modules before pytest plugin patches them
     from custom_components.indoor_aqi import async_setup_entry  # noqa: PLC0415
     from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
 
@@ -72,7 +63,6 @@ async def test_setup_entry(hass: HomeAssistant):
 
 async def test_unload_entry(hass: HomeAssistant):
     """Test unloading a config entry."""
-    # Lazy imports to avoid loading homeassistant modules before pytest plugin patches them
     from custom_components.indoor_aqi import async_unload_entry  # noqa: PLC0415
     from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
 

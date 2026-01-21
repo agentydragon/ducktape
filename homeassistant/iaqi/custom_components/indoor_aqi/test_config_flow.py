@@ -1,34 +1,26 @@
-"""Test the Indoor AQI config flow.
-
-NOTE: These tests are skipped because pytest_homeassistant_custom_component
-doesn't work correctly with Bazel's test environment. The plugin requires
-HA modules not be imported before it patches them, and HA's integration
-loader can't find custom components in Bazel's runfiles structure.
-"""
+"""Test the Indoor AQI config flow."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that, contains_string, equal_to, has_entries
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-pytestmark = pytest.mark.skip(reason="pytest_homeassistant_custom_component incompatible with Bazel")
-
 DOMAIN = "indoor_aqi"
 
 
 async def _init_config_flow(hass: HomeAssistant, source: str | None = None, data: dict | None = None):
     """Initialize a configuration flow with the given source and data."""
-    # Lazy imports to avoid loading homeassistant modules before pytest plugin patches them
-    from homeassistant import config_entries as ce  # noqa: PLC0415
+    # Import inside function to avoid loading HA modules before
+    # pytest_homeassistant_custom_component can patch them
+    from homeassistant import config_entries  # noqa: PLC0415
 
     if source is None:
-        source = ce.SOURCE_IMPORT
+        source = config_entries.SOURCE_IMPORT
     return await hass.config_entries.flow.async_init(DOMAIN, context={"source": source}, data=data)
 
 
@@ -50,7 +42,8 @@ async def test_import_flow(hass: HomeAssistant):
 
 async def test_import_flow_already_exists(hass: HomeAssistant):
     """Test the import flow when an entry already exists."""
-    # Lazy imports to avoid loading homeassistant modules before pytest plugin patches them
+    # Import inside function to avoid loading HA modules before
+    # pytest_homeassistant_custom_component can patch them
     from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
 
     # Create an existing entry with the same unique ID
