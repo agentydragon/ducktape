@@ -47,12 +47,14 @@ class SupervisorSetup:
         """Get supervisor usage guidance."""
         supervisor_dir = paths.get_supervisor_dir()
         supervisor_conf = _get_supervisor_conf()
+        # Use sys.executable to ensure we use the same Python that has supervisor installed
+        python_exe = sys.executable
         return textwrap.dedent(
             f"""\
             Supervisor
             ==========
             Supervisor manages background processes (bazel proxy, etc.).
-            See: supervisorctl -c {supervisor_conf} status
+            See: {python_exe} -m supervisor.supervisorctl -c {supervisor_conf} status
             Service configs: {supervisor_dir}/conf.d/
             Logs: {supervisor_dir}/
             """

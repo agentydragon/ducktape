@@ -98,21 +98,23 @@ This package has the following dependencies (see BUILD.bazel):
 The proxy runs under supervisor for automatic restarts and easy log access:
 
 ```bash
-# View proxy status
-supervisorctl -c ~/.config/supervisor/supervisord.conf status bazel-proxy
+# View proxy status (use the Python that has supervisor installed)
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf status bazel-proxy
 
 # Restart proxy (e.g., after credential refresh)
-supervisorctl -c ~/.config/supervisor/supervisord.conf restart bazel-proxy
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf restart bazel-proxy
 
 # View proxy logs (stdout)
-tail -f ~/.config/supervisor/bazel-proxy.log
+tail -f ~/.config/claude-hooks/supervisor/bazel-proxy.log
 
 # View proxy errors (stderr)
-tail -f ~/.config/supervisor/bazel-proxy.err.log
+tail -f ~/.config/claude-hooks/supervisor/bazel-proxy.err.log
 
 # Stop proxy
-supervisorctl -c ~/.config/supervisor/supervisord.conf stop bazel-proxy
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf stop bazel-proxy
 ```
+
+**Note**: Use the same Python interpreter that has the `supervisor` package installed. In Claude Code web environments, this is typically the interpreter from the claude-hooks uv tool environment.
 
 ### From session-start hook
 
@@ -143,9 +145,9 @@ which detects credential changes and updates the supervisor service config.
 
 The proxy (pproxy) runs under supervisor:
 
-- **Process Manager**: supervisord (`~/.config/supervisor/supervisord.conf`)
-- **Service Config**: `~/.config/supervisor/conf.d/bazel-proxy.conf`
-- **Logging**: Stdout/stderr to `~/.config/supervisor/bazel-proxy.{log,err.log}`
+- **Process Manager**: supervisord (`~/.config/claude-hooks/supervisor/supervisord.conf`)
+- **Service Config**: `~/.config/claude-hooks/supervisor/conf.d/bazel-proxy.conf`
+- **Logging**: Stdout/stderr to `~/.config/claude-hooks/supervisor/bazel-proxy.{log,err.log}`
 - **Auto-restart**: Supervisor automatically restarts on crashes
 - **Credentials**: Embedded in command (service config updated on refresh)
 
@@ -155,7 +157,7 @@ After session start:
 
 ```bash
 # Verify supervisor is running the proxy
-supervisorctl -c ~/.config/supervisor/supervisord.conf status
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf status
 
 # Proxy should be accessible
 curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1
@@ -164,13 +166,13 @@ curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -
 bazel info
 
 # Check proxy logs
-tail -20 ~/.config/supervisor/bazel-proxy.log
-tail -20 ~/.config/supervisor/bazel-proxy.err.log
+tail -20 ~/.config/claude-hooks/supervisor/bazel-proxy.log
+tail -20 ~/.config/claude-hooks/supervisor/bazel-proxy.err.log
 ```
 
 ## Files
 
-Supervisor files (in `~/.config/supervisor/`):
+Supervisor files (in `~/.config/claude-hooks/supervisor/`):
 
 - `supervisord.conf` - Supervisor main configuration
 - `supervisord.{log,pid}` - Supervisor daemon state
