@@ -25,6 +25,11 @@ py_test(
         "tests/test_sensor.py",
         "tests/test_sensor_simple.py",
     ],
+    args = [
+        "--import-mode=importlib",
+        "-p",
+        "pytest_homeassistant_custom_component",
+    ],
     main = "tests/test_sensor.py",
     deps = [
         ":indoor_aqi",
