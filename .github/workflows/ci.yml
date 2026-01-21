@@ -10,7 +10,7 @@
 # - props-e2e-test: Props e2e tests (requires Docker registry, proxy, postgres)
 # - editor-e2e-test: Editor agent e2e tests (requires Docker)
 # - agent-server-e2e-test: Agent server e2e tests (requires Docker and runtime image)
-# - claude-hooks-e2e-test: Session start hook e2e tests (TLS proxy, real network)
+# - claude-hooks: E2E tests + release (separate workflow, always runs)
 # - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 # - nix-flake-check: Verify NixOS and home-manager configurations evaluate
@@ -179,14 +179,8 @@ jobs:
       contains(needs.compute-targets.outputs.bazel_targets, '//agent_server/')
     uses: ./.github/workflows/agent-server-e2e-test.yml
 
-  # Claude Hooks E2E tests - tests full session start hook with TLS proxy
-  # Only runs when tools/claude_hooks targets are affected
-  claude-hooks-e2e-test:
-    needs: compute-targets
-    if: |
-      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
-      contains(needs.compute-targets.outputs.bazel_targets, '//tools/claude_hooks')
-    uses: ./.github/workflows/claude-hooks-e2e-test.yml
+  # Claude Hooks E2E tests are handled by claude-hooks-release.yml which runs
+  # on every push to devel/main and all PRs (not conditional on file changes)
 
   # Conditional - only when nix/ changed
   nix-flake-check:
