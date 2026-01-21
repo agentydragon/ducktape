@@ -86,6 +86,15 @@ jobs:
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
 
+      - name: Reset podman storage
+        run: |
+          # Clear any pre-existing podman storage to avoid driver mismatch errors.
+          # The hook configures VFS driver for gVisor compatibility, but CI runners
+          # may have existing storage from Docker or previous podman runs with
+          # a different driver. The hook intentionally doesn't auto-delete state.
+          sudo rm -rf /var/lib/containers/storage /run/containers/storage
+          sudo rm -rf /etc/containers
+
       - name: Run Podman integration tests
         run: |
           # Run the e2e tests with podman enabled

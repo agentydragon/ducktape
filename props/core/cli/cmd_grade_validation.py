@@ -30,9 +30,7 @@ logger = logging.getLogger(__name__)
 
 @async_run
 async def cmd_grade_validation(
-    critic_model: str = opt.OPT_CRITIC_MODEL,
-    max_parallel: int = opt.OPT_MAX_PARALLEL,
-    verbose: bool = opt.OPT_VERBOSE,
+    critic_model: str = opt.OPT_CRITIC_MODEL, max_parallel: int = opt.OPT_MAX_PARALLEL, verbose: bool = opt.OPT_VERBOSE
 ) -> None:
     """Grade validation set: ensure complete critic coverage across all definitions.
 
@@ -143,11 +141,7 @@ async def cmd_grade_validation(
         typer.echo(f"\n=== Processing {need_critic} items with {max_parallel} workers ===\n")
 
         async def process_one(
-            example: ExampleSpec,
-            image_digest: str,
-            worker_id: int,
-            item_index: int,
-            total_items: int,
+            example: ExampleSpec, image_digest: str, worker_id: int, item_index: int, total_items: int
         ) -> tuple[str, bool, UUID | None]:
             """Process one work item: run critic.
             Returns (status, success, critic_run_id)."""

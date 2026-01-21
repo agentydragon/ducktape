@@ -17,7 +17,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from tools.claude_hooks.errors import SkipError
-from tools.claude_hooks.supervisor_setup import SupervisorClient
+from tools.claude_hooks.supervisor_setup import ProcessState, SupervisorClient
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +119,12 @@ def setup_podman_storage() -> None:
     3. Explicit runroot and graphroot paths
     4. Host user namespace (userns = "host")
     5. Registry configuration for short image names
+
+    Note: If there's pre-existing podman storage created with a different driver,
+    podman will fail with "database graph driver X does not match our graph driver Y".
+    This is intentional - we don't automatically delete existing state. To fix:
+      rm -rf /var/lib/containers/storage /run/containers/storage
+    See tools/claude_hooks/podman_service.py for details.
     """
     podman_config: Traversable = importlib.resources.files("tools.claude_hooks.config.podman")
 
@@ -146,6 +152,7 @@ def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
     """Set up podman storage and start service.
 
     If podman is not installed, attempts to install it via apt.
+    Idempotent: if podman service is already running, returns immediately.
 
     Args:
         supervisor: Supervisor client for managing services
@@ -161,6 +168,14 @@ def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
         logger.info("Skipping podman setup (%s set)", SKIP_ENV_VAR)
         raise SkipError("Podman", SKIP_ENV_VAR)
 
+    socket_path = Path("/run/podman/podman.sock")
+    socket_url = f"unix://{socket_path}"
+
+    # Check if podman service is already running (idempotent case)
+    if _is_podman_service_healthy(supervisor, socket_path):
+        logger.info("Podman service already running, skipping setup")
+        return PodmanSetup(socket_url=socket_url, supervisor=supervisor)
+
     if not is_podman_available():
         logger.info("Podman not found, installing...")
         install_podman()
@@ -170,6 +185,19 @@ def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
     socket_url = start_podman_service(supervisor)
     logger.info(f"Podman service started: DOCKER_HOST={socket_url}")
     return PodmanSetup(socket_url=socket_url, supervisor=supervisor)
+
+
+def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) -> bool:
+    """Check if podman service is running and socket exists.
+
+    Used for idempotency: skip setup if service is already healthy.
+    """
+    if not socket_path.exists():
+        return False
+    try:
+        return supervisor.is_service_running(PODMAN_SERVICE, wait_for_start=False)
+    except Exception:
+        return False
 
 
 def start_podman_service(supervisor: SupervisorClient) -> str:
@@ -215,11 +243,36 @@ def _wait_for_socket(socket_path: Path, supervisor: SupervisorClient, timeout: i
         timeout: Maximum wait time in seconds
 
     Raises:
-        TimeoutError: If socket doesn't become ready in time
+        TimeoutError: If socket doesn't become ready in time, with diagnostic info
     """
+    last_state = None
     for _i in range(timeout * 10):  # Check every 0.1s
         if socket_path.exists() and supervisor.is_service_running("podman", wait_for_start=False):
             return
+        # Track service state for diagnostics
+        try:
+            info = supervisor.get_process_info("podman")
+            last_state = info.statename if info else "unknown"
+        except Exception:
+            last_state = "error"
         time.sleep(0.1)
 
-    raise TimeoutError(f"Podman socket {socket_path} did not become ready in {timeout}s")
+    # Build diagnostic message
+    socket_exists = socket_path.exists()
+    diag = f"socket_exists={socket_exists}, last_service_state={last_state}"
+
+    # Log full process info at error level for visibility
+    if last_state in (ProcessState.FATAL, ProcessState.BACKOFF, ProcessState.EXITED):
+        try:
+            info = supervisor.get_process_info("podman")
+            logger.error("Podman service failed: %s", info.model_dump())
+        except Exception:
+            pass
+
+    # Common cause: storage driver mismatch from pre-existing state
+    hint = (
+        "Common cause: storage driver mismatch. "
+        "If podman was previously used with a different driver, run: "
+        "rm -rf /var/lib/containers/storage /run/containers/storage"
+    )
+    raise TimeoutError(f"Podman socket {socket_path} did not become ready in {timeout}s ({diag}). {hint}")
