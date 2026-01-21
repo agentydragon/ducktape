@@ -89,6 +89,8 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
     supervisor_port = _pick_free_port()
     bazel_proxy_port = _pick_free_port()
 
+    use_wheel = os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1"
+
     env = os.environ.copy()
     env.update(
         {
@@ -108,16 +110,19 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
             # Isolated ports (avoid conflicts between tests)
             "CLAUDE_HOOKS_SUPERVISOR_PORT": str(supervisor_port),
             "CLAUDE_HOOKS_BAZEL_PROXY_PORT": str(bazel_proxy_port),
-            # PYTHONPATH for subprocess to find modules (Bazel doesn't export this)
-            "PYTHONPATH": os.pathsep.join(sys.path),
             # Disable nix installation (speeds up tests, avoids network)
             "CLAUDE_HOOKS_SKIP_NIX": "1",
             # Disable podman setup (requires claude_hooks wheel install)
             "CLAUDE_HOOKS_SKIP_PODMAN": "1",
-            # Use python -m for proxy in tests (console script not available in Bazel)
-            "CLAUDE_AUTH_PROXY_CMD": f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy",
         }
     )
+
+    if not use_wheel:
+        # Bazel test mode: need PYTHONPATH and custom proxy command
+        env["PYTHONPATH"] = os.pathsep.join(sys.path)
+        env["CLAUDE_AUTH_PROXY_CMD"] = f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy"
+    # When use_wheel=True, console scripts (claude-session-start, claude-auth-proxy) are in PATH
+
     return env
 
 
@@ -164,10 +169,25 @@ def _cleanup_supervisor(config_dir: Path) -> None:
 def run_session_start_hook(
     project_dir: Path, env: dict[str, str], source: str = "startup"
 ) -> subprocess.CompletedProcess[str]:
-    """Run the session start hook with given environment."""
+    """Run the session start hook with given environment.
+
+    By default, runs via `python -m tools.claude_hooks.session_start` for Bazel tests.
+    Set CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-session-start` console
+    script instead - this tests the actual wheel packaging.
+    """
     hook_input = make_hook_input(project_dir, source)
+
+    if os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1":
+        # Run installed console script (tests wheel packaging)
+        cmd = ["claude-session-start"]
+        # Don't pass PYTHONPATH - use wheel's installed packages
+        env = {k: v for k, v in env.items() if k != "PYTHONPATH"}
+    else:
+        # Run via python -m (Bazel test mode)
+        cmd = [sys.executable, "-m", "tools.claude_hooks.session_start"]
+
     return subprocess.run(
-        [sys.executable, "-m", "tools.claude_hooks.session_start"],
+        cmd,
         check=False,
         input=hook_input,
         capture_output=True,
