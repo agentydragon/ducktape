@@ -2,8 +2,8 @@
 #
 # Runs on every push to devel/main and all PRs:
 # - Always runs all claude_hooks tests (unit + e2e)
-# - On push: creates commit-tagged release (requires tests to pass)
-# - On push + tests pass: also creates branch-specific "latest" release
+# - Always builds wheel and tests it when installed
+# - On push to devel/main: creates releases (requires tests to pass)
 name: Claude Hooks CI
 
 on:
@@ -86,9 +86,10 @@ jobs:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
-  # Wheel packaging test - verifies the built wheel works when installed
-  wheel-test:
-    name: Wheel Packaging Test
+  # Build wheel, test it, and release (on push to devel/main)
+  wheel-build-test-release:
+    name: Wheel Build, Test & Release
+    needs: [test]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -103,6 +104,18 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+
+      - name: Free disk space
+        if: github.event_name == 'push'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: true
 
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
@@ -123,49 +136,19 @@ jobs:
             --test_env=JAVA_HOME \
             --test_env=PATH
 
-      - uses: ./.github/actions/bazel-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
-
-  # Release job - only runs on push to devel/main, always creates commit-tagged release
-  release:
-    name: Build and Release
-    needs: [test, wheel-test]
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-          docker-images: true
-          swap-storage: true
-
+      # Release steps - only on push to devel/main
       - name: Set short SHA
+        if: github.event_name == 'push'
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
-      - uses: ./.github/actions/bazel-cache
-        id: bazel-cache
-
-      - name: Build wheel
-        run: bazel build //tools/claude_hooks:claude_hooks_wheel
-
-      - name: Prepare wheel
+      - name: Prepare wheel for release
+        if: github.event_name == 'push'
         run: |
           mkdir -p dist
           cp bazel-bin/tools/claude_hooks/claude_hooks-*.whl dist/
 
       - name: Create commit-tagged release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: claude-hooks-${{ env.SHORT_SHA }}
@@ -184,6 +167,7 @@ jobs:
           files: dist/*.whl
 
       - name: Cleanup old releases
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -196,6 +180,7 @@ jobs:
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
 
       - name: Update latest release for branch
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
