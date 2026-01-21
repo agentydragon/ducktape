@@ -179,8 +179,8 @@ jobs:
       contains(needs.compute-targets.outputs.bazel_targets, '//agent_server/')
     uses: ./.github/workflows/agent-server-e2e-test.yml
 
-  # Claude Hooks E2E tests are handled by claude-hooks-release.yml which runs
-  # on every push to devel/main and all PRs (not conditional on file changes)
+  # Claude Hooks tests are handled by claude-hooks-release.yml which runs on
+  # push to devel/main (for releases) and PRs that touch tools/claude_hooks/
 
   # Conditional - only when nix/ changed
   nix-flake-check:

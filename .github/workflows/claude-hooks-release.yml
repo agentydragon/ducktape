@@ -1,15 +1,21 @@
 # Build, test, and release claude_hooks wheel
 #
-# Runs on every push to devel/main and all PRs:
-# - Always runs all claude_hooks tests (unit + e2e)
-# - Always builds wheel and tests it when installed
-# - On push to devel/main: creates releases (requires tests to pass)
+# Runs on:
+# - Every push to devel/main (for releases)
+# - PRs that touch claude_hooks files
+# - Manual workflow_dispatch
+#
+# Tests: unit + e2e (including podman integration)
+# On push to devel/main: creates releases (requires tests to pass)
 name: Claude Hooks CI
 
 on:
   push:
     branches: [devel, main]
   pull_request:
+    paths:
+      - "tools/claude_hooks/**"
+      - ".github/workflows/claude-hooks-release.yml"
   workflow_dispatch:
 
 permissions:
@@ -85,6 +91,13 @@ jobs:
 
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+
+      - name: Clear podman storage
+        run: |
+          # GitHub Actions runners have podman pre-installed with existing storage.
+          # The hook configures VFS driver, which conflicts with existing storage.
+          # Clear storage only - preserve /etc/containers (has policy.json).
+          sudo rm -rf /var/lib/containers/storage /run/containers/storage
 
       - name: Run Podman integration tests
         run: |
