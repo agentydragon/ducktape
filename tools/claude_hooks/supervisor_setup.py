@@ -542,8 +542,9 @@ def start() -> SupervisorSetup:
         # Give it a tiny bit to check if it crashes immediately
         time.sleep(0.1)
         returncode = process.poll()
-        if returncode is not None:
-            # Process exited immediately - read log for details
+        if returncode is not None and returncode != 0:
+            # Process exited with error - read log for details
+            # Note: exit code 0 is SUCCESS (daemon forked and parent exited normally)
             log_content = supervisor_log.read_text() if supervisor_log.exists() else "(log not found)"
             raise SupervisorError(
                 f"supervisord exited immediately with code {returncode}\n"
