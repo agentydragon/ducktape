@@ -110,7 +110,7 @@ def install_bazelisk() -> Path:
     The wrapper script in ~/.cache/bazel-proxy/bin/bazel will call this.
     Skips download if already installed.
     """
-    bazel_proxy_dir = proxy_setup._get_bazel_proxy_dir()
+    bazel_proxy_dir = paths.get_bazel_proxy_dir()
     bazelisk_path = _get_bazelisk_path()
 
     bazel_proxy_dir.mkdir(parents=True, exist_ok=True)
