@@ -229,6 +229,14 @@ def emit_session_context(collector: LogCollector) -> None:
         lines.append("Warnings:")
         lines.extend(f"  - {msg}" for msg in collector.warnings)
 
+    # Check for GitHub CI token
+    if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
+        lines.append("GitHub CI Access:")
+        lines.append("  DUCKTAPE_CI_READ_GITHUB_TOKEN is set - GitHub PAT with read access to ducktape repo.")
+        lines.append("  Use with `gh` CLI: GH_TOKEN=$DUCKTAPE_CI_READ_GITHUB_TOKEN gh ...")
+        lines.append("  Capabilities: read repo, read CI logs, list workflow runs, view PR status.")
+        lines.append("  Workflow: push to branch, ask user to create PR, then poll CI status via gh.")
+
     lines.append(f"Full log: {LOG_FILE}")
 
     print("\n".join(lines))
