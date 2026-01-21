@@ -63,24 +63,8 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Derive cache key
-        id: cache-key
-        run: |
-          SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
-          echo "slug=$SLUG" >> $GITHUB_OUTPUT
-
-      - name: Restore Bazel cache
-        id: cache-bazel-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel-${{ steps.cache-key.outputs.slug }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
 
       # Pull Docker image needed by agent_server tests (removed by free-disk-space)
       - name: Pull test Docker image
@@ -88,7 +72,6 @@ jobs:
 
       - name: Run tests with coverage
         id: tests
-        continue-on-error: true
         env:
           # PostgreSQL environment for props and gatelet tests
           PGHOST: localhost
@@ -112,7 +95,7 @@ jobs:
             ${{ inputs.targets }}
 
       - name: Collect failed test logs
-        if: always()
+        if: failure()
         run: |
           mkdir -p failed-test-logs
 
@@ -148,7 +131,7 @@ jobs:
           find failed-test-logs -type f 2>/dev/null || echo "No files collected"
 
       - name: Upload failed test logs
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: failed-test-logs-${{ github.run_id }}
@@ -185,40 +168,11 @@ jobs:
           reporter: java-junit
           fail-on-error: false
 
-      - name: Generate test summary
-        if: always()
-        run: |
-          echo "### Bazel Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ steps.tests.outcome }}" = "success" ]; then
-            echo ":white_check_mark: All tests passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo ":x: Some tests failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Failed tests:**" >> $GITHUB_STEP_SUMMARY
-            if [ -d failed-test-logs ]; then
-              find failed-test-logs -name "test.xml" | while read xml; do
-                test_path="${xml#failed-test-logs/}"
-                test_name="${test_path%/test.xml}"
-                echo "- \`//${test_name}\`" >> $GITHUB_STEP_SUMMARY
-              done
-            else
-              echo "- (failed to collect test logs)" >> $GITHUB_STEP_SUMMARY
-            fi
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo ":package: Logs available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
-          fi
-
       - name: Save Bazel cache
-        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
-
-      - name: Fail if tests failed
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}

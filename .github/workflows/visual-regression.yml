@@ -27,33 +27,16 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Derive cache key
-        id: cache-key
-        run: |
-          SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
-          echo "slug=$SLUG" >> $GITHUB_OUTPUT
-
-      - name: Restore Bazel cache
-        id: cache-bazel-restore
-        uses: actions/cache/restore@v4
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
         with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel-${{ steps.cache-key.outputs.slug }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
-          restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-
+          hash_files: props/frontend/pnpm-lock.yaml
 
       - name: Run visual regression tests
-        id: visual_test
-        continue-on-error: true
-        run: |
-          bazel test //props/frontend:visual_test --test_output=errors
+        run: bazel test //props/frontend:visual_test --test_output=errors
 
       - name: Extract visual regression artifacts
-        if: always()
+        if: failure()
         run: |
           # Bazel stores undeclared test outputs in a zip file
           OUTPUT_ZIP="bazel-testlogs/props/frontend/visual_test/test.outputs/outputs.zip"
@@ -73,7 +56,7 @@ jobs:
           fi
 
       - name: Upload visual regression artifacts
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: visual-regression-screenshots
@@ -81,27 +64,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Generate test summary
-        if: always()
-        run: |
-          echo "### Visual Regression Results" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.visual_test.outcome }}" = "success" ]; then
-            echo "✅ All visual tests passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Visual regression tests failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "📦 Screenshots and diffs are available in the workflow artifacts" >> $GITHUB_STEP_SUMMARY
-          fi
-
       - name: Save Bazel cache
-        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
-
-      - name: Fail if visual tests failed
-        if: steps.visual_test.outcome == 'failure'
-        run: exit 1
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}

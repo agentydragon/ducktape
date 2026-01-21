@@ -25,9 +25,6 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
       - name: Setup Java (for keytool)
         uses: actions/setup-java@v4
         with:
@@ -37,25 +34,10 @@ jobs:
       - name: Verify keytool available
         run: keytool -help >/dev/null
 
-      - name: Derive cache key
-        id: cache-key
-        run: |
-          SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
-          echo "slug=$SLUG" >> $GITHUB_OUTPUT
-
-      - name: Restore Bazel cache
-        id: cache-bazel-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel-${{ steps.cache-key.outputs.slug }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
 
       - name: Run all Claude hooks tests
-        id: tests
-        continue-on-error: true
         run: |
           bazel test --keep_going \
             --test_output=all \
@@ -65,7 +47,7 @@ jobs:
             //tools/claude_hooks:all
 
       - name: Collect test logs
-        if: always()
+        if: failure()
         run: |
           mkdir -p e2e-test-logs
           TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
@@ -80,7 +62,7 @@ jobs:
           fi
 
       - name: Upload test logs
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: claude-hooks-test-logs-${{ github.run_id }}
@@ -98,17 +80,13 @@ jobs:
           fail-on-error: false
 
       - name: Save Bazel cache
-        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
-
-      - name: Fail if tests failed
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
 
   # Release job - only runs on push to devel/main, always creates commit-tagged release
   release:
@@ -135,24 +113,8 @@ jobs:
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
-      - name: Set up Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Derive cache key
-        id: cache-key
-        run: |
-          SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
-          echo "slug=$SLUG" >> $GITHUB_OUTPUT
-
-      - name: Restore Bazel cache
-        id: cache-bazel-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel-${{ steps.cache-key.outputs.slug }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
 
       - name: Build wheel
         run: bazel build //tools/claude_hooks:claude_hooks_wheel
@@ -232,10 +194,10 @@ jobs:
             dist/*.whl
 
       - name: Save Bazel cache
-        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}

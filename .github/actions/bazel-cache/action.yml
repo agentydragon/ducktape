@@ -1,0 +1,75 @@
+# Composite action for Bazel cache setup
+#
+# Handles:
+# - Setting up Bazelisk
+# - Deriving cache key from workflow name and job
+# - Restoring Bazel cache
+#
+# Usage:
+#   - uses: ./.github/actions/bazel-cache
+#     id: bazel-cache
+#     with:
+#       hash_files: |
+#         Cargo.toml
+#         Cargo.lock
+#
+#   # ... your build steps ...
+#
+#   - name: Save Bazel cache
+#     if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
+#     uses: actions/cache/save@v4
+#     with:
+#       path: |
+#         ~/.cache/bazel
+#         ~/.cache/bazelisk
+#       key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+name: Bazel Cache Setup
+description: Setup Bazelisk and restore Bazel cache with auto-derived keys
+
+inputs:
+  hash_files:
+    description: "Newline-separated list of additional files to hash (MODULE.bazel and requirements_bazel.txt are always included)"
+    required: false
+    default: ""
+
+outputs:
+  cache-hit:
+    description: "Whether the cache was restored"
+    value: ${{ steps.cache-restore.outputs.cache-hit }}
+  cache-primary-key:
+    description: "The primary cache key (use this for cache/save)"
+    value: ${{ steps.cache-restore.outputs.cache-primary-key }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bazelisk
+      uses: bazelbuild/setup-bazelisk@v3
+
+    - name: Derive cache key
+      id: cache-key
+      shell: bash
+      run: |
+        # Slugify workflow name and job
+        SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
+        echo "slug=$SLUG" >> $GITHUB_OUTPUT
+
+        # Compute hash of relevant files
+        FILES="MODULE.bazel requirements_bazel.txt"
+        EXTRA_FILES="${{ inputs.hash_files }}"
+        if [[ -n "$EXTRA_FILES" ]]; then
+          FILES="$FILES $EXTRA_FILES"
+        fi
+        # Use sha256sum on file contents, handle missing files gracefully
+        HASH=$(cat $FILES 2>/dev/null | sha256sum | cut -c1-16)
+        echo "hash=$HASH" >> $GITHUB_OUTPUT
+
+    - name: Restore Bazel cache
+      id: cache-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.cache/bazel
+          ~/.cache/bazelisk
+        key: bazel-${{ steps.cache-key.outputs.slug }}-${{ steps.cache-key.outputs.hash }}
+        restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-

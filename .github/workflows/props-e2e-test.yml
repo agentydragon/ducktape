@@ -39,24 +39,8 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Derive cache key
-        id: cache-key
-        run: |
-          SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
-          echo "slug=$SLUG" >> $GITHUB_OUTPUT
-
-      - name: Restore Bazel cache
-        id: cache-bazel-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel-${{ steps.cache-key.outputs.slug }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
 
       # Generate PGPASSWORD (compose.yaml expects it from environment)
       - name: Setup environment
@@ -104,8 +88,6 @@ jobs:
           bazel run //props/core/agent_defs/prompt_optimizer:push
 
       - name: Run E2E tests
-        id: tests
-        continue-on-error: true
         env:
           PGHOST: 127.0.0.1
           PGPORT: 5433
@@ -124,7 +106,7 @@ jobs:
             ${{ inputs.targets }}
 
       - name: Collect test logs
-        if: always()
+        if: failure()
         run: |
           mkdir -p e2e-test-logs
           TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
@@ -139,7 +121,7 @@ jobs:
           fi
 
       - name: Upload test logs
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-test-logs-${{ github.run_id }}
@@ -162,14 +144,10 @@ jobs:
         run: docker compose down
 
       - name: Save Bazel cache
-        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
-
-      - name: Fail if tests failed
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
