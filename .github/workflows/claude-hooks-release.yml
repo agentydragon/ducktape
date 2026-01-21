@@ -120,7 +120,8 @@ jobs:
             --nocache_test_results \
             --test_env=CLAUDE_HOOKS_USE_WHEEL=1 \
             --test_env=CI=true \
-            --test_env=JAVA_HOME
+            --test_env=JAVA_HOME \
+            --test_env=PATH
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

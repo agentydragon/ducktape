@@ -472,9 +472,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         return_exceptions=True,
     )
 
-    # Log failures
-    if isinstance(proxy_result, Exception):
-        logger.warning("Failed to setup proxy: %s", proxy_result)
+    # Log non-critical failures (git, cluster tools, bazelisk, nix, podman)
     if isinstance(git_result, Exception):
         logger.warning("Failed to install git pre-commit: %s", git_result)
     if isinstance(cluster_result, Exception):
@@ -498,7 +496,12 @@ async def run_web_mode(hook_input: HookInput) -> None:
     TIMESTAMP_FILE.write_text(f"{hook_timestamp.isoformat()}\n")
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
 
-    # Collect environment variables
+    # Proxy setup is required - propagate failure with clear error message
+    if isinstance(proxy_result, Exception):
+        logger.error("Proxy setup failed: %s", proxy_result)
+        raise RuntimeError(f"Proxy setup failed: {proxy_result}") from proxy_result
+
+    # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
     combined_ca = proxy_setup._get_bazel_combined_ca()
     if not combined_ca.exists():
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
