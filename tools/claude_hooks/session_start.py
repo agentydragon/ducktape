@@ -513,6 +513,8 @@ async def run_web_mode(hook_input: HookInput) -> None:
         repo_root=project_dir,
         combined_ca=combined_ca,
         bazel_wrapper_dir=bazelisk_setup._get_wrapper_path().parent,
+        bazelisk_path=bazelisk_setup._get_bazelisk_path(),
+        bazel_proxy_rc=proxy_setup._get_bazel_proxy_rc(),
         nix_paths=nix_paths,
         docker_host=docker_host,
         hook_timestamp=hook_timestamp,

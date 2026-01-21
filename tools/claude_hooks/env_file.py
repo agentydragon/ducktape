@@ -23,6 +23,8 @@ class EnvVars:
     repo_root: Path
     combined_ca: Path
     bazel_wrapper_dir: Path
+    bazelisk_path: Path
+    bazel_proxy_rc: Path
 
     # Nix paths
     nix_paths: list[Path]
@@ -58,11 +60,15 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.append(f'export PATH="{nix_path_str}:$PATH"')
 
     # Bazel proxy configuration
+    local_proxy = f"http://localhost:{vars.proxy_port}"
     exports.extend(
         [
             "",
             "# Bazel proxy configuration",
             f"export BAZEL_PROXY_PORT={vars.proxy_port}",
+            f'export BAZEL_LOCAL_PROXY="{local_proxy}"',
+            f'export BAZELISK_PATH="{vars.bazelisk_path}"',
+            f'export BAZEL_PROXY_BAZELRC="{vars.bazel_proxy_rc}"',
             f'export BAZEL_REPO_ROOT="{vars.repo_root}"',
             f'export NODE_EXTRA_CA_CERTS="{vars.combined_ca}"',
             f'export REQUESTS_CA_BUNDLE="{vars.combined_ca}"',
