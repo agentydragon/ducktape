@@ -552,8 +552,8 @@ async def run_web_mode(hook_input: HookInput) -> None:
     emit_session_context(collector)
 
 
-async def main() -> None:
-    """Unified entry point: dispatch to web or CLI mode based on environment."""
+async def async_main() -> None:
+    """Async entry point: dispatch to web or CLI mode based on environment."""
     raw_input = sys.stdin.read()
     try:
         hook_input = HookInput.model_validate_json(raw_input)
@@ -568,12 +568,17 @@ async def main() -> None:
         await run_cli_mode(hook_input)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Synchronous entry point for console_scripts."""
     try:
-        asyncio.run(main())
+        asyncio.run(async_main())
     except Exception as e:
         # Can't rely on log here since setup may have failed
         print(f"Hook failed: {e}", file=sys.stderr)
         print(f"Hook: {__file__}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
