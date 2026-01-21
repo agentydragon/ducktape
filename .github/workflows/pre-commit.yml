@@ -16,10 +16,15 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      # ============================================================================
+      # ENVIRONMENT SETUP
+      # ============================================================================
+
       - uses: ./.github/actions/setup-python-env
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
+      # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
 
       # Cluster validation tools - use official actions where available
       - name: Setup OpenTofu
@@ -94,15 +99,39 @@ jobs:
           restore-keys: |
             pre-commit-${{ runner.os }}-
 
-      - name: Install and run pre-commit
+      # ============================================================================
+      # PRE-COMMIT INSTALLATION
+      # ============================================================================
+
+      - name: Install pre-commit
+        run: |
+          # Version synced with flake.nix (nixpkgs.pre-commit)
+          # Update both when bumping pre-commit version
+          pip install pre-commit==4.0.1
+
+      # ============================================================================
+      # PRE-COMMIT RUN
+      # ============================================================================
+
+      - name: Run pre-commit
         run: |
           # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
           # isolated node environments (markdownlint-cli2 hook uses npm)
           unset NODE_OPTIONS
-          # Version synced with flake.nix (nixpkgs.pre-commit)
-          # Update both when bumping pre-commit version
-          pip install pre-commit==4.0.1
           pre-commit run --all-files --show-diff-on-failure
+
+      # ============================================================================
+      # CACHE SAVES
+      # ============================================================================
+
+      - name: Save Bazel cache
+        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
 
       - name: Save Ansible Galaxy cache
         if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'
