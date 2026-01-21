@@ -86,10 +86,52 @@ jobs:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
+  # Wheel packaging test - verifies the built wheel works when installed
+  wheel-test:
+    name: Wheel Packaging Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Java (for keytool)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
+
+      - name: Build wheel
+        run: bazel build //tools/claude_hooks:claude_hooks_wheel
+
+      - name: Install wheel
+        run: uv tool install bazel-bin/tools/claude_hooks/claude_hooks-*.whl
+
+      - name: Test installed wheel
+        run: |
+          bazel test //tools/claude_hooks:test_e2e \
+            --test_output=all \
+            --nocache_test_results \
+            --test_env=CLAUDE_HOOKS_USE_WHEEL=1 \
+            --test_env=CI=true \
+            --test_env=JAVA_HOME
+
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
+        with:
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+
   # Release job - only runs on push to devel/main, always creates commit-tagged release
   release:
     name: Build and Release
-    needs: test
+    needs: [test, wheel-test]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
