@@ -299,13 +299,14 @@ def start_podman_service(supervisor: SupervisorClient, env_vars: dict[str, str])
 
     # Podman socket path (rootful since we're running as root)
     socket_path = Path("/run/podman/podman.sock")
+    socket_url = f"unix://{socket_path}"
     socket_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Start podman system service (--time=0 means never timeout, keep running)
     # Pass config env vars so podman uses our isolated paths
     supervisor.add_service(
         name="podman",
-        command=f"podman system service --time=0 unix://{socket_path}",
+        command=f"podman system service --time=0 {socket_url}",
         directory=Path.home(),
         environment=env_vars,
     )
@@ -313,8 +314,7 @@ def start_podman_service(supervisor: SupervisorClient, env_vars: dict[str, str])
     # Wait for socket to be ready
     _wait_for_socket(socket_path, supervisor, timeout=10)
 
-    socket_url = f"unix://{socket_path}"
-    logger.info(f"Podman service ready at {socket_url}")
+    logger.info("Podman service ready at %s", socket_url)
     return socket_url, {"DOCKER_HOST": socket_url}
 
 
