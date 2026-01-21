@@ -1,6 +1,7 @@
 """Podman system service management.
 
 Starts podman system service under supervisor to provide Docker-compatible API.
+Uses isolated configuration to avoid conflicts with system podman.
 """
 
 from __future__ import annotations
@@ -12,11 +13,12 @@ import shutil
 import subprocess
 import textwrap
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from tools.claude_hooks.errors import SkipError
+from tools.claude_hooks.paths import get_containers_config_dir, get_podman_dir
 from tools.claude_hooks.supervisor_setup import ProcessState, SupervisorClient
 
 logger = logging.getLogger(__name__)
@@ -29,12 +31,46 @@ class PodmanInstallError(Exception):
     """Raised when podman installation fails."""
 
 
+class PodmanConfigConflictError(Exception):
+    """Raised when existing config file conflicts with what we want to write."""
+
+
+def _write_config_conservative(path: Path, content: str, description: str) -> None:
+    """Write config file conservatively - only if no conflict.
+
+    Accepts:
+    - File doesn't exist: create it
+    - File exists with exact same content: no-op (idempotent)
+
+    Rejects:
+    - File exists with different content: raises PodmanConfigConflictError
+
+    Args:
+        path: Path to write to
+        content: Content to write
+        description: Human-readable description for error messages
+    """
+    if path.exists():
+        existing = path.read_text()
+        if existing == content:
+            logger.debug("Config %s already has expected content", path)
+            return
+        raise PodmanConfigConflictError(
+            f"Existing {description} at {path} has unexpected content. "
+            f"Expected our gVisor-compatible config but found different content. "
+            f"Delete the file to allow reconfiguration: rm {path}"
+        )
+    path.write_text(content)
+    logger.debug("Wrote %s to %s", description, path)
+
+
 @dataclass
 class PodmanSetup:
     """Result of podman setup."""
 
     socket_url: str
     supervisor: SupervisorClient
+    env_vars: dict[str, str] = field(default_factory=dict)
 
     @property
     def status(self) -> str:
@@ -46,6 +82,7 @@ class PodmanSetup:
     @property
     def guidance(self) -> str:
         """Get podman usage guidance for gVisor sandbox."""
+        podman_dir = get_podman_dir()
         return textwrap.dedent(
             f"""\
             Podman in gVisor Sandbox
@@ -57,10 +94,10 @@ class PodmanSetup:
 
             Configuration Applied:
             ----------------------
-            - VFS storage (/etc/containers/storage.conf)
+            - VFS storage driver (gVisor has no overlay fs)
+            - Isolated config: {podman_dir}
             - userns = "host"
             - run.oci.keep_original_groups=1 annotation (auto-applied)
-            - --network=host
             """
         )
 
@@ -110,42 +147,75 @@ def install_podman() -> None:
         raise PodmanInstallError("podman not found after installation")
 
 
-def setup_podman_storage() -> None:
-    """Configure podman for gVisor compatibility.
+def setup_podman_storage() -> dict[str, str]:
+    """Configure podman for gVisor compatibility with isolated paths.
 
-    gVisor sandbox has restrictions that require specific podman configuration:
+    Uses isolated configuration to avoid conflicts with system podman:
+    - Config files: ~/.cache/claude-hooks/podman/
+    - Storage: ~/.cache/claude-hooks/podman/storage/
+    - policy.json: ~/.config/containers/policy.json (user-level, hardcoded lookup path)
+
+    gVisor sandbox restrictions require:
     1. VFS storage driver (no overlay filesystem support)
-    2. System-level config (/etc/containers) since running as root
-    3. Explicit runroot and graphroot paths
-    4. Host user namespace (userns = "host")
-    5. Registry configuration for short image names
+    2. Host user namespace (userns = "host")
+    3. run.oci.keep_original_groups=1 annotation
 
-    Note: If there's pre-existing podman storage created with a different driver,
-    podman will fail with "database graph driver X does not match our graph driver Y".
-    This is intentional - we don't automatically delete existing state. To fix:
-      rm -rf /var/lib/containers/storage /run/containers/storage
-    See tools/claude_hooks/podman_service.py for details.
+    Uses conservative file writing - only writes if file doesn't exist or
+    already has the exact content we want to write.
+
+    Returns:
+        Dict of environment variables to export (CONTAINERS_CONF, etc.)
+
+    Raises:
+        PodmanConfigConflictError: If existing config file has conflicting content.
     """
+    podman_dir = get_podman_dir()
+    podman_dir.mkdir(parents=True, exist_ok=True)
+
     podman_config: Traversable = importlib.resources.files("tools.claude_hooks.config.podman")
 
-    # Storage configuration (system-level since running as root)
-    storage_conf = Path("/etc/containers/storage.conf")
-    storage_conf.parent.mkdir(parents=True, exist_ok=True)
-    storage_conf.write_text(podman_config.joinpath("storage.conf").read_text())
+    # Storage paths (isolated from system podman)
+    storage_dir = podman_dir / "storage"
+    runroot_dir = podman_dir / "runroot"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    runroot_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate storage.conf with custom paths
+    storage_conf_path = podman_dir / "storage.conf"
+    storage_conf_content = textwrap.dedent(f"""\
+        [storage]
+        driver = "vfs"
+        runroot = "{runroot_dir}"
+        graphroot = "{storage_dir}"
+    """)
+    _write_config_conservative(storage_conf_path, storage_conf_content, "storage.conf")
 
     # Container runtime configuration
-    containers_conf = Path("/etc/containers/containers.conf")
-    containers_conf.write_text(podman_config.joinpath("containers.conf").read_text())
+    containers_conf_path = podman_dir / "containers.conf"
+    containers_conf_content = podman_config.joinpath("containers.conf").read_text()
+    _write_config_conservative(containers_conf_path, containers_conf_content, "containers.conf")
 
     # Registry configuration (allows short image names like "alpine")
-    registries_conf = Path("/etc/containers/registries.conf")
-    registries_conf.write_text(podman_config.joinpath("registries.conf").read_text())
+    registries_conf_path = podman_dir / "registries.conf"
+    registries_conf_content = podman_config.joinpath("registries.conf").read_text()
+    _write_config_conservative(registries_conf_path, registries_conf_content, "registries.conf")
 
-    # Ensure storage directories exist
-    Path("/run/containers/storage").mkdir(parents=True, exist_ok=True)
-    Path("/var/lib/containers/storage").mkdir(parents=True, exist_ok=True)
+    # Policy.json goes to user-level config dir (hardcoded lookup path in podman)
+    # ~/.config/containers/policy.json is checked before /etc/containers/policy.json
+    containers_config_dir = get_containers_config_dir()
+    containers_config_dir.mkdir(parents=True, exist_ok=True)
+    policy_json_path = containers_config_dir / "policy.json"
+    policy_json_content = podman_config.joinpath("policy.json").read_text()
+    _write_config_conservative(policy_json_path, policy_json_content, "policy.json")
 
-    logger.info("Configured podman for gVisor: VFS storage, host userns, registries")
+    logger.info("Configured podman for gVisor: VFS storage at %s", storage_dir)
+
+    # Return env vars for podman to use our isolated config
+    return {
+        "CONTAINERS_STORAGE_CONF": str(storage_conf_path),
+        "CONTAINERS_CONF": str(containers_conf_path),
+        "CONTAINERS_REGISTRIES_CONF": str(registries_conf_path),
+    }
 
 
 def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
@@ -158,7 +228,7 @@ def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
         supervisor: Supervisor client for managing services
 
     Returns:
-        PodmanSetup with socket URL and supervisor client
+        PodmanSetup with socket URL, supervisor client, and env vars to export
 
     Raises:
         SkipError: If CLAUDE_HOOKS_SKIP_PODMAN is set.
@@ -174,17 +244,30 @@ def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
     # Check if podman service is already running (idempotent case)
     if _is_podman_service_healthy(supervisor, socket_path):
         logger.info("Podman service already running, skipping setup")
-        return PodmanSetup(socket_url=socket_url, supervisor=supervisor)
+        # Still need to return env vars for the session
+        env_vars = _get_podman_env_vars()
+        return PodmanSetup(socket_url=socket_url, supervisor=supervisor, env_vars=env_vars)
 
     if not is_podman_available():
         logger.info("Podman not found, installing...")
         install_podman()
 
     logger.info("Configuring podman...")
-    setup_podman_storage()
-    socket_url = start_podman_service(supervisor)
+    env_vars = setup_podman_storage()
+    socket_url, service_env = start_podman_service(supervisor, env_vars)
+    env_vars.update(service_env)
     logger.info(f"Podman service started: DOCKER_HOST={socket_url}")
-    return PodmanSetup(socket_url=socket_url, supervisor=supervisor)
+    return PodmanSetup(socket_url=socket_url, supervisor=supervisor, env_vars=env_vars)
+
+
+def _get_podman_env_vars() -> dict[str, str]:
+    """Get podman env vars for already-configured setup."""
+    podman_dir = get_podman_dir()
+    return {
+        "CONTAINERS_STORAGE_CONF": str(podman_dir / "storage.conf"),
+        "CONTAINERS_CONF": str(podman_dir / "containers.conf"),
+        "CONTAINERS_REGISTRIES_CONF": str(podman_dir / "registries.conf"),
+    }
 
 
 def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) -> bool:
@@ -200,17 +283,18 @@ def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) 
         return False
 
 
-def start_podman_service(supervisor: SupervisorClient) -> str:
+def start_podman_service(supervisor: SupervisorClient, env_vars: dict[str, str]) -> tuple[str, dict[str, str]]:
     """Start podman system service under supervisor.
 
     Args:
         supervisor: Supervisor client for adding services
+        env_vars: Environment variables for podman config paths
 
     Provides Docker-compatible API at Unix socket.
     Does NOT start infrastructure containers (PostgreSQL, Registry, Proxy).
 
     Returns:
-        Socket URL (with unix:// prefix)
+        Tuple of (socket_url, additional_env_vars including DOCKER_HOST)
 
     Raises:
         TimeoutError: If socket doesn't become ready in time
@@ -222,8 +306,12 @@ def start_podman_service(supervisor: SupervisorClient) -> str:
     socket_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Start podman system service (--time=0 means never timeout, keep running)
+    # Pass config env vars so podman uses our isolated paths
     supervisor.add_service(
-        name="podman", command=f"podman system service --time=0 unix://{socket_path}", directory=Path.home()
+        name="podman",
+        command=f"podman system service --time=0 unix://{socket_path}",
+        directory=Path.home(),
+        environment=env_vars,
     )
 
     # Wait for socket to be ready
@@ -231,7 +319,7 @@ def start_podman_service(supervisor: SupervisorClient) -> str:
 
     socket_url = f"unix://{socket_path}"
     logger.info(f"Podman service ready at {socket_url}")
-    return socket_url
+    return socket_url, {"DOCKER_HOST": socket_url}
 
 
 def _wait_for_socket(socket_path: Path, supervisor: SupervisorClient, timeout: int = 10) -> None:
@@ -270,9 +358,10 @@ def _wait_for_socket(socket_path: Path, supervisor: SupervisorClient, timeout: i
             pass
 
     # Common cause: storage driver mismatch from pre-existing state
+    podman_dir = get_podman_dir()
     hint = (
         "Common cause: storage driver mismatch. "
-        "If podman was previously used with a different driver, run: "
-        "rm -rf /var/lib/containers/storage /run/containers/storage"
+        f"If podman was previously used with a different driver, run: "
+        f"rm -rf {podman_dir / 'storage'} {podman_dir / 'runroot'}"
     )
     raise TimeoutError(f"Podman socket {socket_path} did not become ready in {timeout}s ({diag}). {hint}")

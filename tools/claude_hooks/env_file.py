@@ -31,6 +31,7 @@ class EnvVars:
 
     # Podman/Docker
     docker_host: str | None
+    podman_env: dict[str, str] | None  # CONTAINERS_CONF, CONTAINERS_STORAGE_CONF, etc.
 
     # Session metadata
     hook_timestamp: datetime
@@ -78,8 +79,13 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     )
 
     # Docker/Podman configuration
-    if vars.docker_host:
-        exports.extend(["", "# Podman/Docker configuration", f'export DOCKER_HOST="{vars.docker_host}"'])
+    if vars.docker_host or vars.podman_env:
+        exports.extend(["", "# Podman/Docker configuration"])
+        if vars.docker_host:
+            exports.append(f'export DOCKER_HOST="{vars.docker_host}"')
+        if vars.podman_env:
+            for key, value in vars.podman_env.items():
+                exports.append(f'export {key}="{value}"')
 
     # Session metadata
     exports.extend(

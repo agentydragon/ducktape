@@ -448,12 +448,14 @@ async def run_web_mode(hook_input: HookInput) -> None:
         logger.warning("Failed to install nix: %s", nix_result)
 
     docker_host: str | None = None
+    podman_env: dict[str, str] | None = None
     if isinstance(podman_result, SkipError):
         logger.info("Podman setup skipped: %s", podman_result)
     elif isinstance(podman_result, BaseException):
         logger.warning("Failed to configure podman: %s", podman_result)
     else:
         docker_host = podman_result.socket_url
+        podman_env = podman_result.env_vars
 
     # Generate timestamp
     hook_timestamp = datetime.now()
@@ -482,6 +484,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         bazel_proxy_rc=proxy_setup._get_bazel_proxy_rc(),
         nix_paths=nix_paths,
         docker_host=docker_host,
+        podman_env=podman_env,
         hook_timestamp=hook_timestamp,
     )
 

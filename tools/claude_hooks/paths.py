@@ -51,3 +51,27 @@ def get_bazel_proxy_dir() -> Path:
     if env_dir := os.environ.get("CLAUDE_HOOKS_BAZEL_PROXY_DIR"):
         return Path(env_dir)
     return get_cache_dir() / "bazel-proxy"
+
+
+def get_podman_dir() -> Path:
+    """Get podman configuration and storage directory.
+
+    Priority:
+    1. CLAUDE_HOOKS_PODMAN_DIR (test override)
+    2. platformdirs.user_cache_dir() / "podman"
+
+    Contains: storage.conf, containers.conf, registries.conf, storage/, runroot/
+    """
+    if env_dir := os.environ.get("CLAUDE_HOOKS_PODMAN_DIR"):
+        return Path(env_dir)
+    return get_cache_dir() / "podman"
+
+
+def get_containers_config_dir() -> Path:
+    """Get user-level containers config directory (~/.config/containers).
+
+    Used for policy.json which has hardcoded lookup paths:
+    1. $HOME/.config/containers/policy.json (user-level, we use this)
+    2. /etc/containers/policy.json (system-level, we avoid)
+    """
+    return Path(user_config_dir(appname="containers", ensure_exists=False))

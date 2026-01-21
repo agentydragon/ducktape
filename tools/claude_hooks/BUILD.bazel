@@ -35,6 +35,7 @@ py_library(
         "config/env.mako",
         "config/nix.conf",
         "config/podman/containers.conf",
+        "config/podman/policy.json",
         "config/podman/registries.conf",
         "config/podman/storage.conf",
     ],

@@ -316,7 +316,7 @@ class TestPodmanIntegration:
 
     These tests verify that podman is properly configured and can run containers
     after the session start hook runs. They require podman to be installed and
-    root access (for writing to /run/podman and /etc/containers).
+    root access (for creating /run/podman socket). Config uses isolated paths.
     """
 
     @pytest.fixture
@@ -364,13 +364,14 @@ class TestPodmanIntegration:
         return env
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
-    @pytest.mark.skipif(not _is_root(), reason="requires root for /run/podman and /etc/containers")
+    @pytest.mark.skipif(not _is_root(), reason="requires root for /run/podman socket")
     @pytest.mark.skipif(not _can_install_podman(), reason="requires podman or apt-get")
     def test_podman_service_starts(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
         """Verify podman service starts after session start hook.
 
         The hook will auto-install podman if not present, so no skipif for podman.
-        Requires root/sudo for apt install and writing to /etc/containers.
+        Requires root/sudo for apt install and creating /run/podman socket.
+        Config uses isolated paths (~/.cache/claude-hooks/podman/).
         """
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
 
@@ -386,14 +387,14 @@ class TestPodmanIntegration:
         assert "unix:///run/podman/podman.sock" in env_content, "DOCKER_HOST not pointing to podman socket"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
-    @pytest.mark.skipif(not _is_root(), reason="requires root for /run/podman and /etc/containers")
+    @pytest.mark.skipif(not _is_root(), reason="requires root for /run/podman socket")
     @pytest.mark.skipif(not _can_install_podman(), reason="requires podman or apt-get")
     def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
         """Verify podman can run a container after session start hook.
 
         This is the key verification that the hook properly set up podman.
         The hook will auto-install podman if not present.
-        Requires root/sudo and network access for pulling images.
+        Requires root/sudo for socket and network access for pulling images.
         """
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"

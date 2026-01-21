@@ -92,21 +92,15 @@ jobs:
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
 
-      - name: Clear podman storage
-        run: |
-          # GitHub Actions runners have podman pre-installed with existing storage.
-          # The hook configures VFS driver, which conflicts with existing storage.
-          # Clear storage only - preserve /etc/containers (has policy.json).
-          sudo rm -rf /var/lib/containers/storage /run/containers/storage
-
       - name: Run Podman integration tests
         run: |
           # Run the e2e tests with podman enabled
           # GitHub Actions uses user 'runner' (not root) but has passwordless sudo
           # Tests require root for:
           # - apt install podman (if not present, hook will auto-install)
-          # - Writing to /etc/containers
-          # - Writing to /run/podman
+          # - Writing to /run/podman (socket)
+          # Note: Config uses isolated paths (~/.cache/claude-hooks/podman/)
+          # so no conflict with system podman storage
           sudo -E env "PATH=$PATH" "HOME=$HOME" "JAVA_HOME=$JAVA_HOME" \
             bazel test //tools/claude_hooks:test_e2e \
             --test_output=all \
