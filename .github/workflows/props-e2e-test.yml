@@ -49,8 +49,8 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-e2e-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-
+          key: bazel-${{ runner.os }}-props-e2e-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-props-e2e-
 
       # Generate PGPASSWORD (compose.yaml expects it from environment)
       - name: Setup environment

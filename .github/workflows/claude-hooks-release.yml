@@ -44,8 +44,8 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-claude-hooks-e2e-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-
+          key: bazel-${{ runner.os }}-claude-hooks-test-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-claude-hooks-test-
 
       - name: Run all Claude hooks tests
         id: tests
@@ -139,8 +139,8 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-wheel-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-
+          key: bazel-${{ runner.os }}-claude-hooks-wheel-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-claude-hooks-wheel-
 
       - name: Build wheel
         run: bazel build //tools/claude_hooks:claude_hooks_wheel

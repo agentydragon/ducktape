@@ -74,7 +74,7 @@ jobs:
             ~/.cache/bazel
             ~/.cache/bazelisk
           key: bazel-${{ runner.os }}-test-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-
+          restore-keys: bazel-${{ runner.os }}-test-
 
       # Pull Docker image needed by agent_server tests (removed by free-disk-space)
       - name: Pull test Docker image

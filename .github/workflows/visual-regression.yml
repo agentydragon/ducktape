@@ -38,7 +38,7 @@ jobs:
             ~/.cache/bazel
             ~/.cache/bazelisk
           key: bazel-${{ runner.os }}-visual-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
-          restore-keys: bazel-${{ runner.os }}-
+          restore-keys: bazel-${{ runner.os }}-visual-
 
       - name: Run visual regression tests
         id: visual_test

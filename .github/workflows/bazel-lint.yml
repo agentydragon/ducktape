@@ -62,7 +62,7 @@ jobs:
             ~/.cache/bazel
             ~/.cache/bazelisk
           key: bazel-${{ runner.os }}-lint-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-
+          restore-keys: bazel-${{ runner.os }}-lint-
 
       - name: Lint
         run: |
