@@ -37,6 +37,12 @@ jobs:
       - name: Verify keytool available
         run: keytool -help >/dev/null
 
+      - name: Derive cache key
+        id: cache-key
+        run: |
+          SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
+          echo "slug=$SLUG" >> $GITHUB_OUTPUT
+
       - name: Restore Bazel cache
         id: cache-bazel-restore
         uses: actions/cache/restore@v4
@@ -44,8 +50,8 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-claude-hooks-test-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-claude-hooks-test-
+          key: bazel-${{ steps.cache-key.outputs.slug }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-
 
       - name: Run all Claude hooks tests
         id: tests
@@ -132,6 +138,12 @@ jobs:
       - name: Set up Bazelisk
         uses: bazelbuild/setup-bazelisk@v3
 
+      - name: Derive cache key
+        id: cache-key
+        run: |
+          SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
+          echo "slug=$SLUG" >> $GITHUB_OUTPUT
+
       - name: Restore Bazel cache
         id: cache-bazel-restore
         uses: actions/cache/restore@v4
@@ -139,8 +151,8 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-claude-hooks-wheel-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-claude-hooks-wheel-
+          key: bazel-${{ steps.cache-key.outputs.slug }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-
 
       - name: Build wheel
         run: bazel build //tools/claude_hooks:claude_hooks_wheel
