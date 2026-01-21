@@ -9,7 +9,7 @@ import os
 import sys
 from datetime import UTC, datetime
 
-from tools.claude_hooks import proxy_setup
+from tools.claude_hooks import proxy_setup, supervisor_setup
 from tools.claude_hooks.errors import BazelProxyError, MissingEnvVarError
 from tools.claude_hooks.proxy_credentials import check_credential_expiry
 
@@ -26,7 +26,8 @@ def require_env(name: str) -> str:
 
 def ensure_services_running() -> None:
     """Ensure supervisor and proxy are running, starting them if needed."""
-    proxy_setup.ensure_proxy_running()
+    client = supervisor_setup.SupervisorClient()
+    proxy_setup.ensure_proxy_running(client)
 
 
 def warn_if_credentials_expiring() -> None:

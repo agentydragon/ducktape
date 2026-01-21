@@ -10,8 +10,6 @@ bazel_dep(name = "gazelle", version = "0.34.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
 bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
 
-# NOTE: Using newer version with archive_override for ape module to use native ELF
-# instead of APE binaries (which require binfmt_misc not available in containers).
 bazel_dep(name = "aspect_rules_lint", version = "2.0.0-rc0")
 bazel_dep(name = "rules_multirun", version = "0.9.0")  # Required by format_multirun
 bazel_dep(name = "rules_multitool", version = "1.3.0")

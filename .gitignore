@@ -4,6 +4,7 @@
 
 # Build tools and dependencies
 /bazel-*
+MODULE.bazel.lock
 **/node_modules/
 **/.aspect/
 

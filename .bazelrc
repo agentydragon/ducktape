@@ -4,6 +4,13 @@ common --progress_in_terminal_title
 
 common --enable_bzlmod
 
+# Disable MODULE.bazel.lock to avoid churn between environments.
+# The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
+# has platform-specific resolution that causes the lockfile to differ between local
+# dev machines and CI/cloud environments. Since we pin versions explicitly in
+# MODULE.bazel and don't use version ranges, the lockfile provides minimal benefit.
+common --lockfile_mode=off
+
 # Lint configuration (Python ruff + JS/TS eslint)
 # Run with: bazel build --config=lint //...
 build:lint --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%eslint

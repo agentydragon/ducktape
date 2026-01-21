@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v claude-session-start >/dev/null 2>&1 || uv tool install 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-c903d782/claude_hooks-0.1.0-py3-none-any.whl'; claude-session-start"
+            "command": "command -v claude-session-start >/dev/null 2>&1 || uv tool install 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-7fb4b0ff/claude_hooks-0.1.0-py3-none-any.whl'; claude-session-start"
           }
         ]
       }
