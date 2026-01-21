@@ -211,11 +211,7 @@ def setup_podman_storage() -> dict[str, str]:
     logger.info("Configured podman for gVisor: VFS storage at %s", storage_dir)
 
     # Return env vars for podman to use our isolated config
-    return {
-        "CONTAINERS_STORAGE_CONF": str(storage_conf_path),
-        "CONTAINERS_CONF": str(containers_conf_path),
-        "CONTAINERS_REGISTRIES_CONF": str(registries_conf_path),
-    }
+    return _get_podman_env_vars()
 
 
 def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
