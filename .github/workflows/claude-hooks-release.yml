@@ -44,6 +44,7 @@ jobs:
             --nocache_test_results \
             --test_env=CI=true \
             --test_env=GITHUB_ACTIONS=true \
+            --test_env=JAVA_HOME \
             //tools/claude_hooks:all
 
       - name: Collect test logs

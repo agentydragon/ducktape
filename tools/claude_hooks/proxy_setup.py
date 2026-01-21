@@ -157,6 +157,24 @@ def _find_system_file(candidates: list[Path], description: str) -> Path:
     raise FileNotFoundError(f"Could not find {description}")
 
 
+def _get_java_cacerts_candidates() -> list[Path]:
+    """Get list of Java cacerts candidates, including JAVA_HOME if set.
+
+    JAVA_HOME is checked first because on CI (GitHub Actions with setup-java),
+    Java is installed to non-standard locations like /opt/hostedtoolcache/...
+    """
+    candidates = []
+
+    # Check JAVA_HOME first (set by setup-java on GitHub Actions)
+    if java_home := os.environ.get("JAVA_HOME"):
+        candidates.append(Path(java_home) / "lib" / "security" / "cacerts")
+
+    # Then check standard system locations
+    candidates.extend(SYSTEM_JAVA_CACERTS)
+
+    return candidates
+
+
 def _is_anthropic_tls_inspection_ca(cert: x509.Certificate) -> bool:
     """Check if a certificate is an Anthropic TLS Inspection CA.
 
@@ -305,7 +323,7 @@ def _create_java_truststore() -> None:
         raise TruststoreError("No CA file to add to truststore")
 
     try:
-        system_cacerts = _find_system_file(SYSTEM_JAVA_CACERTS, "system Java cacerts")
+        system_cacerts = _find_system_file(_get_java_cacerts_candidates(), "system Java cacerts")
     except FileNotFoundError as e:
         raise TruststoreError(str(e)) from e
 
