@@ -1,4 +1,19 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load(":build_info.bzl", "build_info")
+
+# Copy workspace status file for Python to parse at runtime
+# Stamping is enabled globally in .bazelrc
+build_info(
+    name = "build_info_gen",
+)
+
+# Build information parsed from Bazel workspace status
+py_library(
+    name = "build_info",
+    srcs = ["build_info.py"],
+    data = [":build_info_gen"],
+    visibility = ["//visibility:public"],
+)
 
 # Shared utilities for environment variable handling
 py_library(

@@ -21,6 +21,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from tools import env_utils
+from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import (
     bazelisk_setup,
     binary_tools,
@@ -212,7 +213,7 @@ def emit_session_context(collector: LogCollector) -> None:
     has_warnings = len(collector.warnings) > 0
 
     lines = [
-        "Claude Code on the web (gVisor sandbox)",
+        f"Claude Code on the web (gVisor sandbox) [build: {BUILD_COMMIT}]",
         "Status: " + ("ERRORS" if has_errors else "OK with warnings" if has_warnings else "OK"),
         "Constraints:",
         "  - TLS-inspecting proxy (custom CA configured)",
@@ -233,9 +234,10 @@ def emit_session_context(collector: LogCollector) -> None:
     if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
         lines.append("GitHub CI Access:")
         lines.append("  DUCKTAPE_CI_READ_GITHUB_TOKEN is set - GitHub PAT with read access to ducktape repo.")
-        lines.append("  Use with `gh` CLI: GH_TOKEN=$DUCKTAPE_CI_READ_GITHUB_TOKEN gh ...")
+        lines.append(
+            "  Use via: curl -H 'Authorization: token $DUCKTAPE_CI_READ_GITHUB_TOKEN' https://api.github.com/..."
+        )
         lines.append("  Capabilities: read repo, read CI logs, list workflow runs, view PR status.")
-        lines.append("  Workflow: push to branch, ask user to create PR, then poll CI status via gh.")
 
     lines.append(f"Full log: {LOG_FILE}")
 

@@ -43,6 +43,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":auth_proxy",
+        "//tools:build_info",
         "//tools:env_utils",
         "@pypi//cryptography",
         "@pypi//mako",

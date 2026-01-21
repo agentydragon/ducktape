@@ -94,6 +94,7 @@ known-third-party = ["docker"]
 # First-party = our workspace packages (ruff uses heuristics otherwise)
 # TODO: Auto-generate this list from Bazel once bazelized
 known-first-party = [
+    "tools",
     "adgn",
     "adgn_mcp_starter",
     "agent_core",

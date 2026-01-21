@@ -43,14 +43,29 @@ jobs:
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
 
-      - name: Run all Claude hooks tests
+      - name: Run unit tests (sandboxed)
         run: |
           bazel test --keep_going \
             --test_output=all \
             --nocache_test_results \
+            --test_tag_filters=-e2e \
             --test_env=CI=true \
             --test_env=GITHUB_ACTIONS=true \
             --test_env=JAVA_HOME \
+            //tools/claude_hooks:all
+
+      - name: Run e2e tests (no sandbox for podman)
+        run: |
+          # E2E tests need --spawn_strategy=local so podman can create Unix sockets
+          bazel test \
+            --test_output=all \
+            --nocache_test_results \
+            --test_tag_filters=e2e \
+            --spawn_strategy=local \
+            --test_env=CI=true \
+            --test_env=GITHUB_ACTIONS=true \
+            --test_env=JAVA_HOME \
+            --test_env=PATH \
             //tools/claude_hooks:all
 
       - uses: ./.github/actions/collect-test-logs
@@ -73,58 +88,13 @@ jobs:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
-  # Podman integration tests - GitHub Actions runners have podman pre-installed
-  podman-test:
-    name: Podman Integration Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Setup Java (for keytool)
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "21"
-
-      - uses: ./.github/actions/bazel-cache
-        id: bazel-cache
-
-      - name: Run Podman integration tests
-        run: |
-          # Run the e2e tests with podman enabled
-          # Config and socket use isolated paths (~/.cache/claude-hooks/podman/)
-          # so no conflict with system podman and no root required
-          bazel test //tools/claude_hooks:test_e2e \
-            --test_output=all \
-            --nocache_test_results \
-            --test_env=CI=true \
-            --test_env=GITHUB_ACTIONS=true \
-            --test_env=JAVA_HOME \
-            --test_filter='TestPodmanIntegration'
-
-      - name: Verify podman is available
-        run: |
-          # Verify podman exists (either pre-installed or installed by hook)
-          which podman && podman --version
-          echo "Podman available"
-
-      - uses: ./.github/actions/collect-test-logs
-        if: failure()
-        with:
-          artifact-name: podman-test-logs
-
-      - uses: ./.github/actions/bazel-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
-
   # Build wheel, test it, and release (on push to devel/main)
+  # Note: Podman integration tests run here via the e2e tests with PATH passed through.
+  # A separate podman-test job using Bazel sandbox doesn't work because Bazel's sandbox
+  # doesn't expose podman even when it's installed on the runner.
   wheel-build-test-release:
     name: Wheel Build, Test & Release
-    needs: [test, podman-test]
+    needs: [test]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -161,8 +131,10 @@ jobs:
       - name: Install wheel
         run: uv tool install bazel-bin/tools/claude_hooks/claude_hooks-*.whl
 
-      - name: Test installed wheel
+      - name: Test installed wheel (including podman integration)
         run: |
+          # E2E tests run against the installed wheel (CLAUDE_HOOKS_USE_WHEEL=1).
+          # PATH is passed through so podman (pre-installed on GitHub runners) is available.
           bazel test //tools/claude_hooks:test_e2e \
             --test_output=all \
             --nocache_test_results \
