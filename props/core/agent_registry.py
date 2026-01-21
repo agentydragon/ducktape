@@ -1,16 +1,26 @@
 """Agent registry - unified orchestration layer for agent runs.
 
 AgentRegistry is THE entry point for running agents. It owns shared resources
-(Docker client, database config, workspace manager) and manages concurrency
-via an internal semaphore.
+(Docker client, database config) and manages concurrency via an internal semaphore.
+
+In-container architecture:
+- Container runs its own agent loop (CMD entrypoint)
+- Container talks to LLM proxy (OPENAI_BASE_URL env var)
+- Container exits 0 on success, non-zero on failure
+- Host scaffold: creates temp DB user, starts container, waits for exit
 
 Usage:
-    registry = AgentRegistry(docker_client, db_config, workspace_manager)
+    registry = AgentRegistry(
+        docker_client=docker_client,
+        db_config=db_config,
+        llm_proxy_url="http://props-llm-proxy:5052",
+    )
     async with registry:
         critic_run_id = await registry.run_critic(
-            image_ref="critic",
+            image_ref="builtin",
             example=example,
-            client=critic_client,
+            model="gpt-4o",
+            timeout_seconds=3600,
         )
         # Check status from DB
         with get_session() as session:
@@ -23,71 +33,84 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Literal
 from uuid import UUID, uuid4
-
-import aiodocker
-from fastmcp.client import Client
-
-from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
-from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
-from mcp_infra.display.rich_display import CompactDisplayHandler
-from openai_utils.errors import ContextLengthExceededError
-from openai_utils.model import OpenAIModelProto, UserMessage
-from openai_utils.types import ReasoningSummary
-from props.core.agent_handle import AgentHandle
-from props.core.agent_types import AgentType, CriticTypeConfig, SnapshotGraderTypeConfig
-from props.core.agent_workspace import WorkspaceManager
-from props.core.cli.common_options import DEFAULT_MAX_LINES
-from props.core.critic.critic import CriticAgentEnvironment
-from props.core.critic.exceptions import CriticExecutionError
-from props.core.db.agent_definition_ids import GRADER_IMAGE_REF
-from props.core.db.config import DatabaseConfig
-from props.core.db.models import AgentRun, AgentRunStatus, Snapshot
-from props.core.db.session import get_session
-from props.core.display import short_uuid
-from props.core.exceptions import AgentDidNotSubmitError
-from props.core.grader.daemon import GraderDaemonScaffold
-from props.core.grader.drift_handler import format_notifications
-from props.core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
-from props.core.ids import SnapshotSlug
-from props.core.models.examples import ExampleSpec
-from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 
 if TYPE_CHECKING:
     pass
 
+import aiodocker
+from pydantic import BaseModel, Field
+
+from props.core.agent_types import (
+    AgentType,
+    CriticTypeConfig,
+    ImprovementTypeConfig,
+    PromptOptimizerTypeConfig,
+    SnapshotGraderTypeConfig,
+)
+from props.core.db.config import DatabaseConfig
+from props.core.db.models import AgentRun, AgentRunStatus, Snapshot
+from props.core.db.session import get_session
+from props.core.display import short_uuid
+from props.core.ids import SnapshotSlug
+from props.core.loop_agent_env import ContainerResult, run_loop_agent
+from props.core.mcp_http_server import serve_mcp_http
+from props.core.models.examples import ExampleSpec
+from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
+from props.core.prompt_eval_server import PromptEvalServer, PromptOptimizerState
+from props.core.prompt_improve.main import TerminationSuccess
+from props.core.prompt_optimize.target_metric import TargetMetric
+from props.core.splits import Split
+
 logger = logging.getLogger(__name__)
+
+
+# --- Improvement Agent Result Types ---
+
+
+class OutcomeExhausted(BaseModel):
+    kind: Literal["exhausted"] = "exhausted"
+
+
+class OutcomeUnexpectedTermination(BaseModel):
+    kind: Literal["unexpected_termination"] = "unexpected_termination"
+    message: str
+
+
+ImprovementOutcome = Annotated[
+    TerminationSuccess | OutcomeExhausted | OutcomeUnexpectedTermination, Field(discriminator="kind")
+]
+
+
+class ImprovementResult(BaseModel):
+    tokens_used: int
+    run_id: UUID
+    outcome: ImprovementOutcome
+
+
+# --- Agent Run View ---
 
 
 @dataclass
 class AgentRunView:
-    """Unified view of an agent run from memory or DB."""
+    """Unified view of an agent run from DB."""
 
     agent_run_id: UUID
     image_digest: str
     model: str
     status: AgentRunStatus
     created_at: datetime
-    # Only set for active runs
-    handle: AgentHandle | None = None
-
-
-@dataclass
-class ActiveRun:
-    """Tracks an in-memory active run."""
-
-    handle: AgentHandle
-    task: asyncio.Task | None = None  # None if not yet rolling out
 
 
 class AgentRegistry:
-    """Unified orchestration layer for critic and grader runs.
+    """Unified orchestration layer for agent runs using in-container architecture.
 
     Owns shared resources and provides the single entry point for execution.
     Manages concurrency via internal semaphore.
@@ -97,15 +120,15 @@ class AgentRegistry:
         self,
         docker_client: aiodocker.Docker,
         db_config: DatabaseConfig,
-        workspace_manager: WorkspaceManager,
+        llm_proxy_url: str,
         max_parallel: int = 4,
+        extra_hosts: dict[str, str] | None = None,
     ) -> None:
         self._docker_client = docker_client
         self._db_config = db_config
-        self._workspace_manager = workspace_manager
+        self._llm_proxy_url = llm_proxy_url
+        self._extra_hosts = extra_hosts
         self._semaphore = asyncio.Semaphore(max_parallel)
-        self._active: dict[UUID, ActiveRun] = {}
-        self._lock = asyncio.Lock()
 
     async def close(self) -> None:
         """Clean up resources."""
@@ -126,24 +149,22 @@ class AgentRegistry:
         *,
         image_ref: str,
         example: ExampleSpec,
-        client: OpenAIModelProto,
+        model: str,
+        timeout_seconds: int,
         parent_run_id: UUID | None = None,
-        verbose: bool = False,
-        max_lines: int = DEFAULT_MAX_LINES,
-        max_turns: int = 100,
-        extra_handlers: tuple[BaseHandler, ...] = (),
+        budget_usd: float | None = None,
     ) -> UUID:
-        """Run a critic agent. Acquires semaphore slot.
+        """Run a critic agent using in-container architecture.
+
+        The container runs its own agent loop and exits 0 on success.
 
         Args:
-            image_ref: Image reference (tag or digest) - REQUIRED for explicit version control
+            image_ref: Image reference (tag or digest)
             example: Example specification (snapshot + scope)
-            client: OpenAI-compatible model client
-            parent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
-            verbose: Whether to enable verbose display
-            max_lines: Max lines per event in verbose display
-            max_turns: Maximum agent turns before timeout
-            extra_handlers: Additional handlers to add
+            model: Model name (e.g., "gpt-4o")
+            timeout_seconds: Max seconds before container is killed
+            parent_run_id: Optional parent agent run ID
+            budget_usd: Optional spending budget (not yet implemented)
 
         Returns:
             Agent run ID (query DB for status)
@@ -152,12 +173,10 @@ class AgentRegistry:
             return await self._run_critic_impl(
                 image_ref=image_ref,
                 example=example,
-                client=client,
+                model=model,
+                timeout_seconds=timeout_seconds,
                 parent_run_id=parent_run_id,
-                verbose=verbose,
-                max_lines=max_lines,
-                max_turns=max_turns,
-                extra_handlers=extra_handlers,
+                budget_usd=budget_usd,
             )
 
     async def _run_critic_impl(
@@ -165,12 +184,10 @@ class AgentRegistry:
         *,
         image_ref: str,
         example: ExampleSpec,
-        client: OpenAIModelProto,
+        model: str,
+        timeout_seconds: int,
         parent_run_id: UUID | None,
-        verbose: bool,
-        max_lines: int,
-        max_turns: int,
-        extra_handlers: tuple[BaseHandler, ...],
+        budget_usd: float | None,
     ) -> UUID:
         """Internal critic execution (semaphore already acquired)."""
         snapshot_slug = example.snapshot_slug
@@ -183,8 +200,7 @@ class AgentRegistry:
 
         # Phase 1: Write initial AgentRun to DB
         with get_session() as session:
-            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-            snapshot_split = snapshot.split
+            session.query(Snapshot).filter_by(slug=snapshot_slug).one()
 
             type_config = CriticTypeConfig(example=example)
 
@@ -192,7 +208,7 @@ class AgentRegistry:
                 agent_run_id=agent_run_id,
                 image_digest=image_digest,
                 parent_agent_run_id=parent_run_id,
-                model=client.model,
+                model=model,
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
             )
@@ -200,289 +216,368 @@ class AgentRegistry:
             session.commit()
             logger.info(f"Created critic run: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
 
-        # Set up environment
-        comp_ctx = CriticAgentEnvironment(
-            example=example,
+        # Phase 2: Run container with in-container agent loop
+        extra_env = {"MODEL": model}
+        if budget_usd is not None:
+            extra_env["BUDGET_USD"] = str(budget_usd)
+
+        result = await run_loop_agent(
             docker_client=self._docker_client,
             agent_run_id=agent_run_id,
             db_config=self._db_config,
-            workspace_manager=self._workspace_manager,
             image=image,
+            llm_proxy_url=self._llm_proxy_url,
+            timeout_seconds=timeout_seconds,
+            extra_env=extra_env,
+            container_name=f"critic-{short_uuid(agent_run_id)}",
+            extra_hosts=self._extra_hosts,
         )
 
-        agent_status: AgentRunStatus
-        async with comp_ctx as comp, Client(comp) as mcp_client:
-            # Build handlers
-            def _ready_state() -> bool:
-                with get_session() as session:
-                    run = session.get(AgentRun, agent_run_id)
-                    return run is not None and run.status in (AgentRunStatus.COMPLETED, AgentRunStatus.REPORTED_FAILURE)
+        # Phase 3: Interpret exit code and update status
+        agent_status = self._interpret_container_result(result, agent_run_id)
 
-            handlers: list[BaseHandler] = []
-            if verbose:
-                display_handler = await CompactDisplayHandler.from_compositor(
-                    comp,
-                    max_lines=max_lines,
-                    prefix=f"[CRITIC {short_uuid(agent_run_id)} {snapshot_split} {snapshot_slug}] ",
-                )
-                handlers.append(display_handler)
-
-            handlers.extend(
-                [
-                    RedirectOnTextMessageHandler(
-                        reminder_message=(
-                            "Text messages won't be delivered. Mark issues via MCP tools, then call submit. "
-                            "If you encounter unrecoverable problems, call report_failure instead."
-                        )
-                    ),
-                    AbortIf(should_abort=_ready_state),
-                    *extra_handlers,
-                    MaxTurnsHandler(max_turns=max_turns),
-                ]
-            )
-
-            # Create AgentHandle
-            handle = await AgentHandle.create(
-                agent_run_id=agent_run_id,
-                image_digest=image_digest,
-                model_client=client,
-                mcp_client=mcp_client,
-                compositor=comp,
-                handlers=handlers,
-                reasoning_summary=ReasoningSummary.DETAILED,
-            )
-
-            # Track as active
-            async with self._lock:
-                self._active[agent_run_id] = ActiveRun(handle=handle, task=None)
-
-            try:
-                await handle.run()
-            except MaxTurnsExceededError:
-                logger.warning(
-                    f"Critic hit max turns limit ({max_turns}) for {snapshot_slug}, "
-                    f"agent_run_id={short_uuid(agent_run_id)}"
-                )
-                agent_status = AgentRunStatus.MAX_TURNS_EXCEEDED
-            except ContextLengthExceededError as e:
-                logger.warning(
-                    f"Critic hit context length limit for {snapshot_slug}, agent_run_id={short_uuid(agent_run_id)}: {e}"
-                )
-                agent_status = AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
-            else:
-                # Check database status
-                with get_session() as session:
-                    run = session.get(AgentRun, agent_run_id)
-                    if run is None:
-                        raise CriticExecutionError("Agent run not found in database")
-
-                    if run.status == AgentRunStatus.REPORTED_FAILURE:
-                        raise CriticExecutionError(f"Critic reported failure: {run.completion_summary or 'No message'}")
-
-                    if run.status != AgentRunStatus.COMPLETED:
-                        raise AgentDidNotSubmitError(AgentType.CRITIC, agent_run_id)
-
-                    agent_status = AgentRunStatus.COMPLETED
-            finally:
-                # Remove from active tracking
-                async with self._lock:
-                    self._active.pop(agent_run_id, None)
-
-        # Phase 2: Update run with status
         with get_session() as session:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
-            found_run.status = agent_status
-            session.commit()
-            logger.info(f"Updated critic run: agent_run_id={agent_run_id}, status={agent_status}")
+            # Only update if still IN_PROGRESS (container may have set COMPLETED/REPORTED_FAILURE)
+            if found_run.status == AgentRunStatus.IN_PROGRESS:
+                found_run.status = agent_status
+                session.commit()
+                logger.info(f"Updated critic run: agent_run_id={agent_run_id}, status={agent_status}")
 
         return agent_run_id
 
-    async def run_snapshot_grader(
+    async def run_prompt_optimizer(
         self,
         *,
-        snapshot_slug: SnapshotSlug,
-        client: OpenAIModelProto,
-        verbose: bool = False,
-        max_lines: int = DEFAULT_MAX_LINES,
-        max_turns: int = 200,
+        budget: float,
+        optimizer_model: str,
+        critic_model: str,
+        target_metric: TargetMetric,
+        timeout_seconds: int,
+        image_ref: str = BUILTIN_TAG,
     ) -> UUID:
-        """Run a snapshot grader daemon. Blocks until shutdown or context exhausted.
+        """Run a prompt optimizer agent using in-container architecture.
 
-        The daemon grades ALL critiques for the snapshot, sleeping when no drift
-        and waking on pg_notify when GT changes or new critiques arrive.
-
-        Always uses builtin grader image for evaluation consistency.
+        The optimizer container:
+        1. Talks to LLM proxy for agent responses
+        2. Connects to MCP server on host for run_critic/wait_until_graded tools
+        3. Can orchestrate critic sub-runs via the MCP tools
 
         Args:
-            snapshot_slug: Snapshot this daemon is responsible for
-            client: OpenAI-compatible model client
-            verbose: Whether to enable verbose display
-            max_lines: Max lines per event in verbose display
-            max_turns: Max turns per wake cycle (resets after each sleep)
+            budget: Cost budget in USD
+            optimizer_model: Model name for the optimizer agent
+            critic_model: Model name for critic sub-runs
+            target_metric: WHOLE_REPO or TARGETED
+            timeout_seconds: Max seconds before container is killed
+            image_ref: Optimizer image reference (default: builtin)
 
         Returns:
-            Daemon run ID (query DB for status)
+            Agent run ID (query DB for status)
         """
         async with self._semaphore:
-            return await self._run_snapshot_grader_impl(
-                snapshot_slug=snapshot_slug, client=client, verbose=verbose, max_lines=max_lines, max_turns=max_turns
+            return await self._run_prompt_optimizer_impl(
+                budget=budget,
+                optimizer_model=optimizer_model,
+                critic_model=critic_model,
+                target_metric=target_metric,
+                timeout_seconds=timeout_seconds,
+                image_ref=image_ref,
             )
 
-    async def _run_snapshot_grader_impl(
-        self, *, snapshot_slug: SnapshotSlug, client: OpenAIModelProto, verbose: bool, max_lines: int, max_turns: int
+    async def _run_prompt_optimizer_impl(
+        self,
+        *,
+        budget: float,
+        optimizer_model: str,
+        critic_model: str,
+        target_metric: TargetMetric,
+        timeout_seconds: int,
+        image_ref: str,
     ) -> UUID:
-        """Internal snapshot grader daemon execution."""
-        grader_run_id = uuid4()
-
-        # Always use builtin grader image
-        image_digest = resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
-        image = build_oci_reference(AgentType.GRADER, image_digest)
-        logger.info(f"Using builtin grader image: {image_digest}")
-
-        # Verify snapshot exists
+        """Internal prompt optimizer execution (semaphore already acquired)."""
+        # Get train snapshots from database
         with get_session() as session:
-            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one_or_none()
-            if snapshot is None:
-                raise ValueError(f"Snapshot '{snapshot_slug}' not found")
+            train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).all()
+            train_slugs = [SnapshotSlug(s.slug) for s in train_snapshots]
 
-            type_config = SnapshotGraderTypeConfig(snapshot_slug=snapshot_slug).model_dump(mode="json")
+        logger.info(f"Using {len(train_slugs)} train snapshots (agent will fetch from database)")
 
-            # Create initial daemon run
-            session.add(
-                AgentRun(
-                    agent_run_id=grader_run_id,
-                    image_digest=image_digest,
-                    parent_agent_run_id=None,
-                    model=client.model,
-                    type_config=type_config,
-                    status=AgentRunStatus.IN_PROGRESS,
-                )
+        # Generate unique ID for this run
+        agent_run_id = uuid4()
+        logger.info(f"Prompt optimizer agent_run_id: {agent_run_id}")
+
+        # Resolve image reference to digest and construct full OCI reference
+        image_digest = resolve_image_ref(AgentType.PROMPT_OPTIMIZER, image_ref)
+        image = build_oci_reference(AgentType.PROMPT_OPTIMIZER, image_digest)
+        logger.info(f"Resolved prompt-optimizer image {image_ref} → {image}")
+
+        # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
+        with get_session() as session:
+            type_config = PromptOptimizerTypeConfig(
+                target_metric=target_metric,
+                optimizer_model=optimizer_model,
+                critic_model=critic_model,
+                grader_model=critic_model,  # Not actively used (grading by daemons)
+                budget_limit=budget,
             )
-            session.commit()
-            logger.info(f"Created snapshot grader daemon: agent_run_id={grader_run_id}, snapshot={snapshot_slug}")
 
-        # Set up environment
-        env = SnapshotGraderAgentEnvironment(
-            snapshot_slug=snapshot_slug,
-            docker_client=self._docker_client,
-            grader_run_id=grader_run_id,
-            db_config=self._db_config,
-            workspace_manager=self._workspace_manager,
-            image=image,
+            agent_run = AgentRun(
+                agent_run_id=agent_run_id,
+                image_digest=image_digest,
+                model=optimizer_model,
+                type_config=type_config,
+                status=AgentRunStatus.IN_PROGRESS,
+            )
+            session.add(agent_run)
+            session.commit()
+
+        logger.info(f"Created prompt optimizer AgentRun: {agent_run_id}")
+
+        # Create PromptEvalServer with orchestration tools
+        optimizer_state = PromptOptimizerState()
+        prompt_eval_server = PromptEvalServer(
+            critic_model=critic_model,
+            registry=self,
+            optimizer_state=optimizer_state,
+            target_metric=target_metric,
+            optimizer_run_id=agent_run_id,
         )
 
-        agent_status: AgentRunStatus = AgentRunStatus.IN_PROGRESS
+        try:
+            # Serve PromptEvalServer via HTTP for container to connect
+            with serve_mcp_http(prompt_eval_server) as mcp_handle:
+                logger.info(f"MCP server available at {mcp_handle.url}")
 
-        async with (
-            env as compositor,
-            Client(compositor) as mcp_client,
-            GraderDaemonScaffold(snapshot_slug, self._db_config) as scaffold,
-        ):
-            # Build handlers
-            drift_handler = scaffold.create_drift_handler()
-
-            daemon_handlers: list[BaseHandler] = [drift_handler]
-            if verbose:
-                display_handler = await CompactDisplayHandler.from_compositor(
-                    compositor,
-                    max_lines=max_lines,
-                    prefix=f"[SNAPSHOT-GRADER {short_uuid(grader_run_id)} {snapshot_slug}] ",
+                # Run the container with in-container agent loop
+                result = await run_loop_agent(
+                    docker_client=self._docker_client,
+                    agent_run_id=agent_run_id,
+                    db_config=self._db_config,
+                    image=image,
+                    llm_proxy_url=self._llm_proxy_url,
+                    extra_env={"MCP_SERVER_URL": mcp_handle.url, "MCP_SERVER_TOKEN": mcp_handle.token},
+                    container_name=f"promptopt-{short_uuid(agent_run_id)}",
+                    timeout_seconds=timeout_seconds,
+                    extra_hosts=self._extra_hosts,
                 )
-                daemon_handlers.append(display_handler)
 
-            daemon_handlers.extend(
-                [
-                    RedirectOnTextMessageHandler(
-                        reminder_message=(
-                            "Text messages won't be delivered. Use props grader-agent CLI commands "
-                            "to list pending edges, match issues to GT, and fill remaining edges."
-                        )
-                    ),
-                    MaxTurnsHandler(max_turns=max_turns),
-                ]
+                timed_out = result.exit_code == -1
+                if timed_out:
+                    logger.error(f"Container timed out after {timeout_seconds} seconds")
+                else:
+                    logger.info(f"Container exited with code {result.exit_code}")
+                if result.stderr:
+                    logger.info(f"Container stderr:\n{result.stderr}")
+
+            # Update status based on exit code
+            if timed_out:
+                final_status = AgentRunStatus.TIMED_OUT
+            elif result.exit_code == 0:
+                final_status = AgentRunStatus.COMPLETED
+            else:
+                final_status = AgentRunStatus.REPORTED_FAILURE
+            with get_session() as session:
+                found_run = session.get(AgentRun, agent_run_id)
+                if found_run:
+                    found_run.status = final_status
+                    session.commit()
+                    logger.info(f"Updated agent_run status to {final_status.value}")
+
+        finally:
+            pass  # No cleanup needed - we use self as the registry
+
+        logger.info("Optimization session complete.")
+        logger.info(f"Budget: ${budget:.2f}")
+
+        return agent_run_id
+
+    async def run_improvement_agent(
+        self,
+        *,
+        examples: list[ExampleSpec],
+        baseline_image_refs: list[str],
+        token_budget: int,
+        improvement_model: str,
+        critic_model: str,
+        timeout_seconds: int,
+        output_dir: Path | None = None,
+    ) -> ImprovementResult:
+        """Run an improvement agent using in-container architecture.
+
+        The improvement agent creates agent definitions to beat baselines
+        on the allowed examples.
+
+        Args:
+            examples: Examples the agent is allowed to optimize for
+            baseline_image_refs: Baseline images to beat
+            token_budget: Token budget limit
+            improvement_model: Model name for the improvement agent
+            critic_model: Model name for critic sub-runs
+            timeout_seconds: Max seconds before container is killed
+            output_dir: Optional output directory for agent artifacts
+
+        Returns:
+            ImprovementResult with run_id, tokens_used, and outcome
+        """
+        async with self._semaphore:
+            return await self._run_improvement_agent_impl(
+                examples=examples,
+                baseline_image_refs=baseline_image_refs,
+                token_budget=token_budget,
+                improvement_model=improvement_model,
+                critic_model=critic_model,
+                timeout_seconds=timeout_seconds,
+                output_dir=output_dir,
             )
 
-            # Create AgentHandle
-            agent_handle = await AgentHandle.create(
-                agent_run_id=grader_run_id,
-                image_digest=GRADER_IMAGE_REF,
-                model_client=client,
-                mcp_client=mcp_client,
-                compositor=compositor,
-                handlers=daemon_handlers,
-                dynamic_instructions=compositor.render_agent_dynamic_instructions,
-                parallel_tool_calls=True,
-                reasoning_summary=ReasoningSummary.DETAILED,
+    async def _run_improvement_agent_impl(
+        self,
+        *,
+        examples: list[ExampleSpec],
+        baseline_image_refs: list[str],
+        token_budget: int,
+        improvement_model: str,
+        critic_model: str,
+        timeout_seconds: int,
+        output_dir: Path | None,
+    ) -> ImprovementResult:
+        """Internal improvement agent execution (semaphore already acquired)."""
+        if not examples:
+            raise ValueError("examples must not be empty")
+
+        run_id = uuid4()
+        if output_dir is None:
+            output_dir = Path(tempfile.mkdtemp(prefix=f"improve_agent_{str(run_id)[:8]}_"))
+
+        output_dir = output_dir.resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(
+            f"Starting improvement agent run {run_id}: "
+            f"{len(examples)} examples, {token_budget:,} token budget, model={improvement_model}"
+        )
+        logger.info(f"Output directory: {output_dir}")
+
+        # Always use builtin improvement image
+        image_digest = resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
+        image = build_oci_reference(AgentType.IMPROVEMENT, image_digest)
+        logger.info(f"Using builtin improvement image: {image_digest}")
+
+        type_config = ImprovementTypeConfig(
+            baseline_image_refs=baseline_image_refs,
+            allowed_examples=examples,
+            improvement_model=improvement_model,
+            critic_model=critic_model,
+            grader_model=critic_model,  # Not actively used (grading by daemons)
+        )
+
+        with get_session() as session:
+            agent_run = AgentRun(
+                agent_run_id=run_id,
+                image_digest=image_digest,
+                model=improvement_model,
+                type_config=type_config,
+                status=AgentRunStatus.IN_PROGRESS,
             )
+            session.add(agent_run)
+            session.commit()
 
-            # Track as active
-            async with self._lock:
-                self._active[grader_run_id] = ActiveRun(handle=agent_handle, task=None)
+        # Create PromptEvalServer with orchestration tools
+        optimizer_state = PromptOptimizerState()
+        prompt_eval_server = PromptEvalServer(
+            critic_model=critic_model,
+            registry=self,
+            optimizer_state=optimizer_state,
+            target_metric=TargetMetric.TARGETED,
+            optimizer_run_id=run_id,
+        )
 
-            try:
-                # Daemon loop: run → sleep → wake → run → ...
-                while not scaffold.is_shutdown:
-                    try:
-                        await agent_handle.run()
-                    except MaxTurnsExceededError:
-                        logger.warning("Snapshot grader hit max turns, resetting for next wake cycle")
-                        # Reset turn count by recreating handlers with fresh MaxTurnsHandler
-                        # For now, just continue to sleep/wake cycle
+        try:
+            # Serve PromptEvalServer via HTTP for container to connect
+            with serve_mcp_http(prompt_eval_server) as mcp_handle:
+                logger.info(f"MCP server available at {mcp_handle.url}")
 
-                    # Wait for next work (blocks until pg_notify or drift detected)
-                    notifs = await scaffold.wait_for_drift_or_notification()
+                # Run the container with in-container agent loop
+                result = await run_loop_agent(
+                    docker_client=self._docker_client,
+                    agent_run_id=run_id,
+                    db_config=self._db_config,
+                    image=image,
+                    llm_proxy_url=self._llm_proxy_url,
+                    extra_env={"MCP_SERVER_URL": mcp_handle.url, "MCP_SERVER_TOKEN": mcp_handle.token},
+                    container_name=f"improve-{short_uuid(run_id)}",
+                    timeout_seconds=timeout_seconds,
+                    extra_hosts=self._extra_hosts,
+                )
 
-                    if scaffold.is_shutdown:
-                        break
+                timed_out = result.exit_code == -1
+                if timed_out:
+                    logger.error(f"Container timed out after {timeout_seconds} seconds")
+                else:
+                    logger.info(f"Container exited with code {result.exit_code}")
+                if result.stderr:
+                    logger.info(f"Container stderr:\n{result.stderr}")
 
-                    # Inject wake message and continue
-                    if notifs:
-                        wake_msg = format_notifications(notifs)
-                        agent_handle.agent.process_message(UserMessage.text(wake_msg))
-                    else:
-                        agent_handle.agent.process_message(
-                            UserMessage.text("Drift detected. Check grading_pending for new work.")
-                        )
+            # Update status based on exit code
+            if timed_out:
+                final_status = AgentRunStatus.TIMED_OUT
+            elif result.exit_code == 0:
+                final_status = AgentRunStatus.COMPLETED
+            else:
+                final_status = AgentRunStatus.REPORTED_FAILURE
+            with get_session() as session:
+                found_run = session.get(AgentRun, run_id)
+                if found_run:
+                    found_run.status = final_status
+                    found_run.container_exit_code = result.exit_code if not timed_out else None
+                    session.commit()
+                    logger.info(f"Updated agent_run status to {final_status.value}")
 
-                agent_status = AgentRunStatus.COMPLETED
+            # Determine outcome
+            outcome: ImprovementOutcome
+            if timed_out:
+                outcome = OutcomeUnexpectedTermination(message=f"Container timed out after {timeout_seconds} seconds")
+            elif result.exit_code == 0:
+                # Success - for now just return exhausted (container writes details to DB)
+                outcome = OutcomeExhausted()  # TODO: Parse actual success details from DB
+            else:
+                outcome = OutcomeUnexpectedTermination(message=f"Container exited with code {result.exit_code}")
 
-            except ContextLengthExceededError:
-                logger.warning(f"Snapshot grader {grader_run_id} hit context limit")
-                agent_status = AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
-            except Exception as e:
-                logger.error(f"Snapshot grader {grader_run_id} failed: {e}", exc_info=True)
-                agent_status = AgentRunStatus.REPORTED_FAILURE
-            finally:
-                # Remove from active tracking
-                async with self._lock:
-                    self._active.pop(grader_run_id, None)
+            logger.info(f"Improvement agent completed: kind={outcome.kind}")
+            return ImprovementResult(tokens_used=0, run_id=run_id, outcome=outcome)  # TODO: Track tokens
 
-                # Update status in DB
-                with get_session() as session:
-                    found_run = session.get(AgentRun, grader_run_id)
-                    if found_run and found_run.status == AgentRunStatus.IN_PROGRESS:
-                        found_run.status = agent_status
-                        session.commit()
+        finally:
+            pass  # No cleanup needed - we use self as the registry
 
-        logger.info(f"Snapshot grader daemon exited: agent_run_id={grader_run_id}, status={agent_status}")
-        return grader_run_id
+    def _interpret_container_result(self, result: ContainerResult, agent_run_id: UUID) -> AgentRunStatus:
+        """Map container exit code to AgentRunStatus."""
+        if result.exit_code == 0:
+            # Check DB - container should have set status to COMPLETED
+            with get_session() as session:
+                run = session.get(AgentRun, agent_run_id)
+                if run and run.status == AgentRunStatus.COMPLETED:
+                    return AgentRunStatus.COMPLETED
+                # Container exited 0 but didn't submit - unexpected
+                logger.warning(f"Container exited 0 but status is {run.status if run else 'None'}")
+                return AgentRunStatus.COMPLETED
+        elif result.exit_code == -1:
+            # Timeout
+            logger.warning(f"Container timed out: {agent_run_id}")
+            return AgentRunStatus.MAX_TURNS_EXCEEDED
+        else:
+            # Non-zero exit - check if container set REPORTED_FAILURE
+            with get_session() as session:
+                run = session.get(AgentRun, agent_run_id)
+                if run and run.status == AgentRunStatus.REPORTED_FAILURE:
+                    return AgentRunStatus.REPORTED_FAILURE
+            logger.error(f"Container failed with exit code {result.exit_code}: {result.stderr[:500]}")
+            return AgentRunStatus.REPORTED_FAILURE
 
     # --- State Tracking ---
 
     def get(self, run_id: UUID) -> AgentRunView | None:
-        """Get agent run view from memory (if active) or DB."""
-        if run_id in self._active:
-            active = self._active[run_id]
-            return AgentRunView(
-                agent_run_id=run_id,
-                image_digest=active.handle.image_digest,
-                model=active.handle.agent.model,
-                status=AgentRunStatus.IN_PROGRESS,
-                created_at=datetime.now(),
-                handle=active.handle,
-            )
-
+        """Get agent run view from DB."""
         with get_session() as session:
             db_run = session.get(AgentRun, run_id)
             if not db_run:
@@ -493,24 +588,7 @@ class AgentRegistry:
                 model=db_run.model,
                 status=db_run.status,
                 created_at=db_run.created_at,
-                handle=None,
             )
-
-    def list_active(self) -> list[AgentRunView]:
-        """List all active (in-memory) runs."""
-        result = []
-        for run_id, active in self._active.items():
-            result.append(
-                AgentRunView(
-                    agent_run_id=run_id,
-                    image_digest=active.handle.image_digest,
-                    model=active.handle.agent.model,
-                    status=AgentRunStatus.IN_PROGRESS,
-                    created_at=datetime.now(),
-                    handle=active.handle,
-                )
-            )
-        return result
 
     def list_recent(self, limit: int = 50) -> list[AgentRunView]:
         """List recent runs from database."""
@@ -523,29 +601,89 @@ class AgentRegistry:
                     model=r.model,
                     status=r.status,
                     created_at=r.created_at,
-                    handle=self._active.get(r.agent_run_id, ActiveRun(handle=None)).handle  # type: ignore
-                    if r.agent_run_id in self._active
-                    else None,
                 )
                 for r in runs
             ]
 
-    async def cancel(self, run_id: UUID) -> bool:
-        """Cancel a running agent.
+    async def run_snapshot_grader(
+        self, *, snapshot_slug: SnapshotSlug, model: str, timeout_seconds: int, image_ref: str = "grader"
+    ) -> UUID:
+        """Run a snapshot grader daemon. Blocks until daemon exits or timeout.
 
-        Returns True if cancelled, False if not found or not running.
+        The grader daemon:
+        1. Listens for pg_notify on grading_pending channel
+        2. Grades all critiques for the snapshot until no drift remains
+        3. Sleeps when no drift, wakes on pg_notify
+        4. Exits when timeout reached or shutdown signal received
+
+        Args:
+            snapshot_slug: Snapshot this grader is responsible for
+            model: Model name (e.g., "gpt-4o")
+            timeout_seconds: Max seconds before container is killed
+            image_ref: Image reference (tag or digest), defaults to "grader"
+
+        Returns:
+            Agent run ID
         """
-        if run_id not in self._active:
-            return False
+        async with self._semaphore:
+            return await self._run_snapshot_grader_impl(
+                snapshot_slug=snapshot_slug, model=model, timeout_seconds=timeout_seconds, image_ref=image_ref
+            )
 
-        active = self._active[run_id]
-        if active.task is None or active.task.done():
-            return False
+    async def _run_snapshot_grader_impl(
+        self, *, snapshot_slug: SnapshotSlug, model: str, timeout_seconds: int, image_ref: str
+    ) -> UUID:
+        """Internal snapshot grader execution (semaphore already acquired)."""
+        agent_run_id = uuid4()
 
-        active.task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await active.task
+        # Resolve image reference to digest
+        image_digest = resolve_image_ref(AgentType.SNAPSHOT_GRADER, image_ref)
+        image = build_oci_reference(AgentType.SNAPSHOT_GRADER, image_digest)
+        logger.info(f"Resolved snapshot_grader image {image_ref} → {image_digest}")
 
-        self._active.pop(run_id, None)
-        logger.info(f"Cancelled agent: {run_id}")
-        return True
+        # Phase 1: Write initial AgentRun to DB
+        with get_session() as session:
+            # Verify snapshot exists
+            session.query(Snapshot).filter_by(slug=snapshot_slug).one()
+
+            type_config = SnapshotGraderTypeConfig(snapshot_slug=str(snapshot_slug))
+
+            agent_run = AgentRun(
+                agent_run_id=agent_run_id,
+                image_digest=image_digest,
+                model=model,
+                type_config=type_config,
+                status=AgentRunStatus.IN_PROGRESS,
+            )
+            session.add(agent_run)
+            session.commit()
+            logger.info(f"Created snapshot_grader run: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
+
+        # Phase 2: Run container with in-container agent loop
+        extra_env = {"MODEL": model}
+
+        result = await run_loop_agent(
+            docker_client=self._docker_client,
+            agent_run_id=agent_run_id,
+            db_config=self._db_config,
+            image=image,
+            llm_proxy_url=self._llm_proxy_url,
+            timeout_seconds=timeout_seconds,
+            extra_env=extra_env,
+            container_name=f"grader-{short_uuid(agent_run_id)}",
+            extra_hosts=self._extra_hosts,
+        )
+
+        # Phase 3: Interpret exit code and update status
+        agent_status = self._interpret_container_result(result, agent_run_id)
+
+        with get_session() as session:
+            found_run = session.get(AgentRun, agent_run_id)
+            assert found_run is not None, f"Agent run {agent_run_id} not found in database"
+            # Only update if still IN_PROGRESS
+            if found_run.status == AgentRunStatus.IN_PROGRESS:
+                found_run.status = agent_status
+                session.commit()
+                logger.info(f"Updated snapshot_grader run: agent_run_id={agent_run_id}, status={agent_status}")
+
+        return agent_run_id

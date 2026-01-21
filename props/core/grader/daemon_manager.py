@@ -2,11 +2,10 @@
 
 Manages lifecycle of all snapshot grader daemons:
 - Auto-starts daemons for all snapshots on startup
-- Restarts on context exhaustion with fresh agent
 - Tracks active daemons
 
-TODO: Resume existing IN_PROGRESS runs with transcript from DB on startup
-      (currently starts fresh, which is correct since grading_edges is checkpoint)
+The daemon runs eternally inside its container, handling context exhaustion
+internally. Host-side we just need to manage the container lifecycle.
 
 TODO: Handle new snapshots added after startup (pg_notify on snapshot insert)
 """
@@ -15,30 +14,34 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from props.core.db.models import AgentRun, AgentRunStatus, Snapshot
+from props.core.db.models import Snapshot
 from props.core.db.session import get_session
 from props.core.ids import SnapshotSlug
 
 if TYPE_CHECKING:
-    from openai_utils.model import OpenAIModelProto
     from props.core.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
+# Default timeout for daemon containers (very long since daemons are eternal)
+DEFAULT_DAEMON_TIMEOUT_SECONDS = 86400  # 24 hours
+
 
 class DaemonManager:
-    """Manages snapshot grader daemons with restart-on-context-exhaustion.
+    """Manages snapshot grader daemons.
 
-    Each snapshot gets one daemon. Daemons sleep when no drift and wake on
-    pg_notify. If a daemon hits context limit, it's restarted with fresh context.
+    Each snapshot gets one daemon running in a container. Daemons are eternal -
+    they sleep when no drift and wake on pg_notify. Context exhaustion is
+    handled inside the container via transcript summarization.
     """
 
-    def __init__(self, registry: AgentRegistry, client: OpenAIModelProto):
+    def __init__(self, registry: AgentRegistry, model: str, timeout_seconds: int = DEFAULT_DAEMON_TIMEOUT_SECONDS):
         self._registry = registry
-        self._client = client
-        self._tasks: dict[SnapshotSlug, asyncio.Task] = {}
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+        self._tasks: dict[SnapshotSlug, asyncio.Task[Any]] = {}
         self._shutdown = False
 
     async def start_all(self) -> None:
@@ -50,38 +53,21 @@ class DaemonManager:
         logger.info(f"Starting grader daemons for {len(snapshot_slugs)} snapshots")
 
         for slug in snapshot_slugs:
-            self._tasks[slug] = asyncio.create_task(self._run_daemon_with_restart(slug), name=f"grader-daemon-{slug}")
+            self._tasks[slug] = asyncio.create_task(self._run_daemon(slug), name=f"grader-daemon-{slug}")
 
-    async def _run_daemon_with_restart(self, snapshot_slug: SnapshotSlug) -> None:
-        """Run daemon for a snapshot, restarting on context exhaustion."""
-        restart_count = 0
-        max_restarts = 10  # Safety limit
-
-        while not self._shutdown and restart_count < max_restarts:
-            try:
-                run_id = await self._registry.run_snapshot_grader(snapshot_slug=snapshot_slug, client=self._client)
-
-                # Check exit status
-                with get_session() as session:
-                    run = session.get(AgentRun, run_id)
-                    if run and run.status == AgentRunStatus.CONTEXT_LENGTH_EXCEEDED:
-                        restart_count += 1
-                        logger.info(
-                            f"Daemon for {snapshot_slug} hit context limit, restarting ({restart_count}/{max_restarts})"
-                        )
-                        continue  # Restart with fresh context
-
-                    # Normal exit or other status - don't restart
-                    logger.info(f"Daemon for {snapshot_slug} exited with status: {run.status if run else 'unknown'}")
-                    break
-
-            except Exception as e:
-                logger.error(f"Daemon for {snapshot_slug} failed unexpectedly: {e}", exc_info=True)
-                # Don't restart on unexpected errors
-                break
-
-        if restart_count >= max_restarts:
-            logger.error(f"Daemon for {snapshot_slug} hit max restarts ({max_restarts})")
+    async def _run_daemon(self, snapshot_slug: SnapshotSlug) -> None:
+        """Run daemon for a snapshot."""
+        try:
+            logger.info(f"Starting grader daemon for {snapshot_slug}")
+            await self._registry.run_snapshot_grader(
+                snapshot_slug=snapshot_slug, model=self._model, timeout_seconds=self._timeout_seconds
+            )
+            logger.info(f"Grader daemon for {snapshot_slug} exited")
+        except asyncio.CancelledError:
+            logger.info(f"Grader daemon for {snapshot_slug} cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Grader daemon for {snapshot_slug} failed: {e}", exc_info=True)
 
     async def shutdown(self) -> None:
         """Signal all daemons to shutdown and wait for completion."""

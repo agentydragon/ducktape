@@ -9,7 +9,25 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//agent_core_testing",
+        "//mcp_infra/exec:models",
+        "//openai_utils",
         "//props/testing/fixtures",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "fake_openai_server",
+    testonly = True,
+    srcs = ["fake_openai_server.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils",
+        "@pypi//fastapi",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//uvicorn",
     ],
 )

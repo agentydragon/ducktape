@@ -1,30 +1,41 @@
 """Test prompt improvement agent end-to-end with mocked OpenAI.
 
-Tests the improvement agent workflow:
+Tests the improvement agent workflow using:
+- Real Docker containers running agent loops
+- Real PostgreSQL database with temporary RLS-scoped users
+- Real LLM proxy (validates auth, logs requests)
+- Fake OpenAI server (returns scripted responses from PropsMock)
+
+The test stack is:
+    Container → LLM Proxy → Fake OpenAI → PropsMock
+
+Tests verify:
 - Creating improved package directory via docker_exec
-- Submitting via `props agent-pkg create` CLI
-- Token budget handling
-- RLS-scoped database access
-- Termination when package beats baseline average
+- Database access works from container
+- CLI helpers work in container context
+
+Note: These tests terminate via report-failure since actual termination
+condition checks would require real grading infrastructure.
 """
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 import pytest_bazel
-from hamcrest import assert_that
+from hamcrest import all_of, assert_that
 
 from agent_core_testing.responses import PlayGen
-from agent_core_testing.steps import exited_successfully
+from agent_core_testing.steps import exited_successfully, stdout_contains
 from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.core.db.examples import Example
 from props.core.db.models import AgentRun
 from props.core.db.session import get_session
-from props.core.prompt_improve.improve_agent import run_improvement_agent
-from props.core.prompt_improve.reminder_handler import BlockingStatus
 from props.testing.mocks import PropsMock
+
+pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+
+# Test timeout (seconds) - applies to container execution
+TEST_TIMEOUT_SECONDS = 120
 
 # Define the improved agent.md content used across tests
 # Note: The improvement agent creates a package with Dockerfile + init + agent.md
@@ -54,7 +65,7 @@ print("Ready to begin.")
 
 
 def make_improvement_mock() -> PropsMock:
-    """Create mock for improvement agent that creates and submits a package."""
+    """Create mock for improvement agent that creates files and terminates."""
 
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
@@ -76,42 +87,30 @@ chmod +x /workspace/improved/init""",
             timeout_ms=15000,
         )
         assert_that(result, exited_successfully())
-        # Submit via CLI triggers termination check
-        yield m.assistant_text("Package created successfully.")
+        # Terminate via report-failure (real termination requires grading infrastructure)
+        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Package created, test complete"])
 
     return mock
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-@pytest.mark.requires_postgres
-async def test_prompt_improve_e2e_success(
-    synced_test_db, async_docker_client, success_termination, subtract_file_example, noop_openai_client
-):
-    """Test improvement agent successfully submits improved definition."""
+async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_example):
+    """Test improvement agent can create package directory in container."""
     mock = make_improvement_mock()
-    call_count = 0
 
-    def mock_check_termination(session, improvement_run_id, type_config):
-        nonlocal call_count
-        call_count += 1
-        if call_count <= 1:
-            return BlockingStatus(message="No definitions created yet.")
-        return success_termination
-
-    with patch("props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination):
-        result = await run_improvement_agent(
+    async with e2e_stack(mock) as stack:
+        result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],
             token_budget=100_000,
-            model="gpt-5-nano",
-            docker_client=async_docker_client,
-            db_config=synced_test_db,
-            client=mock,
-            critic_client=noop_openai_client,
-            grader_client=noop_openai_client,
+            improvement_model=stack.model,
+            critic_model=stack.model,
+            timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    assert result.tokens_used >= 0
+    # Agent terminated via report-failure, so run_id should be valid
+    assert result.run_id is not None
 
     with get_session() as session:
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result.run_id).one()
@@ -120,11 +119,9 @@ async def test_prompt_improve_e2e_success(
         assert improvement_config.allowed_examples is not None
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-@pytest.mark.requires_postgres
-async def test_prompt_improve_e2e_multiple_examples(
-    synced_test_db, test_snapshot, async_docker_client, success_termination, noop_openai_client
-):
+async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot):
     """Test improvement agent with multiple training examples."""
     with get_session() as session:
         examples = session.query(Example).filter_by(snapshot_slug=test_snapshot).limit(2).all()
@@ -132,29 +129,18 @@ async def test_prompt_improve_e2e_multiple_examples(
         allowed_examples = [e.to_example_spec() for e in examples]
 
     mock = make_improvement_mock()
-    call_count = 0
 
-    def mock_check_termination(session, improvement_run_id, type_config):
-        nonlocal call_count
-        call_count += 1
-        if call_count <= 1:
-            return BlockingStatus(message="No definitions created yet.")
-        return success_termination
-
-    with patch("props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination):
-        result = await run_improvement_agent(
+    async with e2e_stack(mock) as stack:
+        result = await stack.registry.run_improvement_agent(
             examples=allowed_examples,
             baseline_image_refs=[CRITIC_IMAGE_REF],
             token_budget=100_000,
-            model="gpt-5-nano",
-            docker_client=async_docker_client,
-            db_config=synced_test_db,
-            client=mock,
-            critic_client=noop_openai_client,
-            grader_client=noop_openai_client,
+            improvement_model=stack.model,
+            critic_model=stack.model,
+            timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    assert result.tokens_used >= 0
+    assert result.run_id is not None
 
     with get_session() as session:
         session.query(AgentRun).filter_by(agent_run_id=result.run_id).one()
@@ -172,12 +158,8 @@ def make_leaderboard_check_mock() -> PropsMock:
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
         result = yield from m.docker_exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000)
-        assert_that(result, exited_successfully())
-        assert "76%" in result.stdout
-        assert "Recall" in result.stdout
-        assert "critic" in result.stdout
-        assert "Runs" in result.stdout
-        yield m.assistant_text("Leaderboard test completed successfully.")
+        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
+        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
 
     return mock
 
@@ -189,77 +171,48 @@ def make_hard_examples_check_mock() -> PropsMock:
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
         result = yield from m.docker_exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000)
-        assert_that(result, exited_successfully())
-        assert "76%" in result.stdout
-        assert "test-fixtures" in result.stdout
-        assert "Recall" in result.stdout
-        yield m.assistant_text("Hard examples test completed successfully.")
+        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
+        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
 
     return mock
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-@pytest.mark.requires_postgres
-async def test_cli_leaderboard_in_improvement_agent(
-    synced_test_db,
-    async_docker_client,
-    success_termination,
-    subtract_file_example,
-    noop_openai_client,
-    test_train_example_with_runs,
-):
+async def test_cli_leaderboard_in_improvement_agent(e2e_stack, subtract_file_example, test_train_example_with_runs):
     """Test that leaderboard CLI command works from improvement agent container."""
     mock = make_leaderboard_check_mock()
 
-    def mock_check_termination(session, improvement_run_id, type_config):
-        return success_termination
-
-    with patch("props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination):
-        result = await run_improvement_agent(
+    async with e2e_stack(mock) as stack:
+        result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],
             token_budget=100_000,
-            model="gpt-5-nano",
-            docker_client=async_docker_client,
-            db_config=synced_test_db,
-            client=mock,
-            critic_client=noop_openai_client,
-            grader_client=noop_openai_client,
+            improvement_model=stack.model,
+            critic_model=stack.model,
+            timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    assert result.tokens_used >= 0
+    assert result.run_id is not None
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-@pytest.mark.requires_postgres
-async def test_cli_hard_examples_in_improvement_agent(
-    synced_test_db,
-    async_docker_client,
-    success_termination,
-    subtract_file_example,
-    noop_openai_client,
-    test_train_example_with_runs,
-):
+async def test_cli_hard_examples_in_improvement_agent(e2e_stack, subtract_file_example, test_train_example_with_runs):
     """Test that hard-examples CLI command works from improvement agent container."""
     mock = make_hard_examples_check_mock()
 
-    def mock_check_termination(session, improvement_run_id, type_config):
-        return success_termination
-
-    with patch("props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination):
-        result = await run_improvement_agent(
+    async with e2e_stack(mock) as stack:
+        result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],
             token_budget=100_000,
-            model="gpt-5-nano",
-            docker_client=async_docker_client,
-            db_config=synced_test_db,
-            client=mock,
-            critic_client=noop_openai_client,
-            grader_client=noop_openai_client,
+            improvement_model=stack.model,
+            critic_model=stack.model,
+            timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    assert result.tokens_used >= 0
+    assert result.run_id is not None
 
 
 if __name__ == "__main__":

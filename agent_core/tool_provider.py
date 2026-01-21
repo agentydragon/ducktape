@@ -88,6 +88,7 @@ class ToolProvider(Protocol):
     Implementations:
     - MCPToolProvider: Wraps fastmcp.Client for MCP-based tools
     - DirectToolProvider: Direct function calls without MCP overhead
+    - CompositeToolProvider: Combines multiple providers
     """
 
     async def list_tools(self) -> list[ToolSchema]:
@@ -97,3 +98,48 @@ class ToolProvider(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Execute a tool and return the result."""
         ...
+
+
+# --- Composite provider ---
+
+
+class CompositeToolProvider:
+    """Combines multiple tool providers into one.
+
+    Tools must be unique across all providers - duplicates raise ValueError.
+    Use this to combine local tools with remote MCP tools.
+    """
+
+    def __init__(self, *providers: ToolProvider) -> None:
+        self._providers = providers
+        self._tool_index: dict[str, ToolProvider] | None = None
+
+    async def _build_index(self) -> dict[str, ToolProvider]:
+        """Build tool name -> provider index, checking for duplicates."""
+        if self._tool_index is not None:
+            return self._tool_index
+
+        index: dict[str, ToolProvider] = {}
+        for provider in self._providers:
+            for tool in await provider.list_tools():
+                if tool.name in index:
+                    raise ValueError(f"Duplicate tool '{tool.name}' across providers")
+                index[tool.name] = provider
+        self._tool_index = index
+        return index
+
+    async def list_tools(self) -> list[ToolSchema]:
+        """Return all tools from all providers."""
+        await self._build_index()  # Validate no duplicates
+        all_tools: list[ToolSchema] = []
+        for provider in self._providers:
+            all_tools.extend(await provider.list_tools())
+        return all_tools
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+        """Call tool by name."""
+        index = await self._build_index()
+        provider = index.get(name)
+        if provider is None:
+            return ToolResult.error(f"Tool not found: {name}")
+        return await provider.call_tool(name, arguments)

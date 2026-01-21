@@ -1,12 +1,13 @@
 """Drift detection handler for snapshot grader daemon.
 
 Checks grading_pending before each sample, aborts when no drift (grading complete).
-Drains notification queue and injects context about GT changes during work.
+Drains notification queue and injects context about grading_pending changes during work.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from sqlalchemy import text
@@ -15,6 +16,7 @@ from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from openai_utils.model import UserMessage
 from props.core.db.session import get_session
+from props.core.grader.notifications import GradingPendingNotification
 
 logger = logging.getLogger(__name__)
 
@@ -28,16 +30,11 @@ def check_grading_pending(snapshot_slug: str) -> bool:
         return result.scalar() is not None
 
 
-def format_notifications(notifs: list[dict]) -> str:
+def format_notifications(notifs: list[GradingPendingNotification]) -> str:
     """Format notification payloads for injection into agent context."""
     if not notifs:
         return ""
-    lines = ["GT changes detected:"]
-    for n in notifs:
-        event = n.get("event", "unknown")
-        # e.g., "INSERT_true_positives", "DELETE_false_positive_occurrences"
-        lines.append(f"  - {event}")
-    return "\n".join(lines)
+    return "Grading pending changes:\n" + json.dumps([n.model_dump() for n in notifs], indent=2)
 
 
 class GraderDriftHandler(BaseHandler):
@@ -53,14 +50,9 @@ class GraderDriftHandler(BaseHandler):
     and calls run() again.
     """
 
-    def __init__(self, snapshot_slug: str, notification_queue: list[dict], wake_event: asyncio.Event):
-        """Initialize drift handler.
-
-        Args:
-            snapshot_slug: Snapshot this daemon is responsible for
-            notification_queue: Shared queue that scaffold's listener appends to
-            wake_event: Event set by listener when notifications arrive
-        """
+    def __init__(
+        self, snapshot_slug: str, notification_queue: list[GradingPendingNotification], wake_event: asyncio.Event
+    ):
         self._snapshot_slug = snapshot_slug
         self._queue = notification_queue
         self._wake_event = wake_event

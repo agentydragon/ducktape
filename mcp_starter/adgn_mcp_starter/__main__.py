@@ -1,4 +1,4 @@
-"""Entry point for MCP server - supports both stdio and SSE modes."""
+"""Entry point for MCP server - supports both stdio and streamable HTTP modes."""
 
 import argparse
 import logging
@@ -13,10 +13,10 @@ def main() -> None:
     """Main entry point with transport selection."""
     parser = argparse.ArgumentParser(description="MCP Starter Template Server")
     parser.add_argument(
-        "--transport", choices=["stdio", "sse"], default="stdio", help="Transport mode (default: stdio)"
+        "--transport", choices=["stdio", "streamable-http"], default="stdio", help="Transport mode (default: stdio)"
     )
-    parser.add_argument("--host", default="localhost", help="Host for SSE mode (default: localhost)")
-    parser.add_argument("--port", type=int, default=8000, help="Port for SSE mode (default: 8000)")
+    parser.add_argument("--host", default="localhost", help="Host for HTTP mode (default: localhost)")
+    parser.add_argument("--port", type=int, default=8000, help="Port for HTTP mode (default: 8000)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--debug-mcp", action="store_true", help="Enable full MCP request/response logging")
 
@@ -34,8 +34,8 @@ def main() -> None:
         server.run("stdio")
         return
 
-    logger.info(f"Starting MCP server in SSE mode on {args.host}:{args.port}")
-    server.run("sse", host=args.host, port=args.port)
+    logger.info(f"Starting MCP server in streamable HTTP mode on {args.host}:{args.port}")
+    server.run("streamable-http", host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

@@ -2,8 +2,8 @@
 
 Agent definitions are now stored as OCI images in the registry.
 Use Bazel to build and push images:
-    bazel run //props/core/agent_defs/critic:push
-    bazel run //props/core/agent_defs/grader:push
+    bazel run //props/core/critic:push
+    bazel run //props/core/grader:push
 """
 
 from __future__ import annotations
@@ -40,4 +40,4 @@ def cmd_list(
             typer.echo(f"  {defn.digest} [{defn.agent_type}]{created_by}")
 
 
-# validate command removed - use 'bazel build //props/core/agent_defs/{agent}:image' instead
+# validate command removed - use 'bazel build //props/core/{agent}:image' instead

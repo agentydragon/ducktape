@@ -3,29 +3,31 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
-from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
-from agent_core.tool_provider import TextContent
-from mcp_infra.exec.models import BaseExecResult, ExecInput
-from openai_utils.client_factory import build_client
-from openai_utils.model import ReasoningItem
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
 from props.core.db.examples import Example
-from props.core.db.models import AgentRun, AgentRunStatus, Event, FileSetMember, GradingEdge, GradingTarget, Snapshot
+from props.core.db.models import (
+    AgentRun,
+    AgentRunStatus,
+    FileSetMember,
+    GradingEdge,
+    GradingTarget,
+    LLMRequest,
+    Snapshot,
+)
 from props.core.db.session import get_session
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
@@ -174,84 +176,15 @@ class AgentRunDetail(BaseModel):
     parent_agent_run_id: UUID | None
     model: str
     status: AgentRunStatus
-    completion_summary: str | None
+    container_exit_code: int | None
     created_at: datetime
     updated_at: datetime
     type_config: TypeConfig
-    event_count: int
+    llm_call_count: int
     child_runs: list[ChildRunInfo]
 
     # Type-specific details (discriminated union)
     details: RunSpecifics
-
-
-# --- Parsed Event Types for API ---
-
-
-class DockerExecCallPayload(BaseModel):
-    """Parsed docker_exec tool call."""
-
-    type: Literal["docker_exec_call"] = "docker_exec_call"
-    call_id: str
-    input: ExecInput
-
-
-class DockerExecOutputPayload(BaseModel):
-    """Parsed docker_exec tool output."""
-
-    type: Literal["docker_exec_output"] = "docker_exec_output"
-    call_id: str
-    result: BaseExecResult
-
-
-class GenericToolCallPayload(BaseModel):
-    """Unparsed tool call (fallback)."""
-
-    type: Literal["tool_call"] = "tool_call"
-    name: str
-    call_id: str
-    args_json: str | None
-
-
-class GenericToolOutputPayload(BaseModel):
-    """Unparsed tool output (fallback)."""
-
-    type: Literal["tool_output"] = "tool_output"
-    call_id: str
-    content: list[Any]
-
-
-# Union of all parsed payload types
-# Uses original types where possible, custom wrappers only for docker_exec (structured result parsing)
-ParsedEventPayload = Annotated[
-    DockerExecCallPayload
-    | DockerExecOutputPayload
-    | GenericToolCallPayload
-    | GenericToolOutputPayload
-    | UserText
-    | AssistantText
-    | ApiRequest
-    | Response
-    | ReasoningItem,
-    Field(discriminator="type"),
-]
-
-
-class ParsedEventInfo(BaseModel):
-    """Event with parsed payload for API response."""
-
-    id: int
-    sequence_num: int
-    timestamp: datetime
-    payload: ParsedEventPayload
-
-
-class EventsResponse(BaseModel):
-    """Response for events endpoint."""
-
-    agent_run_id: UUID
-    events: list[ParsedEventInfo]
-    total_count: int
 
 
 class RunInfo(BaseModel):
@@ -280,19 +213,12 @@ class RunsListResponse(BaseModel):
 # --- WebSocket Message Types (Discriminated Union) ---
 
 
-class WsEventMessage(BaseModel):
-    """WebSocket message containing an event."""
-
-    type: Literal["event"] = "event"
-    data: ParsedEventInfo
-
-
 class WsStatusMessage(BaseModel):
     """WebSocket message containing run status."""
 
     type: Literal["status"] = "status"
     status: AgentRunStatus
-    completion_summary: str | None
+    container_exit_code: int | None
 
 
 class WsCompleteMessage(BaseModel):
@@ -302,7 +228,7 @@ class WsCompleteMessage(BaseModel):
 
 
 # Discriminated union of all WebSocket message types
-WsMessage = Annotated[WsEventMessage | WsStatusMessage | WsCompleteMessage, Field(discriminator="type")]
+WsMessage = Annotated[WsStatusMessage | WsCompleteMessage, Field(discriminator="type")]
 
 
 # --- Job Tracking ---
@@ -337,45 +263,6 @@ _jobs: dict[UUID, ValidationJob] = {}
 def get_registry(request: Request) -> AgentRegistry:
     """Get registry from app state."""
     return request.app.state.registry  # type: ignore[no-any-return]
-
-
-def parse_event_payload(payload: EventType) -> ParsedEventPayload:
-    """Convert internal EventType to API ParsedEventPayload."""
-    try:
-        if isinstance(payload, ToolCall):
-            if payload.name == "docker_exec" and payload.args_json:
-                try:
-                    input_data = json.loads(payload.args_json)
-                    return DockerExecCallPayload(call_id=payload.call_id, input=ExecInput.model_validate(input_data))
-                except (json.JSONDecodeError, ValidationError):
-                    pass
-            return GenericToolCallPayload(name=payload.name, call_id=payload.call_id, args_json=payload.args_json)
-
-        if isinstance(payload, ToolCallOutput):
-            # Extract text from our ToolResult content blocks
-            texts = [c.text for c in payload.result.content if isinstance(c, TextContent)]
-            result_text = "\n".join(texts) if texts else None
-            if result_text:
-                try:
-                    result_data = json.loads(result_text)
-                    return DockerExecOutputPayload(
-                        call_id=payload.call_id, result=BaseExecResult.model_validate(result_data)
-                    )
-                except (json.JSONDecodeError, ValidationError):
-                    pass
-            return GenericToolOutputPayload(
-                call_id=payload.call_id, content=[c.model_dump() for c in payload.result.content]
-            )
-
-        # Pass through types that already have correct structure
-        if isinstance(payload, UserText | AssistantText | ApiRequest | Response | ReasoningItem):
-            return payload
-
-        # Fallback - should not happen if all types covered
-        raise ValueError(f"Unknown event payload type: {type(payload)}, payload={payload}")
-    except Exception as e:
-        logger.exception(f"Failed to parse event payload: {type(payload)}, error: {e}")
-        raise
 
 
 # --- Helper functions ---
@@ -578,15 +465,22 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
     Registry semaphore limits actual concurrency.
     Grading is handled automatically by snapshot grader daemons.
     """
+    # Default timeout: 1 hour per agent
+    timeout_seconds = 3600
+
     try:
-        critic_client = build_client(job.critic_model)
 
         async def run_one(example: ExampleSpec) -> bool:
             """Run critic for one example. Returns True on success."""
             try:
                 logger.info(f"[Job {job.job_id}] Running critic on {example.snapshot_slug}")
                 critic_run_id = await registry.run_critic(
-                    image_ref=job.image_digest, example=example, client=critic_client, max_turns=100
+                    image_ref=job.image_digest,
+                    example=example,
+                    model=job.critic_model,
+                    timeout_seconds=timeout_seconds,
+                    parent_run_id=None,
+                    budget_usd=None,
                 )
 
                 # Check critic status
@@ -633,8 +527,8 @@ def get_run(run_id: UUID) -> AgentRunDetail:
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
 
-        # Count events
-        event_count = session.query(Event).filter(Event.agent_run_id == run_id).count()
+        # Count LLM API calls for this run
+        llm_call_count = session.query(LLMRequest).filter(LLMRequest.agent_run_id == run_id).count()
 
         # Get child runs
         child_run_rows = (
@@ -754,50 +648,13 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             parent_agent_run_id=run.parent_agent_run_id,
             model=run.model,
             status=run.status,
-            completion_summary=run.completion_summary,
+            container_exit_code=run.container_exit_code,
             created_at=run.created_at,
             updated_at=run.updated_at,
             type_config=run.type_config,
-            event_count=event_count,
+            llm_call_count=llm_call_count,
             child_runs=child_runs,
             details=details,
-        )
-
-
-@router.get("/run/{run_id}/events")
-def get_run_events(run_id: UUID, offset: int = 0, limit: int = 100) -> EventsResponse:
-    """Get events for a specific agent run.
-
-    Supports pagination via offset/limit. Events are ordered by sequence_num.
-    """
-    with get_session() as session:
-        # Verify run exists
-        run = session.get(AgentRun, run_id)
-        if run is None:
-            raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
-
-        # Get total count
-        total_count = session.query(Event).filter(Event.agent_run_id == run_id).count()
-
-        # Get paginated events
-        events = (
-            session.query(Event)
-            .filter(Event.agent_run_id == run_id)
-            .order_by(Event.sequence_num)
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
-
-        return EventsResponse(
-            agent_run_id=run_id,
-            events=[
-                ParsedEventInfo(
-                    id=e.id, sequence_num=e.sequence_num, timestamp=e.timestamp, payload=parse_event_payload(e.payload)
-                )
-                for e in events
-            ],
-            total_count=total_count,
         )
 
 
@@ -809,10 +666,9 @@ _ws_connections: dict[UUID, set[WebSocket]] = {}
 
 @router.websocket("/run/{run_id}/stream")
 async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
-    """WebSocket endpoint for live event streaming.
+    """WebSocket endpoint for run status streaming.
 
-    Clients connect to receive real-time events as they are written to the database.
-    Initial connection sends all existing events, then streams new ones.
+    Events table deprecated. Now only streams status updates until run completes.
     """
     await websocket.accept()
 
@@ -828,48 +684,21 @@ async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
         _ws_connections[run_id] = set()
     _ws_connections[run_id].add(websocket)
 
-    def _make_event_msg(e: Event) -> WsEventMessage:
-        return WsEventMessage(
-            data=ParsedEventInfo(
-                id=e.id, sequence_num=e.sequence_num, timestamp=e.timestamp, payload=parse_event_payload(e.payload)
-            )
-        )
-
     def _make_status_msg(run: AgentRun) -> WsStatusMessage:
-        return WsStatusMessage(status=run.status, completion_summary=run.completion_summary)
+        return WsStatusMessage(status=run.status, container_exit_code=run.container_exit_code)
 
     try:
-        # Send initial state: all existing events
-        last_seq = -1
+        # Send initial status
         with get_session() as session:
-            events = session.query(Event).filter(Event.agent_run_id == run_id).order_by(Event.sequence_num).all()
-            for e in events:
-                await websocket.send_json(_make_event_msg(e).model_dump(mode="json"))
-                last_seq = e.sequence_num
-
-            # Send current run status
             run = session.get(AgentRun, run_id)
             if run:
                 await websocket.send_json(_make_status_msg(run).model_dump(mode="json"))
 
-        # Poll for new events (until run completes or client disconnects)
+        # Poll for status changes (until run completes or client disconnects)
         while True:
             await asyncio.sleep(0.5)  # Poll every 500ms
 
             with get_session() as session:
-                # Check for new events
-                new_events = (
-                    session.query(Event)
-                    .filter(Event.agent_run_id == run_id, Event.sequence_num > last_seq)
-                    .order_by(Event.sequence_num)
-                    .all()
-                )
-
-                for e in new_events:
-                    await websocket.send_json(_make_event_msg(e).model_dump(mode="json"))
-                    last_seq = e.sequence_num
-
-                # Check run status
                 run = session.get(AgentRun, run_id)
                 if run and run.status != AgentRunStatus.IN_PROGRESS:
                     # Send final status and close

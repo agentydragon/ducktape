@@ -23,8 +23,6 @@ export function isGraderRun(run: AgentRunDetail): run is AgentRunDetail & { deta
   return "agent_type" in run.details && run.details.agent_type === "grader";
 }
 
-export type EventInfo = components["schemas"]["ParsedEventInfo"];
-export type EventsResponse = components["schemas"]["EventsResponse"];
 export type AgentRunStatus = components["schemas"]["AgentRunStatus"];
 export type JobInfo = components["schemas"]["JobInfo"];
 export type JobsResponse = components["schemas"]["JobsResponse"];
@@ -46,26 +44,6 @@ export type GradingEdgeInfo = components["schemas"]["GradingEdgeInfo"];
 export type TpTarget = components["schemas"]["TpTarget"];
 export type FpTarget = components["schemas"]["FpTarget"];
 export type GradingTarget = TpTarget | FpTarget;
-
-// Event payload types (discriminated union)
-export type DockerExecCallPayload = components["schemas"]["DockerExecCallPayload"];
-export type DockerExecOutputPayload = components["schemas"]["DockerExecOutputPayload"];
-export type GenericToolCallPayload = components["schemas"]["GenericToolCallPayload"];
-export type GenericToolOutputPayload = components["schemas"]["GenericToolOutputPayload"];
-export type UserText = components["schemas"]["UserText"];
-export type AssistantText = components["schemas"]["AssistantText"];
-export type ApiRequest = components["schemas"]["ApiRequest"];
-export type Response = components["schemas"]["Response"];
-export type ReasoningItem = components["schemas"]["ReasoningItem"];
-
-// Docker exec types (from mcp_infra.exec.models)
-export type ExecInput = components["schemas"]["ExecInput"];
-export type BaseExecResult = components["schemas"]["BaseExecResult"];
-export type TruncatedStream = components["schemas"]["TruncatedStream"];
-export type Exited = components["schemas"]["Exited"];
-export type TimedOut = components["schemas"]["TimedOut"];
-export type Killed = components["schemas"]["Killed"];
-export type ExitStatus = Exited | TimedOut | Killed;
 
 // Enum value arrays for UI dropdowns (must match schema definitions)
 export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
@@ -138,15 +116,6 @@ export async function fetchRun(runId: string) {
     params: { path: { run_id: runId } },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch run"));
-  return data;
-}
-
-// Fetch run events
-export async function fetchRunEvents(runId: string, offset = 0, limit = 100) {
-  const { data, error } = await api.GET("/api/runs/run/{run_id}/events", {
-    params: { path: { run_id: runId }, query: { offset, limit } },
-  });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch events"));
   return data;
 }
 

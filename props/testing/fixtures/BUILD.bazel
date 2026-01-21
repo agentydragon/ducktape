@@ -9,6 +9,7 @@ py_library(
         "__init__.py",
         "db.py",
         "e2e.py",
+        "e2e_container.py",
         "ground_truth.py",
         "runs.py",
         "scopes.py",
@@ -40,13 +41,20 @@ py_library(
         "//props/core/models:types",
         # props.core/prompt_improve modules
         "//props/core/prompt_improve:improve_agent",
-        "//props/core/prompt_improve:reminder_handler",
+        "//props/core/prompt_improve:main_lib",
         # props.core/prompt_optimize modules
         "//props/core/prompt_optimize:prompt_optimizer",
         "//props/core/prompt_optimize:target_metric",
+        # props.llm_proxy for e2e_container.py
+        "//props/llm_proxy",
+        # props.testing for fake_openai_server
+        "//props/testing:fake_openai_server",
+        "@pypi//aiodocker",
+        "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
     ],
 )

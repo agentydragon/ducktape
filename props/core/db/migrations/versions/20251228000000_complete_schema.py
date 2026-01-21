@@ -441,6 +441,27 @@ Returns NULL for non-agents.'
         $$
     """)
 
+    # Helper: check if ancestor_id is in the parent chain of descendant_id
+    op.execute("""
+        CREATE FUNCTION is_agent_ancestor(ancestor_id UUID, descendant_id UUID)
+        RETURNS BOOLEAN AS $$
+        WITH RECURSIVE ancestors AS (
+            SELECT agent_run_id, parent_agent_run_id
+            FROM agent_runs
+            WHERE agent_run_id = descendant_id
+
+            UNION ALL
+
+            SELECT ar.agent_run_id, ar.parent_agent_run_id
+            FROM agent_runs ar
+            JOIN ancestors a ON ar.agent_run_id = a.parent_agent_run_id
+        )
+        SELECT EXISTS (
+            SELECT 1 FROM ancestors WHERE agent_run_id = ancestor_id
+        );
+        $$ LANGUAGE SQL STABLE SECURITY DEFINER
+    """)
+
     # Improvement agent helpers
     op.execute("""
         CREATE FUNCTION is_improvement_example_allowed(
@@ -1044,7 +1065,13 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
             server_default=sa.text("'in_progress'"),
             nullable=False,
         ),
-        sa.Column("completion_summary", sa.Text(), nullable=True),
+        sa.Column("container_stdout", sa.Text(), nullable=True),
+        sa.Column("container_stderr", sa.Text(), nullable=True),
+        sa.Column("container_exit_code", sa.Integer(), nullable=True),
+        sa.Column("budget_usd", sa.Float(), nullable=True),
+        sa.Column("timeout_seconds", sa.Integer(), nullable=True),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("agent_run_id"),
         sa.ForeignKeyConstraint(["image_digest"], ["agent_definitions.digest"]),
@@ -1064,8 +1091,16 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         "COMMENT ON COLUMN agent_runs.status IS 'Run status: in_progress, completed, max_turns_exceeded, context_length_exceeded, or reported_failure'"
     )
     op.execute(
-        "COMMENT ON COLUMN agent_runs.completion_summary IS 'Markdown summary from agent when status=completed, or error message when status=reported_failure'"
+        "COMMENT ON COLUMN agent_runs.container_exit_code IS 'Container exit code (NULL if still running or not container-based)'"
     )
+    op.execute(
+        "COMMENT ON COLUMN agent_runs.budget_usd IS 'Max USD cost allowed for this agent (including child agents). Enforced by proxy.'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN agent_runs.timeout_seconds IS 'Max seconds before agent is killed. Enforced by agent_registry.'"
+    )
+    op.execute("COMMENT ON COLUMN agent_runs.started_at IS 'When container started executing'")
+    op.execute("COMMENT ON COLUMN agent_runs.ended_at IS 'When container finished (success or failure)'")
 
     # Add FK from agent_definitions to agent_runs (circular reference)
     op.create_foreign_key(
@@ -1571,21 +1606,31 @@ USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only).
 - Clustering: read decisions with NULL targets (unknowns)'
     """)
 
-    # Events table
+    # LLM requests table (logged by proxy)
     op.create_table(
-        "events",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("agent_run_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("sequence_num", sa.Integer(), nullable=False),
-        sa.Column("event_type", sa.String(), nullable=False),
-        sa.Column("timestamp", sa.DateTime(), nullable=False),
-        sa.Column("payload", postgresql.JSONB(), nullable=False),
+        "llm_requests",
+        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("agent_run_id", postgresql.UUID(as_uuid=True), nullable=False, index=True),
+        sa.Column("model", sa.String(), nullable=False, index=True),
+        sa.Column("request_body", postgresql.JSONB(), nullable=False),
+        sa.Column("response_body", postgresql.JSONB(), nullable=True),
+        sa.Column("error", sa.Text(), nullable=True),
+        sa.Column("input_tokens", sa.Integer(), nullable=True),
+        sa.Column("cached_input_tokens", sa.Integer(), nullable=True),
+        sa.Column("output_tokens", sa.Integer(), nullable=True),
+        sa.Column("latency_ms", sa.Integer(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(
-            ["agent_run_id"], ["agent_runs.agent_run_id"], ondelete="CASCADE", name="fk_events_agent_run_id"
+            ["agent_run_id"], ["agent_runs.agent_run_id"], ondelete="CASCADE", name="fk_llm_requests_agent_run_id"
         ),
-        sa.UniqueConstraint("agent_run_id", "sequence_num", name="uq_events_agent_run_id_seq"),
     )
+
+    op.create_index("ix_llm_requests_agent_run_created", "llm_requests", ["agent_run_id", "created_at"])
+
+    op.execute("""
+        COMMENT ON TABLE llm_requests IS 'LLM API requests logged by the proxy. Replaces events table for LLM tracking.'
+    """)
 
     # Model metadata table
     op.create_table(
@@ -1972,16 +2017,35 @@ When this view returns no rows for a grader''s scope, grading is complete.'
     """)
 
     # ============================================================================
-    # 9. pg_notify triggers for GT changes (daemon wake-up)
+    # 9. pg_notify triggers for GT and critique changes (daemon wake-up)
     # ============================================================================
     op.execute("""
         CREATE FUNCTION notify_gt_changed() RETURNS TRIGGER AS $$
+        DECLARE
+            v_row RECORD;
+            v_item JSONB;
         BEGIN
+            v_row := COALESCE(NEW, OLD);
+
+            v_item := json_build_object('table', TG_TABLE_NAME);
+
+            CASE TG_TABLE_NAME
+                WHEN 'true_positives' THEN
+                    v_item := v_item || json_build_object('tp_id', v_row.tp_id);
+                WHEN 'true_positive_occurrences' THEN
+                    v_item := v_item || json_build_object('tp_id', v_row.tp_id, 'occurrence_id', v_row.occurrence_id);
+                WHEN 'false_positives' THEN
+                    v_item := v_item || json_build_object('fp_id', v_row.fp_id);
+                WHEN 'false_positive_occurrences' THEN
+                    v_item := v_item || json_build_object('fp_id', v_row.fp_id, 'occurrence_id', v_row.occurrence_id);
+            END CASE;
+
             PERFORM pg_notify('grading_pending', json_build_object(
-                'event', TG_OP || '_' || TG_TABLE_NAME,
-                'snapshot_slug', COALESCE(NEW.snapshot_slug, OLD.snapshot_slug)
+                'operation', TG_OP,
+                'item', v_item,
+                'snapshot_slug', v_row.snapshot_slug
             )::text);
-            RETURN COALESCE(NEW, OLD);
+            RETURN v_row;
         END;
         $$ LANGUAGE plpgsql
     """)
@@ -2015,6 +2079,66 @@ Fires on INSERT/DELETE of TPs/FPs (not UPDATE - minor wording fixes don''t need 
         CREATE TRIGGER trg_notify_fp_occ_changed
         AFTER INSERT OR DELETE ON false_positive_occurrences
         FOR EACH ROW EXECUTE FUNCTION notify_gt_changed()
+    """)
+
+    # Critique change notification (for grader daemon wake-up when new critiques are reported)
+    op.execute("""
+        CREATE FUNCTION notify_critique_changed() RETURNS TRIGGER AS $$
+        DECLARE
+            v_snapshot_slug VARCHAR;
+            v_item JSONB;
+        BEGIN
+            SELECT ar.type_config->'example'->>'snapshot_slug'
+            INTO v_snapshot_slug
+            FROM agent_runs ar
+            WHERE ar.agent_run_id = NEW.agent_run_id;
+
+            IF v_snapshot_slug IS NOT NULL THEN
+                v_item := json_build_object('table', TG_TABLE_NAME);
+
+                CASE TG_TABLE_NAME
+                    WHEN 'reported_issues' THEN
+                        v_item := v_item || json_build_object(
+                            'agent_run_id', NEW.agent_run_id,
+                            'issue_id', NEW.issue_id
+                        );
+                    WHEN 'reported_issue_occurrences' THEN
+                        v_item := v_item || json_build_object(
+                            'occurrence_id', NEW.id,
+                            'agent_run_id', NEW.agent_run_id,
+                            'reported_issue_id', NEW.reported_issue_id
+                        );
+                END CASE;
+
+                PERFORM pg_notify('grading_pending', json_build_object(
+                    'operation', TG_OP,
+                    'item', v_item,
+                    'snapshot_slug', v_snapshot_slug
+                )::text);
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+    """)
+
+    op.execute("""
+        COMMENT ON FUNCTION notify_critique_changed() IS
+        'Sends pg_notify when new critiques are reported. Used to wake snapshot_grader daemons.
+Fires on INSERT of reported_issues and reported_issue_occurrences.
+Looks up snapshot_slug from agent_run type_config since critique tables do not store it directly.'
+    """)
+
+    op.execute("""
+        CREATE TRIGGER trg_notify_reported_issue_changed
+        AFTER INSERT ON reported_issues
+        FOR EACH ROW EXECUTE FUNCTION notify_critique_changed()
+    """)
+
+    op.execute("""
+        CREATE TRIGGER trg_notify_reported_issue_occ_changed
+        AFTER INSERT ON reported_issue_occurrences
+        FOR EACH ROW EXECUTE FUNCTION notify_critique_changed()
     """)
 
     # ============================================================================
@@ -2342,72 +2466,54 @@ a critique to an occurrence that could not have been found from those files.'
     """)
 
     # =========================================================================
-    # Event and run cost views
+    # LLM request cost views
     # =========================================================================
     op.execute("""
-        CREATE VIEW event_costs AS
+        CREATE VIEW llm_request_costs AS
         SELECT
-            (events.payload->'response_id')::text AS response_id,
-            events.agent_run_id,
-            ((events.payload->'usage'->'model')::text) AS model,
-            ((events.payload->'usage'->'input_tokens')::text)::integer AS input_tokens,
-            COALESCE(((events.payload->'usage'->'input_tokens_details'->'cached_tokens')::text)::integer, 0) AS cached_tokens,
-            ((events.payload->'usage'->'output_tokens')::text)::integer AS output_tokens,
-            COALESCE(((events.payload->'usage'->'output_tokens_details'->'reasoning_tokens')::text)::integer, 0) AS reasoning_tokens,
-            (
-                (((events.payload->'usage'->'input_tokens')::text)::integer -
-                 COALESCE(((events.payload->'usage'->'input_tokens_details'->'cached_tokens')::text)::integer, 0))::float
-                * model_metadata.input_usd_per_1m_tokens / 1000000.0
-                +
-                COALESCE(((events.payload->'usage'->'input_tokens_details'->'cached_tokens')::text)::integer, 0)::float
-                * model_metadata.cached_input_usd_per_1m_tokens / 1000000.0
-                +
-                ((events.payload->'usage'->'output_tokens')::text)::integer::float
-                * model_metadata.output_usd_per_1m_tokens / 1000000.0
-            ) AS cost_usd,
-            events.timestamp
-        FROM events
-        JOIN model_metadata ON ((events.payload->'usage'->'model')::text) = model_metadata.model_id
-        WHERE events.event_type = 'response' AND events.payload->'usage' IS NOT NULL
+            r.id,
+            r.agent_run_id,
+            r.model,
+            r.input_tokens,
+            r.cached_input_tokens,
+            r.output_tokens,
+            r.latency_ms,
+            r.created_at,
+            COALESCE(
+                (r.input_tokens - COALESCE(r.cached_input_tokens, 0))
+                    * m.input_usd_per_1m_tokens / 1000000.0
+                + COALESCE(r.cached_input_tokens, 0)
+                    * m.cached_input_usd_per_1m_tokens / 1000000.0
+                + r.output_tokens
+                    * m.output_usd_per_1m_tokens / 1000000.0,
+                0
+            ) AS cost_usd
+        FROM llm_requests r
+        LEFT JOIN model_metadata m ON r.model = m.model_id
     """)
 
     op.execute("""
-        COMMENT ON VIEW event_costs IS
-        'Per-event cost calculation. Joins events with model_metadata to compute cost_usd.
-Extracts token usage from response events and applies pricing from model_metadata.'
+        COMMENT ON VIEW llm_request_costs IS
+        'Per-request cost calculation. Joins llm_requests with model_metadata to compute cost_usd.'
     """)
 
     op.execute("""
-        CREATE VIEW run_costs AS
-        WITH RECURSIVE run_tree AS (
-            -- Base case: the run itself
-            SELECT agent_run_id, agent_run_id AS root_run_id
-            FROM agent_runs
-
-            UNION ALL
-
-            -- Recursive case: children of runs already in the tree
-            SELECT ar.agent_run_id, rt.root_run_id
-            FROM agent_runs ar
-            JOIN run_tree rt ON ar.parent_agent_run_id = rt.agent_run_id
-        )
+        CREATE VIEW llm_run_costs AS
         SELECT
-            rt.root_run_id AS agent_run_id,
-            ec.model,
-            SUM(ec.input_tokens) AS input_tokens,
-            SUM(ec.cached_tokens) AS cached_tokens,
-            SUM(ec.output_tokens) AS output_tokens,
-            SUM(ec.reasoning_tokens) AS reasoning_tokens,
-            SUM(ec.cost_usd) AS cost_usd
-        FROM run_tree rt
-        JOIN event_costs ec ON ec.agent_run_id = rt.agent_run_id
-        GROUP BY rt.root_run_id, ec.model
+            agent_run_id,
+            model,
+            SUM(input_tokens) AS input_tokens,
+            SUM(cached_input_tokens) AS cached_input_tokens,
+            SUM(output_tokens) AS output_tokens,
+            SUM(cost_usd) AS cost_usd,
+            COUNT(*) AS request_count
+        FROM llm_request_costs
+        GROUP BY agent_run_id, model
     """)
 
     op.execute("""
-        COMMENT ON VIEW run_costs IS
-        'Aggregated costs per agent run. Includes all transitive child runs via recursive CTE.
-Groups by model so queries can see per-model breakdown.'
+        COMMENT ON VIEW llm_run_costs IS
+        'Aggregated costs per agent run, grouped by model.'
     """)
 
     # =========================================================================
@@ -2583,8 +2689,8 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("GRANT SELECT ON TABLE recall_by_definition_example TO agent_base")
     op.execute("GRANT SELECT ON TABLE recall_by_definition_split_kind TO agent_base")
     op.execute("GRANT SELECT ON TABLE recall_by_example TO agent_base")
-    op.execute("GRANT SELECT ON TABLE events TO agent_base")
-    op.execute("GRANT USAGE ON SEQUENCE events_id_seq TO agent_base")
+    op.execute("GRANT SELECT ON TABLE llm_requests TO agent_base")
+    op.execute("GRANT USAGE ON SEQUENCE llm_requests_id_seq TO agent_base")
     op.execute("GRANT SELECT ON TABLE false_positives TO agent_base")
     op.execute("GRANT SELECT ON TABLE grading_edge_credit_sums TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE grading_edges_id_seq TO agent_base")
@@ -2594,8 +2700,8 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("GRANT SELECT ON TABLE occurrence_statistics TO agent_base")
     op.execute("GRANT SELECT ON TABLE pareto_frontier_by_example TO agent_base")
     op.execute("GRANT SELECT ON TABLE validation_recall_by_definition TO agent_base")
-    op.execute("GRANT SELECT ON TABLE event_costs TO agent_base")
-    op.execute("GRANT SELECT ON TABLE run_costs TO agent_base")
+    op.execute("GRANT SELECT ON TABLE llm_request_costs TO agent_base")
+    op.execute("GRANT SELECT ON TABLE llm_run_costs TO agent_base")
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issue_occurrences TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE reported_issue_occurrences_id_seq TO agent_base")
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issues TO agent_base")
@@ -2608,7 +2714,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("ALTER TABLE snapshots FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE true_positives FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE false_positives FORCE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE events FORCE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE llm_requests FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issues FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issue_occurrences FORCE ROW LEVEL SECURITY")
 
@@ -2621,7 +2727,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("ALTER TABLE true_positive_occurrences ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE false_positive_occurrences ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE critic_scopes_expected_to_recall ENABLE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE events ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE llm_requests ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE grading_edges ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issues ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issue_occurrences ENABLE ROW LEVEL SECURITY")
@@ -2629,7 +2735,9 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("ALTER TABLE file_set_members ENABLE ROW LEVEL SECURITY")
 
     # Admin policies for postgres user
-    op.execute("CREATE POLICY admin_full_access_events ON events TO postgres USING (true) WITH CHECK (true)")
+    op.execute(
+        "CREATE POLICY admin_full_access_llm_requests ON llm_requests TO postgres USING (true) WITH CHECK (true)"
+    )
     op.execute(
         "CREATE POLICY admin_full_access_false_positives ON false_positives TO postgres USING (true) WITH CHECK (true)"
     )
@@ -2653,9 +2761,18 @@ USEFUL FOR: Prompt optimizer, improvement agent.
 
     # Agent definitions policies
     op.execute("CREATE POLICY agent_definitions_select ON agent_definitions FOR SELECT USING (true)")
-    op.execute(
-        "CREATE POLICY agent_definitions_insert ON agent_definitions FOR INSERT WITH CHECK (created_by_agent_run_id = current_agent_run_id())"
-    )
+    # Only admin/proxy can insert agent_definitions (agents cannot insert directly)
+    op.execute("""
+        CREATE POLICY agent_definitions_insert ON agent_definitions FOR INSERT WITH CHECK (
+            current_agent_run_id() IS NULL  -- Only admin/proxy can insert
+        )
+    """)
+
+    op.execute("""
+        COMMENT ON POLICY agent_definitions_insert ON agent_definitions IS
+        'Only admin/proxy can insert agent_definitions. Agents cannot insert directly.
+The proxy intercepts manifest pushes and creates agent_definitions rows automatically.'
+    """)
 
     # Agent runs policies (clustering branch removed)
     op.execute("""
@@ -2756,13 +2873,25 @@ USEFUL FOR: Prompt optimizer, improvement agent.
         "CREATE POLICY occ_triggers_agent_select ON critic_scopes_expected_to_recall FOR SELECT USING (can_access_snapshot(snapshot_slug))"
     )
 
-    # Events policies (clustering branch removed)
+    # LLM requests policies
     op.execute("""
-        CREATE POLICY events_agent_select ON events FOR SELECT USING (
-            (current_agent_type() = 'prompt_optimizer' AND is_train_agent_run(agent_run_id))
-            OR (agent_run_id = current_agent_run_id())
+        CREATE POLICY llm_requests_select ON llm_requests FOR SELECT USING (
+            -- Admin can see all
+            current_agent_run_id() IS NULL
+            -- Agent sees own + descendants
+            OR is_agent_ancestor(current_agent_run_id(), agent_run_id)
+            -- Prompt optimizer can see TRAIN split requests
+            OR (current_agent_type() = 'prompt_optimizer' AND is_train_agent_run(agent_run_id))
+            -- Improvement agent can see allowed agent runs' requests
             OR (current_agent_type() = 'improvement'
                 AND agent_run_id IN (SELECT get_improvement_allowed_agent_run_ids()))
+        )
+    """)
+
+    # Only proxy (admin) can insert into llm_requests
+    op.execute("""
+        CREATE POLICY llm_requests_insert ON llm_requests FOR INSERT WITH CHECK (
+            current_agent_run_id() IS NULL
         )
     """)
 

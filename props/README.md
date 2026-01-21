@@ -47,10 +47,10 @@ docker compose up -d
 bazelisk run //props/core/cli -- db recreate
 
 # 5. Push agent images to registry
-bazelisk run //props/core/agent_defs/critic:push
-bazelisk run //props/core/agent_defs/grader:push
-bazelisk run //props/core/agent_defs/improvement:push
-bazelisk run //props/core/agent_defs/prompt_optimizer:push
+bazelisk run //props/core/critic:push
+bazelisk run //props/core/grader:push
+bazelisk run //props/core/prompt_improve:push
+bazelisk run //props/core/prompt_optimize:push
 ```
 
 ## Development

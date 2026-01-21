@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import traceback
 from collections import defaultdict
 from uuid import UUID
@@ -12,10 +13,8 @@ import aiodocker
 import typer
 
 from cli_util.decorators import async_run
-from openai_utils.client_factory import build_client
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType
-from props.core.agent_workspace import WorkspaceManager
 from props.core.cli import common_options as opt
 from props.core.cli.resources import get_database_config
 from props.core.db.examples import Example
@@ -28,11 +27,20 @@ from props.core.splits import Split
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_LLM_PROXY_URL = "http://props-llm-proxy:5052"
+DEFAULT_TIMEOUT_SECONDS = 3600
+
+
 @async_run
 async def cmd_grade_validation(
     critic_model: str = opt.OPT_CRITIC_MODEL,
     max_parallel: int = opt.OPT_MAX_PARALLEL,
-    verbose: bool = opt.OPT_VERBOSE,
+    llm_proxy_url: str = typer.Option(
+        None, "--llm-proxy-url", envvar="PROPS_LLM_PROXY_URL", help=f"LLM proxy URL (default: {DEFAULT_LLM_PROXY_URL})"
+    ),
+    timeout_seconds: int = typer.Option(
+        DEFAULT_TIMEOUT_SECONDS, "--timeout-seconds", help="Max seconds per critic run before timeout"
+    ),
 ) -> None:
     """Grade validation set: ensure complete critic coverage across all definitions.
 
@@ -45,15 +53,16 @@ async def cmd_grade_validation(
 
     Note: Validation/test snapshots should have exactly one example each (full-specimen scope).
     """
+    # Resolve llm_proxy_url: CLI option > env var > default
+    if llm_proxy_url is None:
+        llm_proxy_url = os.environ.get("PROPS_LLM_PROXY_URL", DEFAULT_LLM_PROXY_URL)
+
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
     registry = AgentRegistry(
-        docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager, max_parallel=max_parallel
+        docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url, max_parallel=max_parallel
     )
     try:
-        critic_client = build_client(critic_model)
-
         # Phase 1: Find all work items (snapshot, scope, prompt) combinations
         with get_session() as session:
             # Query validation examples directly (same logic as stats/datapoints)
@@ -143,11 +152,7 @@ async def cmd_grade_validation(
         typer.echo(f"\n=== Processing {need_critic} items with {max_parallel} workers ===\n")
 
         async def process_one(
-            example: ExampleSpec,
-            image_digest: str,
-            worker_id: int,
-            item_index: int,
-            total_items: int,
+            example: ExampleSpec, image_digest: str, worker_id: int, item_index: int, total_items: int
         ) -> tuple[str, bool, UUID | None]:
             """Process one work item: run critic.
             Returns (status, success, critic_run_id)."""
@@ -156,7 +161,7 @@ async def cmd_grade_validation(
             try:
                 # Run critic using registry
                 critic_run_id = await registry.run_critic(
-                    image_ref=image_digest, example=example, client=critic_client, verbose=verbose, max_turns=100
+                    image_ref=image_digest, example=example, model=critic_model, timeout_seconds=timeout_seconds
                 )
 
                 # Check if critic succeeded
@@ -166,16 +171,14 @@ async def cmd_grade_validation(
                     status = critic_run.status
 
                 if status != AgentRunStatus.COMPLETED:
-                    if not verbose:
-                        typer.echo(
-                            f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status}: {snapshot_slug} x {image_digest}"
-                        )
+                    typer.echo(
+                        f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status}: {snapshot_slug} x {image_digest}"
+                    )
                     return (status.value, False, critic_run_id)
 
-                if not verbose:
-                    typer.echo(
-                        f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {image_digest} → {short_uuid(critic_run_id)}"
-                    )
+                typer.echo(
+                    f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {image_digest} → {short_uuid(critic_run_id)}"
+                )
                 return ("complete", True, critic_run_id)
 
             except Exception as e:

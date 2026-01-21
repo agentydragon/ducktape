@@ -1,15 +1,17 @@
-"""E2E tests for critic agent with HTTP MCP mode.
+"""E2E tests for critic agent with in-container agent loop.
 
 Tests the critic agent end-to-end using:
-- Real Docker containers
+- Real Docker containers running agent loops
 - Real PostgreSQL database with temporary RLS-scoped users
-- Mocked OpenAI responses
-- HTTP MCP transport with bearer token auth
+- Real LLM proxy (validates auth, logs requests)
+- Fake OpenAI server (returns scripted responses from PropsMock)
+
+The test stack is:
+    Container → LLM Proxy → Fake OpenAI → PropsMock
 
 Covers:
 - Zero issues submission (clean code)
 - Issue submission workflow
-- Infinite loop prevention (regression test)
 """
 
 from __future__ import annotations
@@ -18,13 +20,15 @@ import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
-from agent_core.events import ApiRequest, SystemText, ToolCall
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully
 from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
-from props.core.db.models import AgentRun, AgentRunStatus, Event
+from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
 from props.testing.mocks import PropsMock
+
+# Test timeout (seconds) - applies to container execution
+TEST_TIMEOUT_SECONDS = 120
 
 
 def make_critic_mock_zero_issues() -> PropsMock:
@@ -40,49 +44,29 @@ def make_critic_mock_zero_issues() -> PropsMock:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_http_mode_zero_issues(test_registry, test_snapshot, all_files_scope):
-    """Test critic successfully submits zero issues using HTTP MCP mode."""
+async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope):
+    """Test critic successfully submits zero issues."""
     mock = make_critic_mock_zero_issues()
-    critic_run_id = await test_registry.run_critic(
-        image_ref=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
-    )
 
-    assert critic_run_id is not None
+    async with e2e_stack(mock) as stack:
+        critic_run_id = await stack.registry.run_critic(
+            image_ref=CRITIC_IMAGE_REF,
+            example=all_files_scope,
+            model=stack.model,
+            timeout_seconds=TEST_TIMEOUT_SECONDS,
+            parent_run_id=None,
+            budget_usd=None,
+        )
 
-    # Verify database records
-    with get_session() as session:
-        run = session.get(AgentRun, critic_run_id)
-        assert run is not None
-        assert run.critic_config().example.snapshot_slug == test_snapshot
-        assert run.status == AgentRunStatus.COMPLETED
-        assert len(run.reported_issues) == 0
+        assert critic_run_id is not None
 
-        # Verify events were persisted
-        events = session.query(Event).filter_by(agent_run_id=critic_run_id).order_by(Event.sequence_num).all()
-        assert len(events) > 0, "Expected at least one event to be persisted"
-
-        api_request_events = [e for e in events if isinstance(e.payload, ApiRequest)]
-        assert len(api_request_events) >= 1, "Expected at least one api_request event"
-
-        tool_call_events = [e for e in events if isinstance(e.payload, ToolCall)]
-        assert len(tool_call_events) >= 1, "Expected at least one tool_call event"
-
-        system_text_events = [e for e in events if isinstance(e.payload, SystemText)]
-        assert len(system_text_events) == 1, "Expected exactly one system_text event"
-        assert system_text_events[0].sequence_num == 0, "System text should be first event (sequence 0)"
-
-
-@pytest.mark.requires_docker
-@pytest.mark.requires_postgres
-async def test_critic_does_not_infinite_loop_on_zero_issues(test_registry, all_files_scope):
-    """Verify critic doesn't get stuck in infinite loop when finding zero issues."""
-    mock = make_critic_mock_zero_issues()
-    critic_run_id = await test_registry.run_critic(
-        image_ref=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
-    )
-
-    assert critic_run_id is not None
-    assert mock.consumed, "Mock should be fully consumed"
+        # Verify database records
+        with get_session() as session:
+            run = session.get(AgentRun, critic_run_id)
+            assert run is not None
+            assert run.critic_config().example.snapshot_slug == test_snapshot
+            assert run.status == AgentRunStatus.COMPLETED
+            assert len(run.reported_issues) == 0
 
 
 def make_critic_mock_with_issues() -> PropsMock:
@@ -106,58 +90,40 @@ def make_critic_mock_with_issues() -> PropsMock:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_http_mode_submit_with_issues(test_registry, test_snapshot, all_files_scope):
-    """Test critic HTTP mode with actual issue submission."""
+async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_scope):
+    """Test critic submits an issue with occurrence."""
     mock = make_critic_mock_with_issues()
-    critic_run_id = await test_registry.run_critic(
-        image_ref=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
-    )
 
-    assert critic_run_id is not None
+    async with e2e_stack(mock) as stack:
+        critic_run_id = await stack.registry.run_critic(
+            image_ref=CRITIC_IMAGE_REF,
+            example=all_files_scope,
+            model=stack.model,
+            timeout_seconds=TEST_TIMEOUT_SECONDS,
+            parent_run_id=None,
+            budget_usd=None,
+        )
 
-    # Verify database records
-    with get_session() as session:
-        run = session.get(AgentRun, critic_run_id)
-        assert run is not None
-        assert run.critic_config().example.snapshot_slug == test_snapshot
-        assert run.status == AgentRunStatus.COMPLETED
+        assert critic_run_id is not None
 
-        # Check that the issue was actually stored
-        assert len(run.reported_issues) == 1
-        issue = run.reported_issues[0]
-        assert issue.issue_id == "dead-import"
-        assert "Unused import" in issue.rationale
+        # Verify database records
+        with get_session() as session:
+            run = session.get(AgentRun, critic_run_id)
+            assert run is not None
+            assert run.critic_config().example.snapshot_slug == test_snapshot
+            assert run.status == AgentRunStatus.COMPLETED
 
-        # Check occurrence
-        assert len(issue.occurrences) == 1
-        occurrence = issue.occurrences[0]
-        assert len(occurrence.locations) == 1
-        assert occurrence.locations[0].file == "subtract.py"
+            # Check that the issue was actually stored
+            assert len(run.reported_issues) == 1
+            issue = run.reported_issues[0]
+            assert issue.issue_id == "dead-import"
+            assert "Unused import" in issue.rationale
 
-
-# =============================================================================
-# AgentHandle-based flow tests (run_critic)
-# =============================================================================
-
-
-@pytest.mark.requires_docker
-@pytest.mark.requires_postgres
-async def test_critic_zero_issues(test_registry, test_snapshot, all_files_scope):
-    """Test run_critic with AgentHandle-based flow."""
-    mock = make_critic_mock_zero_issues()
-    critic_run_id = await test_registry.run_critic(
-        image_ref=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
-    )
-
-    assert critic_run_id is not None
-
-    # Verify database records
-    with get_session() as session:
-        run = session.get(AgentRun, critic_run_id)
-        assert run is not None
-        assert run.critic_config().example.snapshot_slug == test_snapshot
-        assert run.status == AgentRunStatus.COMPLETED
-        assert len(run.reported_issues) == 0
+            # Check occurrence
+            assert len(issue.occurrences) == 1
+            occurrence = issue.occurrences[0]
+            assert len(occurrence.locations) == 1
+            assert occurrence.locations[0].file == "subtract.py"
 
 
 if __name__ == "__main__":

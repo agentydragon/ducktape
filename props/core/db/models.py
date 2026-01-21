@@ -16,12 +16,12 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Enum,
     FetchedValue,
     ForeignKey,
     ForeignKeyConstraint,
-    Index,
     Integer,
     LargeBinary,
     String,
@@ -34,7 +34,6 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
-from agent_core.events import EventType
 from props.core.agent_types import (
     AgentType,
     CriticTypeConfig,
@@ -151,6 +150,7 @@ class AgentRunStatus(StrEnum):
     COMPLETED = "completed"
     MAX_TURNS_EXCEEDED = "max_turns_exceeded"
     CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
+    TIMED_OUT = "timed_out"
     REPORTED_FAILURE = "reported_failure"
 
 
@@ -980,44 +980,14 @@ class ModelMetadata(Base):
     )
 
 
-class Event(Base):
-    """Agent execution event.
+class LLMRunCost(Base):
+    """Aggregated LLM costs per agent run from llm_run_costs database VIEW.
 
-    Linked to agent runs via agent_run_id foreign key.
-
-    The payload column automatically serializes/deserializes EventType via EventTypeColumn.
-    Access event.payload to get a typed EventType instance, set it to store.
+    Aggregates token usage and costs per (agent_run_id, model) from llm_requests
+    logged by the proxy.
     """
 
-    __tablename__ = "events"
-    __table_args__ = (
-        UniqueConstraint("agent_run_id", "sequence_num", name="uq_events_agent_run_id_seq"),
-        Index("ix_events_agent_run_id_seq", "agent_run_id", "sequence_num"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    agent_run_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False
-    )
-    sequence_num: Mapped[int] = mapped_column(nullable=False)
-    event_type: Mapped[str] = mapped_column(String, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
-    payload: Mapped[EventType] = mapped_column(PydanticColumn(EventType), nullable=False)
-
-    # Relationships
-    agent_run: Mapped[AgentRun] = relationship(back_populates="events")
-
-
-class RunCost(Base):
-    """Cost metrics from run_costs database VIEW (not a table).
-
-    Aggregates token usage and costs per agent_run+model from the Event table.
-    Used by prompt optimizer queries to track evaluation costs.
-
-    The view is automatically created via DDL event listener during metadata.create_all().
-    """
-
-    __tablename__ = "run_costs"
+    __tablename__ = "llm_run_costs"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
 
     # Tell SQLAlchemy NOT to create this as a table
@@ -1025,10 +995,11 @@ class RunCost(Base):
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     model: Mapped[str] = mapped_column(String, primary_key=True)
-    cost_usd: Mapped[float] = mapped_column(nullable=False)
-    input_tokens: Mapped[int] = mapped_column(nullable=False)
-    cached_tokens: Mapped[int] = mapped_column(nullable=False)
-    output_tokens: Mapped[int] = mapped_column(nullable=False)
+    input_tokens: Mapped[int] = mapped_column(nullable=True)
+    cached_input_tokens: Mapped[int] = mapped_column(nullable=True)
+    output_tokens: Mapped[int] = mapped_column(nullable=True)
+    cost_usd: Mapped[float] = mapped_column(nullable=True)
+    request_count: Mapped[int] = mapped_column(nullable=True)
 
 
 class OccurrenceCredit(Base):
@@ -1361,6 +1332,31 @@ class AgentDefinition(Base):
     )
 
 
+class LLMRequest(Base):
+    """LLM API request logged by the proxy.
+
+    Records all requests made through the LLM proxy, including full request/response
+    payloads for debugging. Token counts are computed via llm_request_costs view
+    from response_body->'usage' for successful requests.
+    """
+
+    __tablename__ = "llm_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    agent_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    model: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    # Relationships
+    agent_run: Mapped[AgentRun] = relationship(back_populates="llm_requests")
+
+
 class AgentRun(Base):
     """Unified agent run record (replaces separate critic_runs, grader_runs, etc.).
 
@@ -1369,8 +1365,15 @@ class AgentRun(Base):
 
     Status tracking:
     - status: Current run status (in_progress, completed, etc.)
-    - completion_summary: Markdown summary from agent (when status='completed')
-      or error message (when status='reported_failure')
+    - container_exit_code: Exit code from container (NULL if still running)
+
+    Resource limits (set at launch time):
+    - budget_usd: Max USD cost allowed (including child agents). Enforced by proxy.
+    - timeout_seconds: Max seconds before agent is killed. Enforced by agent_registry.
+
+    Container lifecycle timestamps:
+    - started_at: When container started executing
+    - ended_at: When container finished (success or failure)
 
     Image reference:
     - image_digest: OCI image digest (sha256:...), FK to agent_definitions.digest
@@ -1395,15 +1398,33 @@ class AgentRun(Base):
         server_default="in_progress",
         comment="Run status: in_progress, completed, max_turns_exceeded, context_length_exceeded, or reported_failure",
     )
-    completion_summary: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Markdown summary from agent when status='completed', or error message when status='reported_failure'",
+
+    # Resource limits (set at launch time)
+    budget_usd: Mapped[float | None] = mapped_column(
+        nullable=True, comment="Max USD cost allowed for this agent (including child agents). Enforced by proxy."
     )
+    timeout_seconds: Mapped[int | None] = mapped_column(
+        nullable=True, comment="Max seconds before agent is killed. Enforced by agent_registry."
+    )
+
+    # Container lifecycle timestamps
+    started_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP, nullable=True, comment="When container started executing"
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP, nullable=True, comment="When container finished (success or failure)"
+    )
+    container_exit_code: Mapped[int | None] = mapped_column(
+        nullable=True, comment="Container exit code (NULL if still running or not container-based)"
+    )
+
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+    # Container logs captured after container exits (for in-container agent loops)
+    container_stdout: Mapped[str | None] = mapped_column(Text, nullable=True)
+    container_stderr: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs", foreign_keys=[image_digest])
@@ -1414,7 +1435,7 @@ class AgentRun(Base):
     grading_edges: Mapped[list[GradingEdge]] = relationship(
         back_populates="grader_run", foreign_keys="GradingEdge.grader_run_id", cascade="all, delete-orphan"
     )
-    events: Mapped[list[Event]] = relationship(back_populates="agent_run", cascade="all, delete-orphan")
+    llm_requests: Mapped[list[LLMRequest]] = relationship(back_populates="agent_run", cascade="all, delete-orphan")
 
     # Type-safe config accessors
     def critic_config(self) -> CriticTypeConfig:

@@ -42,7 +42,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from uuid import UUID
 
 import aiodocker
@@ -53,13 +53,13 @@ from gepa.strategies.instruction_proposal import InstructionProposalSignature
 from pydantic import BaseModel
 from sqlalchemy import func
 
-from agent_core.events import REFLECTION_EVENT_TYPES, EventType
+from agent_core.events import EventType
 from openai_utils.model import OpenAIModelProto
 from props.core.agent_types import AgentType
 from props.core.agent_workspace import WorkspaceManager
 from props.core.db.config import DatabaseConfig
 from props.core.db.examples import Example, get_examples_for_split
-from props.core.db.models import AgentRun, AgentRunStatus, Event, RecallByDefinitionExample
+from props.core.db.models import AgentRun, AgentRunStatus, RecallByDefinitionExample
 from props.core.db.session import get_session
 from props.core.db.snapshots import DBCriticSubmitPayload
 from props.core.display import short_sha
@@ -84,21 +84,12 @@ def _gepa_not_implemented() -> None:
 
 
 def _filter_reflection_events(agent_run_id: UUID) -> list[EventType]:
-    """Load and filter events for GEPA reflection dataset.
+    """Return empty events list (events table deprecated).
 
-    Fetches events for an agent run and filters to reflection-relevant types
-    (excludes ApiRequest/Response to prevent O(n²) context blowup in reflection LM).
-
-    Args:
-        agent_run_id: Agent run UUID to fetch events for
-
-    Returns:
-        List of filtered events (ToolCall, ToolCallOutput, AssistantText, ReasoningItem)
+    Events are no longer stored in the database. Execution traces are now
+    captured via container logs and llm_requests table instead.
     """
-    with get_session() as session:
-        event_rows = session.query(Event).filter(Event.agent_run_id == agent_run_id).order_by(Event.sequence_num).all()
-        # Filter using isinstance against REFLECTION_EVENT_TYPES tuple
-        return cast(list[EventType], [e.payload for e in event_rows if isinstance(e.payload, REFLECTION_EVENT_TYPES)])
+    return []
 
 
 # =============================================================================
@@ -239,9 +230,8 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         if capture_traces:
             critique_payload_db: DBCriticSubmitPayload | None = None
             if critic_status == AgentRunStatus.COMPLETED:
-                with get_session() as payload_session:
-                    run = payload_session.get(AgentRun, critic_run_id)
-                    critique_payload_db = DBCriticSubmitPayload(notes_md=run.completion_summary) if run else None
+                # Notes are no longer stored; empty payload indicates successful completion
+                critique_payload_db = DBCriticSubmitPayload(notes_md=None)
 
             filtered_events = _filter_reflection_events(critic_run_id)
             trajectory = CriticTrajectory(

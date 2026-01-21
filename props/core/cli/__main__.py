@@ -20,25 +20,20 @@ from typer_di import TyperDI
 
 from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
-from openai_utils.client_factory import build_client
 from props.core.agent_helpers import get_current_agent_run
 
 # cmd_gepa imported lazily below (gepa is optional)
-from props.core.agent_registry import AgentRegistry
+from props.core.agent_registry import AgentRegistry, ImprovementResult
 from props.core.agent_types import AgentType
-from props.core.agent_workspace import WorkspaceManager
 from props.core.cli import common_options as opt
 from props.core.cli.cmd_agent_pkg import app as agent_pkg_app
-from props.core.cli.cmd_analyze_exec import cmd_analyze_exec
 from props.core.cli.cmd_classify_noops import cmd_classify_noops
-from props.core.cli.cmd_critic_agent import app as critic_agent_app
 from props.core.cli.cmd_critic_dev import app as critic_dev_app
 from props.core.cli.cmd_db import db_app
 from props.core.cli.cmd_grade_validation import cmd_grade_validation
 from props.core.cli.cmd_grader_agent import app as grader_agent_app
 from props.core.cli.cmd_gt import gt_app
 from props.core.cli.cmd_snapshot import snapshot_app
-from props.core.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from props.core.cli.cmd_stats import stats_app
 from props.core.cli.shared import make_example_from_files
 from props.core.db.config import get_database_config
@@ -48,13 +43,8 @@ from props.core.db.session import get_session, init_db
 from props.core.display import fmt_pct, short_sha
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
-from props.core.prompt_improve.improve_agent import (
-    OutcomeExhausted,
-    OutcomeUnexpectedTermination,
-    run_improvement_agent,
-)
-from props.core.prompt_improve.reminder_handler import TerminationSuccess
-from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
+from props.core.prompt_improve.improve_agent import OutcomeExhausted, OutcomeUnexpectedTermination
+from props.core.prompt_improve.main import TerminationSuccess
 from props.core.prompt_optimize.target_metric import TargetMetric
 from props.core.splits import Split
 
@@ -70,7 +60,6 @@ app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(agent_pkg_app, name="agent-pkg")
 
 # Agent-type CLI subcommands (dual-use: human operators + container agents)
-app.add_typer(critic_agent_app, name="critic-agent")
 app.add_typer(grader_agent_app, name="grader-agent")
 app.add_typer(critic_dev_app, name="critic-dev")
 
@@ -172,36 +161,37 @@ async def prompt_optimize(
     budget: float = typer.Option(50.0, "--budget", help="$ budget for optimization"),
     optimizer_model: str = opt.OPT_OPTIMIZER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
-    grader_model: str = opt.OPT_GRADER_MODEL,
-    verbose: bool = opt.OPT_VERBOSE,
+    llm_proxy_url: str = typer.Option(..., "--llm-proxy-url", envvar="LLM_PROXY_URL", help="URL of the LLM proxy"),
+    timeout_seconds: int = typer.Option(3600, "--timeout", help="Max seconds before container timeout"),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
+    registry = AgentRegistry(docker_client, db_config, llm_proxy_url)
     try:
-        await run_prompt_optimizer(
+        run_id = await registry.run_prompt_optimizer(
             budget=budget,
-            optimizer_client=build_client(optimizer_model),
-            critic_client=build_client(critic_model),
-            grader_client=build_client(grader_model),
-            docker_client=docker_client,
+            optimizer_model=optimizer_model,
+            critic_model=critic_model,
             target_metric=target_metric,
-            db_config=db_config,
-            verbose=verbose,
+            timeout_seconds=timeout_seconds,
         )
+        typer.echo(f"Prompt optimizer run ID: {run_id}")
     finally:
-        await docker_client.close()
+        await registry.close()
 
 
 @app.command("prompt-improve")
 @async_run
 async def prompt_improve_cmd(
     n_examples: int = typer.Option(10, "--n-examples", "-n", help="Number of training examples to analyze"),
-    token_budget: int = typer.Option(200_000, "--token-budget", "-t", help="Maximum token budget"),
-    model: str = opt.OPT_OPTIMIZER_MODEL,
+    token_budget: int = typer.Option(200_000, "--token-budget", help="Maximum token budget"),
+    improvement_model: str = opt.OPT_OPTIMIZER_MODEL,
+    critic_model: str = opt.OPT_CRITIC_MODEL,
     prompt_sha256: str | None = opt.OPT_PROMPT_SHA256,
     out_dir: Path | None = opt.OPT_OUT_DIR,
-    verbose: bool = opt.OPT_VERBOSE,
+    llm_proxy_url: str = typer.Option(..., "--llm-proxy-url", envvar="LLM_PROXY_URL", help="URL of the LLM proxy"),
+    timeout_seconds: int = typer.Option(3600, "--timeout", help="Max seconds before container timeout"),
 ) -> None:
     """Run prompt improvement agent on training examples.
 
@@ -383,35 +373,31 @@ async def prompt_improve_cmd(
 
     # 3. Run improvement agent
     console.print("\n[bold]Running improvement agent[/bold]")
-    console.print(f"  Model: {model}")
+    console.print(f"  Improvement model: {improvement_model}")
+    console.print(f"  Critic model: {critic_model}")
     console.print(f"  Token budget: {token_budget:,}")
     console.print(f"  Examples: {len(allowed_examples)}")
     console.print()
 
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    openai_client = build_client(model)
+    registry = AgentRegistry(docker_client, db_config, llm_proxy_url)
     try:
-        result = await run_improvement_agent(
+        result: ImprovementResult = await registry.run_improvement_agent(
             examples=allowed_examples,
             baseline_image_refs=[definition_id],
             token_budget=token_budget,
-            model=model,
-            docker_client=docker_client,
-            db_config=db_config,
-            client=openai_client,
-            critic_client=openai_client,
-            grader_client=openai_client,
+            improvement_model=improvement_model,
+            critic_model=critic_model,
+            timeout_seconds=timeout_seconds,
             output_dir=out_dir,
-            verbose=verbose,
         )
     except Exception as e:
         console.print(f"\n[red]Error:[/red] {e}")
-        if verbose:
-            logger.exception("Improvement agent failed")
+        logger.exception("Improvement agent failed")
         raise typer.Exit(1)
     finally:
-        await docker_client.close()
+        await registry.close()
 
     # 5. Display results
     console.print()
@@ -463,17 +449,11 @@ except ImportError:
 # Stats command group
 app.add_typer(stats_app, name="stats")
 
-# Analyze exec commands
-app.command("analyze-exec")(cmd_analyze_exec)
-
 # Classify no-op commands
 app.command("classify-noops")(cmd_classify_noops)
 
 # Grade validation set command
 app.command("grade-validation")(cmd_grade_validation)
-
-# Speak with dead command
-app.command("speak-with-dead")(cmd_speak_with_dead)
 
 
 # ---------- Shared helpers for run ----------
@@ -490,7 +470,8 @@ async def cmd_run(
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
     model: str = opt.OPT_MODEL,
-    max_lines: int = opt.OPT_MAX_LINES,
+    llm_proxy_url: str = typer.Option(..., "--llm-proxy-url", envvar="LLM_PROXY_URL", help="URL of the LLM proxy"),
+    timeout_seconds: int = typer.Option(3600, "--timeout", help="Max seconds before container timeout"),
 ) -> None:
     """Run critic agent on a snapshot with DB persistence.
 
@@ -498,13 +479,12 @@ async def cmd_run(
     outputs the system prompt.
 
     Example:
-        props run ducktape/2025-11-26-00 --definition-id critic
+        props run ducktape/2025-11-26-00 --definition-id critic --llm-proxy-url http://localhost:5052
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
 
-    registry = AgentRegistry(docker_client, db_config, workspace_manager)
+    registry = AgentRegistry(docker_client, db_config, llm_proxy_url)
     try:
         # Get available files from database (no hydration)
         with get_session() as session:
@@ -519,10 +499,8 @@ async def cmd_run(
         critic_run_id = await registry.run_critic(
             image_ref=definition_id,  # definition_id is actually an image ref
             example=example_spec,
-            client=build_client(model),
-            verbose=True,
-            max_lines=max_lines,
-            max_turns=100,
+            model=model,
+            timeout_seconds=timeout_seconds,
         )
 
         # Print results

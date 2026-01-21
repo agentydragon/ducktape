@@ -60,7 +60,10 @@ async def run_critic_cmd(
     files_hash: Annotated[
         str | None, typer.Argument(help="Files hash for file_set example, or omit/empty for whole_snapshot")
     ] = None,
-    max_turns: Annotated[int, typer.Option("--max-turns", "-t", help="Maximum agent turns before timeout")] = 200,
+    timeout_seconds: Annotated[
+        int, typer.Option("--timeout", "-t", help="Max seconds before container timeout")
+    ] = 3600,
+    budget_usd: Annotated[float | None, typer.Option("--budget", "-b", help="Max USD cost for this run")] = None,
 ) -> None:
     """Run critic on an example using an agent image.
 
@@ -80,7 +83,9 @@ async def run_critic_cmd(
     else:
         example = WholeSnapshotExample(snapshot_slug=snapshot_slug)
 
-    payload = RunCriticInput(definition_id=image_ref, example=example, max_turns=max_turns)
+    payload = RunCriticInput(
+        definition_id=image_ref, example=example, timeout_seconds=timeout_seconds, budget_usd=budget_usd
+    )
 
     async with mcp_client_from_env() as (client, _init_result):
         result = await client.call_tool("run_critic", payload.model_dump())

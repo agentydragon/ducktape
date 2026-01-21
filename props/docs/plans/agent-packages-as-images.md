@@ -152,10 +152,10 @@ These tags are set administratively when Bazel pushes to the registry, not by ag
 
 ## Current Progress
 
-- `props/core/agent_defs/critic/BUILD.bazel` - Bazel OCI build for critic agent
+- Agent OCI builds are colocated with implementation code (e.g., `props/core/critic/BUILD.bazel`)
 - Uses `py_binary` with `pkg_tar(include_runfiles=True)` to bundle Python deps
 - Layers onto `python:3.12-slim` base
-- Works: `bazelisk run //props/core/agent_defs/critic:load`
+- Works: `bazelisk run //props/core/critic:load`
 
 ## Built-in Image Publishing
 
@@ -168,12 +168,12 @@ Built-in agent images (critic, grader, etc.) are built by Bazel using `rules_oci
 docker login localhost:5050 -u "$PGUSER" -p "$PGPASSWORD"
 
 # Push builtin image
-bazelisk run //props/core/agent_defs/critic:push
+bazelisk run //props/core/critic:push
 ```
 
 The proxy validates admin credentials, writes an `agent_definitions` row, and forwards to the registry.
 
-See `props/core/agent_defs/*/BUILD.bazel` for `oci_image` and `oci_push` target definitions.
+See `props/core/{critic,grader,prompt_improve,prompt_optimize}/BUILD.bazel` for `oci_image` and `oci_push` target definitions.
 
 ## OCI Distribution Protocol
 

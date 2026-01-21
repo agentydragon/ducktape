@@ -22,7 +22,6 @@ from props.core.db.models import (
     AgentDefinition,
     AgentRun,
     AgentRunStatus,
-    Event,
     OccurrenceCredit,
     OccurrenceStatistics,
     RecallByDefinitionSplitKind,
@@ -1036,51 +1035,10 @@ def cmd_stats(ctx: typer.Context) -> None:
             show_all_prompts=show_all,
         )
 
-    # Display tool call count distributions for successful runs
-    with get_session() as session:
-        # Query tool call counts for successful critic runs (events linked directly to agent_run_id)
-        critic_run_ids = [
-            cr.agent_run_id
-            for cr in session.query(AgentRun)
-            .filter(
-                AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-                AgentRun.status == AgentRunStatus.COMPLETED,
-            )
-            .all()
-        ]
-
-        if critic_run_ids:
-            critic_tool_calls = (
-                session.query(Event.agent_run_id, func.count(Event.id).label("tool_call_count"))
-                .where(Event.event_type == "tool_call")
-                .where(Event.agent_run_id.in_(critic_run_ids))
-                .group_by(Event.agent_run_id)
-                .all()
-            )
-        else:
-            critic_tool_calls = []
-
-        # Query tool call counts for successful grader runs (events linked directly to agent_run_id)
-        grader_run_ids = [
-            gr.agent_run_id
-            for gr in session.query(AgentRun)
-            .filter(
-                AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
-                AgentRun.status == AgentRunStatus.COMPLETED,
-            )
-            .all()
-        ]
-
-        if grader_run_ids:
-            grader_tool_calls = (
-                session.query(Event.agent_run_id, func.count(Event.id).label("tool_call_count"))
-                .where(Event.event_type == "tool_call")
-                .where(Event.agent_run_id.in_(grader_run_ids))
-                .group_by(Event.agent_run_id)
-                .all()
-            )
-        else:
-            grader_tool_calls = []
+    # Tool call count distributions (disabled - Event model not implemented)
+    # TODO: Re-enable when Event model is added to track agent events
+    critic_tool_calls: list[tuple[object, int]] = []
+    grader_tool_calls: list[tuple[object, int]] = []
 
     # Display critic tool call distribution
     if critic_tool_calls:
