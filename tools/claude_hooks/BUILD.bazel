@@ -53,7 +53,11 @@ py_library(
 
 py_package(
     name = "claude_hooks_pkg",
-    packages = ["tools.claude_hooks"],
+    packages = [
+        "tools",
+        "tools.claude_hooks",
+        "tools.claude_hooks.proxy",
+    ],
     deps = [":claude_hooks"],
 )
 
