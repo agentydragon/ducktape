@@ -41,8 +41,11 @@ jobs:
       # Other tools (kustomize, flux, helm, kubeseal) are hermetic via @multitool
       - name: Install kubeconform
         run: |
-          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp
-          sudo install /tmp/kubeconform /usr/local/bin/
+          CHECKSUM="95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73"
+          curl -fsSL -o /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          echo "$CHECKSUM  /tmp/kubeconform.tar.gz" | sha256sum -c -
+          tar xz -C /tmp -f /tmp/kubeconform.tar.gz
+          sudo install -m755 /tmp/kubeconform /usr/local/bin/
 
       # Nix for nixfmt-nix pre-commit hook (runs: nix run nixpkgs#nixfmt)
       - name: Install Nix
@@ -109,14 +112,11 @@ jobs:
       # CACHE SAVES
       # ============================================================================
 
-      - name: Save Bazel cache
-        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
         with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
       - name: Save Ansible Galaxy cache
         if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'

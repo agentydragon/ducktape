@@ -94,50 +94,10 @@ jobs:
             $PROFILE_FLAG \
             ${{ inputs.targets }}
 
-      - name: Collect failed test logs
+      - uses: ./.github/actions/collect-test-logs
         if: failure()
-        run: |
-          mkdir -p failed-test-logs
-
-          # Get actual testlogs path (bazel-testlogs symlink may not work in all cases)
-          TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
-          echo "Looking for test logs in: $TESTLOGS_DIR"
-
-          # Debug: show what's in the testlogs directory
-          if [ -d "$TESTLOGS_DIR" ]; then
-            echo "Found testlogs directory, contents:"
-            find "$TESTLOGS_DIR" -name "test.xml" | head -20
-          else
-            echo "Warning: testlogs directory not found at $TESTLOGS_DIR"
-            echo "Checking bazel-testlogs symlink:"
-            ls -la bazel-testlogs 2>&1 || echo "bazel-testlogs symlink not found"
-          fi
-
-          # Find all test.xml files and check for failures
-          find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
-            test_dir=$(dirname "$xml")
-            # Check if test.xml contains failures or errors (non-zero count)
-            if grep -qE '(failures|errors)="[1-9]' "$xml"; then
-              # Preserve test path structure relative to testlogs dir
-              target_path="${test_dir#$TESTLOGS_DIR/}"
-              echo "Collecting logs for failed test: $target_path"
-              mkdir -p "failed-test-logs/$target_path"
-              cp "$test_dir/test.log" "failed-test-logs/$target_path/" 2>/dev/null || true
-              cp "$test_dir/test.xml" "failed-test-logs/$target_path/" 2>/dev/null || true
-            fi
-          done
-
-          echo "Collected failed test logs:"
-          find failed-test-logs -type f 2>/dev/null || echo "No files collected"
-
-      - name: Upload failed test logs
-        if: failure()
-        uses: actions/upload-artifact@v4
         with:
-          name: failed-test-logs-${{ github.run_id }}
-          path: failed-test-logs/
-          if-no-files-found: ignore
-          retention-days: 14
+          artifact-name: failed-test-logs
 
       - name: Upload coverage report
         if: always()
@@ -168,11 +128,8 @@ jobs:
           reporter: java-junit
           fail-on-error: false
 
-      - name: Save Bazel cache
-        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
         with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}

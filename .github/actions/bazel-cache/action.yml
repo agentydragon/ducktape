@@ -1,34 +1,28 @@
-# Composite action for Bazel cache setup
+# Composite action for Bazel cache setup and save
 #
 # Handles:
 # - Setting up Bazelisk
-# - Deriving cache key from workflow name and job
-# - Restoring Bazel cache
+# - Deriving cache key from workflow/job name + file hashes
+# - Restoring and saving Bazel cache
 #
 # Usage:
 #   - uses: ./.github/actions/bazel-cache
 #     id: bazel-cache
 #     with:
-#       hash_files: |
-#         Cargo.toml
-#         Cargo.lock
+#       extra_hash: ${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
 #
 #   # ... your build steps ...
 #
-#   - name: Save Bazel cache
-#     if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
-#     uses: actions/cache/save@v4
+#   - uses: ./.github/actions/bazel-cache-save
 #     with:
-#       path: |
-#         ~/.cache/bazel
-#         ~/.cache/bazelisk
-#       key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+#       cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+#       cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 name: Bazel Cache Setup
 description: Setup Bazelisk and restore Bazel cache with auto-derived keys
 
 inputs:
-  hash_files:
-    description: "Newline-separated list of additional files to hash (MODULE.bazel and requirements_bazel.txt are always included)"
+  extra_hash:
+    description: "Additional hash to append to cache key (use hashFiles() at call site)"
     required: false
     default: ""
 
@@ -36,9 +30,9 @@ outputs:
   cache-hit:
     description: "Whether the cache was restored"
     value: ${{ steps.cache-restore.outputs.cache-hit }}
-  cache-primary-key:
-    description: "The primary cache key (use this for cache/save)"
-    value: ${{ steps.cache-restore.outputs.cache-primary-key }}
+  cache-key:
+    description: "The cache key (use this for bazel-cache-save)"
+    value: ${{ steps.cache-key.outputs.key }}
 
 runs:
   using: composite
@@ -49,20 +43,25 @@ runs:
     - name: Derive cache key
       id: cache-key
       shell: bash
+      env:
+        BASE_HASH: ${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+        EXTRA_HASH: ${{ inputs.extra_hash }}
+        WORKFLOW: ${{ github.workflow }}
+        JOB: ${{ github.job }}
       run: |
-        # Slugify workflow name and job
-        SLUG=$(echo "${{ github.workflow }}-${{ github.job }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
-        echo "slug=$SLUG" >> $GITHUB_OUTPUT
+        # Slugify workflow name and job for cache key prefix
+        SLUG=$(echo "${WORKFLOW}-${JOB}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
 
-        # Compute hash of relevant files
-        FILES="MODULE.bazel requirements_bazel.txt"
-        EXTRA_FILES="${{ inputs.hash_files }}"
-        if [[ -n "$EXTRA_FILES" ]]; then
-          FILES="$FILES $EXTRA_FILES"
+        # Combine base hash with extra hash if provided
+        if [[ -n "$EXTRA_HASH" ]]; then
+          HASH="${BASE_HASH:0:8}-${EXTRA_HASH:0:8}"
+        else
+          HASH="${BASE_HASH:0:16}"
         fi
-        # Use sha256sum on file contents, handle missing files gracefully
-        HASH=$(cat $FILES 2>/dev/null | sha256sum | cut -c1-16)
-        echo "hash=$HASH" >> $GITHUB_OUTPUT
+
+        KEY="bazel-${SLUG}-${HASH}"
+        echo "key=$KEY" >> $GITHUB_OUTPUT
+        echo "slug=$SLUG" >> $GITHUB_OUTPUT
 
     - name: Restore Bazel cache
       id: cache-restore
@@ -71,5 +70,5 @@ runs:
         path: |
           ~/.cache/bazel
           ~/.cache/bazelisk
-        key: bazel-${{ steps.cache-key.outputs.slug }}-${{ steps.cache-key.outputs.hash }}
+        key: ${{ steps.cache-key.outputs.key }}
         restore-keys: bazel-${{ steps.cache-key.outputs.slug }}-

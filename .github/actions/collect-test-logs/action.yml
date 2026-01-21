@@ -1,0 +1,63 @@
+# Composite action for collecting and uploading failed Bazel test logs
+#
+# Collects test.log and test.xml files from failed tests and uploads as artifact.
+# Only collects logs from tests that have failures or errors.
+#
+# Usage:
+#   - uses: ./.github/actions/collect-test-logs
+#     if: failure()
+#     with:
+#       artifact-name: my-test-logs
+name: Collect Test Logs
+description: Collect and upload failed Bazel test logs
+
+inputs:
+  artifact-name:
+    description: "Name for the uploaded artifact (will have -$run_id appended)"
+    required: false
+    default: "failed-test-logs"
+  retention-days:
+    description: "Number of days to retain the artifact"
+    required: false
+    default: "14"
+
+runs:
+  using: composite
+  steps:
+    - name: Collect failed test logs
+      shell: bash
+      run: |
+        mkdir -p failed-test-logs
+
+        # Get actual testlogs path (bazel-testlogs symlink may not work in all cases)
+        TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
+        echo "Looking for test logs in: $TESTLOGS_DIR"
+
+        if [ -d "$TESTLOGS_DIR" ]; then
+          # Find all test.xml files and collect logs from failed tests
+          find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
+            test_dir=$(dirname "$xml")
+            # Check if test.xml contains failures or errors (non-zero count)
+            if grep -qE '(failures|errors)="[1-9]' "$xml"; then
+              # Preserve test path structure relative to testlogs dir
+              target_path="${test_dir#$TESTLOGS_DIR/}"
+              echo "Collecting logs for failed test: $target_path"
+              mkdir -p "failed-test-logs/$target_path"
+              cp "$test_dir/test.log" "failed-test-logs/$target_path/" 2>/dev/null || true
+              cp "$test_dir/test.xml" "failed-test-logs/$target_path/" 2>/dev/null || true
+            fi
+          done
+        else
+          echo "Warning: testlogs directory not found at $TESTLOGS_DIR"
+        fi
+
+        echo "Collected failed test logs:"
+        find failed-test-logs -type f 2>/dev/null || echo "No files collected"
+
+    - name: Upload failed test logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}-${{ github.run_id }}
+        path: failed-test-logs/
+        if-no-files-found: ignore
+        retention-days: ${{ inputs.retention-days }}

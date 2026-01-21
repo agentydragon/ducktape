@@ -75,11 +75,8 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-      - name: Save Bazel cache
-        if: always() && steps.bazel-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
         with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
