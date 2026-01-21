@@ -322,19 +322,22 @@ class GitRoServer(SimpleFastMCP):
                 state.index.read()
 
                 entry: pygit2.IndexEntry | None = None
+                conflicts = state.index.conflicts
                 if stage == 0:
                     # Stage 0: regular index entries (non-conflict)
-                    for e in state.index:
-                        if e.path == path:
-                            entry = e
-                            break
-                else:
-                    # Stages 1-3: conflict entries (ancestor=1, ours=2, theirs=3)
-                    conflicts = state.index.conflicts
+                    # If file is in conflicts, stage 0 doesn't exist
                     if conflicts and path in conflicts:
-                        ancestor, ours, theirs = conflicts[path]
-                        conflict_entries = {1: ancestor, 2: ours, 3: theirs}
-                        entry = conflict_entries.get(stage)
+                        entry = None
+                    else:
+                        for e in state.index:
+                            if e.path == path:
+                                entry = e
+                                break
+                # Stages 1-3: conflict entries (ancestor=1, ours=2, theirs=3)
+                elif conflicts and path in conflicts:
+                    ancestor, ours, theirs = conflicts[path]
+                    conflict_entries = {1: ancestor, 2: ours, 3: theirs}
+                    entry = conflict_entries.get(stage)
 
                 if entry is None:
                     raise FileNotFoundError(f"Index entry not found: {objspec}")

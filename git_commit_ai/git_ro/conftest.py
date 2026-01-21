@@ -39,7 +39,7 @@ def repo_git_ro(tmp_path: Path) -> pygit2.Repository:
     """
     repo_path = tmp_path / "repo_git_ro"
     repo_path.mkdir(parents=True, exist_ok=True)
-    repo = pygit2.init_repository(str(repo_path), bare=False)
+    repo = pygit2.init_repository(str(repo_path), bare=False, initial_head="main")
     _ensure_identity(repo)
 
     (repo_path / "README.md").write_text("hello\n", encoding="utf-8")
@@ -85,7 +85,7 @@ def repo_with_conflict(tmp_path: Path) -> pygit2.Repository:
     """
     repo_path = tmp_path / "repo_conflict"
     repo_path.mkdir(parents=True, exist_ok=True)
-    repo = pygit2.init_repository(str(repo_path), bare=False)
+    repo = pygit2.init_repository(str(repo_path), bare=False, initial_head="main")
     _ensure_identity(repo)
 
     # Create initial commit with base content
@@ -131,7 +131,7 @@ def repo_with_new_file(tmp_path: Path) -> pygit2.Repository:
     """
     repo_path = tmp_path / "repo_new_file"
     repo_path.mkdir(parents=True, exist_ok=True)
-    repo = pygit2.init_repository(str(repo_path), bare=False)
+    repo = pygit2.init_repository(str(repo_path), bare=False, initial_head="main")
     _ensure_identity(repo)
 
     # Create initial commit

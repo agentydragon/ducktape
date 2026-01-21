@@ -62,14 +62,17 @@ py_test(
         "testing/__init__.py",
         "testing/git_repo_utils.py",
     ],
+    data = ["__snapshots__/test_editor.ambr"],
     main = "test_amend.py",
     deps = [
         ":git_commit_ai_lib",
         "//mcp_infra/testing",
+        "@pypi//fastmcp",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//syrupy",
     ],
 )
 

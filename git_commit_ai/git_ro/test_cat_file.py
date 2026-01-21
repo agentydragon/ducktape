@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
+from fastmcp.exceptions import ToolError
 
 from git_commit_ai.git_ro.formatting import TextSlice
 from git_commit_ai.git_ro.server import CatFileInput, TextPage
@@ -54,16 +55,16 @@ async def test_cat_file_tree_object(typed_git_ro) -> None:
 
 
 async def test_cat_file_not_found(typed_git_ro) -> None:
-    """FileNotFoundError for missing path."""
-    with pytest.raises(FileNotFoundError, match="Path not found"):
+    """ToolError wrapping FileNotFoundError for missing path."""
+    with pytest.raises(ToolError, match="not found"):
         await typed_git_ro.cat_file(
             CatFileInput(object="HEAD:nonexistent.txt", slice=TextSlice(offset_chars=0, max_chars=100))
         )
 
 
 async def test_cat_file_index_not_found(typed_git_ro) -> None:
-    """FileNotFoundError for missing index entry."""
-    with pytest.raises(FileNotFoundError, match="Index entry not found"):
+    """ToolError wrapping FileNotFoundError for missing index entry."""
+    with pytest.raises(ToolError, match="Index entry not found"):
         await typed_git_ro.cat_file(
             CatFileInput(object=":nonexistent.txt", slice=TextSlice(offset_chars=0, max_chars=100))
         )
@@ -98,7 +99,7 @@ async def test_conflict_stage3_theirs(typed_git_ro_conflict) -> None:
 
 async def test_conflict_stage0_not_found(typed_git_ro_conflict) -> None:
     """Stage 0 doesn't exist for conflicted files."""
-    with pytest.raises(FileNotFoundError, match="Index entry not found"):
+    with pytest.raises(ToolError, match="Index entry not found"):
         await typed_git_ro_conflict.cat_file(
             CatFileInput(object=":0:conflict.txt", slice=TextSlice(offset_chars=0, max_chars=100))
         )
@@ -116,7 +117,7 @@ async def test_new_file_read_from_index(typed_git_ro_new_file) -> None:
 
 async def test_new_file_not_in_commit_tree(typed_git_ro_new_file) -> None:
     """HEAD:path fails for newly added file not yet committed."""
-    with pytest.raises(FileNotFoundError, match="not found at repository root"):
+    with pytest.raises(ToolError, match="not found at repository root"):
         await typed_git_ro_new_file.cat_file(
             CatFileInput(object="HEAD:src/newfile.py", slice=TextSlice(offset_chars=0, max_chars=100))
         )
@@ -124,7 +125,7 @@ async def test_new_file_not_in_commit_tree(typed_git_ro_new_file) -> None:
 
 async def test_path_error_shows_available_entries(typed_git_ro_new_file) -> None:
     """Error message shows available entries when path component not found."""
-    with pytest.raises(FileNotFoundError, match=r"Entries at repository root:.*README.md"):
+    with pytest.raises(ToolError, match=r"Entries at repository root:.*README.md"):
         await typed_git_ro_new_file.cat_file(
             CatFileInput(object="HEAD:nonexistent/file.py", slice=TextSlice(offset_chars=0, max_chars=100))
         )
@@ -132,7 +133,7 @@ async def test_path_error_shows_available_entries(typed_git_ro_new_file) -> None
 
 async def test_bare_filename_error_message(typed_git_ro) -> None:
     """Helpful error when using bare filename instead of full path."""
-    with pytest.raises(FileNotFoundError, match="Path must be relative to repository root"):
+    with pytest.raises(ToolError, match="Path must be relative to repository root"):
         await typed_git_ro.cat_file(CatFileInput(object="HEAD:README", slice=TextSlice(offset_chars=0, max_chars=100)))
 
 
