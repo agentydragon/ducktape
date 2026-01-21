@@ -5,12 +5,10 @@ Incremental migration target: we will gradually move subcommands here.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
-from uuid import UUID
 
 import aiodocker
 import typer
@@ -18,7 +16,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.traceback import install as rich_traceback_install
-from sqlalchemy import func
 from typer_di import TyperDI
 
 from cli_util.decorators import async_run
@@ -45,14 +42,7 @@ from props.core.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from props.core.cli.cmd_stats import stats_app
 from props.core.cli.shared import make_example_from_files
 from props.core.db.config import get_database_config
-from props.core.db.models import (
-    AgentRun,
-    AgentRunStatus,
-    GradingEdge,
-    RecallByDefinitionSplitKind,
-    ReportedIssue,
-    Snapshot,
-)
+from props.core.db.models import AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, ReportedIssue, Snapshot
 from props.core.db.query_builders import query_recall_by_example
 from props.core.db.session import get_session, init_db
 from props.core.display import fmt_pct, short_sha
@@ -460,151 +450,6 @@ async def prompt_improve_cmd(
         console.print(panel)
 
     console.print()
-
-
-@app.command("run-grader")
-@async_run
-async def cmd_run_grader(
-    critic_run_id: UUID = opt.ARG_CRITIC_RUN_ID, model: str = opt.OPT_MODEL, verbose: bool = opt.OPT_VERBOSE
-) -> None:
-    """Grade a critic run by database ID against canonical findings.
-
-    Fetches critic run from database, executes grader, and persists results.
-    """
-    docker_client = aiodocker.Docker()
-    db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
-
-    registry = AgentRegistry(docker_client, db_config, workspace_manager)
-    try:
-        # Run grader via registry
-        grader_run_id = await registry.run_grader(
-            critic_run_id=critic_run_id, client=build_client(model), verbose=verbose, max_turns=200
-        )
-
-        with get_session() as session:
-            grader_run = session.get(AgentRun, grader_run_id)
-            if grader_run is None:
-                raise RuntimeError(f"Grader run {grader_run_id} not found in database")
-
-            # Derive snapshot_slug from the graded critic run
-            grader_config = grader_run.grader_config()
-            graded_critic_run = session.get(AgentRun, grader_config.graded_agent_run_id)
-            if graded_critic_run is None:
-                raise RuntimeError(f"Graded critic run {grader_config.graded_agent_run_id} not found in database")
-            snapshot_slug = graded_critic_run.critic_config().example.snapshot_slug
-            typer.echo(f"Graded critic run {critic_run_id}")
-            typer.echo(f"Grader run ID: {grader_run_id}")
-            typer.echo(f"Snapshot: {snapshot_slug}")
-            typer.echo(f"Status: {grader_run.status.value}")
-            typer.echo("")
-
-            # Display completion_summary if available
-            if grader_run.completion_summary:
-                typer.echo("Summary:")
-                typer.echo(grader_run.completion_summary)
-                typer.echo("")
-
-            # Display recall metrics from grading_edges
-            if grader_run.status == AgentRunStatus.COMPLETED:
-                # TODO: Deduplicate recall calculation into db/grading.py helper function
-                total_credit = (
-                    session.query(func.sum(GradingEdge.credit))
-                    .filter_by(grader_run_id=grader_run_id)
-                    .filter(GradingEdge.tp_id.isnot(None))
-                    .scalar()
-                    or 0.0
-                )
-                n_occurrences = (
-                    session.query(GradingEdge.tp_id, GradingEdge.tp_occurrence_id)
-                    .filter_by(grader_run_id=grader_run_id)
-                    .filter(GradingEdge.tp_id.isnot(None))
-                    .distinct()
-                    .count()
-                )
-                recall = total_credit / n_occurrences if n_occurrences > 0 else 0.0
-                typer.echo(f"Recall: {recall:.2%} ({total_credit:.1f} / {n_occurrences})")
-    finally:
-        await registry.close()
-
-
-@app.command("grade-missing")
-@async_run
-async def cmd_grade_missing(
-    grader_model: str = opt.OPT_GRADER_MODEL, max_parallel: int = opt.OPT_MAX_PARALLEL, verbose: bool = opt.OPT_VERBOSE
-) -> None:
-    """Grade all critiques missing grader runs for the specified model.
-
-    Finds critiques without a grader run for the given model and grades them
-    in parallel with semaphore-limited concurrency.
-    """
-    docker_client = aiodocker.Docker()
-    db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
-
-    # Registry with caller-specified max_parallel
-    registry = AgentRegistry(docker_client, db_config, workspace_manager, max_parallel=max_parallel)
-    try:
-        # Find critic run IDs missing grader runs for this model
-        with get_session() as session:
-            # Two-phase approach for unified AgentRun model
-            # Phase 1: Get all completed critic runs
-            completed_critic_runs = (
-                session.query(AgentRun)
-                .filter(
-                    AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-                    AgentRun.status == AgentRunStatus.COMPLETED,
-                )
-                .all()
-            )
-
-            # Phase 2: Filter to those without grader runs for this model
-            ungraded_critic_run_ids: list[UUID] = []
-            for cr in completed_critic_runs:
-                has_grader = (
-                    session.query(AgentRun)
-                    .filter(
-                        AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
-                        AgentRun.type_config["graded_agent_run_id"].astext == str(cr.agent_run_id),
-                        AgentRun.model == grader_model,
-                    )
-                    .first()
-                )
-                if not has_grader:
-                    ungraded_critic_run_ids.append(cr.agent_run_id)
-
-            if not ungraded_critic_run_ids:
-                typer.echo(f"No critic runs missing grader runs for model '{grader_model}'")
-                return
-
-            typer.echo(
-                f"Found {len(ungraded_critic_run_ids)} critic runs missing grader runs for model '{grader_model}'"
-            )
-            typer.echo(f"Grading with max_parallel={max_parallel}...")
-
-        async def grade_one(critic_run_id: UUID) -> tuple[UUID, bool]:
-            """Grade one critic run, returns (critic_run_id, success)"""
-            try:
-                grader_run_id = await registry.run_grader(
-                    critic_run_id=critic_run_id, client=build_client(grader_model), verbose=verbose, max_turns=200
-                )
-                if not verbose:
-                    typer.echo(f"✓ Graded critic run {critic_run_id} → grader_run {grader_run_id}")
-                return (critic_run_id, True)
-            except Exception as e:
-                typer.echo(f"✗ Failed to grade critic run {critic_run_id}: {e}", err=True)
-                return (critic_run_id, False)
-
-        # Grade all in parallel (registry semaphore limits concurrency)
-        results = await asyncio.gather(*[grade_one(cid) for cid in ungraded_critic_run_ids])
-
-        # Summary
-        successes = sum(1 for _, success in results if success)
-        failures = sum(1 for _, success in results if not success)
-        typer.echo("")
-        typer.echo(f"Completed: {successes} succeeded, {failures} failed")
-    finally:
-        await registry.close()
 
 
 # GEPA command (optional - requires gepa package)

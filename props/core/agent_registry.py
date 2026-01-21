@@ -1,4 +1,4 @@
-"""Agent registry - unified orchestration layer for critic and grader runs.
+"""Agent registry - unified orchestration layer for agent runs.
 
 AgentRegistry is THE entry point for running agents. It owns shared resources
 (Docker client, database config, workspace manager) and manages concurrency
@@ -16,10 +16,8 @@ Usage:
         with get_session() as session:
             critic_run = session.get(AgentRun, critic_run_id)
             if critic_run.status == AgentRunStatus.COMPLETED:
-                grader_run_id = await registry.run_grader(
-                    critic_run_id=critic_run_id,
-                    client=grader_client,
-                )
+                # Grading is handled by snapshot grader daemons
+                pass
 """
 
 from __future__ import annotations
@@ -29,7 +27,6 @@ import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -44,24 +41,22 @@ from openai_utils.errors import ContextLengthExceededError
 from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.types import ReasoningSummary
 from props.core.agent_handle import AgentHandle
-from props.core.agent_types import AgentType, CriticTypeConfig, GraderTypeConfig, SnapshotGraderTypeConfig
+from props.core.agent_types import AgentType, CriticTypeConfig, SnapshotGraderTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.critic.critic import CriticAgentEnvironment
 from props.core.critic.exceptions import CriticExecutionError
 from props.core.db.agent_definition_ids import GRADER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
-from props.core.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, Snapshot
+from props.core.db.models import AgentRun, AgentRunStatus, Snapshot
 from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.exceptions import AgentDidNotSubmitError
 from props.core.grader.daemon import GraderDaemonScaffold
 from props.core.grader.drift_handler import format_notifications
-from props.core.grader.grader import GraderAgentEnvironment
-from props.core.grader.persistence import orm_fp_to_db, orm_tp_to_db
 from props.core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
 from props.core.ids import SnapshotSlug
-from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
+from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 
 if TYPE_CHECKING:
@@ -302,232 +297,6 @@ class AgentRegistry:
             logger.info(f"Updated critic run: agent_run_id={agent_run_id}, status={agent_status}")
 
         return agent_run_id
-
-    async def run_grader(
-        self,
-        *,
-        critic_run_id: UUID,
-        client: OpenAIModelProto,
-        parent_run_id: UUID | None = None,
-        verbose: bool = False,
-        max_lines: int = DEFAULT_MAX_LINES,
-        max_turns: int = 200,
-        extra_handlers: tuple[BaseHandler, ...] = (),
-    ) -> UUID:
-        """Run a grader on a critic run. Acquires semaphore slot.
-
-        Always uses builtin grader image for evaluation consistency.
-
-        Args:
-            critic_run_id: ID of the critic run to grade
-            client: OpenAI-compatible model client
-            parent_run_id: Optional parent agent run ID
-            verbose: Whether to enable verbose display
-            max_lines: Max lines per event in verbose display
-            max_turns: Maximum agent turns before timeout
-            extra_handlers: Additional handlers to add
-
-        Returns:
-            Grader run ID (query DB for status)
-        """
-        async with self._semaphore:
-            return await self._run_grader_impl(
-                critic_run_id=critic_run_id,
-                client=client,
-                parent_run_id=parent_run_id,
-                verbose=verbose,
-                max_lines=max_lines,
-                max_turns=max_turns,
-                extra_handlers=extra_handlers,
-            )
-
-    async def _run_grader_impl(
-        self,
-        *,
-        critic_run_id: UUID,
-        client: OpenAIModelProto,
-        parent_run_id: UUID | None,
-        verbose: bool,
-        max_lines: int,
-        max_turns: int,
-        extra_handlers: tuple[BaseHandler, ...],
-    ) -> UUID:
-        """Internal grader execution (semaphore already acquired)."""
-        grader_run_id = uuid4()
-
-        # Always use builtin grader image
-        image_digest = resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
-        image = build_oci_reference(AgentType.GRADER, image_digest)
-        logger.info(f"Using builtin grader image: {image_digest}")
-
-        # Load critic run and prepare canonical issues
-        with get_session() as session:
-            critic_run = session.get(AgentRun, critic_run_id)
-            if critic_run is None:
-                raise ValueError(f"Critic run {critic_run_id} not found in database")
-
-            if not isinstance(critic_run.type_config, CriticTypeConfig):
-                raise ValueError(f"Critic run {critic_run_id} has wrong type_config type")
-
-            example_spec = critic_run.type_config.example
-            snapshot_slug = example_spec.snapshot_slug
-
-            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-            snapshot_split = snapshot.split
-
-            # Resolve scope to file set for TP/FP filtering
-            if isinstance(example_spec, WholeSnapshotExample):
-                reviewed_files = snapshot.files_with_issues()
-                if not reviewed_files:
-                    raise ValueError(f"Snapshot '{snapshot_slug}' has no files with ground truth issues")
-            else:
-                assert isinstance(example_spec, SingleFileSetExample)
-                file_set = (
-                    session.query(FileSet)
-                    .filter_by(snapshot_slug=example_spec.snapshot_slug, files_hash=example_spec.files_hash)
-                    .one()
-                )
-                reviewed_files = {Path(m.file_path) for m in file_set.members}
-
-            # Filter TPs/FPs
-            original_tp_count = len(snapshot.true_positives)
-            filtered_orm_tps = [
-                tp
-                for tp in snapshot.true_positives
-                if any(
-                    any(alt.issubset(reviewed_files) for alt in occ.critic_scopes_expected_to_recall_set)
-                    for occ in tp.occurrences
-                )
-            ]
-            filtered_orm_fps = [
-                fp
-                for fp in snapshot.false_positives
-                if any(bool({rf.file_path for rf in occ.relevant_file_orms} & reviewed_files) for occ in fp.occurrences)
-            ]
-
-            if original_tp_count > 0 and len(filtered_orm_tps) == 0:
-                raise ValueError(
-                    f"Cannot grade: 0/{original_tp_count} TPs in expected recall scope from reviewed files "
-                    f"{sorted(str(f) for f in reviewed_files)}"
-                )
-
-            # Build canonical issues snapshot (direct ORM → DB conversion)
-            canonical_snapshot = CanonicalIssuesSnapshot(
-                true_positives=[orm_tp_to_db(tp) for tp in filtered_orm_tps],
-                false_positives=[orm_fp_to_db(fp) for fp in filtered_orm_fps],
-            )
-
-            type_config = GraderTypeConfig(
-                graded_agent_run_id=critic_run_id, canonical_issues_snapshot=canonical_snapshot.model_dump()
-            ).model_dump(mode="json")
-
-            # Write initial grader run
-            session.add(
-                AgentRun(
-                    agent_run_id=grader_run_id,
-                    image_digest=image_digest,
-                    parent_agent_run_id=parent_run_id,
-                    model=client.model,
-                    type_config=type_config,
-                    status=AgentRunStatus.IN_PROGRESS,
-                )
-            )
-            session.commit()
-            logger.info(f"Created grader run: agent_run_id={grader_run_id}, snapshot_slug={snapshot_slug}")
-
-        # Set up environment
-        comp_ctx = GraderAgentEnvironment(
-            snapshot_slug=snapshot_slug,
-            docker_client=self._docker_client,
-            grader_run_id=grader_run_id,
-            critic_run_id=critic_run_id,
-            db_config=self._db_config,
-            workspace_manager=self._workspace_manager,
-            image=image,
-        )
-
-        agent_status: AgentRunStatus
-
-        async with comp_ctx as compositor, Client(compositor) as mcp_client:
-            # Build handlers
-            def _grader_ready_state() -> bool:
-                with get_session() as session:
-                    found_run = session.get(AgentRun, grader_run_id)
-                    return found_run is not None and found_run.status in (
-                        AgentRunStatus.COMPLETED,
-                        AgentRunStatus.MAX_TURNS_EXCEEDED,
-                        AgentRunStatus.REPORTED_FAILURE,
-                    )
-
-            grader_handlers: list[BaseHandler] = [AbortIf(should_abort=_grader_ready_state)]
-            if verbose:
-                display_handler = await CompactDisplayHandler.from_compositor(
-                    compositor,
-                    max_lines=max_lines,
-                    prefix=f"[GRADER {short_uuid(grader_run_id)} {snapshot_split} {snapshot_slug}] ",
-                )
-                grader_handlers.append(display_handler)
-
-            grader_handlers.extend(
-                [
-                    RedirectOnTextMessageHandler(
-                        reminder_message=(
-                            "Text messages won't be delivered. Complete your grading decisions via MCP tools, "
-                            "then call submit. If you encounter unrecoverable problems, call report_failure instead."
-                        )
-                    ),
-                    *extra_handlers,
-                    MaxTurnsHandler(max_turns=max_turns),
-                ]
-            )
-
-            # Create AgentHandle
-            agent_handle = await AgentHandle.create(
-                agent_run_id=grader_run_id,
-                image_digest=GRADER_IMAGE_REF,
-                model_client=client,
-                mcp_client=mcp_client,
-                compositor=compositor,
-                handlers=grader_handlers,
-                dynamic_instructions=compositor.render_agent_dynamic_instructions,
-                parallel_tool_calls=True,
-                reasoning_summary=ReasoningSummary.DETAILED,
-            )
-
-            # Track as active
-            async with self._lock:
-                self._active[grader_run_id] = ActiveRun(handle=agent_handle, task=None)
-
-            try:
-                await agent_handle.run()
-
-                # Validate database status
-                with get_session() as session:
-                    found_run = session.get(AgentRun, grader_run_id)
-                    if found_run is None or found_run.status != AgentRunStatus.COMPLETED:
-                        raise AgentDidNotSubmitError(AgentType.GRADER, grader_run_id)
-                    agent_status = AgentRunStatus.COMPLETED
-
-            except MaxTurnsExceededError:
-                logger.warning(
-                    f"Grader hit max turns limit ({max_turns}) for {snapshot_slug}, "
-                    f"agent_run_id={short_uuid(grader_run_id)}"
-                )
-                with get_session() as session:
-                    found_run = session.get(AgentRun, grader_run_id)
-                    if found_run:
-                        found_run.status = AgentRunStatus.MAX_TURNS_EXCEEDED
-                        session.commit()
-                agent_status = AgentRunStatus.MAX_TURNS_EXCEEDED
-            finally:
-                # Remove from active tracking
-                async with self._lock:
-                    self._active.pop(grader_run_id, None)
-
-        logger.info(f"Grader run completed: agent_run_id={grader_run_id}, status={agent_status}")
-        return grader_run_id
-
-    # --- Snapshot Grader Daemon ---
 
     async def run_snapshot_grader(
         self,

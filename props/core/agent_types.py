@@ -93,7 +93,7 @@ class PromptOptimizerTypeConfig(BaseModel):
     target_metric: TargetMetric
     optimizer_model: str = Field(description="Model used for the optimizer agent itself")
     critic_model: str = Field(description="Model used for critic evaluations")
-    grader_model: str = Field(description="Model used for grader evaluations")
+    # Note: grader_model removed - grading is handled by snapshot grader daemons
     budget_limit: float = Field(description="Dollar budget limit for optimization")
 
 

@@ -11,10 +11,8 @@ from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from pydantic import Field
-from sqlalchemy import func
 
 from agent_core.handler import AbortIf, RedirectOnTextMessageHandler
-from agent_core.turn_limit import MaxTurnsExceededError
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
@@ -31,12 +29,12 @@ from props.core.critic.exceptions import CriticExecutionError
 from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.examples import Example
-from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingEdge, Snapshot
+from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, Snapshot
 from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.exceptions import AgentDidNotSubmitError
 from props.core.ids import DefinitionId, SnapshotSlug
-from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
+from props.core.models.examples import ExampleSpec, SingleFileSetExample
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 from props.core.prompt_optimize.budget_handler import BudgetEnforcementHandler
 from props.core.splits import Split
@@ -113,7 +111,6 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         optimizer_run_id: UUID,
         optimizer_model: str,
         critic_client: OpenAIModelProto,
-        grader_client: OpenAIModelProto,
         db_config: DatabaseConfig,
         optimizer_state: PromptOptimizerState,
         target_metric: TargetMetric,
@@ -127,7 +124,6 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         self._optimizer_run_id = optimizer_run_id
         self._optimizer_model = optimizer_model
         self._critic_client = critic_client
-        self._grader_client = grader_client
         self._db_config = db_config
         self.optimizer_state = optimizer_state  # Exposed for abort checking
         self._target_metric = target_metric
@@ -156,14 +152,12 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
             target_metric=self._target_metric,
             optimizer_model=self._optimizer_model,
             critic_model=self._critic_client.model,
-            grader_model=self._grader_client.model,
             budget_limit=self._budget_limit,
         )
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
         server = PromptEvalServer(
             critic_client=self._critic_client,
-            grader_client=self._grader_client,
             registry=self._registry,
             optimizer_state=self.optimizer_state,
             target_metric=self._target_metric,
@@ -186,22 +180,7 @@ class RunCriticInput(OpenAIStrictModeBaseModel):
 
 class RunCriticOutput(OpenAIStrictModeBaseModel):
     critic_run_id: UUID = Field(
-        description="agent_run_id of the critic agent run. Query agent_runs for output, costs, model. Pass to run_grader to grade against ground truth."
-    )
-    # cumulative_cost_usd: float = Field(
-    #     description="Total cumulative cost (USD) for all critic/grader runs in this optimization session so far."
-    # )
-
-
-class RunGraderInput(OpenAIStrictModeBaseModel):
-    critic_run_id: UUID = Field(description="agent_run_id of the critic agent run to grade (from run_critic output)")
-    max_turns: int = Field(ge=200, le=200, description="Maximum sampling turns (fixed at 200)")
-
-
-class RunGraderOutput(OpenAIStrictModeBaseModel):
-    grader_run_id: UUID = Field(description="agent_run_id of the grader agent run. Run has been saved to database.")
-    message: str = Field(
-        description="Instructions for querying recall metrics from database views (aggregated across runs)."
+        description="agent_run_id of the critic agent run. Query agent_runs for output, costs, model. Grading happens automatically via snapshot grader daemons - query recall views for metrics."
     )
     # cumulative_cost_usd: float = Field(
     #     description="Total cumulative cost (USD) for all critic/grader runs in this optimization session so far."
@@ -210,17 +189,14 @@ class RunGraderOutput(OpenAIStrictModeBaseModel):
 
 class PromptEvalServer(EnhancedFastMCP):
     RUN_CRITIC_TOOL = "run_critic"
-    RUN_GRADER_TOOL = "run_grader"
 
     run_critic_tool: FlatTool[Any, Any]
-    run_grader_tool: FlatTool[Any, Any]
     report_failure_tool: FlatTool[Any, Any]
 
     def __init__(
         self,
         *,
         critic_client: OpenAIModelProto,
-        grader_client: OpenAIModelProto,
         registry: AgentRegistry,
         optimizer_state: PromptOptimizerState,
         target_metric: TargetMetric,
@@ -233,8 +209,8 @@ class PromptEvalServer(EnhancedFastMCP):
             "prompt_eval",
             instructions=(
                 "Agent definition evaluation tools: "
-                "run_critic(definition_id, example) - run critic agent on example, "
-                "run_grader(critic_run_id) - grade critiques against ground truth. "
+                "run_critic(definition_id, example) - run critic agent on example. "
+                "Grading happens automatically via snapshot grader daemons - query recall views for metrics. "
                 "Create packages via CLI: props agent-pkg create /workspace/my_critic/."
                 "Query the database for results, costs, and metrics. "
                 "Use report_failure to declare the run unsuccessful and abort."
@@ -243,7 +219,6 @@ class PromptEvalServer(EnhancedFastMCP):
 
         # Store parameters for use in tools
         self._critic_client = critic_client
-        self._grader_client = grader_client
         self._registry = registry
         self._optimizer_state = optimizer_state
         self._target_metric = target_metric
@@ -266,7 +241,7 @@ class PromptEvalServer(EnhancedFastMCP):
             - VALID split: restrictions depend on target_metric mode
             - TEST split: completely off-limits
 
-            Returns critic_run_id for subsequent grading with run_grader.
+            Returns critic_run_id. Grading happens automatically via snapshot grader daemons.
             """
             # Validate definition exists
             with get_session() as session:
@@ -368,131 +343,6 @@ class PromptEvalServer(EnhancedFastMCP):
 
         self.run_critic_tool = self.flat_model()(run_critic)
 
-        async def run_grader(payload: RunGraderInput) -> RunGraderOutput:
-            """Run grader agent to evaluate a critique against ground truth.
-
-            Saves grader run to database with per-occurrence credits.
-
-            To get recall metrics, query aggregate views (see docs/db/evaluation_flow.md):
-            - recall_by_definition_split_kind: Recall per (agent_definition_id, models, split, example_kind)
-            - recall_by_example: Recall per (example, models)
-
-            Returns grader_run_id and instructions for querying metrics.
-            """
-            # Execute GraderRun by critic_run_id (fetches critic run from DB, saves grader run to DB)
-            try:
-                grader_run_id = await self._registry.run_grader(
-                    critic_run_id=payload.critic_run_id,
-                    client=self._grader_client,
-                    parent_run_id=self._optimizer_run_id,
-                    verbose=self._verbose,
-                    max_turns=payload.max_turns,
-                )
-            except AgentDidNotSubmitError as e:
-                raise ToolError(
-                    f"{e}\n\n{_AGENT_STUCK_ADVICE}\n{_trace_advice_for_run(e.agent_run_id, is_grader=True)}"
-                ) from e
-            except MaxTurnsExceededError as e:
-                raise ToolError(
-                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n{_AGENT_STUCK_ADVICE}"
-                ) from e
-
-            # Verify grader run succeeded
-            # Note: grader_run_id is always UUID here - the except block always raises
-            with get_session() as session:
-                grader_run = session.get(AgentRun, grader_run_id)
-                if not grader_run:
-                    raise ToolError(f"Grader run {grader_run_id} not found in database")
-                if grader_run.status != AgentRunStatus.COMPLETED:
-                    raise ToolError(
-                        f"Grader run {grader_run_id} did not complete successfully (status={grader_run.status.value})\n\n"
-                        f"{_AGENT_STUCK_ADVICE}\n"
-                        f"{_trace_advice_for_run(grader_run_id, is_grader=True)}"
-                    )
-
-                # Determine split and whether this is a full-snapshot run
-                # Get example spec from the graded critic run
-                graded_critic_run_id = grader_run.grader_config().graded_agent_run_id
-                critic_run = session.get(AgentRun, graded_critic_run_id)
-                if not critic_run:
-                    raise ToolError(f"Grader run {grader_run_id} has no associated critic run")
-                critic_config = critic_run.critic_config()
-                example_spec = critic_config.example
-                snapshot_slug = example_spec.snapshot_slug
-                snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-                split = snapshot.split
-
-                # Find matching example to check scope kind
-                example = Example.from_spec(session, example_spec)  # Raises if not found - data integrity error
-
-                # Get example kind from the example itself
-                scope_kind = example.example_kind
-
-                # Compute immediate feedback from this grader run (direct query to grading_edges)
-                # Pattern 1: Total credit (recall numerator)
-                total_credit = (
-                    session.query(func.sum(GradingEdge.credit))
-                    .filter_by(grader_run_id=grader_run_id)
-                    .filter(GradingEdge.tp_id.isnot(None))  # Only TP matches
-                    .scalar()
-                    or 0.0
-                )
-
-                # Pattern 2: Occurrence count (recall denominator)
-                max_credit = (
-                    session.query(GradingEdge.tp_id, GradingEdge.tp_occurrence_id)
-                    .filter_by(grader_run_id=grader_run_id)
-                    .filter(GradingEdge.tp_id.isnot(None))
-                    .distinct()
-                    .count()
-                )
-
-                # Build message with immediate feedback and query advice
-                immediate_feedback = (
-                    f"Grader run {grader_run_id} completed successfully. "
-                    f"Total credit: {total_credit:.2f} of {max_credit}. "
-                )
-
-                # Add query advice based on split, example type, and optimization mode
-                if (
-                    split == Split.VALID
-                    and scope_kind == ExampleKind.WHOLE_SNAPSHOT
-                    and self._target_metric == TargetMetric.WHOLE_REPO
-                ):
-                    # VALID full-snapshot in whole-repo mode: use validation function
-                    query_advice = (
-                        f"{_FUNCTION_BASED_METRICS_ADVICE} "
-                        f"Example: SELECT * FROM {_VALIDATION_FUNCTION_NAME} WHERE grader_run_id = '{grader_run_id}'; "
-                        f"For full details: SELECT * FROM agent_runs WHERE agent_run_id = '{grader_run_id}';"
-                    )
-                elif (
-                    split == Split.VALID
-                    and scope_kind == ExampleKind.WHOLE_SNAPSHOT
-                    and self._target_metric == TargetMetric.TARGETED
-                ):
-                    # VALID full-snapshot in targeted mode: use aggregate views
-                    query_advice = (
-                        f"{_VIEW_BASED_METRICS_ADVICE} "
-                        "IMPORTANT: Check n_examples >= 5 before trusting metrics (small samples have high variance). "
-                        "Use UCB/LCB bounds to quantify uncertainty. "
-                        f"Example: SELECT recall_stats, n_examples FROM recall_by_definition_split_kind "
-                        f"WHERE critic_image_digest ='...' AND split='valid' AND example_kind='{ExampleKind.WHOLE_SNAPSHOT}'; "
-                        f"For full details: SELECT * FROM agent_runs WHERE agent_run_id = '{grader_run_id}';"
-                    )
-                else:
-                    # TRAIN split or per-file examples: use aggregate views
-                    query_advice = (
-                        f"{_VIEW_BASED_METRICS_ADVICE} "
-                        "Example: SELECT recall_stats FROM recall_by_definition_split_kind WHERE critic_image_digest ='...' AND split='train'; "
-                        f"For full details: SELECT * FROM agent_runs WHERE agent_run_id = '{grader_run_id}';"
-                    )
-
-                message = immediate_feedback + query_advice
-
-            return RunGraderOutput(grader_run_id=grader_run_id, message=message)
-
-        self.run_grader_tool = self.flat_model()(run_grader)
-
         async def report_failure(payload: ReportFailureInput) -> str:
             """Report that optimization could not be completed.
 
@@ -511,7 +361,6 @@ async def run_prompt_optimizer(
     budget: float,
     optimizer_client: OpenAIModelProto,
     critic_client: OpenAIModelProto,
-    grader_client: OpenAIModelProto,
     docker_client: aiodocker.Docker,
     target_metric: TargetMetric,
     db_config: DatabaseConfig,
@@ -519,7 +368,10 @@ async def run_prompt_optimizer(
     max_lines: int = DEFAULT_MAX_LINES,
     image_ref: str = BUILTIN_TAG,
 ) -> None:
-    """Run prompt optimizer agent. Loops until budget exhausted or report_failure called."""
+    """Run prompt optimizer agent. Loops until budget exhausted or report_failure called.
+
+    Note: grader_client removed - grading is handled by snapshot grader daemons.
+    """
     # Get train snapshots from database
     with get_session() as session:
         train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).all()
@@ -542,7 +394,6 @@ async def run_prompt_optimizer(
             target_metric=target_metric,
             optimizer_model=optimizer_client.model,
             critic_model=critic_client.model,
-            grader_model=grader_client.model,
             budget_limit=budget,
         )
 
@@ -571,7 +422,6 @@ async def run_prompt_optimizer(
         optimizer_run_id=agent_run_id,
         optimizer_model=optimizer_client.model,
         critic_client=critic_client,
-        grader_client=grader_client,
         db_config=db_config,
         optimizer_state=PromptOptimizerState(),
         target_metric=target_metric,
@@ -590,17 +440,16 @@ async def run_prompt_optimizer(
         # The prompt eval server (and grader/critic tools) should be able to auto-detect when they're
         # being called within a PO session context (e.g., via environment variable, session metadata,
         # or resource lookup) rather than requiring manual ID propagation through all tool calls.
-        # This would eliminate the need to manually set prompt_optimization_run_id in RunCriticInput
-        # and RunGraderInput.
+        # This would eliminate the need to manually set prompt_optimization_run_id in RunCriticInput.
 
         user = f"""Your budget is: ${budget:.2f}.
 
 Models in use:
 - Optimizer (you): {optimizer_client.model}
 - Critic: {critic_client.model}
-- Grader: {grader_client.model}
 
-Note: The database may contain results from other models. These historical results might provide useful insights for optimization.
+Note: Grading is handled automatically by snapshot grader daemons. Query recall views for metrics.
+The database may contain results from other models. These historical results might provide useful insights for optimization.
 
 Iterate to find an optimal prompt for a code reviewer/critic LLM agent.
 Prioritize recall.
@@ -625,7 +474,7 @@ Prioritize recall.
                 RedirectOnTextMessageHandler(
                     reminder_message=(
                         "Text messages won't be delivered. Continue optimization work via MCP tools "
-                        "(run_critic, run_grader). Report completion or failure via tools."
+                        "(run_critic). Query recall views for grading results. Report completion or failure via tools."
                     )
                 ),
                 AbortIf(should_abort=_optimizer_should_abort),

@@ -24,7 +24,7 @@ from props.core.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_exa
 from props.core.db.session import get_session
 from props.core.display import ColumnDef, build_table_from_schema
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
-from props.core.prompt_optimize.prompt_optimizer import ReportFailureInput, RunCriticInput, RunGraderInput
+from props.core.prompt_optimize.prompt_optimizer import ReportFailureInput, RunCriticInput
 from props.core.splits import Split
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
@@ -85,28 +85,7 @@ async def run_critic_cmd(
     async with mcp_client_from_env() as (client, _init_result):
         result = await client.call_tool("run_critic", payload.model_dump())
         typer.echo(f"Critic run ID: {result}")
-
-
-@app.command("run-grader")
-@async_run
-async def run_grader_cmd(
-    critic_run_id: Annotated[str, typer.Argument(help="UUID of the critic run to grade")],
-    max_turns: Annotated[int, typer.Option("--max-turns", "-t", help="Maximum agent turns before timeout")] = 200,
-) -> None:
-    """Grade a critique and compute recall metrics.
-
-    Takes a critic_run_id and runs the grader to match reported issues
-    against ground truth. Returns the grader_run_id.
-
-    Examples:
-        props critic-dev run-grader "12345678-1234-1234-1234-123456789abc"
-        props critic-dev run-grader "12345678-..." --max-turns 100
-    """
-    payload = RunGraderInput(critic_run_id=UUID(critic_run_id), max_turns=max_turns)
-
-    async with mcp_client_from_env() as (client, _init_result):
-        result = await client.call_tool("run_grader", payload.model_dump(mode="json"))
-        typer.echo(f"Grader run result: {result}")
+        typer.echo("Note: Grading is handled automatically by snapshot grader daemons.")
 
 
 @app.command("report-failure")

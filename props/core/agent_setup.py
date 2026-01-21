@@ -73,9 +73,9 @@ async def build_props_handlers(
     """Build standard handlers for props agent workflows.
 
     # TODO: Refactor display config threading. Currently `verbose` and `max_lines` are passed
-    # separately from CLI through run_critic/run_grader, while `verbose_prefix` is constructed
-    # mid-way from internal context (agent_run_id, snapshot_slug, etc.). Consider consolidating
-    # into a single `DisplayConfig | None` param constructed at the same level as the prefix,
+    # separately from CLI through run_critic, while `verbose_prefix` is constructed mid-way
+    # from internal context (agent_run_id, snapshot_slug, etc.). Consider consolidating into
+    # a single `DisplayConfig | None` param constructed at the same level as the prefix,
     # with CLI just passing `max_lines: int | None` (None = no display).
 
     Always includes DatabaseEventHandler for event persistence.

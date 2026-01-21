@@ -23,24 +23,6 @@ py_library(
 )
 
 py_library(
-    name = "grader",
-    srcs = ["grader.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":submit_server",
-        "//mcp_infra",
-        "//props/core:agent_setup",
-        "//props/core:agent_workspace",
-        "//props/core:display",
-        "//props/core:ids",
-        "//props/core/db:config",
-        "@pypi//aiodocker",
-        "@pypi//fastmcp",
-    ],
-)
-
-py_library(
     name = "persistence",
     srcs = ["persistence.py"],
     imports = ["../../.."],
@@ -206,35 +188,5 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_e2e",
-    srcs = ["test_e2e.py"],
-    env = {
-        "PGHOST": "127.0.0.1",
-        "PGPORT": "5433",
-        "AGENT_PGHOST": "127.0.0.1",
-        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
-        "PROPS_REGISTRY_PROXY_PORT": "5051",
-        "PROPS_DOCKER_NETWORK": "host",
-    },
-    imports = ["../../.."],
-    tags = [
-        "requires_docker",
-        "requires_postgres",
-    ],
-    deps = [
-        ":grader",
-        "//agent_core",
-        "//agent_core_testing",
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "//props/testing",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -67,7 +67,7 @@ class ValidationRunRequest(BaseModel):
     split: Split = Split.VALID
     n_samples: int = Field(ge=1, le=50, default=5)
     critic_model: str = "gpt-5.1-codex-mini"
-    grader_model: str = "gpt-5.1-codex-mini"
+    # Note: grader_model removed - grading is handled by snapshot grader daemons
 
 
 class ValidationRunResponse(BaseModel):
@@ -310,14 +310,16 @@ WsMessage = Annotated[WsEventMessage | WsStatusMessage | WsCompleteMessage, Fiel
 
 @dataclass
 class ValidationJob:
-    """Tracks a validation batch job."""
+    """Tracks a validation batch job.
+
+    Note: grader_model removed - grading is handled by snapshot grader daemons.
+    """
 
     job_id: UUID
     image_digest: str
     example_kind: ExampleKind
     n_samples: int
     critic_model: str
-    grader_model: str
     status: JobStatus = JobStatus.RUNNING
     completed: int = 0
     failed: int = 0
@@ -520,10 +522,11 @@ def list_runs(
 
 @router.post("/validation")
 async def trigger_validation_runs(request: Request, body: ValidationRunRequest) -> ValidationRunResponse:
-    """Trigger validation runs: sample N examples, run 1 critic->grader per example.
+    """Trigger validation critic runs: sample N examples, run 1 critic per example.
 
     Runs are started in the background in parallel. Poll /api/runs/jobs for status.
     Registry semaphore limits actual concurrency.
+    Grading is handled automatically by snapshot grader daemons.
     """
     registry = get_registry(request)
 
@@ -554,7 +557,6 @@ async def trigger_validation_runs(request: Request, body: ValidationRunRequest) 
         example_kind=body.example_kind,
         n_samples=n_to_sample,
         critic_model=body.critic_model,
-        grader_model=body.grader_model,
         examples=example_specs,
     )
     _jobs[job_id] = job
@@ -571,16 +573,16 @@ async def trigger_validation_runs(request: Request, body: ValidationRunRequest) 
 
 
 async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> None:
-    """Run critic->grader for each example in the job, in parallel.
+    """Run critic for each example in the job, in parallel.
 
     Registry semaphore limits actual concurrency.
+    Grading is handled automatically by snapshot grader daemons.
     """
     try:
         critic_client = build_client(job.critic_model)
-        grader_client = build_client(job.grader_model)
 
         async def run_one(example: ExampleSpec) -> bool:
-            """Run critic + grader for one example. Returns True on success."""
+            """Run critic for one example. Returns True on success."""
             try:
                 logger.info(f"[Job {job.job_id}] Running critic on {example.snapshot_slug}")
                 critic_run_id = await registry.run_critic(
@@ -595,9 +597,7 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
                         logger.warning(f"[Job {job.job_id}] Critic failed with status {status}")
                         return False
 
-                # Run grader
-                logger.info(f"[Job {job.job_id}] Running grader on critic {critic_run_id}")
-                await registry.run_grader(critic_run_id=critic_run_id, client=grader_client, max_turns=200)
+                logger.info(f"[Job {job.job_id}] Critic completed: {critic_run_id}")
                 return True
 
             except Exception:
