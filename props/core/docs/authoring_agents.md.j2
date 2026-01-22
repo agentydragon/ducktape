@@ -22,17 +22,17 @@ The container receives these resources:
 
 | Resource | Access Method |
 |----------|---------------|
-| MCP servers | `MCP_SERVER_URL`, `MCP_SERVER_TOKEN` env vars |
+| Backend API | `PROPS_BACKEND_URL` env var (default: http://props-backend:8000) |
 | PostgreSQL | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` env vars |
 | Source code | Built-in images use `props snapshot fetch <slug>` (if your image has props CLI) |
 | Working dir | `/workspace/` (writable) |
-| Registry | `registry-proxy:5050` via postgres credentials (if agent type has registry access) |
+| Registry | `props-backend:8000/v2/*` via postgres credentials (if agent type has registry access) |
 
 **Database user pattern:** `agent_{run_id}` — RLS policies automatically scope queries to your agent's data.
 
-**Registry access:** Agents that create new agent images can pull/push via the registry proxy using their postgres credentials (`agent_{run_id}` / password). Other agent types have no registry access.
+**Registry access:** Agents that create new agent images can pull/push via the backend's registry proxy (`/v2/*`) using their postgres credentials (`agent_{run_id}` / password). Other agent types have no registry access.
 
-**MCP connection:** HTTP-based. The agent framework handles MCP communication; your init script just prints the system message.
+**Backend API access:** PO and PI agents can call `/api/eval/*` endpoints to run critic agents and wait for grading results. Other agents have no backend API access.
 
 ## Available Base Images
 
@@ -75,7 +75,7 @@ import httpx
 # Credentials automatically provided to agent containers
 username = os.environ["PGUSER"]  # "agent_<uuid>"
 password = os.environ["PGPASSWORD"]
-registry_url = "http://registry-proxy:5050"
+backend_url = os.environ.get("PROPS_BACKEND_URL", "http://props-backend:8000")
 auth = (username, password)  # Basic auth
 ```
 
@@ -84,7 +84,7 @@ auth = (username, password)  # Basic auth
 ```python
 # Get manifest for base image
 response = httpx.get(
-    f"{registry_url}/v2/critic/manifests/latest",
+    f"{backend_url}/v2/critic/manifests/latest",
     auth=auth,
     headers={"Accept": "application/vnd.oci.image.manifest.v1+json"}
 )
@@ -126,14 +126,14 @@ import hashlib
 
 # 1. Start upload
 response = httpx.post(
-    f"{registry_url}/v2/critic/blobs/uploads/",
+    f"{backend_url}/v2/critic/blobs/uploads/",
     auth=auth
 )
 upload_url = response.headers["Location"]  # Get upload URL
 
 # 2. Upload layer data (monolithic upload)
 response = httpx.put(
-    f"{registry_url}{upload_url}?digest={layer_digest}",
+    f"{backend_url}{upload_url}?digest={layer_digest}",
     auth=auth,
     headers={"Content-Type": "application/octet-stream"},
     content=layer_bytes
@@ -175,7 +175,7 @@ manifest_digest = f"sha256:{hashlib.sha256(manifest_json.encode()).hexdigest()}"
 
 # Push by digest only
 response = httpx.put(
-    f"{registry_url}/v2/critic/manifests/{manifest_digest}",
+    f"{backend_url}/v2/critic/manifests/{manifest_digest}",
     auth=auth,
     headers={"Content-Type": "application/vnd.oci.image.manifest.v1+json"},
     content=manifest_json
@@ -222,17 +222,21 @@ The built-in `critic`, `grader`, and `prompt-optimizer` images use these pattern
 
 Built-in images put the `props` CLI at `/app/` and agent prompts at `/agent.md`, but this is just one approach.
 
-## Registry Architecture
+## Backend API Architecture
 
-**Registry proxy** (`registry-proxy:5050`) enforces ACL and authentication:
+The unified backend serves all functionality at `http://props-backend:8000`:
 
-| Caller Type | Read | Push by Digest | Push by Tag | Delete |
-|------------|------|----------------|-------------|--------|
-| Admin      | ✓    | ✓              | ✓           | ✗      |
-| Agent author | ✓    | ✓              | ✗           | ✗      |
-| Other agents | ✗ | ✗              | ✗           | ✗      |
+| Path | Description | Access |
+|------|-------------|--------|
+| `/health` | Health check | Public |
+| `/api/stats/*` | Dashboard stats | Admin |
+| `/api/runs/*` | Agent run management | Admin |
+| `/api/gt/*` | Ground truth management | Admin |
+| `/api/eval/*` | Evaluation orchestration | Admin + PO/PI |
+| `/v1/responses` | LLM proxy (OpenAI API) | Agents |
+| `/v2/*` | Registry proxy (OCI API) | Admin + PO/PI |
 
-**Network isolation:** Agents cannot reach the registry directly (`:5000`), only through the proxy. This prevents ACL bypass.
+**Network isolation:** Agents cannot reach the registry directly (`:5000`), only through the backend's proxy endpoints. This prevents ACL bypass.
 
 ## Best Practices
 

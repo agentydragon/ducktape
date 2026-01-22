@@ -1,4 +1,4 @@
-"""Props backend - FastAPI dashboard server."""
+"""Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
@@ -23,10 +23,14 @@ py_library(
         "//props/core:agent_registry",
         "//props/core:agent_types",
         "//props/core:agent_workspace",
+        "//props/core:exceptions",
         "//props/core:ids",
+        "//props/core:oci_utils",
         "//props/core:splits",
         "//props/cli:common_options",
         "//props/cli:resources",
+        "//props/critic:exceptions",
+        "//props/critic_dev:shared",
         "//props/db:examples",
         "//props/db:models",
         "//props/db:session",
@@ -35,9 +39,12 @@ py_library(
         "//props/core/models:true_positive",
         "@pypi//aiodocker",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//openai",
+        "@pypi//psycopg",
         "@pypi//pydantic",
+        "@pypi//starlette",
         "@pypi//typer",
         "@pypi//uvicorn",
     ],

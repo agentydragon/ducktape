@@ -74,8 +74,8 @@ OPT_RUNBOOK_SNAPSHOT = typer.Option(
     None, "--snapshot", help="Snapshot slug to hydrate and mount as /workspace (read-only)", click_type=SNAPSHOT_SLUG
 )
 
-# Options - LLM Proxy
-DEFAULT_LLM_PROXY_URL = "http://props-proxy:5050"
+# Options - LLM Proxy (now part of unified backend)
+DEFAULT_LLM_PROXY_URL = "http://props-backend:8000"
 LLM_PROXY_URL_ENVVAR = "PROPS_LLM_PROXY_URL"
 OPT_LLM_PROXY_URL = typer.Option(
     DEFAULT_LLM_PROXY_URL, "--llm-proxy-url", envvar=LLM_PROXY_URL_ENVVAR, help="URL of the LLM proxy"

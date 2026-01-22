@@ -3,12 +3,12 @@
 # Stop: docker compose down
 
 networks:
-  # Internal network for registry/proxy/postgres communication
+  # Internal network for registry/backend/postgres communication
   # Agents cannot access this network directly
   props-internal:
     name: props-internal
     internal: true
-  # Network for agent containers to reach proxy and postgres
+  # Network for agent containers to reach backend and postgres
   props-agents:
     name: props-agents
 
@@ -37,8 +37,8 @@ services:
   registry:
     image: registry:2
     container_name: props-registry
-    # Note: Registry is not exposed on host - agents talk to it via the proxy
-    # Only exposed for debugging; use a different port to avoid conflict with proxy
+    # Note: Registry is not exposed on host - agents talk to it via the backend proxy
+    # Only exposed for debugging; use a different port to avoid conflict
     ports:
       - "5000:5000"
     volumes:
@@ -47,18 +47,21 @@ services:
       - props-internal
       - default # For host port publishing (internal network blocks it)
 
-  # Combined proxy for both LLM and Registry functionality
-  # LLM endpoints: POST /v1/responses
-  # Registry endpoints: /v2/* (OCI Distribution API)
-  proxy:
-    image: props-proxy:latest
-    container_name: props-proxy
+  # Unified backend: dashboard API + LLM proxy + registry proxy + eval API
+  # Dashboard API: /api/stats, /api/runs, /api/gt
+  # LLM Proxy: POST /v1/responses
+  # Registry Proxy: /v2/* (OCI Distribution API)
+  # Eval API: /api/eval/run_critic, /api/eval/wait_until_graded
+  backend:
+    image: props-backend:latest
+    container_name: props-backend
     ports:
-      - "5050:5050"
+      - "8000:8000"
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_UPSTREAM_URL: https://api.openai.com
       PROPS_REGISTRY_UPSTREAM_URL: http://props-registry:5000
+      PROPS_GRADER_MODEL: ${PROPS_GRADER_MODEL:-gpt-5.1-codex-mini}
       PGHOST: props-postgres
       PGPORT: "5432"
       PGUSER: postgres
@@ -73,7 +76,7 @@ services:
       registry:
         condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s
       timeout: 5s
       retries: 5
