@@ -217,9 +217,10 @@ with get_session() as session:
 
 All structured runs are persisted with:
 
-- Input/output payloads (JSONB columns in database)
+- Agent configuration (type_config JSONB column storing snapshot_slug, files, model, etc.)
+- Reported issues and occurrences in normalized tables (issue_id, rationale, locations)
 - Specimen splits for train/valid/test separation
-- Execution traces in events table
+- Execution traces in LLM requests table (prompt, completion, tokens, cost)
 
 ### Specimen Inspection (for assistants)
 
