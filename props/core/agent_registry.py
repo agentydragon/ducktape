@@ -6,6 +6,7 @@ AgentRegistry is THE entry point for running agents. It owns shared resources
 In-container architecture:
 - Container runs its own agent loop (CMD entrypoint)
 - Container talks to LLM proxy (OPENAI_BASE_URL env var)
+- Container connects to backend REST API for eval operations (PROPS_BACKEND_URL env var)
 - Container exits 0 on success, non-zero on failure
 - Host scaffold: creates temp DB user, starts container, waits for exit
 
@@ -13,7 +14,7 @@ Usage:
     registry = AgentRegistry(
         docker_client=docker_client,
         db_config=db_config,
-        llm_proxy_url="http://props-proxy:5050",
+        llm_proxy_url="http://props-backend:8000",
     )
     async with registry:
         critic_run_id = await registry.run_critic(
@@ -58,12 +59,10 @@ from props.core.agent_types import (
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
 from props.core.loop_agent_env import ContainerResult, run_loop_agent
-from props.core.mcp_http_server import serve_mcp_http
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 from props.core.splits import Split
 from props.critic_dev.improve.main import TerminationSuccess
-from props.critic_dev.prompt_eval_server import PromptEvalServer, PromptOptimizerState
 from props.critic_dev.shared import TargetMetric
 from props.db.config import DatabaseConfig
 from props.db.models import AgentRun, AgentRunStatus, Snapshot
@@ -334,41 +333,31 @@ class AgentRegistry:
 
         logger.info(f"Created prompt optimizer AgentRun: {agent_run_id}")
 
-        # Create PromptEvalServer with orchestration tools
-        optimizer_state = PromptOptimizerState()
-        prompt_eval_server = PromptEvalServer(
-            critic_model=critic_model,
-            registry=self,
-            optimizer_state=optimizer_state,
-            target_metric=target_metric,
-            optimizer_run_id=agent_run_id,
-        )
-
         try:
-            # Serve PromptEvalServer via HTTP for container to connect
-            with serve_mcp_http(prompt_eval_server) as mcp_handle:
-                logger.info(f"MCP server available at {mcp_handle.url}")
+            # Run the container with in-container agent loop
+            # Container uses REST API (PROPS_BACKEND_URL) instead of MCP
+            result = await run_loop_agent(
+                docker_client=self._docker_client,
+                agent_run_id=agent_run_id,
+                db_config=self._db_config,
+                image=image,
+                llm_proxy_url=self._llm_proxy_url,
+                extra_env={
+                    # Backend URL for eval API (run_critic, wait_until_graded)
+                    "PROPS_BACKEND_URL": self._llm_proxy_url
+                },
+                container_name=f"promptopt-{short_uuid(agent_run_id)}",
+                timeout_seconds=timeout_seconds,
+                extra_hosts=self._extra_hosts,
+            )
 
-                # Run the container with in-container agent loop
-                result = await run_loop_agent(
-                    docker_client=self._docker_client,
-                    agent_run_id=agent_run_id,
-                    db_config=self._db_config,
-                    image=image,
-                    llm_proxy_url=self._llm_proxy_url,
-                    extra_env={"MCP_SERVER_URL": mcp_handle.url, "MCP_SERVER_TOKEN": mcp_handle.token},
-                    container_name=f"promptopt-{short_uuid(agent_run_id)}",
-                    timeout_seconds=timeout_seconds,
-                    extra_hosts=self._extra_hosts,
-                )
-
-                timed_out = result.exit_code == -1
-                if timed_out:
-                    logger.error(f"Container timed out after {timeout_seconds} seconds")
-                else:
-                    logger.info(f"Container exited with code {result.exit_code}")
-                if result.stderr:
-                    logger.info(f"Container stderr:\n{result.stderr}")
+            timed_out = result.exit_code == -1
+            if timed_out:
+                logger.error(f"Container timed out after {timeout_seconds} seconds")
+            else:
+                logger.info(f"Container exited with code {result.exit_code}")
+            if result.stderr:
+                logger.info(f"Container stderr:\n{result.stderr}")
 
             # Update status based on exit code
             if timed_out:
@@ -483,41 +472,31 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        # Create PromptEvalServer with orchestration tools
-        optimizer_state = PromptOptimizerState()
-        prompt_eval_server = PromptEvalServer(
-            critic_model=critic_model,
-            registry=self,
-            optimizer_state=optimizer_state,
-            target_metric=TargetMetric.TARGETED,
-            optimizer_run_id=run_id,
-        )
-
         try:
-            # Serve PromptEvalServer via HTTP for container to connect
-            with serve_mcp_http(prompt_eval_server) as mcp_handle:
-                logger.info(f"MCP server available at {mcp_handle.url}")
+            # Run the container with in-container agent loop
+            # Container uses REST API (PROPS_BACKEND_URL) instead of MCP
+            result = await run_loop_agent(
+                docker_client=self._docker_client,
+                agent_run_id=run_id,
+                db_config=self._db_config,
+                image=image,
+                llm_proxy_url=self._llm_proxy_url,
+                extra_env={
+                    # Backend URL for eval API (run_critic, wait_until_graded)
+                    "PROPS_BACKEND_URL": self._llm_proxy_url
+                },
+                container_name=f"improve-{short_uuid(run_id)}",
+                timeout_seconds=timeout_seconds,
+                extra_hosts=self._extra_hosts,
+            )
 
-                # Run the container with in-container agent loop
-                result = await run_loop_agent(
-                    docker_client=self._docker_client,
-                    agent_run_id=run_id,
-                    db_config=self._db_config,
-                    image=image,
-                    llm_proxy_url=self._llm_proxy_url,
-                    extra_env={"MCP_SERVER_URL": mcp_handle.url, "MCP_SERVER_TOKEN": mcp_handle.token},
-                    container_name=f"improve-{short_uuid(run_id)}",
-                    timeout_seconds=timeout_seconds,
-                    extra_hosts=self._extra_hosts,
-                )
-
-                timed_out = result.exit_code == -1
-                if timed_out:
-                    logger.error(f"Container timed out after {timeout_seconds} seconds")
-                else:
-                    logger.info(f"Container exited with code {result.exit_code}")
-                if result.stderr:
-                    logger.info(f"Container stderr:\n{result.stderr}")
+            timed_out = result.exit_code == -1
+            if timed_out:
+                logger.error(f"Container timed out after {timeout_seconds} seconds")
+            else:
+                logger.info(f"Container exited with code {result.exit_code}")
+            if result.stderr:
+                logger.info(f"Container stderr:\n{result.stderr}")
 
             # Update status based on exit code
             if timed_out:
@@ -548,7 +527,7 @@ class AgentRegistry:
             return ImprovementResult(tokens_used=0, run_id=run_id, outcome=outcome)  # TODO: Track tokens
 
         finally:
-            pass  # No cleanup needed - we use self as the registry
+            pass  # No cleanup needed
 
     def _interpret_container_result(self, result: ContainerResult, agent_run_id: UUID) -> AgentRunStatus:
         """Map container exit code to AgentRunStatus."""

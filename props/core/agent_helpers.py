@@ -5,7 +5,7 @@ Provides:
 - get_scope_description(): Get critic scope description for template rendering
 - fetch_snapshot(): Fetch snapshot to local filesystem and return path
 
-For MCP client, use agent_pkg_runtime.mcp_client_from_env directly.
+For eval API client, use props.core.eval_client.EvalClient.
 
 Database access: Just use get_session() directly - it auto-initializes from PG* env vars.
 
@@ -25,11 +25,12 @@ Usage:
     with get_session() as session:
         snapshots = session.query(Snapshot).filter_by(split='train').all()
 
-    # MCP HTTP client (from agent_pkg.runtime.mcp)
-    from agent_pkg.runtime.mcp import mcp_client_from_env
+    # Eval API client (REST-based, replaces MCP)
+    from props.core.eval_client import EvalClient
 
-    async with mcp_client_from_env() as (client, _):
-        result = await client.call_tool("tool_name", {"arg": "value"})
+    async with EvalClient.from_env() as client:
+        result = await client.run_critic(definition_id="critic", example=example)
+        status = await client.wait_until_graded(result.critic_run_id)
 """
 
 from __future__ import annotations

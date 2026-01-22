@@ -14,6 +14,26 @@ backend_url = os.environ.get("PROPS_BACKEND_URL", "http://props-backend:8000")
 auth = (os.environ["PGUSER"], os.environ["PGPASSWORD"])
 ```
 
+## Using EvalClient (Recommended)
+
+For running critic evaluations, use the `EvalClient` class which handles authentication and polling:
+
+```python
+from props.core.eval_client import EvalClient
+from props.core.models.examples import WholeSnapshotExample
+
+async with EvalClient.from_env() as client:
+    # Run critic
+    result = await client.run_critic(
+        definition_id="critic",
+        example=WholeSnapshotExample(snapshot_slug="ducktape/2025-01-01"),
+    )
+
+    # Wait for grading completion (polls automatically)
+    status = await client.wait_until_graded(result.critic_run_id)
+    print(f"Recall: {status.total_credit}/{status.max_credit}")
+```
+
 ## OpenAPI Schema
 
 The full API schema is available at `/openapi.json`. Use this for detailed request/response formats:
@@ -42,7 +62,9 @@ schema = httpx.get(f"{backend_url}/openapi.json").json()
 | Critic                             | ✗        | ✗        | ✓         |
 | Grader                             | ✗        | ✗        | ✓         |
 
-## Example: Running a Critic Evaluation
+## Raw HTTP Example
+
+If you need to use raw HTTP requests instead of `EvalClient`:
 
 ```python
 import os
