@@ -10,6 +10,7 @@ This module provides:
 - Caller type determination for ACL enforcement
 - Starlette middleware for request-level auth
 - Auth context attached to request.state
+- Dependency functions for ACL enforcement (require_read, require_push, require_eval_access)
 """
 
 from __future__ import annotations
@@ -26,15 +27,11 @@ from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
+from props.db.config import get_database_config
 from props.db.models import AgentRun, AgentType
 from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
-
-# Postgres configuration from environment
-PGHOST = os.environ.get("PGHOST", "props-postgres")
-PGPORT = os.environ.get("PGPORT", "5432")
-PGDATABASE = os.environ.get("PGDATABASE", "eval_results")
 
 # Localhost admin access - allow empty creds from localhost to act as admin
 # This is useful for local development and dashboard/backend access
@@ -108,16 +105,21 @@ class CredentialValidationResult:
         return cls(is_valid=True, access_level=AccessLevel.AGENT, agent_run_id=agent_run_id)
 
 
-def extract_agent_run_id(username: str) -> UUID | None:
+def extract_agent_run_id_from_username(username: str) -> UUID | None:
     """Extract agent_run_id from username if it matches agent_{uuid} pattern.
+
+    This uses the same pattern as TempUserManager.generate_username() which creates
+    usernames in the format "agent_{uuid}".
 
     Returns None if username doesn't match the pattern.
     """
-    if not username.startswith("agent_"):
+    # Pattern matches TempUserManager.generate_username(): f"agent_{self.agent_run_id}"
+    prefix = "agent_"
+    if not username.startswith(prefix):
         return None
 
     try:
-        return UUID(username.removeprefix("agent_"))
+        return UUID(username[len(prefix) :])
     except ValueError:
         logger.warning(f"Invalid UUID in agent username: {username}")
         return None
@@ -126,6 +128,8 @@ def extract_agent_run_id(username: str) -> UUID | None:
 def validate_postgres_credentials(username: str, password: str) -> CredentialValidationResult:
     """Validate credentials by attempting Postgres connection.
 
+    Uses DatabaseConfig from props.db.config for connection parameters.
+
     Returns a CredentialValidationResult with:
     - is_valid: True if connection succeeded
     - access_level: ADMIN for regular users, AGENT for agent_{uuid} pattern
@@ -133,12 +137,24 @@ def validate_postgres_credentials(username: str, password: str) -> CredentialVal
     - error: Error message if validation failed
     """
     # First, try to extract agent run ID from username pattern
-    agent_run_id = extract_agent_run_id(username)
+    agent_run_id = extract_agent_run_id_from_username(username)
+
+    # Get database config (uses PGHOST, PGPORT, PGDATABASE from env)
+    try:
+        db_config = get_database_config()
+    except ValueError as e:
+        logger.error(f"Database config not available: {e}")
+        return CredentialValidationResult.invalid("Server configuration error")
 
     # Validate credentials against Postgres
     try:
         with psycopg.connect(
-            host=PGHOST, port=PGPORT, dbname=PGDATABASE, user=username, password=password, connect_timeout=5
+            host=db_config.host,
+            port=db_config.port,
+            dbname=db_config.database,
+            user=username,
+            password=password,
+            connect_timeout=5,
         ):
             pass  # Connection succeeded
     except psycopg.OperationalError as e:
@@ -318,3 +334,47 @@ def get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
             AgentType.GRADER: CallerType.GRADER,
         }
         return caller_type_map.get(agent_type, CallerType.UNKNOWN), auth.agent_run_id
+
+
+# =============================================================================
+# Dependency functions for ACL enforcement
+# =============================================================================
+
+
+def require_registry_read(request: Request) -> tuple[CallerType, UUID | None]:
+    """FastAPI dependency that requires registry read permission.
+
+    Returns (caller_type, agent_run_id) if authorized.
+    Raises HTTPException 403 if caller is not allowed to read from registry.
+    """
+    auth = get_auth_context(request)
+    caller_type, agent_run_id = get_caller_type(auth)
+    if caller_type not in ACL_CAN_READ_REGISTRY:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read from registry")
+    return caller_type, agent_run_id
+
+
+def require_registry_push(request: Request) -> tuple[CallerType, UUID | None]:
+    """FastAPI dependency that requires registry push permission.
+
+    Returns (caller_type, agent_run_id) if authorized.
+    Raises HTTPException 403 if caller is not allowed to push to registry.
+    """
+    auth = get_auth_context(request)
+    caller_type, agent_run_id = get_caller_type(auth)
+    if caller_type not in ACL_CAN_PUSH_REGISTRY:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
+    return caller_type, agent_run_id
+
+
+def require_eval_api_access(request: Request) -> tuple[CallerType, UUID | None]:
+    """FastAPI dependency that requires eval API access.
+
+    Returns (caller_type, agent_run_id) if authorized.
+    Raises HTTPException 403 if caller is not allowed to use eval API.
+    """
+    auth = get_auth_context(request)
+    caller_type, agent_run_id = get_caller_type(auth)
+    if caller_type not in ACL_CAN_USE_EVAL_API:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to access eval endpoints")
+    return caller_type, agent_run_id

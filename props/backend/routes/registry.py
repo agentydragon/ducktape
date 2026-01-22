@@ -27,16 +27,9 @@ import os
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from props.backend.auth import (
-    ACL_CAN_PUSH_REGISTRY,
-    ACL_CAN_PUSH_TAGS,
-    ACL_CAN_READ_REGISTRY,
-    CallerType,
-    get_auth_context,
-    get_caller_type,
-)
+from props.backend.auth import ACL_CAN_PUSH_TAGS, CallerType, require_registry_push, require_registry_read
 from props.core.oci_utils import is_digest
 from props.db.models import AgentDefinition, AgentType
 from props.db.session import get_session
@@ -52,18 +45,6 @@ UPSTREAM_REGISTRY_URL = os.environ.get("PROPS_REGISTRY_UPSTREAM_URL", "http://pr
 # =============================================================================
 # Helper functions
 # =============================================================================
-
-
-def _require_read(caller_type: CallerType) -> None:
-    """Require read permission, raise HTTPException if denied."""
-    if caller_type not in ACL_CAN_READ_REGISTRY:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read")
-
-
-def _require_push(caller_type: CallerType) -> None:
-    """Require push permission, raise HTTPException if denied."""
-    if caller_type not in ACL_CAN_PUSH_REGISTRY:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push")
 
 
 def _require_push_tag(caller_type: CallerType, ref: str) -> None:
@@ -176,39 +157,36 @@ async def v2_check() -> Response:
 
 
 @router.get("/v2/_catalog")
-async def get_catalog(request: Request) -> Response:
+async def get_catalog(
+    request: Request, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
+) -> Response:
     """List repositories."""
-    auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth)
-    _require_read(caller_type)
     return await _proxy_to_upstream(request, "v2/_catalog")
 
 
 @router.get("/v2/{repo}/tags/list")
-async def get_tags(request: Request, repo: str) -> Response:
+async def get_tags(
+    request: Request, repo: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
+) -> Response:
     """List tags for a repository."""
-    auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth)
-    _require_read(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/tags/list")
 
 
 @router.get("/v2/{repo}/manifests/{ref}")
 @router.head("/v2/{repo}/manifests/{ref}")
-async def get_manifest(request: Request, repo: str, ref: str) -> Response:
+async def get_manifest(
+    request: Request, repo: str, ref: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
+) -> Response:
     """Get a manifest by tag or digest."""
-    auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth)
-    _require_read(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/manifests/{ref}")
 
 
 @router.put("/v2/{repo}/manifests/{ref}")
-async def put_manifest(request: Request, repo: str, ref: str) -> Response:
+async def put_manifest(
+    request: Request, repo: str, ref: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
+) -> Response:
     """Push a manifest."""
-    auth = get_auth_context(request)
-    caller_type, agent_run_id = get_caller_type(auth)
-    _require_push(caller_type)
+    caller_type, agent_run_id = auth
     _require_push_tag(caller_type, ref)
 
     # Read body for digest computation and recording
@@ -240,36 +218,32 @@ async def put_manifest(request: Request, repo: str, ref: str) -> Response:
 
 @router.get("/v2/{repo}/blobs/{digest}")
 @router.head("/v2/{repo}/blobs/{digest}")
-async def get_blob(request: Request, repo: str, digest: str) -> Response:
+async def get_blob(
+    request: Request, repo: str, digest: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
+) -> Response:
     """Get a blob by digest."""
-    auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth)
-    _require_read(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/blobs/{digest}")
 
 
 @router.post("/v2/{repo}/blobs/uploads/")
-async def start_blob_upload(request: Request, repo: str) -> Response:
+async def start_blob_upload(
+    request: Request, repo: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
+) -> Response:
     """Start a blob upload."""
-    auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth)
-    _require_push(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/")
 
 
 @router.patch("/v2/{repo}/blobs/uploads/{uuid}")
-async def continue_blob_upload(request: Request, repo: str, uuid: str) -> Response:
+async def continue_blob_upload(
+    request: Request, repo: str, uuid: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
+) -> Response:
     """Continue a blob upload (chunked)."""
-    auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth)
-    _require_push(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")
 
 
 @router.put("/v2/{repo}/blobs/uploads/{uuid}")
-async def complete_blob_upload(request: Request, repo: str, uuid: str) -> Response:
+async def complete_blob_upload(
+    request: Request, repo: str, uuid: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
+) -> Response:
     """Complete a blob upload."""
-    auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth)
-    _require_push(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")

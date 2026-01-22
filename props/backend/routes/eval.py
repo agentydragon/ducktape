@@ -22,11 +22,11 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 
-from props.backend.auth import ACL_CAN_USE_EVAL_API, get_auth_context, get_caller_type
+from props.backend.auth import CallerType, require_eval_api_access
 from props.core.exceptions import AgentDidNotSubmitError
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
@@ -91,22 +91,6 @@ class GradingStatusResponse(BaseModel):
 # =============================================================================
 
 
-def _get_eval_auth_context(request: Request) -> UUID | None:
-    """Get and validate auth context for eval endpoints.
-
-    Returns parent_run_id for agent callers (None for admin).
-    Raises HTTPException if not authorized.
-    """
-    auth = get_auth_context(request)
-    caller_type, agent_run_id = get_caller_type(auth)
-
-    # Check if caller type is allowed to use eval API
-    if caller_type not in ACL_CAN_USE_EVAL_API:
-        raise HTTPException(status_code=403, detail=f"Caller type {caller_type} not allowed to access eval endpoints")
-
-    return agent_run_id
-
-
 def get_registry(request: Request) -> AgentRegistry:
     """Get registry from app state."""
     return request.app.state.registry  # type: ignore[no-any-return]
@@ -118,7 +102,9 @@ def get_registry(request: Request) -> AgentRegistry:
 
 
 @router.post("/run_critic")
-async def run_critic(request: Request, body: RunCriticRequest) -> RunCriticResponse:
+async def run_critic(
+    request: Request, body: RunCriticRequest, auth: tuple[CallerType, UUID | None] = Depends(require_eval_api_access)
+) -> RunCriticResponse:
     """Run critic agent using an agent package.
 
     Loads critic package from database and runs the /init script to get
@@ -131,7 +117,7 @@ async def run_critic(request: Request, body: RunCriticRequest) -> RunCriticRespo
 
     Returns critic_run_id. Use GET /grading_status/{critic_run_id} to poll for results.
     """
-    parent_run_id = _get_eval_auth_context(request)
+    _, parent_run_id = auth
     registry = get_registry(request)
 
     # Validate definition exists
@@ -194,7 +180,9 @@ async def run_critic(request: Request, body: RunCriticRequest) -> RunCriticRespo
 
 
 @router.get("/grading_status/{critic_run_id}")
-async def get_grading_status(request: Request, critic_run_id: UUID) -> GradingStatusResponse:
+async def get_grading_status(
+    critic_run_id: UUID, auth: tuple[CallerType, UUID | None] = Depends(require_eval_api_access)
+) -> GradingStatusResponse:
     """Check grading status for a critic run (non-blocking).
 
     Returns immediately with current grading status. If is_complete=False,
@@ -203,8 +191,6 @@ async def get_grading_status(request: Request, critic_run_id: UUID) -> GradingSt
     A critique is "graded" when all (issue, GT_occurrence) pairs have
     corresponding grading edges - not just when a grader run exists.
     """
-    _get_eval_auth_context(request)  # Validate auth
-
     with get_session() as session:
         # Check for remaining drift using grading_pending view
         pending_count = (
