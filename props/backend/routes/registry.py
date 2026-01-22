@@ -24,15 +24,21 @@ import hashlib
 import json
 import logging
 import os
-from enum import StrEnum
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from props.backend.auth import AuthContext, get_auth_context
+from props.backend.auth import (
+    ACL_CAN_PUSH_REGISTRY,
+    ACL_CAN_PUSH_TAGS,
+    ACL_CAN_READ_REGISTRY,
+    CallerType,
+    get_auth_context,
+    get_caller_type,
+)
 from props.core.oci_utils import is_digest
-from props.db.models import AgentDefinition, AgentRun, AgentType
+from props.db.models import AgentDefinition, AgentType
 from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
@@ -43,72 +49,26 @@ router = APIRouter()
 UPSTREAM_REGISTRY_URL = os.environ.get("PROPS_REGISTRY_UPSTREAM_URL", "http://props-registry:5000")
 
 
-class CallerType(StrEnum):
-    """Type of caller accessing the registry."""
-
-    ANONYMOUS = "anonymous"  # No auth - only /v2/ endpoint allowed
-    ADMIN = "admin"  # postgres user - full access
-    PROMPT_OPTIMIZER = "prompt-optimizer"  # PO agent - can read/push
-    PROMPT_IMPROVER = "prompt-improver"  # PI agent - can read/push
-    CRITIC = "critic"  # Critic agent - no registry access
-    GRADER = "grader"  # Grader agent - no registry access
-    UNKNOWN = "unknown"  # Invalid/unrecognized caller
-
-
-# ACL: sets of caller types allowed for each operation
-CAN_READ = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
-CAN_PUSH = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
-CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
-
-
 # =============================================================================
 # Helper functions
 # =============================================================================
 
 
-def _get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
-    """Determine caller type from auth context. Returns (caller_type, agent_run_id)."""
-    if auth.error:
-        raise HTTPException(status_code=401, detail=auth.error)
-
-    if not auth.is_authenticated:
-        return CallerType.ANONYMOUS, None
-
-    if auth.is_admin:
-        return CallerType.ADMIN, None
-
-    # For agents, look up run in database to determine type
-    assert auth.agent_run_id is not None
-    with get_session() as session:
-        agent_run = session.get(AgentRun, auth.agent_run_id)
-        if agent_run is None:
-            raise HTTPException(status_code=401, detail="Invalid agent token")
-
-        agent_type = agent_run.type_config.agent_type
-        caller_type_map = {
-            AgentType.PROMPT_OPTIMIZER: CallerType.PROMPT_OPTIMIZER,
-            AgentType.IMPROVEMENT: CallerType.PROMPT_IMPROVER,
-            AgentType.CRITIC: CallerType.CRITIC,
-            AgentType.GRADER: CallerType.GRADER,
-        }
-        return caller_type_map.get(agent_type, CallerType.UNKNOWN), auth.agent_run_id
-
-
 def _require_read(caller_type: CallerType) -> None:
     """Require read permission, raise HTTPException if denied."""
-    if caller_type not in CAN_READ:
+    if caller_type not in ACL_CAN_READ_REGISTRY:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read")
 
 
 def _require_push(caller_type: CallerType) -> None:
     """Require push permission, raise HTTPException if denied."""
-    if caller_type not in CAN_PUSH:
+    if caller_type not in ACL_CAN_PUSH_REGISTRY:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push")
 
 
 def _require_push_tag(caller_type: CallerType, ref: str) -> None:
     """Require push-by-tag permission if ref is a tag, raise HTTPException if denied."""
-    if not is_digest(ref) and caller_type not in CAN_PUSH_TAGS:
+    if not is_digest(ref) and caller_type not in ACL_CAN_PUSH_TAGS:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push by tag")
 
 
@@ -219,7 +179,7 @@ async def v2_check() -> Response:
 async def get_catalog(request: Request) -> Response:
     """List repositories."""
     auth = get_auth_context(request)
-    caller_type, _ = _get_caller_type(auth)
+    caller_type, _ = get_caller_type(auth)
     _require_read(caller_type)
     return await _proxy_to_upstream(request, "v2/_catalog")
 
@@ -228,7 +188,7 @@ async def get_catalog(request: Request) -> Response:
 async def get_tags(request: Request, repo: str) -> Response:
     """List tags for a repository."""
     auth = get_auth_context(request)
-    caller_type, _ = _get_caller_type(auth)
+    caller_type, _ = get_caller_type(auth)
     _require_read(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/tags/list")
 
@@ -238,7 +198,7 @@ async def get_tags(request: Request, repo: str) -> Response:
 async def get_manifest(request: Request, repo: str, ref: str) -> Response:
     """Get a manifest by tag or digest."""
     auth = get_auth_context(request)
-    caller_type, _ = _get_caller_type(auth)
+    caller_type, _ = get_caller_type(auth)
     _require_read(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/manifests/{ref}")
 
@@ -247,7 +207,7 @@ async def get_manifest(request: Request, repo: str, ref: str) -> Response:
 async def put_manifest(request: Request, repo: str, ref: str) -> Response:
     """Push a manifest."""
     auth = get_auth_context(request)
-    caller_type, agent_run_id = _get_caller_type(auth)
+    caller_type, agent_run_id = get_caller_type(auth)
     _require_push(caller_type)
     _require_push_tag(caller_type, ref)
 
@@ -283,7 +243,7 @@ async def put_manifest(request: Request, repo: str, ref: str) -> Response:
 async def get_blob(request: Request, repo: str, digest: str) -> Response:
     """Get a blob by digest."""
     auth = get_auth_context(request)
-    caller_type, _ = _get_caller_type(auth)
+    caller_type, _ = get_caller_type(auth)
     _require_read(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/blobs/{digest}")
 
@@ -292,7 +252,7 @@ async def get_blob(request: Request, repo: str, digest: str) -> Response:
 async def start_blob_upload(request: Request, repo: str) -> Response:
     """Start a blob upload."""
     auth = get_auth_context(request)
-    caller_type, _ = _get_caller_type(auth)
+    caller_type, _ = get_caller_type(auth)
     _require_push(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/")
 
@@ -301,7 +261,7 @@ async def start_blob_upload(request: Request, repo: str) -> Response:
 async def continue_blob_upload(request: Request, repo: str, uuid: str) -> Response:
     """Continue a blob upload (chunked)."""
     auth = get_auth_context(request)
-    caller_type, _ = _get_caller_type(auth)
+    caller_type, _ = get_caller_type(auth)
     _require_push(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")
 
@@ -310,6 +270,6 @@ async def continue_blob_upload(request: Request, repo: str, uuid: str) -> Respon
 async def complete_blob_upload(request: Request, repo: str, uuid: str) -> Response:
     """Complete a blob upload."""
     auth = get_auth_context(request)
-    caller_type, _ = _get_caller_type(auth)
+    caller_type, _ = get_caller_type(auth)
     _require_push(caller_type)
     return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")

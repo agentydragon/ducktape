@@ -26,7 +26,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 
-from props.backend.auth import AuthContext, get_auth_context
+from props.backend.auth import ACL_CAN_USE_EVAL_API, get_auth_context, get_caller_type
 from props.core.exceptions import AgentDidNotSubmitError
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
@@ -34,7 +34,7 @@ from props.core.splits import Split
 from props.critic.exceptions import CriticExecutionError
 from props.critic_dev.shared import TargetMetric
 from props.db.examples import Example
-from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, AgentType, GradingEdge, GradingPending, Snapshot
+from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingEdge, GradingPending, Snapshot
 from props.db.session import get_session
 
 if TYPE_CHECKING:
@@ -97,31 +97,14 @@ def _get_eval_auth_context(request: Request) -> UUID | None:
     Returns parent_run_id for agent callers (None for admin).
     Raises HTTPException if not authorized.
     """
-    auth: AuthContext = get_auth_context(request)
+    auth = get_auth_context(request)
+    caller_type, agent_run_id = get_caller_type(auth)
 
-    # Check for auth errors
-    if auth.error:
-        raise HTTPException(status_code=401, detail=auth.error)
+    # Check if caller type is allowed to use eval API
+    if caller_type not in ACL_CAN_USE_EVAL_API:
+        raise HTTPException(status_code=403, detail=f"Caller type {caller_type} not allowed to access eval endpoints")
 
-    # Allow admin access (localhost or postgres admin user)
-    if auth.is_admin:
-        return None
-
-    # Require authentication for agents
-    if not auth.is_authenticated or auth.agent_run_id is None:
-        raise HTTPException(status_code=401, detail="Authorization required")
-
-    # Check agent type - only PO and PI can use eval endpoints
-    with get_session() as session:
-        agent_run = session.get(AgentRun, auth.agent_run_id)
-        if agent_run is None:
-            raise HTTPException(status_code=401, detail="Agent run not found")
-
-        agent_type = agent_run.type_config.agent_type
-        if agent_type not in {AgentType.PROMPT_OPTIMIZER, AgentType.IMPROVEMENT}:
-            raise HTTPException(status_code=403, detail=f"Agent type {agent_type} not allowed to access eval endpoints")
-
-        return auth.agent_run_id
+    return agent_run_id
 
 
 def get_registry(request: Request) -> AgentRegistry:

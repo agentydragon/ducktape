@@ -7,6 +7,7 @@ Authentication uses Basic auth with Postgres credentials validation:
 
 This module provides:
 - Credential validation with access level determination
+- Caller type determination for ACL enforcement
 - Starlette middleware for request-level auth
 - Auth context attached to request.state
 """
@@ -21,9 +22,12 @@ from enum import StrEnum
 from uuid import UUID
 
 import psycopg
-from fastapi import Request
+from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+
+from props.db.models import AgentRun, AgentType
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,31 @@ class AccessLevel(StrEnum):
 
     ADMIN = "admin"  # Full access (postgres user or localhost)
     AGENT = "agent"  # Agent access (agent_{uuid} pattern)
+
+
+class CallerType(StrEnum):
+    """Type of caller accessing APIs - used for fine-grained ACL enforcement.
+
+    While AccessLevel distinguishes admin vs agent at the auth layer,
+    CallerType provides more granular distinctions for ACL decisions:
+    - Different agent types have different permissions
+    - ANONYMOUS represents unauthenticated callers (e.g., for /v2/ check)
+    """
+
+    ANONYMOUS = "anonymous"  # No auth - limited access (e.g., /v2/ check only)
+    ADMIN = "admin"  # postgres user - full access
+    PROMPT_OPTIMIZER = "prompt-optimizer"  # PO agent - can read/push
+    PROMPT_IMPROVER = "prompt-improver"  # PI agent - can read/push
+    CRITIC = "critic"  # Critic agent - limited access (LLM only)
+    GRADER = "grader"  # Grader agent - limited access (LLM only)
+    UNKNOWN = "unknown"  # Invalid/unrecognized caller
+
+
+# ACL permission sets - which CallerTypes can perform each operation
+ACL_CAN_READ_REGISTRY = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
+ACL_CAN_PUSH_REGISTRY = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
+ACL_CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
+ACL_CAN_USE_EVAL_API = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
 
 
 @dataclass(frozen=True)
@@ -253,3 +282,39 @@ def get_auth_context(request: Request) -> AuthContext:
     Use this in route handlers to access the auth context set by middleware.
     """
     return getattr(request.state, "auth", AuthContext.anonymous())
+
+
+def get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
+    """Determine caller type from auth context.
+
+    Returns (caller_type, agent_run_id).
+
+    Raises HTTPException if auth has an error.
+
+    This function does a database lookup for agent users to determine
+    the specific agent type (PO, PI, critic, grader).
+    """
+    if auth.error:
+        raise HTTPException(status_code=401, detail=auth.error)
+
+    if not auth.is_authenticated:
+        return CallerType.ANONYMOUS, None
+
+    if auth.is_admin:
+        return CallerType.ADMIN, None
+
+    # For agents, look up run in database to determine type
+    assert auth.agent_run_id is not None
+    with get_session() as session:
+        agent_run = session.get(AgentRun, auth.agent_run_id)
+        if agent_run is None:
+            raise HTTPException(status_code=401, detail="Invalid agent token")
+
+        agent_type = agent_run.type_config.agent_type
+        caller_type_map = {
+            AgentType.PROMPT_OPTIMIZER: CallerType.PROMPT_OPTIMIZER,
+            AgentType.IMPROVEMENT: CallerType.PROMPT_IMPROVER,
+            AgentType.CRITIC: CallerType.CRITIC,
+            AgentType.GRADER: CallerType.GRADER,
+        }
+        return caller_type_map.get(agent_type, CallerType.UNKNOWN), auth.agent_run_id
