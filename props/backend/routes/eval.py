@@ -28,10 +28,8 @@ from sqlalchemy import func
 from props.backend.auth import CallerType, require_eval_api_access
 from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.exceptions import AgentDidNotSubmitError
-from props.core.models.examples import SingleFileSetExample
 from props.core.splits import Split
 from props.critic.exceptions import CriticExecutionError
-from props.critic_dev.shared import TargetMetric
 from props.db.examples import Example
 from props.db.models import AgentDefinition, AgentRun, GradingEdge, GradingPending, Snapshot
 from props.db.session import get_session
@@ -102,16 +100,6 @@ async def run_critic(
 
         if not example:
             raise HTTPException(status_code=404, detail=f"Example not found: {body.example.model_dump()}")
-
-        # Check if this is a per-file example (SingleFileSetExample) or whole-snapshot (WholeSnapshotExample)
-        is_per_file = isinstance(body.example, SingleFileSetExample)
-
-        # Check VALID scope restrictions based on target metric mode
-        if db_snapshot.split == Split.VALID and is_per_file and body.target_metric == TargetMetric.WHOLE_REPO:
-            assert isinstance(body.example, SingleFileSetExample)
-            raise HTTPException(
-                status_code=400, detail="Valid split in whole-repo mode requires whole-snapshot examples only"
-            )
 
     # Execute critic run using registry
     try:

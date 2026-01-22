@@ -32,7 +32,6 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import SystemMessage
-from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.eval_client import EvalClient
 from props.core.ids import DefinitionId
 from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_logging
@@ -135,7 +134,7 @@ def create_tool_provider(state: LoopState, eval_client: EvalClient, critic_model
         logger.info("Reported failure: %s", args.message)
 
     @provider.tool
-    async def run_critic(args: RunCriticToolArgs) -> RunCriticResponse:
+    async def run_critic(args: RunCriticToolArgs) -> str:
         """Run critic agent on an example.
 
         Returns critic_run_id. Use wait_until_graded to get grading results.
@@ -149,10 +148,15 @@ def create_tool_provider(state: LoopState, eval_client: EvalClient, critic_model
             critic_model=critic_model,
         )
         logger.info(f"Critic run completed: {response.critic_run_id}, status={response.status}")
-        return response
+        return (
+            f"Critic run completed.\n"
+            f"critic_run_id: {response.critic_run_id}\n"
+            f"status: {response.status.value}\n\n"
+            f"Use wait_until_graded with this critic_run_id to get grading results."
+        )
 
     @provider.tool
-    async def wait_until_graded(args: WaitUntilGradedToolArgs) -> GradingStatusResponse:
+    async def wait_until_graded(args: WaitUntilGradedToolArgs) -> str:
         """Wait for a critic run to be fully graded.
 
         Polls until grading is complete or timeout.
@@ -163,7 +167,16 @@ def create_tool_provider(state: LoopState, eval_client: EvalClient, critic_model
             critic_run_id, timeout_seconds=args.timeout_seconds, poll_interval_seconds=args.poll_interval_seconds
         )
         logger.info(f"Grading complete: total_credit={response.total_credit}, max_credit={response.max_credit}")
-        return response
+        return (
+            f"Grading complete.\n"
+            f"grader_run_id: {response.grader_run_id}\n"
+            f"total_credit: {response.total_credit}\n"
+            f"max_credit: {response.max_credit}\n"
+            f"split: {response.split}\n"
+            f"example_kind: {response.example_kind}\n\n"
+            f"Query aggregate metrics: SELECT * FROM recall_by_definition_split_kind "
+            f"WHERE critique_run_id = '{critic_run_id}';"
+        )
 
     return provider
 

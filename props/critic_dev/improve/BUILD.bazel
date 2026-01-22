@@ -31,7 +31,6 @@ py_library(
         "//openai_utils",
         "//props/core:agent_helpers",
         "//props/core:agent_types",
-        "//props/core:eval_api_models",
         "//props/core:eval_client",
         "//props/core:ids",
         "//props/core:loop_utils",
