@@ -1,12 +1,12 @@
 # Build, test, and release claude_hooks wheel
 #
 # Runs on:
-# - Every push to devel/main (for releases)
-# - PRs that touch claude_hooks files
+# - Every push to devel/main (tests always run, release only if changes detected)
+# - PRs that touch claude_hooks files (tests only)
 # - Manual workflow_dispatch
 #
 # Tests: unit + e2e (including podman integration)
-# On push to devel/main: creates releases (requires tests to pass)
+# On push to devel/main: creates releases if there are target changes since last release
 name: Claude Hooks CI
 
 on:
@@ -17,6 +17,12 @@ on:
       - "tools/claude_hooks/**"
       - ".github/workflows/claude-hooks-release.yml"
   workflow_dispatch:
+    inputs:
+      force_release:
+        description: "Force release even if no changes detected"
+        required: false
+        default: false
+        type: boolean
 
 # Cancel outdated workflow runs when new commits are pushed
 concurrency:
@@ -27,6 +33,41 @@ permissions:
   contents: write
 
 jobs:
+  # Check if release is needed (only on push to devel/main)
+  check-release:
+    name: Check if release needed
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      release_needed: ${{ steps.check.outputs.release_needed }}
+      reason: ${{ steps.check.outputs.reason }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
+
+      - name: Check if release needed
+        id: check
+        uses: ./.github/actions/check-release-needed
+        with:
+          package_prefix: claude-hooks
+          bazel_target_pattern: "//tools/claude_hooks/..."
+
+      - name: Log result
+        run: |
+          echo "Release needed: ${{ steps.check.outputs.release_needed }}"
+          echo "Reason: ${{ steps.check.outputs.reason }}"
+
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
+        with:
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+
   # All tests run on all pushes and PRs
   test:
     name: Tests
@@ -93,18 +134,25 @@ jobs:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
-  # Build wheel, test it, and release (on push to devel/main)
-  # Note: Podman integration tests run here via the e2e tests with PATH passed through.
-  # A separate podman-test job using Bazel sandbox doesn't work because Bazel's sandbox
-  # doesn't expose podman even when it's installed on the runner.
+  # Build wheel, test it, and release (only on push to devel/main when release is needed)
   wheel-build-test-release:
     name: Wheel Build, Test & Release
-    needs: [test]
+    needs: [check-release, test]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      github.event_name == 'push' &&
+      (needs.check-release.outputs.release_needed == 'true' || inputs.force_release == true)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+
+      - name: Log release reason
+        run: |
+          echo "Proceeding with release"
+          echo "Reason: ${{ needs.check-release.outputs.reason }}"
 
       - name: Setup Java (for keytool)
         uses: actions/setup-java@v4
@@ -116,7 +164,6 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Free disk space
-        if: github.event_name == 'push'
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: false
@@ -150,19 +197,15 @@ jobs:
             --test_env=JAVA_HOME \
             --test_env=PATH
 
-      # Release steps - only on push to devel/main
       - name: Set short SHA
-        if: github.event_name == 'push'
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
       - name: Prepare wheel for release
-        if: github.event_name == 'push'
         run: |
           mkdir -p dist
           cp bazel-bin/tools/claude_hooks/claude_hooks-*.whl dist/
 
       - name: Create commit-tagged release
-        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: claude-hooks-${{ env.SHORT_SHA }}
@@ -181,7 +224,6 @@ jobs:
           files: dist/*.whl
 
       - name: Cleanup old releases
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -194,7 +236,6 @@ jobs:
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
 
       - name: Update latest release for branch
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

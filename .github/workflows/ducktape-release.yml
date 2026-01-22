@@ -1,19 +1,19 @@
 # Build and release ducktape wheel
+#
+# Only creates a release if there are actual Bazel target changes since the last release.
+# This prevents unnecessary releases when only non-code files change.
 name: ducktape Release
 
 on:
   push:
     branches: [devel, main]
-    paths:
-      - "difftree/**"
-      - "git_commit_ai/**"
-      - "gmail_archiver/**"
-      - "agent_core/**"
-      - "mcp_infra/**"
-      - "openai_utils/**"
-      - "cli_util/**"
-      - "mcp_utils/**"
   workflow_dispatch:
+    inputs:
+      force_release:
+        description: "Force release even if no changes detected"
+        required: false
+        default: false
+        type: boolean
 
 # Cancel outdated workflow runs when new commits are pushed
 concurrency:
@@ -24,7 +24,43 @@ permissions:
   contents: write
 
 jobs:
+  check:
+    name: Check if release needed
+    runs-on: ubuntu-latest
+    outputs:
+      release_needed: ${{ steps.check.outputs.release_needed }}
+      reason: ${{ steps.check.outputs.reason }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Need full history for bazel-diff
+
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
+
+      - name: Check if release needed
+        id: check
+        uses: ./.github/actions/check-release-needed
+        with:
+          package_prefix: ducktape
+          bazel_target_pattern: "//:ducktape_wheel"
+
+      - name: Log result
+        run: |
+          echo "Release needed: ${{ steps.check.outputs.release_needed }}"
+          echo "Reason: ${{ steps.check.outputs.reason }}"
+          echo "Base SHA: ${{ steps.check.outputs.base_sha }}"
+
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
+        with:
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+
   release:
+    needs: [check]
+    if: needs.check.outputs.release_needed == 'true' || inputs.force_release == true
     uses: ./.github/workflows/python-wheel-release.yml
     with:
       package_name: ducktape

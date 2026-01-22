@@ -78,7 +78,7 @@ jobs:
 
       - name: Compute Bazel targets
         id: bazel-diff
-        run: python .github/scripts/compute_affected_targets.py
+        run: python tools/ci/bazel_diff.py
 
       - name: Check path changes
         id: paths

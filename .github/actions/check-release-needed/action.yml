@@ -1,0 +1,41 @@
+name: Check Release Needed
+description: |
+  Check if a release is needed by comparing against the last release tag.
+  Uses bazel-diff to determine if there are actual target changes.
+
+inputs:
+  package_prefix:
+    description: "Package name prefix used in release tags (e.g., 'ducktape', 'claude-hooks')"
+    required: true
+  bazel_target_pattern:
+    description: "Bazel target pattern to check for changes (e.g., '//tools/claude_hooks/...', '//:ducktape_wheel')"
+    required: true
+
+outputs:
+  release_needed:
+    description: "'true' if release is needed, 'false' otherwise"
+    value: ${{ steps.check.outputs.release_needed }}
+  base_sha:
+    description: "The base commit SHA (last release commit, or empty if first release)"
+    value: ${{ steps.check.outputs.base_sha }}
+  reason:
+    description: "Human-readable reason for the decision"
+    value: ${{ steps.check.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch tags
+      shell: bash
+      run: |
+        git fetch --tags --force
+
+    - name: Check if release needed
+      id: check
+      shell: bash
+      env:
+        RELEASE_MODE: "1"
+        PACKAGE_PREFIX: ${{ inputs.package_prefix }}
+        BAZEL_TARGET_PATTERN: ${{ inputs.bazel_target_pattern }}
+      run: |
+        python3 tools/ci/bazel_diff.py
