@@ -43,9 +43,8 @@ from props.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props.db.session import get_session
-
-from ._yaml import load_yaml_issues
-from .loader import discover_snapshots
+from props.db.sync._yaml import load_yaml_issues
+from props.db.sync.loader import discover_snapshots
 
 if TYPE_CHECKING:
     from props.core.models.true_positive import LineRange
@@ -490,7 +489,7 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
 
     # Get existing files from DB (primitive tuples to avoid detached ORM access)
     existing_keys: set[tuple[SnapshotSlug, str]] = {
-        (row[0], row[1]) for row in session.execute(select(SnapshotFile.snapshot_slug, SnapshotFile.relative_path))
+        (row[0], row[1]) for row in session.execute(select(SnapshotFile.snapshot_slug, SnapshotFile.file_path))
     }
     seen_keys: set[tuple[SnapshotSlug, str]] = set()
 
@@ -527,9 +526,9 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
                 # Upsert line_count via ON CONFLICT to avoid ORM instance usage
                 stmt = (
                     insert(SnapshotFile)
-                    .values(snapshot_slug=slug, relative_path=relative, line_count=line_count)
+                    .values(snapshot_slug=slug, file_path=relative, line_count=line_count)
                     .on_conflict_do_update(
-                        index_elements=[SnapshotFile.snapshot_slug, SnapshotFile.relative_path],
+                        index_elements=[SnapshotFile.snapshot_slug, SnapshotFile.file_path],
                         set_={"line_count": line_count},
                     )
                 )
@@ -542,8 +541,8 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
                 total += 1
 
     # Delete orphaned files
-    for snapshot_slug, relative_path in existing_keys - seen_keys:
-        session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, relative_path=relative_path).delete()
+    for snapshot_slug, file_path in existing_keys - seen_keys:
+        session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, file_path=file_path).delete()
         deleted += 1
 
     session.commit()

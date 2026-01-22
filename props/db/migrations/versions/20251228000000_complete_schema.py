@@ -940,7 +940,7 @@ Requires caller to be a whole-repo mode agent (prompt_optimizer or improvement).
             SELECT line_count INTO max_lines
             FROM snapshot_files sf
             WHERE sf.snapshot_slug = example_snapshot
-              AND sf.relative_path = file_path;
+              AND sf.file_path = file_path;
 
             IF NOT FOUND THEN
               RAISE EXCEPTION 'File % not found in snapshot_files for snapshot %',
@@ -1117,9 +1117,9 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     op.create_table(
         "snapshot_files",
         sa.Column("snapshot_slug", sa.String(), nullable=False),
-        sa.Column("relative_path", sa.String(), nullable=False),
+        sa.Column("file_path", sa.String(), nullable=False),
         sa.Column("line_count", sa.Integer(), nullable=False),
-        sa.PrimaryKeyConstraint("snapshot_slug", "relative_path"),
+        sa.PrimaryKeyConstraint("snapshot_slug", "file_path"),
         sa.ForeignKeyConstraint(["snapshot_slug"], ["snapshots.slug"], ondelete="RESTRICT"),
     )
 
@@ -1127,7 +1127,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         "COMMENT ON TABLE snapshot_files IS 'All files in each snapshot. Used for FK validation of file paths in occurrences and trigger sets.'"
     )
     op.execute(
-        "COMMENT ON COLUMN snapshot_files.relative_path IS "
+        "COMMENT ON COLUMN snapshot_files.file_path IS "
         "'Path relative to snapshot root (e.g., \"src/utils.py\"). NOT absolute paths.'"
     )
 
@@ -1191,7 +1191,7 @@ Deduplicated by PK constraint - same files always produce same hash.'
         ),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.file_path"],
             ondelete="CASCADE",
         ),
     )
@@ -1293,7 +1293,7 @@ Deduplicated by PK constraint - same files always produce same hash.'
         ),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.file_path"],
             ondelete="CASCADE",
             name="fk_occurrence_range_snapshot_file",
         ),
@@ -1327,7 +1327,7 @@ Deduplicated by PK constraint - same files always produce same hash.'
         ),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.file_path"],
             ondelete="CASCADE",
             name="fk_fp_relevant_file_snapshot_file",
         ),
@@ -1348,7 +1348,7 @@ Deduplicated by PK constraint - same files always produce same hash.'
             SELECT line_count INTO file_line_count
             FROM snapshot_files
             WHERE snapshot_slug = NEW.snapshot_slug
-              AND relative_path = NEW.file_path;
+              AND file_path = NEW.file_path;
 
             -- Validate end_line is within bounds
             IF NEW.end_line > file_line_count THEN

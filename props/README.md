@@ -217,10 +217,31 @@ with get_session() as session:
 
 All structured runs are persisted with:
 
-- Input/output payloads (JSONB columns in database)
+- Agent configuration (type_config JSONB column storing snapshot_slug, files, model, etc.)
+- Reported issues and occurrences in normalized tables (issue_id, rationale, locations)
 - Specimen splits for train/valid/test separation
-- Execution traces in events table
+- Execution traces in LLM requests table (prompt, completion, tokens, cost)
 
 ### Specimen Inspection (for assistants)
 
 **Note:** The `snapshot exec` command is currently disabled. Snapshot source code is now stored in PostgreSQL and fetched by agent init scripts at runtime. To inspect specimen files, query the database directly or use the sync'd specimens repository.
+
+## GitHub Copilot Agent Setup
+
+GitHub Copilot agents working on the props codebase should use the automated environment setup configured in `.github/workflows/copilot-setup-steps.yml`. This workflow sets up:
+
+**Environment Variables** (analogous to Claude code hooks setup):
+
+- `ADGN_PROPS_SPECIMENS_ROOT`: Points to in-repo test fixtures for CI/testing
+- `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`: PostgreSQL connection
+- `AGENT_PGHOST`: PostgreSQL host for agent containers
+- `PROPS_REGISTRY_PROXY_HOST`, `PROPS_REGISTRY_PROXY_PORT`: Registry proxy config
+- `PROPS_DOCKER_NETWORK`: Docker network for agent containers (props-agents)
+- `PROPS_E2E_HOST_HOSTNAME`: Host network address for containers (172.17.0.1)
+
+**Network Setup Differences:**
+
+- Claude hooks: Uses `host` network with HTTP proxy
+- GitHub Actions: Uses `props-agents` Docker network (simpler, no HTTP proxy needed)
+
+For complete setup instructions, see `.github/COPILOT_INSTRUCTIONS.md`.

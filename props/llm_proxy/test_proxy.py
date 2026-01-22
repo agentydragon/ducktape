@@ -17,9 +17,9 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from starlette.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from starlette.testclient import TestClient
 
 from openai_utils.model import ResponseUsage
 from props.db.config import DatabaseConfig

@@ -7,6 +7,7 @@ This document explains how GitHub Copilot coding agent works with this repositor
 ## What is GitHub Copilot Coding Agent?
 
 GitHub Copilot coding agent is an AI agent that you can assign issues to on GitHub.com. When assigned, it:
+
 - Analyzes the issue and repository context
 - Creates a plan and implements changes
 - Opens a pull request with the changes
@@ -15,7 +16,7 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 ## How GitHub Copilot Coding Agent Works
 
 1. **Runs on GitHub Infrastructure**: The agent executes in an ephemeral GitHub Actions environment
-2. **Uses Repository Context**: It reads your code, issues, PRs, and configuration files  
+2. **Uses Repository Context**: It reads your code, issues, PRs, and configuration files
 3. **Follows Custom Instructions**: It reads `.github/copilot-instructions.md` for repo-specific guidance
 4. **Custom Environment Setup**: You can customize the environment via `.github/workflows/copilot-setup-steps.yml`
 
@@ -25,9 +26,10 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 
 **What it is**: A GitHub Actions workflow that runs before Copilot starts working, allowing you to install dependencies, tools, and configure the environment.
 
-**Location**: `.github/workflows/copilot-setup-steps.yml` 
+**Location**: `.github/workflows/copilot-setup-steps.yml`
 
 **This repository's setup**:
+
 - ✅ Installs Python 3.13
 - ✅ Installs Bazelisk (for building with Bazel)
 - ✅ Caches Bazel artifacts for faster builds
@@ -35,6 +37,7 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 - ✅ Installs cluster tools (opentofu, tflint)
 
 **What you can customize**:
+
 - Install specific versions of languages (Python, Node.js, Go, etc.)
 - Install databases (PostgreSQL, MySQL, Redis, etc.)
 - Install system dependencies
@@ -51,19 +54,21 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 **Location**: `.github/COPILOT_INSTRUCTIONS.md` (this repository already has this file)
 
 **What to include**:
+
 - Repository overview and structure
 - Build and test commands
-- Code style guidelines  
+- Code style guidelines
 - Common pitfalls and workarounds
 - Verification steps
 
 **Example from this repository**:
+
 ```markdown
 ## Build System
 
-bazel build //...   # Build all targets
-bazel test //...    # Run all tests
-bazel lint //...    # Lint (ruff + mypy)
+bazel build //... # Build all targets
+bazel test //... # Run all tests
+bazel lint //... # Lint (ruff + mypy)
 ```
 
 ### 3. Agent Instructions (`AGENTS.md` files)
@@ -84,18 +89,19 @@ bazel lint //...    # Lint (ruff + mypy)
 
 ## Comparison with Claude Code Hooks
 
-| Feature | Claude Code Hooks | GitHub Copilot Coding Agent |
-|---------|------------------|----------------------------|
-| **Execution Environment** | User's local machine or gVisor sandbox | GitHub's managed infrastructure |
-| **Environment Setup** | Custom via `session_start.py` | Managed by GitHub (no custom setup) |
-| **Proxy Configuration** | Supported (required for Claude Web) | Not needed (GitHub handles networking) |
-| **Custom Tool Installation** | Supported (bazelisk, nix, etc.) | Not supported (uses GitHub's tooling) |
-| **Configuration Method** | Python hooks + shell scripts | Markdown instructions files |
-| **Working Directory** | User's repository clone | Temporary GitHub workspace |
+| Feature                      | Claude Code Hooks                      | GitHub Copilot Coding Agent            |
+| ---------------------------- | -------------------------------------- | -------------------------------------- |
+| **Execution Environment**    | User's local machine or gVisor sandbox | GitHub's managed infrastructure        |
+| **Environment Setup**        | Custom via `session_start.py`          | Managed by GitHub (no custom setup)    |
+| **Proxy Configuration**      | Supported (required for Claude Web)    | Not needed (GitHub handles networking) |
+| **Custom Tool Installation** | Supported (bazelisk, nix, etc.)        | Not supported (uses GitHub's tooling)  |
+| **Configuration Method**     | Python hooks + shell scripts           | Markdown instructions files            |
+| **Working Directory**        | User's repository clone                | Temporary GitHub workspace             |
 
 ## What GitHub Copilot Coding Agent Has Access To
 
 ✅ **Available**:
+
 - All repository code and files
 - Git history
 - Issues and PRs
@@ -105,8 +111,9 @@ bazel lint //...    # Lint (ruff + mypy)
 - GitHub's build infrastructure
 
 ❌ **Not Available**:
+
 - Custom environment setup scripts
-- Local proxy configuration  
+- Local proxy configuration
 - Custom CA certificates
 - Supervisor/process management
 - Local service configuration (podman, docker daemon, etc.)
@@ -118,6 +125,7 @@ bazel lint //...    # Lint (ruff + mypy)
 When you add new dependencies or tools to the project, update `.github/workflows/copilot-setup-steps.yml` to ensure Copilot has access to them.
 
 **Example**: If you start using PostgreSQL in your tests:
+
 ```yaml
 - name: Set up PostgreSQL
   run: |
@@ -128,6 +136,7 @@ When you add new dependencies or tools to the project, update `.github/workflows
 ### 2. Keep COPILOT_INSTRUCTIONS.md Updated
 
 When you make significant changes to:
+
 - Build system (Bazel configurations)
 - Test infrastructure
 - Development workflows
@@ -138,6 +147,7 @@ Update `.github/COPILOT_INSTRUCTIONS.md` to reflect these changes.
 ### 3. Document Common Issues
 
 Add common pitfalls and workarounds to the instructions:
+
 ```markdown
 ## Known Issues
 
@@ -148,11 +158,14 @@ Add common pitfalls and workarounds to the instructions:
 ### 4. Provide Clear Build Instructions
 
 Always include the exact commands to run:
+
 ```markdown
 # Correct (specific)
+
 bazel build //...
 
 # Avoid (vague)
+
 "Build the project"
 ```
 
@@ -166,7 +179,7 @@ If you need custom environment setup (like what Claude Code hooks provide), use 
 
 - Custom Docker images
 - Environment variables
-- Tool installations via lifecycle hooks  
+- Tool installations via lifecycle hooks
 - Service configuration
 
 **Note**: Codespaces is for interactive development, not for the GitHub Copilot coding agent which runs automatically in the background.

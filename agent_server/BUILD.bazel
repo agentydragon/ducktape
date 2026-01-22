@@ -247,22 +247,7 @@ py_test(
     deps = _TEST_DEPS,
 )
 
-# E2E tests (manual, require Playwright)
-py_test(
-    name = "test_agent_server_e2e",
-    srcs = [
-        "conftest.py",
-        "e2e/conftest.py",
-        "e2e/test_abort.py",
-        "e2e/test_approvals.py",
-        "e2e/test_notifications_handler.py",
-        "e2e/test_proposals_reject.py",
-        "e2e/test_ui.py",
-    ],
-    imports = [".."],
-    tags = ["manual"],
-    deps = _TEST_DEPS + ["@pypi//playwright"],
-)
+# E2E tests moved to agent_server/e2e/BUILD.bazel
 
 # --- Linting ---
 

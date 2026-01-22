@@ -1,0 +1,72 @@
+"""Agent server E2E tests (manual, require Playwright)."""
+
+load("@rules_python//python:defs.bzl", "py_test")
+
+# Common E2E test dependencies (only what's actually needed)
+_E2E_COMMON_DEPS = [
+    "//agent_core_testing",
+    "@pypi//pytest",
+    "@pypi//pytest_bazel",
+    "@pypi//pytest_asyncio",
+    "@pypi//playwright",
+]
+
+_E2E_TEST_SUPPORT = [
+    "conftest.py",
+]
+
+py_test(
+    name = "test_abort",
+    srcs = _E2E_TEST_SUPPORT + ["test_abort.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_COMMON_DEPS,
+)
+
+py_test(
+    name = "test_approvals",
+    srcs = _E2E_TEST_SUPPORT + ["test_approvals.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_COMMON_DEPS + [
+        "//mcp_infra",
+    ],
+)
+
+py_test(
+    name = "test_notifications_handler",
+    srcs = _E2E_TEST_SUPPORT + ["test_notifications_handler.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_COMMON_DEPS + [
+        "//agent_server/mcp/approval_policy",
+        "//agent_server/runtime",
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+    ],
+)
+
+py_test(
+    name = "test_proposals_reject",
+    srcs = _E2E_TEST_SUPPORT + ["test_proposals_reject.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_COMMON_DEPS + [
+        "//agent_server/mcp/approval_policy",
+        "//agent_server/mcp/ui",
+        "//mcp_infra",
+    ],
+)
+
+py_test(
+    name = "test_ui",
+    srcs = _E2E_TEST_SUPPORT + ["test_ui.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_COMMON_DEPS + [
+        "//agent_server/mcp/ui",
+        "//mcp_infra",
+    ],
+)

@@ -112,7 +112,10 @@ py_library(
 
 py_test(
     name = "test_e2e",
-    srcs = ["test_e2e.py"],
+    srcs = [
+        "test_e2e.py",
+        "//props:conftest.py",
+    ],
     env = {
         "PGHOST": "127.0.0.1",
         "PGPORT": "5433",

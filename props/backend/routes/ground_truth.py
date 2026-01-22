@@ -322,12 +322,9 @@ def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
 
         # Get all snapshot files
         snapshot_files_rows = (
-            session.query(SnapshotFile.relative_path)
-            .filter_by(snapshot_slug=slug)
-            .order_by(SnapshotFile.relative_path)
-            .all()
+            session.query(SnapshotFile.file_path).filter_by(snapshot_slug=slug).order_by(SnapshotFile.file_path).all()
         )
-        snapshot_files = {row.relative_path for row in snapshot_files_rows}
+        snapshot_files = {row.file_path for row in snapshot_files_rows}
 
         # Get TP occurrences with file locations
         tps = (
@@ -441,7 +438,7 @@ def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str) -> FileConten
             raise HTTPException(status_code=404, detail=f"Snapshot has no content: {slug}")
 
         # Check if file exists in snapshot
-        snapshot_file = session.query(SnapshotFile).filter_by(snapshot_slug=slug, relative_path=file_path).first()
+        snapshot_file = session.query(SnapshotFile).filter_by(snapshot_slug=slug, file_path=file_path).first()
         if not snapshot_file:
             raise HTTPException(status_code=404, detail=f"File not found in snapshot: {file_path}")
 

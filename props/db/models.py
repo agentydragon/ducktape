@@ -607,7 +607,7 @@ class OccurrenceRangeORM(Base):
         ),
         ForeignKeyConstraint(
             ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.file_path"],
             ondelete="CASCADE",
         ),
         UniqueConstraint(
@@ -649,7 +649,7 @@ class FalsePositiveRelevantFileORM(Base):
         ),
         ForeignKeyConstraint(
             ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.file_path"],
             ondelete="CASCADE",
         ),
     )
@@ -670,7 +670,7 @@ class SnapshotFile(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), primary_key=True
     )
-    relative_path: Mapped[str] = mapped_column(
+    file_path: Mapped[str] = mapped_column(
         String, primary_key=True, comment='Path relative to snapshot root (e.g., "src/utils.py"). NOT absolute paths.'
     )
     line_count: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -718,7 +718,7 @@ class FileSetMember(Base):
         ),
         ForeignKeyConstraint(
             ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.file_path"],
             ondelete="CASCADE",
         ),
     )

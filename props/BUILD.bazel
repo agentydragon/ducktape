@@ -1,3 +1,23 @@
 # Props workspace - top-level package
 
-exports_files(["devenv.nix"])
+load("@rules_python//python:defs.bzl", "py_library")
+
+exports_files([
+    "conftest.py",
+    "devenv.nix",
+])
+
+# Shared pytest configuration for all props tests
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core_testing",
+        "//mcp_infra/testing",
+        "//props/testing",
+        "@pypi//pytest",
+    ],
+)

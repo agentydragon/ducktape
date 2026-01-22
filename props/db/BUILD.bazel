@@ -154,7 +154,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core:conftest",
+        "//props:conftest",
         "@pypi//pytest",
     ],
 )
@@ -183,7 +183,6 @@ _POSTGRES_TEST_TAGS = [
 py_test(
     name = "test_agent_queries",
     srcs = [
-        "conftest.py",
         "test_agent_queries.py",
     ],
     env = _POSTGRES_TEST_ENV,
@@ -222,7 +221,6 @@ py_test(
 py_test(
     name = "test_pydantic_column_null",
     srcs = [
-        "conftest.py",
         "test_pydantic_column_null.py",
     ],
     env = _POSTGRES_TEST_ENV,
@@ -242,7 +240,6 @@ py_test(
 py_test(
     name = "test_split_based_rls",
     srcs = [
-        "conftest.py",
         "test_split_based_rls.py",
     ],
     env = _POSTGRES_TEST_ENV,
