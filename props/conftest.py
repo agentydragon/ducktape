@@ -1,7 +1,7 @@
-"""Pytest configuration for props/core tests.
+"""Pytest configuration for props tests.
 
 This conftest.py imports fixtures from the testing package and exposes them
-for pytest auto-discovery. Tests anywhere in props/core/ will have access
+for pytest auto-discovery. Tests anywhere in props/ will have access
 to these fixtures.
 """
 

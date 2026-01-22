@@ -114,7 +114,7 @@ py_test(
     name = "test_e2e",
     srcs = [
         "test_e2e.py",
-        "//props/core:conftest.py",
+        "//props:conftest.py",
     ],
     env = {
         "PGHOST": "127.0.0.1",
