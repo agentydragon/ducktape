@@ -260,7 +260,7 @@ py_test(
         "e2e/test_ui.py",
     ],
     imports = [".."],
-    main = "e2e/test_abort.py",  # Pytest will discover all test files
+    main = "e2e/conftest.py",  # Required since no test_agent_server_e2e.py exists
     tags = ["manual"],
     deps = _TEST_DEPS + ["@pypi//playwright"],
 )
