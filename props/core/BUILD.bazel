@@ -113,17 +113,6 @@ py_library(
 )
 
 py_library(
-    name = "mcp_http_server",
-    srcs = ["mcp_http_server.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//net_util",
-        "@pypi//fastmcp",
-    ],
-)
-
-py_library(
     name = "eval_api_models",
     srcs = ["eval_api_models.py"],
     imports = ["../.."],
@@ -345,7 +334,6 @@ ruff_test(
         ":exceptions",
         ":ids",
         ":loop_agent_env",
-        ":mcp_http_server",
         ":oci_utils",
         ":runs_context",
         ":splits",

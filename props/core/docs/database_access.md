@@ -107,3 +107,22 @@ Run `\d+ table_name` before writing queries to understand the schema.
 | `recall_by_definition_split_kind`  | All splits (view)     | -        | -        |
 
 [^1]: VALID/TEST access restricted to prevent overfitting. See `db/evaluation_flow.md.j2` for details.
+
+## Monitoring Grading Status
+
+PO/PI agents can monitor grading status by querying the `grading_pending` view directly:
+
+```bash
+# Check pending grading edges for a critic run
+psql -c "SELECT COUNT(*) FROM grading_pending WHERE critique_run_id = 'YOUR-RUN-ID'"
+
+# See details of pending edges
+psql -c "SELECT critique_issue_id, tp_id, fp_id FROM grading_pending WHERE critique_run_id = 'YOUR-RUN-ID'"
+
+# Check if grading is complete (returns 0 when done)
+psql -c "SELECT COUNT(*) AS pending_count FROM grading_pending WHERE critique_run_id = 'YOUR-RUN-ID'"
+```
+
+**Grading drift:** The `grading_pending` view shows all `(critique_issue, ground_truth_occurrence)` pairs that need grading edges. Grading is complete when the view returns no rows for a given critique run.
+
+For programmatic waiting, use `wait_until_graded()` from `props.core.eval_client` which polls this view automatically.

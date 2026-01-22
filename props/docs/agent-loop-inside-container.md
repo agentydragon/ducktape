@@ -169,38 +169,41 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 
 ### Subagent Spawning
 
-| Aspect          | Decision                                                               |
-| --------------- | ---------------------------------------------------------------------- |
-| Spawn           | MCP-over-HTTP via `PromptEvalServer` (host serves, container connects) |
-| Status query    | Direct Postgres query (no external call needed)                        |
-| Results/logs    | Direct Postgres query                                                  |
-| Cost accounting | Counts against parent's budget                                         |
-| Limits          | No explicit concurrency/spawn limits; cost + timeout sufficient        |
-| Wait helpers    | MCP tools: `wait_until_graded(critic_run_id)` polls DB internally      |
+| Aspect          | Decision                                                                        |
+| --------------- | ------------------------------------------------------------------------------- |
+| Spawn           | REST API call to backend (`/api/eval/run_critic`)                               |
+| Status query    | Direct Postgres query (no external call needed)                                 |
+| Results/logs    | Direct Postgres query                                                           |
+| Cost accounting | Counts against parent's budget                                                  |
+| Limits          | No explicit concurrency/spawn limits; cost + timeout sufficient                 |
+| Wait helpers    | `wait_until_graded_tool` polls `grading_pending` view directly inside container |
 
 **Architecture:**
 
-Host scaffold starts `PromptEvalServer` (FastMCP) and serves it via HTTP. Container connects as MCP client using `MCPToolProvider`. This reuses the existing MCP infrastructure rather than adding new REST endpoints.
+PO/PI agents have DirectToolProvider tools that call the backend REST API for spawning and poll the database directly for grading status. No MCP required.
 
 ```
-Host Scaffold                           Container (PO/PI)
-─────────────                           ─────────────────
-PromptEvalServer (FastMCP)              MCPToolProvider
-├─ run_critic tool      ◄───────────────  client.call_tool("run_critic", ...)
-├─ run_grader tool      ◄───────────────  client.call_tool("run_grader", ...)
-└─ wait_until_graded    ◄───────────────  client.call_tool("wait_until_graded", ...)
+Backend                                 Container (PO/PI)
+───────                                 ─────────────────
+/api/eval/run_critic (REST)             DirectToolProvider
+├─ Spawns critic container   ◄──────────  run_critic tool (HTTP POST)
+└─ Returns critic_run_id
+
+PostgreSQL                              DirectToolProvider
+──────────                              ──────────────────
+grading_pending view         ◄──────────  wait_until_graded_tool (polls DB)
+└─ Returns when drift = 0
 ```
 
-**Tools provided by PromptEvalServer:**
+**Tools provided by DirectToolProvider:**
 
-- `run_critic(image, example, model)` → `agent_run_id` (non-blocking)
-- `run_grader(critic_run_id, model)` → `agent_run_id` (non-blocking, deprecated - prefer daemon)
-- `wait_until_graded(critic_run_id)` → grading results (blocks until daemon grades)
+- `run_critic(definition_id, example, ...)` → critic_run_id (calls REST API)
+- `wait_until_graded_tool(critic_run_id)` → grading results (polls database directly)
 
 **Typical PO workflow:**
 
-1. `run_critic(...)` → critic_run_id (returns immediately)
-2. `wait_until_graded(critic_run_id)` (blocks until daemon grader grades it)
+1. `run_critic(...)` → critic_run_id (returns when critic completes)
+2. `wait_until_graded_tool(critic_run_id)` (polls `grading_pending` until empty)
 3. Query metrics from DB
 
 ### Observability
@@ -441,17 +444,17 @@ Note: Model pricing already exists in `model_metadata` table; `llm_request_costs
 
 ### To Keep (unchanged or minor changes)
 
-| Component                 | Notes                                                         |
-| ------------------------- | ------------------------------------------------------------- |
-| `props critic-agent` CLI  | Already exists, used by agent via subprocess                  |
-| `props grader-agent` CLI  | Already exists, used by agent via subprocess                  |
-| `props snapshot fetch`    | Already exists, used by agent to fetch snapshot               |
-| `grader/daemon.py`        | Keep, but agent loop moves inside container                   |
-| `grader/drift_handler.py` | Keep, runs inside container now                               |
-| `noop_classifier/`        | Keep as-is (specialized utility)                              |
-| Database models, RLS      | Keep as-is                                                    |
-| Registry proxy            | Keep as-is                                                    |
-| **PromptEvalServer**      | Keep for PO/PI - host serves MCP, container connects via HTTP |
+| Component                 | Notes                                                        |
+| ------------------------- | ------------------------------------------------------------ |
+| `props critic-agent` CLI  | Already exists, used by agent via subprocess                 |
+| `props grader-agent` CLI  | Already exists, used by agent via subprocess                 |
+| `props snapshot fetch`    | Already exists, used by agent to fetch snapshot              |
+| `grader/daemon.py`        | Keep, but agent loop moves inside container                  |
+| `grader/drift_handler.py` | Keep, runs inside container now                              |
+| `noop_classifier/`        | Keep as-is (specialized utility)                             |
+| Database models, RLS      | Keep as-is                                                   |
+| Registry proxy            | Keep as-is                                                   |
+| **Backend eval API**      | PO/PI call REST API for spawning, poll DB for grading status |
 
 ## Migration Path
 
@@ -517,11 +520,14 @@ Features:
 
 **Daemon loop:** `DriftHandler.on_before_sample()` checks `grading_pending` view. Returns `Abort()` when empty → agent loop exits → outer loop sleeps on pg_notify → wakes and creates fresh agent context.
 
-### Phase 4: Prompt Optimizer
+### Phase 4: Prompt Optimizer ✓
 
-1. Update PO/PI to run agent loop inside container (keep `PromptEvalServer` MCP-over-HTTP for spawning)
-2. PO/PI containers connect to host `PromptEvalServer` via `MCPToolProvider`
-3. Give PO/PI access to container logs via DB queries
+**Status: Complete**
+
+1. PO/PI run agent loop inside container with DirectToolProvider tools
+2. `run_critic` tool calls backend REST API (`/api/eval/run_critic`)
+3. `wait_until_graded_tool` polls `grading_pending` view directly from container
+4. PO/PI access container logs via DB queries
 
 ### Phase 5: Cleanup
 
@@ -533,12 +539,12 @@ Features:
 
 ### HTTP MCP Servers
 
-| Server                 | Location                              | Tools                                           | Fate                                                  |
-| ---------------------- | ------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
-| **CriticSubmitServer** | `critic/submit_server.py`             | `submit`, `report_failure`                      | **Kill** - replaced by in-container tools + exit 0    |
-| **GraderSubmitServer** | `grader/submit_server.py`             | `grader_submit`, `report_failure`               | **Kill** - replaced by in-container tools + exit 0    |
-| **PromptEvalServer**   | `prompt_optimize/prompt_optimizer.py` | `run_critic`, `run_grader`, `wait_until_graded` | **Keep** - PO/PI containers connect via MCP-over-HTTP |
-| **ClassifierServer**   | `noop_classifier/classifier.py`       | `submit_classifications`                        | **Keep** - specialized utility, not core agent flow   |
+| Server                 | Location                        | Tools                      | Fate                                                 |
+| ---------------------- | ------------------------------- | -------------------------- | ---------------------------------------------------- |
+| **CriticSubmitServer** | `critic/submit_server.py`       | `submit`, `report_failure` | **Killed** - replaced by in-container tools + exit 0 |
+| **GraderSubmitServer** | `grader/submit_server.py`       | `grader_submit`, ...       | **Killed** - replaced by in-container tools + exit 0 |
+| **PromptEvalServer**   | (deleted)                       | (migrated)                 | **Killed** - replaced by REST API + DB polling       |
+| **ClassifierServer**   | `noop_classifier/classifier.py` | `submit_classifications`   | **Keep** - specialized utility, not core agent flow  |
 
 ### Snapshot Fetching
 

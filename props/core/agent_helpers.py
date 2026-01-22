@@ -25,12 +25,14 @@ Usage:
     with get_session() as session:
         snapshots = session.query(Snapshot).filter_by(split='train').all()
 
-    # Eval API client (REST-based, replaces MCP)
-    from props.core.eval_client import EvalClient
+    # Eval API client for running critics (REST-based)
+    from props.core.eval_client import EvalClient, wait_until_graded
 
     async with EvalClient.from_env() as client:
         result = await client.run_critic(definition_id="critic", example=example)
-        status = await client.wait_until_graded(result.critic_run_id)
+
+    # Wait for grading by polling database directly (not via API)
+    status = await wait_until_graded(result.critic_run_id)
 """
 
 from __future__ import annotations

@@ -16,23 +16,28 @@ auth = (os.environ["PGUSER"], os.environ["PGPASSWORD"])
 
 ## Using EvalClient (Recommended)
 
-For running critic evaluations, use the `EvalClient` class which handles authentication and polling:
+For running critic evaluations, use the `EvalClient` class for the REST API calls and the `wait_until_graded()` function for polling grading status directly from the database:
 
 ```python
-from props.core.eval_client import EvalClient
+from props.core.eval_client import EvalClient, wait_until_graded
 from props.core.models.examples import WholeSnapshotExample
 
 async with EvalClient.from_env() as client:
-    # Run critic
+    # Run critic (calls REST API)
     result = await client.run_critic(
         definition_id="critic",
         example=WholeSnapshotExample(snapshot_slug="ducktape/2025-01-01"),
     )
 
-    # Wait for grading completion (polls automatically)
-    status = await client.wait_until_graded(result.critic_run_id)
-    print(f"Recall: {status.total_credit}/{status.max_credit}")
+# Wait for grading completion (polls database directly, not via API)
+status = await wait_until_graded(result.critic_run_id)
+print(f"Recall: {status.total_credit}/{status.max_credit}")
 ```
+
+**Note:** `wait_until_graded()` validates that:
+
+- The critic run is finished (COMPLETED, FAILED, or MAX_TURNS_EXCEEDED)
+- The critic run was started by the current agent
 
 ## OpenAPI Schema
 

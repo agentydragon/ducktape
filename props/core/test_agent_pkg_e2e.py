@@ -26,21 +26,16 @@ from hamcrest import assert_that
 
 from agent_core_testing.responses import PlayGen, tool_roundtrip
 from agent_core_testing.steps import exited_successfully
-from mcp_infra.naming import MCPMountPrefix
+from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
+from props.critic_dev.optimize.main import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.test_e2e import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
     make_orchestration_grader_mock,
     multi_model_e2e_stack,
-)
-from props.critic_dev.prompt_eval_server import (
-    RunCriticInput,
-    RunCriticOutput,
-    WaitUntilGradedInput,
-    WaitUntilGradedOutput,
 )
 from props.critic_dev.shared import TargetMetric
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
@@ -60,8 +55,8 @@ def make_po_orchestration_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
     """Create PO mock that orchestrates critic runs.
 
     The mock:
-    1. Calls run_critic MCP tool
-    2. Waits for grading
+    1. Calls run_critic tool (DirectToolProvider, calls REST API)
+    2. Waits for grading via wait_until_graded_tool (polls database)
     3. Reports success
     """
 
@@ -69,22 +64,22 @@ def make_po_orchestration_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
 
-        # Call run_critic MCP tool
+        # Call run_critic tool (DirectToolProvider)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        run_critic_input = RunCriticInput(
+        run_critic_args = RunCriticToolArgs(
             definition_id="builtin", example=example, timeout_seconds=120, budget_usd=None
         )
 
-        call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "run_critic", run_critic_input)
-        run_critic_output: RunCriticOutput = yield from tool_roundtrip(call, RunCriticOutput)
+        call = m.tool_call("run_critic", run_critic_args)
+        run_critic_output: RunCriticResponse = yield from tool_roundtrip(call, RunCriticResponse)
 
         critic_run_id = run_critic_output.critic_run_id
         logger.info(f"PO got critic_run_id: {critic_run_id}")
 
-        # Wait for grading
-        wait_input = WaitUntilGradedInput(critic_run_id=critic_run_id, timeout_seconds=60)
-        wait_call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "wait_until_graded", wait_input)
-        wait_output: WaitUntilGradedOutput = yield from tool_roundtrip(wait_call, WaitUntilGradedOutput)
+        # Wait for grading (polls database directly inside container)
+        wait_args = WaitUntilGradedToolArgs(critic_run_id=str(critic_run_id), timeout_seconds=60)
+        wait_call = m.tool_call("wait_until_graded_tool", wait_args)
+        wait_output: GradingStatusResponse = yield from tool_roundtrip(wait_call, GradingStatusResponse)
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success
@@ -100,7 +95,7 @@ def make_po_custom_image_mock(snapshot_slug: SnapshotSlug, random_token: str) ->
     1. Creates /workspace/custom_critic/ directory with agent.md containing the token
     2. Calls 'props agent-pkg create' CLI to build and push the image
     3. Extracts the new digest and calls run_critic with it
-    4. Waits for grading
+    4. Waits for grading via wait_until_graded_tool (polls database)
     5. Reports success
 
     NOTE: Requires registry proxy to be available for agent-pkg create to succeed.
@@ -148,25 +143,25 @@ AGENT_EOF
         new_digest = stdout.strip()
         logger.info(f"Created custom critic with digest: {new_digest}")
 
-        # Call run_critic with the CUSTOM critic image
+        # Call run_critic with the CUSTOM critic image (DirectToolProvider)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        run_critic_input = RunCriticInput(
+        run_critic_args = RunCriticToolArgs(
             definition_id=new_digest,  # Use the custom image!
             example=example,
             timeout_seconds=120,
             budget_usd=None,
         )
 
-        call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "run_critic", run_critic_input)
-        run_critic_output: RunCriticOutput = yield from tool_roundtrip(call, RunCriticOutput)
+        call = m.tool_call("run_critic", run_critic_args)
+        run_critic_output: RunCriticResponse = yield from tool_roundtrip(call, RunCriticResponse)
 
         critic_run_id = run_critic_output.critic_run_id
         logger.info(f"PO got critic_run_id: {critic_run_id}")
 
-        # Wait for grading
-        wait_input = WaitUntilGradedInput(critic_run_id=critic_run_id, timeout_seconds=60)
-        wait_call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "wait_until_graded", wait_input)
-        wait_output: WaitUntilGradedOutput = yield from tool_roundtrip(wait_call, WaitUntilGradedOutput)
+        # Wait for grading (polls database directly inside container)
+        wait_args = WaitUntilGradedToolArgs(critic_run_id=str(critic_run_id), timeout_seconds=60)
+        wait_call = m.tool_call("wait_until_graded_tool", wait_args)
+        wait_output: GradingStatusResponse = yield from tool_roundtrip(wait_call, GradingStatusResponse)
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success

@@ -33,14 +33,6 @@ class RunCriticRequest(BaseModel):
     critic_model: str = Field(default="gpt-5.1-codex-mini", description="Model for the critic agent")
 
 
-class WaitUntilGradedRequest(BaseModel):
-    """Request to wait for grading completion."""
-
-    critic_run_id: UUID = Field(description="agent_run_id of the critic run to wait for grading")
-    timeout_seconds: int = Field(default=300, ge=10, le=3600, description="Max time to wait (default 300s)")
-    poll_interval_seconds: int = Field(default=5, ge=1, le=60, description="Polling interval (default 5s)")
-
-
 # =============================================================================
 # Response models
 # =============================================================================

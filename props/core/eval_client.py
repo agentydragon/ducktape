@@ -1,7 +1,12 @@
 """REST API client for evaluation endpoints.
 
-Provides a client for PO/PI agent containers to call the backend's eval API.
-Replaces the MCP-based PromptEvalServer with direct HTTP calls.
+Provides:
+- EvalClient: REST client for PO/PI agents to call backend's /api/eval/run_critic
+- wait_until_graded(): Polls grading_pending view until grading is complete
+
+Architecture:
+- run_critic: REST API call to backend, which spawns critic container
+- wait_until_graded: Direct database polling inside container (no REST call)
 
 Usage (inside container):
     from props.core.eval_client import EvalClient, wait_until_graded
@@ -12,7 +17,7 @@ Usage (inside container):
             example={"kind": "whole_snapshot", "snapshot_slug": "repo/2025-01-01"},
         )
 
-    # Wait for grading by polling the database directly
+    # Wait for grading by polling the database directly (not via REST API)
     grading_result = await wait_until_graded(result.critic_run_id)
 """
 
@@ -29,11 +34,12 @@ from uuid import UUID
 import httpx
 from sqlalchemy import func
 
+from props.core.agent_helpers import get_current_agent_run_id
 from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
 from props.db.examples import Example
-from props.db.models import AgentRun, GradingEdge, GradingPending, Snapshot
+from props.db.models import AgentRun, AgentRunStatus, GradingEdge, GradingPending, Snapshot
 from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
@@ -131,6 +137,10 @@ async def wait_until_graded(
     Polls the grading_pending view directly using the container's database
     credentials until there's no more drift (all edges graded) or timeout.
 
+    Validates that:
+    - The critic run exists and is not IN_PROGRESS (must be in a terminal state)
+    - The critic run was started by the current agent (parent_agent_run_id check)
+
     Args:
         critic_run_id: agent_run_id of the critic run
         timeout_seconds: Max seconds to wait (default: 300)
@@ -140,8 +150,30 @@ async def wait_until_graded(
         GradingStatusResponse with completion status and metrics
 
     Raises:
+        ValueError: If critic run doesn't exist, isn't finished, or wasn't started by this agent
         TimeoutError: If grading doesn't complete within timeout
     """
+    # Validate the critic run before waiting
+    with get_session() as session:
+        critic_run = session.get(AgentRun, critic_run_id)
+        if critic_run is None:
+            raise ValueError(f"Critic run {critic_run_id} not found")
+
+        # Check that critic run is in a terminal state (not IN_PROGRESS)
+        if critic_run.status == AgentRunStatus.IN_PROGRESS:
+            raise ValueError(
+                f"Critic run {critic_run_id} is still in progress (status: {critic_run.status}). "
+                f"wait_until_graded only works on finished runs."
+            )
+
+        # Verify this critic run was started by the current agent
+        current_agent_id = get_current_agent_run_id(session)
+        if critic_run.parent_agent_run_id != current_agent_id:
+            raise ValueError(
+                f"Critic run {critic_run_id} was not started by this agent. "
+                f"Expected parent {current_agent_id}, got {critic_run.parent_agent_run_id}."
+            )
+
     start_time = time.monotonic()
     deadline = start_time + timeout_seconds
     last_pending_count: int | None = None

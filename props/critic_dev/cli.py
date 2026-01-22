@@ -21,6 +21,7 @@ from props.core.agent_helpers import get_current_agent_run, get_current_agent_ru
 from props.core.agent_types import AgentType
 from props.core.display import ColumnDef, build_table_from_schema
 from props.core.eval_client import EvalClient
+from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 from props.critic_dev.cli_helpers import show_execution_traces, show_grading_summary, show_run_status
@@ -81,7 +82,10 @@ async def run_critic_cmd(
 
     async with EvalClient.from_env() as client:
         response = await client.run_critic(
-            definition_id=image_ref, example=example, timeout_seconds=timeout_seconds, budget_usd=budget_usd
+            definition_id=DefinitionId(image_ref),
+            example=example,
+            timeout_seconds=timeout_seconds,
+            budget_usd=budget_usd,
         )
         typer.echo(f"Critic run ID: {response.critic_run_id}")
         typer.echo(f"Status: {response.status}")

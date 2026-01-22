@@ -4,7 +4,11 @@ This is the unified props backend that includes:
 - Dashboard API: /api/stats, /api/runs, /api/gt
 - LLM Proxy: /v1/responses
 - Registry Proxy: /v2/*
-- Eval API: /api/eval/run_critic, /api/eval/wait_until_graded
+- Eval API: /api/eval/run_critic, /api/eval/grading_status/{critic_run_id}
+
+Note: wait_until_graded is implemented inside containers by polling the grading_pending
+view directly, not as a REST endpoint. The grading_status endpoint provides a non-blocking
+status check that containers can poll.
 """
 
 from __future__ import annotations

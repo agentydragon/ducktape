@@ -35,20 +35,15 @@ from hamcrest import all_of, assert_that
 
 from agent_core_testing.responses import PlayGen, tool_roundtrip
 from agent_core_testing.steps import exited_successfully, stdout_contains
-from mcp_infra.naming import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import app as backend_app
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType
-from props.core.eval_api_models import (
-    GradingStatusResponse,
-    RunCriticRequest,
-    RunCriticResponse,
-    WaitUntilGradedRequest,
-)
+from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.core.splits import Split
+from props.critic_dev.optimize.main import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.shared import TargetMetric
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.config import DatabaseConfig
@@ -244,30 +239,35 @@ HOST_GATEWAY = {E2E_HOST_HOSTNAME: "host-gateway"} if E2E_HOST_HOSTNAME == "host
 
 
 def make_orchestration_optimizer_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
-    """Create optimizer mock that calls run_critic MCP tool and waits for grading."""
+    """Create optimizer mock that calls run_critic tool and waits for grading.
+
+    Uses DirectToolProvider tools (not MCP):
+    - run_critic: calls backend REST API
+    - wait_until_graded_tool: polls database directly
+    """
 
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request (system message)
 
-        # Call run_critic tool (now via REST API in container)
+        # Call run_critic tool (DirectToolProvider tool that calls REST API)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        run_critic_request = RunCriticRequest(
+        run_critic_args = RunCriticToolArgs(
             definition_id="builtin",  # Use builtin critic
             example=example,
             timeout_seconds=120,
             budget_usd=None,
         )
 
-        call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "run_critic", run_critic_request)
+        call = m.tool_call("run_critic", run_critic_args)
         run_critic_response: RunCriticResponse = yield from tool_roundtrip(call, RunCriticResponse)
 
         critic_run_id = run_critic_response.critic_run_id
         logger.info(f"Orchestration optimizer got critic_run_id: {critic_run_id}")
 
-        # Call wait_until_graded tool (now via REST API in container)
-        wait_request = WaitUntilGradedRequest(critic_run_id=critic_run_id, timeout_seconds=60)
-        wait_call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "wait_until_graded", wait_request)
+        # Call wait_until_graded_tool (DirectToolProvider tool that polls database)
+        wait_args = WaitUntilGradedToolArgs(critic_run_id=str(critic_run_id), timeout_seconds=60)
+        wait_call = m.tool_call("wait_until_graded_tool", wait_args)
         grading_response: GradingStatusResponse = yield from tool_roundtrip(wait_call, GradingStatusResponse)
 
         total_credit = grading_response.total_credit or 0.0
@@ -431,18 +431,16 @@ async def multi_model_e2e_stack(
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
 @pytest.mark.slow
-async def test_optimizer_orchestrates_critic_via_mcp(
-    synced_test_db: DatabaseConfig, async_docker_client: aiodocker.Docker
-):
-    """Test optimizer can orchestrate critic runs via MCP tools with simulated grading.
+async def test_optimizer_orchestrates_critic(synced_test_db: DatabaseConfig, async_docker_client: aiodocker.Docker):
+    """Test optimizer can orchestrate critic runs with simulated grading.
 
     This e2e test verifies the full orchestration flow:
-    1. Optimizer container starts and connects to MCP server (PromptEvalServer)
-    2. Optimizer calls run_critic MCP tool
+    1. Optimizer container starts with DirectToolProvider tools
+    2. Optimizer calls run_critic tool (REST API to backend)
     3. Registry spawns critic container with different model
     4. Critic runs, submits issues, completes
-    5. Background task injects grader run (simulating grading daemon)
-    6. Optimizer's wait_until_graded returns with grading results
+    5. Background grader daemon processes edges
+    6. Optimizer's wait_until_graded_tool returns (polls database directly)
     7. Optimizer reports success
 
     Uses MultiModelFakeOpenAI to route optimizer and critic to different mocks.
