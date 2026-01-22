@@ -93,3 +93,6 @@ worktrees
 
 # Python build artifacts
 **/dist/
+
+# Auto-generated act proxy config
+.bazelrc.act
