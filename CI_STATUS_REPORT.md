@@ -54,6 +54,7 @@
 ### Props E2E Test Results
 
 **Test Command:**
+
 ```bash
 bazel test --keep_going --test_output=errors \
   //props/critic:test_e2e \
@@ -64,14 +65,15 @@ bazel test --keep_going --test_output=errors \
 
 **Results:** 🔴 **4/4 FAILED** (Known Issue - Database Schema)
 
-| Test Target | Status | Duration | Error |
-|------------|--------|----------|-------|
-| //props/critic:test_e2e | ❌ FAILED | 20.4s | Foreign key violation |
-| //props/critic_dev/improve:test_e2e | ❌ FAILED | 22.6s | Foreign key violation |
-| //props/critic_dev/optimize:test_e2e | ❌ FAILED | 23.9s | Foreign key violation |
-| //props/core:test_agent_pkg_e2e | ❌ FAILED | 25.5s | Foreign key violation |
+| Test Target                          | Status    | Duration | Error                 |
+| ------------------------------------ | --------- | -------- | --------------------- |
+| //props/critic:test_e2e              | ❌ FAILED | 20.4s    | Foreign key violation |
+| //props/critic_dev/improve:test_e2e  | ❌ FAILED | 22.6s    | Foreign key violation |
+| //props/critic_dev/optimize:test_e2e | ❌ FAILED | 23.9s    | Foreign key violation |
+| //props/core:test_agent_pkg_e2e      | ❌ FAILED | 25.5s    | Foreign key violation |
 
 **Failure Details:**
+
 - **Root Cause:** Database schema column name mismatch
 - **Error:** `IntegrityError: insert or update on table "occurrence_ranges" violates foreign key constraint "fk_occurrence_range_snapshot_file"`
 - **Issue:** Foreign key defined as `(snapshot_slug, file_path) REFERENCES snapshot_files(snapshot_slug, relative_path)` - column names don't match
@@ -83,6 +85,7 @@ bazel test --keep_going --test_output=errors \
 - **Affects:** All props E2E tests that insert occurrence data
 
 **Infrastructure Verification:**
+
 - ✅ PostgreSQL: Running and accessible (port 5433)
 - ✅ Docker Registry: Running (port 5050)
 - ✅ Registry Proxy: Running and responding (port 5051, HTTP 200)
@@ -96,6 +99,7 @@ bazel test --keep_going --test_output=errors \
 ### GitHub Copilot Environment Setup
 
 **New Documentation:**
+
 - `.github/docs/PROPS_ENVIRONMENT_SETUP.md` - Complete guide for future agents
   - Step-by-step environment setup (Docker images, compose, database)
   - Service startup procedures and health checks
@@ -106,6 +110,7 @@ bazel test --keep_going --test_output=errors \
   - Performance notes (setup time, disk usage)
 
 **Updated Copilot Setup:**
+
 - `.github/workflows/copilot-setup-steps.yml` - Added props environment variables
   - `ADGN_PROPS_SPECIMENS_ROOT`: In-repo test fixtures path
   - PostgreSQL connection vars (PGHOST, PGPORT, PGUSER, PGDATABASE)
@@ -117,6 +122,7 @@ bazel test --keep_going --test_output=errors \
   - Simplified for GitHub Actions (no HTTP proxy, uses docker network)
 
 **Updated Props Documentation:**
+
 - `props/README.md` - Added "GitHub Copilot Agent Setup" section
   - Environment variables documentation
   - Network setup differences (host vs props-agents)
@@ -162,17 +168,19 @@ bazel test --keep_going --test_output=errors \
 **Issue:** Foreign key column name mismatch in occurrence_ranges table
 
 **Details:**
+
 - Table `occurrence_ranges` has column `file_path`
 - Foreign key references `snapshot_files(snapshot_slug, relative_path)`
 - PostgreSQL expects matching column names but finds `file_path` vs `relative_path`
 - Causes `IntegrityError` when inserting occurrence data
 
 **Evidence:**
+
 ```sql
 -- occurrence_ranges foreign key definition:
-FOREIGN KEY (snapshot_slug, file_path) 
+FOREIGN KEY (snapshot_slug, file_path)
   REFERENCES snapshot_files(snapshot_slug, relative_path)
-  
+
 -- Column name mismatch: file_path != relative_path
 ```
 
@@ -195,6 +203,7 @@ Successfully completed all requested fixes and setup:
 7. ✅ **Identified DB schema issue** - Foreign key column name mismatch
 
 **Next Steps for Maintainer:**
+
 - Review and merge core fixes (formatting, fixtures, e2e restructuring)
 - Address database schema issue (file_path vs relative_path)
 - Register pytest marks (integration, requires_postgres, requires_docker, timeout, slow)
