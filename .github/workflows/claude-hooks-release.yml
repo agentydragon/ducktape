@@ -135,9 +135,11 @@ jobs:
         run: |
           # E2E tests run against the installed wheel (CLAUDE_HOOKS_USE_WHEEL=1).
           # PATH is passed through so podman (pre-installed on GitHub runners) is available.
+          # --spawn_strategy=local is required for podman to create Unix sockets.
           bazel test //tools/claude_hooks:test_e2e \
             --test_output=all \
             --nocache_test_results \
+            --spawn_strategy=local \
             --test_env=CLAUDE_HOOKS_USE_WHEEL=1 \
             --test_env=CI=true \
             --test_env=JAVA_HOME \
