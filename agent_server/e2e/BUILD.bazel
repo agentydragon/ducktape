@@ -1,0 +1,75 @@
+"""Agent server E2E tests (manual, require Playwright)."""
+
+load("@rules_python//python:defs.bzl", "py_test")
+
+# Common test dependencies for E2E tests
+_E2E_TEST_DEPS = [
+    "//agent_server:conftest",
+    "//agent_server:root_modules",
+    "//adgn",
+    "//agent_core:mcp_provider",
+    "//agent_server/mcp",
+    "//agent_server/mcp_bridge",
+    "//agent_server/persist",
+    "//agent_server/policies",
+    "//agent_server/policy_eval",
+    "//agent_server/runtime",
+    "//agent_server/server",
+    "//agent_server/testing",
+    "@pypi//docker",
+    "@pypi//fastapi",
+    "@pypi//fastmcp",
+    "@pypi//mcp",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_bazel",
+    "@pypi//pytest_asyncio",
+    "@pypi//pytest_timeout",
+    "@pypi//starlette",
+    "@pypi//syrupy",
+    "@pypi//playwright",
+]
+
+_E2E_TEST_SUPPORT = [
+    "conftest.py",
+]
+
+py_test(
+    name = "test_abort",
+    srcs = _E2E_TEST_SUPPORT + ["test_abort.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_TEST_DEPS,
+)
+
+py_test(
+    name = "test_approvals",
+    srcs = _E2E_TEST_SUPPORT + ["test_approvals.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_TEST_DEPS,
+)
+
+py_test(
+    name = "test_notifications_handler",
+    srcs = _E2E_TEST_SUPPORT + ["test_notifications_handler.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_TEST_DEPS,
+)
+
+py_test(
+    name = "test_proposals_reject",
+    srcs = _E2E_TEST_SUPPORT + ["test_proposals_reject.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_TEST_DEPS,
+)
+
+py_test(
+    name = "test_ui",
+    srcs = _E2E_TEST_SUPPORT + ["test_ui.py"],
+    imports = ["../.."],
+    tags = ["manual"],
+    deps = _E2E_TEST_DEPS,
+)
