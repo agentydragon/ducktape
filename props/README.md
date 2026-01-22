@@ -7,19 +7,44 @@ High-level architecture and shared infrastructure for the props evaluation syste
 ```
 props/
 ├── .envrc                    # Devenv entry point for env vars
-├── devenv.nix                # Devenv config: sets PG* env vars for Docker Compose access
 ├── compose.yaml              # Docker Compose for postgres, registry, proxy
-├── core/                     # Core Python library (props_core)
-│   ├── pyproject.toml        # Package: props-core
-│   ├── src/props_core/       # The Python package
-│   └── tests/                # Tests for props_core
+├── BUILD.bazel               # Bazel build file
+├── AGENTS.md                 # Agent instructions
+├── core/                     # Core Python library
+│   ├── agent_registry.py     # Agent execution registry
+│   ├── agent_types.py        # Agent type definitions
+│   ├── models/               # Data models
+│   ├── gepa/                 # GEPA prompt optimization
+│   └── docs/                 # Core documentation
+├── cli/                      # Command-line interface
+│   ├── __main__.py           # CLI entry point
+│   ├── cmd_db.py             # Database commands
+│   ├── cmd_snapshot.py       # Snapshot commands
+│   └── ...                   # Other command modules
+├── db/                       # Database layer
+│   ├── models.py             # SQLAlchemy models
+│   ├── migrations/           # Alembic migrations
+│   └── sync/                 # Specimen sync utilities
 ├── backend/                  # FastAPI dashboard backend
-│   ├── __init__.py           # Python package root
-│   ├── routes/               # API endpoints
-│   └── tests/                # Tests for props.backend
-└── frontend/                 # Svelte UI
-    ├── package.json
-    └── src/
+│   ├── app.py                # FastAPI app
+│   └── routes/               # API endpoints
+├── frontend/                 # Svelte UI
+│   ├── package.json
+│   └── src/                  # Frontend source
+├── critic/                   # Critic agent definitions
+├── grader/                   # Grader agent definitions
+├── critic_dev/               # Development critic agents
+│   ├── improve/              # Improvement agent
+│   └── optimize/             # Optimization agent
+├── llm_proxy/                # LLM proxy service
+├── registry_proxy/           # Container registry proxy
+├── standards/                # Property definitions
+│   ├── python/               # Python-specific properties
+│   ├── markdown/             # Markdown-specific properties
+│   └── domain-types-and-units/
+├── testing/                  # Testing utilities
+├── docs/                     # Documentation
+└── prompts/                  # Prompt templates
 ```
 
 ## Initial Setup
@@ -47,10 +72,10 @@ docker compose up -d
 bazelisk run //props/cli -- db recreate
 
 # 5. Push agent images to registry
-bazelisk run //props/core/critic:push
-bazelisk run //props/core/grader:push
-bazelisk run //props/core/critic_dev/improve:push
-bazelisk run //props/core/critic_dev/optimize:push
+bazelisk run //props/critic:push
+bazelisk run //props/grader:push
+bazelisk run //props/critic_dev/improve:push
+bazelisk run //props/critic_dev/optimize:push
 ```
 
 ## Development

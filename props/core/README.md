@@ -151,42 +151,42 @@ flowchart TD
 
 ### 1. Run Critic on a Specimen
 
-Run structured critic to find issues in a specimen:
+Run critic agent to find issues in a specimen:
 
 ```bash
-# Run critic with default preset (max-recall-critic)
-props run --snapshot ducktape/2025-11-20-00 --structured true
+# Run critic with a specific definition
+props run ducktape/2025-11-20-00 --definition-id critic
 
-# Or specify a custom preset
-props run --snapshot ducktape/2025-11-20-00 --structured true --preset find
+# Run with a different model
+props run ducktape/2025-11-20-00 --definition-id critic --model gpt-4o
 
 # Filter to specific files
-props run --snapshot ducktape/2025-11-20-00 --structured true --files src/foo.py src/bar.py
+props run ducktape/2025-11-20-00 --definition-id critic --files src/foo.py src/bar.py
 ```
 
 This:
 
-- Loads the specimen from the registry
+- Loads the specimen from the database
 - Runs the critic agent with MCP tools (Docker-based)
 - Stores the critique in the database
-- Returns the critique_id for grading
+- Returns the agent_run_id for grading
 
 ### 2. Grade a Critique
 
-Grade a stored critique against canonical findings:
+Grade stored critiques against canonical findings:
 
 ```bash
-# Grade by critique ID (from previous critic run output)
-props snapshot-grade 123
+# Grade validation set
+props grade-validation
 
 # Use different model for grading
-props snapshot-grade 123 --model gpt-4o
+props grade-validation --model gpt-4o
 ```
 
 This:
 
-- Fetches the critique from the database
-- Loads the specimen's canonical issues
+- Fetches critiques from the database
+- Loads the specimens' canonical issues
 - Runs the grader to compute metrics (TP/FP/FN/recall/precision)
 - Stores grader results in the database
 
@@ -195,8 +195,8 @@ This:
 Query stored agent runs from the database:
 
 ```python
-from props_core.db import get_session
-from props_core.db.models import AgentRun, GradingDecision
+from props.db.session import get_session
+from props.db.models import AgentRun, ReportedIssue
 
 with get_session() as session:
     # Get all agent runs for a snapshot
@@ -204,9 +204,9 @@ with get_session() as session:
         AgentRun.type_config["snapshot_slug"].astext == "ducktape/2025-11-20-00"
     ).all()
 
-    # Get grading decisions with metrics
-    for d in session.query(GradingDecision).filter_by(agent_run_id=run_id):
-        print(f"TP {d.tp_id}: credit={d.found_credit}")
+    # Get reported issues for a run
+    for issue in session.query(ReportedIssue).filter_by(agent_run_id=run_id):
+        print(f"[{issue.issue_id}] {issue.rationale}")
 ```
 
 All structured runs are persisted with:
