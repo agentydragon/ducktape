@@ -1,17 +1,48 @@
-# CI Status Report for devel Branch
+# CI Status Report for devel Branch - UPDATED
 
-**Branch:** devel  
-**Latest Commit:** b2e23a228b8171e09b2c50f21b91cf402f2d96d8  
-**Commit Title:** Add GitHub Copilot coding agent environment setup configuration (#194)  
-**Report Generated:** 2026-01-22 06:35 UTC
+**Branch:** devel → copilot/check-ci-status-devel  
+**Latest Commit:** 4ed9636f5729dbab2d9f9c34dc9ed1e114df2071  
+**Commit Title:** Move props/core/conftest.py to props/conftest.py for better fixture discovery  
+**Report Generated:** 2026-01-22 06:35 UTC  
+**Last Updated:** 2026-01-22 07:09 UTC
 
 ---
 
 ## Executive Summary
 
-The tip of the devel branch has **CI failures** with multiple test suites failing. The main CI workflow is still in progress (some jobs running), but several critical failures have been identified.
+**Overall Status:** 🟡 **IMPROVING** → Most issues fixed, CI running
 
-**Overall Status:** 🔴 **FAILING**
+### Fixes Applied
+
+✅ **Issue #2 (Formatting)** - FIXED (commit f1ca24c)
+- Fixed all import order violations
+- Fixed quote style inconsistencies  
+- Removed trailing whitespace
+- Applied markdown formatting
+
+✅ **Issue #1 (E2E Fixtures)** - FIXED (commits c6d8a3b, 4ed9636)
+- Moved props/core/conftest.py → props/conftest.py
+- Updated all BUILD.bazel references
+- Fixtures now discoverable by pytest (verified: e2e_stack, synced_test_db found)
+
+### Current CI Status
+
+✅ **Lint/Format Checks** - PASSING
+- `bazel build --config=check //...` - ✅ PASSED
+- All ruff, mypy, eslint, prettier checks pass
+
+✅ **Unit Tests** - MOSTLY PASSING  
+- 25 tests passing
+- Non-Docker/Postgres tests running successfully
+
+🔄 **E2E Tests** - Require Infrastructure
+- Props E2E: Needs Docker + Postgres (will run in CI)
+- Editor E2E: Needs Docker (will run in CI)
+- Agent Server E2E: Needs Docker (will run in CI)
+- Fixtures now correctly discovered ✅
+
+🔴 **Pre-existing Issues** - Not Introduced by This PR
+- Claude Hooks CI: Consistent failure pattern (unrelated to fixture fix)
 
 ---
 
