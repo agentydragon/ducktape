@@ -3,9 +3,17 @@
 This is a self-contained FastAPI application that can run standalone or be
 mounted into a larger application.
 
-Endpoints:
+Endpoints (OCI Distribution API):
 - GET /health - Health check
-- /{path:path} - OCI Distribution API proxy (GET, HEAD, POST, PUT, PATCH, DELETE)
+- GET /v2/ - API version check (anonymous allowed)
+- GET /v2/_catalog - List repositories
+- GET /v2/{repo}/tags/list - List tags
+- GET, HEAD /v2/{repo}/manifests/{ref} - Get manifest
+- PUT /v2/{repo}/manifests/{ref} - Push manifest
+- GET, HEAD /v2/{repo}/blobs/{digest} - Get blob
+- POST /v2/{repo}/blobs/uploads/ - Start blob upload
+- PATCH /v2/{repo}/blobs/uploads/{uuid} - Continue blob upload
+- PUT /v2/{repo}/blobs/uploads/{uuid} - Complete blob upload
 
 Features:
 - Validates agent auth tokens against postgres
@@ -20,7 +28,6 @@ import hashlib
 import json
 import logging
 import os
-import re
 from enum import StrEnum
 from uuid import UUID
 
@@ -50,11 +57,19 @@ class CallerType(StrEnum):
     UNKNOWN = "unknown"  # Invalid/unrecognized caller
 
 
-def _get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
-    """Determine caller type from auth context.
+# ACL: sets of caller types allowed for each operation
+CAN_READ = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
+CAN_PUSH = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
+CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
 
-    Returns (caller_type, agent_run_id).
-    """
+
+# =============================================================================
+# Helper functions
+# =============================================================================
+
+
+def _get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
+    """Determine caller type from auth context. Returns (caller_type, agent_run_id)."""
     if auth.error:
         raise HTTPException(status_code=401, detail=auth.error)
 
@@ -72,100 +87,57 @@ def _get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
             raise HTTPException(status_code=401, detail="Invalid agent token")
 
         agent_type = agent_run.type_config.agent_type
-
         caller_type_map = {
             AgentType.PROMPT_OPTIMIZER: CallerType.PROMPT_OPTIMIZER,
             AgentType.IMPROVEMENT: CallerType.PROMPT_IMPROVER,
             AgentType.CRITIC: CallerType.CRITIC,
             AgentType.GRADER: CallerType.GRADER,
         }
-
         return caller_type_map.get(agent_type, CallerType.UNKNOWN), auth.agent_run_id
 
 
-# ACL: sets of caller types allowed for each operation
-CAN_READ = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
-CAN_PUSH = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
-CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
+def _require_read(caller_type: CallerType) -> None:
+    """Require read permission, raise HTTPException if denied."""
+    if caller_type not in CAN_READ:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read")
 
 
-def _check_permission(caller_type: CallerType, path: str, method: str) -> None:
-    """Check if caller has permission for this operation.
+def _require_push(caller_type: CallerType) -> None:
+    """Require push permission, raise HTTPException if denied."""
+    if caller_type not in CAN_PUSH:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push")
 
-    Uses default-deny with explicit path validation using regex patterns.
-    Raises HTTPException if permission denied.
-    """
-    # Delete always forbidden
-    if method == "DELETE":
-        raise HTTPException(status_code=403, detail="DELETE operations are forbidden")
 
-    # API version check (GET /v2/) - allow all callers
-    if method in {"GET", "HEAD"} and re.fullmatch(r"v2/?", path):
-        return
+def _require_push_tag(caller_type: CallerType, ref: str) -> None:
+    """Require push-by-tag permission if ref is a tag, raise HTTPException if denied."""
+    if not is_digest(ref) and caller_type not in CAN_PUSH_TAGS:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push by tag")
 
-    # Read operations: validate full path structure
-    if method in {"GET", "HEAD"}:
-        # Catalog endpoint: /v2/_catalog
-        if re.fullmatch(r"v2/_catalog", path):
-            if caller_type not in CAN_READ:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read")
-            return
 
-        # Tag list: /v2/<repo>/tags/list
-        if re.fullmatch(r"v2/[^/]+/tags/list", path):
-            if caller_type not in CAN_READ:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read")
-            return
+async def _proxy_to_upstream(request: Request, path: str) -> Response:
+    """Forward request to upstream registry and return response."""
+    upstream_url = f"{UPSTREAM_REGISTRY_URL}/{path}"
+    if request.url.query:
+        upstream_url += f"?{request.url.query}"
 
-        # Manifest read: /v2/<repo>/manifests/<ref>
-        if re.fullmatch(r"v2/[^/]+/manifests/[^/]+", path):
-            if caller_type not in CAN_READ:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read")
-            return
+    async with httpx.AsyncClient() as client:
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        body = await request.body()
 
-        # Blob read: /v2/<repo>/blobs/<digest>
-        if re.fullmatch(r"v2/[^/]+/blobs/[^/]+", path):
-            if caller_type not in CAN_READ:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read")
-            return
+        try:
+            upstream_response = await client.request(
+                method=request.method, url=upstream_url, headers=headers, content=body, timeout=30.0
+            )
+        except httpx.RequestError as e:
+            logger.error(f"Upstream request failed: {e}")
+            raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
 
-        # Unrecognized read operation - deny
-        raise HTTPException(status_code=403, detail=f"Unrecognized read operation: {method} {path}")
-
-    # Manifest push: PUT /v2/<repo>/manifests/<ref>
-    if method == "PUT":
-        match = re.fullmatch(r"v2/([^/]+)/manifests/([^/]+)", path)
-        if match:
-            if caller_type not in CAN_PUSH:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push")
-            # Check if pushing by tag (requires additional permission)
-            ref = match.group(2)
-            if not is_digest(ref) and caller_type not in CAN_PUSH_TAGS:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push by tag")
-            return
-
-    # Blob upload operations: POST to start upload, PATCH/PUT to continue/complete
-    if method in ("POST", "PATCH", "PUT"):
-        # POST /v2/<repo>/blobs/uploads/ - start upload
-        if method == "POST" and re.fullmatch(r"v2/[^/]+/blobs/uploads/?", path):
-            if caller_type not in CAN_PUSH:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push")
-            return
-
-        # PATCH /v2/<repo>/blobs/uploads/<uuid> - continue upload
-        if method == "PATCH" and re.fullmatch(r"v2/[^/]+/blobs/uploads/[^/]+", path):
-            if caller_type not in CAN_PUSH:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push")
-            return
-
-        # PUT /v2/<repo>/blobs/uploads/<uuid>?digest=... - complete upload
-        if method == "PUT" and re.fullmatch(r"v2/[^/]+/blobs/uploads/[^/]+", path):
-            if caller_type not in CAN_PUSH:
-                raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push")
-            return
-
-    # Default: deny any unrecognized operations
-    raise HTTPException(status_code=403, detail=f"Operation not allowed: {method} {path}")
+        return Response(
+            content=upstream_response.content,
+            status_code=upstream_response.status_code,
+            headers=dict(upstream_response.headers),
+        )
 
 
 async def _extract_base_digest(manifest_body: bytes, repository: str) -> str | None:
@@ -221,11 +193,9 @@ async def _record_manifest_push(repository: str, digest: str, manifest_body: byt
             return
 
         base_digest = await _extract_base_digest(manifest_body, repository)
-
         definition = AgentDefinition(
             digest=digest, agent_type=agent_type, created_by_agent_run_id=agent_run_id, base_digest=base_digest
         )
-
         session.add(definition)
         session.commit()
 
@@ -235,10 +205,11 @@ async def _record_manifest_push(repository: str, digest: str, manifest_body: byt
         )
 
 
-# Create standalone FastAPI app
-app = FastAPI(title="Props Registry Proxy")
+# =============================================================================
+# FastAPI App and Routes
+# =============================================================================
 
-# Add auth middleware
+app = FastAPI(title="Props Registry Proxy")
 app.add_middleware(AuthMiddleware)
 
 
@@ -248,52 +219,111 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.api_route("/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
-async def proxy(request: Request, path: str) -> Response:
-    """Proxy all OCI registry requests with ACL enforcement."""
-    # Get auth context and determine caller type
+# --- OCI Distribution API v2 endpoints ---
+
+
+@app.get("/v2/")
+@app.head("/v2/")
+async def v2_check() -> Response:
+    """API version check - allows anonymous access per OCI spec."""
+    return Response(content=b"{}", status_code=200, headers={"Docker-Distribution-API-Version": "registry/2.0"})
+
+
+@app.get("/v2/_catalog")
+async def get_catalog(request: Request) -> Response:
+    """List repositories."""
+    auth = get_auth_context(request)
+    caller_type, _ = _get_caller_type(auth)
+    _require_read(caller_type)
+    return await _proxy_to_upstream(request, "v2/_catalog")
+
+
+@app.get("/v2/{repo}/tags/list")
+async def get_tags(request: Request, repo: str) -> Response:
+    """List tags for a repository."""
+    auth = get_auth_context(request)
+    caller_type, _ = _get_caller_type(auth)
+    _require_read(caller_type)
+    return await _proxy_to_upstream(request, f"v2/{repo}/tags/list")
+
+
+@app.get("/v2/{repo}/manifests/{ref}")
+@app.head("/v2/{repo}/manifests/{ref}")
+async def get_manifest(request: Request, repo: str, ref: str) -> Response:
+    """Get a manifest by tag or digest."""
+    auth = get_auth_context(request)
+    caller_type, _ = _get_caller_type(auth)
+    _require_read(caller_type)
+    return await _proxy_to_upstream(request, f"v2/{repo}/manifests/{ref}")
+
+
+@app.put("/v2/{repo}/manifests/{ref}")
+async def put_manifest(request: Request, repo: str, ref: str) -> Response:
+    """Push a manifest."""
     auth = get_auth_context(request)
     caller_type, agent_run_id = _get_caller_type(auth)
+    _require_push(caller_type)
+    _require_push_tag(caller_type, ref)
 
-    # Check permissions
-    _check_permission(caller_type, path, request.method)
+    # Read body for digest computation and recording
+    body = await request.body()
+    manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
 
-    # Build upstream URL
-    upstream_url = f"{UPSTREAM_REGISTRY_URL}/{path}"
-    if request.url.query:
-        upstream_url += f"?{request.url.query}"
-
-    # Forward request to upstream registry
+    # Forward to upstream
+    upstream_url = f"{UPSTREAM_REGISTRY_URL}/v2/{repo}/manifests/{ref}"
     async with httpx.AsyncClient() as client:
         headers = dict(request.headers)
         headers.pop("host", None)
-        body = await request.body()
-
-        # Special handling for manifest pushes
-        manifest_push_match = None
-        if request.method == "PUT":
-            manifest_push_match = re.fullmatch(r"v2/([^/]+)/manifests/([^/]+)", path)
-
-        manifest_digest = None
-        if manifest_push_match:
-            manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
 
         try:
-            upstream_response = await client.request(
-                method=request.method, url=upstream_url, headers=headers, content=body, timeout=30.0
-            )
+            upstream_response = await client.put(upstream_url, headers=headers, content=body, timeout=30.0)
         except httpx.RequestError as e:
             logger.error(f"Upstream request failed: {e}")
             raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
 
         # Record manifest push if successful
-        if manifest_push_match and upstream_response.status_code in (200, 201):
-            repository = manifest_push_match.group(1)
-            assert manifest_digest is not None
-            await _record_manifest_push(repository, manifest_digest, body, agent_run_id)
+        if upstream_response.status_code in (200, 201):
+            await _record_manifest_push(repo, manifest_digest, body, agent_run_id)
 
         return Response(
             content=upstream_response.content,
             status_code=upstream_response.status_code,
             headers=dict(upstream_response.headers),
         )
+
+
+@app.get("/v2/{repo}/blobs/{digest}")
+@app.head("/v2/{repo}/blobs/{digest}")
+async def get_blob(request: Request, repo: str, digest: str) -> Response:
+    """Get a blob by digest."""
+    auth = get_auth_context(request)
+    caller_type, _ = _get_caller_type(auth)
+    _require_read(caller_type)
+    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/{digest}")
+
+
+@app.post("/v2/{repo}/blobs/uploads/")
+async def start_blob_upload(request: Request, repo: str) -> Response:
+    """Start a blob upload."""
+    auth = get_auth_context(request)
+    caller_type, _ = _get_caller_type(auth)
+    _require_push(caller_type)
+    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/")
+
+
+@app.patch("/v2/{repo}/blobs/uploads/{uuid}")
+async def continue_blob_upload(request: Request, repo: str, uuid: str) -> Response:
+    """Continue a blob upload (chunked)."""
+    auth = get_auth_context(request)
+    caller_type, _ = _get_caller_type(auth)
+    _require_push(caller_type)
+    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")
+
+
+@app.put("/v2/{repo}/blobs/uploads/{uuid}")
+async def complete_blob_upload(request: Request, repo: str, uuid: str) -> Response:
+    """Complete a blob upload."""
+    auth = get_auth_context(request)
+    caller_type, _ = _get_caller_type(auth)
+    _require_push(caller_type)
+    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")

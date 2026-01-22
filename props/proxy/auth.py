@@ -89,21 +89,10 @@ def extract_agent_run_id(username: str) -> UUID | None:
 def is_localhost_request(request: Request) -> bool:
     """Check if request is from localhost.
 
-    Checks both the client host and X-Forwarded-For header.
+    Checks the direct client address.
     """
-    # Check direct client address
     client = request.client
-    if client and client.host in LOCALHOST_ADDRESSES:
-        return True
-
-    # Check X-Forwarded-For (be careful - this can be spoofed)
-    # Only trust it if the direct client is also localhost (i.e., local proxy)
-    if client and client.host in LOCALHOST_ADDRESSES:
-        forwarded_for = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if forwarded_for in LOCALHOST_ADDRESSES:
-            return True
-
-    return False
+    return bool(client and client.host in LOCALHOST_ADDRESSES)
 
 
 @dataclass

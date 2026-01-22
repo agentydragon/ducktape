@@ -146,6 +146,7 @@ oci_push(
 # Shared test fixtures
 py_library(
     name = "test_conftest",
+    testonly = True,
     srcs = ["conftest.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
