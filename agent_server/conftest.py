@@ -12,10 +12,10 @@ import docker
 import mcp.types
 import pytest
 from fastmcp.client import Client
-from starlette.testclient import TestClient
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
+from starlette.testclient import TestClient
 
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_server.approvals import load_default_policy_source

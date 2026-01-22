@@ -18,11 +18,13 @@ The tip of the devel branch has **CI failures** with multiple test suites failin
 ## Workflow Status Overview
 
 ### ✅ Successful Workflows (3)
+
 1. **Copilot Setup Steps** - ✅ Passed
-2. **Visual Regression Tests** - ✅ Passed  
+2. **Visual Regression Tests** - ✅ Passed
 3. **Bazel Rust Lint** - ✅ Passed
 
 ### ❌ Failed Workflows (5)
+
 1. **Claude Hooks CI** - ❌ Failed
 2. **Pre-commit Checks** - ❌ Failed (formatting issues)
 3. **Props E2E Tests** - ❌ Failed (missing fixtures)
@@ -30,12 +32,14 @@ The tip of the devel branch has **CI failures** with multiple test suites failin
 5. **Agent Server E2E Tests** - ❌ Failed (likely same issue)
 
 ### 🔄 In Progress Workflows (4)
+
 1. **Bazel Build** - 🔄 Running
 2. **Bazel Test** - 🔄 Running
 3. **Bazel Lint** - 🔄 Running
 4. **Bazel Typecheck** - 🔄 Running
 
 ### ⏭️ Skipped Workflows (2)
+
 1. **ansible-lint-full** - ⏭️ Skipped
 2. **nix-flake-check** - ⏭️ Skipped
 
@@ -44,12 +48,14 @@ The tip of the devel branch has **CI failures** with multiple test suites failin
 ## Detailed Failure Analysis
 
 ### 1. Pre-commit Checks - ❌ FAILED
+
 **Job ID:** 61110959414  
 **Issue:** Code formatting violations
 
 **Problems Found:**
+
 - `.github/workflows/README.md`: Missing blank line after "**Documentation**:"
-- `.github/workflows/copilot-setup-steps.yml`: 
+- `.github/workflows/copilot-setup-steps.yml`:
   - Quote style inconsistency: `'3.13'` should be `"3.13"`
   - Trailing whitespace removal needed
 - `agent_server/conftest.py`: Import order violation (starlette import)
@@ -61,16 +67,19 @@ The tip of the devel branch has **CI failures** with multiple test suites failin
 ---
 
 ### 2. Props E2E Tests - ❌ FAILED
+
 **Job ID:** 61110994369  
 **Issue:** Missing pytest fixtures
 
 **Specific Failures:**
+
 - `props/critic_dev/optimize/test_e2e.py`: Missing fixture `synced_test_db`
 - `props/critic/test_e2e.py`: Missing fixture `e2e_stack`
 
 **Root Cause:** Test fixtures not properly loaded or defined. The tests are looking for fixtures that aren't available in the test environment.
 
 **Sample Error:**
+
 ```
 E       fixture 'e2e_stack' not found
 >       available fixtures: _class_scoped_runner, _function_scoped_runner, ...
@@ -82,12 +91,14 @@ E       fixture 'e2e_stack' not found
 ---
 
 ### 3. Claude Hooks CI - ❌ FAILED
+
 **Job ID:** 61110649586  
 **Workflow:** `.github/workflows/claude-hooks-release.yml`
 
 **Failed Step:** "Run e2e tests (no sandbox for podman)"
 
 **Details:**
+
 - Unit tests: ✅ Passed
 - E2E tests: ❌ Failed
 - Test artifacts available at: `failed-test-logs/tools/claude_hooks/test_e2e/`
@@ -98,12 +109,14 @@ E       fixture 'e2e_stack' not found
 ---
 
 ### 4. Editor E2E Tests - ❌ FAILED
+
 **Status:** Failed (likely same fixture issue as Props)  
 **Impact:** High
 
 ---
 
 ### 5. Agent Server E2E Tests - ❌ FAILED
+
 **Status:** Failed (likely same fixture issue as Props)  
 **Impact:** High
 
@@ -112,11 +125,13 @@ E       fixture 'e2e_stack' not found
 ## Historical Context
 
 Looking at recent CI runs on the devel branch:
+
 - **Pattern:** Claude Hooks CI has been failing consistently in recent commits
 - **Pattern:** Multiple E2E test failures appearing
 - **Implication:** These may be pre-existing issues, not necessarily introduced by the latest commit
 
 Recent workflow history shows:
+
 ```
 2026-01-22 06:18: Current commit - CI in progress, failures identified
 2026-01-22 06:00: Previous commit - CI cancelled, Claude Hooks failed
