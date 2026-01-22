@@ -93,3 +93,26 @@ bazelisk run //props/cli -- db restore <backup_file>
 
 The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens repo (typically `~/code/specimens`).
 The props package loads specimen data from this external location.
+
+For testing with in-repo fixtures (as used in CI and by GitHub Copilot agents):
+```bash
+export ADGN_PROPS_SPECIMENS_ROOT="$PWD/props/testing/fixtures/testdata/specimens"
+```
+
+## GitHub Copilot Agent Setup
+
+GitHub Copilot agents working on the props codebase should use the automated environment setup configured in `.github/workflows/copilot-setup-steps.yml`. This workflow sets up:
+
+**Environment Variables** (analogous to Claude code hooks setup):
+- `ADGN_PROPS_SPECIMENS_ROOT`: Points to in-repo test fixtures
+- `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`: PostgreSQL connection
+- `AGENT_PGHOST`: PostgreSQL host for agent containers
+- `PROPS_REGISTRY_PROXY_HOST`, `PROPS_REGISTRY_PROXY_PORT`: Registry proxy config
+- `PROPS_DOCKER_NETWORK`: Docker network for agent containers (props-agents)
+- `PROPS_E2E_HOST_HOSTNAME`: Host network address for containers (172.17.0.1)
+
+**Network Setup Differences:**
+- Claude hooks: Uses `host` network with HTTP proxy
+- GitHub Copilot: Uses `props-agents` Docker network (simpler, no proxy needed)
+
+For detailed setup instructions, see: `.github/docs/PROPS_ENVIRONMENT_SETUP.md`

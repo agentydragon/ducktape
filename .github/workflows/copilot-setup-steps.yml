@@ -85,3 +85,33 @@ jobs:
           echo "Pre-commit version: $(pre-commit --version)"
           which tofu && echo "OpenTofu version: $(tofu --version | head -1)" || echo "OpenTofu: not installed"
           which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
+
+      - name: Set up Props environment variables
+        run: |
+          # Props E2E test environment variables
+          # These mirror the setup used by Claude code hooks (tools/claude_hooks/bazelisk_setup.py)
+          # but simplified for GitHub Actions (no HTTP proxy needed, using docker networking)
+          
+          echo "ADGN_PROPS_SPECIMENS_ROOT=${{ github.workspace }}/props/testing/fixtures/testdata/specimens" >> $GITHUB_ENV
+          
+          # PostgreSQL connection (for props database operations)
+          echo "PGHOST=127.0.0.1" >> $GITHUB_ENV
+          echo "PGPORT=5433" >> $GITHUB_ENV
+          echo "PGUSER=postgres" >> $GITHUB_ENV
+          echo "PGDATABASE=eval_results" >> $GITHUB_ENV
+          
+          # Agent containers connect to host PostgreSQL
+          echo "AGENT_PGHOST=127.0.0.1" >> $GITHUB_ENV
+          
+          # Props registry proxy configuration
+          echo "PROPS_REGISTRY_PROXY_HOST=127.0.0.1" >> $GITHUB_ENV
+          echo "PROPS_REGISTRY_PROXY_PORT=5051" >> $GITHUB_ENV
+          
+          # Docker network for agent containers
+          # Claude hooks uses "host" network, GitHub Actions uses "props-agents" network
+          echo "PROPS_DOCKER_NETWORK=props-agents" >> $GITHUB_ENV
+          
+          # Host network address for agent containers to reach host services
+          echo "PROPS_E2E_HOST_HOSTNAME=172.17.0.1" >> $GITHUB_ENV
+          
+          echo "Props environment variables configured"
