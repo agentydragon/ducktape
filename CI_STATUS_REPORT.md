@@ -36,8 +36,8 @@ The tip of the devel branch has **CI failures** with multiple test suites failin
 4. **Bazel Typecheck** - 🔄 Running
 
 ### ⏭️ Skipped Workflows (2)
-- ansible-lint-full (skipped)
-- nix-flake-check (skipped)
+1. **ansible-lint-full** - ⏭️ Skipped
+2. **nix-flake-check** - ⏭️ Skipped
 
 ---
 
@@ -178,11 +178,12 @@ Recent workflow history shows:
 
 ## Summary Statistics
 
-- **Total Workflows on Latest Commit:** 3 (with CI containing 13 sub-jobs)
-- **Passing:** 3 + 1 CI sub-job = 4
-- **Failing:** 5
-- **In Progress:** 4
-- **Skipped:** 2
+- **Total Workflows on Latest Commit:** 3 standalone + 1 CI workflow (containing 13 sub-jobs)
+- **Completed Jobs:** 9 (3 standalone workflows + 6 completed CI sub-jobs)
+  - **Passing:** 4 (3 standalone + 1 CI sub-job)
+  - **Failing:** 5 (all CI sub-jobs)
+- **In Progress:** 4 CI sub-jobs
+- **Skipped:** 2 CI sub-jobs
 - **Success Rate (completed jobs):** 4/9 = 44%
 
 ---
