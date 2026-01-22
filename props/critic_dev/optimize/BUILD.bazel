@@ -26,12 +26,13 @@ py_library(
     deps = [
         "//agent_core",
         "//agent_core:direct_provider",
-        "//agent_core:mcp_provider",
-        "//agent_pkg/runtime",
         "//mcp_infra/exec:direct",
         "//openai_utils",
+        "//props/core:eval_api_models",
+        "//props/core:eval_client",
+        "//props/core:ids",
         "//props/core:loop_utils",
-        "@pypi//fastmcp",
+        "//props/core/models:examples",
         "@pypi//pydantic",
     ],
 )

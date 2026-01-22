@@ -124,16 +124,28 @@ py_library(
 )
 
 py_library(
-    name = "eval_client",
-    srcs = ["eval_client.py"],
+    name = "eval_api_models",
+    srcs = ["eval_api_models.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":ids",
         ":splits",
         "//props/core/models:examples",
-        "//props/critic_dev:shared",
         "//props/db:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "eval_client",
+    srcs = ["eval_client.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":eval_api_models",
+        ":ids",
+        "//props/core/models:examples",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],

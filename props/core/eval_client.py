@@ -25,41 +25,12 @@ from typing import Self
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, Field
 
+from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.ids import DefinitionId
-from props.core.models.examples import ExampleKind, ExampleSpec
-from props.core.splits import Split
-from props.critic_dev.shared import TargetMetric
-from props.db.models import AgentRunStatus
+from props.core.models.examples import ExampleSpec
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Response models (match backend routes/eval.py)
-# =============================================================================
-
-
-class RunCriticResponse(BaseModel):
-    """Response from running a critic agent."""
-
-    critic_run_id: UUID = Field(description="agent_run_id of the critic agent run")
-    status: AgentRunStatus = Field(description="Final status of the critic run")
-
-
-class GradingStatusResponse(BaseModel):
-    """Response with grading status for a critic run."""
-
-    is_complete: bool = Field(description="True if grading is complete")
-    pending_count: int = Field(description="Number of grading edges still pending")
-
-    # Fields below are only populated when is_complete=True
-    grader_run_id: UUID | None = Field(default=None)
-    total_credit: float | None = Field(default=None)
-    max_credit: int | None = Field(default=None)
-    split: Split | None = Field(default=None)
-    example_kind: ExampleKind | None = Field(default=None)
 
 
 # =============================================================================
@@ -116,7 +87,6 @@ class EvalClient:
         timeout_seconds: int = 3600,
         budget_usd: float | None = None,
         critic_model: str = "gpt-5.1-codex-mini",
-        target_metric: TargetMetric = TargetMetric.WHOLE_REPO,
     ) -> RunCriticResponse:
         """Run a critic agent on an example.
 
@@ -126,7 +96,6 @@ class EvalClient:
             timeout_seconds: Max seconds before container is killed
             budget_usd: Max USD cost for this agent
             critic_model: Model for the critic agent
-            target_metric: Target metric mode
 
         Returns:
             RunCriticResponse with critic_run_id and status
@@ -136,17 +105,14 @@ class EvalClient:
         """
         assert self._client is not None, "Client not initialized - use async with"
 
-        response = await self._client.post(
-            "/api/eval/run_critic",
-            json={
-                "definition_id": definition_id,
-                "example": example.model_dump(),
-                "timeout_seconds": timeout_seconds,
-                "budget_usd": budget_usd,
-                "critic_model": critic_model,
-                "target_metric": target_metric.value,
-            },
+        request = RunCriticRequest(
+            definition_id=definition_id,
+            example=example,
+            timeout_seconds=timeout_seconds,
+            budget_usd=budget_usd,
+            critic_model=critic_model,
         )
+        response = await self._client.post("/api/eval/run_critic", json=request.model_dump(mode="json"))
         response.raise_for_status()
         return RunCriticResponse.model_validate(response.json())
 

@@ -344,7 +344,9 @@ class AgentRegistry:
                 llm_proxy_url=self._llm_proxy_url,
                 extra_env={
                     # Backend URL for eval API (run_critic, wait_until_graded)
-                    "PROPS_BACKEND_URL": self._llm_proxy_url
+                    "PROPS_BACKEND_URL": self._llm_proxy_url,
+                    # Critic model for eval tools
+                    "PROPS_CRITIC_MODEL": critic_model,
                 },
                 container_name=f"promptopt-{short_uuid(agent_run_id)}",
                 timeout_seconds=timeout_seconds,
@@ -483,7 +485,9 @@ class AgentRegistry:
                 llm_proxy_url=self._llm_proxy_url,
                 extra_env={
                     # Backend URL for eval API (run_critic, wait_until_graded)
-                    "PROPS_BACKEND_URL": self._llm_proxy_url
+                    "PROPS_BACKEND_URL": self._llm_proxy_url,
+                    # Critic model for eval tools
+                    "PROPS_CRITIC_MODEL": critic_model,
                 },
                 container_name=f"improve-{short_uuid(run_id)}",
                 timeout_seconds=timeout_seconds,

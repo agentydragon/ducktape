@@ -12,7 +12,7 @@ Access control:
 - PO/PI agents: Full access to these endpoints
 - Other agents: No access
 
-Response models are shared between backend and agent containers via props.core.eval_api.
+Response models are shared between backend and agent containers via props.core.eval_api_models.
 Polling/waiting logic is implemented client-side in the agent containers.
 """
 
@@ -23,18 +23,17 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
 from sqlalchemy import func
 
 from props.backend.auth import CallerType, require_eval_api_access
+from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.exceptions import AgentDidNotSubmitError
-from props.core.ids import DefinitionId
-from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
+from props.core.models.examples import SingleFileSetExample
 from props.core.splits import Split
 from props.critic.exceptions import CriticExecutionError
 from props.critic_dev.shared import TargetMetric
 from props.db.examples import Example
-from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingEdge, GradingPending, Snapshot
+from props.db.models import AgentDefinition, AgentRun, GradingEdge, GradingPending, Snapshot
 from props.db.session import get_session
 
 if TYPE_CHECKING:
@@ -43,47 +42,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# =============================================================================
-# Request/Response models (shared with agent containers)
-# =============================================================================
-
-
-class RunCriticRequest(BaseModel):
-    """Request to run a critic agent."""
-
-    definition_id: DefinitionId = Field(description="Agent package ID (e.g., 'critic' or a digest)")
-    example: ExampleSpec = Field(description="Example to evaluate")
-    timeout_seconds: int = Field(default=3600, description="Max seconds before container is killed")
-    budget_usd: float | None = Field(default=None, description="Max USD cost for this agent")
-    critic_model: str = Field(default="gpt-5.1-codex-mini", description="Model for the critic agent")
-    target_metric: TargetMetric = Field(default=TargetMetric.WHOLE_REPO, description="Target metric mode")
-
-
-class RunCriticResponse(BaseModel):
-    """Response from running a critic agent."""
-
-    critic_run_id: UUID = Field(description="agent_run_id of the critic agent run")
-    status: AgentRunStatus = Field(description="Final status of the critic run")
-
-
-class GradingStatusResponse(BaseModel):
-    """Response with grading status for a critic run.
-
-    If is_complete=False, the client should poll again after a delay.
-    If is_complete=True, the grading results are included.
-    """
-
-    is_complete: bool = Field(description="True if grading is complete (no pending edges)")
-    pending_count: int = Field(description="Number of grading edges still pending")
-
-    # Fields below are only populated when is_complete=True
-    grader_run_id: UUID | None = Field(default=None, description="agent_run_id of the grader run")
-    total_credit: float | None = Field(default=None, description="Sum of credits for TP matches")
-    max_credit: int | None = Field(default=None, description="Number of distinct TP occurrences")
-    split: Split | None = Field(default=None, description="Data split of the evaluated example")
-    example_kind: ExampleKind | None = Field(default=None, description="Kind of example")
 
 
 # =============================================================================

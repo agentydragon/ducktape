@@ -1,46 +1,49 @@
 """Prompt optimizer agent main entry point for in-container execution.
 
 This is the CMD entrypoint for the prompt optimizer container. It:
-1. Connects to host MCP server for orchestration tools (run_critic, run_grader)
+1. Connects to backend REST API for orchestration tools (run_critic, wait_until_graded)
 2. Renders the system prompt
 3. Runs the agent loop until submit succeeds or failure
 4. Exits with appropriate code
 
 Architecture:
-- Local tools: exec, submit, report_failure (via DirectToolProvider)
-- Remote tools: run_critic, run_grader (via MCP-over-HTTP to host)
+- All tools registered on DirectToolProvider:
+  - exec, submit, report_failure (local)
+  - run_critic, wait_until_graded (call backend REST API)
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from enum import StrEnum, auto
 from pathlib import Path
+from uuid import UUID
 
-from fastmcp.client import Client
 from pydantic import BaseModel, Field
 
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.mcp_provider import MCPToolProvider
-from agent_core.tool_provider import CompositeToolProvider
-from agent_pkg.runtime.mcp import mcp_client_from_env
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import SystemMessage
+from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
+from props.core.eval_client import EvalClient
+from props.core.ids import DefinitionId
 from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_logging
+from props.core.models.examples import ExampleSpec
 
 logger = logging.getLogger(__name__)
 
 # Reminder sent when agent outputs text instead of using tools
 TEXT_OUTPUT_REMINDER = (
     "You must use tools to optimize prompts. Do not output text directly. "
-    "Use run_critic and run_grader to evaluate agents, then call submit when done."
+    "Use run_critic and wait_until_graded to evaluate agents, then call submit when done."
 )
 
 # Default workspace path
@@ -48,7 +51,7 @@ WORKSPACE = Path("/workspace")
 
 
 # =============================================================================
-# Tool argument models
+# Tool argument models (for DirectToolProvider)
 # =============================================================================
 
 
@@ -62,6 +65,25 @@ class ReportFailureArgs(BaseModel):
     """Arguments for report_failure tool."""
 
     message: str = Field(..., description="Description of why optimization could not be completed")
+
+
+class RunCriticToolArgs(BaseModel):
+    """Arguments for run_critic tool (subset of RunCriticRequest for agent use)."""
+
+    definition_id: DefinitionId = Field(
+        description="Agent package ID (from 'props agent-pkg create' or 'critic' for baseline)"
+    )
+    example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
+    timeout_seconds: int = Field(default=3600, description="Max seconds before container is killed")
+    budget_usd: float | None = Field(default=None, description="Max USD cost for this agent")
+
+
+class WaitUntilGradedToolArgs(BaseModel):
+    """Arguments for wait_until_graded tool."""
+
+    critic_run_id: str = Field(description="agent_run_id of the critic run to wait for grading")
+    timeout_seconds: int = Field(default=300, ge=10, le=3600, description="Max time to wait (default 300s)")
+    poll_interval_seconds: int = Field(default=5, ge=1, le=60, description="Polling interval (default 5s)")
 
 
 # =============================================================================
@@ -84,8 +106,8 @@ class LoopState:
     status: LoopStatus = LoopStatus.IN_PROGRESS
 
 
-def create_local_tool_provider(state: LoopState) -> DirectToolProvider:
-    """Create tool provider with local tools."""
+def create_tool_provider(state: LoopState, eval_client: EvalClient, critic_model: str) -> DirectToolProvider:
+    """Create tool provider with all tools (local + eval API)."""
     provider = DirectToolProvider()
 
     @provider.tool
@@ -112,6 +134,37 @@ def create_local_tool_provider(state: LoopState) -> DirectToolProvider:
         state.status = LoopStatus.EXITED_FAILURE
         logger.info("Reported failure: %s", args.message)
 
+    @provider.tool
+    async def run_critic(args: RunCriticToolArgs) -> RunCriticResponse:
+        """Run critic agent on an example.
+
+        Returns critic_run_id. Use wait_until_graded to get grading results.
+        """
+        logger.info(f"Running critic: definition={args.definition_id}, example={args.example}")
+        response = await eval_client.run_critic(
+            definition_id=args.definition_id,
+            example=args.example,
+            timeout_seconds=args.timeout_seconds,
+            budget_usd=args.budget_usd,
+            critic_model=critic_model,
+        )
+        logger.info(f"Critic run completed: {response.critic_run_id}, status={response.status}")
+        return response
+
+    @provider.tool
+    async def wait_until_graded(args: WaitUntilGradedToolArgs) -> GradingStatusResponse:
+        """Wait for a critic run to be fully graded.
+
+        Polls until grading is complete or timeout.
+        """
+        critic_run_id = UUID(args.critic_run_id)
+        logger.info(f"Waiting for grading: {critic_run_id}")
+        response = await eval_client.wait_until_graded(
+            critic_run_id, timeout_seconds=args.timeout_seconds, poll_interval_seconds=args.poll_interval_seconds
+        )
+        logger.info(f"Grading complete: total_credit={response.total_credit}, max_credit={response.max_credit}")
+        return response
+
     return provider
 
 
@@ -123,24 +176,19 @@ class LoggingHandler(BaseHandler):
         raise exc
 
 
-async def run_prompt_optimizer_loop(system_prompt: str, mcp_client: Client) -> int:
+async def run_prompt_optimizer_loop(system_prompt: str, eval_client: EvalClient, critic_model: str) -> int:
     """Run the prompt optimizer agent loop.
 
     Args:
         system_prompt: The system prompt for the optimizer agent
-        mcp_client: Connected MCP client for remote tools (run_critic, run_grader)
+        eval_client: EvalClient connected to backend for remote tools
+        critic_model: Model to use for critic agents
 
     Returns:
         Exit code (0 for success, non-zero for failure)
     """
     state = LoopState()
-    local_provider = create_local_tool_provider(state)
-
-    # Create MCP tool provider for remote tools
-    mcp_provider = MCPToolProvider(mcp_client)
-
-    # Combine providers (local tools take precedence)
-    tool_provider = CompositeToolProvider(mcp_provider, local_provider)
+    tool_provider = create_tool_provider(state, eval_client, critic_model)
 
     bound_model = create_bound_model_from_env()
 
@@ -187,12 +235,13 @@ async def main() -> int:
 
     logger.info("Prompt optimizer agent starting")
 
-    # Connect to host MCP server for orchestration tools
-    logger.info("Connecting to host MCP server")
-    async with mcp_client_from_env() as (mcp_client, init_result):
-        logger.info(
-            "Connected to MCP server: %s (version %s)", init_result.serverInfo.name, init_result.serverInfo.version
-        )
+    # Get critic model from environment (set by registry)
+    critic_model = os.environ.get("PROPS_CRITIC_MODEL", "gpt-5.1-codex-mini")
+
+    # Connect to backend REST API for orchestration tools
+    logger.info("Connecting to backend REST API")
+    async with EvalClient.from_env() as eval_client:
+        logger.info("Connected to backend at %s", eval_client.backend_url)
 
         # Render system prompt
         logger.info("Rendering system prompt")
@@ -200,7 +249,7 @@ async def main() -> int:
 
         # Run the agent loop
         logger.info("Starting agent loop")
-        exit_code = await run_prompt_optimizer_loop(system_prompt, mcp_client)
+        exit_code = await run_prompt_optimizer_loop(system_prompt, eval_client, critic_model)
 
     logger.info("Agent loop finished with exit code %d", exit_code)
     return exit_code
