@@ -43,11 +43,27 @@ import aiodocker
 import pytest_asyncio
 import uvicorn
 
+from fastapi import FastAPI
+
 from openai_utils.model import OpenAIModelProto
+from props.backend.auth import AuthMiddleware
+from props.backend.routes import llm
 from props.core.agent_registry import AgentRegistry
 from props.db.config import DatabaseConfig
-from props.llm_proxy.proxy import app as proxy_app
 from props.testing.fake_openai_server import FakeOpenAIServer
+
+
+def create_test_proxy_app() -> FastAPI:
+    """Create a minimal FastAPI app with just the LLM proxy for e2e tests.
+
+    This is a lightweight version of the full backend that only includes
+    the LLM proxy routes. It doesn't start grader daemons or other services
+    that are not needed for e2e container tests.
+    """
+    app = FastAPI(title="Test LLM Proxy")
+    app.add_middleware(AuthMiddleware)
+    app.include_router(llm.router, tags=["llm_proxy"])
+    return app
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +127,9 @@ class _ProxyServer:
         # Use a dummy API key (fake server doesn't validate it)
         os.environ["OPENAI_API_KEY"] = "test-key"
 
-        config = uvicorn.Config(proxy_app, host=self._host, port=self._port, log_level="warning")
+        # Create test-specific app with just LLM proxy routes
+        test_app = create_test_proxy_app()
+        config = uvicorn.Config(test_app, host=self._host, port=self._port, log_level="warning")
         self._server = uvicorn.Server(config)
         self._task = asyncio.create_task(self._server.serve())
 
