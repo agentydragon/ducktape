@@ -260,6 +260,7 @@ py_test(
         "e2e/test_ui.py",
     ],
     imports = [".."],
+    main = "e2e/test_abort.py",  # Pytest will discover all test files
     tags = ["manual"],
     deps = _TEST_DEPS + ["@pypi//playwright"],
 )

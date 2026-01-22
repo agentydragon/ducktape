@@ -154,7 +154,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core:conftest",
+        "//props:conftest",
         "@pypi//pytest",
     ],
 )
