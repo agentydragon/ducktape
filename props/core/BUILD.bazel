@@ -295,7 +295,10 @@ py_test(
 
 py_test(
     name = "test_agent_pkg_e2e",
-    srcs = ["test_agent_pkg_e2e.py"],
+    srcs = [
+        "test_agent_pkg_e2e.py",
+        "conftest.py",
+    ],
     imports = ["../.."],
     tags = [
         "integration",
