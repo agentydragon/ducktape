@@ -60,13 +60,9 @@ jobs:
           # Dummy OPENAI_API_KEY to satisfy compose.yaml (tests use fake server)
           echo "OPENAI_API_KEY=test-key-not-used" >> $GITHUB_ENV
 
-      # Build registry-proxy image (compose.yaml references props-registry-proxy:latest)
-      - name: Build registry proxy
-        run: bazel run //props/registry_proxy:load
-
-      # Build llm-proxy image (compose.yaml references props-llm-proxy:latest)
-      - name: Build llm proxy
-        run: bazel run //props/llm_proxy:load
+      # Build unified backend image (compose.yaml references props-backend:latest)
+      - name: Build backend image
+        run: bazel run //props/backend:load
 
       # Pull images needed by compose.yaml
       - name: Pull infrastructure images
@@ -82,14 +78,14 @@ jobs:
           echo "Waiting for PostgreSQL..."
           until pg_isready -h 127.0.0.1 -p 5433 -U postgres; do sleep 1; done
           echo "Waiting for registry..."
-          until curl -sf http://127.0.0.1:5050/v2/; do sleep 1; done
-          echo "Waiting for registry proxy..."
-          for i in {1..30}; do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5051/v2/ || echo "000")
-            if [[ "$HTTP" =~ ^(200|401)$ ]]; then break; fi
-            if [ $i -eq 30 ]; then
-              echo "Registry proxy failed to start"
-              docker logs props-registry-proxy
+          until curl -sf http://127.0.0.1:5000/v2/; do sleep 1; done
+          echo "Waiting for backend..."
+          for i in {1..60}; do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health || echo "000")
+            if [[ "$HTTP" == "200" ]]; then break; fi
+            if [ $i -eq 60 ]; then
+              echo "Backend failed to start"
+              docker logs props-backend
               exit 1
             fi
             sleep 1
@@ -121,8 +117,9 @@ jobs:
           PGUSER: postgres
           PGDATABASE: eval_results
           AGENT_PGHOST: 127.0.0.1
+          # Unified backend handles registry proxy on port 8000
           PROPS_REGISTRY_PROXY_HOST: 127.0.0.1
-          PROPS_REGISTRY_PROXY_PORT: "5051"
+          PROPS_REGISTRY_PROXY_PORT: "8000"
           PROPS_DOCKER_NETWORK: props-agents
           PROPS_E2E_HOST_HOSTNAME: 172.17.0.1
         run: |

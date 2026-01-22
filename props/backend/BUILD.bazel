@@ -1,5 +1,7 @@
 """Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
 
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
@@ -82,4 +84,36 @@ genrule(
 ruff_test(
     name = "ruff",
     srcs = [":backend"],
+)
+
+# =============================================================================
+# OCI Image
+# =============================================================================
+
+pkg_tar(
+    name = "app_tar",
+    srcs = [":backend_cli"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = [
+        "/app/backend_cli",
+        "serve",
+    ],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":app_tar"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["props-backend:latest"],
 )
