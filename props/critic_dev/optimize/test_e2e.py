@@ -37,24 +37,24 @@ from agent_core_testing.responses import PlayGen, tool_roundtrip
 from agent_core_testing.steps import exited_successfully, stdout_contains
 from mcp_infra.naming import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto
+from props.backend.app import app as backend_app
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType
+from props.core.eval_api_models import (
+    GradingStatusResponse,
+    RunCriticRequest,
+    RunCriticResponse,
+    WaitUntilGradedRequest,
+)
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.core.splits import Split
-from props.critic_dev.prompt_eval_server import (
-    RunCriticInput,
-    RunCriticOutput,
-    WaitUntilGradedInput,
-    WaitUntilGradedOutput,
-)
 from props.critic_dev.shared import TargetMetric
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, Snapshot
 from props.db.session import get_session
-from props.llm_proxy.proxy import app as proxy_app
 from props.testing.fake_openai_server import MultiModelFakeOpenAI
 from props.testing.mocks import GraderMock, PropsMock
 
@@ -250,30 +250,30 @@ def make_orchestration_optimizer_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request (system message)
 
-        # Call run_critic MCP tool
+        # Call run_critic tool (now via REST API in container)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        run_critic_input = RunCriticInput(
+        run_critic_request = RunCriticRequest(
             definition_id="builtin",  # Use builtin critic
             example=example,
             timeout_seconds=120,
             budget_usd=None,
         )
 
-        call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "run_critic", run_critic_input)
-        run_critic_output: RunCriticOutput = yield from tool_roundtrip(call, RunCriticOutput)
+        call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "run_critic", run_critic_request)
+        run_critic_response: RunCriticResponse = yield from tool_roundtrip(call, RunCriticResponse)
 
-        critic_run_id = run_critic_output.critic_run_id
+        critic_run_id = run_critic_response.critic_run_id
         logger.info(f"Orchestration optimizer got critic_run_id: {critic_run_id}")
 
-        # Call wait_until_graded MCP tool
-        wait_input = WaitUntilGradedInput(critic_run_id=critic_run_id, timeout_seconds=60)
-        wait_call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "wait_until_graded", wait_input)
-        wait_output: WaitUntilGradedOutput = yield from tool_roundtrip(wait_call, WaitUntilGradedOutput)
+        # Call wait_until_graded tool (now via REST API in container)
+        wait_request = WaitUntilGradedRequest(critic_run_id=critic_run_id, timeout_seconds=60)
+        wait_call = m.mcp_tool_call(MCPMountPrefix("prompt_eval"), "wait_until_graded", wait_request)
+        grading_response: GradingStatusResponse = yield from tool_roundtrip(wait_call, GradingStatusResponse)
 
-        recall = wait_output.total_credit / wait_output.max_credit if wait_output.max_credit > 0 else 0.0
-        logger.info(
-            f"Orchestration optimizer got grading: total_credit={wait_output.total_credit}, recall={recall:.2%}"
-        )
+        total_credit = grading_response.total_credit or 0.0
+        max_credit = grading_response.max_credit or 0
+        recall = total_credit / max_credit if max_credit > 0 else 0.0
+        logger.info(f"Orchestration optimizer got grading: total_credit={total_credit}, recall={recall:.2%}")
 
         # Report success
         yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
@@ -349,7 +349,7 @@ async def _run_proxy(upstream_url: str, host: str = "0.0.0.0") -> AsyncIterator[
     os.environ["OPENAI_UPSTREAM_URL"] = upstream_url
     os.environ["OPENAI_API_KEY"] = "test-key"
 
-    config = uvicorn.Config(proxy_app, host=host, port=0, log_level="warning")
+    config = uvicorn.Config(backend_app, host=host, port=0, log_level="warning")
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())
 

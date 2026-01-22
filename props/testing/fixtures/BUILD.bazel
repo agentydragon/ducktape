@@ -25,6 +25,7 @@ py_library(
         "//props/core:agent_registry",
         "//props/core:agent_types",
         "//props/core:agent_workspace",
+        "//props/core:eval_api_models",
         "//props/core:ids",
         # props.core/db modules
         "//props/db:agent_definition_ids",
@@ -43,9 +44,6 @@ py_library(
         "//props/critic_dev:shared",
         "//props/critic_dev/improve:improve_agent",
         "//props/critic_dev/improve:main_lib",
-        "//props/critic_dev/optimize:prompt_optimizer",
-        # props.llm_proxy for e2e_container.py
-        "//props/llm_proxy",
         # props.testing for fake_openai_server
         "//props/testing:fake_openai_server",
         "@pypi//aiodocker",

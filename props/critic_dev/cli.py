@@ -14,17 +14,16 @@ import typer
 from rich.console import Console
 from sqlalchemy import text
 
-from agent_pkg.runtime.mcp import mcp_client_from_env
 from agent_pkg.runtime.output import render_agent_prompt
 from cli_util.decorators import async_run
 from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.core.agent_helpers import get_current_agent_run, get_current_agent_run_id
 from props.core.agent_types import AgentType
 from props.core.display import ColumnDef, build_table_from_schema
+from props.core.eval_client import EvalClient
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 from props.critic_dev.cli_helpers import show_execution_traces, show_grading_summary, show_run_status
-from props.critic_dev.prompt_eval_server import ReportFailureInput, RunCriticInput
 from props.db.session import get_session
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
@@ -44,9 +43,6 @@ Common workflows:
     props critic-dev leaderboard
     props critic-dev valid-leaderboard  # whole-repo mode only
     props critic-dev hard-examples --limit 10
-
-  Report failure and abort:
-    props critic-dev report-failure "Error message"
 """
 
 app = typer.Typer(name="critic-dev", help=HELP_TEXT, add_completion=False)
@@ -83,35 +79,13 @@ async def run_critic_cmd(
     else:
         example = WholeSnapshotExample(snapshot_slug=snapshot_slug)
 
-    payload = RunCriticInput(
-        definition_id=image_ref, example=example, timeout_seconds=timeout_seconds, budget_usd=budget_usd
-    )
-
-    async with mcp_client_from_env() as (client, _init_result):
-        result = await client.call_tool("run_critic", payload.model_dump())
-        typer.echo(f"Critic run ID: {result}")
+    async with EvalClient.from_env() as client:
+        response = await client.run_critic(
+            definition_id=image_ref, example=example, timeout_seconds=timeout_seconds, budget_usd=budget_usd
+        )
+        typer.echo(f"Critic run ID: {response.critic_run_id}")
+        typer.echo(f"Status: {response.status}")
         typer.echo("Note: Grading is handled automatically by snapshot grader daemons.")
-
-
-@app.command("report-failure")
-@async_run
-async def report_failure_cmd(
-    message: Annotated[str, typer.Argument(help="Error message explaining why the agent could not complete")],
-) -> None:
-    """Report that the agent could not complete and should abort.
-
-    Use this when the optimization or improvement run should be aborted
-    (e.g., critical errors, no viable path forward, budget exceeded).
-
-    Examples:
-        props critic-dev report-failure "Budget exceeded after 50 evaluations"
-        props critic-dev report-failure "No examples available for this split"
-    """
-    payload = ReportFailureInput(message=message)
-
-    async with mcp_client_from_env() as (client, _init_result):
-        result = await client.call_tool("report_failure", payload.model_dump())
-        typer.echo(result)
 
 
 @app.command("run-status")

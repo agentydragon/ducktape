@@ -70,17 +70,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "prompt_optimizer",
-    srcs = ["prompt_optimizer.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/critic_dev:prompt_eval_server",
-        "//props/critic_dev:shared",
-    ],
-)
-
 # =============================================================================
 # Test library (fixtures used by other tests)
 # =============================================================================
@@ -92,9 +81,10 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":prompt_optimizer",
         "//agent_core",
         "//agent_core_testing",
+        "//props/backend",
+        "//props/core:eval_api_models",
         "//props/critic_dev:shared",
         "//props/db:models",
         "//props/db:session",
@@ -103,6 +93,7 @@ py_library(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
     ],
 )
 

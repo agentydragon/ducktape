@@ -1,15 +1,17 @@
 """Improvement agent main entry point for in-container execution.
 
 This is the CMD entrypoint for the improvement agent container. It:
-1. Connects to backend REST API for orchestration tools (run_critic, wait_until_graded)
-2. Loads the system prompt from agent.md
-3. Runs the agent loop until submit succeeds or failure
-4. Exits with appropriate code
+1. Connects to backend REST API for orchestration tools (run_critic)
+2. Polls database directly for grading status (wait_until_graded)
+3. Loads the system prompt from agent.md
+4. Runs the agent loop until submit succeeds or failure
+5. Exits with appropriate code
 
 Architecture:
 - All tools registered on DirectToolProvider:
   - exec, submit, report_failure (local)
-  - run_critic, wait_until_graded (call backend REST API)
+  - run_critic (call backend REST API)
+  - wait_until_graded (poll database directly)
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import SystemMessage, UserMessage
 from props.core.agent_helpers import get_current_agent_run
 from props.core.agent_types import ImprovementTypeConfig
-from props.core.eval_client import EvalClient
+from props.core.eval_client import EvalClient, wait_until_graded
 from props.core.ids import DefinitionId
 from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_logging
 from props.core.models.examples import SingleFileSetExample
@@ -450,14 +452,14 @@ def create_tool_provider(state: LoopState, eval_client: EvalClient, critic_model
         )
 
     @provider.tool
-    async def wait_until_graded(args: WaitUntilGradedToolArgs) -> str:
+    async def wait_until_graded_tool(args: WaitUntilGradedToolArgs) -> str:
         """Wait for a critic run to be fully graded.
 
-        Polls until grading is complete or timeout.
+        Polls the database directly until grading is complete or timeout.
         """
         critic_run_id = UUID(args.critic_run_id)
         logger.info(f"Waiting for grading: {critic_run_id}")
-        response = await eval_client.wait_until_graded(
+        response = await wait_until_graded(
             critic_run_id, timeout_seconds=args.timeout_seconds, poll_interval_seconds=args.poll_interval_seconds
         )
         logger.info(f"Grading complete: total_credit={response.total_credit}, max_credit={response.max_credit}")

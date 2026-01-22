@@ -16,30 +16,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
 )
 
-py_library(
-    name = "prompt_eval_server",
-    srcs = ["prompt_eval_server.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":shared",
-        "//mcp_infra",
-        "//mcp_infra/enhanced",
-        "//openai_utils",
-        "//props/core:exceptions",
-        "//props/core:ids",
-        "//props/core:splits",
-        "//props/core/models:examples",
-        "//props/critic:exceptions",
-        "//props/db:examples",
-        "//props/db:models",
-        "//props/db:session",
-        "@pypi//fastmcp",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 # =============================================================================
 # CLI helpers
 # =============================================================================
@@ -71,15 +47,16 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cli_helpers",
-        ":prompt_eval_server",
         "//agent_pkg/runtime",
         "//cli_util",
         "//props/cli:cmd_stats",
         "//props/core:agent_helpers",
         "//props/core:agent_types",
         "//props/core:display",
+        "//props/core:eval_client",
         "//props/core:splits",
         "//props/core/models:examples",
+        "//props/db:models",
         "//props/db:session",
         "@pypi//rich",
         "@pypi//sqlalchemy",

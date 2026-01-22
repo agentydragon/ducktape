@@ -4,14 +4,16 @@ Provides a client for PO/PI agent containers to call the backend's eval API.
 Replaces the MCP-based PromptEvalServer with direct HTTP calls.
 
 Usage (inside container):
-    from props.core.eval_client import EvalClient
+    from props.core.eval_client import EvalClient, wait_until_graded
 
     async with EvalClient.from_env() as client:
         result = await client.run_critic(
             definition_id="critic",
             example={"kind": "whole_snapshot", "snapshot_slug": "repo/2025-01-01"},
         )
-        status = await client.wait_until_graded(result.critic_run_id)
+
+    # Wait for grading by polling the database directly
+    grading_result = await wait_until_graded(result.critic_run_id)
 """
 
 from __future__ import annotations
@@ -25,16 +27,146 @@ from typing import Self
 from uuid import UUID
 
 import httpx
+from sqlalchemy import func
 
 from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
+from props.db.examples import Example
+from props.db.models import AgentRun, GradingEdge, GradingPending, Snapshot
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Client
+# Database-based grading status check
+# =============================================================================
+
+
+def get_grading_status_from_db(critic_run_id: UUID) -> GradingStatusResponse:
+    """Check grading status by querying the database directly.
+
+    Uses the container's RLS-scoped database credentials to query
+    the grading_pending view for drift detection.
+
+    Args:
+        critic_run_id: agent_run_id of the critic run
+
+    Returns:
+        GradingStatusResponse with completion status and metrics
+    """
+    with get_session() as session:
+        # Check for remaining drift using grading_pending view
+        pending_count = (
+            session.query(func.count())
+            .select_from(GradingPending)
+            .filter(GradingPending.critique_run_id == critic_run_id)
+            .scalar()
+            or 0
+        )
+
+        if pending_count > 0:
+            # Not complete yet - return partial status
+            return GradingStatusResponse(is_complete=False, pending_count=pending_count)
+
+        # No drift - critique is fully graded
+        critic_run = session.get(AgentRun, critic_run_id)
+        if not critic_run:
+            raise ValueError(f"Critic run {critic_run_id} not found")
+
+        critic_config = critic_run.critic_config()
+        example_spec = critic_config.example
+        snapshot_slug = example_spec.snapshot_slug
+        snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
+        split = snapshot.split
+
+        # Find matching example to check scope kind
+        example = Example.from_spec(session, example_spec)
+        scope_kind = example.example_kind
+
+        # Compute grading metrics from edges for this critique
+        total_credit = (
+            session.query(func.sum(GradingEdge.credit))
+            .filter(GradingEdge.critique_run_id == critic_run_id)
+            .filter(GradingEdge.tp_id.isnot(None))
+            .scalar()
+            or 0.0
+        )
+
+        max_credit = (
+            session.query(GradingEdge.tp_id, GradingEdge.tp_occurrence_id)
+            .filter(GradingEdge.critique_run_id == critic_run_id)
+            .filter(GradingEdge.tp_id.isnot(None))
+            .distinct()
+            .count()
+        )
+
+        # Find the grader run(s) that contributed edges
+        grader_run_ids = (
+            session.query(GradingEdge.grader_run_id)
+            .filter(GradingEdge.critique_run_id == critic_run_id)
+            .distinct()
+            .all()
+        )
+        # Use the first grader run ID for the response (usually there's only one)
+        grader_run_id = grader_run_ids[0][0] if grader_run_ids else critic_run_id
+
+        return GradingStatusResponse(
+            is_complete=True,
+            pending_count=0,
+            grader_run_id=grader_run_id,
+            total_credit=float(total_credit),
+            max_credit=max_credit,
+            split=split,
+            example_kind=scope_kind,
+        )
+
+
+async def wait_until_graded(
+    critic_run_id: UUID, *, timeout_seconds: int = 300, poll_interval_seconds: int = 5
+) -> GradingStatusResponse:
+    """Wait for a critic run to be fully graded by polling the database.
+
+    Polls the grading_pending view directly using the container's database
+    credentials until there's no more drift (all edges graded) or timeout.
+
+    Args:
+        critic_run_id: agent_run_id of the critic run
+        timeout_seconds: Max seconds to wait (default: 300)
+        poll_interval_seconds: Polling interval (default: 5)
+
+    Returns:
+        GradingStatusResponse with completion status and metrics
+
+    Raises:
+        TimeoutError: If grading doesn't complete within timeout
+    """
+    start_time = time.monotonic()
+    deadline = start_time + timeout_seconds
+    last_pending_count: int | None = None
+
+    while time.monotonic() < deadline:
+        status = get_grading_status_from_db(critic_run_id)
+
+        if status.is_complete:
+            return status
+
+        # Log progress if pending count changed
+        if last_pending_count != status.pending_count:
+            logger.debug(f"Waiting for grading: {status.pending_count} edges pending")
+            last_pending_count = status.pending_count
+
+        await asyncio.sleep(poll_interval_seconds)
+
+    raise TimeoutError(
+        f"Timeout waiting for critic run {critic_run_id} to be graded. "
+        f"Waited {timeout_seconds} seconds, {last_pending_count} edges still pending."
+    )
+
+
+# =============================================================================
+# REST API Client
 # =============================================================================
 
 
@@ -42,8 +174,11 @@ logger = logging.getLogger(__name__)
 class EvalClient:
     """REST API client for evaluation endpoints.
 
-    Connects to the props backend to run critic evaluations and check grading status.
+    Connects to the props backend to run critic evaluations.
     Used by PO/PI agents inside containers as a replacement for MCP.
+
+    For waiting until graded, use the standalone wait_until_graded() function
+    which polls the database directly instead of the API.
     """
 
     backend_url: str
@@ -115,62 +250,3 @@ class EvalClient:
         response = await self._client.post("/api/eval/run_critic", json=request.model_dump(mode="json"))
         response.raise_for_status()
         return RunCriticResponse.model_validate(response.json())
-
-    async def get_grading_status(self, critic_run_id: UUID) -> GradingStatusResponse:
-        """Check grading status for a critic run (non-blocking).
-
-        Args:
-            critic_run_id: agent_run_id of the critic run
-
-        Returns:
-            GradingStatusResponse with completion status and metrics
-
-        Raises:
-            httpx.HTTPStatusError: On API errors (4xx, 5xx)
-        """
-        assert self._client is not None, "Client not initialized - use async with"
-
-        response = await self._client.get(f"/api/eval/grading_status/{critic_run_id}")
-        response.raise_for_status()
-        return GradingStatusResponse.model_validate(response.json())
-
-    async def wait_until_graded(
-        self, critic_run_id: UUID, *, timeout_seconds: int = 300, poll_interval_seconds: int = 5
-    ) -> GradingStatusResponse:
-        """Wait for a critic run to be fully graded.
-
-        Polls the grading_status endpoint until is_complete=True or timeout.
-
-        Args:
-            critic_run_id: agent_run_id of the critic run
-            timeout_seconds: Max seconds to wait (default: 300)
-            poll_interval_seconds: Polling interval (default: 5)
-
-        Returns:
-            GradingStatusResponse with completion status and metrics
-
-        Raises:
-            TimeoutError: If grading doesn't complete within timeout
-            httpx.HTTPStatusError: On API errors
-        """
-        start_time = time.monotonic()
-        deadline = start_time + timeout_seconds
-        last_pending_count: int | None = None
-
-        while time.monotonic() < deadline:
-            status = await self.get_grading_status(critic_run_id)
-
-            if status.is_complete:
-                return status
-
-            # Log progress if pending count changed
-            if last_pending_count != status.pending_count:
-                logger.debug(f"Waiting for grading: {status.pending_count} edges pending")
-                last_pending_count = status.pending_count
-
-            await asyncio.sleep(poll_interval_seconds)
-
-        raise TimeoutError(
-            f"Timeout waiting for critic run {critic_run_id} to be graded. "
-            f"Waited {timeout_seconds} seconds, {last_pending_count} edges still pending."
-        )

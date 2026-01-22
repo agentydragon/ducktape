@@ -14,7 +14,6 @@ Workflow:
 
 from __future__ import annotations
 
-import asyncio
 import re
 from typing import Annotated
 from uuid import UUID
@@ -398,7 +397,7 @@ def submit_cmd(summary: Annotated[str, typer.Argument(help="Brief summary of gra
         typer.echo(f"Error: {len(remaining)} edges still pending. Complete grading first.", err=True)
         raise typer.Exit(1)
 
-    asyncio.run(submit_grading(summary=summary))
+    submit_grading(summary=summary)
     typer.echo("Grading submitted successfully")
 
 

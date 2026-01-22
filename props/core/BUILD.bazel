@@ -146,8 +146,12 @@ py_library(
         ":eval_api_models",
         ":ids",
         "//props/core/models:examples",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:session",
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )
 
