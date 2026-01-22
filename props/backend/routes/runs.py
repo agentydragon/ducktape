@@ -1,4 +1,7 @@
-"""Runs API routes for triggering and monitoring agent runs."""
+"""Runs API routes for triggering and monitoring agent runs.
+
+All endpoints require admin access (localhost admin or authenticated admin user).
+"""
 
 from __future__ import annotations
 
@@ -12,9 +15,10 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+from props.backend.auth import require_admin_access
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
@@ -25,7 +29,7 @@ from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, FileSetMember, GradingEdge, GradingTarget, LLMRequest, Snapshot
 from props.db.session import get_session
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin_access)])
 logger = logging.getLogger(__name__)
 
 

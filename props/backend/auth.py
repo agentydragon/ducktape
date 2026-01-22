@@ -378,3 +378,17 @@ def require_eval_api_access(request: Request) -> tuple[CallerType, UUID | None]:
     if caller_type not in ACL_CAN_USE_EVAL_API:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to access eval endpoints")
     return caller_type, agent_run_id
+
+
+def require_admin_access(request: Request) -> None:
+    """FastAPI dependency that requires admin access.
+
+    For dashboard APIs (stats, runs, ground_truth) - only localhost admin or
+    authenticated admin users can access these endpoints.
+
+    Raises HTTPException 403 if caller is not admin.
+    """
+    auth = get_auth_context(request)
+    caller_type, _ = get_caller_type(auth)
+    if caller_type != CallerType.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")

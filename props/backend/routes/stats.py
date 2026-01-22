@@ -1,13 +1,17 @@
-"""Stats API routes for props dashboard."""
+"""Stats API routes for props dashboard.
+
+All endpoints require admin access (localhost admin or authenticated admin user).
+"""
 
 from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from props.backend.auth import require_admin_access
 from props.core.agent_types import AgentType
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind
@@ -24,7 +28,7 @@ from props.db.models import (
 )
 from props.db.session import get_session
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin_access)])
 
 
 class DefinitionInfo(BaseModel):

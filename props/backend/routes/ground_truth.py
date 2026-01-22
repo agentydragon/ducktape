@@ -1,4 +1,7 @@
-"""Ground truth API routes for viewing snapshots and issues."""
+"""Ground truth API routes for viewing snapshots and issues.
+
+All endpoints require admin access (localhost admin or authenticated admin user).
+"""
 
 from __future__ import annotations
 
@@ -7,11 +10,12 @@ import tarfile
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
+from props.backend.auth import require_admin_access
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import LineRange
 from props.core.splits import Split
@@ -28,7 +32,7 @@ from props.db.models import (
 )
 from props.db.session import get_session
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin_access)])
 
 
 # --- Response Models ---
