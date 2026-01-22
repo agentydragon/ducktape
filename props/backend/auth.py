@@ -1,12 +1,12 @@
-"""Shared authentication utilities and middleware for LLM and Registry proxies.
+"""Shared authentication utilities and middleware for backend APIs.
 
-Both proxies use Basic auth with Postgres credentials validation:
+Authentication uses Basic auth with Postgres credentials validation:
 - Admin users: Any valid Postgres user (non-agent_* username)
 - Agent users: Format agent_{uuid} with temp credentials
 - Localhost admin: Empty/no creds from localhost = admin (for local dev and dashboard)
 
 This module provides:
-- Common auth parsing utilities
+- Credential validation with access level determination
 - Starlette middleware for request-level auth
 - Auth context attached to request.state
 """
@@ -17,6 +17,7 @@ import base64
 import logging
 import os
 from dataclasses import dataclass
+from enum import StrEnum
 from uuid import UUID
 
 import psycopg
@@ -39,18 +40,86 @@ ALLOW_LOCALHOST_ADMIN = os.environ.get("PROPS_ALLOW_LOCALHOST_ADMIN", "true").lo
 LOCALHOST_ADDRESSES = {"127.0.0.1", "localhost", "::1"}
 
 
-def validate_postgres_credentials(username: str, password: str) -> bool:
+class AccessLevel(StrEnum):
+    """Access level for authenticated users."""
+
+    ADMIN = "admin"  # Full access (postgres user or localhost)
+    AGENT = "agent"  # Agent access (agent_{uuid} pattern)
+
+
+@dataclass(frozen=True)
+class CredentialValidationResult:
+    """Result of credential validation.
+
+    Attributes:
+        is_valid: True if credentials are valid
+        access_level: Access level (admin or agent) if valid
+        agent_run_id: Agent run UUID if access_level is AGENT
+        error: Error message if validation failed
+    """
+
+    is_valid: bool
+    access_level: AccessLevel | None = None
+    agent_run_id: UUID | None = None
+    error: str | None = None
+
+    @classmethod
+    def invalid(cls, error: str) -> CredentialValidationResult:
+        """Create invalid result with error message."""
+        return cls(is_valid=False, error=error)
+
+    @classmethod
+    def admin(cls) -> CredentialValidationResult:
+        """Create valid admin result."""
+        return cls(is_valid=True, access_level=AccessLevel.ADMIN)
+
+    @classmethod
+    def agent(cls, agent_run_id: UUID) -> CredentialValidationResult:
+        """Create valid agent result."""
+        return cls(is_valid=True, access_level=AccessLevel.AGENT, agent_run_id=agent_run_id)
+
+
+def extract_agent_run_id(username: str) -> UUID | None:
+    """Extract agent_run_id from username if it matches agent_{uuid} pattern.
+
+    Returns None if username doesn't match the pattern.
+    """
+    if not username.startswith("agent_"):
+        return None
+
+    try:
+        return UUID(username.removeprefix("agent_"))
+    except ValueError:
+        logger.warning(f"Invalid UUID in agent username: {username}")
+        return None
+
+
+def validate_postgres_credentials(username: str, password: str) -> CredentialValidationResult:
     """Validate credentials by attempting Postgres connection.
 
-    Returns True if credentials are valid, False otherwise.
+    Returns a CredentialValidationResult with:
+    - is_valid: True if connection succeeded
+    - access_level: ADMIN for regular users, AGENT for agent_{uuid} pattern
+    - agent_run_id: Extracted UUID if agent pattern matched
+    - error: Error message if validation failed
     """
+    # First, try to extract agent run ID from username pattern
+    agent_run_id = extract_agent_run_id(username)
+
+    # Validate credentials against Postgres
     try:
         with psycopg.connect(
             host=PGHOST, port=PGPORT, dbname=PGDATABASE, user=username, password=password, connect_timeout=5
         ):
-            return True
-    except psycopg.OperationalError:
-        return False
+            pass  # Connection succeeded
+    except psycopg.OperationalError as e:
+        logger.warning(f"Postgres auth failed for user {username}: {e}")
+        return CredentialValidationResult.invalid("Invalid credentials")
+
+    # Credentials valid - determine access level
+    if agent_run_id is not None:
+        return CredentialValidationResult.agent(agent_run_id)
+    return CredentialValidationResult.admin()
 
 
 def parse_basic_auth_header(authorization: str | None) -> tuple[str, str] | None:
@@ -68,21 +137,6 @@ def parse_basic_auth_header(authorization: str | None) -> tuple[str, str] | None
         return (username, password)
     except (ValueError, UnicodeDecodeError) as e:
         logger.warning(f"Failed to parse Basic auth: {e}")
-        return None
-
-
-def extract_agent_run_id(username: str) -> UUID | None:
-    """Extract agent_run_id from username if it matches agent_{uuid} pattern.
-
-    Returns None if username doesn't match the pattern.
-    """
-    if not username.startswith("agent_"):
-        return None
-
-    try:
-        return UUID(username.removeprefix("agent_"))
-    except ValueError:
-        logger.warning(f"Invalid UUID in agent username: {username}")
         return None
 
 
@@ -179,17 +233,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             else:
                 username, password = parsed
 
-                # Validate credentials against Postgres
-                if not validate_postgres_credentials(username, password):
+                # Validate credentials and determine access level
+                result = validate_postgres_credentials(username, password)
+                if not result.is_valid:
                     logger.warning(f"Invalid postgres credentials for user: {username}")
-                    request.state.auth = AuthContext.failed("Invalid credentials")
+                    request.state.auth = AuthContext.failed(result.error or "Invalid credentials")
+                elif result.access_level == AccessLevel.AGENT:
+                    assert result.agent_run_id is not None
+                    request.state.auth = AuthContext.agent(username, password, result.agent_run_id)
                 else:
-                    # Valid credentials - determine if admin or agent
-                    agent_run_id = extract_agent_run_id(username)
-                    if agent_run_id:
-                        request.state.auth = AuthContext.agent(username, password, agent_run_id)
-                    else:
-                        request.state.auth = AuthContext.admin(username, password)
+                    request.state.auth = AuthContext.admin(username, password)
 
         return await call_next(request)
 
