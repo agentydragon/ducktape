@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Registry URL for pulling images (from agent containers on props-agents network)
-REGISTRY_PROXY_CONTAINER_NAME = os.environ.get("PROPS_REGISTRY_PROXY_CONTAINER_NAME", "props-registry-proxy")
-REGISTRY_PROXY_CONTAINER_PORT = os.environ.get("PROPS_REGISTRY_PROXY_CONTAINER_PORT", "5051")
+REGISTRY_PROXY_CONTAINER_NAME = os.environ.get("PROPS_PROXY_CONTAINER_NAME", "props-proxy")
+REGISTRY_PROXY_CONTAINER_PORT = os.environ.get("PROPS_PROXY_CONTAINER_PORT", "5050")
 
 # Registry URL for pulling images (from host)
 REGISTRY_HOST = os.environ.get("PROPS_REGISTRY_HOST", "127.0.0.1")

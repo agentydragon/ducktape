@@ -73,7 +73,7 @@ async def run_loop_agent(
         agent_run_id: UUID for this agent run
         db_config: Database configuration
         image: OCI image reference (e.g., "localhost:5050/critic@sha256:...")
-        llm_proxy_url: URL of the LLM proxy (e.g., "http://props-llm-proxy:5052")
+        llm_proxy_url: URL of the LLM proxy (e.g., "http://props-proxy:5050")
         timeout_seconds: Max seconds before container is killed (None = no timeout, for daemons)
         extra_env: Additional environment variables for the container
         container_name: Optional container name (defaults to agent-{short_uuid})
@@ -88,7 +88,7 @@ async def run_loop_agent(
             agent_run_id=run_id,
             db_config=db_config,
             image="localhost:5050/critic@sha256:...",
-            llm_proxy_url="http://props-llm-proxy:5052",
+            llm_proxy_url="http://props-proxy:5050",
             timeout_seconds=3600,
         )
         if result.exit_code == 0:

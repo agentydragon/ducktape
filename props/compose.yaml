@@ -37,20 +37,27 @@ services:
   registry:
     image: registry:2
     container_name: props-registry
+    # Note: Registry is not exposed on host - agents talk to it via the proxy
+    # Only exposed for debugging; use a different port to avoid conflict with proxy
     ports:
-      - "5050:5000"
+      - "5000:5000"
     volumes:
       - props_registry_data:/var/lib/registry
     networks:
       - props-internal
       - default # For host port publishing (internal network blocks it)
 
-  registry-proxy:
-    image: props-registry-proxy:latest
-    container_name: props-registry-proxy
+  # Combined proxy for both LLM and Registry functionality
+  # LLM endpoints: POST /v1/responses
+  # Registry endpoints: /v2/* (OCI Distribution API)
+  proxy:
+    image: props-proxy:latest
+    container_name: props-proxy
     ports:
-      - "5051:5051"
+      - "5050:5050"
     environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_UPSTREAM_URL: https://api.openai.com
       PROPS_REGISTRY_UPSTREAM_URL: http://props-registry:5000
       PGHOST: props-postgres
       PGPORT: "5432"
@@ -66,32 +73,7 @@ services:
       registry:
         condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5051/v2/')"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  llm-proxy:
-    image: props-llm-proxy:latest
-    container_name: props-llm-proxy
-    ports:
-      - "5052:5052"
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_UPSTREAM_URL: https://api.openai.com
-      PGHOST: props-postgres
-      PGPORT: "5432"
-      PGUSER: postgres
-      PGPASSWORD: ${PGPASSWORD}
-      PGDATABASE: eval_results
-    networks:
-      - props-internal
-      - props-agents
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5052/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/health')"]
       interval: 5s
       timeout: 5s
       retries: 5

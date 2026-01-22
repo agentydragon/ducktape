@@ -75,7 +75,7 @@ OPT_RUNBOOK_SNAPSHOT = typer.Option(
 )
 
 # Options - LLM Proxy
-DEFAULT_LLM_PROXY_URL = "http://props-llm-proxy:5052"
+DEFAULT_LLM_PROXY_URL = "http://props-proxy:5050"
 LLM_PROXY_URL_ENVVAR = "PROPS_LLM_PROXY_URL"
 OPT_LLM_PROXY_URL = typer.Option(
     DEFAULT_LLM_PROXY_URL, "--llm-proxy-url", envvar=LLM_PROXY_URL_ENVVAR, help="URL of the LLM proxy"

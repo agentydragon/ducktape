@@ -13,7 +13,7 @@ Usage:
     registry = AgentRegistry(
         docker_client=docker_client,
         db_config=db_config,
-        llm_proxy_url="http://props-llm-proxy:5052",
+        llm_proxy_url="http://props-proxy:5050",
     )
     async with registry:
         critic_run_id = await registry.run_critic(
