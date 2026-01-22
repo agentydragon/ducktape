@@ -2,6 +2,8 @@
 
 Svelte-based web interface for viewing Props evaluation results.
 
+Runs at `http://localhost:5173` when using the dev server.
+
 ## Development
 
 ```bash
@@ -28,13 +30,9 @@ Puppeteer-based visual regression testing via Bazel.
 bazel test //props/frontend:visual_test
 
 # Update baselines after intentional UI changes:
-# 1. Build the test harness
-cd props/frontend && node tests/harness/esbuild.config.mjs tests/harness/dist
+UPDATE_BASELINES=1 bazel test //props/frontend:visual_test --test_output=all
 
-# 2. Run with UPDATE_BASELINES=1 to overwrite baselines
-UPDATE_BASELINES=1 HARNESS_PATH=tests/harness/dist/harness.js node tests/visual-regression.spec.js
-
-# 3. Verify the new baselines pass
+# Verify the new baselines pass
 bazel test //props/frontend:visual_test --nocache_test_results
 ```
 

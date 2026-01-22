@@ -45,7 +45,14 @@ We maintain **TWO separate databases** to ensure tests never affect production d
    For incremental updates (without dropping tables):
 
    ```bash
-   props sync
+   # Sync all data from filesystem to database
+   props db sync
+
+   # Use staged files instead of HEAD (for development)
+   props db sync --use-staged
+
+   # Validate sync without committing changes
+   props db sync --dry-run
    ```
 
 ## Database Users
@@ -62,19 +69,23 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 - **Username pattern**: `agent_{agent_run_id}` (unified for all agent types)
 - **Role membership**: Inherit from `agent_base` role
 - **Permissions**: SELECT on reference tables, INSERT/UPDATE/DELETE on agent-specific tables
-- **RLS-restricted**: Access filtered by `current_agent_run_id()` and `current_agent_type()`
-- **Purpose**: Enforce data isolation (e.g., TRAIN-only for prompt optimizer, own-run for critics)
-- **Lifecycle**: Created on-demand, automatically cleaned up on task completion
+- **Access Control**: Row-Level Security (RLS) policies filter data based on `current_agent_run_id()` and `current_agent_type()` session variables
+  - Type-specific access (e.g., TRAIN-only for prompt optimizer, own-run for critics) is controlled entirely by RLS policies based on `agent_runs.type_config`, not by different roles or username patterns
+- **Purpose**: Enforce data isolation between agent runs
+- **Lifecycle**: Created on-demand by `TempUserManager`, automatically cleaned up on task completion
 - **Implementation**: See `TempUserManager` in `db/temp_user_manager.py`
-
-Type-specific access is controlled entirely by RLS policies based on `agent_runs.type_config`,
-not by different roles or username patterns.
 
 ## Running Tests
 
 ```bash
-# Run database tests via Bazel
+# Run all database tests via Bazel
 bazel test //props/db/...
+
+# Run a specific test file
+bazel test //props/db:test_models
+
+# Run tests with verbose output
+bazel test //props/db/... --test_output=all
 ```
 
 **Important**: Tests use fixtures that **only affect eval_results_test**. Production data is never touched.
