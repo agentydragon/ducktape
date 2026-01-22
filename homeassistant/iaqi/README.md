@@ -94,3 +94,36 @@ bazel build //homeassistant/iaqi/...
 bazel test //homeassistant/iaqi/...
 bazel build --config=check //homeassistant/iaqi/...  # lint + typecheck
 ```
+
+### Test Setup with pytest_homeassistant_custom_component
+
+The tests use `pytest_homeassistant_custom_component` for Home Assistant fixtures (`hass`, `enable_custom_integrations`, etc.). Running these tests under Bazel requires two workarounds in `conftest.py`:
+
+**1. Custom component discovery path**
+
+The plugin includes its own `custom_components` namespace package. When it loads, `custom_components.__path__` only points to the plugin's `testing_config/custom_components/` directory. HA's loader uses this path to discover integrations, so without intervention, it can't find `indoor_aqi`.
+
+Fix: The `auto_enable_custom_integrations` fixture adds our `custom_components` directory to `custom_components.__path__`:
+
+```python
+cc_path = str(config_dir / "custom_components")
+if cc_path not in custom_components.__path__:
+    custom_components.__path__.insert(0, cc_path)
+```
+
+**2. Recorder patching order**
+
+The plugin patches HA's recorder module at load time and asserts that `homeassistant.components.recorder.util` isn't already imported. Some HA modules (`homeassistant.setup`, `homeassistant.config_entries`) trigger recorder loading as a side effect.
+
+If test files have top-level imports of these modules, they execute during pytest collection (before the plugin loads), causing the assertion to fail.
+
+Fix: Use lazy imports inside test functions for heavyweight HA modules:
+
+```python
+async def test_setup_component(hass):
+    # Import inside function, not at module level
+    from homeassistant.setup import async_setup_component  # noqa: PLC0415
+    ...
+```
+
+Lightweight imports like `from homeassistant.const import STATE_UNAVAILABLE` are safe at module level.
