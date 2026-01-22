@@ -142,42 +142,16 @@ export ADGN_PROPS_SPECIMENS_ROOT="$REPO_ROOT/../specimens"
 
 See the [specimens repository](https://github.com/agentydragon/specimens) for format specs and authoring guides.
 
-## Properties and Standards
+## Evaluation Workflow
 
-Property definitions and coding standards are maintained in the `standards/` directory. See [standards/README.md](standards/README.md) for details on conventions, property files, GAP markers, and specimen-driven property evolution.
+The props system evaluates LLM critic agents through a fitness-based selection process:
 
-## Training Strategy: Per-File Examples
+1. **Specimens** - Code snapshots with canonical issues identified by humans (maintained in separate [specimens repository](https://github.com/agentydragon/specimens))
+2. **Critiques** - Agent-generated issue reports for each specimen
+3. **Grading** - Comparison of critiques against canonical issues to compute metrics (TP/FP/FN/recall/precision)
+4. **Selection** - Agents are selected based on fitness scores derived from how well they identify canonical issues
 
-**Goal:** Train the LLM critic to behavior-clone the user's subjective code review judgment by using fine-grained training examples.
-
-**Approach:** Generate multiple focused training examples per snapshot (single files, file pairs, component groups) in addition to the full-repo review. This provides tighter feedback loops and more training signal for optimization.
-
-**Dataset model:**
-
-- **Snapshot:** Frozen code state at a specific commit with labeled issues (TPs and FPs) — specimens from separate repo
-- **Training Example:** `(snapshot, targeted_files)` pair where recall denominator is computed based on which issues are in expected recall scope for those files
-- **True Positive filtering:** Uses `critic_scopes_expected_to_recall` to determine which issues should be detectable given a file set
-
-For detailed information, see [Training Strategy](docs/training_strategy.md).
-
-```mermaid
-flowchart TD
-  A[Specimen: code + freeform review items] --> B[Draft/refine property definition]
-  B --> C[Generate/adjust reviewer prompts]
-  C --> D[Run analyzers/reviewers on specimen]
-  D --> E{Backtest results}
-  E -->|Found expected issues| F[Success metrics ↑]
-  E -->|Missed expected issues| B
-  E -->|Flagged acceptable items| C
-  D --> G{Novel findings?}
-  G -->|Yes| H[Augment specimen: add "should find" / "do-not-flag"]
-  H --> D
-  G -->|No| I[Freeze specimen snapshot]
-
-  %% Also allow direct property → reviewers check on arbitrary code
-  B -.-> J[LLM analyzers check arbitrary code]
-  J -.-> E
-```
+For detailed information on training strategies and per-file examples, see [Training Strategy](docs/training_strategy.md).
 
 ## Usage Workflow
 
