@@ -42,37 +42,43 @@ Run a critic agent on an example and get the run ID.
 ```json
 {
   "critic_run_id": "uuid-here",
-  "status": "COMPLETED",
-  "message": "Critic completed successfully. Use wait_until_graded to get results."
+  "status": "COMPLETED"
 }
 ```
 
-### Wait Until Graded
+### Get Grading Status
 
 ```
-POST /api/eval/wait_until_graded
+GET /api/eval/grading_status/{critic_run_id}
 ```
 
-Wait for a critic run to be fully graded and get the results.
+Check grading status for a critic run (non-blocking). Poll this endpoint until `is_complete` is true.
 
-**Request:**
+**Response (pending):**
 
 ```json
 {
-  "critic_run_id": "uuid-here",
-  "timeout_seconds": 300,
-  "poll_interval_seconds": 5
+  "is_complete": false,
+  "pending_count": 5,
+  "grader_run_id": null,
+  "total_credit": null,
+  "max_credit": null,
+  "split": null,
+  "example_kind": null
 }
 ```
 
-**Response:**
+**Response (complete):**
 
 ```json
 {
+  "is_complete": true,
+  "pending_count": 0,
   "grader_run_id": "uuid-here",
   "total_credit": 3.5,
   "max_credit": 5,
-  "message": "To get recall metrics, query the recall_by_definition_split_kind view..."
+  "split": "valid",
+  "example_kind": "whole_snapshot"
 }
 ```
 
@@ -80,6 +86,7 @@ Wait for a critic run to be fully graded and get the results.
 
 ```python
 import os
+import time
 import httpx
 
 backend_url = os.environ.get("PROPS_BACKEND_URL", "http://props-backend:8000")
@@ -98,17 +105,24 @@ response = httpx.post(
 )
 result = response.json()
 critic_run_id = result["critic_run_id"]
-print(f"Critic run started: {critic_run_id}")
+print(f"Critic run completed: {critic_run_id}, status: {result['status']}")
 
-# Wait for grading
-response = httpx.post(
-    f"{backend_url}/api/eval/wait_until_graded",
-    auth=auth,
-    json={"critic_run_id": str(critic_run_id)},
-    timeout=300,
-)
-grading = response.json()
-print(f"Recall: {grading['total_credit']}/{grading['max_credit']}")
+# Poll for grading completion
+while True:
+    response = httpx.get(
+        f"{backend_url}/api/eval/grading_status/{critic_run_id}",
+        auth=auth,
+        timeout=30,
+    )
+    status = response.json()
+
+    if status["is_complete"]:
+        print(f"Grading complete! Recall: {status['total_credit']}/{status['max_credit']}")
+        print(f"Split: {status['split']}, Kind: {status['example_kind']}")
+        break
+
+    print(f"Grading in progress... {status['pending_count']} edges pending")
+    time.sleep(5)  # Poll every 5 seconds
 ```
 
 ## Access Control
