@@ -25,10 +25,8 @@ from rich.table import Table
 
 from agent_pkg.runtime.output import render_agent_prompt
 from props.core.agent_helpers import get_current_agent_run
-from props.core.agent_types import GraderTypeConfig
 from props.core.display import short_uuid
 from props.db.models import (
-    AgentRun,
     FalsePositive,
     FalsePositiveOccurrenceORM,
     GradingPending,

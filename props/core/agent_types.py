@@ -120,11 +120,7 @@ class ImprovementTypeConfig(BaseModel):
 
 # Discriminated union for type-specific config
 TypeConfig = Annotated[
-    CriticTypeConfig
-    | GraderTypeConfig
-    | FreeformTypeConfig
-    | PromptOptimizerTypeConfig
-    | ImprovementTypeConfig,
+    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig | ImprovementTypeConfig,
     Field(discriminator="agent_type"),
 ]
 
