@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import logging
 import select
 import socket
 import ssl
@@ -21,6 +22,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+
+logger = logging.getLogger(__name__)
 
 
 def generate_mock_ca() -> tuple[bytes, bytes]:
@@ -193,6 +196,8 @@ class ForwardingTLSProxy:
         server_sock: socket.socket | None = None
         client_ssl: ssl.SSLSocket | None = None
         server_ssl: ssl.SSLSocket | None = None
+        target_host: str = "<unknown>"
+        target_port: int = 0
 
         try:
             # Read CONNECT request
@@ -260,8 +265,8 @@ class ForwardingTLSProxy:
             # Bidirectional forward
             self._forward_bidirectional(client_ssl, server_ssl)
 
-        except (OSError, ssl.SSLError, ValueError):
-            pass
+        except (OSError, ssl.SSLError, ValueError) as e:
+            logger.debug("Connection to %s:%d failed: %s", target_host, target_port, e)
         finally:
             for sock in [client_ssl, server_ssl, client_sock, server_sock]:
                 if sock:
