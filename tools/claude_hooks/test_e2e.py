@@ -401,6 +401,9 @@ class TestPodmanIntegration:
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true", reason="ForwardingTLSProxy can't handle registry pulls on GHA"
+    )
     def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
         """Verify podman can run a container after session start hook."""
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
