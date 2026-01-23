@@ -1,16 +1,17 @@
 # Bazel test reusable workflow
 #
-# Runs all Bazel tests
+# Runs all Bazel tests except those with dedicated workflows:
+# - //tools/claude_hooks/... - tested by claude-hooks-release.yml (requires Java, special flags)
 name: Bazel Test
 
 on:
   workflow_call:
     inputs:
       targets:
-        description: "Bazel targets to test (default: //...)"
+        description: "Bazel targets to test (default excludes packages with dedicated workflows)"
         required: false
         type: string
-        default: "//..."
+        default: "//... - //tools/claude_hooks/..."
       enable_profiling:
         description: "Enable Bazel profiling (generates downloadable artifacts)"
         required: false
@@ -23,10 +24,10 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: "Bazel targets to test (default: //...)"
+        description: "Bazel targets to test (default excludes packages with dedicated workflows)"
         required: false
         type: string
-        default: "//..."
+        default: "//... - //tools/claude_hooks/..."
       enable_profiling:
         description: "Enable Bazel profiling (generates downloadable artifacts)"
         required: false

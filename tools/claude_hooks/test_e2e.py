@@ -174,6 +174,8 @@ def run_session_start_hook(
     By default, runs via `python -m tools.claude_hooks.session_start` for Bazel tests.
     Set CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-session-start` console
     script instead - this tests the actual wheel packaging.
+
+    Prints hook stdout/stderr for debugging (visible in CI logs on any test failure).
     """
     hook_input = make_hook_input(project_dir, source)
 
@@ -186,7 +188,13 @@ def run_session_start_hook(
         # Run via python -m (Bazel test mode)
         cmd = [sys.executable, "-m", "tools.claude_hooks.session_start"]
 
-    return subprocess.run(cmd, check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
+    result = subprocess.run(cmd, check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
+
+    # Print hook output for debugging (pytest captures and shows on failure)
+    print(f"\n=== Hook stdout ===\n{result.stdout}")
+    print(f"\n=== Hook stderr ===\n{result.stderr}")
+
+    return result
 
 
 @pytest.fixture(autouse=True)
@@ -361,10 +369,6 @@ class TestPodmanIntegration:
         """Verify podman service starts after session start hook."""
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
 
-        # Print hook output for debugging (visible in CI logs on any failure)
-        print(f"\n=== Hook stdout ===\n{result.stdout}")
-        print(f"\n=== Hook stderr ===\n{result.stderr}")
-
         assert result.returncode == 0, "Hook failed with non-zero exit code"
 
         # Verify podman socket exists in isolated directory
@@ -381,10 +385,6 @@ class TestPodmanIntegration:
     def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
         """Verify podman can run a container after session start hook."""
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
-
-        # Print hook output for debugging (visible in CI logs on any failure)
-        print(f"\n=== Hook stdout ===\n{result.stdout}")
-        print(f"\n=== Hook stderr ===\n{result.stderr}")
 
         assert result.returncode == 0, "Hook failed with non-zero exit code"
 
