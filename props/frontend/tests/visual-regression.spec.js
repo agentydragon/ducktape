@@ -62,6 +62,11 @@ const scenarios = [
   { component: "IssueComment", scenario: "FpExpanded" },
   { component: "IssueComment", scenario: "CritiqueCollapsed" },
   { component: "IssueComment", scenario: "CritiqueExpanded" },
+  // LLMRequestViewer: LLM request/response viewer with expandable JSON
+  { component: "LLMRequestViewer", scenario: "Empty" },
+  { component: "LLMRequestViewer", scenario: "SingleRequest" },
+  { component: "LLMRequestViewer", scenario: "MultipleRequests" },
+  { component: "LLMRequestViewer", scenario: "WithError" },
 ];
 
 const CONTENT_TYPES = {

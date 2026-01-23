@@ -2,9 +2,10 @@
   import { onMount, onDestroy } from "svelte";
   import { toast } from "svelte-sonner";
   import SvelteMarkdown from "@humanspeak/svelte-markdown";
-  import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { SvelteMap } from "svelte/reactivity";
   import BackButton from "./BackButton.svelte";
   import Breadcrumb from "./Breadcrumb.svelte";
+  import LLMRequestViewer from "./LLMRequestViewer.svelte";
   import {
     fetchRun,
     fetchSnapshotDetail,
@@ -49,7 +50,6 @@
   // LLM requests state
   let llmRequests: LLMRequestInfo[] = $state([]);
   let loadingLLMRequests = $state(false);
-  let expandedRequests = $state(new SvelteSet<number>());
 
   // Tab state for logs/LLM view
   type LogTab = "stdout" | "stderr" | "llm";
@@ -140,15 +140,6 @@
       toast.error(message);
     } finally {
       loadingLLMRequests = false;
-    }
-  }
-
-  // Toggle LLM request expansion
-  function toggleRequest(id: number) {
-    if (expandedRequests.has(id)) {
-      expandedRequests.delete(id);
-    } else {
-      expandedRequests.add(id);
     }
   }
 
@@ -512,61 +503,8 @@
         <div class="p-4">
           {#if loadingLLMRequests}
             <p class="text-gray-500">Loading LLM requests...</p>
-          {:else if llmRequests.length === 0}
-            <p class="text-gray-500 italic">No LLM requests recorded</p>
           {:else}
-            <div class="space-y-2">
-              {#each llmRequests as req (req.id)}
-                <div class="border rounded">
-                  <button
-                    class="w-full px-4 py-2 flex items-center justify-between text-left hover:bg-gray-50"
-                    onclick={() => toggleRequest(req.id)}
-                  >
-                    <div class="flex items-center gap-4 text-sm">
-                      <span class="font-mono text-gray-500">#{req.id}</span>
-                      <span class="font-medium">{req.model}</span>
-                      {#if req.latency_ms}
-                        <span class="text-gray-500">{req.latency_ms}ms</span>
-                      {/if}
-                      {#if req.error}
-                        <span class="text-red-600">Error</span>
-                      {/if}
-                    </div>
-                    <span class="text-gray-400">{expandedRequests.has(req.id) ? "▼" : "▶"}</span>
-                  </button>
-                  {#if expandedRequests.has(req.id)}
-                    <div class="border-t p-4 space-y-4">
-                      <div>
-                        <h4 class="text-sm font-medium text-gray-600 mb-2">Request</h4>
-                        <pre
-                          class="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-64">{JSON.stringify(
-                            req.request_body,
-                            null,
-                            2
-                          )}</pre>
-                      </div>
-                      {#if req.response_body}
-                        <div>
-                          <h4 class="text-sm font-medium text-gray-600 mb-2">Response</h4>
-                          <pre
-                            class="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-64">{JSON.stringify(
-                              req.response_body,
-                              null,
-                              2
-                            )}</pre>
-                        </div>
-                      {/if}
-                      {#if req.error}
-                        <div>
-                          <h4 class="text-sm font-medium text-red-600 mb-2">Error</h4>
-                          <pre class="bg-red-50 text-red-700 p-3 rounded text-xs">{req.error}</pre>
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
+            <LLMRequestViewer requests={llmRequests} />
           {/if}
         </div>
       {/if}

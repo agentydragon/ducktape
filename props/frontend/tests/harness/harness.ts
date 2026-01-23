@@ -11,6 +11,7 @@ import CopyButton from "../../src/components/CopyButton.svelte";
 import FileViewer from "../../src/components/FileViewer.svelte";
 import FileTree from "../../src/components/FileTree.svelte";
 import IssueComment from "../../src/components/IssueComment.svelte";
+import LLMRequestViewer from "../../src/components/LLMRequestViewer.svelte";
 
 // Mock data for FileViewer tests - a Python file with TPs, FPs, and critique issues
 const mockFileContent = {
@@ -195,6 +196,50 @@ const mockIssueCommentGradingEdges = [
   },
 ];
 
+// Mock LLM requests for LLMRequestViewer tests
+const mockLLMRequests = [
+  {
+    id: 1,
+    model: "gpt-4o",
+    request_body: {
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: "You are a code reviewer." },
+        { role: "user", content: "Review this code for security issues." },
+      ],
+      max_tokens: 1000,
+    },
+    response_body: {
+      id: "chatcmpl-abc123",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "I found a potential SQL injection vulnerability in the login function.",
+          },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 50, completion_tokens: 25, total_tokens: 75 },
+    },
+    error: null,
+    latency_ms: 1234,
+    created_at: "2025-01-20T10:00:00Z",
+  },
+  {
+    id: 2,
+    model: "gpt-4o-mini",
+    request_body: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "Summarize the findings." }],
+    },
+    response_body: null,
+    error: "Rate limit exceeded",
+    latency_ms: 500,
+    created_at: "2025-01-20T10:01:00Z",
+  },
+];
+
 // Component registry with their test scenarios
 const components: Record<string, { component: any; scenarios: Record<string, Record<string, unknown>> }> = {
   BackButton: {
@@ -351,6 +396,23 @@ const components: Record<string, { component: any; scenarios: Record<string, Rec
         gradingEdges: mockIssueCommentGradingEdges,
         snapshotSlug: "test-snapshot",
         expanded: true,
+      },
+    },
+  },
+  LLMRequestViewer: {
+    component: LLMRequestViewer,
+    scenarios: {
+      Empty: {
+        requests: [],
+      },
+      SingleRequest: {
+        requests: [mockLLMRequests[0]],
+      },
+      MultipleRequests: {
+        requests: mockLLMRequests,
+      },
+      WithError: {
+        requests: [mockLLMRequests[1]],
       },
     },
   },
