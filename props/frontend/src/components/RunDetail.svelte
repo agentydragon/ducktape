@@ -9,6 +9,7 @@
     fetchRun,
     fetchSnapshotDetail,
     fetchSnapshotFile,
+    fetchLLMRequests,
     type AgentRunDetail,
     type CriticTypeConfig,
     type GraderTypeConfig,
@@ -18,6 +19,7 @@
     type FileContentResponse,
     type GradingEdgeInfo,
     type ReportedIssueInfo,
+    type LLMRequestInfo,
     isCriticRun,
     isGraderRun,
   } from "../lib/api/client";
@@ -43,6 +45,15 @@
   let snapshotDetail: SnapshotDetailResponse | null = $state(null);
   let fileContents = $state(new SvelteMap<string, FileContentResponse>());
   let loadingSnapshot = $state(false);
+
+  // LLM requests state
+  let llmRequests: LLMRequestInfo[] = $state([]);
+  let loadingLLMRequests = $state(false);
+  let expandedRequests = $state(new SvelteSet<number>());
+
+  // Tab state for logs/LLM view
+  type LogTab = "stdout" | "stderr" | "llm";
+  let activeLogTab: LogTab = $state("llm");
 
   // --- Helpers ---
 
@@ -117,6 +128,30 @@
     }
   }
 
+  // Load LLM requests
+  async function loadLLMRequests() {
+    if (loadingLLMRequests || llmRequests.length > 0) return;
+    loadingLLMRequests = true;
+    try {
+      const response = await fetchLLMRequests(runId);
+      llmRequests = response.requests;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load LLM requests";
+      toast.error(message);
+    } finally {
+      loadingLLMRequests = false;
+    }
+  }
+
+  // Toggle LLM request expansion
+  function toggleRequest(id: number) {
+    if (expandedRequests.has(id)) {
+      expandedRequests.delete(id);
+    } else {
+      expandedRequests.add(id);
+    }
+  }
+
   // Load snapshot and file data for critique viewer
   async function loadSnapshotData(criticRun: AgentRunDetail) {
     if (getAgentType(criticRun) !== "critic") return;
@@ -185,7 +220,12 @@
   }
 
   onMount(() => {
-    loadData();
+    loadData().then(() => {
+      // Load LLM requests after run data is loaded (LLM tab is default)
+      if (run) {
+        loadLLMRequests();
+      }
+    });
     // Poll while in progress
     pollInterval = setInterval(() => {
       if (run?.status === "in_progress") {
@@ -414,6 +454,123 @@
         {/if}
       </div>
     {/if}
+
+    <!-- Logs and LLM Requests Section -->
+    <div class="border-t">
+      <div class="px-4 py-3 bg-gray-100 border-b flex items-center gap-4">
+        <h3 class="text-md font-medium">Logs & LLM Requests</h3>
+        <div class="flex gap-1">
+          <button
+            class="px-3 py-1 text-sm rounded {activeLogTab === 'llm'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+            onclick={() => {
+              activeLogTab = "llm";
+              loadLLMRequests();
+            }}
+          >
+            LLM Requests ({run.llm_call_count})
+          </button>
+          <button
+            class="px-3 py-1 text-sm rounded {activeLogTab === 'stdout'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+            onclick={() => (activeLogTab = "stdout")}
+          >
+            stdout
+          </button>
+          <button
+            class="px-3 py-1 text-sm rounded {activeLogTab === 'stderr'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+            onclick={() => (activeLogTab = "stderr")}
+          >
+            stderr
+          </button>
+        </div>
+      </div>
+
+      {#if activeLogTab === "stdout"}
+        <div class="p-4">
+          {#if run.container_stdout}
+            <pre
+              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stdout}</pre>
+          {:else}
+            <p class="text-gray-500 italic">No stdout captured</p>
+          {/if}
+        </div>
+      {:else if activeLogTab === "stderr"}
+        <div class="p-4">
+          {#if run.container_stderr}
+            <pre
+              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stderr}</pre>
+          {:else}
+            <p class="text-gray-500 italic">No stderr captured</p>
+          {/if}
+        </div>
+      {:else if activeLogTab === "llm"}
+        <div class="p-4">
+          {#if loadingLLMRequests}
+            <p class="text-gray-500">Loading LLM requests...</p>
+          {:else if llmRequests.length === 0}
+            <p class="text-gray-500 italic">No LLM requests recorded</p>
+          {:else}
+            <div class="space-y-2">
+              {#each llmRequests as req (req.id)}
+                <div class="border rounded">
+                  <button
+                    class="w-full px-4 py-2 flex items-center justify-between text-left hover:bg-gray-50"
+                    onclick={() => toggleRequest(req.id)}
+                  >
+                    <div class="flex items-center gap-4 text-sm">
+                      <span class="font-mono text-gray-500">#{req.id}</span>
+                      <span class="font-medium">{req.model}</span>
+                      {#if req.latency_ms}
+                        <span class="text-gray-500">{req.latency_ms}ms</span>
+                      {/if}
+                      {#if req.error}
+                        <span class="text-red-600">Error</span>
+                      {/if}
+                    </div>
+                    <span class="text-gray-400">{expandedRequests.has(req.id) ? "▼" : "▶"}</span>
+                  </button>
+                  {#if expandedRequests.has(req.id)}
+                    <div class="border-t p-4 space-y-4">
+                      <div>
+                        <h4 class="text-sm font-medium text-gray-600 mb-2">Request</h4>
+                        <pre
+                          class="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-64">{JSON.stringify(
+                            req.request_body,
+                            null,
+                            2
+                          )}</pre>
+                      </div>
+                      {#if req.response_body}
+                        <div>
+                          <h4 class="text-sm font-medium text-gray-600 mb-2">Response</h4>
+                          <pre
+                            class="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-64">{JSON.stringify(
+                              req.response_body,
+                              null,
+                              2
+                            )}</pre>
+                        </div>
+                      {/if}
+                      {#if req.error}
+                        <div>
+                          <h4 class="text-sm font-medium text-red-600 mb-2">Error</h4>
+                          <pre class="bg-red-50 text-red-700 p-3 rounded text-xs">{req.error}</pre>
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
   {:else}
     <div class="p-4">
       <p class="text-red-500">Failed to load run</p>

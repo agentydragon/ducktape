@@ -179,6 +179,10 @@ class AgentRunDetail(BaseModel):
     llm_call_count: int
     child_runs: list[ChildRunInfo]
 
+    # Container output (captured after container exits)
+    container_stdout: str | None
+    container_stderr: str | None
+
     # Type-specific details (discriminated union)
     details: RunSpecifics
 
@@ -204,6 +208,33 @@ class RunsListResponse(BaseModel):
     total_count: int
     offset: int
     limit: int
+
+
+# --- LLM Requests Models ---
+
+
+class LLMRequestInfo(BaseModel):
+    """LLM request information for API response.
+
+    Directly mirrors LLMRequest ORM model fields.
+    """
+
+    model_config = {"from_attributes": True}
+
+    id: int
+    model: str
+    request_body: dict
+    response_body: dict | None
+    error: str | None
+    latency_ms: int | None
+    created_at: datetime
+
+
+class LLMRequestsResponse(BaseModel):
+    """Response for LLM requests list."""
+
+    requests: list[LLMRequestInfo]
+    total_count: int
 
 
 # --- WebSocket Message Types (Discriminated Union) ---
@@ -630,7 +661,29 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             type_config=run.type_config,
             llm_call_count=llm_call_count,
             child_runs=child_runs,
+            container_stdout=run.container_stdout,
+            container_stderr=run.container_stderr,
             details=details,
+        )
+
+
+@router.get("/run/{run_id}/llm_requests")
+def get_run_llm_requests(run_id: UUID) -> LLMRequestsResponse:
+    """Get LLM requests for a specific agent run."""
+    with get_session() as session:
+        run = session.get(AgentRun, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
+
+        requests = (
+            session.query(LLMRequest)
+            .filter(LLMRequest.agent_run_id == run_id)
+            .order_by(LLMRequest.created_at.asc())
+            .all()
+        )
+
+        return LLMRequestsResponse(
+            requests=[LLMRequestInfo.model_validate(req) for req in requests], total_count=len(requests)
         )
 
 
