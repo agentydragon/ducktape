@@ -361,7 +361,11 @@ class TestPodmanIntegration:
         """Verify podman service starts after session start hook."""
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
 
-        assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        # Print hook output for debugging (visible in CI logs on any failure)
+        print(f"\n=== Hook stdout ===\n{result.stdout}")
+        print(f"\n=== Hook stderr ===\n{result.stderr}")
+
+        assert result.returncode == 0, "Hook failed with non-zero exit code"
 
         # Verify podman socket exists in isolated directory
         socket_path = isolated_dirs.cache / "claude-hooks" / "podman" / "podman.sock"
@@ -377,7 +381,16 @@ class TestPodmanIntegration:
     def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
         """Verify podman can run a container after session start hook."""
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
-        assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+
+        # Print hook output for debugging (visible in CI logs on any failure)
+        print(f"\n=== Hook stdout ===\n{result.stdout}")
+        print(f"\n=== Hook stderr ===\n{result.stderr}")
+
+        assert result.returncode == 0, "Hook failed with non-zero exit code"
+
+        # Verify podman socket exists before trying to run container
+        socket_path = isolated_dirs.cache / "claude-hooks" / "podman" / "podman.sock"
+        assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
         # Verify we can run podman hello-world
         # The gVisor annotation is auto-applied via containers.conf
