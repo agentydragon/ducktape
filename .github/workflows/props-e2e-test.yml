@@ -65,15 +65,32 @@ jobs:
           docker pull postgres:16
           docker pull registry:2
 
-      # Start services using existing compose.yaml
-      - name: Start infrastructure
+      # Start postgres and registry first (backend needs schema to exist)
+      - name: Start postgres and registry
         working-directory: props
         run: |
-          docker compose up -d
+          docker compose up -d postgres registry
           echo "Waiting for PostgreSQL..."
           until pg_isready -h 127.0.0.1 -p 5433 -U postgres; do sleep 1; done
           echo "Waiting for registry..."
           until curl -sf http://127.0.0.1:5000/v2/; do sleep 1; done
+          echo "PostgreSQL and registry ready"
+
+      # Initialize database schema before starting backend
+      - name: Setup database
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5433
+          PGUSER: postgres
+          PGDATABASE: eval_results
+          ADGN_PROPS_SPECIMENS_ROOT: ${{ github.workspace }}/props/testing/fixtures/testdata/specimens
+        run: bazel run //props/cli:cli -- db recreate -y
+
+      # Now start backend (schema exists)
+      - name: Start backend
+        working-directory: props
+        run: |
+          docker compose up -d backend
           echo "Waiting for backend..."
           for i in {1..60}; do
             HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health || echo "000")
@@ -85,17 +102,7 @@ jobs:
             fi
             sleep 1
           done
-          echo "Infrastructure ready"
-
-      # Initialize database schema and sync test data
-      - name: Setup database
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: 5433
-          PGUSER: postgres
-          PGDATABASE: eval_results
-          ADGN_PROPS_SPECIMENS_ROOT: ${{ github.workspace }}/props/testing/fixtures/testdata/specimens
-        run: bazel run //props/cli:cli -- db recreate -y
+          echo "Backend ready"
 
       # Build and push agent images to local registry
       - name: Push agent images
