@@ -10,6 +10,7 @@ import base64
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -381,14 +382,16 @@ class TestPodmanIntegration:
 
         assert result.returncode == 0, "Hook failed with non-zero exit code"
 
-        # Verify podman socket exists in isolated directory
-        socket_path = isolated_dirs.cache / "claude-hooks" / "podman" / "podman.sock"
-        assert socket_path.exists(), f"Podman socket not created at {socket_path}"
-
-        # Verify DOCKER_HOST is set in env file
+        # Verify DOCKER_HOST is set in env file and extract socket path
         env_content = isolated_dirs.env_file.read_text()
         assert "DOCKER_HOST" in env_content, "DOCKER_HOST not set in env file"
-        assert str(socket_path) in env_content, f"DOCKER_HOST not pointing to podman socket at {socket_path}"
+
+        # Extract socket path from DOCKER_HOST (format: unix:///path/to/socket)
+        match = re.search(r'DOCKER_HOST="?unix://([^"\s]+)"?', env_content)
+        assert match, f"Could not extract DOCKER_HOST socket path from env file:\n{env_content}"
+        socket_path = Path(match.group(1))
+
+        assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
@@ -398,8 +401,12 @@ class TestPodmanIntegration:
 
         assert result.returncode == 0, "Hook failed with non-zero exit code"
 
-        # Verify podman socket exists before trying to run container
-        socket_path = isolated_dirs.cache / "claude-hooks" / "podman" / "podman.sock"
+        # Extract socket path from DOCKER_HOST in env file
+        env_content = isolated_dirs.env_file.read_text()
+        match = re.search(r'DOCKER_HOST="?unix://([^"\s]+)"?', env_content)
+        assert match, f"Could not extract DOCKER_HOST socket path from env file:\n{env_content}"
+        socket_path = Path(match.group(1))
+
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
         # Verify we can run podman hello-world

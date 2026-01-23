@@ -6,6 +6,7 @@ Uses isolated configuration to avoid conflicts with system podman.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.resources
 import logging
 import os
@@ -215,8 +216,21 @@ def setup_podman_storage() -> dict[str, str]:
 
 
 def _get_socket_path() -> Path:
-    """Get podman socket path (in isolated directory)."""
-    return get_podman_dir() / "podman.sock"
+    """Get podman socket path.
+
+    Unix sockets have a 108-character path limit (UNIX_PATH_MAX). When XDG_CACHE_HOME
+    is set to a deeply nested path (e.g., in Bazel test environments), the socket path
+    can exceed this limit. We use a shorter path in /tmp with a hash for uniqueness.
+
+    Override with CLAUDE_HOOKS_PODMAN_SOCKET for testing.
+    """
+    if env_socket := os.environ.get("CLAUDE_HOOKS_PODMAN_SOCKET"):
+        return Path(env_socket)
+
+    # Use a hash of the podman dir to create a unique but short socket path
+    podman_dir = get_podman_dir()
+    dir_hash = hashlib.sha256(str(podman_dir).encode()).hexdigest()[:12]
+    return Path(f"/tmp/claude-podman-{dir_hash}.sock")
 
 
 def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
