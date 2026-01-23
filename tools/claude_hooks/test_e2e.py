@@ -114,8 +114,14 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
             "CLAUDE_HOOKS_SKIP_NIX": "1",
             # Disable podman setup (requires claude_hooks wheel install)
             "CLAUDE_HOOKS_SKIP_PODMAN": "1",
+            # Skip bazelisk download (tests use system bazel)
+            "CLAUDE_HOOKS_SKIP_BAZELISK": "1",
         }
     )
+
+    # Ensure JAVA_HOME is passed through explicitly (needed for Java truststore)
+    if java_home := os.environ.get("JAVA_HOME"):
+        env["JAVA_HOME"] = java_home
 
     if not use_wheel:
         # Bazel test mode: need PYTHONPATH and custom proxy command
