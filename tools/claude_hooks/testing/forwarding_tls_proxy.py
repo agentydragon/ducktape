@@ -71,10 +71,10 @@ def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -
     """Generate a server certificate signed by the CA for a specific hostname.
 
     Matches real Anthropic proxy behavior:
-    - Subject CN = target hostname
+    - Subject CN = target hostname (truncated to 64 chars if needed)
     - Issuer = Anthropic CA
     - 24h validity (real proxy caches and rotates multiple certs per hostname)
-    - SAN with DNS name
+    - SAN with DNS name (full hostname, no length limit)
 
     Returns (cert_pem, key_pem) tuple.
     """
@@ -83,7 +83,9 @@ def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -
 
     server_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostname)])
+    # CN has a 64-character limit; truncate if needed (SAN is authoritative anyway)
+    cn_hostname = hostname[:64] if len(hostname) > 64 else hostname
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn_hostname)])
 
     cert = (
         x509.CertificateBuilder()
