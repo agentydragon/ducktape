@@ -67,15 +67,10 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - uses: ./.github/actions/setup-buildbuddy
-        id: buildbuddy
+      - uses: ./.github/actions/setup-bazel
+        id: bazel
         with:
-          api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-      - uses: ./.github/actions/bazel-cache
-        id: bazel-cache
-        with:
-          skip_cache: ${{ steps.buildbuddy.outputs.enabled }}
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       # Pull Docker image needed by agent_server tests (removed by free-disk-space)
       - name: Pull test Docker image
@@ -142,6 +137,6 @@ jobs:
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
-          skip_cache: ${{ steps.buildbuddy.outputs.enabled }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}
+          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}

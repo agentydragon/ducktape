@@ -47,8 +47,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/bazel-cache
-        id: bazel-cache
+      - uses: ./.github/actions/setup-bazel
+        id: bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Check if release needed
         id: check
@@ -65,8 +67,9 @@ jobs:
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}
+          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
 
   # All tests run on all pushes and PRs
   test:
@@ -86,8 +89,10 @@ jobs:
       - name: Verify keytool available
         run: keytool -help >/dev/null
 
-      - uses: ./.github/actions/bazel-cache
-        id: bazel-cache
+      - uses: ./.github/actions/setup-bazel
+        id: bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Run unit tests (sandboxed)
         run: |
@@ -131,8 +136,9 @@ jobs:
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}
+          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
 
   # Build wheel, test it, and release (only on push to devel/main when release is needed)
   wheel-build-test-release:
@@ -174,8 +180,10 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - uses: ./.github/actions/bazel-cache
-        id: bazel-cache
+      - uses: ./.github/actions/setup-bazel
+        id: bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
         run: bazel build //tools/claude_hooks:claude_hooks_wheel
@@ -277,5 +285,6 @@ jobs:
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}
+          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}

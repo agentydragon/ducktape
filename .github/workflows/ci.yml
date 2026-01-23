@@ -118,6 +118,8 @@ jobs:
     needs: compute-targets
     if: needs.compute-targets.outputs.has_props_frontend == 'true'
     uses: ./.github/workflows/visual-regression.yml
+    secrets:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   # Conditional - only when Bazel targets changed
   bazel-build:

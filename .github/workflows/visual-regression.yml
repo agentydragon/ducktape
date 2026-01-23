@@ -5,6 +5,10 @@ name: Visual regression tests
 
 on:
   workflow_call:
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache (optional)"
+        required: false
   workflow_dispatch:
 
 jobs:
@@ -27,9 +31,10 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - uses: ./.github/actions/bazel-cache
-        id: bazel-cache
+      - uses: ./.github/actions/setup-bazel
+        id: bazel
         with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
           extra_hash: ${{ hashFiles('props/frontend/pnpm-lock.yaml') }}
 
       - name: Run visual regression tests
@@ -67,5 +72,6 @@ jobs:
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}
+          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}

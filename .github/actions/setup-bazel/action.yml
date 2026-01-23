@@ -1,0 +1,58 @@
+# Composite action for Bazel environment setup
+#
+# Combines BuildBuddy remote cache setup and GitHub Actions cache fallback.
+# Use this as the single entry point for Bazel caching in workflows.
+#
+# Usage:
+#   - uses: ./.github/actions/setup-bazel
+#     id: bazel
+#     with:
+#       buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+#
+#   # ... your build steps ...
+#
+#   - uses: ./.github/actions/bazel-cache-save
+#     if: always()
+#     with:
+#       cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+#       cache-key: ${{ steps.bazel.outputs.cache-key }}
+#       skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
+name: Setup Bazel
+description: Setup Bazel with BuildBuddy remote cache or GitHub Actions cache fallback
+
+inputs:
+  buildbuddy_api_key:
+    description: "BuildBuddy API key for remote cache (optional - falls back to GHA cache)"
+    required: false
+    default: ""
+  extra_hash:
+    description: "Additional hash to append to cache key (use hashFiles() at call site)"
+    required: false
+    default: ""
+
+outputs:
+  buildbuddy-enabled:
+    description: "Whether BuildBuddy remote cache is configured ('true' or 'false')"
+    value: ${{ steps.buildbuddy.outputs.enabled }}
+  cache-hit:
+    description: "Whether GitHub Actions cache was restored"
+    value: ${{ steps.cache.outputs.cache-hit }}
+  cache-key:
+    description: "Cache key (for bazel-cache-save)"
+    value: ${{ steps.cache.outputs.cache-key }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup BuildBuddy
+      id: buildbuddy
+      uses: ./.github/actions/setup-buildbuddy
+      with:
+        api_key: ${{ inputs.buildbuddy_api_key }}
+
+    - name: Setup Bazel cache
+      id: cache
+      uses: ./.github/actions/bazel-cache
+      with:
+        extra_hash: ${{ inputs.extra_hash }}
+        skip_cache: ${{ steps.buildbuddy.outputs.enabled }}

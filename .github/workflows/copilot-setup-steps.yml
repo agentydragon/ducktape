@@ -31,29 +31,10 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install Bazelisk
-        run: |
-          # Bazelisk is usually pre-installed on GitHub Actions runners
-          # but we'll ensure it's available and up to date
-          if ! command -v bazelisk &> /dev/null; then
-            echo "Installing Bazelisk..."
-            BAZELISK_VERSION="v1.24.0"
-            BAZELISK_ARCH="linux-amd64"
-            curl -fsSL "https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-${BAZELISK_ARCH}" -o /usr/local/bin/bazelisk
-            chmod +x /usr/local/bin/bazelisk
-            ln -sf /usr/local/bin/bazelisk /usr/local/bin/bazel
-          fi
-          bazelisk version
-
-      - name: Cache Bazel artifacts
-        uses: actions/cache@v4
+      - name: Setup Bazel
+        uses: ./.github/actions/setup-bazel
         with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-bazel-
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Install pre-commit
         run: |
