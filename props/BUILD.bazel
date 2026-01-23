@@ -12,7 +12,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["."],
+    imports = [".."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core_testing",

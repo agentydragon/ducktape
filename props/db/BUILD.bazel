@@ -202,7 +202,6 @@ py_test(
 py_test(
     name = "test_failed_critic_runs_as_zero_recall",
     srcs = [
-        "conftest.py",
         "test_failed_critic_runs_as_zero_recall.py",
     ],
     env = _POSTGRES_TEST_ENV,

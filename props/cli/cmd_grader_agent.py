@@ -23,8 +23,6 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from agent_pkg.runtime.output import render_agent_prompt
-from props.core.agent_helpers import get_current_agent_run
 from props.core.display import short_uuid
 from props.db.models import (
     FalsePositive,
@@ -36,7 +34,7 @@ from props.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props.db.session import get_session
-from props.grader.edge_helpers import delete_edges_for_issue, get_pending_edges, insert_edge, submit_grading
+from props.grader.edge_helpers import delete_edges_for_issue, get_pending_edges, insert_edge
 
 HELP_TEXT = """Grader agent CLI for matching critique issues to ground truth.
 
@@ -378,32 +376,3 @@ def delete_cmd(
     critique_run_id = _parse_run_id(run) if run else None
     count = delete_edges_for_issue(issue_id, critique_run_id=critique_run_id)
     typer.echo(f"Deleted {count} edges for {issue_id}")
-
-
-@app.command("submit")
-def submit_cmd(summary: Annotated[str, typer.Argument(help="Brief summary of grading results")]) -> None:
-    """Submit the grading (finalize and call MCP submit).
-
-    Fails if any edges are still pending.
-
-    Example:
-        props grader-agent submit "Graded 5 issues: 3 TP matches, 2 novel"
-    """
-    remaining = get_pending_edges()
-    if remaining:
-        typer.echo(f"Error: {len(remaining)} edges still pending. Complete grading first.", err=True)
-        raise typer.Exit(1)
-
-    submit_grading(summary=summary)
-    typer.echo("Grading submitted successfully")
-
-
-@app.command("init")
-def init_cmd() -> None:
-    """Run bootstrap (called by /init script)."""
-    with get_session() as session:
-        agent_run = get_current_agent_run(session)
-        config = agent_run.grader_config()
-        helpers = {"is_daemon": True, "snapshot_slug": config.snapshot_slug}
-
-    render_agent_prompt("props_core/docs/agents/grader.md.j2", helpers=helpers)

@@ -1,4 +1,4 @@
-"""Helper functions for grading edges and submitting gradings.
+"""Helper functions for grading edges.
 
 These helpers simplify the grading workflow for the bipartite graph model.
 Each edge represents a grader's judgment about whether a critique issue matches
@@ -10,7 +10,6 @@ the grader agent's RLS-scoped credentials.
 Typical workflow:
     1. Call get_pending_edges() to see what edges need grading
     2. Call insert_edge() for each (issue, occurrence) pair
-    3. Call submit_grading() to finalize and mark the grading complete
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, select, text
 
-from props.db.models import AgentRun, AgentRunStatus, GradingEdge, GradingPending, ReportedIssue
+from props.db.models import AgentRun, GradingEdge, GradingPending, ReportedIssue
 from props.db.session import get_session
 
 
@@ -136,34 +135,3 @@ def delete_edges_for_issue(critique_issue_id: str, critique_run_id: UUID | None 
 
         result = session.execute(stmt)
         return result.rowcount  # type: ignore[attr-defined,no-any-return]
-
-
-def submit_grading(summary: str) -> None:
-    """Finalize the grading for the current grader agent.
-
-    Updates the grader agent run status to COMPLETED. Validates that no edges
-    are still pending before submitting.
-
-    Args:
-        summary: Brief summary of the grading results
-
-    Raises:
-        RuntimeError: If pending edges remain or if not connected as agent user
-    """
-    with get_session() as session:
-        grader_run_id = session.scalar(text("SELECT current_agent_run_id()"))
-        if grader_run_id is None:
-            raise RuntimeError("current_agent_run_id() returned NULL - not connected as agent user")
-
-        # Check for pending edges
-        pending = list(session.scalars(select(GradingPending).limit(1)))
-        if pending:
-            raise RuntimeError("Cannot submit: pending edges remain")
-
-        # Update agent run status
-        agent_run = session.get(AgentRun, grader_run_id)
-        if agent_run is None:
-            raise RuntimeError(f"Agent run not found: {grader_run_id}")
-        agent_run.status = AgentRunStatus.COMPLETED
-        agent_run.summary = summary
-        session.commit()

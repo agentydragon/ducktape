@@ -91,9 +91,7 @@ async def main() -> int:
         agent_run = get_current_agent_run(session)
         model = agent_run.model
         config = agent_run.grader_config()
-        # Get snapshot slug from the critic run being graded
-        critic_run = session.get_one(type(agent_run), config.graded_agent_run_id)
-        snapshot_slug = critic_run.critic_config().example.snapshot_slug
+        snapshot_slug = config.snapshot_slug
         logger.info("Agent run: %s, model: %s, snapshot: %s", agent_run.agent_run_id, model, snapshot_slug)
 
     # Fetch snapshot
