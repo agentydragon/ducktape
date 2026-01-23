@@ -401,7 +401,9 @@ class TestPodmanIntegration:
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
-    def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
+    def test_podman_can_run_container(
+        self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str], forwarding_proxy: ForwardingTLSProxy
+    ) -> None:
         """Verify podman can run a container after session start hook.
 
         Runs podman through the ForwardingTLSProxy to verify the full proxy chain works,
@@ -426,11 +428,20 @@ class TestPodmanIntegration:
             env=podman_hook_env,
         )
 
+        # Include proxy stats in failure message for debugging
+        proxy_stats = (
+            f"\nProxy stats: {forwarding_proxy.stats.total_connections} total, "
+            f"{forwarding_proxy.stats.successful_connections} success, "
+            f"{forwarding_proxy.stats.failed_connections} failed"
+        )
+        if forwarding_proxy.stats.errors:
+            proxy_stats += f"\nProxy errors: {forwarding_proxy.stats.errors[-5:]}"
+
         assert podman_result.returncode == 0, (
-            f"Podman run failed:\nstdout: {podman_result.stdout}\nstderr: {podman_result.stderr}"
+            f"Podman run failed:\nstdout: {podman_result.stdout}\nstderr: {podman_result.stderr}{proxy_stats}"
         )
         assert "Hello from Docker" in podman_result.stdout, (
-            f"Expected 'Hello from Docker' in output:\n{podman_result.stdout}"
+            f"Expected 'Hello from Docker' in output:\n{podman_result.stdout}{proxy_stats}"
         )
 
 

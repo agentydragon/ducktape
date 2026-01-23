@@ -15,6 +15,7 @@ import socket
 import ssl
 import tempfile
 import threading
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -103,6 +104,35 @@ def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -
     return cert_pem, key_pem
 
 
+@dataclass
+class ConnectionStats:
+    """Track connection statistics for debugging."""
+
+    total_connections: int = 0
+    successful_connections: int = 0
+    failed_connections: int = 0
+    bytes_forwarded: int = 0
+    errors: list[str] = field(default_factory=list)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def record_success(self, bytes_count: int = 0) -> None:
+        with self.lock:
+            self.successful_connections += 1
+            self.bytes_forwarded += bytes_count
+
+    def record_failure(self, error: str) -> None:
+        with self.lock:
+            self.failed_connections += 1
+            self.errors.append(error)
+            # Keep only last 100 errors
+            if len(self.errors) > 100:
+                self.errors = self.errors[-100:]
+
+    def record_connection(self) -> None:
+        with self.lock:
+            self.total_connections += 1
+
+
 class ForwardingTLSProxy:
     """A TLS-intercepting proxy that forwards traffic to real destinations.
 
@@ -140,6 +170,9 @@ class ForwardingTLSProxy:
         self._server_certs: dict[str, tuple[bytes, bytes]] = {}
         self._cert_lock = threading.Lock()
 
+        # Connection statistics for debugging
+        self.stats = ConnectionStats()
+
     @property
     def ca_cert_pem(self) -> bytes:
         """Get the CA certificate PEM."""
@@ -154,12 +187,13 @@ class ForwardingTLSProxy:
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind(("127.0.0.1", self.listen_port))
         self.port = self.server_socket.getsockname()[1]
-        self.server_socket.listen(10)
+        self.server_socket.listen(50)  # Increased backlog for concurrent connections
         self.server_socket.settimeout(0.5)
 
         self._running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
+        logger.info("ForwardingTLSProxy started on port %d", self.port)
 
     def stop(self) -> None:
         """Stop the proxy server."""
@@ -171,13 +205,23 @@ class ForwardingTLSProxy:
                 conn.close()
         if self.server_socket:
             self.server_socket.close()
+        logger.info(
+            "ForwardingTLSProxy stopped. Stats: %d total, %d success, %d failed, %d bytes",
+            self.stats.total_connections,
+            self.stats.successful_connections,
+            self.stats.failed_connections,
+            self.stats.bytes_forwarded,
+        )
+        if self.stats.errors:
+            logger.info("Recent errors: %s", self.stats.errors[-5:])
 
     def _serve(self) -> None:
         """Main server loop."""
         while self._running:
             try:
-                client_sock, _ = self.server_socket.accept()  # type: ignore[union-attr]
+                client_sock, _addr = self.server_socket.accept()  # type: ignore[union-attr]
                 self._connections.append(client_sock)
+                self.stats.record_connection()
                 threading.Thread(target=self._handle_client, args=(client_sock,), daemon=True).start()
             except TimeoutError:
                 continue
@@ -198,8 +242,12 @@ class ForwardingTLSProxy:
         server_ssl: ssl.SSLSocket | None = None
         target_host: str = "<unknown>"
         target_port: int = 0
+        bytes_forwarded: int = 0
 
         try:
+            # Set socket timeout for initial handshake
+            client_sock.settimeout(60)
+
             # Read CONNECT request
             request = b""
             while b"\r\n\r\n" not in request:
@@ -211,12 +259,14 @@ class ForwardingTLSProxy:
             request_line = request.split(b"\r\n", 1)[0].decode()
             if not request_line.startswith("CONNECT "):
                 client_sock.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                self.stats.record_failure(f"Non-CONNECT request: {request_line[:50]}")
                 return
 
             # Parse target host:port
             parts = request_line.split()
             if len(parts) < 2:
                 client_sock.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                self.stats.record_failure("Malformed CONNECT request")
                 return
 
             target = parts[1]
@@ -226,6 +276,8 @@ class ForwardingTLSProxy:
             else:
                 target_host = target
                 target_port = 443
+
+            logger.debug("CONNECT %s:%d", target_host, target_port)
 
             # Check auth header
             if self.require_auth:
@@ -242,13 +294,15 @@ class ForwardingTLSProxy:
 
                 if not auth_ok:
                     client_sock.sendall(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
+                    self.stats.record_failure(f"Auth failed for {target_host}:{target_port}")
                     return
 
             # Send 200 Connection Established
             client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
 
-            # Connect to real target
-            server_sock = socket.create_connection((target_host, target_port), timeout=30)
+            # Connect to real target with longer timeout
+            server_sock = socket.create_connection((target_host, target_port), timeout=60)
+            server_sock.settimeout(60)
 
             # Wrap server connection with TLS (to real server)
             server_ctx = ssl.create_default_context()
@@ -263,43 +317,83 @@ class ForwardingTLSProxy:
             client_ssl = client_ctx.wrap_socket(client_sock, server_side=True)
 
             # Bidirectional forward
-            self._forward_bidirectional(client_ssl, server_ssl)
+            bytes_forwarded = self._forward_bidirectional(client_ssl, server_ssl, target_host)
+            self.stats.record_success(bytes_forwarded)
+            logger.debug("Connection to %s:%d completed, %d bytes forwarded", target_host, target_port, bytes_forwarded)
 
-        except (OSError, ssl.SSLError, ValueError) as e:
-            logger.debug("Connection to %s:%d failed: %s", target_host, target_port, e)
+        except TimeoutError as e:
+            error_msg = f"Timeout connecting to {target_host}:{target_port}: {e}"
+            logger.warning(error_msg)
+            self.stats.record_failure(error_msg)
+        except ssl.SSLError as e:
+            error_msg = f"SSL error for {target_host}:{target_port}: {e}"
+            logger.warning(error_msg)
+            self.stats.record_failure(error_msg)
+        except OSError as e:
+            error_msg = f"OS error for {target_host}:{target_port}: {e}"
+            logger.warning(error_msg)
+            self.stats.record_failure(error_msg)
+        except ValueError as e:
+            error_msg = f"Value error for {target_host}:{target_port}: {e}"
+            logger.warning(error_msg)
+            self.stats.record_failure(error_msg)
         finally:
             for sock in [client_ssl, server_ssl, client_sock, server_sock]:
                 if sock:
                     with contextlib.suppress(OSError):
                         sock.close()
 
-    def _forward_bidirectional(self, client_ssl: ssl.SSLSocket, server_ssl: ssl.SSLSocket) -> None:
-        """Forward data bidirectionally between client and server."""
+    def _forward_bidirectional(self, client_ssl: ssl.SSLSocket, server_ssl: ssl.SSLSocket, target_host: str) -> int:
+        """Forward data bidirectionally between client and server.
+
+        Returns total bytes forwarded.
+        """
         sockets = [client_ssl, server_ssl]
+        bytes_forwarded = 0
+
+        # Set non-blocking for select
+        client_ssl.setblocking(False)
+        server_ssl.setblocking(False)
 
         try:
             while True:
-                readable, _, errored = select.select(sockets, [], sockets, 1.0)
+                try:
+                    readable, _, errored = select.select(sockets, [], sockets, 30.0)
+                except (ValueError, OSError) as e:
+                    # Socket closed during select
+                    logger.debug("Select error for %s: %s", target_host, e)
+                    break
 
                 if errored:
+                    logger.debug("Socket error condition for %s", target_host)
                     break
+
+                if not readable:
+                    # Timeout - check if connection is still alive
+                    continue
 
                 for sock in readable:
                     try:
-                        data = sock.recv(8192)
+                        data = sock.recv(65536)  # Larger buffer for efficiency
                         if not data:
-                            return  # Connection closed
+                            return bytes_forwarded  # Connection closed gracefully
 
                         # Forward to the other socket
                         other = server_ssl if sock is client_ssl else client_ssl
                         other.sendall(data)
-                    except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                        bytes_forwarded += len(data)
+                    except ssl.SSLWantReadError:
                         continue
-                    except (OSError, ssl.SSLError):
-                        return
+                    except ssl.SSLWantWriteError:
+                        continue
+                    except (OSError, ssl.SSLError) as e:
+                        logger.debug("Forward error for %s: %s", target_host, e)
+                        return bytes_forwarded
 
-        except (OSError, ssl.SSLError):
-            pass
+        except (OSError, ssl.SSLError) as e:
+            logger.debug("Bidirectional forward error for %s: %s", target_host, e)
+
+        return bytes_forwarded
 
 
 def _load_cert_chain_from_bytes(
