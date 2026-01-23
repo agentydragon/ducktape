@@ -106,16 +106,11 @@ def make_logging_callback(default_level: LogLevel = LogLevel.INFO):
             typer.Option(
                 "--log-output",
                 envvar="ADGN_LOG_OUTPUT",
-                help="Where to send logs: 'stderr' (default), 'stdout', 'none', or a file path",
+                help="Where to send logs: 'stderr', 'stdout', 'none', or a file path",
             ),
         ] = "stderr",
         log_level: Annotated[
-            str,
-            typer.Option(
-                "--log-level",
-                envvar="ADGN_LOG_LEVEL",
-                help=f"Log level: {', '.join(LogLevel)} (default: {default_level})",
-            ),
+            str, typer.Option("--log-level", envvar="ADGN_LOG_LEVEL", help="Log level")
         ] = default_level,
     ) -> None:
         """Configure logging for all subcommands."""

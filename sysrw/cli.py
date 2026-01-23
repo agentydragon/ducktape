@@ -32,7 +32,7 @@ OPT_OUT_DIR_RUN = typer.Option(None, "--out-dir", help="Output directory. If omi
 OPT_N = typer.Option(None, "--n", help="Limit number of samples to process")
 OPT_CONCURRENCY = typer.Option(32, "--concurrency", help="Parallelism for sampling/grading")
 
-OPT_SOURCE = typer.Option("auto", "--source", help="ccr|crush|auto (default: auto)")
+OPT_SOURCE = typer.Option("auto", "--source", help="ccr|crush|auto")
 OPT_WIRE_LOG = typer.Option(None, "--wire-log", help="Crush only: path to provider-wire.log")
 OPT_SCAN_DIR = typer.Option(
     None, "--scan-dir", help="Crush only: scan DIR recursively for **/.crush/logs/provider-wire.log (repeatable)"

@@ -73,17 +73,10 @@ def _init_logging_and_db(
         typer.Option(
             "--log-output",
             envvar="ADGN_LOG_OUTPUT",
-            help="Where to send logs: 'stderr' (default), 'stdout', 'none', or a file path",
+            help="Where to send logs: 'stderr', 'stdout', 'none', or a file path",
         ),
     ] = "stderr",
-    log_level: Annotated[
-        str,
-        typer.Option(
-            "--log-level",
-            envvar="ADGN_LOG_LEVEL",
-            help="Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: WARNING)",
-        ),
-    ] = "WARNING",
+    log_level: Annotated[str, typer.Option("--log-level", envvar="ADGN_LOG_LEVEL", help="Log level")] = "WARNING",
 ) -> None:
     """Global callback to configure logging and initialize database for all subcommands."""
     # First, configure logging via the shared callback
