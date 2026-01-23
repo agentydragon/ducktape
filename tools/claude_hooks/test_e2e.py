@@ -311,9 +311,12 @@ class TestFullSessionStartHook:
 def _can_use_podman() -> bool:
     """Check if podman is available for use.
 
-    Returns True if podman is already installed.
-    Installing via apt-get requires root, which we want to avoid.
+    Returns True if podman is installed AND can run as a service.
+    On GitHub Actions, podman is pre-installed but `podman system service`
+    fails to start due to cgroup/namespace restrictions.
     """
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return False  # podman system service doesn't work on GHA
     return bool(shutil.which("podman"))
 
 
