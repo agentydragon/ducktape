@@ -7,7 +7,7 @@ import pytest
 try:
     import docker
 except ImportError:
-    docker = None  # type: ignore[assignment]
+    docker = None
 
 from agent_pkg.host.builder import ensure_image
 from editor_agent.host.cli import _DOCKERFILE, _REPO_ROOT

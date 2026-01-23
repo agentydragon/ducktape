@@ -482,26 +482,10 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
             # Index critics by their frozen ExampleSpec (hashable discriminated union)
             critic_by_key = {c.critic_config().example: c for c in critic_runs}
 
-            # Query completed grader runs for these critic runs
-            critic_run_ids = [c.agent_run_id for c in critic_runs]
-            grader_runs: list[AgentRun] = []
-            if critic_run_ids:
-                # Note: We need to filter graders by their graded_agent_run_id being in critic_run_ids
-                # Since JSONB contains UUID as string, we need to cast
-                grader_runs = (
-                    session.query(AgentRun)
-                    .filter(
-                        AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
-                        AgentRun.model == self.grader_client.model,
-                        AgentRun.status == AgentRunStatus.COMPLETED,
-                    )
-                    .all()
-                )
-                # Filter in Python for those matching our critic runs
-                grader_runs = [g for g in grader_runs if g.grader_config().graded_agent_run_id in set(critic_run_ids)]
-
-            # Index grader runs by graded_agent_run_id (critic_run_id)
-            grader_by_critic_id: dict[UUID, AgentRun] = {g.grader_config().graded_agent_run_id: g for g in grader_runs}
+            # Note: Grader lookup disabled - the new daemon model grades all critiques per snapshot,
+            # not individual critic runs. This causes cache misses for graded runs.
+            # TODO: Implement snapshot-based grader lookup if needed for GEPA caching.
+            grader_by_critic_id: dict[UUID, AgentRun] = {}
 
             # Process each specimen using indexed results
             for idx, specimen_input in enumerate(batch):

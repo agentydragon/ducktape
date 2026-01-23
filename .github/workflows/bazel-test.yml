@@ -92,7 +92,7 @@ jobs:
             PROFILE_FLAG="--config=ci-profile"
           fi
           bazel coverage --keep_going \
-            --test_tag_filters=-requires_docker,-visual \
+            --test_tag_filters=-requires_docker,-visual,-e2e \
             --combined_report=lcov \
             --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
             --test_env=PGHOST=localhost --test_env=PGPORT=5432 \

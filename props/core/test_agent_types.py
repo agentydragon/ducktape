@@ -37,7 +37,7 @@ class TestTypeConfigDiscriminatedUnion:
                 {"agent_type": "critic", "example": {"kind": "whole_snapshot", "snapshot_slug": "test/2025-01-01-00"}},
                 CriticTypeConfig,
             ),
-            ({"agent_type": "grader", "graded_agent_run_id": "550e8400-e29b-41d4-a716-446655440000"}, GraderTypeConfig),
+            ({"agent_type": "grader", "snapshot_slug": "test/2025-01-01-00"}, GraderTypeConfig),
             ({"agent_type": "freeform"}, FreeformTypeConfig),
             (
                 {
@@ -45,7 +45,6 @@ class TestTypeConfigDiscriminatedUnion:
                     "target_metric": "whole-repo",
                     "optimizer_model": "test-optimizer",
                     "critic_model": "test-critic",
-                    "grader_model": "test-grader",
                     "budget_limit": 100.0,
                 },
                 PromptOptimizerTypeConfig,
@@ -77,25 +76,18 @@ class TestTypeConfigDiscriminatedUnion:
 
 
 class TestGraderTypeConfig:
-    """Tests for GraderTypeConfig behavior."""
+    """Tests for GraderTypeConfig behavior (daemon model with snapshot_slug)."""
 
-    def test_uuid_coercion_from_string(self) -> None:
-        """Pydantic coerces string to UUID."""
-        config = GraderTypeConfig(graded_agent_run_id="550e8400-e29b-41d4-a716-446655440000")
-        assert isinstance(config.graded_agent_run_id, UUID)
+    def test_valid_construction(self) -> None:
+        """GraderTypeConfig accepts valid snapshot_slug."""
+        config = GraderTypeConfig(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))
+        assert config.snapshot_slug == SnapshotSlug("test/2025-01-01-00")
+        assert config.agent_type == AgentType.GRADER
 
-    def test_canonical_issues_snapshot_optional(self) -> None:
-        """canonical_issues_snapshot defaults to None."""
-        config = GraderTypeConfig(graded_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000"))
-        assert config.canonical_issues_snapshot is None
-
-    def test_canonical_issues_snapshot_accepts_dict(self) -> None:
-        """canonical_issues_snapshot accepts dict value."""
-        config = GraderTypeConfig(
-            graded_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-            canonical_issues_snapshot={"true_positives": [], "false_positives": []},
-        )
-        assert config.canonical_issues_snapshot == {"true_positives": [], "false_positives": []}
+    def test_snapshot_slug_required(self) -> None:
+        """snapshot_slug is required."""
+        with pytest.raises(ValidationError):
+            GraderTypeConfig()  # type: ignore[call-arg]
 
 
 class TestImprovementTypeConfig:
@@ -186,7 +178,7 @@ class TestAgentConfig:
         "type_config",
         [
             CriticTypeConfig(example=WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))),
-            GraderTypeConfig(graded_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000")),
+            GraderTypeConfig(snapshot_slug=SnapshotSlug("test/2025-01-01-00")),
             FreeformTypeConfig(),
         ],
         ids=lambda tc: tc.agent_type,
