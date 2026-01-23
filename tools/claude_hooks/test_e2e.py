@@ -401,11 +401,14 @@ class TestPodmanIntegration:
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
-    @pytest.mark.skipif(
-        os.environ.get("GITHUB_ACTIONS") == "true", reason="ForwardingTLSProxy can't handle registry pulls on GHA"
-    )
     def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
-        """Verify podman can run a container after session start hook."""
+        """Verify podman can run a container after session start hook.
+
+        This test runs podman WITHOUT the TLS-inspecting proxy because:
+        1. ForwardingTLSProxy doesn't handle container registry traffic well (HTTP/2, redirects)
+        2. The core value is verifying podman works with our config, not proxy MITM
+        3. test_podman_service_starts already verifies the hook+proxy integration
+        """
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
 
         assert result.returncode == 0, "Hook failed with non-zero exit code"
@@ -413,16 +416,21 @@ class TestPodmanIntegration:
         socket_path = _extract_docker_host_socket(isolated_dirs.env_file)
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
+        # Build env without the test proxy - use direct internet access
+        # This tests that podman itself works, not the proxy MITM chain
+        run_env = podman_hook_env.copy()
+        for var in ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"]:
+            run_env.pop(var, None)
+
         # Verify we can run podman hello-world
         # The gVisor annotation is auto-applied via containers.conf
-        # Run through env file to pick up SSL_CERT_FILE for TLS proxy CA
         podman_result = shell_helpers.run_with_env_file(
             command="podman run --rm docker.io/library/hello-world",
             env_file=isolated_dirs.env_file,
             cwd=isolated_dirs.project,
             check=False,
             timeout=120,
-            env=podman_hook_env,
+            env=run_env,
         )
 
         assert podman_result.returncode == 0, (
