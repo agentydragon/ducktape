@@ -362,6 +362,10 @@ class TestPodmanIntegration:
             }
         )
 
+        # Ensure JAVA_HOME is passed through explicitly (needed for Java truststore)
+        if java_home := os.environ.get("JAVA_HOME"):
+            env["JAVA_HOME"] = java_home
+
         if not use_wheel:
             # Bazel test mode: need PYTHONPATH and custom proxy command
             env["PYTHONPATH"] = os.pathsep.join(sys.path)
