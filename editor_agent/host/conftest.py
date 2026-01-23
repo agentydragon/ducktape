@@ -2,12 +2,8 @@ from __future__ import annotations
 
 from contextlib import suppress
 
+import docker
 import pytest
-
-try:
-    import docker
-except ImportError:
-    docker = None
 
 from agent_pkg.host.builder import ensure_image
 from editor_agent.host.cli import _DOCKERFILE, _REPO_ROOT
@@ -24,13 +20,8 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Skip Docker tests when Docker daemon is not available or images are missing."""
+    """Skip Docker tests when Docker daemon is not available."""
     if item.get_closest_marker("requires_docker") is None:
-        return
-
-    # Check if docker module is available
-    if docker is None:
-        pytest.skip("Docker module not available")
         return
 
     client = None
