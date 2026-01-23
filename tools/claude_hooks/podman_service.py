@@ -349,11 +349,20 @@ def _wait_for_socket(socket_path: Path, supervisor: SupervisorClient, timeout: i
     socket_exists = socket_path.exists()
     diag = f"socket_exists={socket_exists}, last_service_state={last_state}"
 
-    # Log full process info at error level for visibility
+    # Log full process info and log file contents for visibility
     if last_state in (ProcessState.FATAL, ProcessState.BACKOFF, ProcessState.EXITED):
         try:
             info = supervisor.get_process_info("podman")
             logger.error("Podman service failed: %s", info.model_dump())
+            # Read and log the actual podman log files
+            for logfile_attr in ("stdout_logfile", "stderr_logfile"):
+                logfile = getattr(info, logfile_attr, None)
+                if logfile:
+                    logpath = Path(logfile)
+                    if logpath.exists():
+                        content = logpath.read_text()
+                        if content.strip():
+                            logger.error("Podman %s:\n%s", logfile_attr, content)
         except Exception:
             pass
 
