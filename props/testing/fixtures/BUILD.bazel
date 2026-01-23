@@ -47,7 +47,7 @@ py_library(
         # props.testing for fake_openai_server
         "//props/testing:fake_openai_server",
         # props.backend for e2e_container (AuthMiddleware, llm routes)
-        "//props/backend:backend",
+        "//props/backend",
         "@pypi//aiodocker",
         "@pypi//fastapi",
         "@pypi//pydantic",
