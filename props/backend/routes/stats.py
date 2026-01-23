@@ -10,6 +10,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 
 from props.backend.auth import require_admin_access
 from props.core.agent_types import AgentType
@@ -19,8 +20,10 @@ from props.core.splits import Split
 from props.db.examples import Example, count_available_examples_by_scope_all
 from props.db.models import (
     AgentDefinition,
+    AgentRun,
     AgentRunStatus,
     FileSetMember,
+    LLMRunCost,
     RecallByDefinitionExample,
     RecallByDefinitionSplitKind,
     Snapshot,
@@ -148,12 +151,24 @@ class ExampleStats(BaseModel):
     credit_stats: StatsWithCI | None
 
 
+class LLMCostStats(BaseModel):
+    """Aggregated LLM cost stats for a definition."""
+
+    total_requests: int
+    total_input_tokens: int
+    total_cached_tokens: int
+    total_output_tokens: int
+    total_cost_usd: float
+    by_model: dict[str, dict]  # model -> {requests, input_tokens, output_tokens, cost_usd}
+
+
 class DefinitionDetailResponse(BaseModel):
     image_digest: str
     agent_type: AgentType
     created_at: datetime
     stats: SplitStats
     examples: list[ExampleStats]
+    llm_costs: LLMCostStats | None
 
 
 @router.get("/definitions/{image_digest}")
@@ -207,12 +222,64 @@ def get_definition_detail(image_digest: str) -> DefinitionDetailResponse:
             for r in example_results
         ]
 
+        # Get aggregated LLM costs for all runs of this definition
+        llm_cost_rows = (
+            session.query(
+                LLMRunCost.model,
+                func.sum(LLMRunCost.request_count).label("requests"),
+                func.sum(LLMRunCost.input_tokens).label("input_tokens"),
+                func.sum(LLMRunCost.cached_input_tokens).label("cached_tokens"),
+                func.sum(LLMRunCost.output_tokens).label("output_tokens"),
+                func.sum(LLMRunCost.cost_usd).label("cost_usd"),
+            )
+            .join(AgentRun, LLMRunCost.agent_run_id == AgentRun.agent_run_id)
+            .filter(AgentRun.image_digest == image_digest)
+            .group_by(LLMRunCost.model)
+            .all()
+        )
+
+        llm_costs: LLMCostStats | None = None
+        if llm_cost_rows:
+            by_model = {}
+            total_requests = 0
+            total_input = 0
+            total_cached = 0
+            total_output = 0
+            total_cost = 0.0
+            for row in llm_cost_rows:
+                requests = row.requests or 0
+                input_tokens = row.input_tokens or 0
+                cached = row.cached_tokens or 0
+                output_tokens = row.output_tokens or 0
+                cost = row.cost_usd or 0.0
+                by_model[row.model] = {
+                    "requests": requests,
+                    "input_tokens": input_tokens,
+                    "cached_tokens": cached,
+                    "output_tokens": output_tokens,
+                    "cost_usd": cost,
+                }
+                total_requests += requests
+                total_input += input_tokens
+                total_cached += cached
+                total_output += output_tokens
+                total_cost += cost
+            llm_costs = LLMCostStats(
+                total_requests=total_requests,
+                total_input_tokens=total_input,
+                total_cached_tokens=total_cached,
+                total_output_tokens=total_output,
+                total_cost_usd=total_cost,
+                by_model=by_model,
+            )
+
         return DefinitionDetailResponse(
             image_digest=definition.digest,
             agent_type=AgentType(definition.agent_type),
             created_at=definition.created_at,
             stats=dict(stats),
             examples=examples,
+            llm_costs=llm_costs,
         )
 
 

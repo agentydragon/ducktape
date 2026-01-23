@@ -141,6 +141,7 @@ export async function fetchRuns(filters?: RunsFilters) {
 // Fetch definition detail with per-example stats
 export type DefinitionDetailResponse = components["schemas"]["DefinitionDetailResponse"];
 export type ExampleStats = components["schemas"]["ExampleStats"];
+export type LLMCostStats = components["schemas"]["LLMCostStats"];
 
 export async function fetchDefinitionDetail(definitionId: string) {
   const { data, error } = await api.GET("/api/stats/definitions/{image_digest}", {
