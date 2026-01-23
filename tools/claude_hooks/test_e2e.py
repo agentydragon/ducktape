@@ -318,6 +318,20 @@ def _can_use_podman() -> bool:
     return bool(shutil.which("podman"))
 
 
+def _extract_docker_host_socket(env_file: Path) -> Path:
+    """Extract socket path from DOCKER_HOST in env file.
+
+    The env file contains export statements like:
+        export DOCKER_HOST="unix:///tmp/claude-podman-abc123.sock"
+    """
+    env_content = env_file.read_text()
+    assert "DOCKER_HOST" in env_content, "DOCKER_HOST not set in env file"
+
+    match = re.search(r'DOCKER_HOST="?unix://([^"\s]+)"?', env_content)
+    assert match, f"Could not extract DOCKER_HOST socket path from env file:\n{env_content}"
+    return Path(match.group(1))
+
+
 class TestPodmanIntegration:
     """E2E tests for podman integration with session start hook.
 
@@ -382,15 +396,7 @@ class TestPodmanIntegration:
 
         assert result.returncode == 0, "Hook failed with non-zero exit code"
 
-        # Verify DOCKER_HOST is set in env file and extract socket path
-        env_content = isolated_dirs.env_file.read_text()
-        assert "DOCKER_HOST" in env_content, "DOCKER_HOST not set in env file"
-
-        # Extract socket path from DOCKER_HOST (format: unix:///path/to/socket)
-        match = re.search(r'DOCKER_HOST="?unix://([^"\s]+)"?', env_content)
-        assert match, f"Could not extract DOCKER_HOST socket path from env file:\n{env_content}"
-        socket_path = Path(match.group(1))
-
+        socket_path = _extract_docker_host_socket(isolated_dirs.env_file)
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
@@ -401,12 +407,7 @@ class TestPodmanIntegration:
 
         assert result.returncode == 0, "Hook failed with non-zero exit code"
 
-        # Extract socket path from DOCKER_HOST in env file
-        env_content = isolated_dirs.env_file.read_text()
-        match = re.search(r'DOCKER_HOST="?unix://([^"\s]+)"?', env_content)
-        assert match, f"Could not extract DOCKER_HOST socket path from env file:\n{env_content}"
-        socket_path = Path(match.group(1))
-
+        socket_path = _extract_docker_host_socket(isolated_dirs.env_file)
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
         # Verify we can run podman hello-world
