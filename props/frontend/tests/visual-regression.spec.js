@@ -1,14 +1,19 @@
 /**
- * Visual regression tests for UI components
+ * Visual regression tests for page layouts
+ *
+ * Tests whole pages with realistic mock data to verify:
+ * - Overall page layout and structure
+ * - Navigation elements (breadcrumbs, back buttons)
+ * - Data display formatting
+ * - Component integration
  *
  * Stability measures for consistent CI/local rendering:
  * - Hermetic font (Inter) bundled in tests/fonts/, forced via test-fonts.css
  * - CSS animations/transitions disabled via test-fonts.css
  * - Fixed viewport with explicit deviceScaleFactor: 1
  * - Forced media features: prefers-color-scheme=light, prefers-reduced-motion=reduce
- * - Chrome flags: font-render-hinting=none, disable-font-subpixel-positioning,
- *   disable-lcd-text, force-color-profile=srgb
- * - Hermetic Chromium via rules_playwright (same version in CI and local)
+ * - Chrome flags for deterministic font rendering
+ * - Hermetic Chromium via rules_playwright
  *
  * To update baselines: UPDATE_BASELINES=1 bazel test //props/frontend:visual_test
  */
@@ -29,44 +34,21 @@ const __dirname = dirname(__filename);
 const UPDATE_BASELINES = process.env.UPDATE_BASELINES === "1";
 
 // Output directory for test artifacts (diffs, actual screenshots)
-// Use TEST_UNDECLARED_OUTPUTS_DIR for Bazel tests (preserved after test completion)
-// Fall back to local diffs/ directory for manual runs
 const OUTPUT_DIR = process.env.TEST_UNDECLARED_OUTPUTS_DIR || join(__dirname, "diffs");
 
-// Component scenarios to test (mirrors harness.ts)
+// Page scenarios to test - focused on whole pages, not individual component states
 const scenarios = [
-  { component: "BackButton", scenario: "Default" },
-  { component: "BackButton", scenario: "CustomLabel" },
-  { component: "BackButton", scenario: "CustomHref" },
-  { component: "BackButton", scenario: "CustomClass" },
-  { component: "Breadcrumb", scenario: "SingleItem" },
-  { component: "Breadcrumb", scenario: "WithPath" },
-  { component: "Breadcrumb", scenario: "DeepPath" },
-  { component: "Breadcrumb", scenario: "AllLinked" },
-  { component: "CopyButton", scenario: "Default" },
-  { component: "CopyButton", scenario: "CustomLabel" },
-  { component: "CopyButton", scenario: "CustomSuccessMessage" },
-  { component: "CopyButton", scenario: "LongText" },
-  // FileViewer: shows code with TPs/FPs/critique markers and issue comments
-  { component: "FileViewer", scenario: "WithTpAndFp" },
-  { component: "FileViewer", scenario: "WithCritiqueIssues" },
-  { component: "FileViewer", scenario: "TpOnly" },
-  { component: "FileViewer", scenario: "Empty" },
-  // FileTree: directory tree with TP/FP counts
-  { component: "FileTree", scenario: "Default" },
-  { component: "FileTree", scenario: "WithSelection" },
-  // IssueComment: individual issue cards (TP, FP, critique)
-  { component: "IssueComment", scenario: "TpCollapsed" },
-  { component: "IssueComment", scenario: "TpExpanded" },
-  { component: "IssueComment", scenario: "FpCollapsed" },
-  { component: "IssueComment", scenario: "FpExpanded" },
-  { component: "IssueComment", scenario: "CritiqueCollapsed" },
-  { component: "IssueComment", scenario: "CritiqueExpanded" },
-  // LLMRequestViewer: LLM request/response viewer with expandable JSON
-  { component: "LLMRequestViewer", scenario: "Empty" },
-  { component: "LLMRequestViewer", scenario: "SingleRequest" },
-  { component: "LLMRequestViewer", scenario: "MultipleRequests" },
-  { component: "LLMRequestViewer", scenario: "WithError" },
+  // Definition detail page with stats table and CLI command
+  { page: "DefinitionDetail" },
+
+  // File viewer with full annotations (TP, FP, critique, grading edges)
+  { page: "FileViewerAnnotated" },
+
+  // File viewer with just ground truth markers
+  { page: "FileViewerGroundTruth" },
+
+  // LLM requests list with expandable details and errors
+  { page: "LLMRequests" },
 ];
 
 const CONTENT_TYPES = {
@@ -114,7 +96,6 @@ async function startServer(harnessDir) {
 }
 
 function compareBaseline(name, screenshot) {
-  // Use same naming convention as Playwright for compatibility with existing baselines
   const baselineDir = join(__dirname, "visual-regression.spec.ts-snapshots");
   const baselinePath = join(baselineDir, `${name}-chromium-linux.png`);
 
@@ -168,9 +149,7 @@ function compareBaseline(name, screenshot) {
 }
 
 async function runVisualTests() {
-  // Get harness path from environment (set by Bazel) or use default
   const harnessPath = process.env.HARNESS_PATH || join(__dirname, "harness/dist/harness.js");
-  // harnessDir is the parent of dist, containing both index.html and dist/
   const distDir = dirname(harnessPath);
   const harnessDir = distDir.endsWith("/dist") || distDir.endsWith("\\dist") ? dirname(distDir) : distDir;
 
@@ -184,23 +163,12 @@ async function runVisualTests() {
   const { server, port } = await startServer(harnessDir);
   console.log(`Server started on port ${port}`);
 
-  // Use PUPPETEER_EXECUTABLE_PATH if set (for Bazel-managed or system Chrome)
-  // Playwright browser directories have structure: dir/chrome-linux/headless_shell
-  //
-  // Chrome args for consistent rendering across environments:
-  // - --no-sandbox, --disable-setuid-sandbox: Required for CI/container environments
-  // - --font-render-hinting=none: Disable font hinting for consistent glyph shapes
-  // - --disable-font-subpixel-positioning: Prevent subpixel font positioning differences
-  // - --disable-lcd-text: Disable LCD text rendering (subpixel anti-aliasing)
-  // - --force-color-profile=srgb: Force consistent color profile across systems
-  // Use TEST_TMPDIR if available (Bazel test sandbox), or process.cwd() as fallback
-  // This fixes "Permission denied" errors writing to /tmp in containerized environments
   const userDataDir = join(process.env.TEST_TMPDIR || process.cwd(), "chrome-user-data");
   mkdirSync(userDataDir, { recursive: true });
 
   const launchOptions = {
     headless: true,
-    userDataDir, // Use Bazel-writable directory for Chrome data
+    userDataDir,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -211,7 +179,6 @@ async function runVisualTests() {
       "--disable-font-subpixel-positioning",
       "--disable-lcd-text",
       "--force-color-profile=srgb",
-      // Additional flags for deterministic rendering
       "--disable-accelerated-2d-canvas",
       "--disable-gpu-compositing",
       "--disable-software-rasterizer",
@@ -220,13 +187,11 @@ async function runVisualTests() {
       "--disable-backing-store-limit",
       "--use-gl=swiftshader",
       "--disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
-      // Force CPU-only rendering for complete determinism
       "--disable-accelerated-video-decode",
       "--disable-canvas-aa",
       "--disable-2d-canvas-clip-aa",
       "--disable-webgl",
       "--disable-webgl2",
-      // Additional stability flags
       "--blink-settings=imageAnimationPolicy=noAnimation",
       "--disable-smooth-scrolling",
       "--disable-threaded-animation",
@@ -234,9 +199,9 @@ async function runVisualTests() {
       "--disable-checker-imaging",
     ],
   };
+
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     let execPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    // rules_playwright provides a directory - construct path to actual executable
     const playwrightExec = join(execPath, "chrome-linux", "headless_shell");
     if (existsSync(playwrightExec)) {
       execPath = playwrightExec;
@@ -254,23 +219,21 @@ async function runVisualTests() {
   try {
     const page = await browser.newPage();
 
-    // Fixed viewport with explicit device scale factor for consistent rendering
-    await page.setViewport({ width: 800, height: 600, deviceScaleFactor: 1 });
+    // Larger viewport for page-level tests
+    await page.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
 
-    // Force consistent media features across environments
     await page.emulateMediaFeatures([
       { name: "prefers-color-scheme", value: "light" },
       { name: "prefers-reduced-motion", value: "reduce" },
     ]);
 
-    for (const { component, scenario } of scenarios) {
-      const name = `${component}-${scenario}`;
-      console.log(`Testing: ${name}`);
+    for (const { page: pageName } of scenarios) {
+      console.log(`Testing: ${pageName}`);
 
-      const url = `http://127.0.0.1:${port}/?component=${component}&scenario=${scenario}`;
+      const url = `http://127.0.0.1:${port}/?page=${pageName}`;
       await page.goto(url, { waitUntil: "networkidle0" });
 
-      // Wait for component to render
+      // Wait for page to render
       await page.waitForSelector("#app > *", { timeout: 5000 });
 
       // Give animations time to complete
@@ -279,10 +242,9 @@ async function runVisualTests() {
       // Take screenshot of the app container
       const element = await page.$("#app");
       const screenshotData = await element.screenshot();
-      // Ensure we have a Buffer (Puppeteer might return Uint8Array)
       const screenshot = Buffer.isBuffer(screenshotData) ? screenshotData : Buffer.from(screenshotData);
 
-      const result = compareBaseline(name, screenshot);
+      const result = compareBaseline(pageName, screenshot);
 
       if (result.updated) {
         updated++;
