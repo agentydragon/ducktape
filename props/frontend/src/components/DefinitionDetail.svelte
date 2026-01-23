@@ -72,49 +72,6 @@
     </div>
   </div>
 
-  <!-- LLM Cost Stats -->
-  {#if data.llm_costs}
-    <div class="bg-white rounded-lg shadow p-4">
-      <h3 class="text-sm font-medium text-gray-700 mb-3">LLM Usage</h3>
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4">
-        <div>
-          <span class="text-gray-500">Total Requests:</span>
-          <span class="ml-1 font-medium">{data.llm_costs.total_requests.toLocaleString()}</span>
-        </div>
-        <div>
-          <span class="text-gray-500">Input Tokens:</span>
-          <span class="ml-1 font-medium">{data.llm_costs.total_input_tokens.toLocaleString()}</span>
-        </div>
-        <div>
-          <span class="text-gray-500">Cached:</span>
-          <span class="ml-1 font-medium">{data.llm_costs.total_cached_tokens.toLocaleString()}</span>
-        </div>
-        <div>
-          <span class="text-gray-500">Output Tokens:</span>
-          <span class="ml-1 font-medium">{data.llm_costs.total_output_tokens.toLocaleString()}</span>
-        </div>
-        <div>
-          <span class="text-gray-500">Total Cost:</span>
-          <span class="ml-1 font-medium text-green-600">${data.llm_costs.total_cost_usd.toFixed(2)}</span>
-        </div>
-      </div>
-      {#if Object.keys(data.llm_costs.by_model).length > 1}
-        <details class="text-sm">
-          <summary class="cursor-pointer text-gray-600 hover:text-gray-800">By Model</summary>
-          <div class="mt-2 space-y-1 pl-4">
-            {#each Object.entries(data.llm_costs.by_model) as [model, stats]}
-              <div class="flex items-center gap-4">
-                <span class="font-mono text-gray-600 w-48">{model}</span>
-                <span>{stats.requests} requests</span>
-                <span class="text-gray-500">${stats.cost_usd?.toFixed(2) ?? "0.00"}</span>
-              </div>
-            {/each}
-          </div>
-        </details>
-      {/if}
-    </div>
-  {/if}
-
   <!-- Stats table -->
   <div class="bg-white rounded-lg shadow p-4">
     <h3 class="text-sm font-medium text-gray-700 mb-3">Recall by Split/Kind</h3>

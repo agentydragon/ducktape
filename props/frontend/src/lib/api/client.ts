@@ -112,7 +112,7 @@ export async function fetchJobs() {
 
 // Fetch run details
 export async function fetchRun(runId: string) {
-  const { data, error } = await api.GET("/api/runs/run/{run_id}", {
+  const { data, error } = await api.GET("/api/runs/{run_id}", {
     params: { path: { run_id: runId } },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch run"));
@@ -227,7 +227,7 @@ export async function fetchSnapshotFile(snapshotSlug: string, filePath: string) 
 
 // Fetch LLM requests for an agent run
 export async function fetchLLMRequests(runId: string) {
-  const { data, error } = await api.GET("/api/runs/run/{run_id}/llm_requests", {
+  const { data, error } = await api.GET("/api/runs/{run_id}/llm_requests", {
     params: { path: { run_id: runId } },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch LLM requests"));
