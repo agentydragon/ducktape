@@ -1,0 +1,61 @@
+# Workflow trigger definitions - single source of truth
+#
+# Each workflow declares what changes trigger it. The CI decision engine
+# reads this file and outputs a JSON list of workflows to run.
+#
+# Trigger types:
+#   bazel_pattern: Bazel target pattern (uses bazel query intersection)
+#   path_pattern: Regex pattern for changed files
+#   always: Always run this workflow
+#
+# Options:
+#   receives_targets: Pass affected targets to the workflow (default: false)
+#
+# Workflow file changes automatically trigger their workflow (convention:
+# .github/workflows/foo.yml changing triggers the "foo" workflow if defined here).
+
+# Core Bazel workflows - triggered by any Bazel target change
+bazel-build:
+  bazel_pattern: "//..."
+  receives_targets: true
+
+bazel-test:
+  bazel_pattern: "//..."
+  receives_targets: true
+
+bazel-lint:
+  bazel_pattern: "//..."
+  receives_targets: true
+
+bazel-typecheck:
+  bazel_pattern: "//..."
+  receives_targets: true
+
+# Rust-specific (only finance/ has Rust code)
+bazel-rust-lint:
+  bazel_pattern: "//finance/..."
+
+# E2E test workflows - triggered by their package
+props-e2e-test:
+  bazel_pattern: "//props/..."
+
+editor-e2e-test:
+  bazel_pattern: "//editor_agent/..."
+
+agent-server-e2e-test:
+  bazel_pattern: "//agent_server/..."
+
+# Frontend visual regression
+visual-regression:
+  bazel_pattern: "//props/frontend/..."
+
+# Path-based workflows (non-Bazel)
+nix-flake-check:
+  path_pattern: "^nix/"
+
+ansible-lint:
+  path_pattern: "^ansible/"
+
+# Always-run workflows
+pre-commit:
+  always: true

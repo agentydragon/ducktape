@@ -15,6 +15,9 @@
 # - ansible-lint-full: Ansible validation
 # - nix-flake-check: Verify NixOS and home-manager configurations evaluate
 #
+# Workflow triggers are defined in tools/ci/workflows.yaml (single source of truth).
+# The compute-targets job outputs a JSON list of workflows to run.
+#
 # Static analysis via Bazel aspects:
 # - Python: ruff (lint and formatting), mypy (types)
 # - JS/TS: ESLint (lint), prettier (formatting)
@@ -45,21 +48,15 @@ permissions:
   contents: read
 
 jobs:
-  # Compute affected targets once, then run parallel downstream jobs
+  # Compute affected targets and workflows to run (single source of truth)
   compute-targets:
     name: Compute affected targets
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
-      bazel_targets: ${{ steps.bazel-diff.outputs.targets }}
-      has_bazel_changes: ${{ steps.bazel-diff.outputs.has_changes }}
-      has_props: ${{ steps.bazel-diff.outputs.has_props }}
-      has_editor_agent: ${{ steps.bazel-diff.outputs.has_editor_agent }}
-      has_agent_server: ${{ steps.bazel-diff.outputs.has_agent_server }}
-      has_finance: ${{ steps.bazel-diff.outputs.has_finance }}
-      has_props_frontend: ${{ steps.bazel-diff.outputs.has_props_frontend }}
-      has_nix_changes: ${{ steps.paths.outputs.nix }}
-      has_ansible_changes: ${{ steps.paths.outputs.ansible }}
+      targets: ${{ steps.decide.outputs.targets }}
+      workflows: ${{ steps.decide.outputs.workflows }}
+      infra_changed: ${{ steps.decide.outputs.infra_changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,47 +73,39 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compute Bazel targets
-        id: bazel-diff
-        run: python tools/ci/bazel_diff.py
+      - name: Install dependencies
+        run: pip install pyyaml
 
-      - name: Check path changes
-        id: paths
+      - name: Cache bazel-diff
+        id: cache-bazel-diff
+        uses: actions/cache@v4
+        with:
+          path: bazel-diff.jar
+          key: bazel-diff-12.1.1
+
+      - name: Download bazel-diff
+        if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            BASE=$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)
-          else
-            BASE=$(git rev-parse HEAD~1 2>/dev/null || echo "")
-          fi
+          curl -fsSL -o bazel-diff.jar \
+            "https://github.com/Tinder/bazel-diff/releases/download/12.1.1/bazel-diff_deploy.jar"
 
-          if [[ -z "$BASE" ]]; then
-            echo "nix=true" >> $GITHUB_OUTPUT
-            echo "ansible=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+      - name: Set bazel-diff path
+        run: echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
 
-          CHANGED=$(git diff --name-only "$BASE"...HEAD)
-
-          if echo "$CHANGED" | grep -qE '^nix/'; then
-            echo "nix=true" >> $GITHUB_OUTPUT
-          else
-            echo "nix=false" >> $GITHUB_OUTPUT
-          fi
-
-          if echo "$CHANGED" | grep -qE '^ansible/'; then
-            echo "ansible=true" >> $GITHUB_OUTPUT
-          else
-            echo "ansible=false" >> $GITHUB_OUTPUT
-          fi
+      - name: Compute CI decision
+        id: decide
+        run: python tools/ci/ci_decide.py
 
   # Always run - fast safety check
   pre-commit:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'pre-commit')
     uses: ./.github/workflows/pre-commit.yml
 
   # Conditional - only when props/frontend changed
   visual-regression:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_props_frontend == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'visual-regression')
     uses: ./.github/workflows/visual-regression.yml
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
@@ -124,36 +113,36 @@ jobs:
   # Conditional - only when Bazel targets changed
   bazel-build:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')
     uses: ./.github/workflows/bazel-build.yml
     with:
-      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+      targets: ${{ needs.compute-targets.outputs.targets }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   bazel-lint:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-lint')
     uses: ./.github/workflows/bazel-lint.yml
     with:
-      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+      targets: ${{ needs.compute-targets.outputs.targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   bazel-typecheck:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-typecheck')
     uses: ./.github/workflows/bazel-typecheck.yml
     with:
-      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+      targets: ${{ needs.compute-targets.outputs.targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   bazel-rust-lint:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_finance == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-rust-lint')
     uses: ./.github/workflows/bazel-rust-lint.yml
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
@@ -162,36 +151,33 @@ jobs:
 
   bazel-test:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-test')
     uses: ./.github/workflows/bazel-test.yml
     with:
-      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+      targets: ${{ needs.compute-targets.outputs.targets }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   # Props E2E tests - requires Docker infrastructure (registry, proxy, postgres)
-  # Only runs when props/ targets are affected
   props-e2e-test:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_props == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'props-e2e-test')
     uses: ./.github/workflows/props-e2e-test.yml
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   # Editor E2E tests - requires Docker
-  # Only runs when editor_agent/ targets are affected
   editor-e2e-test:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_editor_agent == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'editor-e2e-test')
     uses: ./.github/workflows/editor-e2e-test.yml
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   # Agent Server E2E tests - requires Docker and runtime image
-  # Only runs when agent_server/ targets are affected
   agent-server-e2e-test:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_agent_server == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'agent-server-e2e-test')
     uses: ./.github/workflows/agent-server-e2e-test.yml
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
@@ -202,11 +188,11 @@ jobs:
   # Conditional - only when nix/ changed
   nix-flake-check:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_nix_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'nix-flake-check')
     uses: ./.github/workflows/nix-flake-check.yml
 
   # Conditional - only when ansible/ changed
   ansible-lint-full:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_ansible_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'ansible-lint')
     uses: ./.github/workflows/ansible-lint.yml
