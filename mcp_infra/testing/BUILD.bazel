@@ -41,3 +41,20 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+# Docker fixtures that depend on python-slim OCI image
+# Only include in tests that actually need Docker execution
+py_library(
+    name = "docker_fixtures",
+    testonly = True,
+    srcs = ["docker_fixtures.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":testing",
+        "//mcp_infra/exec:docker",
+        "//test_util",
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
+)

@@ -28,26 +28,23 @@ py_library(
     ],
 )
 
-_TEST_DEPS = [
-    ":mcp_bridge",
-    "//agent_server:conftest",
-    "//agent_server/persist",
-    "//agent_server/testing",
-    "@pypi//fastapi",
-    "@pypi//fastmcp",
-    "@pypi//pyhamcrest",
-    "@pypi//pytest",
-    "@pypi//pytest_asyncio",
-    "@pypi//pytest_bazel",
-    "@pypi//starlette",
-    "@rules_python//python/runfiles",
-]
-
 py_test(
     name = "test_agents_server",
     srcs = ["test_agents_server.py"],
     imports = ["../.."],
-    deps = _TEST_DEPS,
+    deps = [
+        ":mcp_bridge",
+        "//agent_server:conftest",
+        "//agent_server/persist",
+        "//agent_server/testing",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
 )
 
 py_test(
@@ -56,7 +53,18 @@ py_test(
     data = ["//mcp_infra/testing:python_slim_load"],
     imports = ["../.."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS + [
+    deps = [
+        ":mcp_bridge",
+        "//agent_server:conftest",
+        "//agent_server/persist",
+        "//agent_server/testing",
         "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )

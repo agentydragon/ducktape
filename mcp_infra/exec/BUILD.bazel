@@ -150,6 +150,7 @@ py_test(
 py_test(
     name = "test_docker",
     srcs = [
+        "conftest.py",
         "test_docker.py",
         "test_docker_unit.py",
     ],
@@ -159,12 +160,11 @@ py_test(
     deps = [
         ":docker",
         "//mcp_infra:test_support",
-        "@pypi//docker",
+        "//mcp_infra/testing:docker_fixtures",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//types_docker",
-        "@rules_python//python/runfiles",
     ],
 )
 

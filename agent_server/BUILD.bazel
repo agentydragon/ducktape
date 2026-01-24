@@ -7,10 +7,24 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["conftest.py"])
 
-# Shared test fixtures for agent_server tests
+# UI assertion helpers for agent_server tests
+py_library(
+    name = "ui_asserts",
+    testonly = True,
+    srcs = ["ui_asserts.py"],
+    imports = [".."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        "//agent_server/server:types",
+        "@pypi//pyhamcrest",
+    ],
+)
+
+# Shared test fixtures for agent_server tests (requires Docker)
 # Subdirectory tests can depend on this to get access to conftest fixtures
 py_library(
     name = "conftest",
+    testonly = True,
     srcs = ["conftest.py"],
     imports = [".."],
     visibility = ["//agent_server:__subpackages__"],
@@ -32,6 +46,7 @@ py_library(
         "//mcp_infra/exec:docker",
         "//mcp_infra/testing",
         "//openai_utils",
+        "//test_util",
         "@pypi//aiodocker",
         "@pypi//docker",
         "@pypi//fastapi",
@@ -131,129 +146,329 @@ py_binary(
 
 # --- Root-level Tests ---
 
-_TEST_DEPS = [
-    ":root_modules",
-    "//adgn",
-    "//agent_core:mcp_provider",
-    "//agent_server/mcp",
-    "//agent_server/mcp_bridge",
-    "//agent_server/persist",
-    "//agent_server/policies",
-    "//agent_server/policy_eval",
-    "//agent_server/runtime",
-    "//agent_server/server",
-    "//agent_server/testing",
-    "@pypi//docker",
-    "@pypi//fastapi",
-    "@pypi//fastmcp",
-    "@pypi//mcp",
-    "@pypi//pyhamcrest",
-    "@pypi//pytest",
-    "@pypi//pytest_asyncio",
-    "@pypi//pytest_bazel",
-    "@pypi//pytest_timeout",
-    "@pypi//starlette",
-    "@pypi//syrupy",
-    "@rules_python//python/runfiles",
-]
-
-_TEST_SUPPORT = [
-    "conftest.py",
-    "ui_asserts.py",
-]
-
-# Data dependencies for Docker tests
-_DOCKER_DATA = ["//mcp_infra/testing:python_slim_load"]
-
-_RUNTIME_DATA = _DOCKER_DATA + ["//agent_server:load"]
-
 # Tests requiring Docker and runtime image
 py_test(
     name = "test_approval_integration",
-    srcs = _TEST_SUPPORT + ["test_approval_integration.py"],
-    data = _RUNTIME_DATA,
+    srcs = [
+        "conftest.py",
+        "test_approval_integration.py",
+    ],
+    data = [
+        "//agent_server:load",
+        "//mcp_infra/testing:python_slim_load",
+    ],
     imports = [".."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":conftest",
+        ":ui_asserts",
+        "//adgn",
+        "//agent_core:mcp_provider",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//starlette",
+        "@pypi//syrupy",
+    ],
 )
 
 py_test(
     name = "test_default_approval_policy",
-    srcs = _TEST_SUPPORT + ["test_default_approval_policy.py"],
-    data = _RUNTIME_DATA,
+    srcs = [
+        "conftest.py",
+        "test_default_approval_policy.py",
+    ],
+    data = [
+        "//agent_server:load",
+        "//mcp_infra/testing:python_slim_load",
+    ],
     imports = [".."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":conftest",
+        ":ui_asserts",
+        "//adgn",
+        "//agent_core:mcp_provider",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//starlette",
+        "@pypi//syrupy",
+    ],
 )
 
 # Tests requiring Docker (python-slim only)
 py_test(
     name = "test_exec_roundtrip",
-    srcs = _TEST_SUPPORT + ["test_exec_roundtrip.py"],
-    data = _DOCKER_DATA,
+    srcs = [
+        "conftest.py",
+        "test_exec_roundtrip.py",
+    ],
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = [".."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":conftest",
+        ":ui_asserts",
+        "//adgn",
+        "//agent_core:mcp_provider",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//starlette",
+        "@pypi//syrupy",
+    ],
 )
 
 py_test(
     name = "test_mcp_integration",
-    srcs = _TEST_SUPPORT + ["test_mcp_integration.py"],
-    data = _DOCKER_DATA,
+    srcs = [
+        "conftest.py",
+        "test_mcp_integration.py",
+    ],
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = [".."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":conftest",
+        ":ui_asserts",
+        "//adgn",
+        "//agent_core:mcp_provider",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//starlette",
+        "@pypi//syrupy",
+    ],
 )
 
 py_test(
     name = "test_mcp_notifications_flow",
-    srcs = _TEST_SUPPORT + ["test_mcp_notifications_flow.py"],
-    data = _DOCKER_DATA,
+    srcs = [
+        "conftest.py",
+        "test_mcp_notifications_flow.py",
+    ],
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = [".."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":conftest",
+        ":ui_asserts",
+        "//adgn",
+        "//agent_core:mcp_provider",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//starlette",
+        "@pypi//syrupy",
+    ],
 )
 
 py_test(
     name = "test_mcp_resources_flow",
-    srcs = _TEST_SUPPORT + ["test_mcp_resources_flow.py"],
-    data = _DOCKER_DATA,
+    srcs = [
+        "conftest.py",
+        "test_mcp_resources_flow.py",
+    ],
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = [".."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":conftest",
+        ":ui_asserts",
+        "//adgn",
+        "//agent_core:mcp_provider",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//starlette",
+        "@pypi//syrupy",
+    ],
 )
 
 py_test(
     name = "test_policy_eval_abort_on_error",
-    srcs = _TEST_SUPPORT + ["test_policy_eval_abort_on_error.py"],
-    data = _DOCKER_DATA,
+    srcs = [
+        "conftest.py",
+        "test_policy_eval_abort_on_error.py",
+    ],
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = [".."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":conftest",
+        ":ui_asserts",
+        "//adgn",
+        "//agent_core:mcp_provider",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//starlette",
+        "@pypi//syrupy",
+    ],
 )
 
 py_test(
     name = "test_runtime_timeout",
-    srcs = _TEST_SUPPORT + ["test_runtime_timeout.py"],
-    data = _DOCKER_DATA,
+    srcs = [
+        "conftest.py",
+        "test_runtime_timeout.py",
+    ],
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = [".."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":conftest",
+        ":ui_asserts",
+        "//adgn",
+        "//agent_core:mcp_provider",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_timeout",
+        "@pypi//starlette",
+        "@pypi//syrupy",
+    ],
 )
 
 # Tests NOT requiring Docker (run in regular bazel-test)
 py_test(
     name = "test_notifications_handler",
-    srcs = _TEST_SUPPORT + ["test_notifications_handler.py"],
+    srcs = ["test_notifications_handler.py"],
     imports = [".."],
-    deps = _TEST_DEPS,
+    deps = [
+        "//agent_core",
+        "//agent_server/notifications",
+        "//agent_server/testing",
+        "//mcp_infra/notifications",
+        "//openai_utils",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
     name = "test_rendering_instructions",
-    srcs = _TEST_SUPPORT + ["test_rendering_instructions.py"],
+    srcs = ["test_rendering_instructions.py"],
     imports = [".."],
-    deps = _TEST_DEPS,
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/compositor",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 # E2E tests moved to agent_server/e2e/BUILD.bazel
@@ -265,35 +480,34 @@ ruff_test(
     srcs = [
         ":agent_types",
         ":root_modules",
+        ":ui_asserts",
     ],
 )
 
 # --- OCI Runtime Image ---
 
-_RUNTIME_DEPS = [
-    ":root_modules",
-    "//adgn",
-    "//agent_core",
-    "//agent_pkg/runtime",
-    "//agent_server/mcp",
-    "//agent_server/mcp_bridge",
-    "//agent_server/models",
-    "//agent_server/notifications",
-    "//agent_server/persist",
-    "//agent_server/policies",
-    "//agent_server/policy_eval",
-    "//agent_server/runtime",
-    "//agent_server/server",
-    "//cli_util",
-    "//mcp_infra",
-    "//net_util",
-    "//openai_utils",
-]
-
 py_binary(
     name = "runtime_image",
     srcs = ["runtime_image.py"],
-    deps = _RUNTIME_DEPS,
+    deps = [
+        ":root_modules",
+        "//adgn",
+        "//agent_core",
+        "//agent_pkg/runtime",
+        "//agent_server/mcp",
+        "//agent_server/mcp_bridge",
+        "//agent_server/models",
+        "//agent_server/notifications",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//cli_util",
+        "//mcp_infra",
+        "//net_util",
+        "//openai_utils",
+    ],
 )
 
 pkg_tar(

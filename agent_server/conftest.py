@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
 from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -18,7 +15,6 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
-from rules_python.python.runfiles import runfiles
 from starlette.testclient import TestClient
 
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
@@ -44,13 +40,14 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from openai_utils.model import OpenAIModelProto
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from test_util.docker import load_bazel_image, pytest_runtest_setup, python_slim_image  # noqa: F401
+
+# Image tags and load scripts for Bazel-loaded images
+RUNTIME_IMAGE_TAG = "adgn-runtime:latest"
+RUNTIME_LOAD_SCRIPT = "agent_server/load.sh"
 
 # Test server mount name used in fixtures
 TEST_BACKEND_SERVER_NAME = "backend"
-
-# Image tags for loaded Bazel images
-PYTHON_SLIM_IMAGE_TAG = "python-slim:test"
-RUNTIME_IMAGE_TAG = "adgn-runtime:latest"
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core_testing.fixtures import *  # noqa: E402, F403
@@ -58,38 +55,9 @@ from agent_core_testing.responses import *  # noqa: E402, F403
 from mcp_infra.testing.fixtures import *  # noqa: E402, F403
 
 
-def _get_runfiles_path(relative_path: str) -> Path:
-    """Get path to a file in Bazel runfiles."""
-    r = runfiles.Create()
-    path = r.Rlocation(f"_main/{relative_path}")
-    if path:
-        return Path(path)
-
-    # Fallback: check bazel-bin for local dev
-    repo_root = Path(__file__).parent.parent
-    return repo_root / "bazel-bin" / relative_path
-
-
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode."""
     config.option.asyncio_mode = "auto"
-
-
-def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Skip Docker tests when Docker daemon is not available."""
-    if item.get_closest_marker("requires_docker") is None:
-        return
-
-    client = None
-    try:
-        client = docker.from_env()
-        client.ping()
-    except docker.errors.DockerException as exc:
-        pytest.skip(f"Docker not available: {exc}")
-    finally:
-        if client is not None:
-            with suppress(Exception):
-                client.close()
 
 
 # --- Pytest fixtures ---
@@ -102,43 +70,13 @@ def docker_client():
 
 
 @pytest.fixture(scope="session")
-def python_slim_image():
-    """Load python-slim image from Bazel :python_slim_load target."""
-    load_script = _get_runfiles_path("mcp_infra/testing/python_slim_load.sh")
-
-    result = subprocess.run(
-        [load_script],
-        check=False,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "DOCKER_CLI_EXPERIMENTAL": "enabled"},
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to load python-slim image: {result.stderr}")
-
-    return PYTHON_SLIM_IMAGE_TAG
-
-
-@pytest.fixture(scope="session")
 def runtime_image():
     """Load agent server runtime image from Bazel :load target."""
-    load_script = _get_runfiles_path("agent_server/load.sh")
-
-    result = subprocess.run(
-        [load_script],
-        check=False,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "DOCKER_CLI_EXPERIMENTAL": "enabled"},
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to load runtime image: {result.stderr}")
-
-    return RUNTIME_IMAGE_TAG
+    return load_bazel_image(RUNTIME_LOAD_SCRIPT, RUNTIME_IMAGE_TAG)
 
 
 @pytest.fixture
-async def docker_exec_server_py312slim(async_docker_client, python_slim_image):
+async def docker_exec_server_py312slim(async_docker_client, python_slim_image):  # noqa: F811
     """Canonical Docker exec server using python-slim image."""
     opts = make_container_opts(python_slim_image)
     return ContainerExecServer(async_docker_client, opts)

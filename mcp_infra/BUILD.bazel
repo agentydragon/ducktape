@@ -31,9 +31,10 @@ py_library(
     ],
 )
 
-# Shared test utilities
+# Shared test utilities (non-Docker)
 py_library(
     name = "test_support",
+    testonly = True,
     srcs = [
         "_markers.py",
         "conftest.py",
@@ -50,7 +51,6 @@ py_library(
         "//mcp_infra/resources",
         "//mcp_infra/stubs",
         "//mcp_infra/testing",
-        "@pypi//docker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
@@ -60,9 +60,10 @@ py_library(
 py_test(
     name = "test_types",
     srcs = ["test_types.py"],
+    imports = [".."],
     deps = [
-        ":test_support",
-        "@pypi//pydantic",  # imports TypeAdapter, ValidationError
+        ":mcp_infra",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -65,11 +65,10 @@ py_test(
         ":editor_agent_host",
         "//agent_core_testing",
         "//mcp_infra/testing",
-        "@pypi//docker",
+        "//test_util",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -86,12 +85,11 @@ py_test(
         ":editor_agent_host",
         "//agent_core_testing",
         "//mcp_infra/testing",
-        "@pypi//docker",
+        "//test_util",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -105,6 +103,7 @@ py_test(
     deps = [
         ":editor_agent_host",
         "//mcp_infra/testing",
+        "//test_util",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

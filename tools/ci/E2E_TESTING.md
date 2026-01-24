@@ -17,23 +17,51 @@ Tests declare infrastructure requirements via Bazel tags:
 | `visual`                 | Visual regression test          | `props/frontend/`                          |
 | `manual`                 | Excluded from `//...`           | Various                                    |
 
-### Environment Variables Expected
+### Docker Test Infrastructure
 
-**PostgreSQL tests** (inconsistent ports):
+Docker test utilities are consolidated in `//test_util`:
 
-- `bazel-test.yml`: `PGHOST=localhost`, `PGPORT=5432` (GitHub service container)
-- `props-e2e-test.yml`: `PGHOST=127.0.0.1`, `PGPORT=5433` (docker-compose)
+```python
+from test_util.docker import (
+    load_bazel_image,       # Load OCI image from Bazel oci_load target
+    python_slim_image,       # Session fixture for python-slim image
+    pytest_runtest_setup,    # Hook for skipping unavailable Docker tests
+)
+```
 
-**Docker tests**:
+**Pattern for Docker tests:**
 
-- Expect Docker daemon available
-- Some expect pre-loaded images (e.g., `editor-runtime:latest`)
+1. Add `tags = ["requires_docker"]` to the Bazel test target
+2. Import `pytest_runtest_setup` in conftest.py (auto-skips if Docker unavailable)
+3. Use fixtures from `test_util.docker` or `mcp_infra/testing/docker_fixtures.py`
 
-**Props E2E tests** (additional requirements):
+### Props E2E Tests (Testcontainers)
 
-- `PROPS_REGISTRY_PROXY_HOST`, `PROPS_REGISTRY_PROXY_PORT`
-- `PROPS_DOCKER_NETWORK`
-- Backend must be running with schema initialized
+Props E2E tests use **testcontainers** for hermetic infrastructure. See `props/testing/fixtures/e2e_infra.py`:
+
+```python
+@pytest.fixture(scope="session")
+def e2e_registry() -> Generator[DockerContainer]:
+    """Session-scoped Docker registry for e2e tests."""
+    with DockerContainer("registry:2").with_exposed_ports(5000) as registry:
+        wait_for_logs(registry, "listening on")
+        yield registry
+
+@pytest.fixture
+def e2e_env(e2e_registry_config: E2ERegistryConfig, monkeypatch) -> dict[str, str]:
+    """Apply e2e environment variables for a test."""
+    env_vars = e2e_registry_config.as_env_vars()
+    for key, value in env_vars.items():
+        monkeypatch.setenv(key, value)
+    return env_vars
+```
+
+This eliminates the need for docker-compose and CI workflow infrastructure setup - tests are fully hermetic.
+
+### PostgreSQL Tests
+
+- `bazel-test.yml`: Uses GitHub service container (`PGHOST=localhost`, `PGPORT=5432`)
+- Props tests may use testcontainers in the future
 
 ### Workflow Dispatch
 
@@ -43,12 +71,16 @@ Current approach in `ci.yml`:
 2. Individual workflow files are called based on flags
 3. Each E2E workflow has its own setup/teardown logic
 
-**Problems**:
+**Improvements made:**
+
+- Docker tests now share utilities via `//test_util`
+- Props E2E tests use testcontainers for hermetic infrastructure
+- Non-Docker tests no longer depend on Docker fixtures
+
+**Remaining issues:**
 
 1. **Inconsistent env vars**: Same tag (`requires_postgres`) maps to different ports
-2. **Boolean explosion**: Each new infrastructure combo needs new flag + workflow
-3. **Duplicated setup**: Each workflow re-implements similar infra setup
-4. **No tag validation**: Nothing prevents tests from having tags without matching CI support
+2. **No tag validation**: Nothing prevents tests from having tags without matching CI support
 
 ## Industry Patterns
 

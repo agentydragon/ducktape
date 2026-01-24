@@ -32,71 +32,118 @@ py_library(
     ],
 )
 
-_TEST_DEPS = [
-    ":approval_policy",
-    "//agent_core:mcp_provider",
-    "//agent_server:conftest",
-    "//agent_server/testing",
-    "@pypi//docker",
-    "@pypi//fastapi",
-    "@pypi//fastmcp",
-    "@pypi//pyhamcrest",
-    "@pypi//pytest",
-    "@pypi//pytest_asyncio",
-    "@pypi//pytest_bazel",
-    "@pypi//starlette",
-    "@rules_python//python/runfiles",
-]
-
-# Data dependencies for Docker tests
-_DOCKER_DATA = ["//mcp_infra/testing:python_slim_load"]
-
-_RUNTIME_DATA = _DOCKER_DATA + ["//agent_server:load"]
-
 py_test(
     name = "test_policy_validation",
     srcs = [
         "test_policy_validation.py",
         "//agent_server:conftest.py",
     ],
-    data = _RUNTIME_DATA,
+    data = [
+        "//agent_server:load",
+        "//mcp_infra/testing:python_slim_load",
+    ],
     imports = ["../../.."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":approval_policy",
+        "//agent_core:mcp_provider",
+        "//agent_server:conftest",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
 )
 
 py_test(
     name = "test_preset_policy_loading",
     srcs = ["test_preset_policy_loading.py"],
-    data = _DOCKER_DATA,
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = ["../../.."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":approval_policy",
+        "//agent_core:mcp_provider",
+        "//agent_server:conftest",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
 )
 
 py_test(
     name = "test_schema",
     srcs = ["test_schema.py"],
-    data = _DOCKER_DATA,
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = ["../../.."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":approval_policy",
+        "//agent_core:mcp_provider",
+        "//agent_server:conftest",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
 )
 
 py_test(
     name = "test_server",
     srcs = ["test_server.py"],
-    data = _DOCKER_DATA,
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = ["../../.."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":approval_policy",
+        "//agent_core:mcp_provider",
+        "//agent_server:conftest",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
 )
 
 py_test(
     name = "test_server_available",
     srcs = ["test_server_available.py"],
-    data = _DOCKER_DATA,
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = ["../../.."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    deps = [
+        ":approval_policy",
+        "//agent_core:mcp_provider",
+        "//agent_server:conftest",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
 )

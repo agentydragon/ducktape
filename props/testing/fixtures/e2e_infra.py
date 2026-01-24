@@ -106,7 +106,8 @@ def load_and_push_image(
 
     # Get the loaded image
     image = docker_client.images.get(local_tag)
-    logger.info(f"Loaded image {image.id[:19]} as {local_tag}")
+    image_id = image.id or "unknown"
+    logger.info(f"Loaded image {image_id[:19]} as {local_tag}")
 
     # Tag for the registry
     registry_tag = f"{registry_url}/{repo_name}:latest"
@@ -125,6 +126,32 @@ def load_and_push_image(
             docker_client.images.remove(registry_tag, force=True)
         except docker.errors.ImageNotFound:
             pass
+
+
+# --- Registry configuration ---
+
+
+@dataclass
+class E2ERegistryConfig:
+    """Registry configuration for e2e tests.
+
+    Stores individual components (host, port) and builds env vars on demand.
+    """
+
+    host_host: str
+    host_port: str
+    container_host: str
+    container_port: str
+
+    def as_env_vars(self) -> dict[str, str]:
+        """Build environment variables for oci_utils.py configuration."""
+        return {
+            "PROPS_REGISTRY_HOST": self.host_host,
+            "PROPS_REGISTRY_PORT": self.host_port,
+            "PROPS_REGISTRY_PROXY_URL": f"http://{self.host_host}:{self.host_port}",
+            "PROPS_PROXY_CONTAINER_NAME": self.container_host,
+            "PROPS_PROXY_CONTAINER_PORT": self.container_port,
+        }
 
 
 # --- Session-scoped infrastructure ---
@@ -152,21 +179,16 @@ def e2e_registry() -> Generator[DockerContainer]:
 
 
 @pytest.fixture(scope="session")
-def e2e_registry_url(e2e_registry: DockerContainer) -> str:
-    """URL of the e2e registry (for pushing/pulling from host)."""
-    port = e2e_registry.get_exposed_port(5000)
-    return f"localhost:{port}"
-
-
-@pytest.fixture(scope="session")
-def e2e_registry_container_url(e2e_registry: DockerContainer) -> str:
-    """URL of the e2e registry (for pulling from containers).
-
-    Uses host.docker.internal for bridge networking.
-    """
-    port = e2e_registry.get_exposed_port(5000)
-    host = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.internal")
-    return f"{host}:{port}"
+def e2e_registry_config(e2e_registry: DockerContainer) -> E2ERegistryConfig:
+    """Registry configuration for e2e tests."""
+    port = str(e2e_registry.get_exposed_port(5000))
+    container_host = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.internal")
+    return E2ERegistryConfig(
+        host_host="localhost",
+        host_port=port,
+        container_host=container_host,
+        container_port=port,
+    )
 
 
 # --- Agent image fixtures ---
@@ -176,8 +198,9 @@ def _make_image_fixture(load_script: str, repo_name: str, local_tag: str):
     """Factory for agent image fixtures."""
 
     @pytest.fixture(scope="session")
-    def _fixture(docker_client: docker.DockerClient, e2e_registry_url: str) -> Generator[AgentImage]:
-        with load_and_push_image(docker_client, e2e_registry_url, load_script, repo_name, local_tag) as image:
+    def _fixture(docker_client: docker.DockerClient, e2e_registry_config: E2ERegistryConfig) -> Generator[AgentImage]:
+        registry_url = f"{e2e_registry_config.host_host}:{e2e_registry_config.host_port}"
+        with load_and_push_image(docker_client, registry_url, load_script, repo_name, local_tag) as image:
             yield image
 
     return _fixture
@@ -189,35 +212,16 @@ prompt_optimizer_image = _make_image_fixture("props/critic_dev/optimize/load.sh"
 improvement_image = _make_image_fixture("props/critic_dev/improve/load.sh", "improvement", "improvement-agent:latest")
 
 
-# --- Environment configuration ---
-
-
-@pytest.fixture(scope="session")
-def e2e_env_vars(e2e_registry_url: str, e2e_registry_container_url: str) -> dict[str, str]:
-    """Environment variables for e2e tests.
-
-    Sets up the registry URLs so oci_utils.py uses the testcontainers registry.
-    """
-    host, port = e2e_registry_url.split(":")
-    container_host, container_port = e2e_registry_container_url.split(":")
-
-    return {
-        # For host-side operations (resolve_image_ref)
-        "PROPS_REGISTRY_HOST": host,
-        "PROPS_REGISTRY_PORT": port,
-        "PROPS_REGISTRY_PROXY_URL": f"http://{e2e_registry_url}",
-        # For container-side operations
-        "PROPS_PROXY_CONTAINER_NAME": container_host,
-        "PROPS_PROXY_CONTAINER_PORT": container_port,
-    }
+# --- Environment application ---
 
 
 @pytest.fixture
-def e2e_env(e2e_env_vars: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+def e2e_env(e2e_registry_config: E2ERegistryConfig, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     """Apply e2e environment variables for a test.
 
     Use this fixture to configure oci_utils.py to use the testcontainers registry.
     """
-    for key, value in e2e_env_vars.items():
+    env_vars = e2e_registry_config.as_env_vars()
+    for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
-    return e2e_env_vars
+    return env_vars
