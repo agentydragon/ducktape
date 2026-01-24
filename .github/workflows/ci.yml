@@ -100,11 +100,6 @@ jobs:
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: inherit
-  props-e2e-test:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'props-e2e-test')
-    uses: ./.github/workflows/props-e2e-test.yml
-    secrets: inherit
   editor-e2e-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'editor-e2e-test')

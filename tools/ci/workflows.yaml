@@ -48,11 +48,7 @@ workflows:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: [BUILDBUDDY_API_KEY]
 
-  # E2E test workflows
-  props-e2e-test:
-    trigger: { kind: bazel, pattern: "//props/..." }
-    secrets: [BUILDBUDDY_API_KEY]
-
+  # E2E test workflows (props e2e merged into bazel-test)
   editor-e2e-test:
     trigger: { kind: bazel, pattern: "//editor_agent/..." }
     secrets: [BUILDBUDDY_API_KEY]
