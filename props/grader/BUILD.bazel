@@ -60,45 +60,12 @@ py_library(
 )
 
 # =============================================================================
-# In-container agent main entry points
+# In-container agent main entry point (daemon grader)
 # =============================================================================
 
 py_library(
     name = "main_lib",
     srcs = ["main.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":loop",
-        "//props/core:agent_helpers",
-        "//props/db:session",
-        "@pypi//jinja2",
-    ],
-)
-
-py_binary(
-    name = "main",
-    srcs = ["main.py"],
-    main = "main.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":main_lib",
-        "@pypi//jinja2",
-    ],
-)
-
-pkg_tar(
-    name = "main_tar",
-    srcs = [":main"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
-    visibility = ["//props:__subpackages__"],
-)
-
-py_library(
-    name = "daemon_main_lib",
-    srcs = ["daemon_main.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -113,19 +80,19 @@ py_library(
 )
 
 py_binary(
-    name = "daemon_main",
-    srcs = ["daemon_main.py"],
-    main = "daemon_main.py",
+    name = "main",
+    srcs = ["main.py"],
+    main = "main.py",
     visibility = ["//visibility:public"],
     deps = [
-        ":daemon_main_lib",
+        ":main_lib",
         "@pypi//asyncpg",
     ],
 )
 
 pkg_tar(
-    name = "daemon_main_tar",
-    srcs = [":daemon_main"],
+    name = "main_tar",
+    srcs = [":main"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
@@ -233,11 +200,37 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_e2e",
+    srcs = [
+        "test_e2e.py",
+        "//props:conftest.py",
+    ],
+    data = [
+        ":load",  # Grader daemon image
+    ],
+    imports = ["../.."],
+    tags = [
+        "e2e",
+        "requires_docker",
+    ],
+    deps = [
+        "//agent_core_testing",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/db:snapshots",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # =============================================================================
-# Container images
+# Container image (daemon grader)
 # =============================================================================
 
-# One-off grader (grades single critic run)
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
@@ -262,31 +255,4 @@ oci_push(
     image = ":image",
     remote_tags = ["latest"],
     repository = "localhost:8000/grader",
-)
-
-# Daemon grader (grades all critiques for a snapshot, persistent)
-oci_image(
-    name = "daemon_image",
-    base = "@python_slim_linux_amd64",
-    cmd = ["/app/daemon_main"],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
-    tars = [":daemon_main_tar"],
-    workdir = "/workspace",
-)
-
-oci_load(
-    name = "daemon_load",
-    image = ":daemon_image",
-    repo_tags = ["snapshot_grader:latest"],
-    visibility = ["//visibility:public"],
-)
-
-oci_push(
-    name = "daemon_push",
-    image = ":daemon_image",
-    remote_tags = ["latest"],
-    repository = "localhost:8000/snapshot_grader",
 )

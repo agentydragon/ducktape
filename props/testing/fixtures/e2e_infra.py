@@ -169,15 +169,7 @@ def e2e_registry_container_url(e2e_registry: DockerContainer) -> str:
     return f"{host}:{port}"
 
 
-# --- Agent image configurations ---
-
-# Maps fixture name -> (load_script_path, repo_name, local_tag)
-AGENT_IMAGE_CONFIGS: dict[str, tuple[str, str, str]] = {
-    "critic_image": ("props/critic/load.sh", "critic", "critic-agent:latest"),
-    "grader_image": ("props/grader/load.sh", "grader", "grader-agent:latest"),
-    "prompt_optimizer_image": ("props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer:latest"),
-    "improvement_image": ("props/critic_dev/improve/load.sh", "improvement", "improvement-agent:latest"),
-}
+# --- Agent image fixtures ---
 
 
 def _make_image_fixture(load_script: str, repo_name: str, local_tag: str):
@@ -191,11 +183,10 @@ def _make_image_fixture(load_script: str, repo_name: str, local_tag: str):
     return _fixture
 
 
-# Generate fixtures for each agent
-critic_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["critic_image"])
-grader_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["grader_image"])
-prompt_optimizer_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["prompt_optimizer_image"])
-improvement_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["improvement_image"])
+critic_image = _make_image_fixture("props/critic/load.sh", "critic", "critic-agent:latest")
+grader_image = _make_image_fixture("props/grader/load.sh", "grader", "grader-agent:latest")
+prompt_optimizer_image = _make_image_fixture("props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer:latest")
+improvement_image = _make_image_fixture("props/critic_dev/improve/load.sh", "improvement", "improvement-agent:latest")
 
 
 # --- Environment configuration ---

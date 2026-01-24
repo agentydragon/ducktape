@@ -1,98 +1,123 @@
-"""Grader agent main entry point for in-container execution (one-off mode).
+"""Grader daemon main entry point for in-container execution.
 
-This is the CMD entrypoint for the one-off grader container. It:
+This is the CMD entrypoint for the daemon grader container. It:
 1. Fetches the snapshot to /workspace
-2. Renders the system prompt
-3. Runs the agent loop until submit succeeds or failure
-4. Exits with appropriate code
+2. Runs the reconciliation loop:
+   - Grade until grading_pending is empty
+   - Sleep waiting for pg_notify
+   - Wake and repeat
+3. Only exits on fatal error or shutdown signal
 """
 
 from __future__ import annotations
 
 import asyncio
-import importlib.resources
 import logging
 import sys
-from pathlib import Path
+from typing import Any
 
-from jinja2 import Environment
+import asyncpg
+from asyncpg.pool import PoolConnectionProxy
 
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run
+from props.core.ids import SnapshotSlug
+from props.core.loop_utils import WORKSPACE, render_system_prompt, setup_logging
+from props.db.config import get_database_config
 from props.db.session import get_session
+from props.grader.drift_handler import check_grading_pending
 from props.grader.loop import GraderMode, run_grader_loop
+from props.grader.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
 
 logger = logging.getLogger(__name__)
 
-WORKSPACE = Path("/workspace")
+
+class DaemonState:
+    """Tracks daemon state for pg_notify wake/sleep coordination."""
+
+    def __init__(self, snapshot_slug: SnapshotSlug):
+        self.snapshot_slug = snapshot_slug
+        self.wake_event = asyncio.Event()
+        self.shutdown = False
+        self.notification_queue: list[GradingPendingNotification] = []
+
+    def notification_callback(
+        self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
+    ) -> None:
+        """Handle incoming pg_notify notifications."""
+        if not isinstance(payload, str):
+            raise TypeError(f"Expected string payload, got {type(payload)}")
+
+        notification = GradingPendingNotification.model_validate_json(payload)
+
+        if notification.snapshot_slug != self.snapshot_slug:
+            return  # Not for us
+
+        logger.debug(f"Notification for {self.snapshot_slug}: {notification.operation} {notification.item.table}")
+        self.notification_queue.append(notification)
+        self.wake_event.set()
 
 
-def _setup_jinja_env(helpers: dict | None = None) -> Environment:
-    """Create Jinja2 environment with standard helpers."""
-    env = Environment()
-    env.globals["workspace_dir"] = str(WORKSPACE)
+async def run_daemon(snapshot_slug: SnapshotSlug, model: str, system_prompt: str) -> int:
+    """Run the daemon reconciliation loop.
 
-    def include_doc(pkg_path: str, *, raw: bool = False) -> str:
-        """Include doc from package resources."""
-        pkg, _, p = pkg_path.partition("/")
-        content = (importlib.resources.files(pkg) / p).read_text()
-        if raw:
-            return f'<doc source="{pkg_path}">\n{content}\n</doc>'
-        rendered = env.from_string(content).render()
-        return f'<doc source="{pkg_path}">\n{rendered}\n</doc>'
-
-    def include_file(file_path: str, *, raw: bool = False) -> str:
-        """Include file from filesystem."""
-        content = Path(file_path).read_text()
-        if raw:
-            return f'<doc source="{file_path}">\n{content}\n</doc>'
-        rendered = env.from_string(content).render()
-        return f'<doc source="{file_path}">\n{rendered}\n</doc>'
-
-    env.globals["include_doc"] = include_doc
-    env.globals["include_file"] = include_file
-
-    if helpers:
-        env.globals.update(helpers)
-
-    return env
-
-
-def render_system_prompt(template_path: str, helpers: dict | None = None) -> str:
-    """Render system prompt from package resource, returning as string.
-
-    Args:
-        template_path: Package path like "props/docs/agents/grader.md.j2"
-        helpers: Optional dict of additional Jinja2 helpers
-
-    Returns:
-        Rendered system prompt
+    Grades until no drift, sleeps on pg_notify, repeats.
     """
-    package, _, pkg_path = template_path.partition("/")
-    resource = importlib.resources.files(package) / pkg_path
-    root_content = resource.read_text()
+    state = DaemonState(snapshot_slug)
+    db_config = get_database_config()
 
-    env = _setup_jinja_env(helpers)
-    template = env.from_string(root_content)
-    return template.render()
+    # Start pg_notify listener
+    listener_conn = await asyncpg.connect(db_config.admin.url())
+    await listener_conn.add_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
+    logger.info(f"Listening on channel '{GRADING_PENDING_CHANNEL}' for {snapshot_slug}")
+
+    try:
+        while not state.shutdown:
+            # Check if there's drift to process
+            if not check_grading_pending(snapshot_slug):
+                # No drift, wait for notification
+                logger.info(f"No drift for {snapshot_slug}, sleeping...")
+                state.wake_event.clear()
+                state.notification_queue.clear()
+                await state.wake_event.wait()
+
+                if state.shutdown:
+                    break
+
+                logger.info(f"Woken by {len(state.notification_queue)} notifications")
+                continue
+
+            # There's drift, run agent loop
+            logger.info("Drift detected, starting agent loop")
+            exit_code = await run_grader_loop(system_prompt, model, snapshot_slug, GraderMode.DAEMON)
+
+            if exit_code != 0:
+                # Agent reported failure
+                logger.error("Agent loop failed with exit code %d", exit_code)
+                state.shutdown = True
+
+            # Loop continues - check for more drift
+
+    finally:
+        await listener_conn.remove_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
+        await listener_conn.close()
+        logger.info("Listener stopped")
+
+    return 0 if not state.shutdown else 1
 
 
 async def main() -> int:
-    """Main entry point for one-off grader agent.
+    """Main entry point for daemon grader agent."""
+    setup_logging()
 
-    Returns:
-        Exit code (0 for success, non-zero for failure)
-    """
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logger.info("Grader daemon starting")
 
-    logger.info("Grader agent starting (one-off mode)")
-
-    # Get model and snapshot from agent run config
+    # Get snapshot and model from agent run config
     with get_session() as session:
         agent_run = get_current_agent_run(session)
-        model = agent_run.model
         config = agent_run.grader_config()
-        snapshot_slug = config.snapshot_slug
-        logger.info("Agent run: %s, model: %s, snapshot: %s", agent_run.agent_run_id, model, snapshot_slug)
+        snapshot_slug = SnapshotSlug(config.snapshot_slug)
+        model = agent_run.model
+        logger.info("Agent run: %s, snapshot: %s, model: %s", agent_run.agent_run_id, snapshot_slug, model)
 
     # Fetch snapshot
     logger.info("Fetching snapshot to %s", WORKSPACE)
@@ -102,11 +127,11 @@ async def main() -> int:
     logger.info("Rendering system prompt")
     system_prompt = render_system_prompt("props/docs/agents/grader.md.j2")
 
-    # Run the agent loop
-    logger.info("Starting agent loop")
-    exit_code = await run_grader_loop(system_prompt, model, snapshot_slug, GraderMode.ONE_OFF)
+    # Run the daemon loop
+    logger.info("Starting daemon loop")
+    exit_code = await run_daemon(snapshot_slug, model, system_prompt)
 
-    logger.info("Agent loop finished with exit code %d", exit_code)
+    logger.info("Daemon exited with code %d", exit_code)
     return exit_code
 
 
