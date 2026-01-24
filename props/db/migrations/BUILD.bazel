@@ -23,7 +23,6 @@ py_test(
     imports = ["../../../.."],
     deps = [
         "@pypi//alembic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

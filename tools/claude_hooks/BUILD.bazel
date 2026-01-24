@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//tools/lint:linters.bzl", "ruff_test")
 
@@ -137,7 +137,6 @@ py_test(
         "external",  # Requires network access (but now works without it!)
     ],
     deps = [
-        ":claude_hooks",
         "//tools/claude_hooks/testing:forwarding_tls_proxy",
         "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
@@ -148,4 +147,113 @@ py_test(
 ruff_test(
     name = "ruff",
     srcs = [":claude_hooks"],
+)
+
+py_binary(
+    name = "bazel_wrapper",
+    srcs = ["bazel_wrapper.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":claude_hooks"],
+)
+
+py_library(
+    name = "bazelisk_setup",
+    srcs = ["bazelisk_setup.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":claude_hooks",
+        "@pypi//mako",
+    ],
+)
+
+py_library(
+    name = "binary_tools",
+    srcs = ["binary_tools.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "env_file",
+    srcs = ["env_file.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "nix_setup",
+    srcs = ["nix_setup.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":claude_hooks"],
+)
+
+py_library(
+    name = "paths",
+    srcs = ["paths.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//platformdirs"],
+)
+
+py_library(
+    name = "podman_service",
+    srcs = ["podman_service.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":claude_hooks"],
+)
+
+py_library(
+    name = "proxy_credentials",
+    srcs = ["proxy_credentials.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pyjwt"],
+)
+
+py_library(
+    name = "proxy_setup",
+    srcs = ["proxy_setup.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":claude_hooks",
+        "@pypi//cryptography",
+        "@pypi//mako",
+    ],
+)
+
+py_library(
+    name = "resources",
+    srcs = ["resources.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "session_start",
+    srcs = ["session_start.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":claude_hooks",
+        "//tools:build_info",
+        "//tools:env_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "streaming",
+    srcs = ["streaming.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "supervisor_setup",
+    srcs = ["supervisor_setup.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":claude_hooks",
+        "@pypi//pydantic",
+        "@pypi//supervisor",
+    ],
 )

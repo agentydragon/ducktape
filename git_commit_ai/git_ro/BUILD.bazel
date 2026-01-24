@@ -1,0 +1,100 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "formatting",
+    srcs = ["formatting.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_cat_file",
+    srcs = ["test_cat_file.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_diff",
+    srcs = ["test_diff.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_show",
+    srcs = ["test_show.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_stat_counts",
+    srcs = ["test_stat_counts.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//pygit2",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_status_log",
+    srcs = ["test_status_log.py"],
+    deps = [
+        ":conftest",
+        ":formatting",
+        ":server",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,27 +1,46 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-py_library(
-    name = "host",
-    srcs = [
-        "bootstrap_handler.py",
-        "builder.py",
-        "init_runner.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//agent_core",
-        "//mcp_infra",
-        "//mcp_infra/exec:docker",
-        "//mcp_infra/exec:models",
-        "//openai_utils",
-        "@pypi//aiodocker",
-        "@pypi//fastmcp",
-    ],
-)
+# Gazelle will create per-file py_library targets
 
 ruff_test(
     name = "ruff",
-    srcs = [":host"],
+    srcs = [
+        ":bootstrap_handler",
+        ":builder",
+        ":init_runner",
+    ],
+)
+
+py_library(
+    name = "bootstrap_handler",
+    srcs = ["bootstrap_handler.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":init_runner",
+        "//agent_core",
+        "//agent_core:tool_provider",
+        "//mcp_infra/exec:models",
+        "//openai_utils",
+    ],
+)
+
+py_library(
+    name = "builder",
+    srcs = ["builder.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//aiodocker"],
+)
+
+py_library(
+    name = "init_runner",
+    srcs = ["init_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":builder",
+        "//mcp_infra",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp",
+    ],
 )

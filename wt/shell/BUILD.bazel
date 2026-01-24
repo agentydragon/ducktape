@@ -15,5 +15,4 @@ py_binary(
     srcs = ["install.py"],
     main = "install.py",
     visibility = ["//visibility:public"],
-    deps = [":shell"],
 )

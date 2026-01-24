@@ -58,11 +58,8 @@ py_test(
     deps = [
         ":warm_start",
         "//props/db:examples",
-        "//props/db:models",
         "//props/db:session",
-        "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

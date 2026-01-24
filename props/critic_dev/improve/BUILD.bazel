@@ -48,7 +48,24 @@ py_binary(
     srcs = ["main.py"],
     main = "main.py",
     visibility = ["//visibility:public"],
-    deps = [":main_lib"],
+    deps = [
+        "//agent_core",
+        "//agent_core:direct_provider",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils",
+        "//props/core:agent_helpers",
+        "//props/core:agent_types",
+        "//props/core:eval_client",
+        "//props/core:ids",
+        "//props/core:loop_utils",
+        "//props/core/models:examples",
+        "//props/critic_dev/optimize:main_lib",
+        "//props/db:config",
+        "//props/db:session",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 pkg_tar(
@@ -80,10 +97,7 @@ py_library(
 
 py_test(
     name = "test_e2e",
-    srcs = [
-        "test_e2e.py",
-        "//props:conftest.py",
-    ],
+    srcs = ["test_e2e.py"],
     data = [
         ":load",  # Improvement agent image
     ],
@@ -97,9 +111,9 @@ py_test(
         "requires_docker",
     ],
     deps = [
-        ":improve_agent",
-        "//agent_core",
         "//agent_core_testing",
+        "//props/db:agent_definition_ids",
+        "//props/db:examples",
         "//props/db:models",
         "//props/db:session",
         "//props/testing",

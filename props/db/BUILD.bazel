@@ -43,9 +43,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":config",
         ":snapshots",
-        "//agent_core",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core:splits",
@@ -94,10 +92,6 @@ py_library(
     srcs = ["agent_definition_ids.py"],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        ":session",
-        "@pypi//sqlalchemy",
-    ],
 )
 
 py_library(
@@ -124,7 +118,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":session",
+        ":config",
+        ":models",
         "@pypi//alembic",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
@@ -142,10 +137,7 @@ py_library(
     srcs = ["conftest.py"],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props:conftest",
-        "@pypi//pytest",
-    ],
+    deps = ["@pypi//pytest"],
 )
 
 # Static analysis test - no postgres needed
@@ -154,7 +146,7 @@ py_test(
     srcs = ["test_layer_isolation.py"],
     imports = ["../../.."],
     deps = [
-        "@pypi//pytest",
+        ":conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -168,12 +160,13 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":conftest",
+        ":examples",
         ":models",
         ":query_builders",
         ":session",
+        "//props/core:splits",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -185,10 +178,12 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
+        ":agent_definition_ids",
         ":conftest",
+        ":examples",
         ":models",
-        ":session",
-        "@pypi//pytest",
+        "//props/core:splits",
+        "//props/core/models:examples",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -220,10 +215,14 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
+        ":agent_definition_ids",
+        ":config",
         ":conftest",
+        ":examples",
         ":models",
         ":session",
-        "//agent_core",
+        "//props/core:agent_types",
+        "//props/critic_dev:shared",
         "//props/orchestration:agent_credentials",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -234,17 +233,16 @@ py_test(
 
 py_test(
     name = "test_view_extracts_grade_fields",
-    srcs = [
-        "conftest.py",
-        "test_view_extracts_grade_fields.py",
-    ],
+    srcs = ["test_view_extracts_grade_fields.py"],
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
+        ":config",
         ":conftest",
+        ":examples",
         ":models",
         ":session",
-        "@pypi//pytest",
+        "//props/core:ids",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

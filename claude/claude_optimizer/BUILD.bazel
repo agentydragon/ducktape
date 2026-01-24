@@ -20,3 +20,31 @@ ruff_test(
     name = "ruff",
     srcs = [":claude_optimizer"],
 )
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "generic_graders",
+    srcs = ["generic_graders.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "requirement_templates",
+    srcs = ["requirement_templates.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "scoresheet",
+    srcs = ["scoresheet.py"],
+    visibility = ["//:__subpackages__"],
+)

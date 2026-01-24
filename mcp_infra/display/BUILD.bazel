@@ -3,7 +3,6 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "display",
     srcs = [
-        "__init__.py",
         "event_renderer.py",
         "json_utils.py",
         "result_utils.py",
@@ -42,6 +41,78 @@ py_test(
         "@pypi//docker",
         "@pypi//mcp",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//rich",
+        "@pypi//syrupy",
+    ],
+)
+
+py_library(
+    name = "event_renderer",
+    srcs = ["event_renderer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/exec:models",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "json_utils",
+    srcs = ["json_utils.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "result_utils",
+    srcs = ["result_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//agent_core:tool_provider"],
+)
+
+py_library(
+    name = "rich_display",
+    srcs = ["rich_display.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//mcp_infra/exec:models",
+        "//openai_utils",
+        "@pypi//compact_json",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+        "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_compact_display",
+    srcs = ["test_compact_display.py"],
+    deps = [
+        "//agent_core",
+        "//agent_core:tool_provider",
+        "//mcp_infra",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//rich",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_max_height",
+    srcs = ["test_max_height.py"],
+    deps = [
         "@pypi//pytest_bazel",
         "@pypi//rich",
         "@pypi//syrupy",

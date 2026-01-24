@@ -55,3 +55,62 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "container",
+    srcs = ["container.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":images",
+        "//agent_core",
+        "//agent_core:mcp_provider",
+        "//agent_server:agent_types",
+        "//agent_server:approvals",
+        "//agent_server:presets",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/mcp/chat",
+        "//agent_server/mcp/loop",
+        "//agent_server/mcp/runtime:mcp_runtime",
+        "//agent_server/mcp/ui",
+        "//agent_server/persist:handler",
+        "//agent_server/persist:sqlite",
+        "//agent_server/persist:types",
+        "//agent_server/server:bus",
+        "//agent_server/server:runtime_types",
+        "//agent_server/server:system_message",
+        "//mcp_infra",
+        "//mcp_infra/exec:docker",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "handlers",
+    srcs = ["handlers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_server:agent_types",
+        "//agent_server/notifications",
+        "//agent_server/persist:handler",
+        "//agent_server/persist:types",
+        "//agent_server/server:bus",
+        "//agent_server/server:mode_handler",
+        "//agent_server/server:runtime_types",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/persist:sqlite",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)

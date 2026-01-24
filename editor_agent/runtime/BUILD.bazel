@@ -13,7 +13,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_pkg/runtime",
+        "//agent_pkg/runtime:mcp",
+        "//agent_pkg/runtime:output",
         "//cli_util",
         "@pypi//typer",
     ],
@@ -24,9 +25,12 @@ py_binary(
     srcs = ["cli.py"],
     imports = ["../.."],
     main = "cli.py",
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":editor_agent_runtime",
-        "@pypi//typer",
+        "//agent_pkg/runtime:mcp",
+        "//agent_pkg/runtime:output",
+        "//cli_util",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -91,4 +95,10 @@ oci_load(
     image = ":image",
     repo_tags = ["adgn-editor:latest"],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
 )

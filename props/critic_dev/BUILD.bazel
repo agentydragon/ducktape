@@ -51,7 +51,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cli_helpers",
-        "//agent_pkg/runtime",
+        "//agent_pkg/runtime:mcp",
+        "//agent_pkg/runtime:output",
         "//cli_util",
         "//props/cli:cmd_stats",
         "//props/core:agent_helpers",

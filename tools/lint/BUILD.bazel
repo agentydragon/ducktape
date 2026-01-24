@@ -23,11 +23,8 @@ py_binary(
     srcs = ["mypy_runner.py"],
     main = "mypy_runner.py",
     python_version = "3.13",
-    deps = [
-        "@pypi//mypy",
-        "@pypi//pydantic",  # pydantic.mypy plugin
-        "@pypi//sqlalchemy",  # sqlalchemy.ext.mypy.plugin
-    ],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//mypy"],
 )
 
 # ESLint binary for JS/TS linting

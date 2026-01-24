@@ -40,3 +40,101 @@ ruff_test(
     name = "ruff",
     srcs = [":agent_core_testing"],
 )
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "assertions",
+    srcs = ["assertions.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//openai_utils",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "echo_server",
+    srcs = ["echo_server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//openai_utils",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":agent_core_testing",
+        "//agent_core",
+        "//agent_core:mcp_provider",
+        "//agent_core:tool_provider",
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "matchers",
+    srcs = ["matchers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_core:tool_provider",
+        "//openai_utils",
+        "@pypi//pyhamcrest",
+    ],
+)
+
+py_library(
+    name = "openai_mock",
+    srcs = ["openai_mock.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "responses",
+    srcs = ["responses.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":agent_core_testing",
+        "//mcp_infra",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "steps",
+    srcs = ["steps.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":agent_core_testing",
+        "//mcp_infra",
+        "//mcp_infra/exec:models",
+        "//openai_utils",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+    ],
+)

@@ -36,10 +36,10 @@ py_binary(
     srcs = ["cli.py"],
     imports = [".."],
     main = "cli.py",
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":rspcache",
         "@pypi//httpx",
-        "@pypi//typer",
+        "@pypi//typer_slim",
         "@pypi//uvicorn",
     ],
 )
@@ -88,4 +88,72 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["rspcache:latest"],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//canonicaljson",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "admin_app",
+    srcs = ["admin_app.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "codegen",
+    srcs = ["codegen.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "events",
+    srcs = ["events.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "responses_db",
+    srcs = ["responses_db.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
 )

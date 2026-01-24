@@ -9,7 +9,6 @@ py_library(
     visibility = ["//agent_server:__subpackages__"],
     deps = [
         "//agent_core",
-        "//mcp_infra/notifications",
         "//openai_utils",
     ],
 )

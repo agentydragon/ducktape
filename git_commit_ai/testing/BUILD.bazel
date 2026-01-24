@@ -1,0 +1,14 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "git_repo_utils",
+    srcs = ["git_repo_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pygit2"],
+)

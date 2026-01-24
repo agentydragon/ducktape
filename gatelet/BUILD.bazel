@@ -24,7 +24,13 @@ py_binary(
     srcs = ["reporter.py"],
     imports = [".."],
     main = "reporter.py",
-    deps = [":reporter_lib"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//psutil",
+        "@pypi//pydantic",
+        "@pypi//tomlkit",
+    ],
 )
 
 # Management utility - depends on server
@@ -84,4 +90,29 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["gatelet:latest"],
+)
+
+py_binary(
+    name = "aw_summary",
+    srcs = ["aw_summary.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//aw_client"],
+)
+
+py_binary(
+    name = "manage",
+    srcs = ["manage.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gatelet/server:server_lib",
+        "@pypi//sqlalchemy",
+        "@pypi//tomlkit",
+    ],
+)
+
+py_library(
+    name = "tasks",
+    srcs = ["tasks.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//invoke"],
 )

@@ -3,22 +3,14 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "cli",
-    srcs = [
-        "cli.py",
-        "demo_plugin.py",
-        "plugins.py",
-    ],
+    srcs = ["cli.py"],
     imports = [".."],
     visibility = ["//wt:__subpackages__"],
     deps = [
         "//cli_util",
-        "//wt/client",
-        "//wt/shared",
-        "//wt/shell",
         "@pypi//click",
         "@pypi//colorama",
-        "@pypi//pluggy",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -46,4 +38,17 @@ py_binary(
 ruff_test(
     name = "ruff",
     srcs = [":wt"],
+)
+
+py_library(
+    name = "demo_plugin",
+    srcs = ["demo_plugin.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "plugins",
+    srcs = ["plugins.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pluggy"],
 )

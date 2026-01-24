@@ -1,0 +1,17 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle will create per-file py_library targets
+
+py_library(
+    name = "text_extraction",
+    srcs = ["text_extraction.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":types"],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)

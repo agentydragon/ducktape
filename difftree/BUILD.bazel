@@ -26,8 +26,8 @@ py_binary(
     name = "difftree",
     srcs = ["__main__.py"],
     main = "__main__.py",
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":difftree_lib",
         "@pypi//click",
         "@pypi//rich",
     ],
@@ -64,4 +64,126 @@ py_test(
 ruff_test(
     name = "ruff",
     srcs = [":difftree_lib"],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "diff_tree",
+    srcs = ["diff_tree.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//rich"],
+)
+
+py_library(
+    name = "parser",
+    srcs = ["parser.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//unidiff"],
+)
+
+py_library(
+    name = "progress_bar",
+    srcs = ["progress_bar.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//rich"],
+)
+
+py_library(
+    name = "tree",
+    srcs = ["tree.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    deps = [
+        "@pypi//click",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_diff_tree",
+    srcs = ["test_diff_tree.py"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//rich",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    deps = [
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_parser",
+    srcs = ["test_parser.py"],
+    deps = [
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_progress_bar",
+    srcs = ["test_progress_bar.py"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_snapshots",
+    srcs = ["test_snapshots.py"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tree",
+    srcs = ["test_tree.py"],
+    deps = [
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
 )

@@ -53,7 +53,6 @@ py_library(
         "//props/db:config",
         "//props/db:models",
         "//props/db:session",
-        "//props/grader:persistence",
         "@pypi//aiodocker",
         "@pypi//pydantic",
     ],

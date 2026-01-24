@@ -41,7 +41,8 @@ py_binary(
     name = "py_detectors_cli",
     srcs = ["__main__.py"],
     main = "__main__.py",
-    deps = [":py_detectors"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
 )
 
 py_binary(
@@ -71,4 +72,135 @@ py_test(
 ruff_test(
     name = "ruff",
     srcs = [":py_detectors"],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "base",
+    srcs = ["base.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "cli_custom",
+    srcs = ["cli_custom.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_broad_except_order",
+    srcs = ["det_broad_except_order.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_dynamic_attr_probe",
+    srcs = ["det_dynamic_attr_probe.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_flatten_nested_guards",
+    srcs = ["det_flatten_nested_guards.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_import_aliasing",
+    srcs = ["det_import_aliasing.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_imports_inside_def",
+    srcs = ["det_imports_inside_def.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_magic_tuple_indices",
+    srcs = ["det_magic_tuple_indices.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_optional_string_simplify",
+    srcs = ["det_optional_string_simplify.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_pathlike_str_casts",
+    srcs = ["det_pathlike_str_casts.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_pydantic_v1_shims",
+    srcs = ["det_pydantic_v1_shims.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_swallow_errors",
+    srcs = ["det_swallow_errors.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_trivial_alias",
+    srcs = ["det_trivial_alias.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_walrus_suggest",
+    srcs = ["det_walrus_suggest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "import_graph",
+    srcs = ["import_graph.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
 )

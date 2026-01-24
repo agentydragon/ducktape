@@ -73,3 +73,152 @@ ruff_test(
     name = "ruff",
     srcs = [":mcp_infra"],
 )
+
+py_library(
+    name = "_markers",
+    srcs = ["_markers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pytest"],
+)
+
+py_library(
+    name = "calltool",
+    srcs = ["calltool.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "client_helpers",
+    srcs = ["client_helpers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "config_loader",
+    srcs = ["config_loader.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//fastmcp"],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":mcp_infra"],
+)
+
+py_library(
+    name = "flat_tool",
+    srcs = ["flat_tool.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "mcp_types",
+    srcs = ["mcp_types.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "mount_types",
+    srcs = ["mount_types.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "mounted",
+    srcs = ["mounted.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":mcp_infra",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "naming",
+    srcs = ["naming.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":mcp_infra"],
+)
+
+py_library(
+    name = "prefix",
+    srcs = ["prefix.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "resource_utils",
+    srcs = ["resource_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "snapshots",
+    srcs = ["snapshots.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":mcp_infra",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "tool_schemas",
+    srcs = ["tool_schemas.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":mcp_infra",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "urls",
+    srcs = ["urls.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core_testing",
+        "@pypi//pytest",
+    ],
+)

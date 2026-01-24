@@ -22,3 +22,19 @@ ruff_test(
     name = "ruff",
     srcs = [":cli_util"],
 )
+
+py_library(
+    name = "decorators",
+    srcs = ["decorators.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "logging",
+    srcs = ["logging.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//structlog",
+        "@pypi//typer_slim",
+    ],
+)

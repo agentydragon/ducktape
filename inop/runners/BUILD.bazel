@@ -1,0 +1,55 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "base",
+    srcs = ["base.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//inop:__init__"],
+)
+
+py_library(
+    name = "claude_runner",
+    srcs = ["claude_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":base",
+        ":containerized_claude",
+        "@pypi//claude_code_sdk",
+        "@pypi//structlog",
+    ],
+)
+
+py_library(
+    name = "containerized_claude",
+    srcs = ["containerized_claude.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//claude_code_sdk",
+        "@pypi//docker",
+        "@pypi//pathspec",
+    ],
+)
+
+py_library(
+    name = "openai_runner",
+    srcs = ["openai_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":base",
+        "//agent_core",
+        "//agent_core:mcp_provider",
+        "//mcp_infra",
+        "//mcp_infra/exec:bwrap",
+        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:docker",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)

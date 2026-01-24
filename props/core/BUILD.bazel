@@ -79,7 +79,6 @@ py_library(
     deps = [
         ":ids",
         "//props/core/models:examples",
-        "//props/core/models:snapshot",
         "//props/critic_dev:shared",
         "@pypi//pydantic",
     ],
@@ -98,11 +97,7 @@ py_library(
     srcs = ["agent_workspace.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        ":docker_env",
-        "@pypi//aiodocker",
-        "@pypi//platformdirs",
-    ],
+    deps = ["@pypi//platformdirs"],
 )
 
 py_library(
@@ -125,6 +120,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":agent_helpers",
         ":eval_api_models",
         ":ids",
         "//props/core/models:examples",
@@ -132,7 +128,6 @@ py_library(
         "//props/db:models",
         "//props/db:session",
         "@pypi//httpx",
-        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -174,12 +169,6 @@ py_library(
     srcs = ["agent_pkg_utils.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        "//agent_pkg/host",
-        "//agent_pkg/runtime",
-        "@pypi//canonicaljson",
-        "@pypi//pydantic",
-    ],
 )
 
 py_library(
@@ -187,12 +176,6 @@ py_library(
     srcs = ["runs_context.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        ":ids",
-        "//props/db:models",
-        "//props/db:session",
-        "@pypi//sqlalchemy",
-    ],
 )
 
 # =============================================================================
@@ -204,8 +187,6 @@ py_test(
     srcs = ["test_rationale.py"],
     imports = ["../.."],
     deps = [
-        "//agent_core_testing",
-        "//props/core/models:types",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
@@ -249,12 +230,12 @@ py_test(
         "requires_production_specimens",
     ],
     deps = [
-        "//agent_core_testing",
+        ":splits",
+        "//props/db:config",
         "//props/db:models",
         "//props/db:session",
         "//props/db:setup",
         "//props/db/sync",
-        "//props/db/sync:loader",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -265,10 +246,7 @@ py_test(
 
 py_test(
     name = "test_agent_pkg_e2e",
-    srcs = [
-        "test_agent_pkg_e2e.py",
-        "//props:conftest.py",
-    ],
+    srcs = ["test_agent_pkg_e2e.py"],
     data = [
         "//props/critic:load",  # Critic agent image
         "//props/critic_dev/optimize:load",  # Optimizer agent image
@@ -282,11 +260,16 @@ py_test(
         "slow",
     ],
     deps = [
-        ":agent_pkg_utils",
+        ":eval_api_models",
+        ":ids",
         "//agent_core_testing",
+        "//props/core/models:examples",
         "//props/critic_dev:shared",
+        "//props/critic_dev/optimize:main_lib",
         "//props/critic_dev/optimize:test_e2e_lib",
-        "//props/orchestration:agent_registry",
+        "//props/db:agent_definition_ids",
+        "//props/db:models",
+        "//props/db:session",
         "//props/testing",
         "@pypi//pyhamcrest",
         "@pypi//pytest",

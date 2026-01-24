@@ -34,10 +34,7 @@ py_library(
 
 py_test(
     name = "test_policy_validation",
-    srcs = [
-        "test_policy_validation.py",
-        "//agent_server:conftest.py",
-    ],
+    srcs = ["test_policy_validation.py"],
     data = [
         "//agent_server:load",
         "//mcp_infra/testing:python_slim_load",
@@ -45,18 +42,12 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        ":approval_policy",
-        "//agent_core:mcp_provider",
-        "//agent_server:conftest",
-        "//agent_server/testing",
-        "@pypi//docker",
-        "@pypi//fastapi",
+        ":engine",
+        "//agent_server/testing:approval_policy_testdata",
         "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -67,18 +58,13 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        ":approval_policy",
-        "//agent_core:mcp_provider",
-        "//agent_server:conftest",
-        "//agent_server/testing",
-        "@pypi//docker",
-        "@pypi//fastapi",
+        "//agent_server:presets",
+        "//agent_server/testing:approval_policy_testdata",
+        "//mcp_utils",
         "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -89,18 +75,9 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        ":approval_policy",
-        "//agent_core:mcp_provider",
-        "//agent_server:conftest",
-        "//agent_server/testing",
-        "@pypi//docker",
-        "@pypi//fastapi",
-        "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -111,18 +88,10 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        ":approval_policy",
-        "//agent_core:mcp_provider",
-        "//agent_server:conftest",
-        "//agent_server/testing",
-        "@pypi//docker",
-        "@pypi//fastapi",
-        "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
+        "//mcp_utils",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -133,17 +102,50 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        ":approval_policy",
+        "//agent_core",
         "//agent_core:mcp_provider",
-        "//agent_server:conftest",
-        "//agent_server/testing",
-        "@pypi//docker",
-        "@pypi//fastapi",
+        "//agent_core_testing",
+        "//mcp_infra",
+        "//openai_utils",
         "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "clients",
+    srcs = ["clients.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":engine",
+        "//agent_server/policies:policy_types",
+        "//mcp_infra",
+    ],
+)
+
+py_library(
+    name = "engine",
+    srcs = ["engine.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_server:agent_types",
+        "//agent_server:approvals",
+        "//agent_server/models:proposal_status",
+        "//agent_server/persist:types",
+        "//agent_server/policies:policy_types",
+        "//agent_server/policy_eval:container",
+        "//agent_server/policy_eval:runner",
+        "//mcp_infra",
+        "//mcp_infra/exec:docker",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
     ],
 )

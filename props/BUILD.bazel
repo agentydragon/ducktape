@@ -15,7 +15,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core_testing",
-        "//mcp_infra/testing",
         "//props/testing",
         "@pypi//pytest",
     ],

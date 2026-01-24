@@ -18,9 +18,9 @@ py_library(
 py_binary(
     name = "ultra_long_cot",
     srcs = ["ultra_long_cot.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//openai",
-        "@pypi//pydantic",
         "@pypi//tiktoken",
     ],
 )
@@ -28,6 +28,7 @@ py_binary(
 py_binary(
     name = "ultra_long_cot_o4",
     srcs = ["ultra_long_cot_o4.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//openai",
         "@pypi//pydantic",

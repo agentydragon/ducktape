@@ -32,3 +32,92 @@ py_library(
         "@rules_python//python/runfiles",
     ],
 )
+
+py_library(
+    name = "asserts",
+    srcs = ["asserts.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pyhamcrest"],
+)
+
+py_library(
+    name = "config_factory",
+    srcs = ["config_factory.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//wt",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "data",
+    srcs = ["data.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "git_helpers",
+    srcs = ["git_helpers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//wt",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "helpers",
+    srcs = ["helpers.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "mock_factory",
+    srcs = ["mock_factory.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//wt",
+    ],
+)
+
+py_library(
+    name = "repo_factory",
+    srcs = ["repo_factory.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//wt",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//wt",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+        "@pypi//typer_slim",
+    ],
+)

@@ -19,3 +19,27 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "control",
+    srcs = ["control.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/server",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/server",
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//aiohttp",
+        "@pypi//fastmcp",
+        "@pypi//mautrix",
+        "@pypi//pydantic",
+    ],
+)

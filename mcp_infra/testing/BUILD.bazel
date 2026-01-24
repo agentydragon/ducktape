@@ -1,5 +1,5 @@
 load("@rules_oci//oci:defs.bzl", "oci_load")
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 # Load python_slim base image into local Docker daemon for tests
 # Tests that need this should add data = ["//mcp_infra/testing:python_slim_load"]
@@ -13,7 +13,6 @@ oci_load(
 py_library(
     name = "testing",
     srcs = [
-        "__init__.py",
         "exec_stubs.py",
         "fixtures.py",
         "notifications.py",
@@ -51,9 +50,74 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":testing",
         "//mcp_infra/exec:docker",
-        "//test_util",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "exec_stubs",
+    srcs = ["exec_stubs.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/exec:bwrap",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:seatbelt",
+        "//mcp_infra/exec:subprocess",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/exec:docker",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "notifications",
+    srcs = ["notifications.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "simple_servers",
+    srcs = ["simple_servers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "stdio_app",
+    srcs = ["stdio_app.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//anyio",
+    ],
+)
+
+py_binary(
+    name = "stdio_notifier",
+    srcs = ["stdio_notifier.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//anyio",
     ],
 )

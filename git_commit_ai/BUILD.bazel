@@ -5,33 +5,17 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+# Gazelle manages git_ro/ and testing/ subpackages
+
 py_library(
     name = "git_commit_ai_lib",
-    srcs = [
-        "__init__.py",
-        "agent_backend.py",
-        "cli.py",
-        "editor.py",
-        "git_ro/__init__.py",
-        "git_ro/formatting.py",
-        "git_ro/server.py",
-    ],
     data = ["commit_editmsg.mako"],
     visibility = ["//visibility:public"],
     deps = [
-        "//:bazel_util",
-        "//agent_core",
-        "//agent_core:mcp_provider",
-        "//mcp_infra",
-        "//mcp_infra/bootstrap",
-        "//mcp_infra/compositor",
-        "//mcp_infra/display",
-        "//mcp_infra/enhanced",
-        "//openai_utils",
-        "@pypi//fastmcp",
-        "@pypi//mako",
-        "@pypi//pydantic",
-        "@pypi//pygit2",
+        ":agent_backend",
+        ":editor",
+        "//git_commit_ai/git_ro:formatting",
+        "//git_commit_ai/git_ro:server",
     ],
 )
 
@@ -39,45 +23,23 @@ py_binary(
     name = "git_commit_ai",
     srcs = ["cli.py"],
     main = "cli.py",
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":git_commit_ai_lib",
+        ":agent_backend",
+        ":editor",
+        "//:bazel_util",
         "@pypi//pygit2",
-    ],
-)
-
-py_test(
-    name = "test_git_commit_ai",
-    srcs = [
-        "conftest.py",
-        "git_ro/conftest.py",
-        "git_ro/test_cat_file.py",
-        "git_ro/test_diff.py",
-        "git_ro/test_show.py",
-        "git_ro/test_stat_counts.py",
-        "git_ro/test_status_log.py",
-        "test_amend.py",
-        "test_editor.py",
-        "test_stage_all.py",
-        "testing/__init__.py",
-        "testing/git_repo_utils.py",
-    ],
-    data = ["__snapshots__/test_editor.ambr"],
-    main = "test_amend.py",
-    deps = [
-        ":git_commit_ai_lib",
-        "//mcp_infra/testing",
-        "@pypi//fastmcp",
-        "@pypi//pygit2",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
-        "@pypi//syrupy",
     ],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":git_commit_ai_lib"],
+    srcs = [
+        ":agent_backend",
+        ":conftest",
+        ":editor",
+        ":git_commit_ai",
+    ],
 )
 
 # Package for wheel - bundles git_commit_ai and all local dependencies
@@ -129,4 +91,79 @@ py_wheel(
     ],
     version = "0.1.0",
     deps = [":git_commit_ai_pkg"],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "agent_backend",
+    srcs = ["agent_backend.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_core:mcp_provider",
+        "//git_commit_ai/git_ro:server",
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "editor",
+    srcs = ["editor.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//mako",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pygit2",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_amend",
+    srcs = ["test_amend.py"],
+    deps = [
+        ":conftest",
+        ":git_commit_ai",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_editor",
+    srcs = ["test_editor.py"],
+    deps = [
+        ":conftest",
+        ":editor",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_stage_all",
+    srcs = ["test_stage_all.py"],
+    deps = [
+        ":conftest",
+        "@pypi//pygit2",
+        "@pypi//pytest_bazel",
+    ],
 )

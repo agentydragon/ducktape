@@ -8,9 +8,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//agent_server:__subpackages__"],
     deps = [
-        "//agent_server/persist",
+        "//agent_server/persist:sqlite",
         "//mcp_infra",
-        "//mcp_infra/enhanced",
         "//openai_utils",
         "@pypi//aiosqlite",
         "@pypi//fastmcp",

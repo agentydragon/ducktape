@@ -2,9 +2,10 @@
 
 load("@rules_python//python:defs.bzl", "py_library")
 
+package(default_testonly = True)
+
 py_library(
     name = "testing",
-    testonly = True,
     srcs = ["mocks.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
@@ -13,14 +14,12 @@ py_library(
         "//mcp_infra/exec:models",
         "//openai_utils",
         "//props/grader:tools",
-        "//props/testing/fixtures",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
     name = "fake_openai_server",
-    testonly = True,
     srcs = ["fake_openai_server.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],

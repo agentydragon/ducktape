@@ -1,0 +1,50 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle will create per-file py_library targets
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "common",
+    srcs = ["common.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:gmail_client",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_library(
+    name = "filters",
+    srcs = ["filters.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":common",
+        "//gmail_archiver:dirs",
+        "//gmail_archiver:filter_planner",
+        "//gmail_archiver:filter_sync",
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:gmail_client",
+        "//gmail_archiver:gmail_yaml_filters_models",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:plan_display",
+        "@pypi//pyyaml",
+        "@pypi//rich",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_library(
+    name = "labels",
+    srcs = ["labels.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":common",
+        "@pypi//rich",
+        "@pypi//typer_slim",
+    ],
+)

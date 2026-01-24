@@ -3,7 +3,6 @@ load("@rules_python//python:defs.bzl", "py_library")
 py_library(
     name = "notifications",
     srcs = [
-        "__init__.py",
         "types.py",
     ],
     imports = ["../.."],
@@ -12,4 +11,11 @@ py_library(
         "@pypi//mcp",
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
 )

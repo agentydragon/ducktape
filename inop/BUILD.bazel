@@ -8,105 +8,130 @@ load("//tools/lint:linters.bzl", "ruff_test")
 # rules_mypy adds all transitive deps to MYPYPATH, and mypy's exclude pattern doesn't
 # help because the error occurs during module discovery, not import following.
 # See: https://github.com/python/mypy/issues/8944
+
+# Gazelle manages grading/ and runners/ subpackages
+
+# Aggregate target combining all subpackages - for backwards compatibility
 py_library(
     name = "inop",
-    srcs = [
-        "__init__.py",
-        "config.py",
-        "docker/build.py",
-        "engine/models.py",
-        "engine/optimizer.py",
-        "engine/runner_factory.py",
-        "grading/__init__.py",
-        "grading/grader.py",
-        "grading/strategies.py",
-        "io/file_utils.py",
-        "io/jsonl_logger.py",
-        "io/logging_utils.py",
-        "io/task_loader.py",
-        "io/yaml_loader.py",
-        "mcp/prompt_feedback_server.py",
-        "model_factory.py",
-        "plots.py",
-        "prompting/pe_controller.py",
-        "prompting/prompt_engineer.py",
-        "prompting/summarizer.py",
-        "prompting/truncation_utils.py",
-        "runners/__init__.py",
-        "runners/base.py",
-        "runners/claude_runner.py",
-        "runners/containerized_claude.py",
-        "runners/openai_runner.py",
-    ],
     imports = [".."],
     tags = ["no-mypy"],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core",
-        "//mcp_infra",
-        "//mcp_infra/compositor",
-        "//mcp_infra/display",
-        "//mcp_infra/exec:bwrap",
-        "//mcp_infra/exec:direct",
-        "//mcp_infra/exec:docker",
-        "//openai_utils",
-        "@pypi//aiodocker",
-        "@pypi//claude_code_sdk",
-        "@pypi//docker",
-        "@pypi//fastmcp",
-        "@pypi//matplotlib",
-        "@pypi//pandas",
-        "@pypi//pathspec",
-        "@pypi//plotnine",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-        "@pypi//structlog",
-        "@pypi//tiktoken",
+        ":config",
+        ":model_factory",
+        ":plots",
+        "//inop/grading:grader",
+        "//inop/grading:strategies",
+        "//inop/runners:base",
+        "//inop/runners:claude_runner",
+        "//inop/runners:containerized_claude",
+        "//inop/runners:openai_runner",
     ],
 )
 
 py_test(
     name = "test_optimizer_two_iters",
-    srcs = [
-        "conftest.py",
-        "test_optimizer_two_iters.py",
-    ],
+    srcs = ["test_optimizer_two_iters.py"],
     imports = [".."],
     tags = ["no-mypy"],  # see comment on inop library
     deps = [
-        ":inop",
-        "//agent_core_testing",
+        ":config",
+        "//inop/runners:base",
+        "//mcp_infra",
+        "//openai_utils",
         "@pypi//aiodocker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//pytest_mock",
-    ],
-)
-
-py_test(
-    name = "test_unit",
-    srcs = [
-        "conftest.py",
-        "test_config.py",
-        "test_exclusion_patterns.py",
-        "test_file_truncation.py",
-        "test_types.py",
-    ],
-    imports = [".."],
-    main = "conftest.py",
-    tags = ["no-mypy"],  # see comment on inop library
-    deps = [
-        ":inop",
-        "//agent_core_testing",
-        "@pypi//pathspec",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//tiktoken",
     ],
 )
 
 ruff_test(
     name = "ruff",
     srcs = [":inop"],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "model_factory",
+    srcs = ["model_factory.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":config",
+        "//openai_utils",
+    ],
+)
+
+py_library(
+    name = "plots",
+    srcs = ["plots.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//matplotlib",
+        "@pypi//pandas",
+        "@pypi//plotnine",
+        "@pypi//pydantic",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//agent_core_testing"],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_exclusion_patterns",
+    srcs = ["test_exclusion_patterns.py"],
+    deps = [
+        "@pypi//pathspec",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_file_truncation",
+    srcs = ["test_file_truncation.py"],
+    deps = [
+        "@pypi//pytest_bazel",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_test(
+    name = "test_types",
+    srcs = ["test_types.py"],
+    deps = [
+        "@pypi//pytest_bazel",
+    ],
 )

@@ -1,69 +1,13 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
-py_library(
-    name = "llm_html",
-    srcs = [
-        "llm_html/__init__.py",
-        "llm_html/server.py",
-        "llm_html/test_html_rendering.py",
-        "llm_html/test_token.py",
-        "llm_html/token_counter.py",
-        "llm_html/token_scheme.py",
-    ],
-    data = glob([
-        "*.css",
-        "*.html",
-        "*.md",
-    ]),
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//anthropic",
-        "@pypi//beautifulsoup4",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//jinja2",
-        "@pypi//lxml",
-        "@pypi//markdown",
-        "@pypi//markdownify",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
-        "@pypi//tabulate",
-        "@pypi//tiktoken",
-        "@pypi//types_markdown",
-        "@pypi//uvicorn",
-    ],
-)
-
-py_binary(
-    name = "llm-html-server",
-    srcs = ["llm_html/server.py"],
-    main = "llm_html/server.py",
-    deps = [
-        ":llm_html",
-        "@pypi//fastapi",
-        "@pypi//jinja2",
-        "@pypi//markdown",
-        "@pypi//markdownify",
-        "@pypi//types_markdown",
-        "@pypi//uvicorn",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":llm_html"],
-)
+# Gazelle manages llm_html/ subpackage
 
 # --- OCI Image ---
 
 pkg_tar(
     name = "server_tar",
-    srcs = [":llm-html-server"],
+    srcs = ["//llm/html/llm_html:server"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
@@ -72,7 +16,7 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    entrypoint = ["/app/llm-html-server"],
+    entrypoint = ["/app/server"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",

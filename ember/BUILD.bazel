@@ -58,10 +58,8 @@ py_binary(
     name = "emberd",
     srcs = ["__main__.py"],
     main = "__main__.py",
-    deps = [
-        ":ember",
-        "@pypi//uvicorn",
-    ],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//uvicorn"],
 )
 
 # TODO: ember-eval target disabled - src/ember/evals/runner.py does not exist
@@ -147,4 +145,96 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["emberd:latest"],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":ember",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":ember",
+        "//openai_utils",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "handlers",
+    srcs = ["handlers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//openai_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "matrix_client",
+    srcs = ["matrix_client.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":ember",
+        "@pypi//matrix_nio",
+        "@pypi//mautrix",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "mcp_tools",
+    srcs = ["mcp_tools.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":ember",
+        "//mcp_infra",
+        "//mcp_infra/exec:direct",
+        "//openai_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "python_session",
+    srcs = ["python_session.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//jupyter_client"],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":ember",
+        "//agent_core",
+        "//agent_core:mcp_provider",
+        "//openai_utils",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "secrets",
+    srcs = ["secrets.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "system_prompt",
+    srcs = ["system_prompt.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//jinja2"],
 )

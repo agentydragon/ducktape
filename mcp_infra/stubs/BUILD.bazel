@@ -17,3 +17,31 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "resources_stub",
+    srcs = ["resources_stub.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+    ],
+)
+
+py_library(
+    name = "server_stubs",
+    srcs = ["server_stubs.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//fastmcp"],
+)
+
+py_library(
+    name = "typed_stubs",
+    srcs = ["typed_stubs.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)

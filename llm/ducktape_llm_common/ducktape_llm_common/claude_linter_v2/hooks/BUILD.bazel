@@ -1,0 +1,32 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "formatting",
+    srcs = ["formatting.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "handler",
+    srcs = ["handler.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//platformdirs"],
+)
+
+py_library(
+    name = "validation",
+    srcs = ["validation.py"],
+    visibility = ["//:__subpackages__"],
+)

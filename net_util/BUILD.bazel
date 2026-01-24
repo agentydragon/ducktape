@@ -22,3 +22,23 @@ ruff_test(
     name = "ruff",
     srcs = [":net_util"],
 )
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "docker",
+    srcs = ["docker.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//aiodocker"],
+)
+
+py_library(
+    name = "net",
+    srcs = ["net.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//tenacity"],
+)

@@ -3,6 +3,8 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+package(default_testonly = True)
+
 py_library(
     name = "testing",
     srcs = [
@@ -33,4 +35,65 @@ py_library(
 ruff_test(
     name = "ruff",
     srcs = [":testing"],
+)
+
+py_library(
+    name = "approval_policy_testdata",
+    srcs = ["approval_policy_testdata.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//agent_server/policies:policy_types"],
+)
+
+py_library(
+    name = "chat_stubs",
+    srcs = ["chat_stubs.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/mcp/chat",
+        "//mcp_infra",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/policies:policy_types",
+        "//mcp_infra",
+    ],
+)
+
+py_library(
+    name = "helpers",
+    srcs = ["helpers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//net_util",
+        "//openai_utils",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "steps",
+    srcs = ["steps.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core_testing",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/mcp/ui",
+        "//mcp_infra",
+        "//openai_utils",
+    ],
+)
+
+py_library(
+    name = "typed_asserts",
+    srcs = ["typed_asserts.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/server",
+        "@pypi//pyhamcrest",
+    ],
 )

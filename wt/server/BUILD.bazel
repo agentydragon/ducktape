@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "server",
@@ -47,7 +47,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//wt:__subpackages__"],
     deps = [
-        "//wt/testing",
+        "//wt",
         "@pypi//pytest",
     ],
 )
@@ -63,6 +63,154 @@ py_test(
     deps = [
         ":conftest",
         "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "copy_strategies",
+    srcs = ["copy_strategies.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "git_manager",
+    srcs = ["git_manager.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "git_refs_watcher",
+    srcs = ["git_refs_watcher.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pygit2",
+        "@pypi//reaktiv",
+        "@pypi//watchdog",
+    ],
+)
+
+py_library(
+    name = "github_client",
+    srcs = ["github_client.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pygithub"],
+)
+
+py_library(
+    name = "github_watcher",
+    srcs = ["github_watcher.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//reaktiv"],
+)
+
+py_library(
+    name = "gitstatus_refresh",
+    srcs = ["gitstatus_refresh.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//watchdog"],
+)
+
+py_library(
+    name = "gitstatusd_listener",
+    srcs = ["gitstatusd_listener.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//wt",
+        "@pypi//reaktiv",
+    ],
+)
+
+py_library(
+    name = "repo_status",
+    srcs = ["repo_status.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "rpc",
+    srcs = ["rpc.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//punq",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "services",
+    srcs = ["services.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "stores",
+    srcs = ["stores.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//wt",
+        "@pypi//reaktiv",
+    ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "watcher",
+    srcs = ["watcher.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//wt",
+        "@pypi//watchdog",
+    ],
+)
+
+py_library(
+    name = "worktree_ids",
+    srcs = ["worktree_ids.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "worktree_index",
+    srcs = ["worktree_index.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "worktree_registry",
+    srcs = ["worktree_registry.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "worktree_service",
+    srcs = ["worktree_service.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//psutil",
+        "@pypi//pygit2",
+    ],
+)
+
+py_binary(
+    name = "wt_server",
+    srcs = ["wt_server.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_test(
+    name = "test_worktree_service",
+    srcs = ["test_worktree_service.py"],
+    deps = [
+        "//wt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

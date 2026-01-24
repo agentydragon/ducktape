@@ -25,7 +25,9 @@ py_library(
     deps = [
         "//agent_core",
         "//agent_core:mcp_provider",
-        "//agent_pkg/host",
+        "//agent_pkg/host:bootstrap_handler",
+        "//agent_pkg/host:builder",
+        "//agent_pkg/host:init_runner",
         "//cli_util",
         "//editor_agent/runtime:editor_agent_runtime",
         "//mcp_infra",
@@ -46,26 +48,24 @@ py_binary(
     srcs = ["cli.py"],
     imports = ["../.."],
     main = "cli.py",
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":editor_agent_host",
-        "@pypi//typer",
+        "//agent_pkg/host:builder",
+        "//cli_util",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//typer_slim",
     ],
 )
 
 py_test(
     name = "test_runner_session",
-    srcs = [
-        "conftest.py",
-        "test_runner_session.py",
-    ],
+    srcs = ["test_runner_session.py"],
     data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
-        ":editor_agent_host",
-        "//agent_core_testing",
-        "//mcp_infra/testing",
-        "//test_util",
+        ":conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -74,18 +74,13 @@ py_test(
 
 py_test(
     name = "test_editor_e2e_steps",
-    srcs = [
-        "conftest.py",
-        "test_editor_e2e_steps.py",
-    ],
+    srcs = ["test_editor_e2e_steps.py"],
     data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
-        ":editor_agent_host",
+        ":conftest",
         "//agent_core_testing",
-        "//mcp_infra/testing",
-        "//test_util",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -95,15 +90,10 @@ py_test(
 
 py_test(
     name = "test_submit_server",
-    srcs = [
-        "conftest.py",
-        "test_submit_server.py",
-    ],
+    srcs = ["test_submit_server.py"],
     imports = ["../.."],
     deps = [
-        ":editor_agent_host",
-        "//mcp_infra/testing",
-        "//test_util",
+        ":conftest",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -114,4 +104,59 @@ py_test(
 ruff_test(
     name = "ruff",
     srcs = [":editor_agent_host"],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "agent_runner",
+    srcs = ["agent_runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_core:mcp_provider",
+        "//agent_pkg/host:init_runner",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//mcp_infra/exec:docker",
+        "//net_util",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "submit_server",
+    srcs = ["submit_server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//test_util",
+        "@pypi//pytest",
+    ],
 )

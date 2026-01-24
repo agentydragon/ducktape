@@ -3,7 +3,6 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "resources",
     srcs = [
-        "__init__.py",
         "types.py",
     ],
     imports = ["../.."],
@@ -32,6 +31,82 @@ py_test(
         "@pypi//docker",  # mcp_infra/conftest.py imports docker
         "@pypi//fastmcp",
         "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_list_changes_subscriptions",
+    srcs = ["test_list_changes_subscriptions.py"],
+    deps = [
+        "//mcp_infra",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_list_resources_null_filters",
+    srcs = ["test_list_resources_null_filters.py"],
+    deps = [
+        "//mcp_infra",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_notifications",
+    srcs = ["test_notifications.py"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_read_blocks",
+    srcs = ["test_read_blocks.py"],
+    deps = [
+        "//mcp_infra",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_subscribe",
+    srcs = ["test_subscribe.py"],
+    deps = [
+        "//mcp_infra",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_subscriptions_index",
+    srcs = ["test_subscriptions_index.py"],
+    deps = [
+        "//mcp_infra",
+        "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

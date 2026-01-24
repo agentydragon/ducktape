@@ -53,3 +53,21 @@ ruff_test(
     name = "ruff",
     srcs = [":headscale_cleanup"],
 )
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//cli_util",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_binary(
+    name = "headscale_cleanup_bin",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    visibility = ["//:__subpackages__"],
+    deps = [":headscale_cleanup"],
+)

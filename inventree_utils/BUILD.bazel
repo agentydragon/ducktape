@@ -1,107 +1,10 @@
 # gazelle:exclude rai_plugin
 # rai_plugin uses InvenTree's plugin framework (not in @pypi)
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-# Core utilities (no external deps)
-py_library(
-    name = "iter_util",
-    srcs = ["beautifier/iter_util.py"],
-)
-
-py_library(
-    name = "lcsc_util",
-    srcs = ["beautifier/lcsc_util.py"],
-)
-
-py_library(
-    name = "cli_util",
-    srcs = ["beautifier/cli_util.py"],
-    deps = [":iter_util"],
-)
-
-# InventTree-dependent utilities
-py_library(
-    name = "config",
-    srcs = ["beautifier/config.py"],
-    deps = [
-        "@pypi//inventree",
-        "@pypi//platformdirs",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "inventree_util",
-    srcs = ["beautifier/inventree_util.py"],
-    deps = ["@pypi//inventree"],
-)
-
-py_library(
-    name = "fix_lcsc_links",
-    srcs = ["beautifier/fix_lcsc_links.py"],
-    deps = [
-        ":cli_util",
-        ":inventree_util",
-        ":iter_util",
-        ":lcsc_util",
-        "@pypi//inventree",
-        "@pypi//structlog",
-    ],
-)
-
-py_library(
-    name = "assign_jellybean",
-    srcs = ["beautifier/assign_jellybean.py"],
-    deps = [
-        ":cli_util",
-        ":inventree_util",
-        ":iter_util",
-        "@pypi//inventree",
-        "@pypi//tqdm",
-    ],
-)
-
-py_library(
-    name = "upload_lcsc_images",
-    srcs = ["beautifier/upload_lcsc_images.py"],
-    deps = [
-        ":cli_util",
-        ":inventree_util",
-        ":iter_util",
-        ":lcsc_util",
-        "@pypi//beautifulsoup4",
-        "@pypi//inventree",
-        "@pypi//requests",
-        "@pypi//structlog",
-    ],
-)
-
-# Main beautifier library
-py_library(
-    name = "beautifier",
-    srcs = ["beautifier/__main__.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":assign_jellybean",
-        ":config",
-        ":fix_lcsc_links",
-        ":upload_lcsc_images",
-        "@pypi//structlog",
-    ],
-)
-
-py_binary(
-    name = "inventree_beautifier",
-    srcs = ["beautifier/__main__.py"],
-    main = "beautifier/__main__.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":beautifier",
-        "@pypi//structlog",
-    ],
-)
+# Gazelle manages beautifier/ subpackage
 
 # Samplebooks import (standalone script)
 py_library(
@@ -123,41 +26,28 @@ py_binary(
     ],
 )
 
-# Tests
-py_test(
-    name = "test_lcsc_util",
-    srcs = ["beautifier/test_lcsc_util.py"],
-    imports = [".."],
-    deps = [
-        ":lcsc_util",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_fix_lcsc_links",
-    srcs = ["beautifier/test_fix_lcsc_links.py"],
-    imports = [".."],
-    deps = [
-        ":fix_lcsc_links",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_assign_jellybean",
-    srcs = ["beautifier/test_assign_jellybean.py"],
-    imports = [".."],
-    deps = [
-        ":assign_jellybean",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 ruff_test(
     name = "ruff",
-    srcs = [":beautifier"],
+    srcs = [
+        ":make_prompt",
+        ":tasks",
+    ],
+)
+
+py_library(
+    name = "make_prompt",
+    srcs = ["make_prompt.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pyperclip"],
+)
+
+py_library(
+    name = "tasks",
+    srcs = ["tasks.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//inventree_utils/beautifier:config",
+        "@pypi//inventree",
+        "@pypi//invoke",
+    ],
 )

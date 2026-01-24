@@ -56,10 +56,12 @@ py_library(
         ":handlers",
         ":types",
         "//agent_core",
-        "//agent_server/mcp/approval_policy",
+        "//agent_server:agent_types",
+        "//agent_server/mcp/approval_policy:engine",
         "//agent_server/mcp/ui",
-        "//agent_server/persist",
-        "//mcp_infra/compositor",
+        "//agent_server/persist:handler",
+        "//agent_server/persist:types",
+        "//mcp_infra",
         "//openai_utils",
     ],
 )
@@ -107,30 +109,146 @@ _TEST_DEPS = [
 
 py_test(
     name = "test_end_turn_ui_integration",
-    srcs = [
-        "test_end_turn_ui_integration.py",
-        "//agent_server:conftest.py",
-    ],
+    srcs = ["test_end_turn_ui_integration.py"],
     imports = ["../.."],
-    deps = _TEST_DEPS,
+    deps = [
+        ":server",
+        "//agent_server/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
     name = "test_history_fold_typed",
-    srcs = [
-        "test_history_fold_typed.py",
-        "//agent_server:conftest.py",
-    ],
+    srcs = ["test_history_fold_typed.py"],
     imports = ["../.."],
-    deps = _TEST_DEPS,
+    deps = [
+        ":server",
+        "//agent_server/testing",
+        "//mcp_infra",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
     name = "test_reducer",
-    srcs = [
-        "test_reducer.py",
-        "//agent_server:conftest.py",
-    ],
+    srcs = ["test_reducer.py"],
     imports = ["../.."],
-    deps = _TEST_DEPS,
+    deps = [
+        ":server",
+        "//agent_server/testing",
+        "//mcp_infra/exec:models",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//agent_server/mcp_bridge:auth",
+        "//agent_server/mcp_bridge:compositor_factory",
+        "//agent_server/mcp_bridge:registry",
+        "//agent_server/persist:sqlite",
+        "//agent_server/runtime:registry",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "bus",
+    srcs = ["bus.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "mcp_routing",
+    srcs = ["mcp_routing.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server/mcp_bridge:auth",
+        "//agent_server/runtime:registry",
+        "@pypi//fastapi",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "mode_handler",
+    srcs = ["mode_handler.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//agent_core",
+        "//agent_server/notifications",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "protocol",
+    srcs = ["protocol.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//agent_core",
+        "//agent_server/models:policy_error",
+        "//agent_server/models:proposal_status",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "reducer",
+    srcs = ["reducer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "//agent_core",
+        "//agent_server/mcp/ui",
+        "//agent_server/persist:events",
+        "//mcp_infra",
+        "//mcp_infra/exec:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "state",
+    srcs = ["state.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":server",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "status_shared",
+    srcs = ["status_shared.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "system_message",
+    srcs = ["system_message.py"],
+    visibility = ["//:__subpackages__"],
 )

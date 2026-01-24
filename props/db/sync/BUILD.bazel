@@ -24,7 +24,6 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props/db:__subpackages__"],
     deps = [
-        ":_models",
         "//props/core:ids",
         "//props/core/models:true_positive",
         "//props/core/models:types",
@@ -38,8 +37,6 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props/db:__subpackages__"],
     deps = [
-        ":_models",
-        ":_yaml_models",
         "//props/core:ids",
         "@pypi//pyyaml",
     ],
@@ -81,6 +78,7 @@ py_library(
         "//props/core:ids",
         "//props/core:runs_context",
         "//props/core/models:snapshot",
+        "//props/core/models:true_positive",
         "//props/db:models",
         "//props/db:session",
         "@pypi//pygit2",
@@ -98,13 +96,13 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        ":sync",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
         "//props/db:examples",
+        "//props/db:models",
         "//props/db:session",
-        "//props/testing",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -115,13 +113,10 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":loader",
-        ":sync",
-        "//props/db:session",
-        "//props/testing",
+        "//props/core:ids",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-        "@pypi//sqlalchemy",
-        "@pypi//types_pyyaml",
     ],
 )

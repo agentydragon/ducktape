@@ -1,39 +1,43 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-py_library(
-    name = "gitea_mirror_lib",
-    srcs = [
-        "launcher.py",
-        "server.py",
-    ],
-    imports = ["../../.."],
+# Gazelle will create per-file py_library targets (server, launcher, conftest)
+
+py_binary(
+    name = "gitea_mirror_launcher",
+    srcs = ["launcher.py"],
+    main = "launcher.py",
     visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":conftest",
+        ":server",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra",
-        "//mcp_infra/enhanced",
-        "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//requests",
     ],
 )
 
-py_binary(
-    name = "launcher",
-    srcs = ["launcher.py"],
-    deps = [":gitea_mirror_lib"],
-)
-
-py_test(
-    name = "test_server",
-    srcs = [
-        "conftest.py",
-        "test_server.py",
-    ],
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":gitea_mirror_lib",
-        "//mcp_infra/testing",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )

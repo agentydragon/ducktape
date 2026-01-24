@@ -30,8 +30,8 @@ py_test(
     name = "test_json_schema",
     srcs = ["test_json_schema.py"],
     deps = [
+        ":conftest",
         ":openai_utils",
-        "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -42,9 +42,9 @@ py_test(
     name = "test_pydantic_strict_mode",
     srcs = ["test_pydantic_strict_mode.py"],
     deps = [
+        ":conftest",
         ":openai_utils",
         "//openai_utils/testing",
-        "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -53,16 +53,14 @@ py_test(
 
 py_test(
     name = "test_pydantic_strict_mode_live",
-    srcs = [
-        "conftest.py",
-        "test_pydantic_strict_mode_live.py",
-    ],
+    srcs = ["test_pydantic_strict_mode_live.py"],
     env_inherit = [
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
     ],
     tags = ["live_openai_api"],
     deps = [
+        ":conftest",
         ":openai_utils",
         "//openai_utils/testing",
         "@pypi//openai",
@@ -75,19 +73,15 @@ py_test(
 
 py_test(
     name = "test_context_length_live",
-    srcs = [
-        "conftest.py",
-        "test_context_length_live.py",
-    ],
+    srcs = ["test_context_length_live.py"],
     env_inherit = [
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
     ],
     tags = ["live_openai_api"],
     deps = [
+        ":conftest",
         ":openai_utils",
-        "@pypi//openai",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -96,19 +90,15 @@ py_test(
 
 py_test(
     name = "test_responses_api_live",
-    srcs = [
-        "conftest.py",
-        "test_responses_api_live.py",
-    ],
+    srcs = ["test_responses_api_live.py"],
     env_inherit = [
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
     ],
     tags = ["live_openai_api"],
     deps = [
-        ":openai_utils",
+        ":conftest",
         "@pypi//openai",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -118,4 +108,115 @@ py_test(
 ruff_test(
     name = "ruff",
     srcs = [":openai_utils"],
+)
+
+py_library(
+    name = "builders",
+    srcs = ["builders.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "client_factory",
+    srcs = ["client_factory.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":openai_utils",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//openai"],
+)
+
+py_library(
+    name = "http_logging",
+    srcs = ["http_logging.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "json_schema",
+    srcs = ["json_schema.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "model",
+    srcs = ["model.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":openai_utils",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "model_metadata",
+    srcs = ["model_metadata.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "pydantic_strict_mode",
+    srcs = ["pydantic_strict_mode.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":openai_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "retry",
+    srcs = ["retry.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "text_extraction",
+    srcs = ["text_extraction.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":openai_utils"],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//typing_extensions"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pytest",
+    ],
 )

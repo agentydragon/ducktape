@@ -1,58 +1,16 @@
 """System rewriter package."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-py_library(
-    name = "sysrw",
-    srcs = [
-        "anthropic/text_extraction.py",
-        "anthropic/types.py",
-        "cli.py",
-        "compare_eval_vs_ccr.py",
-        "constants.py",
-        "extract_common.py",
-        "extract_dataset.py",
-        "extract_dataset_ccr.py",
-        "extract_dataset_crush.py",
-        "leaderboard.py",
-        "openai_typing.py",
-        "prompts.py",
-        "run_eval.py",
-        "schemas.py",
-        "templates/__init__.py",
-        "tools/show_rewritten_crush.py",
-        "translation.py",
-        "validation.py",
-    ],
-    data = glob([
-        "**/*.j2",
-        "js/*.js",
-        "templates/**/*.txt",
-    ]),
-    imports = [".."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//openai_utils",
-        "@pypi//anthropic",
-        "@pypi//jinja2",
-        "@pypi//openai",
-        "@pypi//pydantic",
-        "@pypi//rich",
-        "@pypi//tiktoken",
-        "@pypi//typer",
-    ],
-)
+# Gazelle will create per-file py_library targets
+# Subdirectories (anthropic/, templates/, tools/) have their own BUILD files
 
 py_test(
     name = "test_templates_conformance",
-    srcs = [
-        "conftest.py",
-        "test_templates_conformance.py",
-    ],
-    imports = [".."],
+    srcs = ["test_templates_conformance.py"],
     deps = [
-        ":sysrw",
+        ":conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -60,14 +18,12 @@ py_test(
 
 py_test(
     name = "test_loader_min",
-    srcs = [
-        "conftest.py",
-        "test_loader_min.py",
-    ],
+    srcs = ["test_loader_min.py"],
     data = glob(["testdata/*.jsonl"]),
-    imports = [".."],
     deps = [
-        ":sysrw",
+        ":conftest",
+        ":run_eval",
+        ":schemas",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -77,20 +33,157 @@ py_test(
 
 py_test(
     name = "test_check_crush_dataset",
-    srcs = [
-        "conftest.py",
-        "test_check_crush_dataset.py",
-    ],
+    srcs = ["test_check_crush_dataset.py"],
     data = glob(["testdata/*.jsonl"]),
-    imports = [".."],
     deps = [
-        ":sysrw",
-        "@pypi//pytest",
+        ":conftest",
         "@pypi//pytest_bazel",
     ],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":sysrw"],
+    srcs = [
+        ":cli",
+        ":compare_eval_vs_ccr",
+        ":conftest",
+        ":constants",
+        ":extract_common",
+        ":extract_dataset",
+        ":extract_dataset_ccr",
+        ":extract_dataset_crush",
+        ":leaderboard",
+        ":openai_typing",
+        ":prompts",
+        ":run_eval",
+        ":schemas",
+        ":translation",
+        ":validation",
+    ],
+)
+
+py_binary(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils",
+        "@pypi//rich",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_binary(
+    name = "compare_eval_vs_ccr",
+    srcs = ["compare_eval_vs_ccr.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "extract_common",
+    srcs = ["extract_common.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "extract_dataset",
+    srcs = ["extract_dataset.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "extract_dataset_ccr",
+    srcs = ["extract_dataset_ccr.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "extract_dataset_crush",
+    srcs = ["extract_dataset_crush.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "leaderboard",
+    srcs = ["leaderboard.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//rich",
+    ],
+)
+
+py_library(
+    name = "openai_typing",
+    srcs = ["openai_typing.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//openai"],
+)
+
+py_library(
+    name = "run_eval",
+    srcs = ["run_eval.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils",
+        "//sysrw/anthropic:types",
+        "@pypi//jinja2",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_library(
+    name = "schemas",
+    srcs = ["schemas.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils",
+        "//sysrw/anthropic:types",
+        "@pypi//anthropic",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "translation",
+    srcs = ["translation.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sysrw/anthropic:text_extraction",
+        "//sysrw/anthropic:types",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "validation",
+    srcs = ["validation.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pytest"],
 )

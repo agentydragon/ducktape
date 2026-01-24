@@ -7,7 +7,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//wt:__subpackages__"],
     deps = [
-        "//wt/testing",
+        "//wt",
         "@pypi//pytest",
     ],
 )
@@ -27,6 +27,38 @@ py_test(
     deps = [
         ":conftest",
         "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration_cli_daemon",
+    srcs = ["test_integration_cli_daemon.py"],
+    deps = [
+        "//wt",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration_cli_output_format",
+    srcs = ["test_integration_cli_output_format.py"],
+    deps = [
+        "//wt",
+        "//wt:cli",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration_shell",
+    srcs = ["test_integration_shell.py"],
+    deps = [
+        "//wt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
