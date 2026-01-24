@@ -149,7 +149,7 @@ def build_compute_targets_job() -> GHAJob:
             GHAStep(uses="bazelbuild/setup-bazelisk@v3"),
             GHAStep(uses="actions/setup-java@v4", with_args={"distribution": "temurin", "java-version": "21"}),
             GHAStep(
-                name="Cache bazel-diff",
+                name="Cache bazel-diff JAR",
                 id="cache-bazel-diff",
                 uses="actions/cache@v4",
                 with_args={"path": "bazel-diff.jar", "key": f"bazel-diff-{BAZEL_DIFF_VERSION}"},
@@ -162,7 +162,20 @@ def build_compute_targets_job() -> GHAJob:
                     f'  "https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"'
                 ),
             ),
-            GHAStep(name="Set bazel-diff path", run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV'),
+            GHAStep(
+                name="Cache bazel-diff hashes",
+                uses="actions/cache@v4",
+                with_args={
+                    "path": ".bazel-diff-cache",
+                    "key": "bazel-diff-hashes-${{ github.sha }}",
+                    "restore-keys": "bazel-diff-hashes-",
+                },
+            ),
+            GHAStep(
+                name="Set bazel-diff env",
+                run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
+                'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV',
+            ),
             GHAStep(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
         ],
     )

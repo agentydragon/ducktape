@@ -38,7 +38,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Cache bazel-diff
+      - name: Cache bazel-diff JAR
         id: cache-bazel-diff
         uses: actions/cache@v4
         with:
@@ -49,8 +49,16 @@ jobs:
         run: |-
           curl -fsSL -o bazel-diff.jar \
             "https://github.com/Tinder/bazel-diff/releases/download/12.1.1/bazel-diff_deploy.jar"
-      - name: Set bazel-diff path
-        run: echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
+      - name: Cache bazel-diff hashes
+        uses: actions/cache@v4
+        with:
+          path: .bazel-diff-cache
+          key: bazel-diff-hashes-${{ github.sha }}
+          restore-keys: bazel-diff-hashes-
+      - name: Set bazel-diff env
+        run: |-
+          echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
+          echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
       - name: Compute CI decision
         id: decide
         run: uv run tools/ci/ci_decide.py

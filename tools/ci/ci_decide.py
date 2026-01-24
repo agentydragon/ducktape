@@ -139,6 +139,38 @@ def checkout_commit(repo: pygit2.Repository, commit: pygit2.Commit) -> None:
     repo.set_head(commit.id)
 
 
+def get_or_generate_hashes(
+    repo: pygit2.Repository, jar_path: Path, workspace: Path, commit: pygit2.Commit, cache_dir: Path
+) -> Path:
+    """Get cached hashes or generate them for a commit.
+
+    Returns path to the hash JSON file.
+    """
+    sha = str(commit.id)
+    cached_path = cache_dir / f"{sha}.json"
+
+    if cached_path.exists():
+        print(f"Using cached hashes for {sha[:8]}")
+        return cached_path
+
+    print(f"Generating hashes for {sha[:8]}...")
+    current_head = repo.head.peel(pygit2.Commit)
+    checkout_commit(repo, commit)
+
+    try:
+        subprocess.run(
+            ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", cached_path],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        # Always restore to original HEAD
+        checkout_commit(repo, current_head)
+
+    return cached_path
+
+
 def run_bazel_diff(
     repo: pygit2.Repository, jar_path: Path, workspace: Path, base_commit: pygit2.Commit
 ) -> list[str] | None:
@@ -148,60 +180,36 @@ def run_bazel_diff(
     """
     head_commit = repo.head.peel(pygit2.Commit)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        base_json = Path(tmpdir) / "base.json"
-        head_json = Path(tmpdir) / "head.json"
-        targets_file = Path(tmpdir) / "targets.txt"
+    # Use cache directory for hash files (persisted via GitHub Actions cache)
+    cache_dir = Path(os.environ.get("BAZEL_DIFF_CACHE_DIR", workspace / ".bazel-diff-cache"))
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            # Generate hashes for base commit
-            print(f"Generating hashes for base commit {str(base_commit.id)[:8]}...")
-            checkout_commit(repo, base_commit)
-            subprocess.run(
-                ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", base_json],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+    try:
+        base_json = get_or_generate_hashes(repo, jar_path, workspace, base_commit, cache_dir)
+        head_json = get_or_generate_hashes(repo, jar_path, workspace, head_commit, cache_dir)
 
-            # Generate hashes for head commit
-            print(f"Generating hashes for head commit {str(head_commit.id)[:8]}...")
-            checkout_commit(repo, head_commit)
-            subprocess.run(
-                ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", head_json],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+        # Compute impacted targets
+        print("Computing impacted targets...")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            targets_file = Path(f.name)
 
-            # Compute impacted targets
-            print("Computing impacted targets...")
-            subprocess.run(
-                [
-                    "java",
-                    "-jar",
-                    jar_path,
-                    "get-impacted-targets",
-                    "-sh",
-                    base_json,
-                    "-fh",
-                    head_json,
-                    "-o",
-                    targets_file,
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as e:
-            print(f"bazel-diff failed: {e.stderr or e.stdout or e}")
-            checkout_commit(repo, head_commit)
-            return None
+        subprocess.run(
+            ["java", "-jar", jar_path, "get-impacted-targets", "-sh", base_json, "-fh", head_json, "-o", targets_file],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
         if not targets_file.exists() or targets_file.stat().st_size == 0:
             return []
 
-        return [t for t in targets_file.read_text().strip().split("\n") if t]
+        result = [t for t in targets_file.read_text().strip().split("\n") if t]
+        targets_file.unlink()
+        return result
+
+    except subprocess.CalledProcessError as e:
+        print(f"bazel-diff failed: {e.stderr or e.stdout or e}")
+        return None
 
 
 def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
