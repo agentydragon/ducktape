@@ -3,10 +3,10 @@
 # This file defines all CI workflows and their triggers. The generator script
 # (generate_ci.py) reads this to produce .github/workflows/ci.yml.
 #
-# Trigger types:
-#   bazel_pattern: Bazel target pattern (uses bazel query intersection)
-#   path_pattern: Regex pattern for changed files
+# Trigger types (discriminated by trigger.kind):
 #   always: Always run this workflow
+#   bazel: Bazel target pattern (uses bazel query intersection)
+#   path: Regex pattern for changed files
 #
 # Job options:
 #   targets: Pass affected targets to the workflow (default: false)
@@ -15,63 +15,64 @@
 #
 # Workflow file changes automatically trigger their workflow.
 
-# Core Bazel workflows
-bazel-build:
-  bazel_pattern: "//..."
-  targets: true
-  secrets: [BUILDBUDDY_API_KEY]
+workflows:
+  # Core Bazel workflows
+  bazel-build:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    secrets: [BUILDBUDDY_API_KEY]
 
-bazel-test:
-  bazel_pattern: "//..."
-  targets: true
-  secrets: [BUILDBUDDY_API_KEY]
+  bazel-test:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    secrets: [BUILDBUDDY_API_KEY]
 
-bazel-lint:
-  bazel_pattern: "//..."
-  targets: true
-  inputs:
-    enable_profiling: ${{ inputs.enable_profiling || false }}
-  secrets: [BUILDBUDDY_API_KEY]
+  bazel-lint:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    inputs:
+      enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: [BUILDBUDDY_API_KEY]
 
-bazel-typecheck:
-  bazel_pattern: "//..."
-  targets: true
-  inputs:
-    enable_profiling: ${{ inputs.enable_profiling || false }}
-  secrets: [BUILDBUDDY_API_KEY]
+  bazel-typecheck:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    inputs:
+      enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: [BUILDBUDDY_API_KEY]
 
-# Rust-specific (only finance/ has Rust code)
-bazel-rust-lint:
-  bazel_pattern: "//finance/..."
-  inputs:
-    enable_profiling: ${{ inputs.enable_profiling || false }}
-  secrets: [BUILDBUDDY_API_KEY]
+  # Rust-specific (only finance/ has Rust code)
+  bazel-rust-lint:
+    trigger: { kind: bazel, pattern: "//finance/..." }
+    inputs:
+      enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: [BUILDBUDDY_API_KEY]
 
-# E2E test workflows
-props-e2e-test:
-  bazel_pattern: "//props/..."
-  secrets: [BUILDBUDDY_API_KEY]
+  # E2E test workflows
+  props-e2e-test:
+    trigger: { kind: bazel, pattern: "//props/..." }
+    secrets: [BUILDBUDDY_API_KEY]
 
-editor-e2e-test:
-  bazel_pattern: "//editor_agent/..."
-  secrets: [BUILDBUDDY_API_KEY]
+  editor-e2e-test:
+    trigger: { kind: bazel, pattern: "//editor_agent/..." }
+    secrets: [BUILDBUDDY_API_KEY]
 
-agent-server-e2e-test:
-  bazel_pattern: "//agent_server/..."
-  secrets: [BUILDBUDDY_API_KEY]
+  agent-server-e2e-test:
+    trigger: { kind: bazel, pattern: "//agent_server/..." }
+    secrets: [BUILDBUDDY_API_KEY]
 
-# Frontend visual regression
-visual-regression:
-  bazel_pattern: "//props/frontend/..."
-  secrets: [BUILDBUDDY_API_KEY]
+  # Frontend visual regression
+  visual-regression:
+    trigger: { kind: bazel, pattern: "//props/frontend/..." }
+    secrets: [BUILDBUDDY_API_KEY]
 
-# Path-based workflows (non-Bazel)
-nix-flake-check:
-  path_pattern: "^nix/"
+  # Path-based workflows (non-Bazel)
+  nix-flake-check:
+    trigger: { kind: path, pattern: "^nix/" }
 
-ansible-lint:
-  path_pattern: "^ansible/"
+  ansible-lint:
+    trigger: { kind: path, pattern: "^ansible/" }
 
-# Always-run workflows
-pre-commit:
-  always: true
+  # Always-run workflows
+  pre-commit:
+    trigger: { kind: always }
