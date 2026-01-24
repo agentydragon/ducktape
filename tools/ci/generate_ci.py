@@ -66,6 +66,18 @@ class GHAJob(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class GHAWorkflow(BaseModel):
+    """A GitHub Actions workflow file."""
+
+    name: str
+    on: dict[str, Any] = Field(serialization_alias="on")
+    concurrency: dict[str, Any]
+    permissions: dict[str, str]
+    jobs: dict[str, GHAJob]
+
+    model_config = {"populate_by_name": True}
+
+
 COMPUTE_TARGETS_JOB = GHAJob(
     name="Compute affected targets",
     runs_on="ubuntu-latest",
@@ -129,16 +141,15 @@ def build_workflow_job(name: str, config: WorkflowConfig) -> GHAJob:
     )
 
 
-def generate_ci_config(manifest: WorkflowManifest) -> dict[str, Any]:
-    """Generate the complete ci.yml config dict."""
-    jobs: dict[str, Any] = {"compute-targets": COMPUTE_TARGETS_JOB.model_dump(by_alias=True, exclude_none=True)}
-
+def generate_ci_config(manifest: WorkflowManifest) -> GHAWorkflow:
+    """Generate the complete ci.yml config."""
+    jobs: dict[str, GHAJob] = {"compute-targets": COMPUTE_TARGETS_JOB}
     for name, config in manifest.workflows.items():
-        jobs[name] = build_workflow_job(name, config).model_dump(by_alias=True, exclude_none=True)
+        jobs[name] = build_workflow_job(name, config)
 
-    return {
-        "name": "CI",
-        "on": {
+    return GHAWorkflow(
+        name="CI",
+        on={
             "push": {"branches": ["main", "master", "devel"]},
             "pull_request": None,
             "workflow_dispatch": {
@@ -152,15 +163,16 @@ def generate_ci_config(manifest: WorkflowManifest) -> dict[str, Any]:
                 }
             },
         },
-        "concurrency": {"group": "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": True},
-        "permissions": {"contents": "read"},
-        "jobs": jobs,
-    }
+        concurrency={"group": "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": True},
+        permissions={"contents": "read"},
+        jobs=jobs,
+    )
 
 
 def generate_ci_yml(manifest: WorkflowManifest) -> str:
     """Generate the complete ci.yml content."""
-    config = generate_ci_config(manifest)
+    workflow = generate_ci_config(manifest)
+    config = workflow.model_dump(by_alias=True, exclude_none=True)
 
     # Custom representer for multiline strings
     def str_representer(dumper: yaml.Dumper, data: str) -> yaml.Node:
