@@ -86,7 +86,15 @@ jobs:
           ADGN_PROPS_SPECIMENS_ROOT: ${{ github.workspace }}/props/testing/fixtures/testdata/specimens
         run: bazel run //props/cli:cli -- db recreate -y
 
-      # Now start backend (schema exists)
+      # Push agent images before backend starts (daemon manager needs grader image)
+      - name: Push agent images
+        run: |
+          bazel run //props/critic:push
+          bazel run //props/grader:push
+          bazel run //props/critic_dev/improve:push
+          bazel run //props/critic_dev/optimize:push
+
+      # Now start backend (schema exists, grader image available)
       - name: Start backend
         working-directory: props
         run: |
@@ -103,14 +111,6 @@ jobs:
             sleep 1
           done
           echo "Backend ready"
-
-      # Build and push agent images to local registry
-      - name: Push agent images
-        run: |
-          bazel run //props/critic:push
-          bazel run //props/grader:push
-          bazel run //props/critic_dev/improve:push
-          bazel run //props/critic_dev/optimize:push
 
       - name: Run E2E tests
         env:
