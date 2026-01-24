@@ -1,15 +1,14 @@
 """Props-specific mock utilities."""
 
 from collections.abc import Generator
-from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
 from agent_core_testing.responses import DecoratorMock
 from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage
-from props.grader.tools import PendingEdge
+from props.grader.tools import FillRemainingArgs, ListPendingArgs, PendingEdge, SubmitArgs
 
 
 def get_system_message_text(req: ResponsesRequest) -> str:
@@ -75,22 +74,12 @@ class GraderMock(DecoratorMock):
             yield m.submit("Grading complete")
     """
 
-    def grader_tool_call(self, name: str, arguments: dict[str, Any] | BaseModel) -> FunctionCallItem:
-        """Create a grader tool call (tools registered directly, no MCP prefix)."""
-        args_dict = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
-        return self.tool_call(name, args_dict)
-
-    def list_pending_call(self, *, issue: str | None = None, run: str | None = None) -> FunctionCallItem:
+    def list_pending_call(self, *, issue: str | None = None, run: UUID | None = None) -> FunctionCallItem:
         """Create list_pending tool call."""
-        args: dict[str, Any] = {}
-        if issue is not None:
-            args["issue"] = issue
-        if run is not None:
-            args["run"] = run
-        return self.grader_tool_call("list_pending", args)
+        return self.tool_call("list_pending", ListPendingArgs(issue=issue, run=run))
 
     def list_pending_roundtrip(
-        self, *, issue: str | None = None, run: str | None = None
+        self, *, issue: str | None = None, run: UUID | None = None
     ) -> Generator[FunctionCallItem, ResponsesRequest, list[PendingEdge]]:
         """Yield list_pending call and return parsed result as list of PendingEdge."""
         call = self.list_pending_call(issue=issue, run=run)
@@ -100,9 +89,9 @@ class GraderMock(DecoratorMock):
 
     def fill_remaining_call(self, run: UUID, issue_id: str, expected_count: int, rationale: str) -> FunctionCallItem:
         """Create fill_remaining tool call."""
-        return self.grader_tool_call(
+        return self.tool_call(
             "fill_remaining",
-            {"run": str(run), "issue_id": issue_id, "expected_count": expected_count, "rationale": rationale},
+            FillRemainingArgs(run=run, issue_id=issue_id, expected_count=expected_count, rationale=rationale),
         )
 
     def fill_remaining_roundtrip(
@@ -115,7 +104,7 @@ class GraderMock(DecoratorMock):
 
     def submit_call(self, summary: str) -> FunctionCallItem:
         """Create submit tool call."""
-        return self.grader_tool_call("submit", {"summary": summary})
+        return self.tool_call("submit", SubmitArgs(summary=summary))
 
     def submit(self, summary: str) -> FunctionCallItem:
         """Create submit tool call (alias for convenience)."""
