@@ -175,7 +175,6 @@ def e2e_registry_container_url(e2e_registry: DockerContainer) -> str:
 AGENT_IMAGE_CONFIGS: dict[str, tuple[str, str, str]] = {
     "critic_image": ("props/critic/load.sh", "critic", "critic-agent:latest"),
     "grader_image": ("props/grader/load.sh", "grader", "grader-agent:latest"),
-    "grader_daemon_image": ("props/grader/daemon_load.sh", "grader-daemon", "grader-daemon:latest"),
     "prompt_optimizer_image": ("props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer:latest"),
     "improvement_image": ("props/critic_dev/improve/load.sh", "improvement", "improvement-agent:latest"),
 }
@@ -195,7 +194,6 @@ def _make_image_fixture(load_script: str, repo_name: str, local_tag: str):
 # Generate fixtures for each agent
 critic_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["critic_image"])
 grader_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["grader_image"])
-grader_daemon_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["grader_daemon_image"])
 prompt_optimizer_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["prompt_optimizer_image"])
 improvement_image = _make_image_fixture(*AGENT_IMAGE_CONFIGS["improvement_image"])
 
