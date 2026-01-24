@@ -7,6 +7,7 @@
 # gazelle:exclude k8s-old  # legacy k8s configs, deps not in main requirements
 
 # gazelle:python_root
+# gazelle:python_generation_mode file
 #
 # Resolve local packages with fine-grained targets.
 # These packages have multiple py_library targets for different modules,
