@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
@@ -20,7 +21,6 @@ import asyncpg
 from asyncpg.pool import PoolConnectionProxy
 
 from props.core.ids import SnapshotSlug
-from props.db.config import DatabaseConfig
 from props.db.models import Snapshot
 from props.db.session import get_session
 from props.grader.notifications import SNAPSHOT_CREATED_CHANNEL, SnapshotCreatedNotification
@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     from props.core.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
+
+# Type alias for async connection factory
+ConnectionFactory = Callable[[], Awaitable[asyncpg.Connection[Any]]]
 
 
 class DaemonManager:
@@ -46,12 +49,12 @@ class DaemonManager:
         # dm.shutdown() called automatically
     """
 
-    def __init__(self, registry: AgentRegistry, db_config: DatabaseConfig, model: str):
+    def __init__(self, registry: AgentRegistry, connect: ConnectionFactory, model: str):
         self._registry = registry
-        self._db_config = db_config
+        self._connect = connect
         self._model = model
         self._tasks: dict[SnapshotSlug, asyncio.Task[Any]] = {}
-        self._listener_conn: asyncpg.Connection | None = None
+        self._listener_conn: asyncpg.Connection[Any] | None = None
         self._shutdown = False
 
     async def __aenter__(self) -> DaemonManager:
@@ -108,7 +111,7 @@ class DaemonManager:
 
     async def _start_listener(self) -> None:
         """Start listening for snapshot_created notifications."""
-        self._listener_conn = await asyncpg.connect(self._db_config.admin.url())
+        self._listener_conn = await self._connect()
         await self._listener_conn.add_listener(SNAPSHOT_CREATED_CHANNEL, self._notification_callback)
         logger.info(f"Listening on channel '{SNAPSHOT_CREATED_CHANNEL}' for new snapshots")
 

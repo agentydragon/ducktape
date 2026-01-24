@@ -42,6 +42,7 @@ py_library(
         "//props/core/models:examples",
         "//props/core/models:true_positive",
         "@pypi//aiodocker",
+        "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//mcp",

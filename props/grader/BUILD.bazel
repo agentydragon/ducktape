@@ -193,7 +193,6 @@ py_library(
         ":notifications",
         "//props/core:agent_registry",
         "//props/core:ids",
-        "//props/db:config",
         "//props/db:models",
         "//props/db:session",
         "@pypi//asyncpg",

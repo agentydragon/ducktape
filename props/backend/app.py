@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiodocker
+import asyncpg
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -29,7 +30,6 @@ from fastapi.staticfiles import StaticFiles
 from cli_util.logging import LogLevel, configure_logging
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
-from props.cli.common_options import DEFAULT_LLM_PROXY_URL
 from props.cli.resources import get_database_config
 from props.core.agent_registry import AgentRegistry
 from props.grader.daemon_manager import DaemonManager
@@ -43,6 +43,14 @@ configure_logging(
 )
 logger = logging.getLogger(__name__)
 
+# Environment variable names for configuration
+ENV_LLM_PROXY_URL = "PROPS_LLM_PROXY_URL"
+ENV_GRADER_MODEL = "PROPS_GRADER_MODEL"
+ENV_CORS_ORIGINS = "PROPS_CORS_ORIGINS"
+
+# Default CORS origins for development
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -52,21 +60,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
 
-    llm_proxy_url = getattr(app.state, "llm_proxy_url", None) or DEFAULT_LLM_PROXY_URL
+    # LLM proxy URL is required - check app.state first (for tests), then env var
+    llm_proxy_url = getattr(app.state, "llm_proxy_url", None) or os.environ.get(ENV_LLM_PROXY_URL)
+    if not llm_proxy_url:
+        raise RuntimeError(f"LLM proxy URL required: set {ENV_LLM_PROXY_URL} or app.state.llm_proxy_url")
 
     # Registry owns resources and orchestrates agent runs
     app.state.registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)
 
     # Initialize daemon manager if configured
     # Daemon manager listens for pg_notify on snapshot_created channel and spawns daemons automatically
-    grader_model = os.environ.get("PROPS_GRADER_MODEL")
+    grader_model = getattr(app.state, "grader_model", None) or os.environ.get(ENV_GRADER_MODEL)
     if grader_model:
-        app.state.daemon_manager = DaemonManager(registry=app.state.registry, db_config=db_config, model=grader_model)
+        # Connection factory for pg_notify listener
+        async def connect() -> asyncpg.Connection[asyncpg.Record]:
+            return await asyncpg.connect(db_config.admin.url())
+
+        app.state.daemon_manager = DaemonManager(registry=app.state.registry, connect=connect, model=grader_model)
         await app.state.daemon_manager.start()
         logger.info(f"Daemon manager started (model: {grader_model})")
     else:
         app.state.daemon_manager = None
-        logger.info("Daemon manager disabled (PROPS_GRADER_MODEL not set)")
+        logger.info(f"Daemon manager disabled ({ENV_GRADER_MODEL} not set)")
 
     logger.info("Props backend ready")
     yield
@@ -92,9 +107,10 @@ def create_app(*, static_dir: Path | None = None) -> FastAPI:
     app.add_middleware(AuthMiddleware)
 
     # CORS for development (Vite dev server on different port)
+    cors_origins = os.environ.get(ENV_CORS_ORIGINS, DEFAULT_CORS_ORIGINS)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=[origin.strip() for origin in cors_origins.split(",")],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
