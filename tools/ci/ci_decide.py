@@ -1,14 +1,16 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["pydantic>=2.0", "pygit2>=1.14", "pyyaml>=6.0"]
+# ///
 """CI decision engine - computes affected targets and workflows to run.
 
 Reads workflow definitions from workflows.yaml and uses bazel-diff to compute
 exactly which Bazel targets are affected. Outputs a JSON list of workflows
 to trigger instead of individual boolean flags.
 
-Outputs to $GITHUB_OUTPUT:
-    targets: space-separated list of affected Bazel targets (or "//..." on infra change)
-    workflows: JSON array of workflow names to run
-    infra_changed: "true" if infrastructure files changed (MODULE.bazel, etc.)
+Requires GITHUB_OUTPUT environment variable to be set.
+Requires BAZEL_DIFF_JAR environment variable pointing to bazel-diff JAR.
 """
 
 from __future__ import annotations
@@ -19,10 +21,11 @@ import re
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
 
+import pygit2
 import yaml
+from pydantic import BaseModel, Field
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
 INFRA_PATTERNS = [
@@ -36,101 +39,92 @@ INFRA_PATTERNS = [
 ]
 
 
-@dataclass
-class WorkflowConfig:
-    """Configuration for a single workflow."""
+class WorkflowTrigger(BaseModel):
+    """Trigger configuration for a workflow."""
 
     name: str
     bazel_pattern: str | None = None
     path_pattern: str | None = None
     always: bool = False
-    pass_targets: bool = False  # Whether this workflow receives the targets input
 
 
-@dataclass
-class CIDecision:
+class CIDecision(BaseModel):
     """Result of CI decision computation."""
 
-    targets: str  # Space-separated Bazel targets or "//..."
-    workflows: list[str] = field(default_factory=list)
+    targets: list[str] = Field(default_factory=list)  # List of affected Bazel targets
+    all_targets: bool = False  # True means "//..." (rebuild everything)
+    workflows: list[str] = Field(default_factory=list)
     infra_changed: bool = False
 
+    @property
+    def targets_str(self) -> str:
+        """Return targets as space-separated string for GitHub Actions output."""
+        if self.all_targets:
+            return "//..."
+        return " ".join(self.targets)
 
-def run_cmd(cmd: list[str], *, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess:
-    """Run a command, optionally checking return code."""
-    return subprocess.run(cmd, check=check, capture_output=capture, text=True)
-
-
-def output(key: str, value: str) -> None:
-    """Write a key-value pair to GitHub Actions output."""
-    output_file = os.environ.get("GITHUB_OUTPUT")
-    if output_file:
-        with Path(output_file).open("a") as f:
-            f.write(f"{key}={value}\n")
-    print(f"{key}={value}")
-
-
-def bool_str(value: bool) -> str:
-    """Convert bool to GitHub Actions output string."""
-    return "true" if value else "false"
+    def write_to_github_output(self, output_path: Path) -> None:
+        """Write decision to GitHub Actions output file."""
+        with output_path.open("a") as f:
+            f.write(f"targets={self.targets_str}\n")
+            f.write(f"workflows={json.dumps(self.workflows)}\n")
+            f.write(f"infra_changed={'true' if self.infra_changed else 'false'}\n")
 
 
-def print_truncated(label: str, items: list[str], limit: int = 20) -> None:
-    """Print a list, truncating if over limit."""
-    print(f"{label}:")
-    for item in items[:limit]:
-        print(f"  {item}")
-    if len(items) > limit:
-        print(f"  ... and {len(items) - limit} more")
-
-
-def load_workflows(manifest_path: Path) -> dict[str, WorkflowConfig]:
+def load_workflows(manifest_path: Path) -> dict[str, WorkflowTrigger]:
     """Load workflow definitions from YAML manifest."""
     with manifest_path.open() as f:
         data = yaml.safe_load(f)
 
-    workflows = {}
-    for name, config in data.items():
-        workflows[name] = WorkflowConfig(
+    return {
+        name: WorkflowTrigger(
             name=name,
             bazel_pattern=config.get("bazel_pattern"),
             path_pattern=config.get("path_pattern"),
             always=config.get("always", False),
-            pass_targets=config.get("targets", False),
         )
-    return workflows
+        for name, config in data.items()
+    }
 
 
-def get_base_sha() -> str | None:
-    """Determine base SHA for comparison (merge-base for PRs, HEAD~1 for pushes)."""
+def get_base_commit(repo: pygit2.Repository) -> pygit2.Commit | None:
+    """Determine base commit for comparison."""
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
 
     if event_name == "pull_request":
         base_ref = os.environ.get("GITHUB_BASE_REF", "")
         if not base_ref:
             return None
-        result = run_cmd(["git", "merge-base", f"origin/{base_ref}", "HEAD"], check=False)
-        if result.returncode != 0:
+        try:
+            remote_ref = repo.references.get(f"refs/remotes/origin/{base_ref}")
+            if remote_ref is None:
+                return None
+            base_commit = remote_ref.peel(pygit2.Commit)
+            merge_base_oid = repo.merge_base(base_commit.id, repo.head.target)
+            if merge_base_oid is None:
+                return None
+            print(f"Pull request: comparing against merge-base {str(merge_base_oid)[:8]}")
+            return repo.get(merge_base_oid)
+        except (KeyError, pygit2.GitError):
             return None
-        sha = result.stdout.strip()
-        print(f"Pull request: comparing against merge-base {sha}")
-        return sha
 
-    # Push event: compare against previous commit
-    result = run_cmd(["git", "rev-parse", "HEAD~1"], check=False, capture=True)
-    if result.returncode != 0:
-        return None
-    sha = result.stdout.strip()
-    print(f"Push: comparing against HEAD~1 ({sha})")
-    return sha
+    # Push event: compare against parent commit
+    try:
+        head_commit = repo.head.peel(pygit2.Commit)
+        if head_commit.parents:
+            parent = head_commit.parents[0]
+            print(f"Push: comparing against HEAD~1 ({str(parent.id)[:8]})")
+            return parent
+    except (KeyError, pygit2.GitError):
+        pass
+    return None
 
 
-def get_changed_files(base_sha: str) -> list[str]:
-    """Get list of files changed between base_sha and HEAD."""
-    result = run_cmd(["git", "diff", "--name-only", f"{base_sha}...HEAD"], check=False)
-    if result.returncode != 0:
-        return []
-    return [f for f in result.stdout.strip().split("\n") if f]
+def get_changed_files(repo: pygit2.Repository, base_commit: pygit2.Commit) -> list[str]:
+    """Get list of files changed between base commit and HEAD."""
+    head_commit = repo.head.peel(pygit2.Commit)
+    diff = repo.diff(base_commit, head_commit)
+    return [delta.new_file.path for delta in diff.deltas]
 
 
 def has_infra_changes(changed_files: list[str]) -> bool:
@@ -139,12 +133,20 @@ def has_infra_changes(changed_files: list[str]) -> bool:
     return any(r.match(f) for r in compiled for f in changed_files)
 
 
-def run_bazel_diff(jar_path: Path, workspace: str, base_sha: str) -> list[str] | None:
+def checkout_commit(repo: pygit2.Repository, commit: pygit2.Commit) -> None:
+    """Checkout a specific commit, updating the working directory."""
+    repo.checkout_tree(commit, strategy=pygit2.GIT_CHECKOUT_FORCE)
+    repo.set_head(commit.id)
+
+
+def run_bazel_diff(
+    repo: pygit2.Repository, jar_path: Path, workspace: Path, base_commit: pygit2.Commit
+) -> list[str] | None:
     """Run bazel-diff to compute impacted targets.
 
     Returns list of targets, empty list if no changes, or None on failure.
     """
-    current_sha = run_cmd(["git", "rev-parse", "HEAD"]).stdout.strip()
+    head_commit = repo.head.peel(pygit2.Commit)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         base_json = Path(tmpdir) / "base.json"
@@ -152,25 +154,29 @@ def run_bazel_diff(jar_path: Path, workspace: str, base_sha: str) -> list[str] |
         targets_file = Path(tmpdir) / "targets.txt"
 
         # Generate hashes for base commit
-        print(f"Generating hashes for base commit {base_sha[:8]}...")
-        run_cmd(["git", "checkout", "--quiet", base_sha])
+        print(f"Generating hashes for base commit {str(base_commit.id)[:8]}...")
+        checkout_commit(repo, base_commit)
 
-        result = run_cmd(
-            ["java", "-jar", str(jar_path), "generate-hashes", "-w", workspace, "-b", "bazelisk", str(base_json)],
+        result = subprocess.run(
+            ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", base_json],
             check=False,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             print("Base hash generation failed")
-            run_cmd(["git", "checkout", "--quiet", current_sha])
+            checkout_commit(repo, head_commit)
             return None
 
         # Generate hashes for head commit
-        print(f"Generating hashes for head commit {current_sha[:8]}...")
-        run_cmd(["git", "checkout", "--quiet", current_sha])
+        print(f"Generating hashes for head commit {str(head_commit.id)[:8]}...")
+        checkout_commit(repo, head_commit)
 
-        result = run_cmd(
-            ["java", "-jar", str(jar_path), "generate-hashes", "-w", workspace, "-b", "bazelisk", str(head_json)],
+        result = subprocess.run(
+            ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", head_json],
             check=False,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             print("Head hash generation failed")
@@ -178,20 +184,11 @@ def run_bazel_diff(jar_path: Path, workspace: str, base_sha: str) -> list[str] |
 
         # Compute impacted targets
         print("Computing impacted targets...")
-        result = run_cmd(
-            [
-                "java",
-                "-jar",
-                str(jar_path),
-                "get-impacted-targets",
-                "-sh",
-                str(base_json),
-                "-fh",
-                str(head_json),
-                "-o",
-                str(targets_file),
-            ],
+        result = subprocess.run(
+            ["java", "-jar", jar_path, "get-impacted-targets", "-sh", base_json, "-fh", head_json, "-o", targets_file],
             check=False,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             print("Target diff failed")
@@ -203,21 +200,18 @@ def run_bazel_diff(jar_path: Path, workspace: str, base_sha: str) -> list[str] |
         return [t for t in targets_file.read_text().strip().split("\n") if t]
 
 
-def check_bazel_intersection(targets: str, pattern: str) -> bool:
+def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
     """Check if affected targets intersect with a Bazel pattern."""
     if not targets:
         return False
 
-    # Full build ("//...") always intersects with any pattern
-    if targets == "//...":
-        return True
-
-    query = f"set({targets}) intersect {pattern}"
-    result = run_cmd(["bazelisk", "query", query], check=False)
+    targets_str = " ".join(targets)
+    query = f"set({targets_str}) intersect {pattern}"
+    result = subprocess.run(["bazelisk", "query", query], check=False, capture_output=True, text=True)
     return bool(result.stdout.strip())
 
 
-def get_workflows_from_file_changes(changed_files: list[str], workflows: dict[str, WorkflowConfig]) -> set[str]:
+def get_workflows_from_file_changes(changed_files: list[str], workflows: dict[str, WorkflowTrigger]) -> set[str]:
     """Detect workflows triggered by their own workflow file changing."""
     triggered = set()
     for f in changed_files:
@@ -230,7 +224,7 @@ def get_workflows_from_file_changes(changed_files: list[str], workflows: dict[st
 
 
 def compute_triggered_workflows(
-    workflows: dict[str, WorkflowConfig], targets: str, changed_files: list[str], has_bazel_changes: bool
+    workflows: dict[str, WorkflowTrigger], targets: list[str], changed_files: list[str]
 ) -> list[str]:
     """Determine which workflows should run based on changes."""
     triggered: set[str] = set()
@@ -251,8 +245,8 @@ def compute_triggered_workflows(
                 print(f"Path pattern '{config.path_pattern}' matched -> triggers {name}")
                 triggered.add(name)
 
-    # 4. Bazel-pattern workflows (only if we have Bazel changes)
-    if has_bazel_changes:
+    # 4. Bazel-pattern workflows (only if we have affected targets)
+    if targets:
         for name, config in workflows.items():
             if config.bazel_pattern and check_bazel_intersection(targets, config.bazel_pattern):
                 triggered.add(name)
@@ -260,27 +254,44 @@ def compute_triggered_workflows(
     return sorted(triggered)
 
 
-def main() -> None:
+def print_truncated(label: str, items: list[str], limit: int = 20) -> None:
+    """Print a list, truncating if over limit."""
+    print(f"{label}:")
+    for item in items[:limit]:
+        print(f"  {item}")
+    if len(items) > limit:
+        print(f"  ... and {len(items) - limit} more")
+
+
+def main() -> int:
+    # Require GITHUB_OUTPUT
+    output_path_str = os.environ.get("GITHUB_OUTPUT")
+    if not output_path_str:
+        print("Error: GITHUB_OUTPUT environment variable not set", file=sys.stderr)
+        return 1
+    output_path = Path(output_path_str)
+
     # Load workflow manifest
     script_dir = Path(__file__).parent
     manifest_path = script_dir / "workflows.yaml"
     if not manifest_path.exists():
         print(f"Error: {manifest_path} not found", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     workflows = load_workflows(manifest_path)
     print(f"Loaded {len(workflows)} workflow definitions")
 
-    workspace = os.environ.get("GITHUB_WORKSPACE") or str(Path.cwd())
+    workspace = Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())
+    repo = pygit2.Repository(workspace)
 
-    # Get base SHA for comparison
-    base_sha = get_base_sha()
-    if not base_sha:
-        print("No base SHA (new branch or initial commit), triggering all workflows")
-        decision = CIDecision(targets="//...", workflows=sorted(workflows.keys()), infra_changed=True)
+    # Get base commit for comparison
+    base_commit = get_base_commit(repo)
+    if not base_commit:
+        print("No base commit (new branch or initial commit), triggering all workflows")
+        decision = CIDecision(all_targets=True, workflows=sorted(workflows.keys()), infra_changed=True)
     else:
         # Get changed files
-        changed_files = get_changed_files(base_sha)
+        changed_files = get_changed_files(repo, base_commit)
         print_truncated("Changed files", changed_files)
 
         # Check for infrastructure changes
@@ -288,58 +299,50 @@ def main() -> None:
         if infra_changed:
             print("Infrastructure change detected")
 
-        # Run bazel-diff (JAR path from env, downloaded by CI workflow)
+        # Require BAZEL_DIFF_JAR
         jar_path_str = os.environ.get("BAZEL_DIFF_JAR")
         if not jar_path_str:
             print("Error: BAZEL_DIFF_JAR environment variable not set", file=sys.stderr)
-            sys.exit(1)
+            return 1
 
         jar_path = Path(jar_path_str)
         if not jar_path.exists():
             print(f"Error: bazel-diff JAR not found at {jar_path}", file=sys.stderr)
-            sys.exit(1)
+            return 1
 
-        targets_list = run_bazel_diff(jar_path, workspace, base_sha)
+        targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
 
-        # Determine targets string
-        if targets_list is None:
-            # bazel-diff failed
-            targets = "//..."
-            has_bazel_changes = True
-        elif not targets_list:
-            # No Bazel targets affected
-            targets = ""
-            has_bazel_changes = False
+        # Handle bazel-diff result
+        all_targets = False
+        if targets is None:
+            # bazel-diff failed, build everything
+            print("bazel-diff failed, building all targets")
+            targets = []
+            all_targets = True
+        elif not targets:
             print("No Bazel targets affected")
         else:
-            print_truncated(f"Found {len(targets_list)} affected targets", targets_list)
-            # If infra changed, use //... for safety but still compute workflows from actual targets
+            print_truncated(f"Found {len(targets)} affected targets", targets)
             if infra_changed:
-                targets = "//..."
-                has_bazel_changes = True
-            else:
-                targets = " ".join(targets_list)
-                has_bazel_changes = True
+                # Infrastructure change means we need to rebuild everything
+                all_targets = True
 
         # Compute which workflows to run
-        triggered = compute_triggered_workflows(
-            workflows,
-            targets if not infra_changed else " ".join(targets_list or []),
-            changed_files,
-            has_bazel_changes or infra_changed,
+        triggered = compute_triggered_workflows(workflows, targets, changed_files)
+
+        decision = CIDecision(
+            targets=targets, all_targets=all_targets, workflows=triggered, infra_changed=infra_changed
         )
 
-        decision = CIDecision(targets=targets, workflows=triggered, infra_changed=infra_changed)
-
-    # Output results
-    output("targets", decision.targets)
-    output("workflows", json.dumps(decision.workflows))
-    output("infra_changed", bool_str(decision.infra_changed))
+    # Write to GITHUB_OUTPUT
+    decision.write_to_github_output(output_path)
 
     print(f"\nDecision: {len(decision.workflows)} workflows to run")
     for w in decision.workflows:
         print(f"  - {w}")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

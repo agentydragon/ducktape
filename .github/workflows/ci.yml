@@ -1,5 +1,5 @@
 # AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
-# Regenerate with: python tools/ci/generate_ci.py
+# Regenerate with: uv run tools/ci/generate_ci.py
 name: CI
 "on":
   push:
@@ -38,11 +38,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: pip install pyyaml
       - name: Cache bazel-diff
         id: cache-bazel-diff
         uses: actions/cache@v4
@@ -58,23 +53,21 @@ jobs:
         run: echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
       - name: Compute CI decision
         id: decide
-        run: python tools/ci/ci_decide.py
+        run: uv run tools/ci/ci_decide.py
   bazel-build:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')
     uses: ./.github/workflows/bazel-build.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   bazel-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-test')
     uses: ./.github/workflows/bazel-test.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   bazel-lint:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-lint')
@@ -82,8 +75,7 @@ jobs:
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   bazel-typecheck:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-typecheck')
@@ -91,40 +83,34 @@ jobs:
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   bazel-rust-lint:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-rust-lint')
     uses: ./.github/workflows/bazel-rust-lint.yml
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   props-e2e-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'props-e2e-test')
     uses: ./.github/workflows/props-e2e-test.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   editor-e2e-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'editor-e2e-test')
     uses: ./.github/workflows/editor-e2e-test.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   agent-server-e2e-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'agent-server-e2e-test')
     uses: ./.github/workflows/agent-server-e2e-test.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   visual-regression:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'visual-regression')
     uses: ./.github/workflows/visual-regression.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    secrets: inherit
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'nix-flake-check')
