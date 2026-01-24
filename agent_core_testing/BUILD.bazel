@@ -20,6 +20,7 @@ py_library(
         "//mcp_infra/testing",
         "//openai_utils",
         "@pypi//anyio",
+        "@pypi//cachetools",  # Required by fastmcp via py-key-value-aio[memory]
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//openai",
