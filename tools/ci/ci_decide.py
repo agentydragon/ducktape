@@ -20,11 +20,10 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pygit2
-import yaml
+from models import WorkflowConfig, WorkflowManifest
 from pydantic import BaseModel, Field
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
@@ -37,15 +36,6 @@ INFRA_PATTERNS = [
     r"^tools/bazel",
     r"^WORKSPACE",
 ]
-
-
-class WorkflowTrigger(BaseModel):
-    """Trigger configuration for a workflow."""
-
-    name: str
-    bazel_pattern: str | None = None
-    path_pattern: str | None = None
-    always: bool = False
 
 
 class CIDecision(BaseModel):
@@ -69,22 +59,6 @@ class CIDecision(BaseModel):
             f.write(f"targets={self.targets_str}\n")
             f.write(f"workflows={json.dumps(self.workflows)}\n")
             f.write(f"infra_changed={'true' if self.infra_changed else 'false'}\n")
-
-
-def load_workflows(manifest_path: Path) -> dict[str, WorkflowTrigger]:
-    """Load workflow definitions from YAML manifest."""
-    with manifest_path.open() as f:
-        data = yaml.safe_load(f)
-
-    return {
-        name: WorkflowTrigger(
-            name=name,
-            bazel_pattern=config.get("bazel_pattern"),
-            path_pattern=config.get("path_pattern"),
-            always=config.get("always", False),
-        )
-        for name, config in data.items()
-    }
 
 
 def get_base_commit(repo: pygit2.Repository) -> pygit2.Commit | None:
@@ -190,22 +164,17 @@ def run_bazel_diff(
 
         # Compute impacted targets
         print("Computing impacted targets...")
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            targets_file = Path(f.name)
-
-        subprocess.run(
-            ["java", "-jar", jar_path, "get-impacted-targets", "-sh", base_json, "-fh", head_json, "-o", targets_file],
+        result = subprocess.run(
+            ["java", "-jar", jar_path, "get-impacted-targets", "-sh", base_json, "-fh", head_json],
             check=True,
             capture_output=True,
             text=True,
         )
 
-        if not targets_file.exists() or targets_file.stat().st_size == 0:
+        if not result.stdout.strip():
             return []
 
-        result = [t for t in targets_file.read_text().strip().split("\n") if t]
-        targets_file.unlink()
-        return result
+        return [t for t in result.stdout.strip().split("\n") if t]
 
     except subprocess.CalledProcessError as e:
         print(f"bazel-diff failed: {e.stderr or e.stdout or e}")
@@ -223,7 +192,7 @@ def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
     return bool(result.stdout.strip())
 
 
-def get_workflows_from_file_changes(changed_files: list[str], workflows: dict[str, WorkflowTrigger]) -> set[str]:
+def get_workflows_from_file_changes(changed_files: list[str], workflows: dict[str, WorkflowConfig]) -> set[str]:
     """Detect workflows triggered by their own workflow file changing."""
     triggered = set()
     for f in changed_files:
@@ -236,7 +205,7 @@ def get_workflows_from_file_changes(changed_files: list[str], workflows: dict[st
 
 
 def compute_triggered_workflows(
-    workflows: dict[str, WorkflowTrigger], targets: list[str], changed_files: list[str]
+    workflows: dict[str, WorkflowConfig], targets: list[str], changed_files: list[str]
 ) -> list[str]:
     """Determine which workflows should run based on changes."""
     triggered: set[str] = set()
@@ -290,7 +259,8 @@ def main() -> int:
         print(f"Error: {manifest_path} not found", file=sys.stderr)
         return 1
 
-    workflows = load_workflows(manifest_path)
+    manifest = WorkflowManifest.from_yaml(manifest_path)
+    workflows = manifest.workflows
     print(f"Loaded {len(workflows)} workflow definitions")
 
     workspace = Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from models import WorkflowConfig, WorkflowManifest
 from pydantic import BaseModel, Field
 
 SCRIPT_DIR = Path(__file__).parent
@@ -34,31 +35,6 @@ HEADER = """\
 """
 
 BAZEL_DIFF_VERSION = "12.1.1"
-
-
-class WorkflowConfig(BaseModel):
-    """Configuration for a workflow from workflows.yaml."""
-
-    bazel_pattern: str | None = None
-    path_pattern: str | None = None
-    always: bool = False
-    targets: bool = False
-    inputs: dict[str, str] = Field(default_factory=dict)
-    secrets: list[str] = Field(default_factory=list)
-
-
-class WorkflowManifest(BaseModel):
-    """Collection of all workflow configurations."""
-
-    workflows: dict[str, WorkflowConfig]
-
-    @classmethod
-    def from_yaml(cls, path: Path) -> WorkflowManifest:
-        """Load from YAML file."""
-        with path.open() as f:
-            data = yaml.safe_load(f)
-        workflows = {name: WorkflowConfig.model_validate(config) for name, config in data.items()}
-        return cls(workflows=workflows)
 
 
 class GHAStep(BaseModel):
