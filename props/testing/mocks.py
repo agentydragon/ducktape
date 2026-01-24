@@ -8,7 +8,7 @@ from pydantic import TypeAdapter
 from agent_core_testing.responses import DecoratorMock
 from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage
-from props.grader.tools import FillRemainingArgs, ListPendingArgs, PendingEdge, SubmitArgs
+from props.grader.tools import FillRemainingArgs, ListPendingArgs, PendingEdge
 
 
 def get_system_message_text(req: ResponsesRequest) -> str:
@@ -60,9 +60,9 @@ class GraderMock(DecoratorMock):
     """Mock with grader-specific tool helpers.
 
     Grader tools are registered directly (not via MCP), so they use simple names
-    like 'list_pending', 'fill_remaining', 'submit'.
+    like 'list_pending', 'fill_remaining'.
 
-    Example:
+    Example (daemon mode - no submit):
         @GraderMock.mock()
         def mock(m: GraderMock) -> PlayGen:
             yield None  # First request
@@ -71,7 +71,6 @@ class GraderMock(DecoratorMock):
                 yield from m.fill_remaining_roundtrip(
                     edge.critique_run_id, edge.critique_issue_id, 1, "No matches"
                 )
-            yield m.submit("Grading complete")
     """
 
     def list_pending_call(self, *, issue: str | None = None, run: UUID | None = None) -> FunctionCallItem:
@@ -101,11 +100,3 @@ class GraderMock(DecoratorMock):
         call = self.fill_remaining_call(run, issue_id, expected_count, rationale)
         req = yield call
         return _extract_raw_output(req, call)
-
-    def submit_call(self, summary: str) -> FunctionCallItem:
-        """Create submit tool call."""
-        return self.tool_call("submit", SubmitArgs(summary=summary))
-
-    def submit(self, summary: str) -> FunctionCallItem:
-        """Create submit tool call (alias for convenience)."""
-        return self.submit_call(summary)
