@@ -59,7 +59,7 @@ def make_grader_daemon_mock() -> GraderMock:
 
             # Mark as no match (FP with 0 credit)
             yield from m.fill_remaining_roundtrip(
-                str(edge.critique_run_id), edge.critique_issue_id, 0, "No matching ground truth"
+                edge.critique_run_id, edge.critique_issue_id, 0, "No matching ground truth"
             )
 
         # Daemon continues running (eternal) - test will cancel after verifying grading

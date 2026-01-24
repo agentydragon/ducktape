@@ -2,6 +2,7 @@
 
 from collections.abc import Generator
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, TypeAdapter
 
@@ -69,7 +70,7 @@ class GraderMock(DecoratorMock):
             pending = yield from m.list_pending_roundtrip()
             for edge in pending:
                 yield from m.fill_remaining_roundtrip(
-                    str(edge.critique_run_id), edge.critique_issue_id, 1, "No matches"
+                    edge.critique_run_id, edge.critique_issue_id, 1, "No matches"
                 )
             yield m.submit("Grading complete")
     """
@@ -97,15 +98,15 @@ class GraderMock(DecoratorMock):
         raw = _extract_raw_output(req, call)
         return TypeAdapter(list[PendingEdge]).validate_json(raw)
 
-    def fill_remaining_call(self, run: str, issue_id: str, expected_count: int, rationale: str) -> FunctionCallItem:
+    def fill_remaining_call(self, run: UUID, issue_id: str, expected_count: int, rationale: str) -> FunctionCallItem:
         """Create fill_remaining tool call."""
         return self.grader_tool_call(
             "fill_remaining",
-            {"run": run, "issue_id": issue_id, "expected_count": expected_count, "rationale": rationale},
+            {"run": str(run), "issue_id": issue_id, "expected_count": expected_count, "rationale": rationale},
         )
 
     def fill_remaining_roundtrip(
-        self, run: str, issue_id: str, expected_count: int, rationale: str
+        self, run: UUID, issue_id: str, expected_count: int, rationale: str
     ) -> Generator[FunctionCallItem, ResponsesRequest, str]:
         """Yield fill_remaining call and return result message."""
         call = self.fill_remaining_call(run, issue_id, expected_count, rationale)

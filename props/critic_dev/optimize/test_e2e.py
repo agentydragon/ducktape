@@ -26,6 +26,7 @@ import os
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from uuid import UUID
 
 import aiodocker
 import pytest
@@ -326,9 +327,9 @@ def make_orchestration_grader_mock() -> GraderMock:
             return
 
         # Group by (run, issue_id) to batch fill_remaining calls
-        by_issue: dict[tuple[str, str], int] = defaultdict(int)
+        by_issue: dict[tuple[UUID, str], int] = defaultdict(int)
         for edge in pending:
-            key = (str(edge.critique_run_id), edge.critique_issue_id)
+            key = (edge.critique_run_id, edge.critique_issue_id)
             by_issue[key] += 1
 
         # Fill each issue's remaining edges
