@@ -63,6 +63,14 @@ PATH_PATTERNS = {
     "has_props_frontend": "//props/frontend/...",
 }
 
+# Workflow file patterns that force certain outputs to be true
+# (workflow file changes should trigger the corresponding workflow)
+WORKFLOW_TRIGGERS = {
+    r"^\.github/workflows/props-e2e-test\.yml$": ["has_props"],
+    r"^\.github/workflows/editor-e2e-test\.yml$": ["has_editor_agent"],
+    r"^\.github/workflows/agent-server-e2e-test\.yml$": ["has_agent_server"],
+}
+
 
 @dataclass
 class AffectedTargets:
@@ -255,13 +263,47 @@ def check_intersection(targets: str, pattern: str) -> bool:
     return bool(result.stdout.strip())
 
 
-def compute_intersections(targets: str, has_changes: bool) -> dict[str, bool]:
-    """Compute intersection flags for all path patterns."""
-    if not has_changes:
-        return dict.fromkeys(PATH_PATTERNS, False)
+def check_workflow_triggers(changed_files: list[str]) -> dict[str, bool]:
+    """Check if any changed workflow files force certain outputs to be true."""
+    triggers: dict[str, bool] = {}
+    compiled = [(re.compile(p), vars) for p, vars in WORKFLOW_TRIGGERS.items()]
 
+    for file in changed_files:
+        for pattern, var_names in compiled:
+            if pattern.match(file):
+                print(f"Workflow file {file} triggers: {var_names}")
+                for var in var_names:
+                    triggers[var] = True
+
+    return triggers
+
+
+def compute_intersections(targets: str, has_changes: bool, changed_files: list[str] | None = None) -> dict[str, bool]:
+    """Compute intersection flags for all path patterns.
+
+    Checks both Bazel target intersections and workflow file triggers.
+    Workflow file changes can trigger jobs even if no Bazel targets changed.
+    """
+    result = dict.fromkeys(PATH_PATTERNS, False)
+
+    # Check workflow file triggers first (these apply even without Bazel changes)
+    if changed_files:
+        workflow_triggers = check_workflow_triggers(changed_files)
+        for var, val in workflow_triggers.items():
+            if val:
+                result[var] = True
+
+    # If no Bazel changes, only workflow triggers apply
+    if not has_changes:
+        return result
+
+    # Check Bazel target intersections
     print("Computing path intersections...")
-    return {var_name: check_intersection(targets, pattern) for var_name, pattern in PATH_PATTERNS.items()}
+    for var_name, pattern in PATH_PATTERNS.items():
+        if check_intersection(targets, pattern):
+            result[var_name] = True
+
+    return result
 
 
 def run_ci_mode() -> None:
@@ -269,6 +311,8 @@ def run_ci_mode() -> None:
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
     ref_name = os.environ.get("GITHUB_REF_NAME", "")
     workspace = os.environ.get("GITHUB_WORKSPACE") or str(Path.cwd())
+
+    changed_files: list[str] = []
 
     # Full build on main/devel branches (only use diffs for PRs)
     if event_name != "pull_request":
@@ -302,8 +346,8 @@ def run_ci_mode() -> None:
                         print_truncated(f"Found {len(targets)} affected targets", targets)
                         affected = AffectedTargets(targets=" ".join(targets), has_changes=True)
 
-    # Compute intersections for conditional jobs
-    intersections = compute_intersections(affected.targets, affected.has_changes)
+    # Compute intersections for conditional jobs (also checks workflow file triggers)
+    intersections = compute_intersections(affected.targets, affected.has_changes, changed_files)
 
     # Output results
     output("targets", affected.targets)
