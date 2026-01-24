@@ -62,7 +62,7 @@ class GraderMock(DecoratorMock):
     Grader tools are registered directly (not via MCP), so they use simple names
     like 'list_pending', 'fill_remaining'.
 
-    Example (daemon mode - no submit):
+    Example:
         @GraderMock.mock()
         def mock(m: GraderMock) -> PlayGen:
             yield None  # First request
