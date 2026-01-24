@@ -479,9 +479,7 @@ async def test_optimizer_orchestrates_critic(synced_test_db: DatabaseConfig, asy
             """Run grader daemon in background."""
             try:
                 logger.info(f"Starting grader daemon for {snapshot_slug}")
-                await registry.run_snapshot_grader(
-                    snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL, timeout_seconds=120
-                )
+                await registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
                 logger.info("Grader daemon completed")
             except asyncio.CancelledError:
                 logger.info("Grader daemon cancelled")

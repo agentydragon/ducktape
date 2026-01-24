@@ -57,24 +57,23 @@ def make_critic_run(
 
 def make_grader_run(
     *,
-    critic_run: AgentRun,
-    canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+    snapshot_slug: SnapshotSlug,
     model: str = "test-model",
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
     agent_run_id: UUID | None = None,
-    image_digest: str = GRADER_IMAGE_REF,
 ) -> AgentRun:
-    """Build AgentRun for grader from critic AgentRun."""
+    """Build AgentRun for daemon-based grader (one per snapshot)."""
     if agent_run_id is None:
         agent_run_id = uuid4()
 
-    type_config = GraderTypeConfig(
-        graded_agent_run_id=critic_run.agent_run_id,
-        canonical_issues_snapshot=canonical_issues_snapshot.model_dump(mode="json"),
-    )
+    type_config = GraderTypeConfig(snapshot_slug=snapshot_slug)
 
     return AgentRun(
-        agent_run_id=agent_run_id, image_digest=image_digest, model=model, status=status, type_config=type_config
+        agent_run_id=agent_run_id,
+        image_digest=GRADER_IMAGE_REF,
+        model=model,
+        status=status,
+        type_config=type_config,
     )
 
 
@@ -110,8 +109,7 @@ def make_critic_and_grader_run(
     session.flush()
 
     grader_run = make_grader_run(
-        critic_run=critic_run,
-        canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+        snapshot_slug=example.snapshot_slug,
         model="test-grader",
         status=AgentRunStatus.COMPLETED,
     )
@@ -170,13 +168,10 @@ def make_grader_run_with_credit(
     )
     session.add(occ)
 
-    grader_run = make_grader_run(
-        critic_run=critic_run, model=model, canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT
-    )
+    snapshot_slug = critic_run.critic_config().example.snapshot_slug
+    grader_run = make_grader_run(snapshot_slug=snapshot_slug, model=model)
     session.add(grader_run)
     session.flush()
-
-    snapshot_slug = critic_run.critic_config().example.snapshot_slug
 
     edge = GradingEdge(
         critique_run_id=critic_run.agent_run_id,

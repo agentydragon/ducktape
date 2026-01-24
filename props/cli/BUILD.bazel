@@ -219,7 +219,6 @@ py_library(
         "//props/db:models",
         "//props/db:query_builders",
         "//props/db:session",
-        "//props/grader:staleness",
         "@pypi//plotext",
         "@pypi//rich",
         "@pypi//sqlalchemy",

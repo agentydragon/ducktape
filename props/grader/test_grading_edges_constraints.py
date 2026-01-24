@@ -36,9 +36,9 @@ def test_critic_run(session, example_subtract_orm):
 
 
 @pytest.fixture
-def test_grader_run(session, test_critic_run):
+def test_grader_run(session, example_subtract_orm):
     """Create a grader run for testing edges."""
-    grader_run = make_grader_run(critic_run=test_critic_run, status=AgentRunStatus.IN_PROGRESS)
+    grader_run = make_grader_run(snapshot_slug=example_subtract_orm.snapshot_slug, status=AgentRunStatus.IN_PROGRESS)
     session.add(grader_run)
     session.commit()
     return grader_run

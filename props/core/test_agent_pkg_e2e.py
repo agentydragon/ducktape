@@ -246,9 +246,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(synced_test_db, a
     ) as registry:
         # Start grader daemon in background
         grader_task = asyncio.create_task(
-            registry.run_snapshot_grader(
-                snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL, timeout_seconds=120
-            )
+            registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
         )
 
         try:
@@ -307,9 +305,7 @@ async def test_po_creates_custom_critic_with_token(synced_test_db, async_docker_
         optimizer_mock, critic_mock, synced_test_db, async_docker_client, grader_mock=grader_mock
     ) as registry:
         grader_task = asyncio.create_task(
-            registry.run_snapshot_grader(
-                snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL, timeout_seconds=120
-            )
+            registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
         )
 
         try:

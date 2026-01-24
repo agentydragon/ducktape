@@ -197,23 +197,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "staleness",
-    srcs = ["staleness.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":persistence",
-        "//props/core:agent_types",
-        "//props/core:ids",
-        "//props/core/models:examples",
-        "//props/db:models",
-        "//props/db:session",
-        "//props/db:snapshots",
-        "@pypi//canonicaljson",
-    ],
-)
-
 # =============================================================================
 # Tests
 # =============================================================================

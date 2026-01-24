@@ -10,12 +10,7 @@ from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRunStatus, GradingEdge, TruePositive
 from props.db.session import get_session
-from props.testing.fixtures import (
-    EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-    make_critic_run,
-    make_grader_run,
-    make_reported_issues,
-)
+from props.testing.fixtures import make_critic_run, make_grader_run, make_reported_issues
 
 
 def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
@@ -65,10 +60,7 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
 
         # Insert grader run with output using fixture factory
         grader_run = make_grader_run(
-            critic_run=critic_run,
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            model="test-grader-model",
-            agent_run_id=grader_agent_run_id,
+            snapshot_slug=example.snapshot_slug, model="test-grader-model", agent_run_id=grader_agent_run_id
         )
         session.add(grader_run)
         session.flush()

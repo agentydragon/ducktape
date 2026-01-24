@@ -30,8 +30,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Type alias for async connection factory
-ConnectionFactory = Callable[[], Awaitable[asyncpg.Connection[Any]]]
+# Type alias for async connection factory (type statement is lazily evaluated)
+type ConnectionFactory = Callable[[], Awaitable[asyncpg.Connection[Any]]]
 
 
 class GraderSupervisor:

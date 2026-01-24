@@ -123,6 +123,7 @@ py_test(
     deps = [
         ":test_e2e_lib",
         "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
     ],
 )
 

@@ -59,11 +59,12 @@ def make_test_grader_run(critic_run_id: UUID, status: AgentRunStatus = AgentRunS
         grader_run_id (UUID)
     """
     with get_session() as session:
-        # Fetch the critic_run to pass to factory
+        # Fetch the critic_run to get its snapshot_slug
         critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()
+        snapshot_slug = critic_run.critic_config().example.snapshot_slug
 
         # Use centralized factory
-        grader_run = make_grader_run(critic_run=critic_run, status=status)
+        grader_run = make_grader_run(snapshot_slug=snapshot_slug, status=status)
         session.add(grader_run)
         session.commit()
         return grader_run.agent_run_id

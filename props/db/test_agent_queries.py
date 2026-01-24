@@ -77,14 +77,14 @@ def query_test_data(synced_test_db):
 
         session.flush()
 
-        # Create grader runs using factory
-        grader_run_train = make_grader_run(critic_run=critic_run_train)
+        # Create grader runs using factory (one per snapshot)
+        grader_run_train = make_grader_run(snapshot_slug=train_examples[0].snapshot_slug)
         session.add(grader_run_train)
 
-        grader_run_valid_1 = make_grader_run(critic_run=critic_run_valid_1)
+        grader_run_valid_1 = make_grader_run(snapshot_slug=valid_examples[0].snapshot_slug)
         session.add(grader_run_valid_1)
 
-        grader_run_valid_2 = make_grader_run(critic_run=critic_run_valid_2)
+        grader_run_valid_2 = make_grader_run(snapshot_slug=valid_examples[1].snapshot_slug)
         session.add(grader_run_valid_2)
 
         session.flush()

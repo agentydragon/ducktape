@@ -114,7 +114,7 @@ async def main() -> int:
     # Get snapshot and model from agent run config
     with get_session() as session:
         agent_run = get_current_agent_run(session)
-        config = agent_run.snapshot_grader_config()
+        config = agent_run.grader_config()
         snapshot_slug = SnapshotSlug(config.snapshot_slug)
         model = agent_run.model
         logger.info("Agent run: %s, snapshot: %s, model: %s", agent_run.agent_run_id, snapshot_slug, model)

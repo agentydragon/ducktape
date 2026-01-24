@@ -47,9 +47,7 @@ async def cmd_grade_validation(
 
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    registry = AgentRegistry(
-        docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url, max_parallel=max_parallel
-    )
+    registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)
     try:
         # Phase 1: Find all work items (snapshot, scope, prompt) combinations
         with get_session() as session:

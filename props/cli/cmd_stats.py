@@ -40,7 +40,6 @@ from props.db.models import (
 )
 from props.db.query_builders import query_recall_by_example
 from props.db.session import get_session
-from props.grader.staleness import identify_stale_runs
 
 # Stats subcommand group
 stats_app = typer.Typer(help="Statistics and metrics commands")
@@ -741,35 +740,23 @@ def cmd_stats(ctx: typer.Context) -> None:
         for status, count in critic_status_counts.items():
             status_counts["Critic"][status] = count
 
-        # Grader status counts - pre-fetch graded runs and snapshots to avoid N+1
+        # Grader status counts - daemon-based graders are per-snapshot
         grader_runs = (
             session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER).all()
         )
-        graded_run_ids = {gr.grader_config().graded_agent_run_id for gr in grader_runs}
-        graded_runs = (
-            session.query(AgentRun).filter(AgentRun.agent_run_id.in_(graded_run_ids)).all() if graded_run_ids else []
-        )
-        graded_run_by_id = {r.agent_run_id: r for r in graded_runs}
 
-        # Already have snapshots from critic query above, but need to expand for graded runs
-        additional_snapshot_slugs = {
-            graded_run.critic_config().example.snapshot_slug
-            for graded_run in graded_runs
-            if isinstance(graded_run.type_config, CriticTypeConfig)
-        } - snapshot_slugs
-        if additional_snapshot_slugs:
-            additional_snapshots = session.query(Snapshot).filter(Snapshot.slug.in_(additional_snapshot_slugs)).all()
+        # Pre-fetch additional snapshots for graders
+        grader_snapshot_slugs = {gr.grader_config().snapshot_slug for gr in grader_runs} - snapshot_slugs
+        if grader_snapshot_slugs:
+            additional_snapshots = session.query(Snapshot).filter(Snapshot.slug.in_(grader_snapshot_slugs)).all()
             snapshot_by_slug.update({s.slug: s for s in additional_snapshots})
 
         grader_status_counts: Counter[AgentRunStatus] = Counter()
         for gr in grader_runs:
             grader_config = gr.grader_config()
-            graded_run = graded_run_by_id.get(grader_config.graded_agent_run_id)
-            if graded_run and isinstance(graded_run.type_config, CriticTypeConfig):
-                snapshot_slug = graded_run.critic_config().example.snapshot_slug
-                snapshot = snapshot_by_slug.get(snapshot_slug)
-                if snapshot and snapshot.split in (Split.TRAIN, Split.VALID):
-                    grader_status_counts[gr.status] += 1
+            snapshot = snapshot_by_slug.get(grader_config.snapshot_slug)
+            if snapshot and snapshot.split in (Split.TRAIN, Split.VALID):
+                grader_status_counts[gr.status] += 1
 
         for status, count in grader_status_counts.items():
             status_counts["Grader"][status] = count
@@ -1005,42 +992,3 @@ def cmd_stats(ctx: typer.Context) -> None:
         _display_distribution(
             console, grader_counts, "Tool Calls per Successful Grader Run", grader_buckets, value_format="{:.0f}"
         )
-
-    # Check for stale grader runs
-    console.print("\n[bold cyan]Grader Run Staleness Check[/bold cyan]")
-    console.print("=" * 60)
-
-    stale_run_ids, by_snapshot = identify_stale_runs()
-    stale_runs = len(stale_run_ids)
-    total_runs = sum(stats["total"] for stats in by_snapshot.values())
-
-    if total_runs == 0:
-        console.print("No grader runs found in database")
-    else:
-        stale_pct = (stale_runs / total_runs * 100) if total_runs > 0 else 0
-        console.print(f"\nTotal grader runs: {total_runs}")
-        console.print(f"Stale runs: {stale_runs} ({stale_pct:.1f}%)")
-        console.print(f"Up-to-date runs: {total_runs - stale_runs} ({100 - stale_pct:.1f}%)")
-
-        if stale_runs > 0:
-            console.print("\n[bold]Stale runs by snapshot:[/bold]")
-
-            # Filter to snapshots with stale runs and prepare data
-            stale_snapshot_data = [
-                (slug, by_snapshot[slug]) for slug in sorted(by_snapshot.keys()) if by_snapshot[slug]["stale"] > 0
-            ]
-
-            columns: list[ColumnDef[Any, Any]] = [
-                ColumnDef("Snapshot", lambda r: str(r[0]), style="cyan"),
-                ColumnDef("Total", lambda r: r[1]["total"], str, justify="right"),
-                ColumnDef("Stale", lambda r: r[1]["stale"], str, justify="right"),
-                ColumnDef(
-                    "Stale %",
-                    lambda r: (r[1]["stale"] / r[1]["total"] * 100) if r[1]["total"] > 0 else 0,
-                    lambda v: f"{v:.1f}%",
-                    justify="right",
-                ),
-            ]
-
-            table = build_table_from_schema(stale_snapshot_data, columns)
-            console.print(table)
