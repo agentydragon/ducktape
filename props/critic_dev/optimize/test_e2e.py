@@ -328,7 +328,7 @@ def make_orchestration_grader_mock() -> GraderMock:
         # Group by (run, issue_id) to batch fill_remaining calls
         by_issue: dict[tuple[str, str], int] = defaultdict(int)
         for edge in pending:
-            key = (str(edge["critique_run_id"]), edge["critique_issue_id"])
+            key = (str(edge.critique_run_id), edge.critique_issue_id)
             by_issue[key] += 1
 
         # Fill each issue's remaining edges

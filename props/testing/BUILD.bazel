@@ -12,6 +12,7 @@ py_library(
         "//agent_core_testing",
         "//mcp_infra/exec:models",
         "//openai_utils",
+        "//props/grader:tools",
         "//props/testing/fixtures",
         "@pypi//pydantic",
     ],

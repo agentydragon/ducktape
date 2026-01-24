@@ -1,14 +1,14 @@
 """Props-specific mock utilities."""
 
-import json
 from collections.abc import Generator
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from agent_core_testing.responses import DecoratorMock
 from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage
+from props.grader.tools import PendingEdge
 
 
 def get_system_message_text(req: ResponsesRequest) -> str:
@@ -67,10 +67,10 @@ class GraderMock(DecoratorMock):
         def mock(m: GraderMock) -> PlayGen:
             yield None  # First request
             pending = yield from m.list_pending_roundtrip()
-            for item in pending:
-                issue_id = item["critique_issue_id"]
-                run_id = item["critique_run_id"]
-                yield from m.fill_remaining_roundtrip(run_id, issue_id, 1, "No matches")
+            for edge in pending:
+                yield from m.fill_remaining_roundtrip(
+                    str(edge.critique_run_id), edge.critique_issue_id, 1, "No matches"
+                )
             yield m.submit("Grading complete")
     """
 
@@ -90,13 +90,12 @@ class GraderMock(DecoratorMock):
 
     def list_pending_roundtrip(
         self, *, issue: str | None = None, run: str | None = None
-    ) -> Generator[FunctionCallItem, ResponsesRequest, list[dict[str, Any]]]:
-        """Yield list_pending call and return parsed result as list of dicts."""
+    ) -> Generator[FunctionCallItem, ResponsesRequest, list[PendingEdge]]:
+        """Yield list_pending call and return parsed result as list of PendingEdge."""
         call = self.list_pending_call(issue=issue, run=run)
         req = yield call
         raw = _extract_raw_output(req, call)
-        result: list[dict[str, Any]] = json.loads(raw)
-        return result
+        return TypeAdapter(list[PendingEdge]).validate_json(raw)
 
     def fill_remaining_call(self, run: str, issue_id: str, expected_count: int, rationale: str) -> FunctionCallItem:
         """Create fill_remaining tool call."""

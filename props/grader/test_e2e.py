@@ -54,13 +54,13 @@ def make_grader_daemon_mock() -> GraderMock:
         logger.info(f"Grader found {len(pending)} pending items")
 
         # Grade each pending item
-        for item in pending:
-            issue_id = item["critique_issue_id"]
-            run_id = item["critique_run_id"]
-            logger.info(f"Grading issue {issue_id} from run {run_id}")
+        for edge in pending:
+            logger.info(f"Grading issue {edge.critique_issue_id} from run {edge.critique_run_id}")
 
             # Mark as no match (FP with 0 credit)
-            yield from m.fill_remaining_roundtrip(run_id, issue_id, 0.0, "No matching ground truth")
+            yield from m.fill_remaining_roundtrip(
+                str(edge.critique_run_id), edge.critique_issue_id, 0, "No matching ground truth"
+            )
 
         # Daemon continues running (eternal) - test will cancel after verifying grading
 
