@@ -26,7 +26,7 @@ from props.db.session import get_session
 from props.grader.notifications import SNAPSHOT_CREATED_CHANNEL, SnapshotCreatedNotification
 
 if TYPE_CHECKING:
-    from props.core.agent_registry import AgentRegistry
+    from props.orchestration.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 

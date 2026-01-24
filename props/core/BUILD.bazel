@@ -1,10 +1,18 @@
-"""Props core package - per-file targets."""
+"""Props core package - per-file targets.
+
+TODO: This package is being phased out. Remaining modules should move to:
+- types/ (SHARED): agent_types, ids, splits, models/, eval_api_models
+- orchestration/ (HOST): Already moved (agent_registry, loop_agent_env, etc.)
+- Agent folders (CONTAINER): agent_helpers, docker_env, agent_workspace, loop_utils
+- shared/ (SHARED utility): display, oci_utils, eval_client, exceptions
+"""
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 # =============================================================================
 # Leaf modules (no props.core deps)
+# TODO: Move to props/types/
 # =============================================================================
 
 py_library(
@@ -98,21 +106,6 @@ py_library(
 )
 
 py_library(
-    name = "loop_agent_env",
-    srcs = ["loop_agent_env.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":display",
-        ":docker_env",
-        ":oci_utils",
-        "//props/db:config",
-        "//props/db:temp_user_manager",
-        "@pypi//aiodocker",
-    ],
-)
-
-py_library(
     name = "eval_api_models",
     srcs = ["eval_api_models.py"],
     imports = ["../.."],
@@ -141,30 +134,6 @@ py_library(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "agent_registry",
-    srcs = ["agent_registry.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":agent_types",
-        ":display",
-        ":ids",
-        ":loop_agent_env",
-        ":oci_utils",
-        ":splits",
-        "//props/core/models:examples",
-        "//props/critic_dev:shared",
-        "//props/critic_dev/improve:main_lib",
-        "//props/db:config",
-        "//props/db:models",
-        "//props/db:session",
-        "//props/grader:persistence",
-        "@pypi//aiodocker",
-        "@pypi//pydantic",
     ],
 )
 
@@ -309,10 +278,10 @@ py_test(
     ],
     deps = [
         ":agent_pkg_utils",
-        ":agent_registry",
         "//agent_core_testing",
         "//props/critic_dev:shared",
         "//props/critic_dev/optimize:test_e2e_lib",
+        "//props/orchestration:agent_registry",
         "//props/testing",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
@@ -326,14 +295,12 @@ ruff_test(
     srcs = [
         ":agent_helpers",
         ":agent_pkg_utils",
-        ":agent_registry",
         ":agent_types",
         ":agent_workspace",
         ":display",
         ":docker_env",
         ":exceptions",
         ":ids",
-        ":loop_agent_env",
         ":oci_utils",
         ":runs_context",
         ":splits",

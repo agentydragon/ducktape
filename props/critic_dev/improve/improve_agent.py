@@ -7,7 +7,7 @@ This module provides backwards-compatible re-exports.
 from __future__ import annotations
 
 # Re-export result types from agent_registry (canonical location)
-from props.core.agent_registry import (
+from props.orchestration.agent_registry import (
     ImprovementOutcome,
     ImprovementResult,
     OutcomeExhausted,

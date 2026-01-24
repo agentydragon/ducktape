@@ -185,21 +185,6 @@ py_library(
 )
 
 py_library(
-    name = "daemon_manager",
-    srcs = ["daemon_manager.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":notifications",
-        "//props/core:agent_registry",
-        "//props/core:ids",
-        "//props/db:models",
-        "//props/db:session",
-        "@pypi//asyncpg",
-    ],
-)
-
-py_library(
     name = "edge_helpers",
     srcs = ["edge_helpers.py"],
     imports = ["../.."],

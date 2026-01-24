@@ -21,8 +21,8 @@ py_library(
         "//mcp_infra",
         "//mcp_utils",
         "//openai_utils",
-        # props.core modules
-        "//props/core:agent_registry",
+        # props orchestration modules
+        "//props/orchestration:agent_registry",
         "//props/core:agent_types",
         "//props/core:agent_workspace",
         "//props/core:eval_api_models",
@@ -38,7 +38,7 @@ py_library(
         "//props/db:examples",
         "//props/db:models",
         "//props/db:session",
-        "//props/grader:daemon_manager",
+        "//props/orchestration:daemon_manager",
         "//props/core/models:examples",
         "//props/core/models:true_positive",
         "@pypi//aiodocker",

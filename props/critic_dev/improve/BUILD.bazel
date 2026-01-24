@@ -70,7 +70,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core:agent_registry",
+        "//props/orchestration:agent_registry",
     ],
 )
 

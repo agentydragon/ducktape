@@ -20,7 +20,6 @@ from pydantic import BaseModel, Field
 
 from props.backend.auth import require_admin_access
 from props.backend.routes.ground_truth import FileLocationInfo
-from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
@@ -37,6 +36,7 @@ from props.db.models import (
     Snapshot,
 )
 from props.db.session import get_session
+from props.orchestration.agent_registry import AgentRegistry
 
 router = APIRouter(dependencies=[Depends(require_admin_access)])
 logger = logging.getLogger(__name__)

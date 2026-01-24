@@ -44,7 +44,7 @@ from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
 from props.db.session import get_session
-from props.db.temp_user_manager import TempUserCredentials, TempUserManager
+from props.orchestration.temp_user_manager import TempUserCredentials, TempUserManager
 from props.testing.fixtures import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

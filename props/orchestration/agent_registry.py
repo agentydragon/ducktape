@@ -56,7 +56,6 @@ from props.core.agent_types import (
 )
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
-from props.core.loop_agent_env import ContainerResult, run_loop_agent
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 from props.core.splits import Split
@@ -65,6 +64,7 @@ from props.critic_dev.shared import TargetMetric
 from props.db.config import DatabaseConfig
 from props.db.models import AgentRun, AgentRunStatus, Snapshot
 from props.db.session import get_session
+from props.orchestration.loop_agent_env import ContainerResult, run_loop_agent
 
 logger = logging.getLogger(__name__)
 

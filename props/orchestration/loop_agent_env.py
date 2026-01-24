@@ -28,7 +28,7 @@ from props.core.display import short_uuid
 from props.core.docker_env import PROPS_NETWORK_NAME
 from props.core.oci_utils import resolve_image_ref_async
 from props.db.config import DatabaseConfig
-from props.db.temp_user_manager import TempUserManager
+from props.orchestration.temp_user_manager import TempUserManager
 
 if TYPE_CHECKING:
     import aiodocker

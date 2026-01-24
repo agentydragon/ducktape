@@ -37,7 +37,6 @@ from agent_core_testing.responses import PlayGen, tool_roundtrip
 from agent_core_testing.steps import exited_successfully, stdout_contains
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import app as backend_app
-from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
@@ -50,6 +49,7 @@ from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, Snapshot
 from props.db.session import get_session
+from props.orchestration.agent_registry import AgentRegistry
 from props.testing.fake_openai_server import MultiModelFakeOpenAI
 from props.testing.mocks import GraderMock, PropsMock
 

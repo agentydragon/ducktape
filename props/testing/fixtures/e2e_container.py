@@ -48,7 +48,7 @@ from fastapi import FastAPI
 from openai_utils.model import OpenAIModelProto
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import llm
-from props.core.agent_registry import AgentRegistry
+from props.orchestration.agent_registry import AgentRegistry
 from props.db.config import DatabaseConfig
 from props.testing.fake_openai_server import FakeOpenAIServer
 

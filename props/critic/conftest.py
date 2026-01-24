@@ -14,7 +14,7 @@ from props.db.examples import Example
 from props.db.models import AgentRunStatus
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
-from props.db.temp_user_manager import TempUserManager
+from props.orchestration.temp_user_manager import TempUserManager
 from props.testing.fixtures import make_critic_run
 
 if TYPE_CHECKING:

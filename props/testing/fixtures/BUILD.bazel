@@ -21,8 +21,8 @@ py_library(
         "//agent_core_testing",
         "//mcp_infra",
         "//openai_utils",
-        # props.core modules
-        "//props/core:agent_registry",
+        # props orchestration modules
+        "//props/orchestration:agent_registry",
         "//props/core:agent_types",
         "//props/core:agent_workspace",
         "//props/core:eval_api_models",

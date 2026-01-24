@@ -31,9 +31,6 @@ from props.cli.cmd_snapshot import snapshot_app
 from props.cli.cmd_stats import stats_app
 from props.cli.shared import make_example_from_files
 from props.core.agent_helpers import get_current_agent_run
-
-# cmd_gepa imported lazily below (gepa is optional)
-from props.core.agent_registry import AgentRegistry, ImprovementResult, OutcomeExhausted, OutcomeUnexpectedTermination
 from props.core.agent_types import AgentType
 from props.core.display import fmt_pct, short_sha
 from props.core.ids import DefinitionId, SnapshotSlug
@@ -45,6 +42,14 @@ from props.db.config import get_database_config
 from props.db.models import AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, ReportedIssue, Snapshot
 from props.db.query_builders import query_recall_by_example
 from props.db.session import get_session, init_db
+
+# cmd_gepa imported lazily below (gepa is optional)
+from props.orchestration.agent_registry import (
+    AgentRegistry,
+    ImprovementResult,
+    OutcomeExhausted,
+    OutcomeUnexpectedTermination,
+)
 
 logger = logging.getLogger(__name__)
 

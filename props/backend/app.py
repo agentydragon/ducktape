@@ -31,8 +31,8 @@ from cli_util.logging import LogLevel, configure_logging
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
 from props.cli.resources import get_database_config
-from props.core.agent_registry import AgentRegistry
-from props.grader.daemon_manager import DaemonManager
+from props.orchestration.agent_registry import AgentRegistry
+from props.orchestration.daemon_manager import DaemonManager
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
