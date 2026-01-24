@@ -148,6 +148,7 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["prompt-optimizer-agent:latest"],
+    visibility = ["//visibility:public"],
 )
 
 oci_push(

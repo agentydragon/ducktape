@@ -58,5 +58,6 @@ py_library(
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
         "@pypi//uvicorn",
+        "@rules_python//python/runfiles",
     ],
 )

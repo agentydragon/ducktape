@@ -40,6 +40,7 @@ from pathlib import Path
 
 import docker
 import pytest
+from rules_python.python.runfiles import runfiles
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
@@ -56,30 +57,15 @@ class AgentImage:
 
 
 def _get_runfiles_path(relative_path: str) -> Path:
-    """Get path to a file in Bazel runfiles.
-
-    Raises FileNotFoundError if not found.
-    """
-    try:
-        from rules_python.python.runfiles import runfiles
-
-        r = runfiles.Create()
-        path = r.Rlocation(f"_main/{relative_path}")
-        if path and Path(path).exists():
-            return Path(path)
-    except ImportError:
-        pass
+    """Get path to a file in Bazel runfiles."""
+    r = runfiles.Create()
+    path = r.Rlocation(f"_main/{relative_path}")
+    if path:
+        return Path(path)
 
     # Fallback: check bazel-bin for local dev
     repo_root = Path(__file__).parent.parent.parent.parent
-    path = repo_root / "bazel-bin" / relative_path
-    if path.exists():
-        return path
-
-    raise FileNotFoundError(
-        f"Load script not found: {relative_path}. "
-        f"Add the :load target to your test's data deps."
-    )
+    return repo_root / "bazel-bin" / relative_path
 
 
 @contextmanager
