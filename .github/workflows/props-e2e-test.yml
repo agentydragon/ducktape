@@ -1,6 +1,7 @@
 # Props E2E test reusable workflow
 #
-# Runs props e2e tests that require Docker infrastructure (registry, proxy, postgres)
+# Runs props e2e tests using testcontainers for infrastructure.
+# No docker-compose required - all infrastructure is managed by pytest fixtures.
 name: Props E2E Test
 
 on:
@@ -48,95 +49,14 @@ jobs:
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
-      # Generate PGPASSWORD (compose.yaml expects it from environment)
-      - name: Setup environment
-        run: |
-          echo "PGPASSWORD=$(openssl rand -base64 24)" >> $GITHUB_ENV
-          # Dummy OPENAI_API_KEY to satisfy compose.yaml (tests use fake server)
-          echo "OPENAI_API_KEY=test-key-not-used" >> $GITHUB_ENV
-
-      # Build unified backend image (compose.yaml references props-backend:latest)
-      - name: Build backend image
-        run: bazel run //props/backend:load
-
-      # Pull images needed by compose.yaml
-      - name: Pull infrastructure images
-        run: |
-          docker pull postgres:16
-          docker pull registry:2
-
-      # Start postgres and registry
-      - name: Start postgres and registry
-        working-directory: props
-        run: |
-          docker compose up -d postgres registry
-          echo "Waiting for PostgreSQL..."
-          until pg_isready -h 127.0.0.1 -p 5433 -U postgres; do sleep 1; done
-          echo "Waiting for registry..."
-          until curl -sf http://127.0.0.1:5000/v2/; do sleep 1; done
-          echo "PostgreSQL and registry ready"
-
-      # Initialize database schema (required before backend starts)
-      - name: Initialize database schema
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: 5433
-          PGUSER: postgres
-          PGDATABASE: eval_results
-        run: bazel run //props/cli:cli -- db init -y
-
-      # Start backend (daemon manager requires schema to exist)
-      - name: Start backend
-        working-directory: props
-        run: |
-          docker compose up -d backend
-          echo "Waiting for backend..."
-          for i in {1..60}; do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health || echo "000")
-            if [[ "$HTTP" == "200" ]]; then break; fi
-            if [ $i -eq 60 ]; then
-              echo "Backend failed to start"
-              docker logs props-backend
-              exit 1
-            fi
-            sleep 1
-          done
-          echo "Backend ready"
-
-      # Push agent images via backend registry proxy
-      - name: Push agent images
-        run: |
-          bazel run //props/critic:push
-          bazel run //props/grader:push
-          bazel run //props/grader:daemon_push
-          bazel run //props/critic_dev/improve:push
-          bazel run //props/critic_dev/optimize:push
-
-      # Sync snapshots (triggers pg_notify which starts grader daemons)
-      - name: Sync snapshots
-        env:
-          PGHOST: 127.0.0.1
-          PGPORT: 5433
-          PGUSER: postgres
-          PGDATABASE: eval_results
-          ADGN_PROPS_SPECIMENS_ROOT: ${{ github.workspace }}/props/testing/fixtures/testdata/specimens
-        run: bazel run //props/cli:cli -- db sync
-
       - name: Run E2E tests
         env:
-          PGHOST: 127.0.0.1
-          PGPORT: 5433
-          PGUSER: postgres
-          PGDATABASE: eval_results
-          AGENT_PGHOST: 127.0.0.1
-          # Unified backend handles registry proxy on port 8000
-          PROPS_REGISTRY_PROXY_HOST: 127.0.0.1
-          PROPS_REGISTRY_PROXY_PORT: "8000"
-          PROPS_DOCKER_NETWORK: props-agents
-          PROPS_E2E_HOST_HOSTNAME: 172.17.0.1
+          # For testcontainers bridge networking
+          PROPS_E2E_HOST_HOSTNAME: host.docker.internal
         run: |
           bazel test --keep_going \
             --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
+            --test_env=PROPS_E2E_HOST_HOSTNAME=host.docker.internal \
             ${{ inputs.targets }}
 
       - uses: ./.github/actions/collect-test-logs
@@ -152,11 +72,6 @@ jobs:
           path: "bazel-testlogs/**/test.xml"
           reporter: java-junit
           fail-on-error: false
-
-      - name: Cleanup infrastructure
-        if: always()
-        working-directory: props
-        run: docker compose down
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

@@ -269,8 +269,14 @@ py_test(
         "test_agent_pkg_e2e.py",
         "//props:conftest.py",
     ],
+    data = [
+        "//props/critic:load",  # Critic agent image
+        "//props/critic_dev/optimize:load",  # Optimizer agent image
+        "//props/grader:load",  # Grader agent image
+    ],
     imports = ["../.."],
     tags = [
+        "e2e",
         "integration",
         "requires_docker",
         "slow",

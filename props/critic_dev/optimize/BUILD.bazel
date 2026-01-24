@@ -107,14 +107,20 @@ py_test(
         "test_e2e.py",
         "//props:conftest.py",
     ],
+    data = [
+        ":load",  # Prompt optimizer agent image
+        "//props/critic:load",  # Critic for orchestration
+        "//props/grader:load",  # Grader for orchestration
+    ],
     env = {
-        # E2E container networking - not postgres related
-        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
-        "PROPS_REGISTRY_PROXY_PORT": "5051",
+        # E2E container networking
         "PROPS_DOCKER_NETWORK": "host",
     },
     imports = ["../../.."],
-    tags = ["requires_docker"],
+    tags = [
+        "e2e",
+        "requires_docker",
+    ],
     deps = [
         ":test_e2e_lib",
         "@pypi//pytest_bazel",
