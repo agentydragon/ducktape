@@ -2,10 +2,7 @@
 
 load("@rules_python//python:defs.bzl", "py_library")
 
-exports_files([
-    "conftest.py",
-    "devenv.nix",
-])
+exports_files(["conftest.py"])
 
 # Shared pytest configuration for all props tests
 py_library(

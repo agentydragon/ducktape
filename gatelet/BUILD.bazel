@@ -3,10 +3,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files([
-    "gatelet.toml",
-    "pyproject.toml",
-])
+exports_files(["gatelet.toml"])
 
 # Reporter is a standalone CLI tool - doesn't depend on server
 py_library(

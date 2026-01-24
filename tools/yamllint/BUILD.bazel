@@ -2,10 +2,6 @@ load("@rules_python//python:defs.bzl", "py_binary")
 
 # Yamllint tool for YAML linting in Bazel
 
-exports_files([
-    "pyproject.toml",
-])
-
 # Yamllint binary via py_binary entry point
 py_binary(
     name = "yamllint",
