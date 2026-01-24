@@ -8,9 +8,10 @@ Detection: checks if ~/.cache/bazel-proxy/combined_ca.pem exists.
 The session hook creates this file when setting up the TLS-inspecting proxy.
 """
 
-# Fixed paths matching bazel_proxy_setup.py constants
+# Fixed paths matching tools/claude_hooks/paths.py (get_bazel_proxy_dir())
+# platformdirs.user_cache_dir("claude-hooks") + "bazel-proxy"
 _BAZEL_PROXY_PORT = "18081"
-_BAZEL_COMBINED_CA = "/root/.cache/bazel-proxy/combined_ca.pem"
+_BAZEL_COMBINED_CA = "/root/.cache/claude-hooks/bazel-proxy/combined_ca.pem"
 
 def _proxy_config_repo_impl(repository_ctx):
     """Generate proxy_env.bzl based on proxy file existence."""
