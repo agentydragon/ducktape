@@ -96,7 +96,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Props backend stopped")
 
 
+<<<<<<< HEAD
 def create_app(*, static_dir: Path | None = None) -> FastAPI:
+=======
+def create_app(*, static_dir: Path | None) -> FastAPI:
+    configure_logging(
+        log_output=os.environ.get("ADGN_LOG_OUTPUT", "stderr"),
+        log_level=os.environ.get("ADGN_LOG_LEVEL", LogLevel.INFO),
+    )
+    # Quiet noisy loggers
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("aiodocker").setLevel(logging.WARNING)
+
+>>>>>>> 5b02ece (Use shared configure_logging with standard ADGN_LOG_* env vars)
     app = FastAPI(
         title="Props Backend",
         description="Unified props backend: dashboard, proxies (LLM/registry), and eval APIs",
