@@ -57,15 +57,16 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 - **Bypasses RLS**: Can see all splits (train/valid/test)
 - **Connection**: Via PGUSER/PGPASSWORD environment variables
 
-### Temporary Agent Users (per-task)
+### Agent Roles (persistent)
 
 - **Username pattern**: `agent_{agent_run_id}` (unified for all agent types)
 - **Role membership**: Inherit from `agent_base` role
 - **Permissions**: SELECT on reference tables, INSERT/UPDATE/DELETE on agent-specific tables
 - **RLS-restricted**: Access filtered by `current_agent_run_id()` and `current_agent_type()`
 - **Purpose**: Enforce data isolation (e.g., TRAIN-only for prompt optimizer, own-run for critics)
-- **Lifecycle**: Created on-demand, automatically cleaned up on task completion
-- **Implementation**: See `TempUserManager` in `db/temp_user_manager.py`
+- **Lifecycle**: Created on first use, never deleted (allows reconnection)
+- **Passwords**: Deterministic (HMAC-SHA256 of salt + agent_run_id)
+- **Implementation**: See `ensure_agent_role()` in `orchestration/agent_credentials.py`
 
 Type-specific access is controlled entirely by RLS policies based on `agent_runs.type_config`,
 not by different roles or username patterns.

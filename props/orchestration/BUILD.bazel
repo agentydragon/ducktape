@@ -4,14 +4,14 @@ This package contains HOST-only code that orchestrates agent containers:
 - AgentRegistry: unified entry point for running agents
 - loop_agent_env: container spawning and lifecycle
 - grader_supervisor: grader daemon lifecycle management
-- temp_user_manager: temporary PostgreSQL user creation
+- agent_credentials: PostgreSQL role creation for agents
 """
 
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
-    name = "temp_user_manager",
-    srcs = ["temp_user_manager.py"],
+    name = "agent_credentials",
+    srcs = ["agent_credentials.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -26,7 +26,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":temp_user_manager",
+        ":agent_credentials",
         "//props/core:display",
         "//props/core:docker_env",
         "//props/core:oci_utils",

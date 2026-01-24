@@ -14,7 +14,7 @@ from props.db.examples import Example
 from props.db.models import AgentRunStatus
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
-from props.orchestration.temp_user_manager import TempUserManager
+from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
 from props.testing.fixtures import make_critic_run
 
 if TYPE_CHECKING:
@@ -42,14 +42,13 @@ def test_critic_run(synced_test_db, test_snapshot):
 
 
 @pytest.fixture
-async def temp_creds(test_db, test_critic_run):
-    """Create temporary database user with RLS scoping.
+async def temp_creds(test_db, test_critic_run) -> AgentCredentials:
+    """Ensure agent role exists with RLS scoping.
 
     Returns:
-        TempUserCredentials for the critic agent
+        AgentCredentials for the critic agent
     """
-    async with TempUserManager(test_db.admin, test_critic_run) as creds:
-        yield creds
+    return await ensure_agent_role(test_db.admin, test_critic_run)
 
 
 @pytest.fixture

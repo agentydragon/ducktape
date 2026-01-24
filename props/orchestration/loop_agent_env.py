@@ -7,7 +7,7 @@ This is the new architecture where:
 - The container exits 0 on success, non-zero on failure
 
 Host scaffold responsibilities:
-1. Create temporary database user with RLS scoping
+1. Ensure agent database role exists with RLS scoping
 2. Start container with:
    - OPENAI_BASE_URL pointing to LLM proxy
    - OPENAI_API_KEY = temp user password
@@ -28,7 +28,7 @@ from props.core.display import short_uuid
 from props.core.docker_env import PROPS_NETWORK_NAME
 from props.core.oci_utils import resolve_image_ref_async
 from props.db.config import DatabaseConfig
-from props.orchestration.temp_user_manager import TempUserManager
+from props.orchestration.agent_credentials import ensure_agent_role
 
 if TYPE_CHECKING:
     import aiodocker
@@ -57,7 +57,7 @@ async def run_loop_agent(
 ) -> ContainerResult:
     """Run an agent container with in-container agent loop.
 
-    Creates temp DB user, starts container, waits for exit, captures logs, cleans up.
+    Ensures agent role exists, starts container, waits for exit, captures logs, cleans up.
     Container should run its agent loop via CMD and exit 0 on success.
     timeout_seconds=None means no timeout (for daemons). Returns exit_code=-1 on timeout.
     """
@@ -65,87 +65,87 @@ async def run_loop_agent(
     image_id = await resolve_image_ref_async(docker_client, image)
     logger.info("Using image %s from %s", image_id[:19], image)
 
-    # Create temporary database user
-    async with TempUserManager(db_config.admin, agent_run_id) as temp_creds:
-        logger.info("Created temporary database user: %s", temp_creds.username)
+    # Ensure agent database role exists
+    creds = await ensure_agent_role(db_config.admin, agent_run_id)
+    logger.info("Agent role ready: %s", creds.username)
 
-        container = None
+    container = None
+    try:
+        # Build container config
+        name = container_name or f"agent-{short_uuid(agent_run_id)}"
+        container_db = db_config.for_container_user(creds.username, creds.password)
+
+        env = {
+            # Database credentials (agent derives run ID from PGUSER via current_agent_run_id())
+            "PGHOST": container_db.host,
+            "PGPORT": str(container_db.port),
+            "PGUSER": container_db.user,
+            "PGPASSWORD": container_db.password,
+            "PGDATABASE": container_db.database,
+            # LLM proxy credentials (same password as database)
+            "OPENAI_BASE_URL": f"{llm_proxy_url}/v1",
+            "OPENAI_API_KEY": creds.password,
+        }
+        if extra_env:
+            env.update(extra_env)
+
+        # Create and start container
+        host_config: dict[str, object] = {
+            "NetworkMode": PROPS_NETWORK_NAME,
+            "AutoRemove": False,  # Keep container to read logs
+        }
+        if extra_hosts:
+            # Convert {"host": "ip"} to ["host:ip"] format for Docker API
+            host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in extra_hosts.items()]
+
+        container_config: dict[str, object] = {
+            "Image": image_id,
+            "Env": [f"{k}={v}" for k, v in env.items()],
+            "HostConfig": host_config,
+            "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
+        }
+
+        container = await docker_client.containers.create(container_config, name=name)  # type: ignore[arg-type]
+        logger.info("Created container %s", name)
+
+        await container.start()
+        logger.info("Started container %s", name)
+
+        # Wait for container to exit (with optional timeout)
+        timed_out = False
         try:
-            # Build container config
-            name = container_name or f"agent-{short_uuid(agent_run_id)}"
-            container_db = db_config.for_container_user(temp_creds.username, temp_creds.password)
-
-            env = {
-                # Database credentials (agent derives run ID from PGUSER via current_agent_run_id())
-                "PGHOST": container_db.host,
-                "PGPORT": str(container_db.port),
-                "PGUSER": container_db.user,
-                "PGPASSWORD": container_db.password,
-                "PGDATABASE": container_db.database,
-                # LLM proxy credentials (same password as database)
-                "OPENAI_BASE_URL": f"{llm_proxy_url}/v1",
-                "OPENAI_API_KEY": temp_creds.password,
-            }
-            if extra_env:
-                env.update(extra_env)
-
-            # Create and start container
-            host_config: dict[str, object] = {
-                "NetworkMode": PROPS_NETWORK_NAME,
-                "AutoRemove": False,  # Keep container to read logs
-            }
-            if extra_hosts:
-                # Convert {"host": "ip"} to ["host:ip"] format for Docker API
-                host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in extra_hosts.items()]
-
-            container_config: dict[str, object] = {
-                "Image": image_id,
-                "Env": [f"{k}={v}" for k, v in env.items()],
-                "HostConfig": host_config,
-                "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
-            }
-
-            container = await docker_client.containers.create(container_config, name=name)  # type: ignore[arg-type]
-            logger.info("Created container %s", name)
-
-            await container.start()
-            logger.info("Started container %s", name)
-
-            # Wait for container to exit (with optional timeout)
-            timed_out = False
+            if timeout_seconds is not None:
+                exit_info = await asyncio.wait_for(container.wait(), timeout=timeout_seconds)
+            else:
+                exit_info = await container.wait()
+            exit_code = exit_info.get("StatusCode", 1)
+        except TimeoutError:
+            logger.error("Container %s timed out after %d seconds", name, timeout_seconds)
+            timed_out = True
+            exit_code = -1  # Sentinel for timeout
+            # Kill the container
             try:
-                if timeout_seconds is not None:
-                    exit_info = await asyncio.wait_for(container.wait(), timeout=timeout_seconds)
-                else:
-                    exit_info = await container.wait()
-                exit_code = exit_info.get("StatusCode", 1)
-            except TimeoutError:
-                logger.error("Container %s timed out after %d seconds", name, timeout_seconds)
-                timed_out = True
-                exit_code = -1  # Sentinel for timeout
-                # Kill the container
-                try:
-                    await container.kill()
-                except Exception as e:
-                    logger.warning("Failed to kill timed-out container: %s", e)
+                await container.kill()
+            except Exception as e:
+                logger.warning("Failed to kill timed-out container: %s", e)
 
-            if not timed_out:
-                logger.info("Container %s exited with code %d", name, exit_code)
+        if not timed_out:
+            logger.info("Container %s exited with code %d", name, exit_code)
 
-            # Capture logs
-            stdout_logs = await container.log(stdout=True, stderr=False)
-            stderr_logs = await container.log(stdout=False, stderr=True)
+        # Capture logs
+        stdout_logs = await container.log(stdout=True, stderr=False)
+        stderr_logs = await container.log(stdout=False, stderr=True)
 
-            stdout = "".join(stdout_logs) if stdout_logs else ""
-            stderr = "".join(stderr_logs) if stderr_logs else ""
+        stdout = "".join(stdout_logs) if stdout_logs else ""
+        stderr = "".join(stderr_logs) if stderr_logs else ""
 
-            return ContainerResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
+        return ContainerResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
-        finally:
-            # Clean up container
-            if container is not None:
-                try:
-                    await container.delete(force=True)
-                    logger.info("Deleted container")
-                except Exception as e:
-                    logger.warning("Failed to delete container: %s", e)
+    finally:
+        # Clean up container
+        if container is not None:
+            try:
+                await container.delete(force=True)
+                logger.info("Deleted container")
+            except Exception as e:
+                logger.warning("Failed to delete container: %s", e)

@@ -12,6 +12,6 @@
 
 See also:
 
-- `props/db/temp_user_manager.py` - Unified user manager for all agent types
+- `props/orchestration/agent_credentials.py` - Agent role creation
 - `props/core/clustering/` - Clustering infrastructure
 - `props/db/migrations/versions/*_clustering*.py` - Clustering schema migrations

@@ -49,27 +49,27 @@ CASCADE`), all dependent views are also dropped. Before writing such a migration
 2. Recreate all dropped views in correct dependency order in the same migration
 3. Re-grant permissions (`GRANT SELECT ON TABLE view_name TO agent_base`)
 
-## Temporary Database Users (Scoped Access)
+## Agent Database Roles (Scoped Access)
 
-**Pattern:** Task-specific agents create temporary PostgreSQL users with RLS-scoped access for the duration of their execution.
+**Pattern:** Task-specific agents get persistent PostgreSQL roles with RLS-scoped access. Passwords are deterministic (derived from salt + agent_run_id) enabling reconnection.
 
-**Why temporary users?**
+**Why agent roles?**
 
 - Enforces data isolation (e.g., TRAIN-only access for optimization agents)
 - Prevents accidental leakage of validation/test data during training
-- No persistent credentials to manage or rotate
-- Automatic cleanup on agent exit
+- Deterministic passwords allow agents to reconnect
+- Roles persist (no cleanup races)
 
 **Function-Based RLS:**
 
-- Username pattern encodes scope (e.g., `prompt_optimizer_agent_{uuid}`)
-- PostgreSQL function extracts ID from username: `current_prompt_optimizer_run_id()`
+- Username pattern encodes scope: `agent_{agent_run_id}`
+- PostgreSQL function extracts ID from username: `current_agent_run_id()`
 - Centralized policies use function to filter rows - O(1) overhead
 - Scales to many concurrent users without per-user policy creation
 
 **See also:**
 
-- `db/temp_user_manager.py` - Unified user manager for all agent types
+- `orchestration/agent_credentials.py` - Agent role creation and password derivation
 - `db/migrations/versions/20251215000000_add_prompt_optimizer_rls.py` - RLS setup migration
 
 ## Architecture: MCP I/O Models vs DB Persistence Models

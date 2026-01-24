@@ -99,6 +99,7 @@ py_test(
     deps = [
         "//props/db:models",
         "//props/db:session",
+        "//props/orchestration:agent_credentials",
         "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

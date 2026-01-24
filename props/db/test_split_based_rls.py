@@ -1,7 +1,7 @@
 """Test split-based RLS policies for optimization agents.
 
-Verifies that prompt optimizer users (temporary users created via
-TempUserManager) can only access TRAIN split sensitive data
+Verifies that prompt optimizer users (agent roles created via
+ensure_agent_role) can only access TRAIN split sensitive data
 (true_positives, false_positives, agent_runs, llm_requests, etc.), not TEST or VALID.
 
 **Note on snapshots table**: The snapshots table contains only metadata (slug, split,
@@ -44,15 +44,15 @@ from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
 from props.db.session import get_session
-from props.orchestration.temp_user_manager import TempUserCredentials, TempUserManager
+from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
 from props.testing.fixtures import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest_asyncio.fixture
-async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerator[TempUserCredentials]:
-    """Create prompt optimizer temporary user credentials.
+async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerator[AgentCredentials]:
+    """Create prompt optimizer agent credentials.
 
     Creates an AgentRun record with agent_type='prompt_optimizer' so that
     current_agent_type() returns the correct value for RLS policy evaluation.
@@ -63,7 +63,7 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
     run_id = uuid4()
 
     # Create AgentRun record with prompt_optimizer type_config (as admin)
-    # This must happen BEFORE the temp user is created, so RLS policies can
+    # This must happen BEFORE the agent role is created, so RLS policies can
     # identify this user as a prompt_optimizer via current_agent_type()
     with get_session() as session:
         type_config = PromptOptimizerTypeConfig(
@@ -83,13 +83,12 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
         session.add(agent_run)
         session.commit()
 
-    async with TempUserManager(synced_test_db.admin, run_id) as creds:
-        yield creds
+    yield await ensure_agent_role(synced_test_db.admin, run_id)
 
 
 @pytest_asyncio.fixture
 async def prompt_optimizer_session(
-    prompt_optimizer_creds: TempUserCredentials, synced_test_db: DatabaseConfig
+    prompt_optimizer_creds: AgentCredentials, synced_test_db: DatabaseConfig
 ) -> AsyncGenerator[Session]:
     """Create database session as prompt optimizer temp user.
 

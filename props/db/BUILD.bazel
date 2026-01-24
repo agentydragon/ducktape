@@ -238,7 +238,7 @@ py_test(
         ":models",
         ":session",
         "//agent_core",
-        "//props/orchestration:temp_user_manager",
+        "//props/orchestration:agent_credentials",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
