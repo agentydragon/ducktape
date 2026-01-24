@@ -2,110 +2,85 @@
 
 ## Architecture
 
-The CI system uses a declarative workflow manifest (`workflows.yaml`) as the single source of truth for workflow triggers. The decision engine (`ci_decide.py`) computes affected Bazel targets and determines which workflows to run.
+The CI system uses a declarative workflow manifest (`workflows.yaml`) as the single source of truth. Two scripts consume this manifest:
+
+1. **`generate_ci.py`** - Generates `.github/workflows/ci.yml` from the manifest
+2. **`ci_decide.py`** - Computes affected targets and which workflows to run at CI time
 
 ```
-workflows.yaml          ci_decide.py              ci.yml
-     │                       │                      │
-     │  trigger rules        │  bazel-diff         │  contains(workflows, 'name')
-     └──────────────────────►│◄─────────────────────┤
-                             │                      │
-                             │  outputs:            │
-                             │  - targets           │
-                             │  - workflows (JSON)  │
-                             │  - infra_changed     │
-                             └──────────────────────►
+workflows.yaml
+     │
+     ├──► generate_ci.py ──► ci.yml (committed)
+     │
+     └──► ci_decide.py (at CI time)
+              │
+              └──► outputs: targets, workflows (JSON), infra_changed
 ```
 
 ## Components
 
-### `workflows.yaml` - Trigger Definitions
+### `workflows.yaml` - Single Source of Truth
 
-Declares when each workflow runs:
+Defines all workflows, their triggers, and job configuration:
 
 ```yaml
-# Bazel-pattern triggers: uses bazel query intersection
 bazel-build:
-  bazel_pattern: "//..."
-  receives_targets: true
+  bazel_pattern: "//..." # Trigger on any Bazel target
+  targets: true # Pass affected targets to workflow
+  secrets: [BUILDBUDDY_API_KEY]
 
 props-e2e-test:
   bazel_pattern: "//props/..."
+  secrets: [BUILDBUDDY_API_KEY]
 
-# Path-pattern triggers: regex match on changed files
 nix-flake-check:
-  path_pattern: "^nix/"
+  path_pattern: "^nix/" # Trigger on path changes
 
-# Always-run workflows
 pre-commit:
-  always: true
+  always: true # Always run
 ```
 
-**Automatic workflow file detection**: If `.github/workflows/foo.yml` changes, the `foo` workflow is triggered (if defined in the manifest). No explicit mapping needed.
+### `generate_ci.py` - CI YAML Generator
 
-### `ci_decide.py` - Decision Engine
+Generates `ci.yml` from `workflows.yaml` using proper YAML serialization:
 
-1. Loads `workflows.yaml`
-2. Computes base SHA (merge-base for PRs, HEAD~1 for pushes)
-3. Gets changed files via `git diff`
-4. Runs `bazel-diff` to compute affected Bazel targets
-5. Evaluates trigger rules against changes
-6. Outputs:
-   - `targets`: Space-separated Bazel targets (or `//...` on infra change)
-   - `workflows`: JSON array of workflow names to run
-   - `infra_changed`: Boolean flag for infrastructure changes
-
-### `ci.yml` - Workflow Dispatch
-
-Uses `contains(fromJson(...), 'name')` for each job's `if:` condition:
-
-```yaml
-jobs:
-  compute-targets:
-    outputs:
-      workflows: ${{ steps.decide.outputs.workflows }}
-      targets: ${{ steps.decide.outputs.targets }}
-
-  bazel-build:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')
-    uses: ./.github/workflows/bazel-build.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
+```bash
+python tools/ci/generate_ci.py        # Generate ci.yml
+python tools/ci/generate_ci.py --check  # Verify ci.yml is up to date
 ```
 
-## Key Design Decisions
+The generated `ci.yml` includes:
 
-### Always compute specific targets
+- `compute-targets` job (downloads bazel-diff, runs ci_decide.py)
+- One job per workflow with `contains(fromJson(...))` condition
 
-Unlike the previous design that used `//...` for push events, the new system always runs `bazel-diff` to compute exactly affected targets. This improves:
+### `ci_decide.py` - Runtime Decision Engine
 
-- Cache hit rates
-- Build times
-- Resource usage
+At CI time, computes:
 
-The only exceptions that trigger `//...`:
+1. Base SHA (merge-base for PRs, HEAD~1 for pushes)
+2. Changed files via `git diff`
+3. Affected Bazel targets via `bazel-diff`
+4. Which workflows to run based on trigger rules
 
-- Infrastructure file changes (MODULE.bazel, requirements_bazel.txt, etc.)
-- bazel-diff failures (graceful fallback)
-- Missing base SHA (new branch)
+Outputs (to `$GITHUB_OUTPUT`):
 
-### Single source of truth
+- `targets`: Space-separated Bazel targets (or `//...` on infra change)
+- `workflows`: JSON array of workflow names
+- `infra_changed`: Boolean flag
 
-All trigger logic lives in `workflows.yaml`. Adding a new conditional workflow:
+## Trigger Types
 
-1. Add entry to `workflows.yaml`
-2. Add job to `ci.yml` with `contains()` check
-
-No need to touch multiple Python dicts, bash scripts, or YAML conditions.
-
-### Automatic workflow file triggers
-
-When `.github/workflows/foo.yml` changes, the `foo` workflow runs automatically. This is derived from naming convention, not explicit mapping.
+| Type            | Description                                      |
+| --------------- | ------------------------------------------------ |
+| `bazel_pattern` | Bazel query pattern (uses set intersection)      |
+| `path_pattern`  | Regex pattern matched against changed files      |
+| `always`        | Always run this workflow                         |
+| (automatic)     | Workflow file changes trigger their own workflow |
 
 ## Infrastructure Files
 
-These patterns trigger `//...` (full build) since they can affect any target:
+These patterns trigger `//...` (full build):
 
 - `MODULE.bazel`, `MODULE.bazel.lock`
 - `requirements_bazel.txt`
@@ -119,12 +94,11 @@ These patterns trigger `//...` (full build) since they can affect any target:
 2. Add to `workflows.yaml`:
    ```yaml
    my-workflow:
-     bazel_pattern: "//my-package/..." # or path_pattern, or always
+     bazel_pattern: "//my-package/..."
+     secrets: [BUILDBUDDY_API_KEY]
    ```
-3. Add job to `ci.yml`:
-   ```yaml
-   my-workflow:
-     needs: compute-targets
-     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'my-workflow')
-     uses: ./.github/workflows/my-workflow.yml
+3. Regenerate ci.yml:
+   ```bash
+   python tools/ci/generate_ci.py
    ```
+4. Commit both `workflows.yaml` and `ci.yml`

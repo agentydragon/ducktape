@@ -44,7 +44,7 @@ class WorkflowConfig:
     bazel_pattern: str | None = None
     path_pattern: str | None = None
     always: bool = False
-    receives_targets: bool = False
+    pass_targets: bool = False  # Whether this workflow receives the targets input
 
 
 @dataclass
@@ -96,7 +96,7 @@ def load_workflows(manifest_path: Path) -> dict[str, WorkflowConfig]:
             bazel_pattern=config.get("bazel_pattern"),
             path_pattern=config.get("path_pattern"),
             always=config.get("always", False),
-            receives_targets=config.get("receives_targets", False),
+            pass_targets=config.get("targets", False),
         )
     return workflows
 

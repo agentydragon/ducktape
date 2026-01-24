@@ -1,54 +1,26 @@
-# CI workflow - calls reusable workflow files for each job
-#
-# Jobs (defined in separate files):
-# - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
-# - bazel-build: Build all targets
-# - bazel-lint: Linting (Python ruff, JS/TS eslint)
-# - bazel-typecheck: Type checking (Python mypy)
-# - bazel-rust-lint: Rust linting (clippy)
-# - bazel-test: Run all tests (excludes e2e tests requiring Docker infra)
-# - props-e2e-test: Props e2e tests (requires Docker registry, proxy, postgres)
-# - editor-e2e-test: Editor agent e2e tests (requires Docker)
-# - agent-server-e2e-test: Agent server e2e tests (requires Docker and runtime image)
-# - claude-hooks: E2E tests + release (separate workflow, always runs)
-# - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
-# - ansible-lint-full: Ansible validation
-# - nix-flake-check: Verify NixOS and home-manager configurations evaluate
-#
-# Workflow triggers are defined in tools/ci/workflows.yaml (single source of truth).
-# The compute-targets job outputs a JSON list of workflows to run.
-#
-# Static analysis via Bazel aspects:
-# - Python: ruff (lint and formatting), mypy (types)
-# - JS/TS: ESLint (lint), prettier (formatting)
-# - Rust: clippy (lint), rustfmt (formatting)
-# - Shell: shfmt (formatting)
-# - Bazel: buildifier (formatting)
+# AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
+# Regenerate with: python tools/ci/generate_ci.py
 name: CI
-
-on:
+"on":
   push:
-    branches: [main, master, devel]
-  pull_request:
+    branches:
+      - main
+      - master
+      - devel
+  pull_request: null
   workflow_dispatch:
     inputs:
       enable_profiling:
-        description: "Enable Bazel profiling (generates downloadable artifacts)"
+        description: Enable Bazel profiling (generates downloadable artifacts)
         required: false
         type: boolean
         default: false
-
-# Cancel outdated workflow runs when new commits are pushed
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-# Least-privilege permissions
 permissions:
   contents: read
-
 jobs:
-  # Compute affected targets and workflows to run (single source of truth)
   compute-targets:
     name: Compute affected targets
     runs-on: ubuntu-latest
@@ -61,56 +33,32 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: bazelbuild/setup-bazelisk@v3
-
       - uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
+          distribution: temurin
           java-version: "21"
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install dependencies
         run: pip install pyyaml
-
       - name: Cache bazel-diff
         id: cache-bazel-diff
         uses: actions/cache@v4
         with:
           path: bazel-diff.jar
           key: bazel-diff-12.1.1
-
       - name: Download bazel-diff
         if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
-        run: |
+        run: |-
           curl -fsSL -o bazel-diff.jar \
             "https://github.com/Tinder/bazel-diff/releases/download/12.1.1/bazel-diff_deploy.jar"
-
       - name: Set bazel-diff path
         run: echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
-
       - name: Compute CI decision
         id: decide
         run: python tools/ci/ci_decide.py
-
-  # Always run - fast safety check
-  pre-commit:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'pre-commit')
-    uses: ./.github/workflows/pre-commit.yml
-
-  # Conditional - only when props/frontend changed
-  visual-regression:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'visual-regression')
-    uses: ./.github/workflows/visual-regression.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Conditional - only when Bazel targets changed
   bazel-build:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')
@@ -119,7 +67,14 @@ jobs:
       targets: ${{ needs.compute-targets.outputs.targets }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
+  bazel-test:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-test')
+    uses: ./.github/workflows/bazel-test.yml
+    with:
+      targets: ${{ needs.compute-targets.outputs.targets }}
+    secrets:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
   bazel-lint:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-lint')
@@ -129,7 +84,6 @@ jobs:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
   bazel-typecheck:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-typecheck')
@@ -139,7 +93,6 @@ jobs:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
   bazel-rust-lint:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-rust-lint')
@@ -148,51 +101,39 @@ jobs:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  bazel-test:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-test')
-    uses: ./.github/workflows/bazel-test.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Props E2E tests - requires Docker infrastructure (registry, proxy, postgres)
   props-e2e-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'props-e2e-test')
     uses: ./.github/workflows/props-e2e-test.yml
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Editor E2E tests - requires Docker
   editor-e2e-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'editor-e2e-test')
     uses: ./.github/workflows/editor-e2e-test.yml
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Agent Server E2E tests - requires Docker and runtime image
   agent-server-e2e-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'agent-server-e2e-test')
     uses: ./.github/workflows/agent-server-e2e-test.yml
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Claude Hooks tests are handled by claude-hooks-release.yml which runs on
-  # push to devel/main (for releases) and PRs that touch tools/claude_hooks/
-
-  # Conditional - only when nix/ changed
+  visual-regression:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'visual-regression')
+    uses: ./.github/workflows/visual-regression.yml
+    secrets:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'nix-flake-check')
     uses: ./.github/workflows/nix-flake-check.yml
-
-  # Conditional - only when ansible/ changed
-  ansible-lint-full:
+  ansible-lint:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'ansible-lint')
     uses: ./.github/workflows/ansible-lint.yml
+  pre-commit:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'pre-commit')
+    uses: ./.github/workflows/pre-commit.yml

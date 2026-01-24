@@ -1,53 +1,69 @@
 # Workflow trigger definitions - single source of truth
 #
-# Each workflow declares what changes trigger it. The CI decision engine
-# reads this file and outputs a JSON list of workflows to run.
+# This file defines all CI workflows and their triggers. The generator script
+# (generate_ci.py) reads this to produce .github/workflows/ci.yml.
 #
 # Trigger types:
 #   bazel_pattern: Bazel target pattern (uses bazel query intersection)
 #   path_pattern: Regex pattern for changed files
 #   always: Always run this workflow
 #
-# Options:
-#   receives_targets: Pass affected targets to the workflow (default: false)
+# Job options:
+#   targets: Pass affected targets to the workflow (default: false)
+#   secrets: List of secrets to pass (default: [BUILDBUDDY_API_KEY])
+#   inputs: Additional inputs to pass to the workflow
 #
-# Workflow file changes automatically trigger their workflow (convention:
-# .github/workflows/foo.yml changing triggers the "foo" workflow if defined here).
+# Workflow file changes automatically trigger their workflow.
 
-# Core Bazel workflows - triggered by any Bazel target change
+# Core Bazel workflows
 bazel-build:
   bazel_pattern: "//..."
-  receives_targets: true
+  targets: true
+  secrets: [BUILDBUDDY_API_KEY]
 
 bazel-test:
   bazel_pattern: "//..."
-  receives_targets: true
+  targets: true
+  secrets: [BUILDBUDDY_API_KEY]
 
 bazel-lint:
   bazel_pattern: "//..."
-  receives_targets: true
+  targets: true
+  inputs:
+    enable_profiling: ${{ inputs.enable_profiling || false }}
+  secrets: [BUILDBUDDY_API_KEY]
 
 bazel-typecheck:
   bazel_pattern: "//..."
-  receives_targets: true
+  targets: true
+  inputs:
+    enable_profiling: ${{ inputs.enable_profiling || false }}
+  secrets: [BUILDBUDDY_API_KEY]
 
 # Rust-specific (only finance/ has Rust code)
 bazel-rust-lint:
   bazel_pattern: "//finance/..."
+  inputs:
+    enable_profiling: ${{ inputs.enable_profiling || false }}
+  secrets: [BUILDBUDDY_API_KEY]
 
-# E2E test workflows - triggered by their package
+# E2E test workflows
 props-e2e-test:
   bazel_pattern: "//props/..."
+  secrets: [BUILDBUDDY_API_KEY]
 
 editor-e2e-test:
   bazel_pattern: "//editor_agent/..."
+  secrets: [BUILDBUDDY_API_KEY]
 
 agent-server-e2e-test:
   bazel_pattern: "//agent_server/..."
+  secrets: [BUILDBUDDY_API_KEY]
 
 # Frontend visual regression
 visual-regression:
   bazel_pattern: "//props/frontend/..."
+  secrets: [BUILDBUDDY_API_KEY]
 
 # Path-based workflows (non-Bazel)
 nix-flake-check:
