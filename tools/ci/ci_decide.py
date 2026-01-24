@@ -170,9 +170,6 @@ def run_bazel_diff(
             text=True,
         )
 
-        if not result.stdout.strip():
-            return []
-
         return [t for t in result.stdout.strip().split("\n") if t]
 
     except subprocess.CalledProcessError as e:
