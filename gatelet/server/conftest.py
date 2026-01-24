@@ -142,7 +142,7 @@ def test_settings(tmp_path: Path, postgres_config: PostgresConfig) -> Settings:
     This ensures tests don't depend on production config.
     """
     return Settings(
-        database=DatabaseSettings(dsn=postgres_config.url(driver="")),
+        database=DatabaseSettings(dsn=postgres_config.url()),  # Uses asyncpg by default
         server=ServerSettings(log_file=str(tmp_path / "test.log")),
         auth=AuthSettings(
             key_in_url=KeyInUrlAuthSettings(enabled=True, key_valid_days=365),
