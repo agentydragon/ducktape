@@ -58,15 +58,18 @@ py_test(
         "conftest.py",
         "test_runner_session.py",
     ],
+    data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
         ":editor_agent_host",
         "//agent_core_testing",
         "//mcp_infra/testing",
+        "@pypi//docker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -76,16 +79,19 @@ py_test(
         "conftest.py",
         "test_editor_e2e_steps.py",
     ],
+    data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
         ":editor_agent_host",
         "//agent_core_testing",
         "//mcp_infra/testing",
+        "@pypi//docker",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

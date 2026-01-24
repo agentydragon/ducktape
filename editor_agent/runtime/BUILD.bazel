@@ -90,4 +90,5 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["adgn-editor:latest"],
+    visibility = ["//visibility:public"],
 )

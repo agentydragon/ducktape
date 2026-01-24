@@ -100,11 +100,6 @@ jobs:
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: inherit
-  editor-e2e-test:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'editor-e2e-test')
-    uses: ./.github/workflows/editor-e2e-test.yml
-    secrets: inherit
   agent-server-e2e-test:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'agent-server-e2e-test')
