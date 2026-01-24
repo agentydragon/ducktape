@@ -48,11 +48,6 @@ workflows:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: [BUILDBUDDY_API_KEY]
 
-  # E2E test workflows (props and editor e2e merged into bazel-test)
-  agent-server-e2e-test:
-    trigger: { kind: bazel, pattern: "//agent_server/..." }
-    secrets: [BUILDBUDDY_API_KEY]
-
   # Frontend visual regression
   visual-regression:
     trigger: { kind: bazel, pattern: "//props/frontend/..." }

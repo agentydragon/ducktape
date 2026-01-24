@@ -1,15 +1,33 @@
 """Test fixtures for mcp_infra tests."""
 
+import os
+import subprocess
 from contextlib import suppress
+from pathlib import Path
 
 import docker
 import pytest
+from rules_python.python.runfiles import runfiles
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core_testing.fixtures import *  # noqa: F403
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.testing.fixtures import *  # noqa: F403
 from mcp_infra.testing.fixtures import make_container_opts
+
+PYTHON_SLIM_IMAGE_TAG = "python-slim:test"
+
+
+def _get_runfiles_path(relative_path: str) -> Path:
+    """Get path to a file in Bazel runfiles."""
+    r = runfiles.Create()
+    path = r.Rlocation(f"_main/{relative_path}")
+    if path:
+        return Path(path)
+
+    # Fallback: check bazel-bin for local dev
+    repo_root = Path(__file__).parent.parent
+    return repo_root / "bazel-bin" / relative_path
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -18,7 +36,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Skip Docker tests when Docker daemon is not available or images are missing."""
+    """Skip Docker tests when Docker daemon is not available."""
     if item.get_closest_marker("requires_docker") is None:
         return
 
@@ -26,12 +44,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     try:
         client = docker.from_env()
         client.ping()
-
-        # Check if required images are available
-        try:
-            client.images.get("python:3.12-slim")
-        except docker.errors.ImageNotFound:
-            pytest.skip("Docker image python:3.12-slim not available (run: docker pull python:3.12-slim)")
     except docker.errors.DockerException as exc:
         pytest.skip(f"Docker not available: {exc}")
     finally:
@@ -40,10 +52,28 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
                 client.close()
 
 
+@pytest.fixture(scope="session")
+def python_slim_image():
+    """Load python-slim image from Bazel :python_slim_load target."""
+    load_script = _get_runfiles_path("mcp_infra/testing/python_slim_load.sh")
+
+    result = subprocess.run(
+        [load_script],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "DOCKER_CLI_EXPERIMENTAL": "enabled"},
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to load python-slim image: {result.stderr}")
+
+    return PYTHON_SLIM_IMAGE_TAG
+
+
 @pytest.fixture
-async def docker_exec_server_py312slim(async_docker_client):
-    """Canonical Docker exec server using python:3.12-slim image."""
-    opts = make_container_opts("python:3.12-slim")
+async def docker_exec_server_py312slim(async_docker_client, python_slim_image):
+    """Canonical Docker exec server using python-slim image."""
+    opts = make_container_opts(python_slim_image)
     return ContainerExecServer(async_docker_client, opts)
 
 

@@ -153,7 +153,9 @@ py_test(
         "test_docker.py",
         "test_docker_unit.py",
     ],
+    data = ["//mcp_infra/testing:python_slim_load"],
     main = "test_docker.py",
+    tags = ["requires_docker"],
     deps = [
         ":docker",
         "//mcp_infra:test_support",
@@ -162,6 +164,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//types_docker",
+        "@rules_python//python/runfiles",
     ],
 )
 

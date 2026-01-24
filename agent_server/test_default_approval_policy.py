@@ -25,7 +25,6 @@ if __name__ == '__main__':
 
 
 @pytest.mark.requires_docker
-@pytest.mark.requires_runtime_image
 async def test_ui_tools_allowed(policy_evaluator):
     ui_tools = [make_policy_request(UI_MOUNT_PREFIX, "send_message"), make_policy_request(UI_MOUNT_PREFIX, "end_turn")]
     for ctx in ui_tools:
@@ -34,7 +33,6 @@ async def test_ui_tools_allowed(policy_evaluator):
 
 
 @pytest.mark.requires_docker
-@pytest.mark.requires_runtime_image
 async def test_resource_operations_allowed(policy_evaluator):
     resource_ops = [
         make_policy_request(RESOURCES_MOUNT_PREFIX, "read"),
@@ -46,7 +44,6 @@ async def test_resource_operations_allowed(policy_evaluator):
 
 
 @pytest.mark.requires_docker
-@pytest.mark.requires_runtime_image
 async def test_other_tools_require_approval(policy_evaluator):
     other_tools = [
         make_policy_request(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME),

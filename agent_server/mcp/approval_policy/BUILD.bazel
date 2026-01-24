@@ -42,10 +42,16 @@ _TEST_DEPS = [
     "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
-    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//pytest_bazel",
     "@pypi//starlette",
+    "@rules_python//python/runfiles",
 ]
+
+# Data dependencies for Docker tests
+_DOCKER_DATA = ["//mcp_infra/testing:python_slim_load"]
+
+_RUNTIME_DATA = _DOCKER_DATA + ["//agent_server:load"]
 
 py_test(
     name = "test_policy_validation",
@@ -53,17 +59,16 @@ py_test(
         "test_policy_validation.py",
         "//agent_server:conftest.py",
     ],
+    data = _RUNTIME_DATA,
     imports = ["../../.."],
-    tags = [
-        "requires_docker",
-        "requires_runtime_image",
-    ],
+    tags = ["requires_docker"],
     deps = _TEST_DEPS,
 )
 
 py_test(
     name = "test_preset_policy_loading",
     srcs = ["test_preset_policy_loading.py"],
+    data = _DOCKER_DATA,
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -72,6 +77,7 @@ py_test(
 py_test(
     name = "test_schema",
     srcs = ["test_schema.py"],
+    data = _DOCKER_DATA,
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -80,6 +86,7 @@ py_test(
 py_test(
     name = "test_server",
     srcs = ["test_server.py"],
+    data = _DOCKER_DATA,
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -88,6 +95,7 @@ py_test(
 py_test(
     name = "test_server_available",
     srcs = ["test_server_available.py"],
+    data = _DOCKER_DATA,
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,

@@ -19,7 +19,6 @@ from openai_utils.model import SystemMessage
 
 
 @pytest.mark.requires_docker
-@pytest.mark.requires_runtime_image
 async def test_approval_system_wired_and_blocks_on_ask(
     echo_spec, make_policy_gateway_compositor, make_approval_policy_server
 ) -> None:

@@ -32,7 +32,6 @@ def failing_policy() -> str:
 
 
 @pytest.mark.requires_docker
-@pytest.mark.requires_runtime_image
 class TestPolicyValidation:
     """Tests for policy validation via MCP admin tools."""
 

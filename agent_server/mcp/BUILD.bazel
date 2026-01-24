@@ -27,9 +27,16 @@ _TEST_DEPS = [
     "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
-    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//pytest_bazel",
     "@pypi//starlette",
+    "@rules_python//python/runfiles",
+]
+
+# Data dependencies for Docker tests
+_RUNTIME_DATA = [
+    "//agent_server:load",
+    "//mcp_infra/testing:python_slim_load",
 ]
 
 py_test(
@@ -65,11 +72,9 @@ py_test(
         "test_policy_gateway_middleware.py",
         "//agent_server:conftest.py",
     ],
+    data = _RUNTIME_DATA,
     imports = ["../.."],
-    tags = [
-        "requires_docker",
-        "requires_runtime_image",
-    ],
+    tags = ["requires_docker"],
     deps = _TEST_DEPS + [
         "//agent_server/mcp/approval_policy",
         "@pypi//docker",

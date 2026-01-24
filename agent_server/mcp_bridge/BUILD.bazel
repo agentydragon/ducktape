@@ -37,9 +37,10 @@ _TEST_DEPS = [
     "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
-    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//pytest_bazel",
     "@pypi//starlette",
+    "@rules_python//python/runfiles",
 ]
 
 py_test(
@@ -52,6 +53,7 @@ py_test(
 py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS + [

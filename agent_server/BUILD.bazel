@@ -149,11 +149,12 @@ _TEST_DEPS = [
     "@pypi//mcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
-    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//pytest_bazel",
     "@pypi//pytest_timeout",
     "@pypi//starlette",
     "@pypi//syrupy",
+    "@rules_python//python/runfiles",
 ]
 
 _TEST_SUPPORT = [
@@ -161,32 +162,35 @@ _TEST_SUPPORT = [
     "ui_asserts.py",
 ]
 
-# Tests requiring Docker (need docker-in-docker CI)
+# Data dependencies for Docker tests
+_DOCKER_DATA = ["//mcp_infra/testing:python_slim_load"]
+
+_RUNTIME_DATA = _DOCKER_DATA + ["//agent_server:load"]
+
+# Tests requiring Docker and runtime image
 py_test(
     name = "test_approval_integration",
     srcs = _TEST_SUPPORT + ["test_approval_integration.py"],
+    data = _RUNTIME_DATA,
     imports = [".."],
-    tags = [
-        "requires_docker",
-        "requires_runtime_image",
-    ],
+    tags = ["requires_docker"],
     deps = _TEST_DEPS,
 )
 
 py_test(
     name = "test_default_approval_policy",
     srcs = _TEST_SUPPORT + ["test_default_approval_policy.py"],
+    data = _RUNTIME_DATA,
     imports = [".."],
-    tags = [
-        "requires_docker",
-        "requires_runtime_image",
-    ],
+    tags = ["requires_docker"],
     deps = _TEST_DEPS,
 )
 
+# Tests requiring Docker (python-slim only)
 py_test(
     name = "test_exec_roundtrip",
     srcs = _TEST_SUPPORT + ["test_exec_roundtrip.py"],
+    data = _DOCKER_DATA,
     imports = [".."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -195,6 +199,7 @@ py_test(
 py_test(
     name = "test_mcp_integration",
     srcs = _TEST_SUPPORT + ["test_mcp_integration.py"],
+    data = _DOCKER_DATA,
     imports = [".."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -203,6 +208,7 @@ py_test(
 py_test(
     name = "test_mcp_notifications_flow",
     srcs = _TEST_SUPPORT + ["test_mcp_notifications_flow.py"],
+    data = _DOCKER_DATA,
     imports = [".."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -211,6 +217,7 @@ py_test(
 py_test(
     name = "test_mcp_resources_flow",
     srcs = _TEST_SUPPORT + ["test_mcp_resources_flow.py"],
+    data = _DOCKER_DATA,
     imports = [".."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -219,6 +226,7 @@ py_test(
 py_test(
     name = "test_policy_eval_abort_on_error",
     srcs = _TEST_SUPPORT + ["test_policy_eval_abort_on_error.py"],
+    data = _DOCKER_DATA,
     imports = [".."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -227,6 +235,7 @@ py_test(
 py_test(
     name = "test_runtime_timeout",
     srcs = _TEST_SUPPORT + ["test_runtime_timeout.py"],
+    data = _DOCKER_DATA,
     imports = [".."],
     tags = ["requires_docker"],
     deps = _TEST_DEPS,
@@ -314,4 +323,5 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["adgn-runtime:latest"],
+    visibility = ["//agent_server:__subpackages__"],
 )

@@ -73,10 +73,6 @@ jobs:
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
-      # Pull Docker image needed by agent_server tests (removed by free-disk-space)
-      - name: Pull test Docker image
-        run: docker pull python:3.12-slim
-
       - name: Run tests with coverage
         id: tests
         env:

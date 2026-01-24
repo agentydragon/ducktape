@@ -100,11 +100,6 @@ jobs:
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: inherit
-  agent-server-e2e-test:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'agent-server-e2e-test')
-    uses: ./.github/workflows/agent-server-e2e-test.yml
-    secrets: inherit
   visual-regression:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'visual-regression')

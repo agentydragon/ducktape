@@ -1,4 +1,14 @@
+load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
+
+# Load python_slim base image into local Docker daemon for tests
+# Tests that need this should add data = ["//mcp_infra/testing:python_slim_load"]
+oci_load(
+    name = "python_slim_load",
+    image = "@python_slim_linux_amd64",
+    repo_tags = ["python-slim:test"],
+    visibility = ["//visibility:public"],
+)
 
 py_library(
     name = "testing",
