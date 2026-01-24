@@ -5,10 +5,7 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "mcp_utils",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [".*/**"],
-    ),
+    srcs = ["resources.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [

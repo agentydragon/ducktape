@@ -5,10 +5,14 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "testing",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = ["testdata/**"],
-    ),
+    srcs = [
+        "approval_policy_testdata.py",
+        "chat_stubs.py",
+        "fixtures.py",
+        "helpers.py",
+        "steps.py",
+        "typed_asserts.py",
+    ],
     data = glob(["testdata/**/*.py"]),
     visibility = ["//visibility:public"],
     deps = [

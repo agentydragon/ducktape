@@ -4,10 +4,11 @@ load("//tools/lint:linters.bzl", "ruff_test")
 # Experimental LLM RL scripts - not a proper package, just standalone scripts
 py_library(
     name = "cotrl",
-    srcs = glob(
-        ["*.py"],
-        exclude = ["test_*.py"],
-    ),
+    srcs = [
+        "analyze_trajectories.py",
+        "llm_rl_experiment.py",
+        "llm_rl_quick_test.py",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",

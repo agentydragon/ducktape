@@ -7,13 +7,20 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "backend",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "__init__.py",
+        "app.py",
+        "auth.py",
+        "cli.py",
+        "export_schema.py",
+        "routes/__init__.py",
+        "routes/eval.py",
+        "routes/ground_truth.py",
+        "routes/llm.py",
+        "routes/registry.py",
+        "routes/runs.py",
+        "routes/stats.py",
+    ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [

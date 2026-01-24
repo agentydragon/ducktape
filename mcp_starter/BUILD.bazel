@@ -3,7 +3,11 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "adgn_mcp_starter",
-    srcs = glob(["adgn_mcp_starter/**/*.py"]),
+    srcs = [
+        "adgn_mcp_starter/__init__.py",
+        "adgn_mcp_starter/__main__.py",
+        "adgn_mcp_starter/server.py",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//claude_code_sdk",

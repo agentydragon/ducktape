@@ -5,13 +5,28 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "py_detectors",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "__init__.py",
+        "__main__.py",
+        "base.py",
+        "cli_custom.py",
+        "det_broad_except_order.py",
+        "det_dynamic_attr_probe.py",
+        "det_flatten_nested_guards.py",
+        "det_import_aliasing.py",
+        "det_imports_inside_def.py",
+        "det_magic_tuple_indices.py",
+        "det_optional_string_simplify.py",
+        "det_pathlike_str_casts.py",
+        "det_pydantic_v1_shims.py",
+        "det_swallow_errors.py",
+        "det_trivial_alias.py",
+        "det_walrus_suggest.py",
+        "import_graph.py",
+        "models.py",
+        "registry.py",
+        "utils.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -35,10 +50,11 @@ py_binary(
 
 py_test(
     name = "test_py_detectors",
-    srcs = glob(
-        ["tests/**/*.py"],
-        exclude = ["tests/fixtures/**/*.py"],
-    ),
+    srcs = [
+        "tests/conftest.py",
+        "tests/fixture_utils.py",
+        "tests/test_detectors.py",
+    ],
     data = glob(["tests/**/*.md"]) + glob(["tests/fixtures/**/*.py"]),
     imports = ["."],
     main = "tests/test_detectors.py",

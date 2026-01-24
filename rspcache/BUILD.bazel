@@ -5,13 +5,15 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "rspcache",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            "admin_ui/**",
-            "docker/**",
-        ],
-    ),
+    srcs = [
+        "__init__.py",
+        "admin_app.py",
+        "cli.py",
+        "codegen.py",
+        "events.py",
+        "models.py",
+        "responses_db.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [

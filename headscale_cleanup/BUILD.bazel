@@ -4,10 +4,10 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "headscale_cleanup",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = ["tests/**"],
-    ),
+    srcs = [
+        "__main__.py",
+        "cli.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
