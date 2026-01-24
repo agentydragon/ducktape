@@ -1,22 +1,30 @@
-"""Temporary PostgreSQL user management with async context manager pattern.
+"""Agent PostgreSQL role management.
 
-Provides lifecycle management (create, yield credentials, cleanup) for ephemeral database users
-used by all agent types (critic, grader, prompt optimizer, etc.).
+Creates persistent database roles for agent runs with RLS-scoped access.
+All agent types use the same pattern - type-specific access is controlled
+by RLS policies based on agent_runs.type_config.
 
 All agents use the unified pattern:
 - Username: agent_{agent_run_id}
 - Role: agent_base (grants via migration 20251226000001)
 - RLS: current_agent_run_id() extracts UUID, current_agent_type() determines access
+- Password: deterministic from salt + agent_run_id (enables reconnection)
 
-Type-specific access is controlled entirely by RLS policies based on agent_runs.type_config,
-not by different roles or username patterns.
+Roles are created on first use and never deleted. This avoids cleanup races
+and allows agents to reconnect with the same credentials.
+
+TODO: Consider adding a cleanup job to periodically remove stale agent roles
+(e.g., roles for agent_runs older than 30 days).
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
+import os
 import re
-import secrets
+from base64 import urlsafe_b64encode
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -24,6 +32,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from props.db.config import DbConnectionConfig
+
+# Salt for deriving deterministic agent passwords.
+# Set PROPS_AGENT_PASSWORD_SALT in production; uses default for development.
+AGENT_PASSWORD_SALT = os.environ.get("PROPS_AGENT_PASSWORD_SALT", "dev-salt-change-in-production")
 
 logger = logging.getLogger(__name__)
 
@@ -63,20 +75,36 @@ class TempUserCredentials:
     password: str
 
 
-class TempUserManager:
-    """Async context manager for temporary PostgreSQL agent users.
+def derive_agent_password(agent_run_id: UUID, salt: str = AGENT_PASSWORD_SALT) -> str:
+    """Derive a deterministic password for an agent from salt and run ID.
 
-    Creates ephemeral database users for agent runs with RLS-scoped access.
+    Uses HMAC-SHA256 for secure key derivation, then base64-encodes the result.
+    The same agent_run_id always produces the same password (given the same salt),
+    enabling agents to reconnect with consistent credentials.
+    """
+    key = salt.encode("utf-8")
+    msg = str(agent_run_id).encode("utf-8")
+    digest = hmac.new(key, msg, hashlib.sha256).digest()
+    return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+class TempUserManager:
+    """Async context manager for PostgreSQL agent roles.
+
+    Creates persistent database roles for agent runs with RLS-scoped access.
     All agent types use the same pattern - type-specific access is controlled
     by RLS policies based on agent_runs.type_config.
 
     Lifecycle:
     1. Generate username from agent_run_id (agent_{uuid} pattern)
-    2. Create PostgreSQL role with secure password
-    3. Grant agent_base role (provides common permissions)
-    4. Yield credentials (username, password)
-    5. Revoke permissions and terminate connections
-    6. Drop role
+    2. Derive deterministic password from salt + agent_run_id
+    3. Create PostgreSQL role if it doesn't exist (idempotent)
+    4. Grant agent_base role (provides common permissions)
+    5. Yield credentials (username, password)
+    6. On exit: no cleanup (roles persist for reconnection)
+
+    Roles are never deleted - this allows agents to reconnect and avoids
+    cleanup races. Stale roles can be cleaned up by a separate job.
 
     Usage:
         async with TempUserManager(admin_config, agent_run_id) as creds:
@@ -84,7 +112,7 @@ class TempUserManager:
             config = admin_config.with_user(creds.username, creds.password)
             engine = create_engine(config.url())
             # Agent has RLS-scoped access based on agent_run_id and type_config
-        # User automatically cleaned up on exit
+        # Role persists after exit (no cleanup)
     """
 
     def __init__(self, admin_config: DbConnectionConfig, agent_run_id: UUID):
@@ -119,15 +147,12 @@ class TempUserManager:
 
         logger.debug(f"Granted agent_base to {username}")
 
-    async def revoke_permissions(self, username: str) -> None:
-        """No-op: DROP ROLE automatically removes role memberships and inherited privileges."""
-
     async def __aenter__(self) -> TempUserCredentials:
-        """Create user and grant permissions, return credentials."""
+        """Create role (if needed) and grant permissions, return credentials."""
         self._username = self.generate_username()
-        self._password = secrets.token_urlsafe(32)
+        self._password = derive_agent_password(self.agent_run_id)
 
-        logger.info(f"Creating temporary user: {self._username}")
+        logger.info(f"Ensuring agent role exists: {self._username}")
 
         # Create admin engine
         admin_url = self.admin_config.url().replace("postgresql://", "postgresql+asyncpg://")
@@ -139,24 +164,14 @@ class TempUserManager:
         # Grant permissions (subclass-specific)
         await self.grant_permissions(self._username)
 
-        logger.info(f"Temporary user {self._username} ready")
+        logger.info(f"Agent role {self._username} ready")
 
         # Return credentials only (caller combines with their connection parameters)
         return TempUserCredentials(username=self._username, password=self._password)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Revoke permissions, terminate connections, drop user."""
-        if self.admin_engine is None or self._username is None:
-            return
-
-        try:
-            await self.revoke_permissions(self._username)
-            await self._terminate_connections(self._username)
-            await self._drop_user(self._username)
-            logger.info(f"Temporary user {self._username} cleaned up")
-        except Exception as e:
-            logger.error(f"Failed to cleanup user {self._username}: {e}", exc_info=True)
-        finally:
+        """Dispose admin engine. Roles persist for agent reconnection."""
+        if self.admin_engine is not None:
             await self.admin_engine.dispose()
 
     async def _create_user(self, username: str, password: str) -> None:
@@ -182,40 +197,3 @@ class TempUserManager:
                 logger.debug(f"Created role: {username}")
             else:
                 logger.debug(f"Role {username} already exists")
-
-    async def _terminate_connections(self, username: str) -> None:
-        """Terminate all active connections for the user.
-
-        Required before dropping the role.
-
-        Args:
-            username: Role name to terminate connections for
-        """
-        assert self.admin_engine is not None, "admin_engine not initialized"
-        async with self.admin_engine.begin() as conn:
-            await conn.execute(
-                text(
-                    """
-                    SELECT pg_terminate_backend(pid)
-                    FROM pg_stat_activity
-                    WHERE usename = :username
-                      AND pid != pg_backend_pid()
-                """
-                ),
-                {"username": username},
-            )
-
-        logger.debug(f"Terminated connections for {username}")
-
-    async def _drop_user(self, username: str) -> None:
-        """Drop PostgreSQL role.
-
-        Args:
-            username: Role name to drop
-        """
-        assert self.admin_engine is not None, "admin_engine not initialized"
-        async with self.admin_engine.begin() as conn:
-            quoted_username = quote_ident(username)
-            await conn.execute(text(f"DROP ROLE IF EXISTS {quoted_username}"))
-
-        logger.debug(f"Dropped user: {username}")
