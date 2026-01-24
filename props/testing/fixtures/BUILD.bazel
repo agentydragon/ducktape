@@ -10,6 +10,7 @@ py_library(
         "db.py",
         "e2e.py",
         "e2e_container.py",
+        "e2e_infra.py",
         "ground_truth.py",
         "runs.py",
         "scopes.py",
@@ -49,6 +50,7 @@ py_library(
         # props.backend for e2e_container (AuthMiddleware, llm routes)
         "//props/backend",
         "@pypi//aiodocker",
+        "@pypi//docker",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pytest",
