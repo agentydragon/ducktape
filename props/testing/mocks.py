@@ -73,30 +73,22 @@ class GraderMock(DecoratorMock):
                 )
     """
 
-    def list_pending_call(self, *, issue: str | None = None, run: UUID | None = None) -> FunctionCallItem:
-        """Create list_pending tool call."""
-        return self.tool_call("list_pending", ListPendingArgs(issue=issue, run=run))
-
     def list_pending_roundtrip(
         self, *, issue: str | None = None, run: UUID | None = None
     ) -> Generator[FunctionCallItem, ResponsesRequest, list[PendingEdge]]:
         """Yield list_pending call and return parsed result as list of PendingEdge."""
-        call = self.list_pending_call(issue=issue, run=run)
+        call = self.tool_call("list_pending", ListPendingArgs(issue=issue, run=run))
         req = yield call
         raw = _extract_raw_output(req, call)
         return TypeAdapter(list[PendingEdge]).validate_json(raw)
-
-    def fill_remaining_call(self, run: UUID, issue_id: str, expected_count: int, rationale: str) -> FunctionCallItem:
-        """Create fill_remaining tool call."""
-        return self.tool_call(
-            "fill_remaining",
-            FillRemainingArgs(run=run, issue_id=issue_id, expected_count=expected_count, rationale=rationale),
-        )
 
     def fill_remaining_roundtrip(
         self, run: UUID, issue_id: str, expected_count: int, rationale: str
     ) -> Generator[FunctionCallItem, ResponsesRequest, str]:
         """Yield fill_remaining call and return result message."""
-        call = self.fill_remaining_call(run, issue_id, expected_count, rationale)
+        call = self.tool_call(
+            "fill_remaining",
+            FillRemainingArgs(run=run, issue_id=issue_id, expected_count=expected_count, rationale=rationale),
+        )
         req = yield call
         return _extract_raw_output(req, call)
