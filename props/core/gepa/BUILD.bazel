@@ -27,8 +27,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":warm_start",
-        "//agent_core",
-        "//openai_utils",
+        "//agent_core:agent",
+        "//openai_utils:model",
         "//props/core:agent_types",
         "//props/core:agent_workspace",
         "//props/core:display",

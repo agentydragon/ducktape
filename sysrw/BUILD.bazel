@@ -67,7 +67,7 @@ py_binary(
     srcs = ["cli.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
@@ -141,7 +141,7 @@ py_library(
     srcs = ["run_eval.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "//sysrw/anthropic:types",
         "@pypi//jinja2",
         "@pypi//openai",
@@ -155,7 +155,7 @@ py_library(
     srcs = ["schemas.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "//sysrw/anthropic:types",
         "@pypi//anthropic",
         "@pypi//openai",

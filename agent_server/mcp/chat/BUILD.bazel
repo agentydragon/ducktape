@@ -9,8 +9,8 @@ py_library(
     visibility = ["//agent_server:__subpackages__"],
     deps = [
         "//agent_server/persist:sqlite",
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
         "@pypi//aiosqlite",
         "@pypi//fastmcp",
         "@pypi//pydantic",

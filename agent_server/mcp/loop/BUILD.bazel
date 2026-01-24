@@ -8,7 +8,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//agent_server:__subpackages__"],
     deps = [
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
     ],
 )

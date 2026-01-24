@@ -9,8 +9,8 @@ py_library(
     visibility = ["//agent_server:__subpackages__"],
     deps = [
         "//agent_server/server:bus",
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
         "@pypi//pydantic",
     ],
 )

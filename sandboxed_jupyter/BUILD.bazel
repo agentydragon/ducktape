@@ -22,7 +22,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_infra/seatbelt",
         "//net_util",
         "@pypi//ipykernel",

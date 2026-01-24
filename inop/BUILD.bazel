@@ -38,8 +38,8 @@ py_test(
     deps = [
         ":config",
         "//inop/runners:base",
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -63,7 +63,7 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -75,7 +75,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":config",
-        "//openai_utils",
+        "//openai_utils:model",
     ],
 )
 

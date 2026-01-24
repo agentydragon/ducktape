@@ -18,10 +18,10 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":init_runner",
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_core:tool_provider",
         "//mcp_infra/exec:models",
-        "//openai_utils",
+        "//openai_utils:model",
     ],
 )
 
@@ -38,7 +38,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":builder",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_infra/exec:docker",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp",

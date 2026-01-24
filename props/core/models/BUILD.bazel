@@ -20,7 +20,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/core:ids",
         "@pypi//pydantic",
     ],

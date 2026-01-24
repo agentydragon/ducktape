@@ -74,7 +74,7 @@ py_library(
     deps = [
         ":_yaml",
         ":loader",
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/core:ids",
         "//props/core:runs_context",
         "//props/core/models:snapshot",

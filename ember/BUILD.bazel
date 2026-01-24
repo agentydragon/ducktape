@@ -31,13 +31,13 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_core:mcp_provider",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_infra/compositor",
-        "//mcp_infra/enhanced",
+        "//mcp_infra/enhanced:simple",
         "//mcp_infra/exec:direct",
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//fastapi",
         "@pypi//fastmcp",
         "@pypi//ipykernel",
@@ -164,7 +164,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":ember",
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//openai",
         "@pypi//pydantic",
     ],
@@ -175,8 +175,8 @@ py_library(
     srcs = ["handlers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core",
-        "//openai_utils",
+        "//agent_core:agent",
+        "//openai_utils:model",
         "@pypi//pydantic",
     ],
 )
@@ -199,9 +199,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":ember",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_infra/exec:direct",
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//pydantic",
     ],
 )
@@ -219,9 +219,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":ember",
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_core:mcp_provider",
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//fastmcp",
     ],
 )

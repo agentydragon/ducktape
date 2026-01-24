@@ -1,63 +1,20 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-py_library(
-    name = "compositor",
-    srcs = [
-        "admin.py",
-        "clients.py",
-        "meta_server.py",
-        "mount.py",
-        "notifications_buffer.py",
-        "rendering.py",
-        "resources_server.py",
-        "server.py",
-    ],
-    data = ["templates/compositor_instructions.md.j2"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//mcp_infra",
-        "//mcp_infra/enhanced",
-        "//mcp_infra/notifications",
-        "//mcp_infra/resources",
-        "@pypi//anyio",
-        "@pypi//fastmcp",
-        "@pypi//jinja2",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_compositor",
-    srcs = [
-        "conftest.py",
-        "test_admin.py",
-        "test_admin_client.py",
-        "test_inproc_server_storage.py",
-        "test_lifecycle.py",
-        "test_meta_basic.py",
-        "test_meta_inproc_proxies.py",
-        "test_pinned_unmount.py",
-    ],
-    main = "test_admin.py",
-    deps = [
-        ":compositor",
-        "//mcp_infra:test_support",
-        "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
     name = "admin",
     srcs = ["admin.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
-        "//openai_utils",
+        ":server",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//pydantic",
     ],
@@ -66,9 +23,11 @@ py_library(
 py_library(
     name = "clients",
     srcs = ["clients.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        ":server",
+        "//mcp_infra:snapshots",
         "@pypi//fastmcp",
     ],
 )
@@ -76,9 +35,13 @@ py_library(
 py_library(
     name = "meta_server",
     srcs = ["meta_server.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra/enhanced:server",
         "@pypi//fastmcp",
     ],
 )
@@ -86,9 +49,10 @@ py_library(
 py_library(
     name = "mount",
     srcs = ["mount.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "@pypi//fastmcp",
     ],
 )
@@ -96,9 +60,11 @@ py_library(
 py_library(
     name = "notifications_buffer",
     srcs = ["notifications_buffer.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra/notifications:types",
         "@pypi//fastmcp",
         "@pypi//mcp",
     ],
@@ -107,9 +73,13 @@ py_library(
 py_library(
     name = "rendering",
     srcs = ["rendering.py"],
+    data = ["templates/compositor_instructions.md.j2"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
         "@pypi//jinja2",
         "@pypi//pydantic",
     ],
@@ -118,10 +88,19 @@ py_library(
 py_library(
     name = "resources_server",
     srcs = ["resources_server.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra:snapshots",
+        "//mcp_infra:urls",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/resources:types",
+        "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -131,9 +110,20 @@ py_library(
 py_library(
     name = "server",
     srcs = ["server.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        ":meta_server",
+        ":mount",
+        ":rendering",
+        ":resources_server",
+        "//mcp_infra:constants",
+        "//mcp_infra:mount_types",
+        "//mcp_infra:mounted",
+        "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra:tool_schemas",
+        "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -144,9 +134,13 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    visibility = ["//:__subpackages__"],
+    imports = ["../.."],
+    visibility = ["//mcp_infra/compositor:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        ":admin",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -157,7 +151,8 @@ py_test(
     name = "test_admin",
     srcs = ["test_admin.py"],
     deps = [
-        "//mcp_infra",
+        ":admin",
+        "//mcp_infra:constants",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -168,7 +163,9 @@ py_test(
     name = "test_admin_client",
     srcs = ["test_admin_client.py"],
     deps = [
-        "//mcp_infra",
+        ":admin",
+        "//mcp_infra:constants",
+        "//mcp_infra:prefix",
         "@pypi//fastmcp",
         "@pypi//pytest",
     ],
@@ -178,7 +175,9 @@ py_test(
     name = "test_inproc_server_storage",
     srcs = ["test_inproc_server_storage.py"],
     deps = [
-        "//mcp_infra",
+        ":mount",
+        ":server",
+        "//mcp_infra:prefix",
         "@pypi//fastmcp",
     ],
 )
@@ -187,7 +186,9 @@ py_test(
     name = "test_lifecycle",
     srcs = ["test_lifecycle.py"],
     deps = [
-        "//mcp_infra",
+        ":mount",
+        ":server",
+        "//mcp_infra:prefix",
         "@pypi//fastmcp",
         "@pypi//pytest",
     ],
@@ -197,7 +198,8 @@ py_test(
     name = "test_meta_basic",
     srcs = ["test_meta_basic.py"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra:snapshots",
     ],
 )
 
@@ -205,7 +207,8 @@ py_test(
     name = "test_meta_inproc_proxies",
     srcs = ["test_meta_inproc_proxies.py"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra:snapshots",
     ],
 )
 
@@ -213,7 +216,7 @@ py_test(
     name = "test_pinned_unmount",
     srcs = ["test_pinned_unmount.py"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "@pypi//pytest",
     ],
 )

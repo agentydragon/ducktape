@@ -39,7 +39,7 @@ py_test(
     deps = [
         "//agent_server/mcp/chat",
         "//agent_server/testing",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_utils",
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
@@ -55,7 +55,7 @@ py_test(
     imports = ["../.."],
     deps = [
         "//agent_server/notifications",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -74,7 +74,7 @@ py_test(
     deps = [
         "//agent_server/mcp/approval_policy:engine",
         "//agent_server/policies:policy_types",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pytest",
@@ -102,7 +102,7 @@ py_test(
     imports = ["../.."],
     deps = [
         "//agent_server/notifications",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "@pypi//fastmcp",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -114,7 +114,7 @@ py_test(
     srcs = ["test_ui_server.py"],
     imports = ["../.."],
     deps = [
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_server/mcp/ui",
         "//agent_server/server",
         "@pypi//pytest",

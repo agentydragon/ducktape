@@ -12,7 +12,7 @@ py_library(
     deps = [
         "//agent_core_testing",
         "//mcp_infra/exec:models",
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/grader:tools",
         "@pypi//pydantic",
     ],
@@ -24,7 +24,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//fastapi",
         "@pypi//openai",
         "@pypi//pydantic",

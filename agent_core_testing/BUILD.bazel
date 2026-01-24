@@ -16,13 +16,13 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_core:mcp_provider",
         "//agent_core:tool_provider",
-        "//mcp_infra",
-        "//mcp_infra/enhanced",
-        "//mcp_infra/testing",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:simple",
+        "//mcp_infra/testing:fixtures",
+        "//openai_utils:model",
         "@pypi//anyio",
         "@pypi//cachetools",  # Required by fastmcp via py-key-value-aio[memory]
         "@pypi//fastmcp",
@@ -52,8 +52,8 @@ py_library(
     srcs = ["assertions.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core",
-        "//openai_utils",
+        "//agent_core:agent",
+        "//openai_utils:model",
         "@pypi//pydantic",
         "@pypi//pytest",
     ],
@@ -64,8 +64,8 @@ py_library(
     srcs = ["echo_server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
     ],
 )
 
@@ -75,11 +75,11 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":agent_core_testing",
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_core:mcp_provider",
         "//agent_core:tool_provider",
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//openai",
         "@pypi//pydantic",
@@ -92,9 +92,9 @@ py_library(
     srcs = ["matchers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_core:tool_provider",
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//pyhamcrest",
     ],
 )
@@ -104,7 +104,7 @@ py_library(
     srcs = ["openai_mock.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//pydantic",
     ],
 )
@@ -115,10 +115,10 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":agent_core_testing",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_infra/exec:docker",
         "//mcp_infra/exec:models",
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -131,9 +131,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":agent_core_testing",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_infra/exec:models",
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
     ],

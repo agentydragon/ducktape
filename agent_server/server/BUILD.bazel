@@ -2,118 +2,16 @@
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-# Lower-level types and utilities - no MCP server dependencies
-py_library(
-    name = "types",
-    srcs = [
-        "bus.py",
-        "exceptions.py",
-        "protocol.py",
-        "state.py",
-        "status_shared.py",
-        "system_message.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        "//agent_core",
-        "//agent_server/models",
-        "@pypi//jinja2",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-    ],
-)
-
-# Mode handler and reducer - depend on types and mcp servers, but not full runtime
-py_library(
-    name = "handlers",
-    srcs = [
-        "mode_handler.py",
-        "reducer.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        ":types",
-        "//agent_core",
-        "//agent_server/mcp/ui",
-        "//agent_server/notifications",
-        "//agent_server/persist",
-        "//mcp_infra/display",
-        "//mcp_infra/exec:models",
-        "//mcp_infra/notifications",
-        "//openai_utils",
-    ],
-)
-
-# Server runtime types (session, event handler) - used by runtime package
-py_library(
-    name = "runtime_types",
-    srcs = ["runtime.py"],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        ":handlers",
-        ":types",
-        "//agent_core",
-        "//agent_server:agent_types",
-        "//agent_server/mcp/approval_policy:engine",
-        "//agent_server/mcp/ui",
-        "//agent_server/persist:handler",
-        "//agent_server/persist:types",
-        "//mcp_infra",
-        "//openai_utils",
-    ],
-)
-
-# Full server package - FastAPI app (highest level, depends on everything)
-py_library(
-    name = "server",
-    srcs = [
-        "app.py",
-        "mcp_routing.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        ":handlers",
-        ":runtime_types",
-        ":types",
-        "//agent_server/mcp_bridge",
-        "//agent_server/persist",
-        "//agent_server/runtime",
-        "//openai_utils",
-        "@pypi//aiodocker",
-        "@pypi//fastapi",
-        "@pypi//fastmcp",
-        "@pypi//uvicorn",
-    ],
-)
-
-# Tests
-_TEST_DEPS = [
-    ":handlers",
-    ":types",
-    "//agent_server:conftest",
-    "//agent_server/testing",
-    "//mcp_infra",
-    "//mcp_infra/exec:models",
-    "@pypi//fastapi",
-    "@pypi//fastmcp",
-    "@pypi//pyhamcrest",
-    "@pypi//pytest",
-    "@pypi//pytest_bazel",
-    "@pypi//pytest_asyncio",  # keep
-    "@pypi//starlette",
-]
+# NOTE: No aggregator targets - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_test(
     name = "test_end_turn_ui_integration",
     srcs = ["test_end_turn_ui_integration.py"],
     imports = ["../.."],
     deps = [
-        ":server",
-        "//agent_server/testing",
+        ":app",
+        "//agent_server/testing:helpers",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],
@@ -124,9 +22,9 @@ py_test(
     srcs = ["test_history_fold_typed.py"],
     imports = ["../.."],
     deps = [
-        ":server",
-        "//agent_server/testing",
-        "//mcp_infra",
+        ":app",
+        "//agent_server/testing:helpers",
+        "//mcp_infra:prefix",
         "@pypi//pytest_bazel",
     ],
 )
@@ -136,8 +34,8 @@ py_test(
     srcs = ["test_reducer.py"],
     imports = ["../.."],
     deps = [
-        ":server",
-        "//agent_server/testing",
+        ":reducer",
+        "//agent_server/testing:helpers",
         "//mcp_infra/exec:models",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
@@ -147,15 +45,18 @@ py_test(
 py_library(
     name = "app",
     srcs = ["app.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":server",
+        ":mcp_routing",
+        ":mode_handler",
+        ":runtime",
         "//agent_server/mcp_bridge:auth",
         "//agent_server/mcp_bridge:compositor_factory",
         "//agent_server/mcp_bridge:registry",
         "//agent_server/persist:sqlite",
         "//agent_server/runtime:registry",
-        "//openai_utils",
+        "//openai_utils:client_factory",
         "@pypi//aiodocker",
         "@pypi//fastapi",
         "@pypi//fastmcp",
@@ -166,6 +67,7 @@ py_library(
 py_library(
     name = "bus",
     srcs = ["bus.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -173,12 +75,14 @@ py_library(
 py_library(
     name = "exceptions",
     srcs = ["exceptions.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "mcp_routing",
     srcs = ["mcp_routing.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//agent_server/mcp_bridge:auth",
@@ -189,12 +93,34 @@ py_library(
 )
 
 py_library(
-    name = "mode_handler",
-    srcs = ["mode_handler.py"],
+    name = "runtime",
+    srcs = ["runtime.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":server",
-        "//agent_core",
+        ":mode_handler",
+        ":state",
+        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_server:agent_types",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/mcp/ui",
+        "//agent_server/persist:handler",
+        "//agent_server/persist:types",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
+    ],
+)
+
+py_library(
+    name = "mode_handler",
+    srcs = ["mode_handler.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bus",
+        ":state",
+        "//agent_core:events",
         "//agent_server/notifications",
         "@pypi//pydantic",
     ],
@@ -203,10 +129,11 @@ py_library(
 py_library(
     name = "protocol",
     srcs = ["protocol.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":server",
-        "//agent_core",
+        ":state",
+        "//agent_core:events",
         "//agent_server/models:policy_error",
         "//agent_server/models:proposal_status",
         "@pypi//mcp",
@@ -217,14 +144,18 @@ py_library(
 py_library(
     name = "reducer",
     srcs = ["reducer.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":server",
-        "//agent_core",
+        ":bus",
+        ":protocol",
+        ":state",
+        "//agent_core:events",
         "//agent_server/mcp/ui",
         "//agent_server/persist:events",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_infra/exec:models",
+        "//openai_utils:model",
         "@pypi//pydantic",
     ],
 )
@@ -232,9 +163,12 @@ py_library(
 py_library(
     name = "state",
     srcs = ["state.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":server",
+        ":bus",
+        ":protocol",
+        "//agent_server/models",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],
@@ -243,6 +177,7 @@ py_library(
 py_library(
     name = "status_shared",
     srcs = ["status_shared.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -250,5 +185,6 @@ py_library(
 py_library(
     name = "system_message",
     srcs = ["system_message.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
 )

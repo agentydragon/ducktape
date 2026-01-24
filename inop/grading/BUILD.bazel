@@ -13,7 +13,7 @@ py_library(
     deps = [
         ":strategies",
         "//inop:config",
-        "//openai_utils",
+        "//openai_utils:model",
     ],
 )
 

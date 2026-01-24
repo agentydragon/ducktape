@@ -21,8 +21,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core_testing",
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
         # props orchestration modules
         "//props/orchestration:agent_registry",
         "//props/core:agent_types",
@@ -92,7 +92,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//agent_core_testing",
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/core:ids",
         "//props/critic_dev/improve:main_lib",
         "@pypi//pytest",
@@ -104,7 +104,7 @@ py_library(
     srcs = ["e2e_container.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/backend",
         "//props/db:config",
         "//props/orchestration:agent_registry",

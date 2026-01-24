@@ -28,9 +28,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli_util",
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_utils",
-        "//openai_utils",
+        "//openai_utils:model",
         # props orchestration modules
         "//props/orchestration:agent_registry",
         "//props/core:agent_types",

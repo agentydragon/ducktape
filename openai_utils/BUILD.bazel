@@ -1,37 +1,164 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+# NOTE: No aggregator target - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
 py_library(
-    name = "openai_utils",
-    srcs = [
-        "builders.py",
-        "client_factory.py",
-        "errors.py",
-        "http_logging.py",
-        "json_schema.py",
-        "model.py",
-        "model_metadata.py",
-        "pydantic_strict_mode.py",
-        "retry.py",
-        "text_extraction.py",
-        "types.py",
-    ],
+    name = "types",
+    srcs = ["types.py"],
     imports = [".."],
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//openai"],
+)
+
+py_library(
+    name = "model_metadata",
+    srcs = ["model_metadata.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "json_schema",
+    srcs = ["json_schema.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "model",
+    srcs = ["model.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":errors",
+        ":types",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "builders",
+    srcs = ["builders.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":model",
+        "@pypi//pydantic",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "http_logging",
+    srcs = ["http_logging.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//httpx",
         "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "pydantic_strict_mode",
+    srcs = ["pydantic_strict_mode.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":json_schema",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "retry",
+    srcs = ["retry.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":errors",
+        ":model",
+        "@pypi//httpx",
+        "@pypi//openai",
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "client_factory",
+    srcs = ["client_factory.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":http_logging",
+        ":model",
+        ":retry",
+        ":types",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "text_extraction",
+    srcs = ["text_extraction.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [":model"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = [".."],
+    visibility = ["//openai_utils:__subpackages__"],
+    deps = [
+        "@pypi//openai",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [
+        ":builders",
+        ":client_factory",
+        ":conftest",
+        ":errors",
+        ":http_logging",
+        ":json_schema",
+        ":model",
+        ":model_metadata",
+        ":pydantic_strict_mode",
+        ":retry",
+        ":text_extraction",
+        ":types",
     ],
 )
 
 py_test(
     name = "test_json_schema",
     srcs = ["test_json_schema.py"],
+    imports = [".."],
     deps = [
         ":conftest",
-        ":openai_utils",
+        ":json_schema",
+        ":pydantic_strict_mode",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -41,9 +168,11 @@ py_test(
 py_test(
     name = "test_pydantic_strict_mode",
     srcs = ["test_pydantic_strict_mode.py"],
+    imports = [".."],
     deps = [
         ":conftest",
-        ":openai_utils",
+        ":json_schema",
+        ":pydantic_strict_mode",
         "//openai_utils/testing",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -58,10 +187,14 @@ py_test(
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
     ],
+    imports = [".."],
     tags = ["live_openai_api"],
     deps = [
+        ":client_factory",
         ":conftest",
-        ":openai_utils",
+        ":json_schema",
+        ":model",
+        ":pydantic_strict_mode",
         "//openai_utils/testing",
         "@pypi//openai",
         "@pypi//pydantic",
@@ -78,10 +211,14 @@ py_test(
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
     ],
+    imports = [".."],
     tags = ["live_openai_api"],
     deps = [
+        ":client_factory",
         ":conftest",
-        ":openai_utils",
+        ":errors",
+        ":model",
+        ":retry",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -95,6 +232,7 @@ py_test(
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
     ],
+    imports = [".."],
     tags = ["live_openai_api"],
     deps = [
         ":conftest",
@@ -102,121 +240,5 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":openai_utils"],
-)
-
-py_library(
-    name = "builders",
-    srcs = ["builders.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_core",
-    ],
-)
-
-py_library(
-    name = "client_factory",
-    srcs = ["client_factory.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":openai_utils",
-        "@pypi//openai",
-    ],
-)
-
-py_library(
-    name = "errors",
-    srcs = ["errors.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//openai"],
-)
-
-py_library(
-    name = "http_logging",
-    srcs = ["http_logging.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//httpx",
-        "@pypi//openai",
-    ],
-)
-
-py_library(
-    name = "json_schema",
-    srcs = ["json_schema.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_core",
-    ],
-)
-
-py_library(
-    name = "model",
-    srcs = ["model.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":openai_utils",
-        "@pypi//openai",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "model_metadata",
-    srcs = ["model_metadata.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "pydantic_strict_mode",
-    srcs = ["pydantic_strict_mode.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":openai_utils",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "retry",
-    srcs = ["retry.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//httpx",
-        "@pypi//openai",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "text_extraction",
-    srcs = ["text_extraction.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":openai_utils"],
-)
-
-py_library(
-    name = "types",
-    srcs = ["types.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//typing_extensions"],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//openai",
-        "@pypi//pytest",
     ],
 )

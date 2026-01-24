@@ -17,7 +17,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//asyncpg",
         "@pypi//canonicaljson",
         "@pypi//fastapi",
@@ -108,7 +108,7 @@ py_library(
     srcs = ["admin_app.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//openai",

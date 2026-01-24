@@ -1,46 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-py_library(
-    name = "enhanced",
-    srcs = [
-        "flat_mixin.py",
-        "oob_notify_mixin.py",
-        "openai_strict_mixin.py",
-        "server.py",
-        "simple.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//mcp_infra",
-        "//openai_utils",
-        "@pypi//fastmcp",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_enhanced",
-    srcs = [
-        "test_flat_decorator.py",
-        "test_flat_helper.py",
-        "test_oob_broadcast.py",
-        "test_oob_session_capturing.py",
-        "test_openai_strict_validation.py",
-    ],
-    main = "test_flat_decorator.py",
-    deps = [
-        ":enhanced",
-        "//mcp_infra:test_support",
-        "@pypi//anyio",
-        "@pypi//docker",
-        "@pypi//fastmcp",
-        "@pypi//mcp",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
     name = "flat_mixin",
@@ -48,8 +9,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:flat_tool",
+        "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -62,7 +23,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -75,7 +35,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//fastmcp",
     ],
 )
@@ -98,6 +58,12 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":flat_mixin",
+        ":oob_notify_mixin",
+        ":openai_strict_mixin",
+        ":server",
+        "//mcp_infra:urls",
+        "//mcp_infra/stubs:typed_stubs",
         "@pypi//fastmcp",
     ],
 )
@@ -106,8 +72,9 @@ py_test(
     name = "test_flat_decorator",
     srcs = ["test_flat_decorator.py"],
     deps = [
-        "//mcp_infra",
-        "//openai_utils",
+        ":flat_mixin",
+        "//mcp_infra:flat_tool",
+        "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -119,7 +86,7 @@ py_test(
     name = "test_flat_helper",
     srcs = ["test_flat_helper.py"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -130,6 +97,7 @@ py_test(
     name = "test_oob_broadcast",
     srcs = ["test_oob_broadcast.py"],
     deps = [
+        ":oob_notify_mixin",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
@@ -140,7 +108,7 @@ py_test(
     name = "test_oob_session_capturing",
     srcs = ["test_oob_session_capturing.py"],
     deps = [
-        "//mcp_infra",
+        ":oob_notify_mixin",
         "@pypi//fastmcp",
     ],
 )

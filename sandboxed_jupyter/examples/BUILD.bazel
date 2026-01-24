@@ -10,7 +10,7 @@ py_test(
     name = "test_workflow",
     srcs = ["test_workflow.py"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

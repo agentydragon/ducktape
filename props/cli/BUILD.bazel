@@ -80,7 +80,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/core/noop_classifier:classifier",
         "@pypi//rich",
         "@pypi//typer_slim",
@@ -112,7 +112,7 @@ py_library(
     deps = [
         ":common_options",
         "//cli_util",
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/core:agent_workspace",
         "//props/core/gepa:gepa_adapter",
         "//props/db:config",
@@ -233,7 +233,7 @@ py_library(
         ":common_options",
         ":shared",
         "//cli_util",
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/core:agent_helpers",
         "//props/core:agent_types",
         "//props/core:agent_workspace",

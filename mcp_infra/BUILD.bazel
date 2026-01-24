@@ -1,35 +1,8 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-# Core mcp_infra types and utilities (no subpackages - consumers add those explicitly)
-py_library(
-    name = "mcp_infra",
-    srcs = [
-        "calltool.py",
-        "client_helpers.py",
-        "config_loader.py",
-        "constants.py",
-        "flat_tool.py",
-        "mcp_types.py",
-        "mount_types.py",
-        "mounted.py",
-        "naming.py",
-        "prefix.py",
-        "resource_utils.py",
-        "snapshots.py",
-        "tool_schemas.py",
-        "urls.py",
-    ],
-    imports = [".."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//mcp_utils",
-        "@pypi//fastmcp",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-        "@pypi//typer",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets like :flat_tool, :prefix, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 # Shared test utilities (non-Docker)
 py_library(
@@ -42,15 +15,9 @@ py_library(
     imports = [".."],
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
-        ":mcp_infra",
         "//agent_core_testing",
-        "//mcp_infra/compositor",
-        "//mcp_infra/enhanced",
         "//mcp_infra/exec:docker",
-        "//mcp_infra/notifications",
-        "//mcp_infra/resources",
-        "//mcp_infra/stubs",
-        "//mcp_infra/testing",
+        "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -62,7 +29,7 @@ py_test(
     srcs = ["test_types.py"],
     imports = [".."],
     deps = [
-        ":mcp_infra",
+        ":prefix",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -71,7 +38,24 @@ py_test(
 
 ruff_test(
     name = "ruff",
-    srcs = [":mcp_infra"],
+    srcs = [
+        ":_markers",
+        ":calltool",
+        ":client_helpers",
+        ":config_loader",
+        ":conftest",
+        ":constants",
+        ":flat_tool",
+        ":mcp_types",
+        ":mount_types",
+        ":mounted",
+        ":naming",
+        ":prefix",
+        ":resource_utils",
+        ":snapshots",
+        ":tool_schemas",
+        ":urls",
+    ],
 )
 
 py_library(
@@ -113,7 +97,7 @@ py_library(
     name = "constants",
     srcs = ["constants.py"],
     visibility = ["//:__subpackages__"],
-    deps = [":mcp_infra"],
+    deps = [":prefix"],
 )
 
 py_library(
@@ -149,7 +133,9 @@ py_library(
     srcs = ["mounted.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":mcp_infra",
+        ":naming",
+        ":prefix",
+        ":resource_utils",
         "@pypi//fastmcp",
         "@pypi//pydantic",
     ],
@@ -159,7 +145,7 @@ py_library(
     name = "naming",
     srcs = ["naming.py"],
     visibility = ["//:__subpackages__"],
-    deps = [":mcp_infra"],
+    deps = [":prefix"],
 )
 
 py_library(
@@ -188,7 +174,7 @@ py_library(
     srcs = ["snapshots.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":mcp_infra",
+        ":prefix",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],
@@ -199,7 +185,8 @@ py_library(
     srcs = ["tool_schemas.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":mcp_infra",
+        ":flat_tool",
+        ":prefix",
         "@pypi//fastmcp",
         "@pypi//pydantic",
     ],
@@ -216,7 +203,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    visibility = ["//:__subpackages__"],
+    visibility = ["//mcp_infra:__subpackages__"],
     deps = [
         "//agent_core_testing",
         "@pypi//pytest",

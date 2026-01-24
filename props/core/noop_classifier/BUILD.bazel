@@ -11,7 +11,7 @@ py_library(
     srcs = ["models.py"],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
-    deps = ["//openai_utils"],
+    deps = ["//openai_utils:model"],
 )
 
 py_library(
@@ -22,10 +22,10 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":models",
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_core:mcp_provider",
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
         "@pypi//fastmcp",
     ],
 )

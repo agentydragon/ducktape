@@ -63,7 +63,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:prefix",
         "//mcp_infra/compositor",
         "//mcp_infra/exec:docker",
         "//props/db:config",
@@ -157,7 +157,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":agent_helpers",
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/db:session",
         "@pypi//jinja2",
         "@pypi//openai",

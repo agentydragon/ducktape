@@ -11,7 +11,7 @@ py_library(
     srcs = ["formatting.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],
@@ -22,8 +22,8 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//openai_utils:model",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],

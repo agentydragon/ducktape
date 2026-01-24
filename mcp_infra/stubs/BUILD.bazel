@@ -1,17 +1,19 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
+# NOTE: No aggregator target - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
 py_library(
-    name = "stubs",
-    srcs = [
-        "resources_stub.py",
-        "server_stubs.py",
-        "typed_stubs.py",
-    ],
+    name = "resources_stub",
+    srcs = ["resources_stub.py"],
     imports = ["../.."],
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra/compositor",
-        "//mcp_infra/resources",
+        ":server_stubs",
+        "//mcp_infra:mcp_types",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/resources:types",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -19,17 +21,9 @@ py_library(
 )
 
 py_library(
-    name = "resources_stub",
-    srcs = ["resources_stub.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//mcp_infra",
-    ],
-)
-
-py_library(
     name = "server_stubs",
     srcs = ["server_stubs.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//fastmcp"],
 )
@@ -37,9 +31,11 @@ py_library(
 py_library(
     name = "typed_stubs",
     srcs = ["typed_stubs.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra",
+        "//mcp_infra:client_helpers",
+        "//mcp_infra/enhanced:flat_mixin",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
