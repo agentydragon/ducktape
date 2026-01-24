@@ -32,7 +32,7 @@ from props.backend.auth import AuthMiddleware
 from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
 from props.cli.resources import get_database_config
 from props.orchestration.agent_registry import AgentRegistry
-from props.orchestration.daemon_manager import DaemonManager
+from props.orchestration.grader_supervisor import GraderSupervisor
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -76,11 +76,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async def connect() -> asyncpg.Connection[asyncpg.Record]:
             return await asyncpg.connect(db_config.admin.url())
 
-        app.state.daemon_manager = DaemonManager(registry=app.state.registry, connect=connect, model=grader_model)
-        await app.state.daemon_manager.start()
+        app.state.grader_supervisor = GraderSupervisor(registry=app.state.registry, connect=connect, model=grader_model)
+        await app.state.grader_supervisor.start()
         logger.info(f"Daemon manager started (model: {grader_model})")
     else:
-        app.state.daemon_manager = None
+        app.state.grader_supervisor = None
         logger.info(f"Daemon manager disabled ({ENV_GRADER_MODEL} not set)")
 
     logger.info("Props backend ready")
@@ -88,8 +88,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Cleanup
     logger.info("Shutting down props backend...")
-    if app.state.daemon_manager:
-        await app.state.daemon_manager.shutdown()
+    if app.state.grader_supervisor:
+        await app.state.grader_supervisor.shutdown()
     await app.state.registry.close()
     logger.info("Props backend stopped")
 

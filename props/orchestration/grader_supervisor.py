@@ -1,12 +1,12 @@
-"""Daemon manager for snapshot grader daemons.
+"""Grader supervisor - manages snapshot grader daemon lifecycle.
 
-Manages lifecycle of all snapshot grader daemons:
+Supervises all snapshot grader daemons:
 - Listens for pg_notify on snapshot_created channel
 - Spawns daemons for existing snapshots on startup
 - Spawns new daemons when snapshots are created
 
-The daemon runs eternally inside its container, handling context exhaustion
-internally. Host-side we just need to manage the container lifecycle.
+Each daemon runs eternally inside its container, handling context exhaustion
+internally. Host-side we supervise container lifecycle.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 ConnectionFactory = Callable[[], Awaitable[asyncpg.Connection[Any]]]
 
 
-class DaemonManager:
+class GraderSupervisor:
     """Manages snapshot grader daemons.
 
     Each snapshot gets one daemon running in a container. Daemons are eternal -
@@ -43,7 +43,7 @@ class DaemonManager:
 
     Use as async context manager for proper lifecycle:
 
-        async with DaemonManager(...) as dm:
+        async with GraderSupervisor(...) as dm:
             # dm is now listening and has started daemons for existing snapshots
             await some_long_running_task()
         # dm.shutdown() called automatically
@@ -57,7 +57,7 @@ class DaemonManager:
         self._listener_conn: asyncpg.Connection[Any] | None = None
         self._shutdown = False
 
-    async def __aenter__(self) -> DaemonManager:
+    async def __aenter__(self) -> GraderSupervisor:
         """Start listening and spawn daemons for existing snapshots."""
         await self.start()
         return self

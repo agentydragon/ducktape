@@ -3,7 +3,7 @@
 This package contains HOST-only code that orchestrates agent containers:
 - AgentRegistry: unified entry point for running agents
 - loop_agent_env: container spawning and lifecycle
-- daemon_manager: grader daemon lifecycle management
+- grader_supervisor: grader daemon lifecycle management
 - temp_user_manager: temporary PostgreSQL user creation
 """
 
@@ -60,8 +60,8 @@ py_library(
 )
 
 py_library(
-    name = "daemon_manager",
-    srcs = ["daemon_manager.py"],
+    name = "grader_supervisor",
+    srcs = ["grader_supervisor.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [

@@ -38,7 +38,7 @@ py_library(
         "//props/db:examples",
         "//props/db:models",
         "//props/db:session",
-        "//props/orchestration:daemon_manager",
+        "//props/orchestration:grader_supervisor",
         "//props/core/models:examples",
         "//props/core/models:true_positive",
         "@pypi//aiodocker",

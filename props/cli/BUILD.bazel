@@ -158,7 +158,7 @@ py_library(
         "//props/db:session",
         "//props/grader:edge_helpers",
         "//props/orchestration:agent_registry",
-        "//props/orchestration:daemon_manager",
+        "//props/orchestration:grader_supervisor",
         "@pypi//aiodocker",
         "@pypi//rich",
         "@pypi//sqlalchemy",

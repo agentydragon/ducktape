@@ -124,7 +124,7 @@ class SnapshotCreatedNotification(BaseModel):
     Structure: {operation, snapshot_slug}
 
     Produced by PostgreSQL trigger: notify_snapshot_created() on snapshots INSERT
-    Consumed by: DaemonManager in daemon_manager.py to spawn new grader daemons
+    Consumed by: GraderSupervisor in orchestration/grader_supervisor.py to spawn new grader daemons
     """
 
     operation: Operation
