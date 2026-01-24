@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from cli_util.logging import configure_logging
+from cli_util.logging import LogLevel, configure_logging
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
 from props.cli.resources import get_database_config
@@ -66,9 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise RuntimeError(f"LLM proxy URL required: set {ENV_LLM_PROXY_URL} or app.state.llm_proxy_url")
 
     # Registry owns resources and orchestrates agent runs
-    app.state.registry = AgentRegistry(
-        docker_client=docker_client, db_config=db_config, llm_proxy_url=DEFAULT_LLM_PROXY_URL
-    )
+    app.state.registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)
 
     # Initialize daemon manager if configured
     # Daemon manager listens for pg_notify on snapshot_created channel and spawns daemons automatically
@@ -96,17 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Props backend stopped")
 
 
-<<<<<<< HEAD
 def create_app(*, static_dir: Path | None = None) -> FastAPI:
-=======
-def create_app(*, static_dir: Path | None) -> FastAPI:
-    configure_logging()
-    # Quiet noisy loggers
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("aiodocker").setLevel(logging.WARNING)
-
->>>>>>> 5b02ece (Use shared configure_logging with standard ADGN_LOG_* env vars)
     app = FastAPI(
         title="Props Backend",
         description="Unified props backend: dashboard, proxies (LLM/registry), and eval APIs",
@@ -162,4 +150,4 @@ def create_app(*, static_dir: Path | None) -> FastAPI:
 
 
 # Default app instance for uvicorn
-app = create_app(static_dir=None)
+app = create_app()

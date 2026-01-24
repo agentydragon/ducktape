@@ -89,6 +89,7 @@ COMPUTE_TARGETS_JOB = GHAJob(
     },
     steps=[
         GHAStep(uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
+        GHAStep(uses="astral-sh/setup-uv@v4"),
         GHAStep(uses="bazelbuild/setup-bazelisk@v3"),
         GHAStep(uses="actions/setup-java@v4", with_args={"distribution": "temurin", "java-version": "21"}),
         GHAStep(
