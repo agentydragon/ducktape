@@ -182,7 +182,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//starlette",
-        "@pypi//syrupy",
     ],
 )
 
@@ -221,7 +220,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//starlette",
-        "@pypi//syrupy",
     ],
 )
 
@@ -258,7 +256,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//starlette",
-        "@pypi//syrupy",
     ],
 )
 
@@ -294,7 +291,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//starlette",
-        "@pypi//syrupy",
     ],
 )
 
@@ -330,7 +326,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//starlette",
-        "@pypi//syrupy",
     ],
 )
 
@@ -366,7 +361,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//starlette",
-        "@pypi//syrupy",
     ],
 )
 
@@ -402,7 +396,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//starlette",
-        "@pypi//syrupy",
     ],
 )
 
@@ -438,7 +431,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//starlette",
-        "@pypi//syrupy",
     ],
 )
 
