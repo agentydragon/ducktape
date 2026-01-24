@@ -1,5 +1,15 @@
 """Helper to filter wheels that require system dependencies."""
 
+# Packages requiring native system libraries not available in Bazel sandbox.
+# These packages need libraries like dbus-1, girepository-2.0, cairo which
+# are not present in the hermetic Python toolchain.
+# Format: normalized package names (underscores, lowercase) as they appear in @pypi//
+SYSTEM_PACKAGES = [
+    "dbus_python",  # requires dbus-1
+    "pycairo",  # requires cairo
+    "pygobject",  # requires girepository-2.0
+]
+
 def filter_system_packages(all_wheels):
     """Filter out packages that need system libraries unavailable in Bazel sandbox.
 
@@ -9,11 +19,10 @@ def filter_system_packages(all_wheels):
     Returns:
         Filtered list with system packages removed.
     """
-    system_packages = ["pygobject", "dbus-python", "pycairo"]
     filtered = []
     for wheel in all_wheels:
         include = True
-        for pkg in system_packages:
+        for pkg in SYSTEM_PACKAGES:
             if pkg in wheel:
                 include = False
                 break

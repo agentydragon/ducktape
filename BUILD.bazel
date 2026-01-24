@@ -2,9 +2,26 @@
 # Most .gitignore patterns are handled by .bazelignore (root-level directories)
 # or don't need exclusion (cache dirs with no .py files like __pycache__)
 # gazelle:exclude ansible
+# gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
+# gazelle:exclude claude/claude_hooks  # complex internal imports
 
 # gazelle:python_root
-# gazelle:python_library_naming_convention $package_name$_lib
+#
+# Resolve local packages with fine-grained targets.
+# These packages have multiple py_library targets for different modules,
+# so we tell gazelle which target provides the base package namespace.
+# gazelle:resolve py agent_core //agent_core
+# gazelle:resolve py agent_core_testing //agent_core_testing
+# gazelle:resolve py agent_server //agent_server
+# gazelle:resolve py agent_server.server //agent_server/server
+# gazelle:resolve py agent_server.testing //agent_server/testing
+# gazelle:resolve py cli_util //cli_util
+# gazelle:resolve py mcp_infra //mcp_infra
+# gazelle:resolve py mcp_utils //mcp_utils
+# gazelle:resolve py openai_utils //openai_utils
+# gazelle:resolve py net_util //net_util
+# gazelle:resolve py third_party.openai_cookbook //third_party/openai_cookbook
+# gazelle:resolve py claude_hooks //claude/claude_hooks
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
@@ -12,9 +29,13 @@ load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@proxy_config//:proxy_env.bzl", "PROXY_ENV")
+load("@pypi//:requirements.bzl", "all_whl_requirements")
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
+load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
+load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
+load("//:filter_wheels.bzl", "filter_system_packages")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -122,12 +143,24 @@ platform(
 )
 
 # Gazelle Python configuration
-# Running without manifest due to system packages (pygobject, dbus-python, pycairo)
-# that require unavailable libraries. Gazelle will still:
-# - Generate py_library/py_test targets
-# - Infer local dependencies
-# - Detect test files
-# Manual dependency management needed for: @pypi packages, system packages
+# The modules_mapping extracts import metadata from wheels to map Python imports
+# to PyPI packages. System packages (pygobject, dbus-python, pycairo) are filtered
+# out as they require native libraries not available in Bazel's sandbox.
+modules_mapping(
+    name = "modules_map",
+    wheels = filter_system_packages(all_whl_requirements),
+)
+
+# Generate gazelle_python.yaml manifest for Gazelle to resolve PyPI imports.
+# Run `bazel run //:gazelle_python_manifest.update` to regenerate.
+# The .test target verifies the manifest is up-to-date.
+gazelle_python_manifest(
+    name = "gazelle_python_manifest",
+    modules_mapping = ":modules_map",
+    pip_repository_name = "pypi",
+    requirements = "//:requirements_bazel.txt",
+)
+
 gazelle_binary(
     name = "gazelle_python_binary",
     languages = ["@rules_python_gazelle_plugin//python"],
@@ -135,6 +168,7 @@ gazelle_binary(
 
 gazelle(
     name = "gazelle",
+    data = [":gazelle_python_manifest"],
     gazelle = ":gazelle_python_binary",
 )
 

@@ -109,6 +109,11 @@ repos:
         language: system
         files: "BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$|MODULE\\.bazel$"
 
+      # Gazelle Python: available for manual use to update BUILD deps
+      # Run `bazel run //:gazelle` to regenerate - not enforced in pre-commit
+      # due to complex internal import patterns in some packages.
+      # TODO: Enable gazelle-diff once validation issues are resolved
+
       # Unified formatter via Bazel (prettier, ruff, buildifier, shfmt, rustfmt)
       # Single source of truth - eliminates version mismatches between pre-commit and Bazel
       - id: bazel-format
