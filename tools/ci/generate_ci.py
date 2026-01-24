@@ -16,7 +16,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -44,117 +43,73 @@ class GHAStep(BaseModel):
     id: str | None = None
     uses: str | None = None
     run: str | None = None
-    if_cond: str | None = Field(None, alias="if")
-    with_args: dict[str, Any] | None = Field(None, alias="with")
+    if_cond: str | None = Field(None, alias="if", serialization_alias="if")
+    with_args: dict[str, Any] | None = Field(None, alias="with", serialization_alias="with")
 
     model_config = {"populate_by_name": True}
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for YAML output, omitting None values."""
-        d: dict[str, Any] = {}
-        if self.name:
-            d["name"] = self.name
-        if self.id:
-            d["id"] = self.id
-        if self.uses:
-            d["uses"] = self.uses
-        if self.if_cond:
-            d["if"] = self.if_cond
-        if self.run:
-            d["run"] = self.run
-        if self.with_args:
-            d["with"] = self.with_args
-        return d
 
 
 class GHAJob(BaseModel):
     """A job in a GitHub Actions workflow."""
 
     name: str | None = None
-    runs_on: str | None = Field(None, alias="runs-on")
-    timeout_minutes: int | None = Field(None, alias="timeout-minutes")
+    runs_on: str | None = Field(None, alias="runs-on", serialization_alias="runs-on")
+    timeout_minutes: int | None = Field(None, alias="timeout-minutes", serialization_alias="timeout-minutes")
     needs: str | None = None
-    if_cond: str | None = Field(None, alias="if")
+    if_cond: str | None = Field(None, alias="if", serialization_alias="if")
     uses: str | None = None
-    with_args: dict[str, str] | None = Field(None, alias="with")
-    secrets: str | None = None  # "inherit" to pass all secrets
+    with_args: dict[str, str] | None = Field(None, alias="with", serialization_alias="with")
+    secrets: str | None = None
     outputs: dict[str, str] | None = None
     steps: list[GHAStep] | None = None
 
     model_config = {"populate_by_name": True}
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for YAML output."""
-        d: dict[str, Any] = {}
-        if self.name:
-            d["name"] = self.name
-        if self.runs_on:
-            d["runs-on"] = self.runs_on
-        if self.timeout_minutes:
-            d["timeout-minutes"] = self.timeout_minutes
-        if self.needs:
-            d["needs"] = self.needs
-        if self.if_cond:
-            d["if"] = self.if_cond
-        if self.uses:
-            d["uses"] = self.uses
-        if self.outputs:
-            d["outputs"] = self.outputs
-        if self.with_args:
-            d["with"] = self.with_args
-        if self.secrets:
-            d["secrets"] = self.secrets
-        if self.steps:
-            d["steps"] = [s.to_dict() for s in self.steps]
-        return d
 
-
-def build_compute_targets_job() -> GHAJob:
-    """Build the compute-targets job definition."""
-    return GHAJob(
-        name="Compute affected targets",
-        runs_on="ubuntu-latest",
-        timeout_minutes=30,
-        outputs={
-            "targets": "${{ steps.decide.outputs.targets }}",
-            "workflows": "${{ steps.decide.outputs.workflows }}",
-            "infra_changed": "${{ steps.decide.outputs.infra_changed }}",
-        },
-        steps=[
-            GHAStep(uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
-            GHAStep(uses="bazelbuild/setup-bazelisk@v3"),
-            GHAStep(uses="actions/setup-java@v4", with_args={"distribution": "temurin", "java-version": "21"}),
-            GHAStep(
-                name="Cache bazel-diff JAR",
-                id="cache-bazel-diff",
-                uses="actions/cache@v4",
-                with_args={"path": "bazel-diff.jar", "key": f"bazel-diff-{BAZEL_DIFF_VERSION}"},
+COMPUTE_TARGETS_JOB = GHAJob(
+    name="Compute affected targets",
+    runs_on="ubuntu-latest",
+    timeout_minutes=30,
+    outputs={
+        "targets": "${{ steps.decide.outputs.targets }}",
+        "workflows": "${{ steps.decide.outputs.workflows }}",
+        "infra_changed": "${{ steps.decide.outputs.infra_changed }}",
+    },
+    steps=[
+        GHAStep(uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
+        GHAStep(uses="bazelbuild/setup-bazelisk@v3"),
+        GHAStep(uses="actions/setup-java@v4", with_args={"distribution": "temurin", "java-version": "21"}),
+        GHAStep(
+            name="Cache bazel-diff JAR",
+            id="cache-bazel-diff",
+            uses="actions/cache@v4",
+            with_args={"path": "bazel-diff.jar", "key": f"bazel-diff-{BAZEL_DIFF_VERSION}"},
+        ),
+        GHAStep(
+            name="Download bazel-diff",
+            if_cond="steps.cache-bazel-diff.outputs.cache-hit != 'true'",
+            run=(
+                f"curl -fsSL -o bazel-diff.jar \\\n"
+                f'  "https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"'
             ),
-            GHAStep(
-                name="Download bazel-diff",
-                if_cond="steps.cache-bazel-diff.outputs.cache-hit != 'true'",
-                run=(
-                    f"curl -fsSL -o bazel-diff.jar \\\n"
-                    f'  "https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"'
-                ),
-            ),
-            GHAStep(
-                name="Cache bazel-diff hashes",
-                uses="actions/cache@v4",
-                with_args={
-                    "path": ".bazel-diff-cache",
-                    "key": "bazel-diff-hashes-${{ github.sha }}",
-                    "restore-keys": "bazel-diff-hashes-",
-                },
-            ),
-            GHAStep(
-                name="Set bazel-diff env",
-                run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
-                'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV',
-            ),
-            GHAStep(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
-        ],
-    )
+        ),
+        GHAStep(
+            name="Cache bazel-diff hashes",
+            uses="actions/cache@v4",
+            with_args={
+                "path": ".bazel-diff-cache",
+                "key": "bazel-diff-hashes-${{ github.sha }}",
+                "restore-keys": "bazel-diff-hashes-",
+            },
+        ),
+        GHAStep(
+            name="Set bazel-diff env",
+            run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
+            'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV',
+        ),
+        GHAStep(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
+    ],
+)
 
 
 def build_workflow_job(name: str, config: WorkflowConfig) -> GHAJob:
@@ -176,10 +131,10 @@ def build_workflow_job(name: str, config: WorkflowConfig) -> GHAJob:
 
 def generate_ci_config(manifest: WorkflowManifest) -> dict[str, Any]:
     """Generate the complete ci.yml config dict."""
-    jobs: dict[str, Any] = {"compute-targets": build_compute_targets_job().to_dict()}
+    jobs: dict[str, Any] = {"compute-targets": COMPUTE_TARGETS_JOB.model_dump(by_alias=True, exclude_none=True)}
 
     for name, config in manifest.workflows.items():
-        jobs[name] = build_workflow_job(name, config).to_dict()
+        jobs[name] = build_workflow_job(name, config).model_dump(by_alias=True, exclude_none=True)
 
     return {
         "name": "CI",
@@ -219,9 +174,13 @@ def generate_ci_yml(manifest: WorkflowManifest) -> str:
     return HEADER + yaml_content
 
 
-def main() -> int:
+class OutOfDateError(Exception):
+    """CI workflow file is out of date."""
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="Generate ci.yml from workflows.yaml")
-    parser.add_argument("--check", action="store_true", help="Check if ci.yml is up to date (exit 1 if not)")
+    parser.add_argument("--check", action="store_true", help="Check if ci.yml is up to date")
     args = parser.parse_args()
 
     manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
@@ -229,19 +188,16 @@ def main() -> int:
 
     if args.check:
         if not CI_YML.exists():
-            print(f"Error: {CI_YML} does not exist", file=sys.stderr)
-            return 1
+            raise FileNotFoundError(f"{CI_YML} does not exist")
         current = CI_YML.read_text()
         if current != generated:
-            print(f"Error: {CI_YML} is out of date. Run 'uv run tools/ci/generate_ci.py' to update.", file=sys.stderr)
-            return 1
+            raise OutOfDateError(f"{CI_YML} is out of date. Run 'uv run tools/ci/generate_ci.py' to update.")
         print(f"{CI_YML} is up to date")
-        return 0
+        return
 
     CI_YML.write_text(generated)
     print(f"Generated {CI_YML}")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

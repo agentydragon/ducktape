@@ -19,11 +19,10 @@ import json
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 import pygit2
-from models import WorkflowConfig, WorkflowManifest
+from models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from pydantic import BaseModel, Field
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
@@ -192,47 +191,37 @@ def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
     return bool(result.stdout.strip())
 
 
-def get_workflows_from_file_changes(changed_files: list[str], workflows: dict[str, WorkflowConfig]) -> set[str]:
-    """Detect workflows triggered by their own workflow file changing."""
-    triggered = set()
-    for f in changed_files:
-        if m := re.match(r"^\.github/workflows/([^/]+)\.yml$", f):
-            workflow_name = m.group(1)
-            if workflow_name in workflows:
-                print(f"Workflow file changed: {f} -> triggers {workflow_name}")
-                triggered.add(workflow_name)
-    return triggered
+def workflow_file_changed(name: str, changed_files: list[str]) -> bool:
+    """Check if this workflow's file was changed."""
+    return f".github/workflows/{name}.yml" in changed_files
 
 
-def compute_triggered_workflows(
+def should_trigger(name: str, config: WorkflowConfig, targets: list[str], changed_files: list[str]) -> bool:
+    """Check if a workflow should be triggered."""
+    if workflow_file_changed(name, changed_files):
+        print(f"Workflow file changed -> triggers {name}")
+        return True
+
+    match config.trigger:
+        case AlwaysTrigger():
+            return True
+        case PathPatternTrigger(pattern=pattern):
+            regex = re.compile(pattern)
+            if any(regex.match(f) for f in changed_files):
+                print(f"Path pattern '{pattern}' matched -> triggers {name}")
+                return True
+        case BazelPatternTrigger(pattern=pattern):
+            if targets and check_bazel_intersection(targets, pattern):
+                return True
+
+    return False
+
+
+def get_triggered_workflows(
     workflows: dict[str, WorkflowConfig], targets: list[str], changed_files: list[str]
 ) -> list[str]:
     """Determine which workflows should run based on changes."""
-    triggered: set[str] = set()
-
-    # 1. Always-run workflows
-    for name, config in workflows.items():
-        if config.always:
-            triggered.add(name)
-
-    # 2. Workflow file changes trigger their workflow
-    triggered.update(get_workflows_from_file_changes(changed_files, workflows))
-
-    # 3. Path-pattern workflows
-    for name, config in workflows.items():
-        if config.path_pattern:
-            pattern = re.compile(config.path_pattern)
-            if any(pattern.match(f) for f in changed_files):
-                print(f"Path pattern '{config.path_pattern}' matched -> triggers {name}")
-                triggered.add(name)
-
-    # 4. Bazel-pattern workflows (only if we have affected targets)
-    if targets:
-        for name, config in workflows.items():
-            if config.bazel_pattern and check_bazel_intersection(targets, config.bazel_pattern):
-                triggered.add(name)
-
-    return sorted(triggered)
+    return sorted(name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files))
 
 
 def print_truncated(label: str, items: list[str], limit: int = 20) -> None:
@@ -244,87 +233,75 @@ def print_truncated(label: str, items: list[str], limit: int = 20) -> None:
         print(f"  ... and {len(items) - limit} more")
 
 
-def main() -> int:
-    # Require GITHUB_OUTPUT
+def get_bazel_diff_jar() -> Path:
+    """Get path to bazel-diff JAR from environment."""
+    jar_path_str = os.environ.get("BAZEL_DIFF_JAR")
+    if not jar_path_str:
+        raise RuntimeError("BAZEL_DIFF_JAR environment variable not set")
+    jar_path = Path(jar_path_str)
+    if not jar_path.exists():
+        raise FileNotFoundError(f"bazel-diff JAR not found at {jar_path}")
+    return jar_path
+
+
+def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> CIDecision:
+    """Compute CI decision based on changes."""
+    repo = pygit2.Repository(workspace)
+    base_commit = get_base_commit(repo)
+
+    if not base_commit:
+        print("No base commit (new branch or initial commit), triggering all workflows")
+        return CIDecision(all_targets=True, workflows=sorted(workflows.keys()), infra_changed=True)
+
+    changed_files = get_changed_files(repo, base_commit)
+    print_truncated("Changed files", changed_files)
+
+    infra_changed = has_infra_changes(changed_files)
+    if infra_changed:
+        print("Infrastructure change detected")
+
+    jar_path = get_bazel_diff_jar()
+    targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
+
+    all_targets = False
+    if targets is None:
+        print("bazel-diff failed, building all targets")
+        targets = []
+        all_targets = True
+    elif not targets:
+        print("No Bazel targets affected")
+    else:
+        print_truncated(f"Found {len(targets)} affected targets", targets)
+        if infra_changed:
+            all_targets = True
+
+    triggered = get_triggered_workflows(workflows, targets, changed_files)
+    return CIDecision(targets=targets, all_targets=all_targets, workflows=triggered, infra_changed=infra_changed)
+
+
+def main() -> None:
     output_path_str = os.environ.get("GITHUB_OUTPUT")
     if not output_path_str:
-        print("Error: GITHUB_OUTPUT environment variable not set", file=sys.stderr)
-        return 1
+        raise RuntimeError("GITHUB_OUTPUT environment variable not set")
     output_path = Path(output_path_str)
 
-    # Load workflow manifest
     script_dir = Path(__file__).parent
     manifest_path = script_dir / "workflows.yaml"
     if not manifest_path.exists():
-        print(f"Error: {manifest_path} not found", file=sys.stderr)
-        return 1
+        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
 
     manifest = WorkflowManifest.from_yaml(manifest_path)
-    workflows = manifest.workflows
-    print(f"Loaded {len(workflows)} workflow definitions")
+    print(f"Loaded {len(manifest.workflows)} workflow definitions")
 
     workspace = Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())
-    repo = pygit2.Repository(workspace)
+    decision = compute_decision(manifest.workflows, workspace)
 
-    # Get base commit for comparison
-    base_commit = get_base_commit(repo)
-    if not base_commit:
-        print("No base commit (new branch or initial commit), triggering all workflows")
-        decision = CIDecision(all_targets=True, workflows=sorted(workflows.keys()), infra_changed=True)
-    else:
-        # Get changed files
-        changed_files = get_changed_files(repo, base_commit)
-        print_truncated("Changed files", changed_files)
-
-        # Check for infrastructure changes
-        infra_changed = has_infra_changes(changed_files)
-        if infra_changed:
-            print("Infrastructure change detected")
-
-        # Require BAZEL_DIFF_JAR
-        jar_path_str = os.environ.get("BAZEL_DIFF_JAR")
-        if not jar_path_str:
-            print("Error: BAZEL_DIFF_JAR environment variable not set", file=sys.stderr)
-            return 1
-
-        jar_path = Path(jar_path_str)
-        if not jar_path.exists():
-            print(f"Error: bazel-diff JAR not found at {jar_path}", file=sys.stderr)
-            return 1
-
-        targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
-
-        # Handle bazel-diff result
-        all_targets = False
-        if targets is None:
-            # bazel-diff failed, build everything
-            print("bazel-diff failed, building all targets")
-            targets = []
-            all_targets = True
-        elif not targets:
-            print("No Bazel targets affected")
-        else:
-            print_truncated(f"Found {len(targets)} affected targets", targets)
-            if infra_changed:
-                # Infrastructure change means we need to rebuild everything
-                all_targets = True
-
-        # Compute which workflows to run
-        triggered = compute_triggered_workflows(workflows, targets, changed_files)
-
-        decision = CIDecision(
-            targets=targets, all_targets=all_targets, workflows=triggered, infra_changed=infra_changed
-        )
-
-    # Write to GITHUB_OUTPUT
     decision.write_to_github_output(output_path)
 
     print(f"\nDecision: {len(decision.workflows)} workflows to run")
     for w in decision.workflows:
         print(f"  - {w}")
 
-    return 0
-
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
