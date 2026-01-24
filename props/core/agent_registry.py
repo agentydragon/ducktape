@@ -1,7 +1,7 @@
 """Agent registry - unified orchestration layer for agent runs.
 
 AgentRegistry is THE entry point for running agents. It owns shared resources
-(Docker client, database config) and manages concurrency via an internal semaphore.
+(Docker client, database config).
 
 In-container architecture:
 - Container runs its own agent loop (CMD entrypoint)
@@ -35,18 +35,14 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
-
-if TYPE_CHECKING:
-    pass
 
 import aiodocker
 from pydantic import BaseModel, Field
@@ -114,7 +110,6 @@ class AgentRegistry:
     """Unified orchestration layer for agent runs using in-container architecture.
 
     Owns shared resources and provides the single entry point for execution.
-    Manages concurrency via internal semaphore.
     """
 
     def __init__(
@@ -122,14 +117,12 @@ class AgentRegistry:
         docker_client: aiodocker.Docker,
         db_config: DatabaseConfig,
         llm_proxy_url: str,
-        max_parallel: int = 4,
         extra_hosts: dict[str, str] | None = None,
     ) -> None:
         self._docker_client = docker_client
         self._db_config = db_config
         self._llm_proxy_url = llm_proxy_url
         self._extra_hosts = extra_hosts
-        self._semaphore = asyncio.Semaphore(max_parallel)
 
     async def close(self) -> None:
         await self._docker_client.close()
@@ -155,26 +148,6 @@ class AgentRegistry:
         budget_usd: float | None,
     ) -> UUID:
         """Run a critic agent. Returns agent run ID (query DB for status)."""
-        async with self._semaphore:
-            return await self._run_critic_impl(
-                image_ref=image_ref,
-                example=example,
-                model=model,
-                timeout_seconds=timeout_seconds,
-                parent_run_id=parent_run_id,
-                budget_usd=budget_usd,
-            )
-
-    async def _run_critic_impl(
-        self,
-        *,
-        image_ref: str,
-        example: ExampleSpec,
-        model: str,
-        timeout_seconds: int,
-        parent_run_id: UUID | None,
-        budget_usd: float | None,
-    ) -> UUID:
         snapshot_slug = example.snapshot_slug
         agent_run_id = uuid4()
 
@@ -243,26 +216,6 @@ class AgentRegistry:
         image_ref: str = BUILTIN_TAG,
     ) -> UUID:
         """Run a prompt optimizer agent. Returns agent run ID (query DB for status)."""
-        async with self._semaphore:
-            return await self._run_prompt_optimizer_impl(
-                budget=budget,
-                optimizer_model=optimizer_model,
-                critic_model=critic_model,
-                target_metric=target_metric,
-                timeout_seconds=timeout_seconds,
-                image_ref=image_ref,
-            )
-
-    async def _run_prompt_optimizer_impl(
-        self,
-        *,
-        budget: float,
-        optimizer_model: str,
-        critic_model: str,
-        target_metric: TargetMetric,
-        timeout_seconds: int,
-        image_ref: str,
-    ) -> UUID:
         # Get train snapshots from database
         with get_session() as session:
             train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).all()
@@ -363,28 +316,6 @@ class AgentRegistry:
         output_dir: Path | None = None,
     ) -> ImprovementResult:
         """Run an improvement agent that creates definitions to beat baselines on the allowed examples."""
-        async with self._semaphore:
-            return await self._run_improvement_agent_impl(
-                examples=examples,
-                baseline_image_refs=baseline_image_refs,
-                token_budget=token_budget,
-                improvement_model=improvement_model,
-                critic_model=critic_model,
-                timeout_seconds=timeout_seconds,
-                output_dir=output_dir,
-            )
-
-    async def _run_improvement_agent_impl(
-        self,
-        *,
-        examples: list[ExampleSpec],
-        baseline_image_refs: list[str],
-        token_budget: int,
-        improvement_model: str,
-        critic_model: str,
-        timeout_seconds: int,
-        output_dir: Path | None,
-    ) -> ImprovementResult:
         if not examples:
             raise ValueError("examples must not be empty")
 
@@ -545,14 +476,6 @@ class AgentRegistry:
         critiques for the snapshot until no drift remains, sleeps when no drift, and
         exits when timeout reached or shutdown signal received.
         """
-        async with self._semaphore:
-            return await self._run_snapshot_grader_impl(
-                snapshot_slug=snapshot_slug, model=model, timeout_seconds=timeout_seconds, image_ref=image_ref
-            )
-
-    async def _run_snapshot_grader_impl(
-        self, *, snapshot_slug: SnapshotSlug, model: str, timeout_seconds: int, image_ref: str
-    ) -> UUID:
         agent_run_id = uuid4()
 
         # Resolve image reference to digest
