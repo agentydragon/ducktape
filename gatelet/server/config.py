@@ -14,9 +14,6 @@ from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
-# Default config file path (can be overridden with GATELET_CONFIG env var)
-CONFIG_PATH = Path(os.getenv("GATELET_CONFIG", "gatelet.toml"))
-
 
 class LogLevel(StrEnum):
     """Logging level for server configuration."""

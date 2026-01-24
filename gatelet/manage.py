@@ -5,13 +5,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
+import os
 import tomllib
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from tomlkit import dumps
 
-from gatelet.server.config import CONFIG_PATH, get_settings
+from gatelet.server.config import get_settings
 from gatelet.server.models import Base, WebhookIntegration, WebhookPayload
 from gatelet.server.security import hash_password
 
@@ -73,21 +75,20 @@ async def reset_db(*, force: bool = False) -> None:
     print("Database initialized with sample webhook payloads.")
 
 
-def change_password(password: str | None) -> None:
+def change_password(config_path: Path, password: str | None) -> None:
     """Change admin password stored in the config file."""
-
     pwd = password or getpass.getpass("New admin password: ")
     hashed = hash_password(pwd)
 
-    with CONFIG_PATH.open("rb") as f:
+    with config_path.open("rb") as f:
         data = tomllib.load(f)
 
     data.setdefault("admin", {})["password_hash"] = hashed
 
-    with CONFIG_PATH.open("w", encoding="utf-8") as f:
+    with config_path.open("w", encoding="utf-8") as f:
         f.write(dumps(data))
 
-    print("Admin password updated in config.")
+    print(f"Admin password updated in {config_path}.")
 
 
 def main() -> None:
@@ -104,7 +105,8 @@ def main() -> None:
     if args.cmd == "reset-db":
         asyncio.run(reset_db(force=args.force))
     elif args.cmd == "change-password":
-        change_password(args.password)
+        config_path = Path(os.getenv("GATELET_CONFIG", "gatelet.toml"))
+        change_password(config_path, args.password)
 
 
 if __name__ == "__main__":
