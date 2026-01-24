@@ -467,14 +467,12 @@ class AgentRegistry:
                 for r in runs
             ]
 
-    async def run_snapshot_grader(
-        self, *, snapshot_slug: SnapshotSlug, model: str, timeout_seconds: int, image_ref: str = "grader"
-    ) -> UUID:
-        """Run a snapshot grader daemon. Blocks until daemon exits or timeout.
+    async def run_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str, image_ref: str = "grader") -> UUID:
+        """Run a snapshot grader daemon. Blocks until daemon exits.
 
         The grader daemon listens for pg_notify on grading_pending channel, grades all
-        critiques for the snapshot until no drift remains, sleeps when no drift, and
-        exits when timeout reached or shutdown signal received.
+        critiques for the snapshot until no drift remains, sleeps when no drift.
+        Daemons run indefinitely until cancelled.
         """
         agent_run_id = uuid4()
 
@@ -510,7 +508,6 @@ class AgentRegistry:
             db_config=self._db_config,
             image=image,
             llm_proxy_url=self._llm_proxy_url,
-            timeout_seconds=timeout_seconds,
             extra_env=extra_env,
             container_name=f"grader-{short_uuid(agent_run_id)}",
             extra_hosts=self._extra_hosts,
