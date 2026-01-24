@@ -129,27 +129,86 @@ Run docker-compose before tests (current `props-e2e-test.yml` approach):
 
 **Recommendation**: Good for complex multi-service tests. Keep for props E2E.
 
-### Option 4: Bazel-Native Test Services
+### Option 4: rules_itest (Bazel-Native Service Orchestration)
 
-Build infrastructure binaries into Bazel (PostgreSQL, etc.) and launch via test wrappers.
+[rules_itest](https://github.com/dzbarsky/rules_itest) is a modern Bazel ruleset (available on [Bazel Central Registry](https://registry.bazel.build/modules/rules_itest)) for hermetic service provisioning:
 
-See [Bazel native test service management discussion](https://groups.google.com/g/bazel-discuss/c/4x3gFY2EU6Q):
+```python
+# MODULE.bazel
+bazel_dep(name = "rules_itest", version = "0.0.41")
+```
 
-> "The best strategy for native services in testing currently is to provide binaries for multiple platforms (Linux/Mac) in Bazel via a repo rule and then write a service launcher."
+```python
+# BUILD.bazel
+load("@rules_itest//itest:itest.bzl", "itest_service", "itest_task", "service_test")
+
+itest_service(
+    name = "postgres",
+    exe = "@rules_postgresql//:postgres",
+    autoassign_port = True,
+    health_check = "//infra:pg_healthcheck",
+)
+
+itest_task(
+    name = "db_migrate",
+    exe = "//scripts:migrate",
+    deps = [":postgres"],
+    env = {"DB_PORT": "$${@@//:postgres}"},
+)
+
+service_test(
+    name = "integration_test",
+    test = ":_test_impl",
+    services = [":postgres", ":db_migrate"],
+)
+```
+
+**Key features**:
+
+- Automatic port assignment with `$${PORT}` substitution
+- Health checks verified before test starts
+- Service control HTTP API for dynamic start/stop during tests
+- `ibazel` integration for hot-reload during development
+- Port information exposed via `ASSIGNED_PORTS` env var (JSON)
 
 **Pros**:
 
-- Fully hermetic
-- Bazel manages everything
+- Fully hermetic - services managed by Bazel
+- Fresh service instances per test
 - Works with remote execution
+- Active development (v0.0.41 as of 2024)
 
 **Cons**:
 
-- Significant engineering effort
-- Need platform-specific binaries
-- Complex for stateful services like PostgreSQL
+- Learning curve for new rule syntax
+- Need to package services as Bazel targets
+- Less mature than docker-compose for complex orchestration
 
-**Recommendation**: Too heavy for this repo's needs. Revisit if hermetic remote execution becomes important.
+### Option 5: rules_postgresql (Hermetic PostgreSQL)
+
+[rules_postgresql](https://github.com/jacobshirley/rules_postgresql) downloads PostgreSQL binaries hermetically:
+
+```python
+# Downloads postgres binaries for Linux/macOS/Windows (x86_64/arm64)
+postgresql_server_test(
+    name = "db_test",
+    srcs = ["test_db.py"],
+    # Creates isolated cluster with separate data directory
+)
+```
+
+**Pros**:
+
+- Zero local setup - PostgreSQL downloaded by Bazel
+- Isolated clusters per test
+- Cross-platform (Linux, macOS, Windows)
+
+**Cons**:
+
+- Only `postgresql_server_test` currently supported
+- Limited to PostgreSQL (no Redis, etc.)
+
+**Recommendation**: Consider rules_itest for new hermetic tests, especially if remote execution becomes important. Keep docker-compose for existing complex E2E flows.
 
 ## Recommended Approach: Tag-Based Environment Dispatch
 
@@ -344,8 +403,20 @@ def validate():
 
 ## References
 
-- [Testcontainers + Bazel integration](https://www.docker.com/blog/revolutionize-your-ci-cd-pipeline-integrating-testcontainers-and-bazel/)
-- [Bazel native test service management](https://groups.google.com/g/bazel-discuss/c/4x3gFY2EU6Q)
-- [Migrating Docker Compose Tests to Bazel](https://blog.aspect.build/integration-testing-oci)
-- [GitHub Actions matrix strategy](https://devopsdirective.com/posts/2025/08/advanced-github-actions-matrix/)
-- [GitHub Actions dynamic matrix with fromJSON](https://docs.github.com/en/actions/learn-github-actions/expressions#fromjson)
+### Bazel Service Testing
+
+- [rules_itest](https://github.com/dzbarsky/rules_itest) - Modern Bazel rules for hermetic service provisioning (databases, servers, mocks)
+- [rules_itest on Bazel Central Registry](https://registry.bazel.build/modules/rules_itest) - Official BCR entry
+- [rules_itest API docs](https://github.com/dzbarsky/rules_itest/blob/master/docs/itest.md) - itest_service, service_test, port assignment
+- [rules_postgresql](https://github.com/jacobshirley/rules_postgresql) - Hermetic PostgreSQL binaries for Bazel
+
+### Container Testing
+
+- [Testcontainers + Bazel integration](https://www.docker.com/blog/revolutionize-your-ci-cd-pipeline-integrating-testcontainers-and-bazel/) - Docker's guide to Testcontainers with Bazel
+- [Migrating Docker Compose Tests to Bazel](https://blog.aspect.build/integration-testing-oci) - Aspect Build's comparison of approaches
+- [rules_oci](https://github.com/bazel-contrib/rules_oci) - Official OCI container rules for Bazel
+
+### CI/GitHub Actions
+
+- [GitHub Actions matrix strategy](https://devopsdirective.com/posts/2025/08/advanced-github-actions-matrix/) - Advanced dynamic matrix patterns
+- [GitHub Actions dynamic matrix with fromJSON](https://docs.github.com/en/actions/learn-github-actions/expressions#fromjson) - Official docs
