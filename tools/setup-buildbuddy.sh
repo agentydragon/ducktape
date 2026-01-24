@@ -27,6 +27,11 @@ common --remote_cache=grpcs://remote.buildbuddy.io
 common --remote_timeout=10m
 common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
 common --experimental_remote_cache_compression
+common --experimental_remote_cache_compression_threshold=100
+build --noslim_profile
+build --experimental_profile_include_target_label
+build --experimental_profile_include_primary_output
+build --nolegacy_important_outputs
 EOF
 
 # Ensure ~/.bazelrc has the try-import (for CI environments without home-manager)
