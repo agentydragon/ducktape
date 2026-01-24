@@ -21,7 +21,6 @@ from props.testing.fixtures import (  # noqa: F401  # noqa: E402, F401
     admin_engine,
     # scopes
     all_files_scope,
-    block_production_config_in_tests,
     # ground_truth
     example_multi_tp_orm,
     example_subtract_orm,
@@ -62,6 +61,9 @@ from props.testing.fixtures import (  # noqa: F401  # noqa: E402, F401
     tp_single_id,
     tp_single_occurrence_id,
 )
+
+# Testcontainers fixtures - imported directly from defining module
+from props.testing.fixtures.db import postgres_base_config, postgres_container  # noqa: F401
 
 # Import e2e container fixture directly from its module
 from props.testing.fixtures.e2e_container import e2e_stack  # noqa: F401

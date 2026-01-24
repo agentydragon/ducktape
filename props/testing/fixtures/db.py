@@ -1,17 +1,21 @@
-"""Database fixtures for props tests."""
+"""Database fixtures for props tests.
+
+Uses Testcontainers for hermetic PostgreSQL instances. Each test session gets
+a fresh PostgreSQL container, and each test gets its own isolated database.
+"""
 
 import hashlib
-import inspect
 import os
-from collections.abc import AsyncGenerator, Callable, Generator
+from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from testcontainers.postgres import PostgresContainer
 
-from props.db.config import DatabaseConfig, get_database_config
+from props.db.config import DatabaseConfig
 from props.db.session import dispose_db, get_session, init_db, recreate_database
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import sync_all
@@ -36,41 +40,66 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-@pytest.fixture(autouse=True)
-def block_production_config_in_tests(monkeypatch: pytest.MonkeyPatch) -> Callable:
-    """Prevent test functions from accidentally using production database.
+@pytest.fixture(scope="session")
+def postgres_container() -> Generator[PostgresContainer]:
+    """Session-scoped PostgreSQL container.
 
-    Tests should use the test_db fixture, which creates isolated test databases.
-    Calling get_database_config() from test code is a bug - it returns production
-    database credentials instead of the test-specific isolated database.
-
-    This fixture blocks ALL calls to get_database_config() from test files.
-    Production code (like database session management, Alembic offline mode) can
-    still call it normally.
+    Starts a fresh PostgreSQL 16 container for the entire test session.
+    All tests share this container but get isolated databases.
     """
+    with PostgresContainer(
+        image="postgres:16",
+        username="postgres",
+        password="postgres",
+        dbname="postgres",
+    ) as postgres:
+        yield postgres
 
-    original = get_database_config
 
-    def _block_from_tests(*args, **kwargs):
-        # Check the immediate caller (frame 1)
-        stack = inspect.stack()
-        if len(stack) > 1:
-            caller_frame = stack[1]
-            caller_file = caller_frame.filename
-            # If called from a test file, fail
-            if "/tests/" in caller_file and caller_file.endswith(".py"):
-                raise RuntimeError(
-                    f"Tests must use test_db fixture, not get_database_config()!\n"
-                    f"Called from: {caller_file}:{caller_frame.lineno}\n"
-                    f"Fix: Use 'config = test_db' instead of 'get_database_config()'."
-                )
-        # Called from production code - allow it
-        return original(*args, **kwargs)
+@pytest.fixture(scope="session")
+def postgres_base_config(postgres_container: PostgresContainer) -> DatabaseConfig:
+    """Session-scoped base database config from the testcontainer.
 
-    monkeypatch.setattr("props.db.config.get_database_config", _block_from_tests)
+    Provides connection parameters for the containerized PostgreSQL instance.
+    Agent containers can reach postgres via host.docker.internal since
+    testcontainers maps the port to the host.
+    """
+    host = postgres_container.get_container_host_ip()
+    port = int(postgres_container.get_exposed_port(5432))
 
-    # Return original for test_db fixture to use
-    return original
+    # Container routing: agent containers reach postgres via host.docker.internal
+    # since testcontainers exposes the port on the host
+    container_host = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.internal")
+
+    return DatabaseConfig(
+        host=host,
+        port=port,
+        database="postgres",
+        container_name=container_host,
+        container_port=port,  # Same mapped port, accessible via host.docker.internal
+        user="postgres",
+        password="postgres",
+    )
+
+
+def _terminate_and_drop_db(postgres_engine, db_name: str) -> None:
+    """Terminate all connections and drop a database.
+
+    Used for test cleanup to ensure databases can be dropped even if
+    connections are still open.
+    """
+    with postgres_engine.connect() as conn:
+        conn.execute(
+            text(
+                f"""
+                SELECT pg_terminate_backend(pg_stat_activity.pid)
+                FROM pg_stat_activity
+                WHERE pg_stat_activity.datname = '{db_name}'
+                  AND pid <> pg_backend_pid()
+            """
+            )
+        )
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
 
 
 def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
@@ -94,54 +123,42 @@ def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
 
 @pytest.fixture
 def test_db(
-    request: pytest.FixtureRequest, block_production_config_in_tests: Callable
+    request: pytest.FixtureRequest,
+    postgres_base_config: DatabaseConfig,
 ) -> Generator[DatabaseConfig]:
     """Create isolated database for each test.
 
     Creates a unique database per test, initializes schema, and drops it after.
     Safe for parallel pytest-xdist execution - each test gets its own database.
+    Uses the session-scoped postgres container via postgres_base_config.
     """
     test_node_id = request.node.nodeid
     sanitized_id = _sanitize_test_id(test_node_id)
     db_name = f"props_test_{sanitized_id}"
 
-    get_database_config_original = block_production_config_in_tests
-    base_config = get_database_config_original()
+    ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
+    test_config = postgres_base_config.with_database(db_name)
 
-    ensure_database_exists(base_config, db_name, drop_existing=True)
-    test_config = base_config.with_database(db_name)
-
-    postgres_config = base_config.with_database("postgres")
+    postgres_config = postgres_base_config.with_database("postgres")
     postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
 
     dispose_db()
     init_db(test_config)
     recreate_database()
 
-    yield test_config
+    try:
+        yield test_config
+    finally:
+        keep_db = request.config.getoption("--keep-db") or os.environ.get("KEEP_TEST_DB") == "1"
+        if keep_db:
+            print(f"\n\n=== KEEPING TEST DATABASE: {db_name} ===")
+            print(f"Database config: {test_config}")
+            print(f"Connect with: psql {test_config.admin_url()}")
+            postgres_engine.dispose()
+            return
 
-    keep_db = request.config.getoption("--keep-db") or os.environ.get("KEEP_TEST_DB") == "1"
-    if keep_db:
-        print(f"\n\n=== KEEPING TEST DATABASE: {db_name} ===")
-        print(f"Database config: {test_config}")
-        print(f"Connect with: direnv exec adgn psql -d {db_name}")
+        _terminate_and_drop_db(postgres_engine, db_name)
         postgres_engine.dispose()
-        return
-
-    with postgres_engine.connect() as conn:
-        conn.execute(
-            text(
-                f"""
-            SELECT pg_terminate_backend(pg_stat_activity.pid)
-            FROM pg_stat_activity
-            WHERE pg_stat_activity.datname = '{db_name}'
-              AND pid <> pg_backend_pid()
-        """
-            )
-        )
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-
-    postgres_engine.dispose()
 
 
 @pytest.fixture
@@ -171,18 +188,19 @@ def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _session_synced_db(
-    request: pytest.FixtureRequest, session_monkeypatch: pytest.MonkeyPatch
+    postgres_base_config: DatabaseConfig,
+    session_monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncGenerator[DatabaseConfig]:
     """Internal: Session-scoped synced database.
 
     Use synced_readonly_session instead of this directly.
+    Uses the session-scoped postgres container.
     """
     db_name = "props_test_session_shared"
-    base_config = get_database_config()
-    ensure_database_exists(base_config, db_name, drop_existing=True)
-    test_config = base_config.with_database(db_name)
+    ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
+    test_config = postgres_base_config.with_database(db_name)
 
-    postgres_config = base_config.with_database("postgres")
+    postgres_config = postgres_base_config.with_database("postgres")
     postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
 
     dispose_db()
@@ -191,21 +209,11 @@ async def _session_synced_db(
 
     _sync_test_fixtures(session_monkeypatch)
 
-    yield test_config
-
-    with postgres_engine.connect() as conn:
-        conn.execute(
-            text(
-                f"""
-            SELECT pg_terminate_backend(pg_stat_activity.pid)
-            FROM pg_stat_activity
-            WHERE pg_stat_activity.datname = '{db_name}'
-              AND pid <> pg_backend_pid()
-        """
-            )
-        )
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    postgres_engine.dispose()
+    try:
+        yield test_config
+    finally:
+        _terminate_and_drop_db(postgres_engine, db_name)
+        postgres_engine.dispose()
 
 
 @pytest.fixture(scope="session")

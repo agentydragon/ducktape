@@ -53,14 +53,8 @@ py_library(
 py_test(
     name = "test_warm_start",
     srcs = ["test_warm_start.py"],
-    env = {
-        "PGHOST": "127.0.0.1",
-        "PGPORT": "5433",
-    },
     imports = ["../../.."],
-    tags = [
-        "requires_postgres",
-    ],
+    tags = ["requires_docker"],
     deps = [
         ":warm_start",
         "//props/db:examples",

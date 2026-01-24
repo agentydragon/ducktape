@@ -85,18 +85,13 @@ py_test(
         "//props:conftest.py",
     ],
     env = {
-        "PGHOST": "127.0.0.1",
-        "PGPORT": "5433",
-        "AGENT_PGHOST": "127.0.0.1",
+        # E2E container networking - not postgres related
         "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
         "PROPS_REGISTRY_PROXY_PORT": "5051",
         "PROPS_DOCKER_NETWORK": "host",
     },
     imports = ["../../.."],
-    tags = [
-        "requires_docker",
-        "requires_postgres",
-    ],
+    tags = ["requires_docker"],
     deps = [
         ":improve_agent",
         "//agent_core",

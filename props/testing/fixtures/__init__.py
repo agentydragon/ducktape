@@ -7,7 +7,6 @@ Re-exports all fixtures from submodules for convenient importing.
 from props.testing.fixtures.db import (
     TEST_FIXTURES_PATH,
     admin_engine,
-    block_production_config_in_tests,
     pytest_addoption,
     session_monkeypatch,
     synced_readonly_session,
@@ -69,7 +68,6 @@ __all__ = [
     "admin_engine",
     # scopes
     "all_files_scope",
-    "block_production_config_in_tests",
     # ground_truth
     "example_multi_tp_orm",
     "example_subtract_orm",

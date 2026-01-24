@@ -92,21 +92,11 @@ py_library(
 # Tests
 # =============================================================================
 
-_POSTGRES_TEST_ENV = {
-    "PGHOST": "127.0.0.1",
-    "PGPORT": "5433",
-}
-
-_POSTGRES_TEST_TAGS = [
-    "requires_postgres",
-]
-
 py_test(
     name = "test_example_generation",
     srcs = ["test_example_generation.py"],
-    env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
-    tags = _POSTGRES_TEST_TAGS,
+    tags = ["requires_docker"],
     deps = [
         ":sync",
         "//props/db:examples",
@@ -121,9 +111,8 @@ py_test(
 py_test(
     name = "test_manifest_loading",
     srcs = ["test_manifest_loading.py"],
-    env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
-    tags = _POSTGRES_TEST_TAGS,
+    tags = ["requires_docker"],
     deps = [
         ":loader",
         ":sync",

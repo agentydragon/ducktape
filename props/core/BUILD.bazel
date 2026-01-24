@@ -245,7 +245,7 @@ py_test(
     imports = ["../.."],
     tags = [
         "integration",
-        "requires_postgres",
+        "requires_docker",
         "requires_production_specimens",
     ],
     deps = [
@@ -273,7 +273,6 @@ py_test(
     tags = [
         "integration",
         "requires_docker",
-        "requires_postgres",
         "slow",
     ],
     deps = [

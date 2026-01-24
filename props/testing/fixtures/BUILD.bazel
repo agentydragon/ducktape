@@ -54,6 +54,7 @@ py_library(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
         "@pypi//uvicorn",
     ],
 )

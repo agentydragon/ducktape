@@ -159,24 +159,13 @@ py_test(
     ],
 )
 
-# Integration tests - require postgres
-_POSTGRES_TEST_ENV = {
-    "PGHOST": "127.0.0.1",
-    "PGPORT": "5433",
-}
-
-_POSTGRES_TEST_TAGS = [
-    "requires_postgres",
-]
-
 py_test(
     name = "test_agent_queries",
     srcs = [
         "test_agent_queries.py",
     ],
-    env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
-    tags = _POSTGRES_TEST_TAGS,
+    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":models",
@@ -193,9 +182,8 @@ py_test(
     srcs = [
         "test_failed_critic_runs_as_zero_recall.py",
     ],
-    env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
-    tags = _POSTGRES_TEST_TAGS,
+    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":models",
@@ -211,9 +199,8 @@ py_test(
     srcs = [
         "test_pydantic_column_null.py",
     ],
-    env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
-    tags = _POSTGRES_TEST_TAGS,
+    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":models",
@@ -230,9 +217,8 @@ py_test(
     srcs = [
         "test_split_based_rls.py",
     ],
-    env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
-    tags = _POSTGRES_TEST_TAGS,
+    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":models",
@@ -252,9 +238,8 @@ py_test(
         "conftest.py",
         "test_view_extracts_grade_fields.py",
     ],
-    env = _POSTGRES_TEST_ENV,
     imports = ["../../.."],
-    tags = _POSTGRES_TEST_TAGS,
+    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":models",
