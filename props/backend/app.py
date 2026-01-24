@@ -66,7 +66,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise RuntimeError(f"LLM proxy URL required: set {ENV_LLM_PROXY_URL} or app.state.llm_proxy_url")
 
     # Registry owns resources and orchestrates agent runs
-    app.state.registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)
+    app.state.registry = AgentRegistry(
+        docker_client=docker_client, db_config=db_config, llm_proxy_url=DEFAULT_LLM_PROXY_URL
+    )
 
     # Initialize daemon manager if configured
     # Daemon manager listens for pg_notify on snapshot_created channel and spawns daemons automatically
@@ -150,4 +152,4 @@ def create_app(*, static_dir: Path | None = None) -> FastAPI:
 
 
 # Default app instance for uvicorn
-app = create_app()
+app = create_app(static_dir=None)

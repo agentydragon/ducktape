@@ -5,6 +5,6 @@ import json
 from props.backend.app import create_app
 
 if __name__ == "__main__":
-    app = create_app()
+    app = create_app(static_dir=None)
     schema = app.openapi()
     print(json.dumps(schema, indent=2))
