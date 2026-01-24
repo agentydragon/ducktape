@@ -23,3 +23,9 @@ props/.direnv
 
 # Investigations - no BUILD files
 investigations
+
+# Legacy k8s cluster configs - deps not in main requirements
+k8s-old
+
+# Trilium Notes extensions - deps not in main requirements
+trilium

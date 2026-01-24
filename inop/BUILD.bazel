@@ -78,7 +78,7 @@ py_test(
         "//agent_core_testing",
         "@pypi//aiodocker",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//pytest_mock",
     ],

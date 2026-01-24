@@ -23,7 +23,7 @@ py_library(
         "@pypi//pygit2",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_mock",
         "@pypi//pyyaml",
         "@pypi//tenacity",

@@ -101,7 +101,7 @@ _TEST_DEPS = [
     "@pypi//pyhamcrest",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
-    "@pypi//pytest_asyncio",
+    "@pypi//pytest_asyncio",  # keep
     "@pypi//starlette",
 ]
 

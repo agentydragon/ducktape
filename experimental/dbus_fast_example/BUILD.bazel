@@ -1,3 +1,4 @@
+# gazelle:ignore
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
@@ -24,7 +25,7 @@ py_test(
     deps = [
         ":dbus_fast_example",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )

@@ -34,7 +34,7 @@ py_test(
         "@pypi//mcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
@@ -54,7 +54,7 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
@@ -74,7 +74,7 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
@@ -104,7 +104,7 @@ py_test(
         "@pypi//mcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
@@ -128,7 +128,7 @@ py_test(
         "@pypi//mcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
@@ -148,7 +148,7 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
@@ -169,7 +169,7 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],

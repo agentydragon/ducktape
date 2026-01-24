@@ -70,7 +70,7 @@ py_test(
         ":sysrw",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )

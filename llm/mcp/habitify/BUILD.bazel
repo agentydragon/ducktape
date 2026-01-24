@@ -1,3 +1,8 @@
+# gazelle:ignore
+# gazelle:exclude utils
+# gazelle:exclude examples
+# Self-contained MCP server with circular internal imports via imports = [".."]
+
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
@@ -73,7 +78,7 @@ py_test(
         ":habitify",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -92,7 +97,7 @@ py_test(
         "@pypi//httpx",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

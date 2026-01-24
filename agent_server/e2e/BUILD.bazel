@@ -7,7 +7,7 @@ _E2E_COMMON_DEPS = [
     "//agent_core_testing",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
-    "@pypi//pytest_asyncio",
+    "@pypi//pytest_asyncio",  # keep
     "@pypi//playwright",
 ]
 

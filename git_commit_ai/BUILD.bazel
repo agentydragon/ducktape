@@ -69,7 +69,7 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//syrupy",
     ],

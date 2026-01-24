@@ -4,6 +4,7 @@
 # gazelle:exclude ansible
 # gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
 # gazelle:exclude claude/claude_hooks  # complex internal imports
+# gazelle:exclude k8s-old  # legacy k8s configs, deps not in main requirements
 
 # gazelle:python_root
 #
@@ -11,6 +12,40 @@
 # These packages have multiple py_library targets for different modules,
 # so we tell gazelle which target provides the base package namespace.
 # gazelle:resolve py agent_core //agent_core
+#
+# props/core has per-file targets
+# gazelle:resolve py props.core.agent_types //props/core:agent_types
+# gazelle:resolve py props.core.ids //props/core:ids
+# gazelle:resolve py props.core.splits //props/core:splits
+# gazelle:resolve py props.core.display //props/core:display
+# gazelle:resolve py props.core.agent_workspace //props/core:agent_workspace
+# gazelle:resolve py props.core.oci_utils //props/core:oci_utils
+# gazelle:resolve py props.core.docker_env //props/core:docker_env
+# gazelle:resolve py props.core.eval_api_models //props/core:eval_api_models
+# gazelle:resolve py props.core.exceptions //props/core:exceptions
+# gazelle:resolve py props.core.eval_client //props/core:eval_client
+# gazelle:resolve py props.core.agent_helpers //props/core:agent_helpers
+# gazelle:resolve py props.core.loop_utils //props/core:loop_utils
+# gazelle:resolve py props.core.runs_context //props/core:runs_context
+# gazelle:resolve py props.core.agent_pkg_utils //props/core:agent_pkg_utils
+#
+# props/db has per-file targets
+# gazelle:resolve py props.db.config //props/db:config
+# gazelle:resolve py props.db.models //props/db:models
+# gazelle:resolve py props.db.session //props/db:session
+# gazelle:resolve py props.db.examples //props/db:examples
+# gazelle:resolve py props.db.snapshots //props/db:snapshots
+# gazelle:resolve py props.db.snapshot_io //props/db:snapshot_io
+# gazelle:resolve py props.db.agent_definition_ids //props/db:agent_definition_ids
+# gazelle:resolve py props.db.query_builders //props/db:query_builders
+# gazelle:resolve py props.db.setup //props/db:setup
+#
+# props/critic_dev has per-file targets
+# gazelle:resolve py props.critic_dev.optimize.main //props/critic_dev/optimize:main_lib
+# gazelle:resolve py props.critic_dev.optimize.test_e2e //props/critic_dev/optimize:test_e2e_lib
+# gazelle:resolve py props.critic_dev.improve.main //props/critic_dev/improve:main_lib
+# gazelle:resolve py props.critic_dev.shared //props/critic_dev:shared
+#
 # gazelle:resolve py agent_core_testing //agent_core_testing
 # gazelle:resolve py agent_server //agent_server
 # gazelle:resolve py agent_server.server //agent_server/server
@@ -22,6 +57,36 @@
 # gazelle:resolve py net_util //net_util
 # gazelle:resolve py third_party.openai_cookbook //third_party/openai_cookbook
 # gazelle:resolve py claude_hooks //claude/claude_hooks
+# gazelle:resolve py ember //ember
+# gazelle:resolve py bazel_util //:bazel_util
+# gazelle:resolve py headscale_cleanup //headscale_cleanup
+# gazelle:resolve py headscale_cleanup.cli //headscale_cleanup
+# gazelle:resolve py inventree_utils.beautifier.assign_jellybean //inventree_utils:assign_jellybean
+# gazelle:resolve py inventree_utils.beautifier //inventree_utils:beautifier
+# gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
+# gazelle:resolve py ducktape_llm_common //llm/ducktape_llm_common:core
+# gazelle:resolve py ducktape_llm_common.claude_linter //llm/ducktape_llm_common/ducktape_llm_common/claude_linter
+# gazelle:resolve py ducktape_llm_common.claude_linter.cli //llm/ducktape_llm_common/ducktape_llm_common/claude_linter
+# gazelle:resolve py mcp_starter.conftest //mcp_starter:test_mcp_starter
+# gazelle:resolve py adgn_mcp_starter //mcp_starter:adgn_mcp_starter
+# gazelle:resolve py adgn_mcp_starter.server //mcp_starter:adgn_mcp_starter
+# gazelle:resolve py sandboxed_jupyter //sandboxed_jupyter:sandboxed_jupyter
+# gazelle:resolve py sandboxed_jupyter.sandboxer //sandboxed_jupyter:sandboxed_jupyter
+#
+# Bazel-provided libraries (not from PyPI)
+# gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
+# gazelle:resolve py python.runfiles @rules_python//python/runfiles
+#
+# tools namespace resolution
+# gazelle:resolve py tools.claude_hooks //tools/claude_hooks
+# gazelle:resolve py tools.claude_hooks.proxy //tools/claude_hooks:auth_proxy
+# gazelle:resolve py tools.claude_hooks.proxy.auth_forwarding_proxy //tools/claude_hooks:auth_proxy
+# gazelle:resolve py tools.build_info //tools:build_info
+# gazelle:resolve py tools.env_utils //tools:env_utils
+#
+# wt namespace resolution
+# gazelle:resolve py wt //wt
+# gazelle:resolve py wt.cli //wt:cli
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")

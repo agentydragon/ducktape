@@ -67,7 +67,7 @@ py_test(
         "//mcp_infra/testing",
         "//test_util",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
@@ -88,7 +88,7 @@ py_test(
         "//test_util",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
@@ -106,7 +106,7 @@ py_test(
         "//test_util",
         "@pypi//fastmcp",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )

@@ -1,3 +1,4 @@
+# gazelle:ignore
 # Cluster validation scripts
 #
 # These scripts validate cluster configuration via pre-commit hooks.

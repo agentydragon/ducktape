@@ -1,3 +1,7 @@
+# gazelle:python_library_naming_convention $package_name$_lib
+# gazelle:exclude cli.py
+# gazelle:exclude __main__.py
+
 """Critic development CLI and shared types.
 
 Shared infrastructure for prompt optimizer and improvement agents.

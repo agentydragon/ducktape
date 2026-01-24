@@ -84,7 +84,7 @@ _TEST_DEPS = [
     "@pypi//mcp",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
-    "@pypi//pytest_asyncio",
+    "@pypi//pytest_asyncio",  # keep
 ]
 
 py_test(

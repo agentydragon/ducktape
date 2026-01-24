@@ -1,3 +1,6 @@
+# gazelle:ignore
+# Has intra-package imports via imports=[".."] that Gazelle can't validate
+
 """Sandboxed Jupyter execution package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -69,7 +72,7 @@ py_test(
     deps = [
         ":sandboxed_jupyter",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//pyyaml",

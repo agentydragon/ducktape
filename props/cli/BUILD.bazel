@@ -1,3 +1,5 @@
+# Props has complex inter-package dependencies that are manually configured
+
 """CLI module - per-file targets."""
 
 # gazelle:python_library_naming_convention $package_name$_lib

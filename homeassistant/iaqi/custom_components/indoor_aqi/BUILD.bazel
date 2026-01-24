@@ -1,3 +1,6 @@
+# gazelle:ignore
+# Uses @pypi_homeassistant hub, not the main @pypi
+
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 

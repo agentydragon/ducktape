@@ -1,6 +1,8 @@
+# gazelle:ignore
+# InvenTree plugin - requires Django from InvenTree environment (not in @pypi)
+
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-# InvenTree plugin - requires Django from InvenTree environment
 py_library(
     name = "custom_tags",
     srcs = ["custom_tags.py"],

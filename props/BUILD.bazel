@@ -1,3 +1,5 @@
+# gazelle:python_generation_mode file
+# gazelle:python_library_naming_convention $package_name$_lib
 # Props workspace - top-level package
 
 load("@rules_python//python:defs.bzl", "py_library")

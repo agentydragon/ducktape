@@ -1,3 +1,6 @@
+# gazelle:exclude ci
+# CI scripts run via uv, not Bazel; they use relative imports
+
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load(":build_info.bzl", "build_info")
 

@@ -91,7 +91,7 @@ py_library(
         "//props/testing",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//uvicorn",
     ],

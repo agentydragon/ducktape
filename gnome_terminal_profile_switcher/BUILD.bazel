@@ -1,3 +1,4 @@
+# gazelle:ignore
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//tools/lint:linters.bzl", "ruff_test")

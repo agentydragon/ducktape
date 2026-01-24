@@ -1,3 +1,4 @@
+# gazelle:ignore
 load("@rules_python//python:python.bzl", "py_library")
 
 py_library(

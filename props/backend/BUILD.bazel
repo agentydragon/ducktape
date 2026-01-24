@@ -1,3 +1,6 @@
+# gazelle:exclude routes
+# Props has complex inter-package dependencies that are manually configured
+
 """Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")

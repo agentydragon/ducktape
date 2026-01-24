@@ -56,7 +56,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
         "@pypi//uvicorn",
