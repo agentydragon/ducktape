@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from cli_util.logging import LogLevel, configure_logging
+from cli_util.logging import configure_logging
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
 from props.cli.resources import get_database_config
@@ -100,10 +100,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app(*, static_dir: Path | None = None) -> FastAPI:
 =======
 def create_app(*, static_dir: Path | None) -> FastAPI:
-    configure_logging(
-        log_output=os.environ.get("ADGN_LOG_OUTPUT", "stderr"),
-        log_level=os.environ.get("ADGN_LOG_LEVEL", LogLevel.INFO),
-    )
+    configure_logging()
     # Quiet noisy loggers
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)

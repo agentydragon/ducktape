@@ -22,13 +22,21 @@ class LogLevel(StrEnum):
     CRITICAL = "CRITICAL"
 
 
-def configure_logging(log_output: str = "stderr", log_level: str | LogLevel = LogLevel.WARNING) -> None:
+def configure_logging(log_output: str | None = None, log_level: str | LogLevel | None = None) -> None:
     """Single source of truth for logging configuration.
 
     - Routes ALL logs through stdlib logging (structlog uses stdlib LoggerFactory)
     - Configurable output destination and level
     - No prints; no library-specific handlers
+
+    If not specified, reads from ADGN_LOG_OUTPUT and ADGN_LOG_LEVEL environment
+    variables, defaulting to stderr/INFO.
     """
+    if log_output is None:
+        log_output = os.environ.get("ADGN_LOG_OUTPUT", "stderr")
+    if log_level is None:
+        log_level = os.environ.get("ADGN_LOG_LEVEL", LogLevel.INFO)
+
     # Normalize and validate log level
     log_level_upper = log_level.upper() if isinstance(log_level, str) else log_level
     try:
