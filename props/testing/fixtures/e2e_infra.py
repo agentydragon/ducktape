@@ -31,18 +31,17 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
 
 import docker
 import pytest
-from rules_python.python.runfiles import runfiles
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
+
+from test_util.docker import load_bazel_image
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +53,6 @@ class AgentImage:
     repo_name: str
     local_tag: str
     registry_tag: str
-
-
-def _get_runfiles_path(relative_path: str) -> Path:
-    """Get path to a file in Bazel runfiles."""
-    r = runfiles.Create()
-    path = r.Rlocation(f"_main/{relative_path}")
-    if path:
-        return Path(path)
-
-    # Fallback: check bazel-bin for local dev
-    repo_root = Path(__file__).parent.parent.parent.parent
-    return repo_root / "bazel-bin" / relative_path
 
 
 @contextmanager
@@ -91,18 +78,7 @@ def load_and_push_image(
     Cleanup:
         Removes the registry tag after the context exits.
     """
-    script_path = _get_runfiles_path(load_script_path)
-
-    # Run the load script to load image into Docker
-    logger.info(f"Loading {repo_name} image via {script_path}")
-    result = subprocess.run(
-        [script_path],
-        capture_output=True,
-        text=True,
-        env={**os.environ, "DOCKER_CLI_EXPERIMENTAL": "enabled"},
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to load {repo_name} image: {result.stderr}")
+    load_bazel_image(load_script_path, local_tag)
 
     # Get the loaded image
     image = docker_client.images.get(local_tag)

@@ -49,6 +49,8 @@ py_library(
         "//props/testing:fake_openai_server",
         # props.backend for e2e_container (AuthMiddleware, llm routes)
         "//props/backend",
+        # test_util for load_bazel_image
+        "//test_util",
         "@pypi//aiodocker",
         "@pypi//docker",
         "@pypi//fastapi",
@@ -58,6 +60,5 @@ py_library(
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
         "@pypi//uvicorn",
-        "@rules_python//python/runfiles",
     ],
 )

@@ -161,6 +161,7 @@ py_test(
         ":docker",
         "//mcp_infra:test_support",
         "//mcp_infra/testing:docker_fixtures",
+        "//test_util",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

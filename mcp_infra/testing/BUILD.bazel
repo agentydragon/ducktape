@@ -55,6 +55,5 @@ py_library(
         "//mcp_infra/exec:docker",
         "//test_util",
         "@pypi//pytest",
-        "@rules_python//python/runfiles",
     ],
 )
