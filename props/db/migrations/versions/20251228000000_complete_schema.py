@@ -2141,6 +2141,30 @@ Looks up snapshot_slug from agent_run type_config since critique tables do not s
         FOR EACH ROW EXECUTE FUNCTION notify_critique_changed()
     """)
 
+    # Snapshot creation notification (for backend daemon manager to spawn new daemons)
+    op.execute("""
+        CREATE FUNCTION notify_snapshot_created() RETURNS TRIGGER AS $$
+        BEGIN
+            PERFORM pg_notify('snapshot_created', jsonb_build_object(
+                'operation', TG_OP,
+                'snapshot_slug', NEW.slug
+            )::text);
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+    """)
+
+    op.execute("""
+        COMMENT ON FUNCTION notify_snapshot_created() IS
+        'Sends pg_notify when a snapshot is inserted. Used by backend daemon manager to spawn grader daemons for new snapshots.'
+    """)
+
+    op.execute("""
+        CREATE TRIGGER trg_notify_snapshot_created
+        AFTER INSERT ON snapshots
+        FOR EACH ROW EXECUTE FUNCTION notify_snapshot_created()
+    """)
+
     # ============================================================================
     # 10. Credit sum enforcement for grading_edges
     # ============================================================================

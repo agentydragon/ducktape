@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from cli_util.logging import LogLevel, configure_logging
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
 from props.cli.common_options import DEFAULT_LLM_PROXY_URL
@@ -37,39 +37,10 @@ from props.grader.daemon_manager import DaemonManager
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-# --- Logging Configuration ---
-
-
-def configure_logging() -> None:
-    log_level = os.environ.get("PROPS_LOG_LEVEL", "INFO").upper()
-    log_file = os.environ.get("PROPS_LOG_FILE")
-
-    # Create formatter
-    formatter = logging.Formatter(fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-
-    # Root logger
-    root = logging.getLogger()
-    root.setLevel(log_level)
-
-    # Console handler (always)
-    console = logging.StreamHandler(sys.stderr)
-    console.setFormatter(formatter)
-    root.addHandler(console)
-
-    # File handler (if configured)
-    if log_file:
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(formatter)
-        root.addHandler(file_handler)
-
-    # Quiet noisy loggers
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("aiodocker").setLevel(logging.WARNING)
-
-
 # Configure logging on module import
-configure_logging()
+configure_logging(
+    log_output=os.environ.get("PROPS_LOG_OUTPUT", "stderr"), log_level=os.environ.get("PROPS_LOG_LEVEL", LogLevel.INFO)
+)
 logger = logging.getLogger(__name__)
 
 
@@ -86,21 +57,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Registry owns resources and orchestrates agent runs
     app.state.registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)
 
-    # Start grader daemons (required)
+    # Initialize daemon manager if configured
+    # Daemon manager listens for pg_notify on snapshot_created channel and spawns daemons automatically
     grader_model = os.environ.get("PROPS_GRADER_MODEL")
-    if not grader_model:
-        raise RuntimeError("PROPS_GRADER_MODEL environment variable is required")
-    daemon_manager = DaemonManager(registry=app.state.registry, model=grader_model)
-    await daemon_manager.start_all()
-    app.state.daemon_manager = daemon_manager
-    logger.info(f"Grader daemons started (model: {grader_model})")
+    if grader_model:
+        app.state.daemon_manager = DaemonManager(registry=app.state.registry, db_config=db_config, model=grader_model)
+        await app.state.daemon_manager.start()
+        logger.info(f"Daemon manager started (model: {grader_model})")
+    else:
+        app.state.daemon_manager = None
+        logger.info("Daemon manager disabled (PROPS_GRADER_MODEL not set)")
 
     logger.info("Props backend ready")
     yield
 
     # Cleanup
     logger.info("Shutting down props backend...")
-    await daemon_manager.shutdown()
+    if app.state.daemon_manager:
+        await app.state.daemon_manager.shutdown()
     await app.state.registry.close()
     logger.info("Props backend stopped")
 

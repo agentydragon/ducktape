@@ -65,7 +65,7 @@ jobs:
           docker pull postgres:16
           docker pull registry:2
 
-      # Start postgres and registry first (backend needs schema to exist)
+      # Start postgres and registry
       - name: Start postgres and registry
         working-directory: props
         run: |
@@ -76,25 +76,16 @@ jobs:
           until curl -sf http://127.0.0.1:5000/v2/; do sleep 1; done
           echo "PostgreSQL and registry ready"
 
-      # Initialize database schema before starting backend
-      - name: Setup database
+      # Initialize database schema (required before backend starts)
+      - name: Initialize database schema
         env:
           PGHOST: 127.0.0.1
           PGPORT: 5433
           PGUSER: postgres
           PGDATABASE: eval_results
-          ADGN_PROPS_SPECIMENS_ROOT: ${{ github.workspace }}/props/testing/fixtures/testdata/specimens
-        run: bazel run //props/cli:cli -- db recreate -y
+        run: bazel run //props/cli:cli -- db init -y
 
-      # Push agent images before backend starts (daemon manager needs grader image)
-      - name: Push agent images
-        run: |
-          bazel run //props/critic:push
-          bazel run //props/grader:push
-          bazel run //props/critic_dev/improve:push
-          bazel run //props/critic_dev/optimize:push
-
-      # Now start backend (schema exists, grader image available)
+      # Start backend (daemon manager requires schema to exist)
       - name: Start backend
         working-directory: props
         run: |
@@ -111,6 +102,25 @@ jobs:
             sleep 1
           done
           echo "Backend ready"
+
+      # Push agent images via backend registry proxy
+      - name: Push agent images
+        run: |
+          bazel run //props/critic:push
+          bazel run //props/grader:push
+          bazel run //props/grader:daemon_push
+          bazel run //props/critic_dev/improve:push
+          bazel run //props/critic_dev/optimize:push
+
+      # Sync snapshots (triggers pg_notify which starts grader daemons)
+      - name: Sync snapshots
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5433
+          PGUSER: postgres
+          PGDATABASE: eval_results
+          ADGN_PROPS_SPECIMENS_ROOT: ${{ github.workspace }}/props/testing/fixtures/testdata/specimens
+        run: bazel run //props/cli:cli -- db sync
 
       - name: Run E2E tests
         env:

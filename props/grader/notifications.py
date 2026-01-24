@@ -16,8 +16,9 @@ from pydantic import BaseModel, Field
 
 from props.core.ids import SnapshotSlug
 
-# pg_notify channel for grading-related events
+# pg_notify channels
 GRADING_PENDING_CHANNEL = "grading_pending"
+SNAPSHOT_CREATED_CHANNEL = "snapshot_created"
 
 
 class Operation(StrEnum):
@@ -114,4 +115,17 @@ class GradingPendingNotification(BaseModel):
 
     operation: Operation
     item: GradingItem
+    snapshot_slug: SnapshotSlug
+
+
+class SnapshotCreatedNotification(BaseModel):
+    """Notification sent when a snapshot is created in the database.
+
+    Structure: {operation, snapshot_slug}
+
+    Produced by PostgreSQL trigger: notify_snapshot_created() on snapshots INSERT
+    Consumed by: DaemonManager in daemon_manager.py to spawn new grader daemons
+    """
+
+    operation: Operation
     snapshot_slug: SnapshotSlug
