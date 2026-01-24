@@ -191,14 +191,9 @@ def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
     return bool(result.stdout.strip())
 
 
-def workflow_file_changed(name: str, changed_files: list[str]) -> bool:
-    """Check if this workflow's file was changed."""
-    return f".github/workflows/{name}.yml" in changed_files
-
-
 def should_trigger(name: str, config: WorkflowConfig, targets: list[str], changed_files: list[str]) -> bool:
     """Check if a workflow should be triggered."""
-    if workflow_file_changed(name, changed_files):
+    if f".github/workflows/{name}.yml" in changed_files:
         print(f"Workflow file changed -> triggers {name}")
         return True
 

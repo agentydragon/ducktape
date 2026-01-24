@@ -21,23 +21,24 @@ workflows.yaml
 
 ### `workflows.yaml` - Single Source of Truth
 
-Defines all workflows, their triggers, and job configuration:
+Defines all workflows with discriminated union triggers:
 
 ```yaml
-bazel-build:
-  bazel_pattern: "//..." # Trigger on any Bazel target
-  targets: true # Pass affected targets to workflow
-  secrets: [BUILDBUDDY_API_KEY]
+workflows:
+  bazel-build:
+    trigger: { kind: bazel, pattern: "//..." }
+    targets: true
+    secrets: [BUILDBUDDY_API_KEY]
 
-props-e2e-test:
-  bazel_pattern: "//props/..."
-  secrets: [BUILDBUDDY_API_KEY]
+  props-e2e-test:
+    trigger: { kind: bazel, pattern: "//props/..." }
+    secrets: [BUILDBUDDY_API_KEY]
 
-nix-flake-check:
-  path_pattern: "^nix/" # Trigger on path changes
+  nix-flake-check:
+    trigger: { kind: path, pattern: "^nix/" }
 
-pre-commit:
-  always: true # Always run
+  pre-commit:
+    trigger: { kind: always }
 ```
 
 ### `generate_ci.py` - CI YAML Generator
