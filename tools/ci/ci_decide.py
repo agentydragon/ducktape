@@ -153,45 +153,49 @@ def run_bazel_diff(
         head_json = Path(tmpdir) / "head.json"
         targets_file = Path(tmpdir) / "targets.txt"
 
-        # Generate hashes for base commit
-        print(f"Generating hashes for base commit {str(base_commit.id)[:8]}...")
-        checkout_commit(repo, base_commit)
+        try:
+            # Generate hashes for base commit
+            print(f"Generating hashes for base commit {str(base_commit.id)[:8]}...")
+            checkout_commit(repo, base_commit)
+            subprocess.run(
+                ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", base_json],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
-        result = subprocess.run(
-            ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", base_json],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print("Base hash generation failed")
+            # Generate hashes for head commit
+            print(f"Generating hashes for head commit {str(head_commit.id)[:8]}...")
             checkout_commit(repo, head_commit)
-            return None
+            subprocess.run(
+                ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", head_json],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
-        # Generate hashes for head commit
-        print(f"Generating hashes for head commit {str(head_commit.id)[:8]}...")
-        checkout_commit(repo, head_commit)
-
-        result = subprocess.run(
-            ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", head_json],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print("Head hash generation failed")
-            return None
-
-        # Compute impacted targets
-        print("Computing impacted targets...")
-        result = subprocess.run(
-            ["java", "-jar", jar_path, "get-impacted-targets", "-sh", base_json, "-fh", head_json, "-o", targets_file],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print("Target diff failed")
+            # Compute impacted targets
+            print("Computing impacted targets...")
+            subprocess.run(
+                [
+                    "java",
+                    "-jar",
+                    jar_path,
+                    "get-impacted-targets",
+                    "-sh",
+                    base_json,
+                    "-fh",
+                    head_json,
+                    "-o",
+                    targets_file,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"bazel-diff failed: {e.stderr or e.stdout or e}")
+            checkout_commit(repo, head_commit)
             return None
 
         if not targets_file.exists() or targets_file.stat().st_size == 0:
