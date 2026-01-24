@@ -65,7 +65,8 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: false
-          docker-images: true
+          # Keep docker-images: testcontainers needs to pull images for tests
+          docker-images: false
           swap-storage: true
 
       - uses: ./.github/actions/setup-bazel
