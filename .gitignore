@@ -93,3 +93,4 @@ worktrees
 
 # Python build artifacts
 **/dist/
+uv.lock
