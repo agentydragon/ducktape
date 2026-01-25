@@ -27,7 +27,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//cli_util",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "//mcp_infra:prefix",
         "//mcp_utils",
         "//openai_utils:model",
@@ -71,7 +72,8 @@ py_binary(
     main = "cli.py",
     visibility = ["//props/frontend:__pkg__"],
     deps = [
-        "//cli_util",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "//props/cli:common_options",
         "@pypi//typer_slim",
         "@pypi//uvicorn",
@@ -143,7 +145,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":backend",
-        "//cli_util",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "//props/cli:resources",
         "//props/orchestration:agent_registry",
         "//props/orchestration:grader_supervisor",

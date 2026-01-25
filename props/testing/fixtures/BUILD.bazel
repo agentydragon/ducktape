@@ -45,7 +45,7 @@ py_library(
         # props.core/critic_dev modules (optimizer and improvement agents)
         "//props/critic_dev:shared",
         "//props/critic_dev/improve:improve_agent",
-        "//props/critic_dev/improve:main_lib",
+        "//props/critic_dev/improve:main",
         # props.testing for fake_openai_server
         "//props/testing:fake_openai_server",
         # props.backend for e2e_container (AuthMiddleware, llm routes)
@@ -94,7 +94,7 @@ py_library(
         "//agent_core_testing",
         "//openai_utils:model",
         "//props/core:ids",
-        "//props/critic_dev/improve:main_lib",
+        "//props/critic_dev/improve:main",
         "@pypi//pytest",
     ],
 )

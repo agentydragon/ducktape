@@ -1,9 +1,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-# NOTE: No aggregator target - use specific per-file targets
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 # Load python_slim base image into local Docker daemon for tests
 # Tests that need this should add data = ["//mcp_infra/testing:python_slim_load"]
 oci_load(

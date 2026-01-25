@@ -174,6 +174,52 @@ bazel build //adgn:adgn
 2. Run `bazel run //:requirements.update` to regenerate lockfile
 3. Use `@pypi//package_name` in BUILD.bazel deps
 
+### Python BUILD.bazel Patterns (Gazelle-compatible)
+
+This repository uses **Gazelle-compatible patterns** for Python BUILD files. This enables automatic BUILD file generation and maintenance via `bazel run //:gazelle`.
+
+**Key pattern: One `py_library` per `.py` file (no aggregators)**
+
+```python
+# CORRECT - per-file targets
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = ["//other_pkg:specific_target"],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [":client"],
+)
+
+# WRONG - aggregator bundling multiple files
+py_library(
+    name = "my_package",  # Don't do this
+    srcs = ["client.py", "server.py"],
+    deps = [...],
+)
+```
+
+**Rules:**
+
+1. **No aggregator targets** - Each `.py` file gets its own `py_library` with `name` matching the file stem
+2. **Reference specific targets** - Use `//pkg:module` not `//pkg` (e.g., `//openai_utils:model` not `//openai_utils`)
+3. **Use `imports = [".."]`** - Bazel auto-generates `__init__.py` stubs; don't create real `__init__.py` files
+4. **Add NOTE comment** when removing aggregators:
+   ```python
+   # NOTE: No aggregator target - use specific per-file targets like :client, :server
+   # This is the Gazelle-compatible pattern (python_generation_mode = file)
+   ```
+
+**Running Gazelle:**
+
+```bash
+bazel run //:gazelle              # Update BUILD files
+bazel run //:gazelle -- --mode=diff  # Preview changes
+```
+
 ### Rust (Finance tools)
 
 ```bash

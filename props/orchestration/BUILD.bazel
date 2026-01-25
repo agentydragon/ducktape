@@ -49,7 +49,7 @@ py_library(
         "//props/core:splits",
         "//props/core/models:examples",
         "//props/critic_dev:shared",
-        "//props/critic_dev/improve:main_lib",
+        "//props/critic_dev/improve:main",
         "//props/db:config",
         "//props/db:models",
         "//props/db:session",

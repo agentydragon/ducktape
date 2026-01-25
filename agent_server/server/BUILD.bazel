@@ -2,9 +2,6 @@
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-# NOTE: No aggregator targets - use specific per-file targets
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 py_test(
     name = "test_end_turn_ui_integration",
     srcs = ["test_end_turn_ui_integration.py"],
@@ -132,7 +129,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":state",
         "//agent_core:events",
         "//agent_server/models:policy_error",
         "//agent_server/models:proposal_status",
@@ -168,7 +164,7 @@ py_library(
     deps = [
         ":bus",
         ":protocol",
-        "//agent_server/models",
+        "//agent_server/models:proposal_status",
         "@pypi//mcp",
         "@pypi//pydantic",
     ],

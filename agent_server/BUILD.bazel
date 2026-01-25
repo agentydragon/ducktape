@@ -15,7 +15,7 @@ py_library(
     imports = [".."],
     visibility = ["//agent_server:__subpackages__"],
     deps = [
-        "//agent_server/server",
+        "//agent_server/server:state",
         "@pypi//pyhamcrest",
     ],
 )
@@ -69,27 +69,6 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
-py_library(
-    name = "root_modules",
-    srcs = [
-        "approvals.py",
-        "logging_config.py",
-        "presets.py",
-    ],
-    imports = [".."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        ":agent_types",
-        "//agent_core:agent",
-        "//agent_server/persist",
-        "@pypi//fastmcp",
-        "@pypi//platformdirs",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
-)
-
 # --- Binaries ---
 # Each binary depends only on what it actually uses
 
@@ -101,7 +80,8 @@ py_binary(
     deps = [
         "//agent_server/mcp_bridge:auth",
         "//agent_server/server:app",
-        "//cli_util",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "//mcp_infra:prefix",
         "//net_util",
         "@pypi//typer_slim",
@@ -114,13 +94,13 @@ py_binary(
     srcs = ["matrix_bot.py"],
     main = "matrix_bot.py",
     deps = [
-        ":root_modules",
+        ":logging_config",
         "//agent_core:agent",
         "//agent_core:mcp_provider",
-        "//agent_server/server:handlers",
-        "//agent_server/server:types",
-        "//mcp_infra/compositor",
-        "//mcp_infra/display",
+        "//agent_server/server:bus",
+        "//agent_server/server:mode_handler",
+        "//mcp_infra/compositor:server",
+        "//mcp_infra/display:event_renderer",
         "//mcp_infra/enhanced:simple",
         "//mcp_infra/exec:docker",
         "//mcp_infra/exec:models",
@@ -137,10 +117,10 @@ py_binary(
     srcs = ["scripts/generate_frontend_code.py"],
     main = "scripts/generate_frontend_code.py",
     deps = [
-        ":root_modules",
-        "//agent_server/mcp_bridge",
-        "//agent_server/persist",
-        "//agent_server/server:types",
+        ":approvals",
+        "//agent_server/mcp_bridge:agents",
+        "//agent_server/persist:types",
+        "//agent_server/server:protocol",
         "@pypi//pydantic",
     ],
 )
@@ -318,7 +298,7 @@ py_test(
         ":conftest",
         "//agent_core:agent",
         "//agent_server/notifications",
-        "//agent_server/testing",
+        "//agent_server/testing:helpers",
         "//openai_utils:model",
         "@pypi//pytest_bazel",
     ],
@@ -344,7 +324,9 @@ ruff_test(
     name = "ruff",
     srcs = [
         ":agent_types",
-        ":root_modules",
+        ":approvals",
+        ":logging_config",
+        ":presets",
         ":ui_asserts",
     ],
 )

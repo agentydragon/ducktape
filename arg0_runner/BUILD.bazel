@@ -20,7 +20,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":unified_patch",
-        "//third_party/openai_cookbook:apply_patch_lib",
+        "//third_party/openai_cookbook:apply_patch",
         "@pypi//unidiff",
     ],
 )

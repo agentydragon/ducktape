@@ -5,12 +5,16 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 package(default_testonly = True)
 
-# NOTE: No aggregator target - use specific per-file targets
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 ruff_test(
     name = "ruff",
-    srcs = glob(["*.py"]),
+    srcs = [
+        ":approval_policy_testdata",
+        ":chat_stubs",
+        ":fixtures",
+        ":helpers",
+        ":steps",
+        ":typed_asserts",
+    ],
 )
 
 py_library(

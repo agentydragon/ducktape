@@ -23,7 +23,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//mcp_infra:prefix",
-        "//mcp_infra/seatbelt",
+        "//mcp_infra/seatbelt:compile",
+        "//mcp_infra/seatbelt:model",
         "//net_util",
         "@pypi//ipykernel",
         "@pypi//jupyter_mcp_server",

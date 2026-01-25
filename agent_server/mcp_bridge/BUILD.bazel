@@ -2,32 +2,6 @@
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-py_library(
-    name = "mcp_bridge",
-    srcs = [
-        "agents.py",
-        "auth.py",
-        "compositor_factory.py",
-        "registry.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        "//agent_server/persist",
-        "//agent_server/runtime",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
-        "//mcp_infra/enhanced:simple",
-        "//openai_utils:model",
-        "@pypi//aiodocker",
-        "@pypi//fastapi",
-        "@pypi//fastmcp",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
-)
-
 py_test(
     name = "test_agents_server",
     srcs = ["test_agents_server.py"],

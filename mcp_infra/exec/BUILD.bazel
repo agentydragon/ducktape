@@ -98,7 +98,8 @@ py_library(
     deps = [
         ":models",
         ":read_image",
-        "//cli_util",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:simple",
         "@pypi//aiodocker",

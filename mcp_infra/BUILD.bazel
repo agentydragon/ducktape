@@ -1,20 +1,15 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-# NOTE: No aggregator target - use specific per-file targets like :flat_tool, :prefix, etc.
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 # Shared test utilities (non-Docker)
 py_library(
     name = "test_support",
     testonly = True,
-    srcs = [
-        "_markers.py",
-        "conftest.py",
-    ],
     imports = [".."],
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
+        ":_markers",
+        ":conftest",
         "//agent_core_testing",
         "//mcp_infra/exec:docker",
         "//mcp_infra/testing:fixtures",

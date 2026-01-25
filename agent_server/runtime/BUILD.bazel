@@ -18,44 +18,6 @@ py_library(
     deps = ["@pypi//fastmcp"],
 )
 
-# Full runtime package - depends on many agent_server subpackages
-py_library(
-    name = "runtime",
-    srcs = [
-        "container.py",
-        "handlers.py",
-        "registry.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        ":auto_attach",
-        ":images",
-        "//agent_core:agent",
-        "//agent_core:mcp_provider",
-        "//agent_server/mcp/approval_policy",
-        "//agent_server/mcp/chat",
-        "//agent_server/mcp/loop",
-        "//agent_server/mcp/runtime:mcp_runtime",
-        "//agent_server/mcp/ui",
-        "//agent_server/notifications",
-        "//agent_server/persist",
-        "//agent_server/policies",
-        "//agent_server/server:handlers",
-        "//agent_server/server:runtime_types",
-        "//agent_server/server:types",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
-        "//mcp_infra/display",
-        "//mcp_infra/enhanced:simple",
-        "//mcp_infra/exec:docker",
-        "//openai_utils:model",
-        "@pypi//aiodocker",
-        "@pypi//fastmcp",
-        "@pypi//pydantic",
-    ],
-)
-
 py_library(
     name = "container",
     srcs = ["container.py"],
@@ -76,7 +38,7 @@ py_library(
         "//agent_server/persist:sqlite",
         "//agent_server/persist:types",
         "//agent_server/server:bus",
-        "//agent_server/server:runtime_types",
+        "//agent_server/server:runtime",
         "//agent_server/server:system_message",
         "//mcp_infra:prefix",
         "//mcp_infra/exec:docker",
@@ -99,7 +61,7 @@ py_library(
         "//agent_server/persist:types",
         "//agent_server/server:bus",
         "//agent_server/server:mode_handler",
-        "//agent_server/server:runtime_types",
+        "//agent_server/server:runtime",
     ],
 )
 

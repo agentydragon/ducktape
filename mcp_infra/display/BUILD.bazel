@@ -1,53 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "display",
-    srcs = [
-        "event_renderer.py",
-        "json_utils.py",
-        "result_utils.py",
-        "rich_display.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//agent_core:agent",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
-        "//mcp_infra/exec:models",
-        "//openai_utils:model",
-        "@pypi//compact_json",
-        "@pypi//fastmcp",  # event_renderer.py, rich_display.py
-        "@pypi//mcp",
-        "@pypi//pydantic",
-        "@pypi//rich",
-    ],
-)
-
-py_test(
-    name = "test_display",
-    srcs = [
-        "test_compact_display.py",
-        "test_max_height.py",
-    ],
-    data = [
-        "__snapshots__/test_compact_display.ambr",
-        "__snapshots__/test_max_height.ambr",
-    ],
-    main = "test_compact_display.py",
-    deps = [
-        ":display",
-        "//mcp_infra:test_support",
-        "@pypi//docker",
-        "@pypi//mcp",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//rich",
-        "@pypi//syrupy",
-    ],
-)
-
-py_library(
     name = "event_renderer",
     srcs = ["event_renderer.py"],
     visibility = ["//:__subpackages__"],

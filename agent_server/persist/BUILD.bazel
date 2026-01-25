@@ -3,29 +3,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
-    name = "persist",
-    srcs = [
-        "events.py",
-        "handler.py",
-        "sqlite.py",
-        "types.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        "//agent_core:agent",
-        "//agent_server:agent_types",
-        "//agent_server/models",
-        "//agent_server/runtime:auto_attach",
-        "//openai_utils:model",
-        "@pypi//aiosqlite",
-        "@pypi//fastmcp",
-        "@pypi//pydantic",
-        "@pypi//pydantic_core",
-    ],
-)
-
-py_library(
     name = "events",
     srcs = ["events.py"],
     visibility = ["//:__subpackages__"],

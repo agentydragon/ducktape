@@ -15,7 +15,8 @@ py_library(
     deps = [
         "//agent_pkg/runtime:mcp",
         "//agent_pkg/runtime:output",
-        "//cli_util",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "@pypi//typer",
     ],
 )
@@ -29,7 +30,8 @@ py_binary(
     deps = [
         "//agent_pkg/runtime:mcp",
         "//agent_pkg/runtime:output",
-        "//cli_util",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "@pypi//typer_slim",
     ],
 )

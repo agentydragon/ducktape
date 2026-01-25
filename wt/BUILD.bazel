@@ -7,7 +7,8 @@ py_library(
     imports = [".."],
     visibility = ["//wt:__subpackages__"],
     deps = [
-        "//cli_util",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "@pypi//click",
         "@pypi//colorama",
         "@pypi//typer_slim",

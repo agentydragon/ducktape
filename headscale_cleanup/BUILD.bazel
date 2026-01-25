@@ -1,18 +1,25 @@
+# gazelle:ignore
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
-    name = "headscale_cleanup",
-    srcs = [
-        "__main__.py",
-        "cli.py",
-    ],
+    name = "__main__",
+    srcs = ["__main__.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [":cli"],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//cli_util",
-        "@pypi//typer",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -21,15 +28,19 @@ py_binary(
     srcs = ["cli.py"],
     main = "cli.py",
     deps = [
-        ":headscale_cleanup",
-        "@pypi//typer",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "@pypi//typer_slim",
     ],
 )
 
 py_package(
     name = "headscale_cleanup_pkg",
     packages = ["headscale_cleanup"],
-    deps = [":headscale_cleanup"],
+    deps = [
+        ":__main__",
+        ":cli",
+    ],
 )
 
 py_wheel(
@@ -51,16 +62,9 @@ py_wheel(
 
 ruff_test(
     name = "ruff",
-    srcs = [":headscale_cleanup"],
-)
-
-py_library(
-    name = "cli",
-    srcs = ["cli.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//cli_util",
-        "@pypi//typer_slim",
+    srcs = [
+        ":__main__",
+        ":cli",
     ],
 )
 
@@ -69,5 +73,5 @@ py_binary(
     srcs = ["__main__.py"],
     main = "__main__.py",
     visibility = ["//:__subpackages__"],
-    deps = [":headscale_cleanup"],
+    deps = [":cli"],
 )

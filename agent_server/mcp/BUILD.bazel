@@ -1,23 +1,6 @@
-"""MCP servers aggregate and root-level tests."""
+"""MCP servers - root-level tests."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-
-# Aggregate target for all MCP servers
-py_library(
-    name = "mcp",
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//agent_server/mcp/approval_policy",
-        "//agent_server/mcp/chat",
-        "//agent_server/mcp/loop",
-        "//agent_server/mcp/matrix",
-        "//agent_server/mcp/runtime:mcp_runtime",
-        "//agent_server/mcp/ui",
-    ],
-)
-
-# Root-level mcp tests
+load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
     name = "test_chat_notifications",
@@ -38,7 +21,7 @@ py_test(
     imports = ["../.."],
     deps = [
         "//agent_server/mcp/chat",
-        "//agent_server/testing",
+        "//agent_server/testing:chat_stubs",
         "//mcp_infra:prefix",
         "//mcp_utils",
         "@pypi//fastmcp",
@@ -116,7 +99,8 @@ py_test(
     deps = [
         "//agent_core:agent",
         "//agent_server/mcp/ui",
-        "//agent_server/server",
+        "//agent_server/server:bus",
+        "//agent_server/server:mode_handler",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

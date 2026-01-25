@@ -1,8 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
-# NOTE: No aggregator target - use specific per-file targets
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 py_library(
     name = "resources_stub",
     srcs = ["resources_stub.py"],

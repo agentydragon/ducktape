@@ -102,8 +102,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//agent_server:agent_types",
-        "//agent_server/server",
-        "//agent_server/testing",
+        "//agent_server/server:app",
+        "//agent_server/testing:helpers",
         "@pypi//playwright",
         "@pypi//pytest",
     ],

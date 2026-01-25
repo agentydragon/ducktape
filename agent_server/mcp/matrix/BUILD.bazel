@@ -3,29 +3,11 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
-    name = "matrix",
-    srcs = [
-        "control.py",
-        "server.py",
-    ],
-    imports = ["../../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        "//agent_server/server:types",
-        "//mcp_infra/enhanced:simple",
-        "//openai_utils:model",
-        "@pypi//fastmcp",
-        "@pypi//mautrix",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "control",
     srcs = ["control.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_server/server",
+        "//agent_server/server:bus",
     ],
 )
 
@@ -34,7 +16,7 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_server/server",
+        "//agent_server/server:bus",
         "//mcp_infra:prefix",
         "//openai_utils:model",
         "@pypi//aiohttp",

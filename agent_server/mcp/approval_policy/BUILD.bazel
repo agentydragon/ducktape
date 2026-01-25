@@ -2,36 +2,6 @@
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-py_library(
-    name = "approval_policy",
-    srcs = [
-        "clients.py",
-        "engine.py",
-    ],
-    data = ["instructions.j2.md"],
-    imports = ["../../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        "//agent_core:agent",
-        "//agent_server:root_modules",
-        "//agent_server/models",
-        "//agent_server/persist",
-        "//agent_server/policies",
-        "//agent_server/policy_eval",
-        "//mcp_infra:prefix",
-        "//mcp_infra/enhanced:simple",
-        "//mcp_infra/exec:docker",
-        "//mcp_infra/stubs",
-        "//openai_utils:model",
-        "@pypi//aiodocker",
-        "@pypi//fastmcp",
-        "@pypi//jinja2",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-        "@pypi//pydantic_core",
-    ],
-)
-
 py_test(
     name = "test_policy_validation",
     srcs = ["test_policy_validation.py"],
@@ -128,6 +98,7 @@ py_library(
 py_library(
     name = "engine",
     srcs = ["engine.py"],
+    data = ["instructions.j2.md"],
     visibility = ["//:__subpackages__"],
     deps = [
         "//agent_core:agent",
