@@ -334,7 +334,13 @@ class ForwardingTLSProxy:
         assert upstream is not None
 
         logger.debug(
-            "Connecting to %s:%d via upstream proxy %s:%d", target_host, target_port, upstream.host, upstream.port
+            "Connecting to %s:%d via upstream proxy %s:%d (auth: %s, ca: %s)",
+            target_host,
+            target_port,
+            upstream.host,
+            upstream.port,
+            "yes" if upstream.username else "no",
+            upstream.ca_bundle,
         )
 
         # Connect to upstream proxy
