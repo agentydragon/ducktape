@@ -1,19 +1,6 @@
 roles:
-  - src: geerlingguy.docker
-  - src: systemli.letsencrypt
   - src: nbigot.ansible-fail2ban # Fail2Ban
-  - src: rolehippie.syncthing
-
-  # My fork - makes GNOME Shell not always restart (since unneeded). TODO: merge upstream
-  # - src: petermosmans.customize-gnome
-  - name: petermosmans.customize-gnome
-    src: https://github.com/agentydragon/ansible-role-customize-gnome.git
-    scm: git
-    version: agentydragon/updates
 
 collections:
-  - community.docker
-  - community.general # cargo
-  - community.crypto # ACME / TLS certificates
-  - ansible.netcommon
-  - ansible.posix
+  - community.general # dconf module
+  - ansible.posix # mount module
