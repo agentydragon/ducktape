@@ -36,10 +36,14 @@ py_test(
     imports = [".."],
     tags = ["no-mypy"],  # see comment on inop library
     deps = [
+        ":__init__",
         ":config",
+        ":conftest",
         "//inop/runners:base",
+        "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//openai_utils:model",
+        "//openai_utils:types",
         "@pypi//aiodocker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -63,7 +67,7 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils:model",
+        "//openai_utils:types",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -75,7 +79,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":config",
+        "//openai_utils:client_factory",
         "//openai_utils:model",
+        "//openai_utils:types",
     ],
 )
 
@@ -84,6 +90,7 @@ py_library(
     srcs = ["plots.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "@pypi//matplotlib",
         "@pypi//pandas",
         "@pypi//plotnine",
@@ -97,7 +104,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["//agent_core_testing"],
+    deps = ["//agent_core_testing:__init__"],
 )
 
 py_test(
@@ -105,6 +112,7 @@ py_test(
     srcs = ["test_config.py"],
     deps = [
         ":config",
+        ":conftest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -114,6 +122,7 @@ py_test(
     name = "test_exclusion_patterns",
     srcs = ["test_exclusion_patterns.py"],
     deps = [
+        ":conftest",
         "@pypi//pathspec",
         "@pypi//pytest_bazel",
     ],
@@ -123,6 +132,8 @@ py_test(
     name = "test_file_truncation",
     srcs = ["test_file_truncation.py"],
     deps = [
+        ":__init__",
+        ":conftest",
         "@pypi//pytest_bazel",
         "@pypi//tiktoken",
     ],
@@ -132,6 +143,6 @@ py_test(
     name = "test_types",
     srcs = ["test_types.py"],
     deps = [
-        "@pypi//pytest_bazel",
+        ":conftest",
     ],
 )

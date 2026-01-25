@@ -21,7 +21,6 @@ py_test(
         ":conftest",
         "//mcp_starter/adgn_mcp_starter:server",
         "@pypi//fastmcp",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
@@ -34,7 +33,6 @@ py_test(
     tags = ["manual"],
     deps = [
         ":conftest",
-        "//mcp_starter/adgn_mcp_starter:server",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pytest",

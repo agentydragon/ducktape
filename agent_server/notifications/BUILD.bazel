@@ -8,7 +8,9 @@ py_library(
     imports = ["../.."],
     visibility = ["//agent_server:__subpackages__"],
     deps = [
-        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/notifications:types",
         "//openai_utils:model",
     ],
 )

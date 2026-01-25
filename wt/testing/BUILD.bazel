@@ -1,39 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
-    name = "testing",
-    testonly = True,
-    srcs = [
-        "asserts.py",
-        "config_factory.py",
-        "conftest.py",
-        "constants.py",
-        "data.py",
-        "git_helpers.py",
-        "helpers.py",
-        "mock_factory.py",
-        "repo_factory.py",
-        "utils.py",
-    ],
-    data = ["//wt:wt-cli"],
-    imports = ["../.."],
-    visibility = ["//wt:__subpackages__"],
-    deps = [
-        "//wt",
-        "@pypi//pygit2",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_mock",
-        "@pypi//pyyaml",
-        "@pypi//tenacity",
-        "@pypi//typer",
-        "@pypi//types_pyyaml",
-        "@rules_python//python/runfiles",
-    ],
-)
-
-py_library(
     name = "asserts",
     srcs = ["asserts.py"],
     visibility = ["//:__subpackages__"],
@@ -45,7 +12,9 @@ py_library(
     srcs = ["config_factory.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//wt",
+        ":data",
+        "//wt/shared:config_file",
+        "//wt/shared:configuration",
         "@pypi//pyyaml",
     ],
 )
@@ -68,7 +37,7 @@ py_library(
     srcs = ["git_helpers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//wt",
+        ":data",
         "@pypi//pygit2",
     ],
 )
@@ -84,7 +53,13 @@ py_library(
     srcs = ["mock_factory.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//wt",
+        ":data",
+        "//wt/client:view_formatter",
+        "//wt/client:wt_client",
+        "//wt/server:git_manager",
+        "//wt/server:github_client",
+        "//wt/server:worktree_service",
+        "//wt/shared:protocol",
     ],
 )
 
@@ -93,7 +68,7 @@ py_library(
     srcs = ["repo_factory.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//wt",
+        ":data",
         "@pypi//pygit2",
     ],
 )
@@ -114,7 +89,18 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//wt",
+        ":config_factory",
+        ":data",
+        ":mock_factory",
+        ":repo_factory",
+        ":utils",
+        "//wt/server:git_manager",
+        "//wt/server:github_client",
+        "//wt/server:worktree_service",
+        "//wt/shared:config_file",
+        "//wt/shared:configuration",
+        "//wt/shared:fixtures",
+        "//wt/shared:protocol",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pyyaml",

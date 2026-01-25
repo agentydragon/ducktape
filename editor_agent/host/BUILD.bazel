@@ -50,10 +50,11 @@ py_binary(
     main = "cli.py",
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "//agent_pkg/host:builder",
         "//cli_util:decorators",
         "//cli_util:logging",
-        "//openai_utils:model",
+        "//openai_utils:client_factory",
         "@pypi//aiodocker",
         "@pypi//typer_slim",
     ],
@@ -66,6 +67,7 @@ py_test(
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
+        ":__init__",
         ":conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -80,8 +82,9 @@ py_test(
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
+        ":__init__",
         ":conftest",
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -94,6 +97,7 @@ py_test(
     srcs = ["test_submit_server.py"],
     imports = ["../.."],
     deps = [
+        ":__init__",
         ":conftest",
         "@pypi//fastmcp",
         "@pypi//pytest",
@@ -118,9 +122,14 @@ py_library(
     srcs = ["agent_runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
         "//agent_core:mcp_provider",
+        "//agent_core:turn_limit",
         "//agent_pkg/host:init_runner",
+        "//mcp_infra/display:rich_display",
         "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
@@ -132,9 +141,13 @@ py_library(
     srcs = ["runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra:prefix",
+        ":__init__",
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/compositor:server",
         "//mcp_infra/exec:docker",
-        "//net_util",
+        "//net_util:__init__",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
     ],
@@ -145,8 +158,10 @@ py_library(
     srcs = ["submit_server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra:prefix",
-        "//openai_utils:model",
+        "//editor_agent/runtime:__init__",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
     ],
 )
@@ -157,6 +172,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//mcp_infra/testing:fixtures",
         "//test_util",
         "@pypi//pytest",
     ],

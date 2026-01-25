@@ -82,7 +82,7 @@ py_library(
     deps = [
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:flat_mixin",
-        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//pydantic",
     ],
 )

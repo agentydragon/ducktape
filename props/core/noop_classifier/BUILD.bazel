@@ -11,7 +11,7 @@ py_library(
     srcs = ["models.py"],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
-    deps = ["//openai_utils:model"],
+    deps = ["//openai_utils:pydantic_strict_mode"],
 )
 
 py_library(
@@ -23,8 +23,14 @@ py_library(
     deps = [
         ":models",
         "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
         "//agent_core:mcp_provider",
+        "//mcp_infra:flat_tool",
         "//mcp_infra:prefix",
+        "//mcp_infra/compositor:server",
+        "//mcp_infra/display:rich_display",
+        "//mcp_infra/enhanced:server",
         "//openai_utils:model",
         "@pypi//fastmcp",
     ],

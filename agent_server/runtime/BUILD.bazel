@@ -25,6 +25,7 @@ py_library(
     deps = [
         ":images",
         "//agent_core:agent",
+        "//agent_core:loop_control",
         "//agent_core:mcp_provider",
         "//agent_server:agent_types",
         "//agent_server:approvals",
@@ -40,8 +41,15 @@ py_library(
         "//agent_server/server:bus",
         "//agent_server/server:runtime",
         "//agent_server/server:system_message",
+        "//mcp_infra:mounted",
         "//mcp_infra:prefix",
+        "//mcp_infra:snapshots",
+        "//mcp_infra/compositor:clients",
+        "//mcp_infra/compositor:notifications_buffer",
+        "//mcp_infra/compositor:server",
+        "//mcp_infra/enhanced:server",
         "//mcp_infra/exec:docker",
+        "//openai_utils:client_factory",
         "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
@@ -54,7 +62,7 @@ py_library(
     srcs = ["handlers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core:agent",
+        "//agent_core:handler",
         "//agent_server:agent_types",
         "//agent_server/notifications",
         "//agent_server/persist:handler",
@@ -62,6 +70,9 @@ py_library(
         "//agent_server/server:bus",
         "//agent_server/server:mode_handler",
         "//agent_server/server:runtime",
+        "//mcp_infra/compositor:server",
+        "//mcp_infra/display:event_renderer",
+        "//mcp_infra/notifications:types",
     ],
 )
 

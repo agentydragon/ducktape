@@ -21,6 +21,10 @@
 # gazelle:resolve py adgn_mcp_starter.server //mcp_starter/adgn_mcp_starter:server
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
 #
+# Packages with both py_library and py_binary for the same source (disambiguate for Gazelle)
+# gazelle:resolve py props.critic_dev.improve.main //props/critic_dev/improve:main
+# gazelle:resolve py props.critic_dev.optimize.main //props/critic_dev/optimize:main
+#
 # Root-level targets
 # gazelle:resolve py bazel_util //:bazel_util
 

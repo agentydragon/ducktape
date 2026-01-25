@@ -91,7 +91,7 @@ py_library(
     srcs = ["e2e.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
         "//openai_utils:model",
         "//props/core:ids",
         "//props/critic_dev/improve:main",
@@ -106,6 +106,7 @@ py_library(
     deps = [
         "//openai_utils:model",
         "//props/backend",
+        "//props/backend:__init__",
         "//props/db:config",
         "//props/orchestration:agent_registry",
         "//props/testing:fake_openai_server",

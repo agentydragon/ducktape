@@ -72,7 +72,7 @@ py_binary(
     main = "cli.py",
     visibility = ["//props/frontend:__pkg__"],
     deps = [
-        "//cli_util:decorators",
+        ":__init__",
         "//cli_util:logging",
         "//props/cli:common_options",
         "@pypi//typer_slim",
@@ -85,7 +85,7 @@ py_binary(
     srcs = ["export_schema.py"],
     main = "export_schema.py",
     visibility = ["//:__subpackages__"],
-    deps = [":app"],
+    deps = [":__init__"],
 )
 
 genrule(
@@ -144,8 +144,8 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         ":backend",
-        "//cli_util:decorators",
         "//cli_util:logging",
         "//props/cli:resources",
         "//props/orchestration:agent_registry",

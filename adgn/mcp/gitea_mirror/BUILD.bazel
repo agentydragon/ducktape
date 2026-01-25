@@ -26,7 +26,8 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra:prefix",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra/enhanced:server",
         "@pypi//pydantic",
         "@pypi//requests",
     ],
@@ -38,6 +39,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
     ],
 )

@@ -1,68 +1,24 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "server",
-    srcs = [
-        "copy_strategies.py",
-        "git_manager.py",
-        "git_refs_watcher.py",
-        "github_client.py",
-        "github_watcher.py",
-        "gitstatus_refresh.py",
-        "gitstatusd_listener.py",
-        "handlers/path_handler.py",
-        "handlers/pr_handler.py",
-        "handlers/status_handler.py",
-        "handlers/worktree_handler.py",
-        "repo_status.py",
-        "rpc.py",
-        "services.py",
-        "stores.py",
-        "types.py",
-        "watcher.py",
-        "worktree_ids.py",
-        "worktree_index.py",
-        "worktree_registry.py",
-        "worktree_service.py",
-        "wt_server.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//wt:__subpackages__"],
-    deps = [
-        "//wt/shared",
-        "@pypi//psutil",
-        "@pypi//punq",
-        "@pypi//pydantic",
-        "@pypi//pygit2",
-        "@pypi//pygithub",
-        "@pypi//reaktiv",
-        "@pypi//watchdog",
-    ],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
     imports = ["../.."],
     visibility = ["//wt:__subpackages__"],
     deps = [
-        "//wt",
+        "//wt/testing:conftest",
         "@pypi//pytest",
     ],
 )
 
 py_test(
-    name = "test_server",
-    srcs = [
-        "conftest.py",
-        "handlers/test_status_handler.py",
-        "test_worktree_service.py",
-    ],
-    main = "test_worktree_service.py",
+    name = "test_status_handler",
+    srcs = ["handlers/test_status_handler.py"],
     deps = [
         ":conftest",
-        "@pypi//pygit2",
+        ":rpc",
+        "//wt/shared:protocol",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -118,7 +74,7 @@ py_library(
     srcs = ["gitstatusd_listener.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//wt",
+        "//wt/shared:protocol",
         "@pypi//reaktiv",
     ],
 )
@@ -151,7 +107,7 @@ py_library(
     srcs = ["stores.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//wt",
+        "//wt/shared:protocol",
         "@pypi//reaktiv",
     ],
 )
@@ -167,7 +123,7 @@ py_library(
     srcs = ["watcher.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//wt",
+        ":stores",
         "@pypi//watchdog",
     ],
 )
@@ -210,7 +166,8 @@ py_test(
     name = "test_worktree_service",
     srcs = ["test_worktree_service.py"],
     deps = [
-        "//wt",
+        ":conftest",
+        ":worktree_service",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

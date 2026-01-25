@@ -24,6 +24,7 @@ py_test(
     srcs = ["test_types.py"],
     imports = [".."],
     deps = [
+        ":conftest",
         ":prefix",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -200,7 +201,8 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
+        "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
     ],
 )

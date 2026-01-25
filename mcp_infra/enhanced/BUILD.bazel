@@ -7,7 +7,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra:flat_tool",
-        "//openai_utils:model",
+        "//openai_utils:json_schema",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -20,6 +20,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//mcp_infra:urls",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -32,7 +33,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
     ],
 )
@@ -43,6 +44,9 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":flat_mixin",
+        ":oob_notify_mixin",
+        ":openai_strict_mixin",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
@@ -56,11 +60,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":flat_mixin",
-        ":oob_notify_mixin",
         ":openai_strict_mixin",
-        ":server",
-        "//mcp_infra:urls",
-        "//mcp_infra/stubs:typed_stubs",
         "@pypi//fastmcp",
     ],
 )
@@ -69,9 +69,9 @@ py_test(
     name = "test_flat_decorator",
     srcs = ["test_flat_decorator.py"],
     deps = [
-        ":flat_mixin",
-        "//mcp_infra:flat_tool",
-        "//openai_utils:model",
+        ":server",
+        "//mcp_infra/stubs:typed_stubs",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -83,7 +83,8 @@ py_test(
     name = "test_flat_helper",
     srcs = ["test_flat_helper.py"],
     deps = [
-        "//openai_utils:model",
+        ":server",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -94,7 +95,7 @@ py_test(
     name = "test_oob_broadcast",
     srcs = ["test_oob_broadcast.py"],
     deps = [
-        ":oob_notify_mixin",
+        ":server",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
@@ -105,7 +106,8 @@ py_test(
     name = "test_oob_session_capturing",
     srcs = ["test_oob_session_capturing.py"],
     deps = [
-        ":oob_notify_mixin",
+        ":server",
+        "//mcp_infra:urls",
         "@pypi//fastmcp",
     ],
 )
@@ -114,6 +116,7 @@ py_test(
     name = "test_openai_strict_validation",
     srcs = ["test_openai_strict_validation.py"],
     deps = [
+        ":server",
         "@pypi//pydantic",
         "@pypi//pytest",
     ],

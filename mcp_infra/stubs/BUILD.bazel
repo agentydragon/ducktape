@@ -11,9 +11,6 @@ py_library(
         "//mcp_infra:resource_utils",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/resources:types",
-        "@pypi//fastmcp",
-        "@pypi//mcp",
-        "@pypi//pydantic",
     ],
 )
 

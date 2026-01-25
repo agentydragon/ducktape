@@ -28,6 +28,7 @@ py_binary(
     main = "cli.py",
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "//agent_pkg/runtime:mcp",
         "//agent_pkg/runtime:output",
         "//cli_util:decorators",

@@ -46,6 +46,8 @@ py_library(
         ":tools",
         "//agent_core:agent",
         "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
         "//openai_utils:model",
@@ -127,7 +129,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":notifications",
-        "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
         "//openai_utils:model",
         "//props/db:session",
         "@pypi//sqlalchemy",
@@ -184,6 +187,7 @@ py_test(
         ":conftest",
         "//props/db:models",
         "//props/db:session",
+        "//props/testing/fixtures:__init__",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -219,11 +223,12 @@ py_test(
     ],
     deps = [
         ":conftest",
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
         "//props/db:models",
         "//props/db:session",
         "//props/db:snapshots",
         "//props/testing",
+        "//props/testing/fixtures:__init__",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -270,6 +275,7 @@ py_library(
         "//props/db:examples",
         "//props/db:models",
         "//props/db:session",
+        "//props/testing/fixtures:__init__",
         "@pypi//pytest",
     ],
 )

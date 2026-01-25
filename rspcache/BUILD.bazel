@@ -38,6 +38,7 @@ py_binary(
     main = "cli.py",
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "@pypi//httpx",
         "@pypi//typer_slim",
         "@pypi//uvicorn",
@@ -108,6 +109,7 @@ py_library(
     srcs = ["admin_app.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "//openai_utils:model",
         "@pypi//asyncpg",
         "@pypi//fastapi",
@@ -121,6 +123,7 @@ py_binary(
     srcs = ["codegen.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pyyaml",
@@ -132,6 +135,7 @@ py_library(
     srcs = ["events.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "@pypi//pydantic",
     ],
 )
@@ -151,6 +155,7 @@ py_library(
     srcs = ["responses_db.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "@pypi//asyncpg",
         "@pypi//openai",
         "@pypi//pydantic",

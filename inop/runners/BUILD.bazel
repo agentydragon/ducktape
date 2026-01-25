@@ -20,6 +20,7 @@ py_library(
     deps = [
         ":base",
         ":containerized_claude",
+        "//inop:__init__",
         "@pypi//claude_code_sdk",
         "@pypi//structlog",
     ],
@@ -30,6 +31,7 @@ py_library(
     srcs = ["containerized_claude.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//inop:__init__",
         "@pypi//claude_code_sdk",
         "@pypi//docker",
         "@pypi//pathspec",
@@ -43,8 +45,16 @@ py_library(
     deps = [
         ":base",
         "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
         "//agent_core:mcp_provider",
+        "//agent_core:transcript_handler",
+        "//inop:__init__",
+        "//mcp_infra:constants",
+        "//mcp_infra:mcp_types",
         "//mcp_infra:prefix",
+        "//mcp_infra/compositor:server",
+        "//mcp_infra/display:event_renderer",
         "//mcp_infra/exec:bwrap",
         "//mcp_infra/exec:direct",
         "//mcp_infra/exec:docker",

@@ -14,8 +14,10 @@ py_library(
     imports = [".."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
+        "//mcp_infra/testing:fixtures",
         "//props/testing",
+        "//props/testing/fixtures:__init__",
         "@pypi//pytest",
     ],
 )

@@ -11,6 +11,7 @@ py_test(
     srcs = ["test_templates_conformance.py"],
     deps = [
         ":conftest",
+        "//sysrw/templates:__init__",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -67,7 +68,7 @@ py_binary(
     srcs = ["cli.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils:model",
+        "//openai_utils:client_factory",
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
@@ -141,7 +142,9 @@ py_library(
     srcs = ["run_eval.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//openai_utils:client_factory",
         "//openai_utils:model",
+        "//openai_utils:retry",
         "//sysrw/anthropic:types",
         "@pypi//jinja2",
         "@pypi//openai",

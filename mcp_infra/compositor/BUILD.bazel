@@ -11,7 +11,7 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/enhanced:server",
-        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
         "@pypi//pydantic",
     ],
@@ -35,6 +35,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":server",
         "//mcp_infra:mount_types",
         "//mcp_infra:prefix",
         "//mcp_infra:snapshots",
@@ -60,6 +61,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":server",
         "//mcp_infra:resource_utils",
         "//mcp_infra/notifications:types",
         "@pypi//fastmcp",
@@ -88,6 +90,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":server",
         "//mcp_infra:mcp_types",
         "//mcp_infra:mount_types",
         "//mcp_infra:prefix",
@@ -97,7 +100,7 @@ py_library(
         "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/enhanced:server",
         "//mcp_infra/resources:types",
-        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -120,7 +123,6 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra:snapshots",
         "//mcp_infra:tool_schemas",
-        "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
@@ -149,6 +151,7 @@ py_test(
     srcs = ["test_admin.py"],
     deps = [
         ":admin",
+        ":conftest",
         "//mcp_infra:constants",
         "@pypi//fastmcp",
         "@pypi//pytest",
@@ -161,6 +164,7 @@ py_test(
     srcs = ["test_admin_client.py"],
     deps = [
         ":admin",
+        ":conftest",
         "//mcp_infra:constants",
         "//mcp_infra:prefix",
         "@pypi//fastmcp",
@@ -172,6 +176,7 @@ py_test(
     name = "test_inproc_server_storage",
     srcs = ["test_inproc_server_storage.py"],
     deps = [
+        ":conftest",
         ":mount",
         ":server",
         "//mcp_infra:prefix",
@@ -183,6 +188,7 @@ py_test(
     name = "test_lifecycle",
     srcs = ["test_lifecycle.py"],
     deps = [
+        ":conftest",
         ":mount",
         ":server",
         "//mcp_infra:prefix",
@@ -195,6 +201,7 @@ py_test(
     name = "test_meta_basic",
     srcs = ["test_meta_basic.py"],
     deps = [
+        ":conftest",
         "//mcp_infra:resource_utils",
         "//mcp_infra:snapshots",
     ],
@@ -204,6 +211,7 @@ py_test(
     name = "test_meta_inproc_proxies",
     srcs = ["test_meta_inproc_proxies.py"],
     deps = [
+        ":conftest",
         "//mcp_infra:resource_utils",
         "//mcp_infra:snapshots",
     ],
@@ -213,6 +221,7 @@ py_test(
     name = "test_pinned_unmount",
     srcs = ["test_pinned_unmount.py"],
     deps = [
+        ":conftest",
         "//mcp_infra:prefix",
         "@pypi//pytest",
     ],

@@ -7,28 +7,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//wt:__subpackages__"],
     deps = [
-        "//wt",
+        "//wt/testing:conftest",
         "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_integration",
-    srcs = [
-        "conftest.py",
-        "test_integration_cli_daemon.py",
-        "test_integration_cli_output_format.py",
-        "test_integration_shell.py",
-    ],
-    data = [
-        "//wt:wt-cli",  # Shell integration tests need the CLI binary
-    ],
-    main = "test_integration_cli_daemon.py",
-    deps = [
-        ":conftest",
-        "@pypi//pygit2",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -36,7 +16,9 @@ py_test(
     name = "test_integration_cli_daemon",
     srcs = ["test_integration_cli_daemon.py"],
     deps = [
-        "//wt",
+        ":conftest",
+        "//wt/shared:git_utils",
+        "//wt/testing:asserts",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -47,8 +29,10 @@ py_test(
     name = "test_integration_cli_output_format",
     srcs = ["test_integration_cli_output_format.py"],
     deps = [
-        "//wt",
+        ":conftest",
         "//wt:cli",
+        "//wt/shared:protocol",
+        "//wt/testing:asserts",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -57,8 +41,9 @@ py_test(
 py_test(
     name = "test_integration_shell",
     srcs = ["test_integration_shell.py"],
+    data = ["//wt:wt-cli"],
     deps = [
-        "//wt",
+        ":conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

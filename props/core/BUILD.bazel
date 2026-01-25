@@ -63,6 +63,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//mcp_infra:constants",
+        "//mcp_infra:mounted",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor:server",
         "//mcp_infra/exec:docker",
@@ -262,7 +264,7 @@ py_test(
     deps = [
         ":eval_api_models",
         ":ids",
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
         "//props/core/models:examples",
         "//props/critic_dev:shared",
         "//props/critic_dev/optimize:main",

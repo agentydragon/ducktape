@@ -7,7 +7,7 @@ py_library(
     srcs = ["events.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core:agent",
+        "//agent_core:events",
         "@pypi//pydantic",
     ],
 )
@@ -18,7 +18,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":types",
-        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
         "//agent_server:agent_types",
         "//openai_utils:model",
     ],
@@ -30,7 +31,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":types",
-        "//agent_core:agent",
+        "//agent_core:events",
         "//agent_server:agent_types",
         "//agent_server/models:proposal_status",
         "//agent_server/runtime:auto_attach",
@@ -46,7 +47,7 @@ py_library(
     srcs = ["types.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core:agent",
+        "//agent_core:events",
         "//agent_server:agent_types",
         "//agent_server/models:proposal_status",
         "@pypi//fastmcp",

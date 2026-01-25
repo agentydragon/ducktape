@@ -27,7 +27,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":warm_start",
-        "//agent_core:agent",
+        "//agent_core:events",
         "//openai_utils:model",
         "//props/core:agent_types",
         "//props/core:agent_workspace",
@@ -59,6 +59,7 @@ py_test(
         ":warm_start",
         "//props/db:examples",
         "//props/db:session",
+        "//props/testing/fixtures:__init__",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

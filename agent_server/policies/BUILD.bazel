@@ -1,10 +1,10 @@
+load("presets.py", "py_library")
+
 """Policies package - policy types, presets, and standalone policy programs."""
 
 # gazelle:map_kind py_binary py_library approve_all.py
 # gazelle:map_kind py_binary py_library default_policy.py
 # gazelle:map_kind py_binary py_library presets.py
-
-load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
     name = "approve_all",
@@ -23,7 +23,8 @@ py_library(
     deps = [
         ":policy_types",
         ":scaffold",
-        "//mcp_infra:prefix",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
     ],
 )
 

@@ -9,7 +9,7 @@ py_test(
     deps = [
         ":agents",
         "//agent_server/persist:types",
-        "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -42,8 +42,9 @@ py_library(
     deps = [
         ":registry",
         "//agent_server:presets",
-        "//mcp_infra:prefix",
-        "//openai_utils:model",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
         "@pypi//pydantic",
     ],
@@ -69,6 +70,7 @@ py_library(
         ":agents",
         ":registry",
         "//mcp_infra:prefix",
+        "//mcp_infra/compositor:server",
     ],
 )
 
@@ -82,6 +84,7 @@ py_library(
         "//agent_server/persist:sqlite",
         "//agent_server/runtime:container",
         "//mcp_infra:prefix",
+        "//mcp_infra/compositor:server",
         "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//fastmcp",

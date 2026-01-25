@@ -49,24 +49,7 @@ py_binary(
     srcs = ["main.py"],
     main = "main.py",
     visibility = ["//visibility:public"],
-    deps = [
-        "//agent_core:agent",
-        "//agent_core:direct_provider",
-        "//mcp_infra/exec:direct",
-        "//mcp_infra/exec:models",
-        "//openai_utils:model",
-        "//props/core:agent_helpers",
-        "//props/core:agent_types",
-        "//props/core:eval_client",
-        "//props/core:ids",
-        "//props/core:loop_utils",
-        "//props/core/models:examples",
-        "//props/critic_dev/optimize:main",
-        "//props/db:config",
-        "//props/db:session",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
+    deps = [":main"],
 )
 
 pkg_tar(

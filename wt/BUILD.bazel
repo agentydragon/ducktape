@@ -5,7 +5,7 @@ py_library(
     name = "cli",
     srcs = ["cli.py"],
     imports = [".."],
-    visibility = ["//wt:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         "//cli_util:decorators",
         "//cli_util:logging",
@@ -15,30 +15,21 @@ py_library(
     ],
 )
 
-# Umbrella target that re-exports everything
-py_library(
-    name = "wt",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":cli",
-        "//wt/client",
-        "//wt/server",
-        "//wt/shared",
-        "//wt/shell",
-    ],
-)
-
 py_binary(
     name = "wt-cli",
     srcs = ["__main__.py"],
     main = "__main__.py",
-    visibility = ["//wt:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [":cli"],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":wt"],
+    srcs = [
+        ":cli",
+        ":demo_plugin",
+        ":plugins",
+    ],
 )
 
 py_library(

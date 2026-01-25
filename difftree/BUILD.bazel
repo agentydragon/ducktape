@@ -111,6 +111,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":__init__",
         "@pypi//pytest",
         "@pypi//rich",
     ],
@@ -120,6 +121,7 @@ py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
     deps = [
+        ":__init__",
         "@pypi//click",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -130,6 +132,7 @@ py_test(
     name = "test_config",
     srcs = ["test_config.py"],
     deps = [
+        ":__init__",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -139,6 +142,7 @@ py_test(
     name = "test_diff_tree",
     srcs = ["test_diff_tree.py"],
     deps = [
+        ":__init__",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//rich",
@@ -149,6 +153,7 @@ py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     deps = [
+        ":__init__",
         "@pypi//pytest_bazel",
     ],
 )
@@ -157,6 +162,7 @@ py_test(
     name = "test_parser",
     srcs = ["test_parser.py"],
     deps = [
+        ":__init__",
         "@pypi//pytest_bazel",
     ],
 )
@@ -165,6 +171,7 @@ py_test(
     name = "test_progress_bar",
     srcs = ["test_progress_bar.py"],
     deps = [
+        ":__init__",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -174,6 +181,7 @@ py_test(
     name = "test_snapshots",
     srcs = ["test_snapshots.py"],
     deps = [
+        ":__init__",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -183,6 +191,7 @@ py_test(
     name = "test_tree",
     srcs = ["test_tree.py"],
     deps = [
+        ":__init__",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],

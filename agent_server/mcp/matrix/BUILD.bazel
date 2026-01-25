@@ -8,6 +8,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//agent_server/server:bus",
+        "//mcp_infra/enhanced:server",
     ],
 )
 
@@ -17,8 +18,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//agent_server/server:bus",
-        "//mcp_infra:prefix",
-        "//openai_utils:model",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//aiohttp",
         "@pypi//fastmcp",
         "@pypi//mautrix",

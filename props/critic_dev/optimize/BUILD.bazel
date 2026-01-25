@@ -42,17 +42,7 @@ py_binary(
     srcs = ["main.py"],
     main = "main.py",
     visibility = ["//visibility:public"],
-    deps = [
-        "//agent_core:agent",
-        "//agent_core:direct_provider",
-        "//mcp_infra/exec:direct",
-        "//openai_utils:model",
-        "//props/core:eval_client",
-        "//props/core:ids",
-        "//props/core:loop_utils",
-        "//props/core/models:examples",
-        "@pypi//pydantic",
-    ],
+    deps = [":main"],
 )
 
 pkg_tar(

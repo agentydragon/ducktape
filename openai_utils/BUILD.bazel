@@ -6,6 +6,7 @@ py_library(
     srcs = ["types.py"],
     imports = [".."],
     visibility = ["//:__subpackages__"],
+    deps = ["@pypi//typing_extensions"],
 )
 
 py_library(
@@ -54,7 +55,6 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":model",
         "@pypi//pydantic",
         "@pypi//pydantic_core",
     ],
@@ -88,8 +88,6 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":errors",
-        ":model",
         "@pypi//httpx",
         "@pypi//openai",
         "@pypi//tenacity",
