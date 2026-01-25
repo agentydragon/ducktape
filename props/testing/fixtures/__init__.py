@@ -17,12 +17,7 @@ from props.testing.fixtures.db import (
 )
 
 # E2E fixtures
-from props.testing.fixtures.e2e import (
-    make_openai_client,
-    mock_snapshot_slug,
-    noop_openai_client,
-    success_termination,
-)
+from props.testing.fixtures.e2e import make_openai_client, mock_snapshot_slug, noop_openai_client, success_termination
 
 # Ground truth fixtures
 from props.testing.fixtures.ground_truth import (

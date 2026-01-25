@@ -57,11 +57,7 @@ class AgentImage:
 
 @contextmanager
 def load_and_push_image(
-    docker_client: docker.DockerClient,
-    registry_url: str,
-    load_script_path: str,
-    repo_name: str,
-    local_tag: str,
+    docker_client: docker.DockerClient, registry_url: str, load_script_path: str, repo_name: str, local_tag: str
 ) -> Generator[AgentImage]:
     """Context manager to load an image via Bazel :load script and push to registry.
 
@@ -159,12 +155,7 @@ def e2e_registry_config(e2e_registry: DockerContainer) -> E2ERegistryConfig:
     """Registry configuration for e2e tests."""
     port = str(e2e_registry.get_exposed_port(5000))
     container_host = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.internal")
-    return E2ERegistryConfig(
-        host_host="localhost",
-        host_port=port,
-        container_host=container_host,
-        container_port=port,
-    )
+    return E2ERegistryConfig(host_host="localhost", host_port=port, container_host=container_host, container_port=port)
 
 
 # --- Agent image fixtures ---
@@ -184,7 +175,9 @@ def _make_image_fixture(load_script: str, repo_name: str, local_tag: str):
 
 critic_image = _make_image_fixture("props/critic/load.sh", "critic", "critic-agent:latest")
 grader_image = _make_image_fixture("props/grader/load.sh", "grader", "grader-agent:latest")
-prompt_optimizer_image = _make_image_fixture("props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer:latest")
+prompt_optimizer_image = _make_image_fixture(
+    "props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer:latest"
+)
 improvement_image = _make_image_fixture("props/critic_dev/improve/load.sh", "improvement", "improvement-agent:latest")
 
 

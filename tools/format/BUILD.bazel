@@ -29,6 +29,8 @@ py_binary(
     },
     main = "__main__.py",
     deps = [
+        "//tools:env_utils",
+        "@pypi//pygit2",
         "@rules_python//python/runfiles",
     ],
 )
@@ -52,6 +54,8 @@ py_binary(
     },
     main = "__main__.py",
     deps = [
+        "//tools:env_utils",
+        "@pypi//pygit2",
         "@rules_python//python/runfiles",
     ],
 )

@@ -65,6 +65,7 @@ def create_test_proxy_app() -> FastAPI:
     app.include_router(llm.router, tags=["llm_proxy"])
     return app
 
+
 logger = logging.getLogger(__name__)
 
 # Default model name for tests
@@ -76,11 +77,7 @@ TEST_MODEL = "test-model"
 E2E_HOST_HOSTNAME = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.internal")
 
 # Host gateway for container access to host services (only needed for bridge networking)
-HOST_GATEWAY = (
-    {E2E_HOST_HOSTNAME: "host-gateway"}
-    if E2E_HOST_HOSTNAME == "host.docker.internal"
-    else {}
-)
+HOST_GATEWAY = {E2E_HOST_HOSTNAME: "host-gateway"} if E2E_HOST_HOSTNAME == "host.docker.internal" else {}
 
 
 @dataclass
@@ -164,10 +161,7 @@ class _ProxyServer:
 
 @asynccontextmanager
 async def e2e_stack_context(
-    mock: OpenAIModelProto,
-    db_config: DatabaseConfig,
-    docker_client: aiodocker.Docker,
-    model: str = TEST_MODEL,
+    mock: OpenAIModelProto, db_config: DatabaseConfig, docker_client: aiodocker.Docker, model: str = TEST_MODEL
 ) -> AsyncIterator[E2EStack]:
     """Create and manage the full e2e test stack.
 
@@ -201,18 +195,10 @@ async def e2e_stack_context(
             # Create registry with proxy URL accessible from containers
             proxy_url = f"http://{E2E_HOST_HOSTNAME}:{proxy.port}"
             registry = AgentRegistry(
-                docker_client=docker_client,
-                db_config=db_config,
-                llm_proxy_url=proxy_url,
-                extra_hosts=HOST_GATEWAY,
+                docker_client=docker_client, db_config=db_config, llm_proxy_url=proxy_url, extra_hosts=HOST_GATEWAY
             )
 
-            yield E2EStack(
-                fake_openai=fake_openai,
-                proxy_port=proxy.port,
-                registry=registry,
-                model=model,
-            )
+            yield E2EStack(fake_openai=fake_openai, proxy_port=proxy.port, registry=registry, model=model)
 
             await registry.close()
 
@@ -229,11 +215,8 @@ E2EStackFactory = Callable[[OpenAIModelProto], AbstractAsyncContextManager[E2ESt
 
 @pytest_asyncio.fixture
 async def e2e_stack(
-    synced_test_db: DatabaseConfig,
-    async_docker_client: aiodocker.Docker,
-) -> AsyncIterator[
-    Callable[[OpenAIModelProto], AbstractAsyncContextManager[E2EStack]]
-]:
+    synced_test_db: DatabaseConfig, async_docker_client: aiodocker.Docker
+) -> AsyncIterator[Callable[[OpenAIModelProto], AbstractAsyncContextManager[E2EStack]]]:
     """Fixture factory for creating e2e test stacks.
 
     Usage:

@@ -20,16 +20,19 @@ TODO: Support Java/Scala JAVA_RUNFILES workaround
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
-import subprocess
 import sys
 import time
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
-# Resolve runfiles paths
+import pygit2
 from python.runfiles import runfiles
+
+from tools.env_utils import get_workspace_dir
 
 _RUNFILES_OPT = runfiles.Create()
 if _RUNFILES_OPT is None:
@@ -71,6 +74,9 @@ FILENAME_MAP: dict[str, str] = {
 # Shebang pattern for shell scripts (matching rules_lint)
 SHELL_SHEBANG_RE = re.compile(rb"^#![ \t]*/(usr/)?bin/(env[ \t]+)?(sh|bash|mksh|bats|zsh)")
 
+# Attributes that mark a file as ignored (matching rules_lint behavior)
+IGNORE_ATTRIBUTES = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
+
 
 def get_max_batch_size() -> int:
     """Get max command-line size, matching rules_lint behavior."""
@@ -84,23 +90,18 @@ def get_max_batch_size() -> int:
 def batch_files(files: list[str], max_size: int) -> list[list[str]]:
     """Split files into batches that fit within ARG_MAX."""
     batches: list[list[str]] = []
-    current_batch: list[str] = []
-    current_size = 0
+    batch: list[str] = []
     for f in files:
-        if current_size + len(f) + 1 >= max_size and current_batch:
-            batches.append(current_batch)
-            current_batch = []
-            current_size = 0
-        current_batch.append(f)
-        current_size += len(f) + 1
-    if current_batch:
-        batches.append(current_batch)
-    return batches
+        if batch and len(" ".join(batch)) + 1 + len(f) >= max_size:
+            batches.append(batch)
+            batch = []
+        batch.append(f)
+    return [*batches, batch] if batch else batches
 
 
 def detect_shell_by_shebang(path: Path) -> bool:
     """Check if file has a shell shebang (for files without .sh extension)."""
-    if path.suffix:  # Has extension, skip shebang check
+    if path.suffix:
         return False
     try:
         with path.open("rb") as f:
@@ -114,133 +115,138 @@ def get_formatter(path: Path) -> str | None:
     """Determine which formatter to use for a file."""
     if path.name in FILENAME_MAP:
         return FILENAME_MAP[path.name]
-    formatter = EXTENSION_MAP.get(path.suffix.lower())
-    if formatter:
+    if formatter := EXTENSION_MAP.get(path.suffix.lower()):
         return formatter
-    # Check shebang for shell scripts without extension (like gradlew)
     if detect_shell_by_shebang(path):
         return "shfmt"
     return None
 
 
-def get_all_files() -> list[Path]:
-    """Get all tracked/modified files via git ls-files."""
-    result = subprocess.run(
-        ["git", "ls-files", "--cached", "--modified", "--other", "--exclude-standard"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return [Path(f) for f in result.stdout.strip().split("\n") if f]
+def get_all_files(repo: pygit2.Repository) -> list[Path]:
+    """Get all tracked/modified/untracked files via pygit2."""
+    tracked = {entry.path for entry in repo.index}
+    modified = {path for path, flags in repo.status().items() if not (flags & pygit2.GIT_STATUS_IGNORED)}
+    return [Path(f) for f in sorted(tracked | modified)]
 
 
-# Attributes that mark a file as ignored (matching rules_lint behavior)
-IGNORE_ATTRIBUTES = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
-
-
-def filter_ignored(files: list[Path]) -> list[Path]:
+def filter_ignored(repo: pygit2.Repository, files: list[Path]) -> list[Path]:
     """Filter out files marked as ignored via .gitattributes."""
     if not files:
         return []
-
-    # Batch check all attributes for all files in one call
-    result = subprocess.run(
-        ["git", "check-attr", *IGNORE_ATTRIBUTES, "--", *[str(f) for f in files]],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        # If git check-attr fails, don't filter anything
-        return files
-
-    # Parse output: "path: attr: value" format
-    # A file is ignored if any attribute is "true" (not "unspecified" or "false")
-    ignored_files: set[str] = set()
-    for line in result.stdout.strip().split("\n"):
-        if not line:
-            continue
-        # Format: "path: attribute: value"
-        parts = line.split(": ", 2)
-        if len(parts) == 3 and parts[2] == "true":
-            ignored_files.add(parts[0])
-
-    return [f for f in files if str(f) not in ignored_files]
+    return [f for f in files if not any(repo.get_attr(str(f), attr) in (True, "true") for attr in IGNORE_ATTRIBUTES)]
 
 
-def run_formatter(formatter: str, files: list[Path], check_mode: bool) -> None:
-    """Run a formatter on files. Raises on failure."""
-    if not files:
-        return
+@dataclass
+class FormatterResult:
+    """Result of running a formatter."""
 
-    # Filter to existing files
-    existing = [str(f) for f in files if f.exists()]
-    if not existing:
-        return
+    formatter: str
+    file_count: int
+    elapsed: float
+    success: bool
+    errors: list[str] = field(default_factory=list)
 
-    # Get binary path from environment (set by Bazel) and resolve via runfiles
+
+def resolve_formatter_bin(formatter: str) -> str:
+    """Resolve formatter binary path from environment. Raises if not found."""
     bin_var = f"{formatter.upper()}_BIN"
-    rlocation_path = os.environ.get(bin_var)
-    if not rlocation_path:
-        raise RuntimeError(f"{bin_var} not set")
+    if not (rlocation_path := os.environ.get(bin_var)):
+        raise RuntimeError(f"{bin_var} environment variable not set")
+    if not (bin_path := _RUNFILES.Rlocation(rlocation_path)) or not Path(bin_path).exists():
+        raise RuntimeError(f"Could not resolve {rlocation_path}")
+    return bin_path
 
-    bin_path = _RUNFILES.Rlocation(rlocation_path)
-    if not bin_path or not Path(bin_path).exists():
-        raise RuntimeError(f"could not resolve {rlocation_path}")
 
-    # Build base command (without files)
-    if formatter == "prettier":
-        base_cmd = [bin_path, "--check" if check_mode else "--write"]
-    elif formatter == "ruff":
-        base_cmd = [bin_path, "format", *(["--check"] if check_mode else [])]
-    elif formatter == "shfmt":
-        base_cmd = [bin_path, "-d" if check_mode else "-w"]
-    elif formatter == "buildifier":
-        base_cmd = [bin_path]
-    else:
-        raise RuntimeError(f"Unknown formatter: {formatter}")
+# Formatter command builders
+FORMATTER_COMMANDS: dict[str, callable[[str, bool], list[str]]] = {
+    "prettier": lambda bin_path, check: [bin_path, "--check" if check else "--write"],
+    "ruff": lambda bin_path, check: [bin_path, "format", *(["--check"] if check else [])],
+    "shfmt": lambda bin_path, check: [bin_path, "-d" if check else "-w"],
+    "buildifier": lambda bin_path, _: [bin_path],
+}
 
-    # Batch files to avoid ARG_MAX limit
-    batches = batch_files(existing, get_max_batch_size())
+
+async def run_batch(base_cmd: list[str], batch: list[str]) -> tuple[int, str]:
+    """Run formatter on a batch of files. Returns (returncode, combined output)."""
+    proc = await asyncio.create_subprocess_exec(
+        *base_cmd, *batch, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    output = (stdout.decode() + stderr.decode()).strip()
+    return proc.returncode or 0, output
+
+
+async def run_formatter_async(formatter: str, files: list[Path], check_mode: bool) -> FormatterResult:
+    """Run a formatter on files asynchronously, parallelizing batches."""
+    if not files:
+        return FormatterResult(formatter=formatter, file_count=0, elapsed=0.0, success=True)
+
+    file_paths = [str(f) for f in files]
+    bin_path = resolve_formatter_bin(formatter)
+    base_cmd = FORMATTER_COMMANDS[formatter](bin_path, check_mode)
+
+    batches = batch_files(file_paths, get_max_batch_size())
     start = time.perf_counter()
-    for batch in batches:
-        subprocess.run([*base_cmd, *batch], check=True)
+
+    # Run all batches in parallel
+    results = await asyncio.gather(*[run_batch(base_cmd, batch) for batch in batches])
+
+    errors = [output for returncode, output in results if returncode != 0 and output]
     elapsed = time.perf_counter() - start
-    print(f"Formatted {len(existing)} files with {formatter} in {elapsed:.1f}s")
+    return FormatterResult(
+        formatter=formatter, file_count=len(file_paths), elapsed=elapsed, success=not errors, errors=errors
+    )
 
 
-def main() -> int:
+async def main_async() -> int:
     check_mode = os.environ.get("FMT_CHECK", "").lower() in ("1", "true", "yes")
+    # Workspace dir needed for: pygit2.Repository("."), relative file paths from pre-commit
+    os.chdir(get_workspace_dir())
 
-    # Change to workspace directory if set
-    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
-    if workspace:
-        os.chdir(workspace)
+    repo = pygit2.Repository(".")
 
     # Get files to format
-    files = [Path(f) for f in sys.argv[1:]] if len(sys.argv) > 1 else get_all_files()
+    files = [Path(f) for f in sys.argv[1:]] if len(sys.argv) > 1 else get_all_files(repo)
 
     # Filter out files marked as ignored via .gitattributes
-    files = filter_ignored(files)
+    files = filter_ignored(repo, files)
 
     # Group by formatter
     by_formatter: dict[str, list[Path]] = defaultdict(list)
     for f in files:
-        formatter = get_formatter(f)
-        if formatter:
+        if formatter := get_formatter(f):
             by_formatter[formatter].append(f)
 
-    # Run formatters
-    try:
-        for formatter, formatter_files in by_formatter.items():
-            run_formatter(formatter, formatter_files, check_mode)
-    except subprocess.CalledProcessError as e:
-        print(f"FAILED: A formatter exited with code {e.returncode}", file=sys.stderr)
+    # Run formatters in parallel (batches within each formatter also parallelized)
+    start_total = time.perf_counter()
+    results = await asyncio.gather(
+        *[run_formatter_async(fmt, fmt_files, check_mode) for fmt, fmt_files in by_formatter.items()]
+    )
+
+    # Report results
+    failed = []
+    for result in results:
+        if result.file_count > 0:
+            status = "✓" if result.success else "✗"
+            print(f"{status} {result.formatter}: {result.file_count} files in {result.elapsed:.1f}s")
+        if result.errors:
+            failed.append(result)
+            for error in result.errors:
+                print(f"  Error: {error[:500]}", file=sys.stderr)
+
+    elapsed_total = time.perf_counter() - start_total
+    print(f"Total: {elapsed_total:.1f}s (parallel)")
+
+    if failed:
         if check_mode:
             print("Try running 'bazel run //tools/format' to fix this.", file=sys.stderr)
-        raise
+        return 1
 
     return 0
+
+
+def main() -> int:
+    return asyncio.run(main_async())
 
 
 if __name__ == "__main__":

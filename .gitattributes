@@ -21,3 +21,4 @@ tana/testdata/** rules-lint-ignored=true
 # Archived/legacy code
 k8s-old/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
+llm/html/llm_html/coding.md rules-lint-ignored=true

@@ -25,6 +25,14 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+# Library for checking pytest_bazel.main() calls (importable)
+py_library(
+    name = "check_pytest_main_lib",
+    srcs = ["check_pytest_main.py"],
+    visibility = ["//visibility:public"],
+    deps = ["//:bazel_util"],
+)
+
 # Guard against missing pytest_bazel.main() calls in test files
 py_binary(
     name = "check_pytest_main",

@@ -47,11 +47,7 @@ def make_critic_run(
     type_config = CriticTypeConfig(example=example_spec)
 
     return AgentRun(
-        agent_run_id=agent_run_id,
-        image_digest=image_digest,
-        model=model,
-        status=status,
-        type_config=type_config,
+        agent_run_id=agent_run_id, image_digest=image_digest, model=model, status=status, type_config=type_config
     )
 
 
@@ -69,11 +65,7 @@ def make_grader_run(
     type_config = GraderTypeConfig(snapshot_slug=snapshot_slug)
 
     return AgentRun(
-        agent_run_id=agent_run_id,
-        image_digest=GRADER_IMAGE_REF,
-        model=model,
-        status=status,
-        type_config=type_config,
+        agent_run_id=agent_run_id, image_digest=GRADER_IMAGE_REF, model=model, status=status, type_config=type_config
     )
 
 
@@ -109,9 +101,7 @@ def make_critic_and_grader_run(
     session.flush()
 
     grader_run = make_grader_run(
-        snapshot_slug=example.snapshot_slug,
-        model="test-grader",
-        status=AgentRunStatus.COMPLETED,
+        snapshot_slug=example.snapshot_slug, model="test-grader", status=AgentRunStatus.COMPLETED
     )
     session.add(grader_run)
     session.flush()

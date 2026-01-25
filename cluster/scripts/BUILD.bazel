@@ -14,7 +14,10 @@
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-package(default_visibility = ["//cluster:__subpackages__"])
+package(default_visibility = [
+    "//cluster:__subpackages__",
+    "//tools/precommit:__pkg__",
+])
 
 exports_files([
     "validate_flux_build.py",

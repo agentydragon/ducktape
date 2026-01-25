@@ -101,29 +101,16 @@ repos:
 
   - repo: local
     hooks:
-      # Buildifier linting via Bazel (hermetic buildifier binary)
-      # Formatting handled by bazel-format below
-      - id: buildifier-lint
-        name: buildifier lint
-        entry: bazelisk run //:buildifier -- --mode=check --lint=warn
-        language: system
-        files: "BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$|MODULE\\.bazel$"
-
-      # Gazelle Python: available for manual use to update BUILD deps
-      # Run `bazel run //:gazelle` to regenerate - not enforced in pre-commit
-      # due to complex internal import patterns in some packages.
-      # TODO: Enable gazelle-diff once validation issues are resolved
-
-      # Unified formatter via Bazel (prettier, ruff, buildifier, shfmt, rustfmt)
-      # Single source of truth - eliminates version mismatches between pre-commit and Bazel
-      - id: bazel-format
-        name: bazel format
-        entry: bazelisk run //tools/format --
+      # Unified pre-commit: format + validate
+      # Uses --script_path runner to avoid Bazel lock (allows parallel batch execution)
+      # Runners stored in .git/precommit-runners/, one per pre-commit invocation
+      - id: bazel-precommit
+        name: bazel precommit (format + validate)
+        entry: tools/precommit/run-precommit.sh
         language: system
         pass_filenames: true
-        # Use files regex since pre-commit doesn't have starlark type
-        # Covers: JS/TS/Svelte, CSS, Markdown, YAML, JSON, HTML, Python, Shell, Starlark
-        files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html|py|sh|bash)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$"
+        # Triggers on: formattable files, Bazel files, test files, cluster files
+        files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html|py|sh|bash|tf)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$|MODULE\\.bazel$|^cluster/"
         exclude: "\\.pnpm/"
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
@@ -180,74 +167,8 @@ repos:
         args: [--framework, terraform, --skip-check, CKV_TF_1]
         files: ^cluster/terraform/.*\.tf$
 
-  # Cluster-specific local hooks (Bazel-managed binaries)
-  - repo: local
-    hooks:
-      # Kustomize validation via Bazel (hermetic kustomize binary)
-      - id: kustomize-dry-run
-        name: Validate Kustomize builds (cluster)
-        entry: bazelisk run //cluster/scripts:validate_kustomizations --
-        language: system
-        files: ^cluster/k8s/.*\.(yaml|yml)$
-        pass_filenames: false
-
-      # Flux build validation via Bazel (hermetic flux binary)
-      - id: flux-build-dry-run
-        name: Validate Flux kustomizations (cluster)
-        entry: bazelisk run //cluster/scripts:validate_flux_build --
-        language: system
-        files: ^cluster/k8s/.*\.(yaml|yml)$
-        pass_filenames: false
-
-      # GitOps dependency validation via Bazel
-      - id: gitops-dependency-validation
-        name: Validate GitOps dependencies (cluster)
-        entry: bazelisk run //cluster/scripts:validate_dependencies --
-        language: system
-        files: ^cluster/k8s/.*\.(yaml|yml)$
-        pass_filenames: false
-
-      # Helm template validation via Bazel (hermetic helm binary)
-      - id: helm-template-dry-run
-        name: Validate Helm templates (cluster)
-        entry: bazelisk run //cluster/scripts:validate_helm_templates --
-        language: system
-        files: ^cluster/terraform/.*cilium.*\.(yaml|yml|tf)$
-        pass_filenames: false
-
-      # Prevent terraform provider version redefinitions in modules
-      # Layer root directories (00-*, 01-*, 02-*, 03-*, authentik-blueprint) are excluded as they are independent terraform roots
-      - id: terraform-version-centralization
-        name: Prevent terraform provider version redefinitions (cluster)
-        entry: >-
-          bash -c
-          'MATCHES=$(grep -r -l "required_providers" cluster/terraform/modules/ --include="*.tf" --exclude-dir=".terraform" | grep -v "terraform.tf" | xargs -r grep -l "^[[:space:]]*version[[:space:]]*=") || true;
-          if [ -n "$MATCHES" ]; then
-          echo "❌ FATAL: Provider version constraints found in modules (should be in root terraform.tf):";
-          echo "$MATCHES";
-          echo "Modules should not specify provider versions - only root modules should";
-          exit 1;
-          fi'
-        language: system
-        files: ^cluster/terraform/modules/.*\.tf$
-        pass_filenames: false
-
-      # Validate SealedSecrets via Bazel (hermetic kubeseal + tofu binaries)
-      - id: validate-sealed-secrets
-        name: Validate SealedSecrets with terraform keypair (cluster)
-        entry: bazelisk run //cluster/scripts:validate_sealed_secrets --
-        language: system
-        files: ^cluster/(k8s/.*sealed.*\.yaml|terraform/00-persistent-auth/)
-        pass_filenames: false
-
-  # Python test validation
-  - repo: local
-    hooks:
-      # Check that py_test files have pytest_bazel.main() entry points
-      # Prevents silent test failures where tests import as modules without executing
-      - id: check-pytest-main
-        name: Check pytest_bazel.main() in test files
-        entry: bazelisk run //tools:check_pytest_main --
-        language: system
-        files: ^.*test_.*\.py$
-        pass_filenames: true
+  # NOTE: The following hooks are now combined into bazel-precommit:
+  # - bazel-format (prettier, ruff, shfmt, buildifier)
+  # - bazel-validate (buildifier-lint, pytest-main check, cluster validations)
+  # - terraform-version-centralization
+  # This avoids Bazel client lock contention (~55s per hook -> ~20s total).

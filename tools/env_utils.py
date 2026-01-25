@@ -30,3 +30,10 @@ def get_optional_env_path(name: str) -> Path | None:
     if not value:
         return None
     return Path(value)
+
+
+def get_workspace_dir() -> Path:
+    """Get effective workspace directory, handling Bazel run context."""
+    if workspace := os.environ.get("BUILD_WORKSPACE_DIRECTORY"):
+        return Path(workspace)
+    return Path.cwd()

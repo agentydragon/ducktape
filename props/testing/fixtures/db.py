@@ -48,10 +48,7 @@ def postgres_container() -> Generator[PostgresContainer]:
     All tests share this container but get isolated databases.
     """
     with PostgresContainer(
-        image="postgres:16",
-        username="postgres",
-        password="postgres",
-        dbname="postgres",
+        image="postgres:16", username="postgres", password="postgres", dbname="postgres"
     ) as postgres:
         yield postgres
 
@@ -122,10 +119,7 @@ def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
 
 
 @pytest.fixture
-def test_db(
-    request: pytest.FixtureRequest,
-    postgres_base_config: DatabaseConfig,
-) -> Generator[DatabaseConfig]:
+def test_db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> Generator[DatabaseConfig]:
     """Create isolated database for each test.
 
     Creates a unique database per test, initializes schema, and drops it after.
@@ -188,8 +182,7 @@ def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _session_synced_db(
-    postgres_base_config: DatabaseConfig,
-    session_monkeypatch: pytest.MonkeyPatch,
+    postgres_base_config: DatabaseConfig, session_monkeypatch: pytest.MonkeyPatch
 ) -> AsyncGenerator[DatabaseConfig]:
     """Internal: Session-scoped synced database.
 
