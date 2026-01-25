@@ -285,6 +285,84 @@ class TestFullSessionStartHook:
         # back to system bazel if bazelisk isn't installed.
         build_env = hook_env.copy()
 
+        # === FORENSIC DIAGNOSTICS START ===
+        print("\n=== FORENSIC DIAGNOSTICS ===")
+
+        # 1. Check bazelrc file exists and show contents
+        bazelrc_path = bazel_proxy_dir / "bazelrc"
+        print(f"\n[1] Bazelrc path: {bazelrc_path}")
+        print(f"    Exists: {bazelrc_path.exists()}")
+        if bazelrc_path.exists():
+            print(f"    Contents:\n{bazelrc_path.read_text()}")
+
+        # 2. Check truststore file
+        truststore_path = bazel_proxy_dir / "cacerts.jks"
+        print(f"\n[2] Truststore path: {truststore_path}")
+        print(f"    Exists: {truststore_path.exists()}")
+        if truststore_path.exists():
+            print(f"    Size: {truststore_path.stat().st_size} bytes")
+            # Verify truststore is valid by listing its contents
+            keytool_result = subprocess.run(
+                ["keytool", "-list", "-keystore", str(truststore_path), "-storepass", "changeit"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            print(f"    Keytool list rc: {keytool_result.returncode}")
+            print(f"    Keytool output:\n{keytool_result.stdout[:2000]}")
+            if keytool_result.returncode != 0:
+                print(f"    Keytool stderr:\n{keytool_result.stderr}")
+
+        # 3. Check CA file
+        ca_path = bazel_proxy_dir / "anthropic_ca.pem"
+        print(f"\n[3] CA file path: {ca_path}")
+        print(f"    Exists: {ca_path.exists()}")
+        if ca_path.exists():
+            print(f"    Size: {ca_path.stat().st_size} bytes")
+            # Show first few lines
+            ca_content = ca_path.read_text()
+            print(f"    First 500 chars:\n{ca_content[:500]}")
+
+        # 4. Show env file contents
+        print(f"\n[4] Env file path: {isolated_dirs.env_file}")
+        print(f"    Exists: {isolated_dirs.env_file.exists()}")
+        if isolated_dirs.env_file.exists():
+            print(f"    Contents:\n{isolated_dirs.env_file.read_text()}")
+
+        # 5. Show key build_env variables
+        print("\n[5] Key build_env variables:")
+        for key in ["BAZEL_SYSTEM_BAZELRC_PATH", "HOME", "XDG_CACHE_HOME", "JAVA_HOME"]:
+            print(f"    {key}={build_env.get(key, '<NOT SET>')}")
+
+        # 6. Run diagnostic bash command to show effective environment
+        diag_result = shell_helpers.run_with_env_file(
+            command="echo 'BAZEL_SYSTEM_BAZELRC_PATH='$BAZEL_SYSTEM_BAZELRC_PATH && ls -la $BAZEL_SYSTEM_BAZELRC_PATH 2>&1 || echo 'File not found'",
+            env_file=isolated_dirs.env_file,
+            cwd=workspace,
+            check=False,
+            timeout=30,
+            env=build_env,
+        )
+        print("\n[6] Diagnostic shell check:")
+        print(f"    stdout: {diag_result.stdout}")
+        print(f"    stderr: {diag_result.stderr}")
+
+        # 7. Run bazel info startup_options to see what options are being used
+        info_result = shell_helpers.run_with_env_file(
+            command="bazel info startup_options 2>&1 || echo 'bazel info failed'",
+            env_file=isolated_dirs.env_file,
+            cwd=workspace,
+            check=False,
+            timeout=60,
+            env=build_env,
+        )
+        print("\n[7] Bazel startup_options:")
+        print(f"    stdout: {info_result.stdout}")
+        print(f"    stderr: {info_result.stderr}")
+
+        print("\n=== END FORENSIC DIAGNOSTICS ===\n")
+        # === FORENSIC DIAGNOSTICS END ===
+
         # Use shared helper to run bazel through env file (mimics Claude Code behavior)
         result = shell_helpers.run_with_env_file(
             command="bazel build //:hello",
