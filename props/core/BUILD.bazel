@@ -267,7 +267,7 @@ py_test(
         "//agent_core_testing:__init__",
         "//props/core/models:examples",
         "//props/critic_dev:shared",
-        "//props/critic_dev/optimize:main",
+        "//props/critic_dev/optimize:main_lib",
         "//props/critic_dev/optimize:orchestration_fixtures",
         "//props/db:agent_definition_ids",
         "//props/db:models",

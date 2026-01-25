@@ -10,17 +10,12 @@ The container runs an agent loop that:
 3. Optimizes prompts based on target metrics
 """
 
-# gazelle:ignore
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# =============================================================================
-# In-container agent main entry point
-# =============================================================================
-
 py_library(
-    name = "main",
+    name = "main_lib",
     srcs = ["main.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
@@ -42,7 +37,20 @@ py_binary(
     srcs = ["main.py"],
     main = "main.py",
     visibility = ["//visibility:public"],
-    deps = [":main"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils:model",
+        "//props/core:eval_client",
+        "//props/core:ids",
+        "//props/core:loop_utils",
+        "//props/core/models:examples",
+        "@pypi//pydantic",
+    ],
 )
 
 pkg_tar(
@@ -54,10 +62,6 @@ pkg_tar(
     visibility = ["//props:__subpackages__"],
 )
 
-# =============================================================================
-# Library targets
-# =============================================================================
-
 py_library(
     name = "budget_handler",
     srcs = ["budget_handler.py"],
@@ -65,16 +69,15 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
         "//openai_utils:model",
         "//props/db:query_builders",
         "//props/db:session",
         "@pypi//sqlalchemy",
     ],
 )
-
-# =============================================================================
-# Test library (fixtures used by other tests)
-# =============================================================================
 
 py_library(
     name = "orchestration_fixtures",
@@ -83,10 +86,9 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":main",
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
         "//openai_utils:model",
-        "//props/backend",
+        "//props/backend:__init__",
         "//props/db:config",
         "//props/orchestration:agent_registry",
         "//props/testing",
@@ -96,20 +98,15 @@ py_library(
     ],
 )
 
-# =============================================================================
-# Tests
-# =============================================================================
-
 py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
-        ":load",  # Prompt optimizer agent image
-        "//props/critic:load",  # Critic for orchestration
-        "//props/grader:load",  # Grader for orchestration
+        ":load",
+        "//props/critic:load",
+        "//props/grader:load",
     ],
     env = {
-        # E2E container networking
         "PROPS_DOCKER_NETWORK": "host",
     },
     imports = ["../../.."],
@@ -118,9 +115,9 @@ py_test(
         "requires_docker",
     ],
     deps = [
-        ":main",
+        ":main_lib",
         ":orchestration_fixtures",
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
         "//props/core:agent_types",
         "//props/core:eval_api_models",
         "//props/core:ids",
@@ -139,10 +136,6 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-# =============================================================================
-# Container image
-# =============================================================================
 
 oci_image(
     name = "image",
