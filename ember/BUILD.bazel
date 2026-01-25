@@ -7,10 +7,9 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    data = [
+filegroup(
+    name = "data_files",
+    srcs = [
         "docs/agent_ontology.md",
         "docs/pilot_plan.md",
         "resources/examples/matrix-client/quickstart.py",
@@ -18,7 +17,6 @@ py_library(
         "resources/examples/python-session/test_demo.sh",
         "system_prompt.md.j2",
     ],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
 )
 
@@ -48,9 +46,9 @@ py_binary(
 py_test(
     name = "test_documentation_snippets",
     srcs = ["test_documentation_snippets.py"],
+    data = [":data_files"],
     imports = [".."],
     deps = [
-        ":__init__",
         ":system_prompt",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
