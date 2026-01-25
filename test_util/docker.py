@@ -9,24 +9,11 @@ from __future__ import annotations
 import os
 import subprocess
 from contextlib import suppress
-from pathlib import Path
 
 import docker
 import pytest
 
 import runfiles
-
-
-def get_runfiles_path(relative_path: str) -> Path:
-    """Get path to a file in Bazel runfiles.
-
-    Args:
-        relative_path: Path relative to repository root (e.g., "mcp_infra/testing/python_slim_load.sh")
-
-    Returns:
-        Absolute path to the file from runfiles.
-    """
-    return runfiles.get_path(f"_main/{relative_path}")
 
 
 def load_bazel_image(load_script_path: str, image_tag: str) -> str:
@@ -42,7 +29,7 @@ def load_bazel_image(load_script_path: str, image_tag: str) -> str:
     Raises:
         RuntimeError: If loading the image fails.
     """
-    load_script = get_runfiles_path(load_script_path)
+    load_script = runfiles.get_path(f"_main/{load_script_path}")
 
     result = subprocess.run(
         [load_script],
