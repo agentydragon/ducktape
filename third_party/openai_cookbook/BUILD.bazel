@@ -1,6 +1,6 @@
 load("apply_patch.py", "py_library")
 
-"""Vendored OpenAI Cookbook utilities."""
+# Vendored OpenAI Cookbook utilities.
 
 # gazelle:map_kind py_binary py_library apply_patch.py
 

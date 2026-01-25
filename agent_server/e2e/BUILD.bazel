@@ -1,19 +1,6 @@
-"""Agent server E2E tests (manual, require Playwright)."""
+# Agent server E2E tests (manual, require Playwright).
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-
-# Common E2E test dependencies (only what's actually needed)
-_E2E_COMMON_DEPS = [
-    "//agent_core_testing",
-    "@pypi//pytest",
-    "@pypi//pytest_bazel",
-    "@pypi//pytest_asyncio",  # keep
-    "@pypi//playwright",
-]
-
-_E2E_TEST_SUPPORT = [
-    "conftest.py",
-]
 
 py_test(
     name = "test_abort",
