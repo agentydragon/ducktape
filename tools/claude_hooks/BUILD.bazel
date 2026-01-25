@@ -132,6 +132,17 @@ py_test(
     data = [
         "//tools/claude_hooks/testdata/test_workspace:workspace_files",
     ],
+    # Inherit proxy env vars so ForwardingTLSProxy can chain through hook's bazel proxy
+    # (in gVisor/Claude Code web, DNS doesn't work - must CONNECT via proxy)
+    # After session_start hook runs, HTTPS_PROXY points to the local auth-forwarding proxy (B)
+    # which already knows how to talk to Anthropic's proxy (A) with proper auth
+    env_inherit = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "NODE_EXTRA_CA_CERTS",
+    ],
     imports = ["../.."],
     tags = [
         "e2e",

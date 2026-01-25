@@ -386,6 +386,10 @@ async def run_web_mode(hook_input: HookInput) -> None:
     logger.info("Setting up dev environment...")
     logger.info(format_environment_summary())
 
+    # Capture original upstream proxy before any setup modifies it
+    # This is exported so tests can chain through the real upstream
+    original_upstream_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+
     # Get required environment variables (fail early if missing)
     env_file_path = env_utils.get_required_env_path("CLAUDE_ENV_FILE")
 
@@ -527,6 +531,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         bazel_wrapper_dir=bazelisk_setup._get_wrapper_path().parent,
         bazelisk_path=bazelisk_setup._get_bazelisk_path(),
         bazel_proxy_rc=proxy_setup._get_bazel_proxy_rc(),
+        upstream_proxy_url=original_upstream_proxy,
         nix_paths=nix_paths,
         docker_host=docker_host,
         podman_env=podman_env,

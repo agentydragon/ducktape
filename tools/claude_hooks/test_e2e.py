@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.parse
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +26,7 @@ import pytest
 import pytest_bazel
 
 from tools.claude_hooks.testing import shell_helpers
-from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy
+from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy, UpstreamProxyConfig
 
 
 @dataclass
@@ -40,17 +41,50 @@ class IsolatedDirs:
 
 
 @pytest.fixture(scope="module")
-def forwarding_proxy() -> Generator[ForwardingTLSProxy]:
-    """Start a ForwardingTLSProxy that forwards to real internet with TLS MITM."""
+def real_upstream_proxy() -> UpstreamProxyConfig | None:
+    """Get upstream proxy for chaining in gVisor environments.
+
+    After session_start hook runs, HTTPS_PROXY points to the local auth-forwarding
+    proxy (B) which chains to Anthropic's proxy (A). ForwardingTLSProxy chains
+    through B, which handles auth to A.
+
+    Chain: ForwardingTLSProxy (A2) -> hook's bazel proxy (B) -> Anthropic proxy (A)
+    """
+    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    if not proxy_url:
+        return None
+    parsed = urllib.parse.urlparse(proxy_url)
+    if not parsed.hostname or not parsed.port:
+        return None
+    ca_bundle = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
+    return UpstreamProxyConfig(
+        host=parsed.hostname,
+        port=parsed.port,
+        username=urllib.parse.unquote(parsed.username) if parsed.username else None,
+        password=urllib.parse.unquote(parsed.password) if parsed.password else None,
+        ca_bundle=ca_bundle,
+    )
+
+
+@pytest.fixture(scope="module")
+def forwarding_proxy(real_upstream_proxy: UpstreamProxyConfig | None) -> Generator[ForwardingTLSProxy]:
+    """Start a ForwardingTLSProxy that forwards to real internet with TLS MITM.
+
+    Chains through the real upstream proxy (if available), allowing tests to work
+    in environments like gVisor where direct internet access is blocked.
+    """
     proxy = ForwardingTLSProxy(
         listen_port=0,  # Ephemeral port
         require_auth=True,
         username="proxy_user",
         password="test_jwt_token",
+        upstream_proxy=real_upstream_proxy,
     )
     proxy.start()
-    yield proxy
-    proxy.stop()
+    try:
+        yield proxy
+    finally:
+        proxy.stop()
 
 
 @pytest.fixture

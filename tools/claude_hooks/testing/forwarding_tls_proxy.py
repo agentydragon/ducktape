@@ -3,6 +3,10 @@
 Unlike MockTLSProxy which only does TLS handshake and closes, this proxy
 actually forwards traffic to real servers while doing TLS MITM. This enables
 e2e testing of the full proxy chain including actual BCR fetches.
+
+Supports chaining through an upstream proxy (detected via HTTPS_PROXY env var),
+which is required in environments like gVisor where direct internet access is
+blocked and all traffic must go through a corporate proxy.
 """
 
 from __future__ import annotations
@@ -10,11 +14,13 @@ from __future__ import annotations
 import base64
 import contextlib
 import logging
+import os
 import select
 import socket
 import ssl
 import tempfile
 import threading
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -25,6 +31,54 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class UpstreamProxyConfig:
+    """Configuration for upstream proxy."""
+
+    host: str
+    port: int
+    username: str | None = None
+    password: str | None = None
+    ca_bundle: str | None = None  # Path to CA bundle for verifying upstream TLS
+
+    @classmethod
+    def from_env(cls, exclude_localhost: bool = True) -> UpstreamProxyConfig | None:
+        """Parse upstream proxy from environment variables.
+
+        Looks for HTTPS_PROXY or https_proxy in format:
+        http://user:pass@host:port or http://host:port
+
+        Args:
+            exclude_localhost: If True, ignore proxies pointing to localhost/127.0.0.1
+                              (to avoid self-referential loops in test environments)
+        """
+        proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        if not proxy_url:
+            return None
+
+        parsed = urllib.parse.urlparse(proxy_url)
+        if not parsed.hostname:
+            return None
+
+        # Skip localhost proxies to avoid chaining through ourselves in tests
+        if exclude_localhost and parsed.hostname in ("localhost", "127.0.0.1", "::1"):
+            logger.debug("Ignoring localhost proxy %s (exclude_localhost=True)", proxy_url)
+            return None
+
+        # Get CA bundle for verifying upstream proxy's TLS
+        ca_bundle = (
+            os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("CURL_CA_BUNDLE")
+        )
+
+        return cls(
+            host=parsed.hostname,
+            port=parsed.port or 8080,
+            username=urllib.parse.unquote(parsed.username) if parsed.username else None,
+            password=urllib.parse.unquote(parsed.password) if parsed.password else None,
+            ca_bundle=ca_bundle,
+        )
 
 
 def generate_mock_ca() -> tuple[bytes, bytes]:
@@ -140,8 +194,9 @@ class ForwardingTLSProxy:
 
     - Requires Basic auth on CONNECT requests (like Anthropic's proxy)
     - Performs TLS interception using a mock CA
-    - Actually forwards traffic to real servers
+    - Actually forwards traffic to real servers (or through upstream proxy)
     - Enables e2e testing of the full proxy chain
+    - Supports chaining through upstream proxy (auto-detected from HTTPS_PROXY)
     """
 
     def __init__(
@@ -151,12 +206,16 @@ class ForwardingTLSProxy:
         username: str = "testuser",
         password: str = "testpass",
         temp_dir: Path | None = None,
+        upstream_proxy: UpstreamProxyConfig | None = None,
     ):
         self.listen_port = listen_port
         self.require_auth = require_auth
         self.username = username
         self.password = password
         self.temp_dir = temp_dir
+
+        # Auto-detect upstream proxy from environment if not explicitly provided
+        self.upstream_proxy = upstream_proxy if upstream_proxy is not None else UpstreamProxyConfig.from_env()
 
         self.server_socket: socket.socket | None = None
         self.port: int = 0
@@ -195,7 +254,15 @@ class ForwardingTLSProxy:
         self._running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
-        logger.info("ForwardingTLSProxy started on port %d", self.port)
+        if self.upstream_proxy:
+            logger.info(
+                "ForwardingTLSProxy started on port %d (chaining through upstream %s:%d)",
+                self.port,
+                self.upstream_proxy.host,
+                self.upstream_proxy.port,
+            )
+        else:
+            logger.info("ForwardingTLSProxy started on port %d (direct connections)", self.port)
 
     def stop(self) -> None:
         """Stop the proxy server."""
@@ -237,9 +304,79 @@ class ForwardingTLSProxy:
                 self._server_certs[hostname] = generate_server_cert(self._ca_cert_pem, self._ca_key_pem, hostname)
             return self._server_certs[hostname]
 
+    def _connect_to_target(self, target_host: str, target_port: int) -> ssl.SSLSocket:
+        """Connect to target server, optionally through upstream proxy.
+
+        Returns an SSL-wrapped socket connected to the target.
+        """
+        if self.upstream_proxy:
+            return self._connect_via_upstream(target_host, target_port)
+        return self._connect_direct(target_host, target_port)
+
+    def _connect_direct(self, target_host: str, target_port: int) -> ssl.SSLSocket:
+        """Connect directly to target server."""
+        server_sock = socket.create_connection((target_host, target_port), timeout=60)
+        server_sock.settimeout(60)
+        server_ctx = ssl.create_default_context()
+        return server_ctx.wrap_socket(server_sock, server_hostname=target_host)
+
+    def _connect_via_upstream(self, target_host: str, target_port: int) -> ssl.SSLSocket:
+        """Connect to target through upstream proxy.
+
+        The upstream proxy (e.g., Anthropic's TLS-inspecting proxy) will:
+        1. Accept our CONNECT request
+        2. Establish tunnel to target
+        3. Perform TLS MITM (presenting a cert signed by its CA)
+
+        We trust the upstream CA via SSL_CERT_FILE or similar env var.
+        """
+        upstream = self.upstream_proxy
+        assert upstream is not None
+
+        logger.debug(
+            "Connecting to %s:%d via upstream proxy %s:%d", target_host, target_port, upstream.host, upstream.port
+        )
+
+        # Connect to upstream proxy
+        proxy_sock = socket.create_connection((upstream.host, upstream.port), timeout=60)
+        proxy_sock.settimeout(60)
+
+        # Build CONNECT request
+        connect_req = f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
+        connect_req += f"Host: {target_host}:{target_port}\r\n"
+
+        # Add auth if configured
+        if upstream.username and upstream.password:
+            creds = f"{upstream.username}:{upstream.password}"
+            encoded = base64.b64encode(creds.encode()).decode()
+            connect_req += f"Proxy-Authorization: Basic {encoded}\r\n"
+
+        connect_req += "\r\n"
+        proxy_sock.sendall(connect_req.encode())
+
+        # Read response
+        response = b""
+        while b"\r\n\r\n" not in response:
+            chunk = proxy_sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("Upstream proxy closed connection")
+            response += chunk
+
+        # Check for success (2xx status)
+        status_line = response.split(b"\r\n")[0].decode()
+        if " 200 " not in status_line and " 2" not in status_line.split()[1]:
+            raise ConnectionError(f"Upstream proxy rejected CONNECT: {status_line}")
+
+        logger.debug("Upstream proxy tunnel established to %s:%d", target_host, target_port)
+
+        # Wrap with TLS to target (upstream proxy does MITM, we trust its CA)
+        server_ctx = ssl.create_default_context()
+        if upstream.ca_bundle and Path(upstream.ca_bundle).exists():
+            server_ctx.load_verify_locations(upstream.ca_bundle)
+        return server_ctx.wrap_socket(proxy_sock, server_hostname=target_host)
+
     def _handle_client(self, client_sock: socket.socket) -> None:
         """Handle a single client connection."""
-        server_sock: socket.socket | None = None
         client_ssl: ssl.SSLSocket | None = None
         server_ssl: ssl.SSLSocket | None = None
         target_host: str = "<unknown>"
@@ -302,13 +439,8 @@ class ForwardingTLSProxy:
             # Send 200 Connection Established
             client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
 
-            # Connect to real target with longer timeout
-            server_sock = socket.create_connection((target_host, target_port), timeout=60)
-            server_sock.settimeout(60)
-
-            # Wrap server connection with TLS (to real server)
-            server_ctx = ssl.create_default_context()
-            server_ssl = server_ctx.wrap_socket(server_sock, server_hostname=target_host)
+            # Connect to real target (directly or via upstream proxy)
+            server_ssl = self._connect_to_target(target_host, target_port)
 
             # Generate server cert for this hostname and wrap client connection
             # Include CA cert in chain so clients can extract it via get_unverified_chain()
@@ -340,7 +472,7 @@ class ForwardingTLSProxy:
             logger.warning(error_msg)
             self.stats.record_failure(error_msg)
         finally:
-            for sock in [client_ssl, server_ssl, client_sock, server_sock]:
+            for sock in [client_ssl, server_ssl, client_sock]:
                 if sock:
                     with contextlib.suppress(OSError):
                         sock.close()

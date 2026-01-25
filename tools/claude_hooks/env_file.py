@@ -5,9 +5,18 @@ Centralizes all environment variable exports into a single file write.
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+
+def _exports_from_dict(env_vars: dict[str, str]) -> list[str]:
+    """Generate export lines from a dict of env var name -> value.
+
+    Properly shell-escapes values to handle special characters.
+    """
+    return [f"export {name}={shlex.quote(value)}" for name, value in env_vars.items()]
 
 
 @dataclass
@@ -25,6 +34,9 @@ class EnvVars:
     bazel_wrapper_dir: Path
     bazelisk_path: Path
     bazel_proxy_rc: Path
+
+    # Upstream proxy (original proxy before hook rewrites)
+    upstream_proxy_url: str | None
 
     # Nix paths
     nix_paths: list[Path]
@@ -62,35 +74,54 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
 
     # Bazel proxy configuration
     local_proxy = f"http://localhost:{vars.proxy_port}"
-    exports.extend(
-        [
-            "",
-            "# Bazel proxy configuration",
-            f"export BAZEL_PROXY_PORT={vars.proxy_port}",
-            f'export BAZEL_LOCAL_PROXY="{local_proxy}"',
-            f'export BAZELISK_PATH="{vars.bazelisk_path}"',
-            f'export BAZEL_PROXY_BAZELRC="{vars.bazel_proxy_rc}"',
-            f'export BAZEL_REPO_ROOT="{vars.repo_root}"',
-            f'export NODE_EXTRA_CA_CERTS="{vars.combined_ca}"',
-            f'export REQUESTS_CA_BUNDLE="{vars.combined_ca}"',
-            f'export CURL_CA_BUNDLE="{vars.combined_ca}"',
-            f'export SSL_CERT_FILE="{vars.combined_ca}"',
-        ]
-    )
+    combined_ca = str(vars.combined_ca)
+
+    bazel_config = {
+        "BAZEL_PROXY_PORT": str(vars.proxy_port),
+        "BAZEL_LOCAL_PROXY": local_proxy,
+        "BAZELISK_PATH": str(vars.bazelisk_path),
+        "BAZEL_PROXY_BAZELRC": str(vars.bazel_proxy_rc),
+        "BAZEL_REPO_ROOT": str(vars.repo_root),
+        "NODE_EXTRA_CA_CERTS": combined_ca,
+        "REQUESTS_CA_BUNDLE": combined_ca,
+        "CURL_CA_BUNDLE": combined_ca,
+        "SSL_CERT_FILE": combined_ca,
+    }
+    exports.extend(["", "# Bazel proxy configuration"])
+    exports.extend(_exports_from_dict(bazel_config))
+
+    # Proxy env vars for subprocesses (point to local auth-forwarding proxy)
+    # These override Anthropic's original proxy vars so subprocesses use our local proxy
+    proxy_var_names = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "GLOBAL_AGENT_HTTPS_PROXY",
+        "GLOBAL_AGENT_HTTP_PROXY",
+        "YARN_HTTPS_PROXY",
+        "YARN_HTTP_PROXY",
+    ]
+    exports.extend(["", "# Proxy env vars for subprocesses (point to local auth-forwarding proxy)"])
+    exports.extend(_exports_from_dict(dict.fromkeys(proxy_var_names, local_proxy)))
+
+    # Upstream proxy (original before hook rewrites HTTPS_PROXY)
+    # Exported so tests can chain through the real upstream when testing the hook
+    if vars.upstream_proxy_url:
+        exports.extend(["", "# Original upstream proxy (for tests that need to chain through)"])
+        exports.extend(_exports_from_dict({"CLAUDE_HOOKS_UPSTREAM_PROXY_URL": vars.upstream_proxy_url}))
 
     # Docker/Podman configuration
     if vars.docker_host or vars.podman_env:
         exports.extend(["", "# Podman/Docker configuration"])
         if vars.docker_host:
-            exports.append(f'export DOCKER_HOST="{vars.docker_host}"')
+            exports.extend(_exports_from_dict({"DOCKER_HOST": vars.docker_host}))
         if vars.podman_env:
-            for key, value in vars.podman_env.items():
-                exports.append(f'export {key}="{value}"')
+            exports.extend(_exports_from_dict(vars.podman_env))
 
     # Session metadata
-    exports.extend(
-        ["", "# Session metadata", f'export DUCKTAPE_SESSION_START_HOOK_TS="{vars.hook_timestamp.isoformat()}"']
-    )
+    exports.extend(["", "# Session metadata"])
+    exports.extend(_exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
 
     content = "\n".join(exports) + "\n"
     env_file.write_text(content)
