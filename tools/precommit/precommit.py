@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pygit2
+from checkov.runner_filter import RunnerFilter
+from checkov.terraform.runner import Runner as CheckovTerraformRunner
 from python.runfiles import runfiles
 
 from tools.check_pytest_main import check_files_async
@@ -239,6 +241,10 @@ def is_terraform_module(p: Path) -> bool:
     return p.suffix == ".tf" and p.is_relative_to("cluster/terraform/modules")
 
 
+def is_terraform_file(p: Path) -> bool:
+    return p.suffix == ".tf" and p.is_relative_to("cluster/terraform")
+
+
 async def run_buildifier_lint(files: list[Path]) -> ValidationResult:
     """Run buildifier lint on Bazel files."""
     name = "buildifier-lint"
@@ -312,13 +318,124 @@ async def run_terraform_centralization_check(files: list[Path]) -> ValidationRes
     return ValidationResult(name, elapsed, not violations, output)
 
 
+async def run_tflint(files: list[Path], repo_root: Path) -> ValidationResult:
+    """Run tflint on terraform files."""
+    name = "tflint"
+    tf_files = [f for f in files if is_terraform_file(f)]
+    if not tf_files:
+        return ValidationResult(name, 0.0, True, skipped=True)
+
+    start = time.perf_counter()
+    tflint_bin = resolve_formatter_bin("tflint")
+    tf_dirs = {f.parent for f in tf_files}
+    config_path = repo_root / "cluster" / ".tflint.hcl"
+
+    # Run tflint on each directory
+    tasks = []
+    for tf_dir in tf_dirs:
+        tasks.append(
+            asyncio.create_subprocess_exec(
+                tflint_bin,
+                f"--chdir={tf_dir}",
+                f"--config={config_path}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        )
+
+    procs = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*[p.communicate() for p in procs])
+    elapsed = time.perf_counter() - start
+
+    failed_outputs = []
+    for proc, (stdout, stderr) in zip(procs, results, strict=True):
+        if proc.returncode != 0:
+            output = (stdout + stderr).decode().strip()
+            if output:
+                failed_outputs.append(output)
+
+    return ValidationResult(name, elapsed, not failed_outputs, "\n".join(failed_outputs))
+
+
+async def run_tofu_validate(files: list[Path]) -> list[ValidationResult]:
+    """Run tofu validate on terraform directories."""
+    tf_files = [f for f in files if is_terraform_file(f)]
+    if not tf_files:
+        return []
+
+    tofu_bin = resolve_formatter_bin("tofu")
+    tf_dirs = {f.parent for f in tf_files}
+    results = []
+
+    for tf_dir in tf_dirs:
+        name = f"tofu-validate:{tf_dir.name}"
+        start = time.perf_counter()
+
+        # Init first (required for validate)
+        init_proc = await asyncio.create_subprocess_exec(
+            tofu_bin,
+            f"-chdir={tf_dir}",
+            "init",
+            "-backend=false",
+            "-input=false",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await init_proc.communicate()
+
+        # Validate
+        proc = await asyncio.create_subprocess_exec(
+            tofu_bin, f"-chdir={tf_dir}", "validate", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        elapsed = time.perf_counter() - start
+
+        output = (stdout + stderr).decode().strip()
+        results.append(ValidationResult(name, elapsed, proc.returncode == 0, output if proc.returncode != 0 else ""))
+
+    return results
+
+
+async def run_checkov(files: list[Path]) -> ValidationResult:
+    """Run checkov security scanner on terraform files."""
+    name = "checkov"
+    tf_files = [f for f in files if is_terraform_file(f)]
+    if not tf_files:
+        return ValidationResult(name, 0.0, True, skipped=True)
+
+    start = time.perf_counter()
+
+    runner = CheckovTerraformRunner()
+    runner_filter = RunnerFilter(skip_checks=["CKV_TF_1"])
+
+    # Run in executor to not block the event loop
+    loop = asyncio.get_event_loop()
+    report = await loop.run_in_executor(
+        None, lambda: runner.run(root_folder="cluster/terraform", runner_filter=runner_filter)
+    )
+    elapsed = time.perf_counter() - start
+
+    # Check for failures
+    failed_checks = report.failed_checks if report else []
+    if failed_checks:
+        output_lines = [f"{c.resource}: {c.check_id} - {c.check.name}" for c in failed_checks]
+        return ValidationResult(name, elapsed, False, "\n".join(output_lines))
+
+    return ValidationResult(name, elapsed, True, "")
+
+
 async def run_validate(files: list[Path], repo_root: Path) -> list[ValidationResult]:
     """Run all validations on files."""
-    return list(
+    # Run tofu validate separately since it returns multiple results
+    tofu_results = await run_tofu_validate(files)
+
+    other_results = list(
         await asyncio.gather(
             run_buildifier_lint(files),
             run_pytest_main_check(files, repo_root),
             run_terraform_centralization_check(files),
+            run_tflint(files, repo_root),
+            run_checkov(files),
             run_subprocess_validation(
                 "kustomize-validate", "_main/cluster/scripts/validate_kustomizations", files, is_cluster_k8s
             ),
@@ -336,6 +453,8 @@ async def run_validate(files: list[Path], repo_root: Path) -> list[ValidationRes
             ),
         )
     )
+
+    return other_results + tofu_results
 
 
 def get_all_files(repo: pygit2.Repository) -> list[Path]:

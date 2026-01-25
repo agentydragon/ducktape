@@ -140,35 +140,8 @@ repos:
         files: ^cluster/k8s/.*\.yaml$
         exclude: (cluster/k8s/.*-chart/|cluster/charts/)
 
-  # Terraform hooks for cluster
-  - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.103.0
-    hooks:
-      - id: terraform_fmt
-        name: terraform_fmt (cluster)
-        files: ^cluster/terraform/.*\.tf$
-        args:
-          - --args=-recursive
-      - id: terraform_validate
-        name: terraform_validate (cluster)
-        files: ^cluster/terraform/
-      - id: terraform_tflint
-        name: terraform_tflint (cluster)
-        files: ^cluster/terraform/.*\.tf$
-        args:
-          - --args=--config=__GIT_WORKING_DIR__/cluster/.tflint.hcl
-
-  # Checkov security analysis (official pre-commit hook)
-  - repo: https://github.com/bridgecrewio/checkov.git
-    rev: 3.2.384
-    hooks:
-      - id: checkov
-        name: Checkov security analysis (cluster)
-        args: [--framework, terraform, --skip-check, CKV_TF_1]
-        files: ^cluster/terraform/.*\.tf$
-
   # NOTE: The following hooks are now combined into bazel-precommit:
   # - bazel-format (prettier, ruff, shfmt, buildifier)
   # - bazel-validate (buildifier-lint, pytest-main check, cluster validations)
-  # - terraform-version-centralization
-  # This avoids Bazel client lock contention (~55s per hook -> ~20s total).
+  # - terraform checks (tflint, tofu validate, checkov, terraform-version-centralization)
+  # This avoids Bazel client lock contention and runs terraform checks in parallel.
