@@ -116,6 +116,7 @@ py_test(
         "@pypi//cryptography",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
