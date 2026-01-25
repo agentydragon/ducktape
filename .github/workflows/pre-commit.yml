@@ -66,9 +66,25 @@ jobs:
       # - No official status page (github.com/ansible/galaxy/issues/3508)
       # All required collections (community.docker, community.general, community.crypto,
       # ansible.netcommon, ansible.posix) are included in the ansible package.
-      # Roles from requirements.yaml are NOT needed for syntax checking.
       - name: Install Ansible
         run: pip install "ansible>=10"
+
+      # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
+      - name: Restore Ansible Galaxy roles cache
+        id: cache-ansible-roles-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.ansible/roles
+          key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: ansible-roles-${{ runner.os }}-
+
+      # Roles ARE needed for syntax checking - ansible-playbook --syntax-check resolves
+      # role dependencies from meta/main.yml files (e.g., legacy_gui depends on
+      # petermosmans.customize-gnome)
+      - name: Install Ansible Galaxy roles
+        run: |
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
 
       - name: Restore pre-commit cache
         id: cache-precommit-restore
@@ -116,3 +132,10 @@ jobs:
         with:
           path: ~/.cache/pre-commit
           key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}
+
+      - name: Save Ansible Galaxy roles cache
+        if: always() && steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ansible/roles
+          key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}
