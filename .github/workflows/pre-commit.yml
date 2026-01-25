@@ -73,10 +73,8 @@ jobs:
         run: |
           pip install "ansible-core>=2.18"
           cd ansible
-          # Use --ignore-errors and || true to continue even when Ansible Galaxy API is down
-          # CI should not fail due to transient Galaxy API issues (HTTP 503)
-          ansible-galaxy role install -r requirements.yaml --ignore-errors || true
-          ansible-galaxy collection install -r requirements.yaml --ignore-errors || true
+          ansible-galaxy role install -r requirements.yaml
+          ansible-galaxy collection install -r requirements.yaml
 
       - name: Restore pre-commit cache
         id: cache-precommit-restore
