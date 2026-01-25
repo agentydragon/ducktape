@@ -11,7 +11,7 @@ from mcp_infra.notifications.types import NotificationsBatch, ResourcesServerNot
 from mcp_infra.resource_utils import derive_origin_server
 
 if TYPE_CHECKING:
-    from mcp_infra.compositor.server import Compositor
+    from mcp_infra.compositor.compositor import Compositor
 
 logger = logging.getLogger(__name__)
 

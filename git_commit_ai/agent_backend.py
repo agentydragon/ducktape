@@ -23,7 +23,7 @@ from git_commit_ai.git_ro.server import (
     TextSlice,
 )
 from mcp_infra.bootstrap import TypedBootstrapBuilder
-from mcp_infra.compositor.server import Compositor
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.simple import SimpleFastMCP
 from mcp_infra.mcp_types import SimpleOk

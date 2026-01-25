@@ -20,7 +20,7 @@ from agent_server.agent_types import AgentID
 from agent_server.persist.sqlite import SQLitePersistence
 from agent_server.presets import create_agent_from_preset
 from agent_server.runtime.container import AgentContainer, build_container
-from mcp_infra.compositor.server import Compositor
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto
 

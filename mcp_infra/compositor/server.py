@@ -27,11 +27,8 @@ from fastmcp.server import FastMCP
 from mcp import types as mcp_types
 from pydantic import ValidationError
 
-from mcp_infra.compositor.meta_server import CompositorMetaServer
 from mcp_infra.compositor.mount import Mount
 from mcp_infra.compositor.rendering import render_compositor_instructions
-from mcp_infra.compositor.resources_server import ResourcesServer
-from mcp_infra.constants import COMPOSITOR_META_MOUNT_PREFIX, RESOURCES_MOUNT_PREFIX
 from mcp_infra.mount_types import MountEvent
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
@@ -55,7 +52,7 @@ T = TypeVar("T", bound=FastMCP)
 class ChildNotificationHandler(MessageHandler):
     """Message handler that forwards notifications to compositor with origin attribution."""
 
-    def __init__(self, compositor: Compositor, server_prefix: MCPMountPrefix) -> None:
+    def __init__(self, compositor: BaseCompositor, server_prefix: MCPMountPrefix) -> None:
         self._compositor = compositor
         self._server_prefix = server_prefix
 
@@ -87,48 +84,24 @@ class CompositorState(Enum):
     CLOSED = auto()  # Cleanup completed, terminal state
 
 
-class Compositor(FastMCP):
-    """Aggregates upstream MCP servers under a single FastMCP surface.
+class BaseCompositor(FastMCP):
+    """Base class for MCP server aggregation. Use Compositor for typical usage.
+
+    Aggregates upstream MCP servers under a single FastMCP surface.
+    Most users should use Compositor (which extends this and auto-mounts
+    infrastructure servers like resources and compositor_meta).
 
     MUST be used as async context manager:
-        async with Compositor() as comp:
+        async with BaseCompositor() as comp:
             await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, runtime_server)
-            async with Client(comp) as client:
-                from mcp_infra.naming import build_mcp_function
-                result = await client.call_tool(
-                    build_mcp_function("runtime", "exec"), {"command": ["ls"]}
-                )
-        # All non-pinned servers cleaned up here
+            ...
 
     Features:
     - Namespaces tools as {server}_{tool} (use build_mcp_function(server, tool) helper)
     - Reuses persistent upstream sessions per mount
     - Relays resource updates as notifications
     - Exception-safe mount/unmount (no leaks on failure)
-    - Pinned servers (e.g., compositor_meta) persist through close()
-    - Auto-mounts infrastructure servers (resources, compositor_meta) on __aenter__
-
-    Common Patterns:
-
-    1. Short-lived script:
-        async with Compositor() as comp:
-            await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, RuntimeServer(...))
-            async with Client(comp) as client:
-                agent = await Agent.create(mcp_client=client)
-                await agent.run("review this code")
-
-    2. Long-lived server:
-        stack = AsyncExitStack()
-        comp = Compositor()
-        await stack.enter_async_context(comp)  # Adds to parent stack
-        await comp.mount_servers_from_config(config)
-        # Later: await stack.aclose() cleans up compositor
-
-    3. With pinned servers:
-        async with Compositor() as comp:
-            await comp.mount_inproc(RESOURCES_MOUNT_PREFIX, resources_server, pinned=True)
-            await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, runtime_server)  # Not pinned
-            # On exit: runtime unmounted, resources stays
+    - Pinned servers persist through close()
 
     Safeguards (raises RuntimeError/ValueError):
     - Cannot double-enter same compositor
@@ -140,13 +113,9 @@ class Compositor(FastMCP):
     - __del__ warning if leaked (container leak detection)
 
     See also:
+    - Compositor for the standard entry point with infrastructure servers
     - Mount class for per-server lifecycle
-    - docs/compositor.md for architecture and exception safety proofs
     """
-
-    # Infrastructure servers (mounted automatically in __aenter__, always pinned)
-    resources: Mounted[ResourcesServer]
-    compositor_meta: Mounted[CompositorMetaServer]
 
     def __init__(
         self, name: str = "compositor", *, instructions: str | None = None, version: str | None = None
@@ -167,8 +136,6 @@ class Compositor(FastMCP):
         self._pending_resource_list_changes: set[MCPMountPrefix] = set()
         self._resource_list_change_listeners: list[Callable[[MCPMountPrefix], Awaitable[None] | None]] = []
         self._resource_updated_listeners: list[Callable[[MCPMountPrefix, str], Awaitable[None] | None]] = []
-
-        # Compositor metadata resources are exposed via the separate 'compositor_meta' server.
 
     # ---- Public child client accessor -------------------------------------
 
@@ -563,27 +530,19 @@ class Compositor(FastMCP):
     async def __aenter__(self):
         """Enter context. Returns self (NOT a separate Handle type).
 
-        Auto-mounts infrastructure servers (resources, compositor_meta) as pinned.
-
         Raises:
             RuntimeError: If already entered or closed
         """
         async with self._state_lock:
             if self._state == CompositorState.ACTIVE:
                 raise RuntimeError(
-                    f"Compositor '{self.name}' is already in an active context manager! "
+                    f"BaseCompositor '{self.name}' is already in an active context manager! "
                     "Cannot enter the same compositor twice."
                 )
             if self._state == CompositorState.CLOSED:
-                raise RuntimeError(f"Compositor '{self.name}' is already closed. Cannot reuse a closed compositor.")
+                raise RuntimeError(f"BaseCompositor '{self.name}' is already closed. Cannot reuse a closed compositor.")
 
             self._state = CompositorState.ACTIVE
-
-        # Mount infrastructure servers (always pinned)
-        self.resources = await self.mount_inproc(RESOURCES_MOUNT_PREFIX, ResourcesServer(compositor=self), pinned=True)
-        self.compositor_meta = await self.mount_inproc(
-            COMPOSITOR_META_MOUNT_PREFIX, CompositorMetaServer(compositor=self), pinned=True
-        )
 
         return self
 
@@ -637,7 +596,7 @@ class Compositor(FastMCP):
             ExceptionGroup: If any servers failed to unmount (Python 3.11+)
         """
         if self._state == CompositorState.CLOSED:
-            raise RuntimeError(f"Compositor '{self.name}' is already closed")
+            raise RuntimeError(f"BaseCompositor '{self.name}' is already closed")
 
         # Snapshot non-pinned servers under lock
         async with self._mount_lock:

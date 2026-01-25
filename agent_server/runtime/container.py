@@ -34,8 +34,8 @@ from agent_server.server.bus import ServerBus
 from agent_server.server.runtime import AgentSession, UiEventHandler
 from agent_server.server.system_message import get_ui_system_message
 from mcp_infra.compositor.clients import CompositorMetaClient
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
-from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.container_session import ContainerOptions
 from mcp_infra.prefix import MCPMountPrefix

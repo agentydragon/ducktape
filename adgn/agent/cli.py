@@ -18,7 +18,7 @@ from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
 from cli_util.decorators import async_run
 from cli_util.logging import make_logging_callback
-from mcp_infra.compositor.server import Compositor
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.config_loader import build_mcp_config
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.client_factory import build_client

@@ -69,7 +69,7 @@ from inop.prompting.prompt_engineer import (
 )
 from inop.prompting.summarizer import PatternSummarizer
 from inop.prompting.truncation_utils import TruncationManager
-from mcp_infra.compositor.server import Compositor
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, UserMessage
 

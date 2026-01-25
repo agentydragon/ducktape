@@ -113,7 +113,7 @@ py_library(
         "//mcp_infra:mounted",
         "//mcp_infra:prefix",
         "//mcp_infra/bootstrap:__init__",
-        "//mcp_infra/compositor:server",
+        "//mcp_infra/compositor",
         "//mcp_infra/display:rich_display",
         "//mcp_infra/enhanced:simple",
         "//openai_utils:client_factory",

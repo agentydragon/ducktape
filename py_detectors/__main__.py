@@ -19,6 +19,7 @@ from py_detectors import (
     det_pydantic_v1_shims,  # noqa: F401
     det_swallow_errors,  # noqa: F401
     det_trivial_alias,  # noqa: F401
+    det_trivial_passthrough,  # noqa: F401
     det_walrus_suggest,  # noqa: F401
 )
 from py_detectors.registry import all_detectors, run_all

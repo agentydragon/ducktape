@@ -31,7 +31,7 @@ from agent_server.server.app import create_app
 from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
 from agent_server.testing.approval_policy_testdata import fetch_policy, make_policy
-from mcp_infra.compositor.server import Compositor
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mcp_types import McpServerSpecs

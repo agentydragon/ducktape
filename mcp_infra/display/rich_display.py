@@ -29,7 +29,7 @@ from openai_utils.model import ReasoningItem
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
 
-    from mcp_infra.compositor.server import Compositor
+    from mcp_infra.compositor.compositor import Compositor
 
 logger = logging.getLogger(__name__)
 

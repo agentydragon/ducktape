@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from agent_server.runtime.registry import AgentRegistry
-    from mcp_infra.compositor.server import Compositor
+    from mcp_infra.compositor.compositor import Compositor
 
 logger = logging.getLogger(__name__)
 

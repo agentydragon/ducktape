@@ -4,10 +4,7 @@ import asyncio
 import logging
 from collections.abc import Iterator, Sequence
 from enum import StrEnum
-from typing import TYPE_CHECKING, Annotated, Final, Literal, cast
-
-if TYPE_CHECKING:
-    from mcp_infra.compositor.server import Compositor  # gazelle:ignore mcp_infra.compositor.server
+from typing import Annotated, Final, Literal, cast
 
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource
@@ -15,6 +12,7 @@ from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
+from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.mcp_types import SimpleOk
@@ -319,11 +317,11 @@ class ResourcesServer(EnhancedFastMCP):
     subscribe_list_changes_tool: FlatTool
     unsubscribe_list_changes_tool: FlatTool
 
-    def __init__(self, *, compositor: Compositor):
+    def __init__(self, *, compositor: BaseCompositor):
         """Create a Resources MCP server.
 
         Args:
-            compositor: Compositor for resource operations, metadata, and lifecycle listeners
+            compositor: BaseCompositor for resource operations, metadata, and lifecycle listeners
         """
         # TODO: Ensure NotificationsHandler is consistently injected when mounting this server,
         # or make subscription functionality optionally toggleable (don't advertise subscribe

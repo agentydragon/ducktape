@@ -6,10 +6,12 @@ import asyncio
 from unittest.mock import patch
 
 import pytest
+import pytest_bazel
 from fastmcp.server import FastMCP
 
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.mount import Mount, MountState
-from mcp_infra.compositor.server import Compositor, CompositorState
+from mcp_infra.compositor.server import CompositorState
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -364,3 +366,7 @@ async def test_compositor_warns_on_leak(make_simple_mcp):
         assert "backend" in warning_msg
         assert "was never used as context manager" in warning_msg
         assert warning_category is ResourceWarning
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

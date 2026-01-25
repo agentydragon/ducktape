@@ -20,9 +20,10 @@ from ember.config import (
     SleepUntilUserMessagePolicy,
 )
 from ember.matrix_client import ConversationStatus
-from mcp_infra.compositor.server import Compositor, Mounted
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.exec.direct import DirectExecServer
+from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 

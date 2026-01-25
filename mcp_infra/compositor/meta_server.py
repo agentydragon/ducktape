@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from fastmcp.resources import FunctionResource, ResourceTemplate
 
+from mcp_infra.compositor.server import BaseCompositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.mount_types import MountEvent
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import ServerEntry
-
-if TYPE_CHECKING:
-    from mcp_infra.compositor.server import Compositor  # gazelle:ignore mcp_infra.compositor.server
 
 
 class CompositorMetaServer(EnhancedFastMCP):
@@ -25,11 +23,11 @@ class CompositorMetaServer(EnhancedFastMCP):
     servers_list_resource: FunctionResource
     server_state_resource: ResourceTemplate
 
-    def __init__(self, *, compositor: Compositor):
+    def __init__(self, *, compositor: BaseCompositor):
         """Create compositor metadata server.
 
         Args:
-            compositor: Compositor instance to expose metadata for
+            compositor: BaseCompositor instance to expose metadata for
         """
         # Pass explicit version to avoid importlib.metadata.version() lookup which can hang under pytest-xdist
         super().__init__(
@@ -98,16 +96,3 @@ class CompositorMetaServer(EnhancedFastMCP):
                 await self.broadcast_resource_updated(self.server_state_resource.uri_template.format(server=name))
 
         self._compositor.add_mount_listener(_on_mount_change)
-
-
-def make_compositor_meta_server(*, compositor: Compositor, name: str | None = None) -> CompositorMetaServer:
-    """Factory function for backward compatibility.
-
-    Args:
-        compositor: Compositor instance to expose metadata for
-        name: Unused (kept for API compatibility)
-
-    Returns:
-        CompositorMetaServer instance
-    """
-    return CompositorMetaServer(compositor=compositor)

@@ -89,7 +89,7 @@ py_library(
     deps = [
         "//agent_server/mcp_bridge:auth",
         "//agent_server/runtime:registry",
-        "//mcp_infra/compositor:server",
+        "//mcp_infra/compositor",
         "@pypi//fastapi",
         "@pypi//starlette",
     ],

@@ -15,7 +15,7 @@ from mcp_infra.naming import parse_tool_name
 from openai_utils.model import ReasoningItem
 
 if TYPE_CHECKING:
-    from mcp_infra.compositor.server import Compositor
+    from mcp_infra.compositor.compositor import Compositor
 
 from agent_core.events import AssistantText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler

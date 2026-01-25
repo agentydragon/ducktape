@@ -53,7 +53,7 @@ py_library(
         "//mcp_infra:constants",
         "//mcp_infra:mcp_types",
         "//mcp_infra:prefix",
-        "//mcp_infra/compositor:server",
+        "//mcp_infra/compositor",
         "//mcp_infra/display:event_renderer",
         "//mcp_infra/exec:bwrap",
         "//mcp_infra/exec:direct",

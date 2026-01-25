@@ -28,7 +28,7 @@ py_library(
         "//agent_core:mcp_provider",
         "//mcp_infra:flat_tool",
         "//mcp_infra:prefix",
-        "//mcp_infra/compositor:server",
+        "//mcp_infra/compositor",
         "//mcp_infra/display:rich_display",
         "//mcp_infra/enhanced:server",
         "//openai_utils:model",

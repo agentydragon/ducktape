@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from agent_server.mcp_bridge.agents import AgentsManagementServer
-from mcp_infra.compositor.server import Compositor
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.prefix import MCPMountPrefix
 
 if TYPE_CHECKING:

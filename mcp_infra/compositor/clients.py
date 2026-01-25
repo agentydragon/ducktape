@@ -5,7 +5,7 @@ from typing import cast
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from mcp_infra.compositor.server import Compositor
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.snapshots import ServerEntry
 
 

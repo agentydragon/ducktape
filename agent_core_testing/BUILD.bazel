@@ -76,6 +76,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":__init__",
+        ":echo_server",
+        ":openai_mock",
+        ":responses",
         "//agent_core:agent",
         "//agent_core:events",
         "//agent_core:handler",

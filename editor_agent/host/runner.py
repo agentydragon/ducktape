@@ -12,8 +12,8 @@ import aiodocker
 from fastmcp.server.auth import StaticTokenVerifier
 
 from editor_agent.host.submit_server import EditorSubmitServer
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.resources_server import ResourcesServer
-from mcp_infra.compositor.server import Compositor
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.exec.docker.container_session import ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer

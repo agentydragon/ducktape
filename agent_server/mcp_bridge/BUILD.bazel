@@ -70,7 +70,7 @@ py_library(
         ":agents",
         ":registry",
         "//mcp_infra:prefix",
-        "//mcp_infra/compositor:server",
+        "//mcp_infra/compositor",
     ],
 )
 
@@ -84,7 +84,7 @@ py_library(
         "//agent_server/persist:sqlite",
         "//agent_server/runtime:container",
         "//mcp_infra:prefix",
-        "//mcp_infra/compositor:server",
+        "//mcp_infra/compositor",
         "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//fastmcp",

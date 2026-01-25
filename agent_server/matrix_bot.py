@@ -17,8 +17,8 @@ from agent_core.mcp_provider import MCPToolProvider
 from agent_server.logging_config import configure_logging_info
 from agent_server.server.bus import ServerBus, UiEndTurn
 from agent_server.server.mode_handler import ServerModeHandler
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
-from mcp_infra.compositor.server import Compositor
 from mcp_infra.config_loader import build_mcp_config
 from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP

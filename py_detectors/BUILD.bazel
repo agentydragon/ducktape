@@ -24,6 +24,7 @@ py_library(
         "det_pydantic_v1_shims.py",
         "det_swallow_errors.py",
         "det_trivial_alias.py",
+        "det_trivial_passthrough.py",
         "det_walrus_suggest.py",
         "import_graph.py",
         "models.py",
@@ -167,6 +168,13 @@ py_library(
 py_library(
     name = "det_trivial_alias",
     srcs = ["det_trivial_alias.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":__init__"],
+)
+
+py_library(
+    name = "det_trivial_passthrough",
+    srcs = ["det_trivial_passthrough.py"],
     visibility = ["//:__subpackages__"],
     deps = [":__init__"],
 )

@@ -7,11 +7,12 @@ server state without going through the MCP client protocol.
 
 from __future__ import annotations
 
+import pytest_bazel
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 
+from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.mount import Mount
-from mcp_infra.compositor.server import Compositor
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -265,3 +266,7 @@ async def test_compositor_get_inproc_servers_excludes_external():
         # Infrastructure servers should be present
         assert MCPMountPrefix("resources") in servers
         assert MCPMountPrefix("compositor_meta") in servers
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
