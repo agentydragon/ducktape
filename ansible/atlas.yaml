@@ -158,7 +158,7 @@
         regexp: "^GRUB_CMDLINE_LINUX_DEFAULT="
         line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet amd_iommu=on iommu=pt"'
         backup: true
-      notify: update grub
+      notify: Update grub
       tags: [gpu_passthrough, iommu]
 
     - name: Add VFIO modules to /etc/modules
@@ -166,6 +166,7 @@
         path: /etc/modules
         line: "{{ item }}"
         create: true
+        mode: "0644"
       loop:
         - vfio
         - vfio_iommu_type1
@@ -208,7 +209,7 @@
     # Consider using community.general.proxmox_kvm module or templating .conf files
 
   handlers:
-    - name: update grub
+    - name: Update grub
       ansible.builtin.command:
         cmd: update-grub
       register: grub_result

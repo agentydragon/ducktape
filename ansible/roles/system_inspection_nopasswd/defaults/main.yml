@@ -18,7 +18,7 @@ system_inspection_nopasswd_user: "{{ my_user }}"
 # All paths are for Debian/Ubuntu systems.
 
 # Commands where any arguments are safe (truly read-only)
-system_inspection_sudo_any_args:
+system_inspection_nopasswd_sudo_any_args:
   # Hardware information (needs sudo for full access)
   - /usr/bin/lshw
   - /usr/sbin/dmidecode
@@ -57,7 +57,7 @@ system_inspection_sudo_any_args:
 
 # Commands restricted to specific safe subcommands (exact match)
 # Format: "command subcommand" or "command" for no-args
-system_inspection_sudo_exact_subcommands:
+system_inspection_nopasswd_sudo_exact_subcommands:
   # GPU information - ONLY query subcommands
   - /usr/bin/nvidia-smi
   - /usr/bin/nvidia-smi -q
@@ -148,7 +148,7 @@ system_inspection_sudo_exact_subcommands:
 
 # Commands with safe prefix + variable trailing argument (wildcard match)
 # Format: "command prefix" - will be expanded to "command prefix *"
-system_inspection_sudo_wildcard_subcommands:
+system_inspection_nopasswd_sudo_wildcard_subcommands:
   # Session/user info - needs session/user ID
   - /usr/bin/loginctl show-session
   - /usr/bin/loginctl show-user
@@ -176,7 +176,7 @@ system_inspection_sudo_wildcard_subcommands:
 
 # Log viewing commands with path restrictions
 # These are separate because Claude Code cannot express path restrictions
-system_inspection_log_viewing:
+system_inspection_nopasswd_log_viewing:
   - /usr/bin/tail -f /var/log/*
   - /usr/bin/head /var/log/*
   - /usr/bin/cat /var/log/*

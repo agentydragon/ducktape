@@ -10,21 +10,21 @@
 #   - Log viewing: path-restricted log access
 
 # Commands where any arguments are safe
-{% for cmd in system_inspection_sudo_any_args %}
+{% for cmd in system_inspection_nopasswd_sudo_any_args %}
 {{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ cmd }}
 {% endfor %}
 
 # Commands restricted to specific safe subcommands (exact match)
-{% for cmd in system_inspection_sudo_exact_subcommands %}
+{% for cmd in system_inspection_nopasswd_sudo_exact_subcommands %}
 {{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ cmd }}
 {% endfor %}
 
 # Commands with safe prefix + variable trailing argument
-{% for cmd in system_inspection_sudo_wildcard_subcommands %}
+{% for cmd in system_inspection_nopasswd_sudo_wildcard_subcommands %}
 {{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ cmd }} *
 {% endfor %}
 
 # Log viewing with path restrictions
-{% for cmd in system_inspection_log_viewing %}
+{% for cmd in system_inspection_nopasswd_log_viewing %}
 {{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ cmd }}
 {% endfor %}

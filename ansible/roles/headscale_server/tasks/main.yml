@@ -145,8 +145,8 @@
     fi
   args:
     executable: /bin/bash
-  register: headscale_atlas_ip_result
-  changed_when: "'changed' in headscale_atlas_ip_result.stdout"
-  failed_when: headscale_atlas_ip_result.rc != 0
+  register: headscale_server_atlas_ip_result
+  changed_when: "'changed' in headscale_server_atlas_ip_result.stdout"
+  failed_when: headscale_server_atlas_ip_result.rc != 0
   notify: Restart Headscale
   tags: [headscale, atlas-ip]
