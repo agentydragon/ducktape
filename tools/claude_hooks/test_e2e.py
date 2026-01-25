@@ -26,6 +26,7 @@ import pytest_bazel
 
 from net_util.net import pick_free_port
 from runfiles import get_required_path
+from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.testing import runfiles_util, shell_helpers
 from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy, UpstreamProxyConfig
 
@@ -125,11 +126,6 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
             "CLAUDE_CODE_REMOTE": "true",
             "CLAUDE_PROJECT_DIR": str(isolated_dirs.project),
             "CLAUDE_ENV_FILE": str(isolated_dirs.env_file),
-            # Proxy configuration (simulating Claude Code web)
-            "https_proxy": proxy_url,
-            "HTTPS_PROXY": proxy_url,
-            "http_proxy": proxy_url,
-            "HTTP_PROXY": proxy_url,
             # Isolated directories
             "HOME": str(isolated_dirs.home),
             "XDG_CACHE_HOME": str(isolated_dirs.cache),
@@ -143,6 +139,8 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
             "CLAUDE_HOOKS_SKIP_PODMAN": "1",
             # Skip bazelisk download (tests use system bazel)
             "CLAUDE_HOOKS_SKIP_BAZELISK": "1",
+            # Proxy configuration (simulating Claude Code web)
+            **dict.fromkeys(PROXY_ENV_VARS, proxy_url),
         }
     )
 

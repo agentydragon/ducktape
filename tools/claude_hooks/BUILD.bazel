@@ -16,6 +16,7 @@ py_library(
         "podman_service.py",
         "proxy_credentials.py",
         "proxy_setup.py",
+        "proxy_vars.py",
         "resources.py",
         "session_start.py",
         "streaming.py",

@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from tools.claude_hooks import proxy_setup, supervisor_setup
 from tools.claude_hooks.errors import BazelProxyError, MissingEnvVarError
 from tools.claude_hooks.proxy_credentials import check_credential_expiry
+from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ def main() -> None:
         log_recovery_instructions(require_env("DUCKTAPE_REPO_ROOT"))
         raise SystemExit(1) from e
 
-    for var in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"]:
+    for var in PROXY_ENV_VARS:
         os.environ[var] = require_env("BAZEL_LOCAL_PROXY")
 
     bazelisk_path = require_env("BAZELISK_PATH")

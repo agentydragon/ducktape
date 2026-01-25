@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
+
 
 def _exports_from_dict(env_vars: dict[str, str]) -> list[str]:
     """Generate export lines from a dict of env var name -> value.
@@ -91,18 +93,8 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
 
     # Proxy env vars for subprocesses (point to local auth-forwarding proxy)
     # These override Anthropic's original proxy vars so subprocesses use our local proxy
-    proxy_var_names = [
-        "HTTPS_PROXY",
-        "https_proxy",
-        "HTTP_PROXY",
-        "http_proxy",
-        "GLOBAL_AGENT_HTTPS_PROXY",
-        "GLOBAL_AGENT_HTTP_PROXY",
-        "YARN_HTTPS_PROXY",
-        "YARN_HTTP_PROXY",
-    ]
     exports.extend(["", "# Proxy env vars for subprocesses (point to local auth-forwarding proxy)"])
-    exports.extend(_exports_from_dict(dict.fromkeys(proxy_var_names, local_proxy)))
+    exports.extend(_exports_from_dict(dict.fromkeys(PROXY_ENV_VARS, local_proxy)))
 
     # Upstream proxy (original before hook rewrites HTTPS_PROXY)
     # Exported so tests can chain through the real upstream when testing the hook
