@@ -21,25 +21,25 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Restore Ansible Galaxy cache
+      # Only cache roles - collections are bundled in ansible package
+      - name: Restore Ansible Galaxy roles cache
         id: cache-ansible-restore
         uses: actions/cache/restore@v4
         with:
-          path: |
-            ~/.ansible/collections
-            ~/.ansible/roles
-          key: ansible-galaxy-full-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
-          restore-keys: ansible-galaxy-full-${{ runner.os }}-
+          path: ~/.ansible/roles
+          key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: ansible-roles-${{ runner.os }}-
 
+      # Use full 'ansible' package for bundled collections (avoids Galaxy API for collections).
+      # Galaxy has known reliability issues - see pre-commit.yml for details.
       - name: Install ansible and ansible-lint
-        run: |
-          pip install "ansible-core>=2.18" ansible-lint
+        run: pip install "ansible>=10" ansible-lint
 
-      - name: Install Ansible Galaxy dependencies
+      # Only fetch roles from Galaxy - collections are bundled in ansible package
+      - name: Install Ansible Galaxy roles
         run: |
           cd ansible
           ansible-galaxy role install -r requirements.yaml
-          ansible-galaxy collection install -r requirements.yaml
 
       - name: Run ansible-lint (thorough mode)
         run: .github/scripts/run-ansible-lint.sh
@@ -58,11 +58,9 @@ jobs:
             echo "❌ Ansible-lint found issues" >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Save Ansible Galaxy cache
+      - name: Save Ansible Galaxy roles cache
         if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: |
-            ~/.ansible/collections
-            ~/.ansible/roles
+          path: ~/.ansible/roles
           key: ${{ steps.cache-ansible-restore.outputs.cache-primary-key }}

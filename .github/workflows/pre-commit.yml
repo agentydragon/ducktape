@@ -60,21 +60,15 @@ jobs:
           # Set PCT_TFPATH so terraform hooks find opentofu
           echo "PCT_TFPATH=$(which tofu)" >> $GITHUB_ENV
 
-      - name: Restore Ansible Galaxy cache
-        id: cache-ansible-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.ansible
-          key: ansible-galaxy-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
-          restore-keys: |
-            ansible-galaxy-${{ runner.os }}-
-
-      - name: Bootstrap Ansible Galaxy dependencies
-        run: |
-          pip install "ansible-core>=2.18"
-          cd ansible
-          ansible-galaxy role install -r requirements.yaml
-          ansible-galaxy collection install -r requirements.yaml
+      # Use full 'ansible' package instead of 'ansible-core' to get bundled collections.
+      # This avoids Ansible Galaxy API calls entirely - Galaxy has known reliability issues:
+      # - Intermittent 500 errors (github.com/ansible/galaxy/issues/2954)
+      # - No official status page (github.com/ansible/galaxy/issues/3508)
+      # All required collections (community.docker, community.general, community.crypto,
+      # ansible.netcommon, ansible.posix) are included in the ansible package.
+      # Roles from requirements.yaml are NOT needed for syntax checking.
+      - name: Install Ansible
+        run: pip install "ansible>=10"
 
       - name: Restore pre-commit cache
         id: cache-precommit-restore
@@ -115,13 +109,6 @@ jobs:
         with:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
-
-      - name: Save Ansible Galaxy cache
-        if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.ansible
-          key: ${{ steps.cache-ansible-restore.outputs.cache-primary-key }}
 
       - name: Save pre-commit cache
         if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'
