@@ -1,0 +1,43 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle-managed per-file py_library targets
+
+py_library(
+    name = "evaluator",
+    srcs = ["evaluator.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tana/domain:constants",
+        "//tana/domain:nodes",
+        "//tana/domain:search",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+        "//tana/query:filters",
+    ],
+)
+
+py_library(
+    name = "materializer",
+    srcs = ["materializer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":evaluator",
+        ":parser",
+        "//tana/domain:nodes",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+    ],
+)
+
+py_library(
+    name = "parser",
+    srcs = ["parser.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tana/domain:constants",
+        "//tana/domain:nodes",
+        "//tana/domain:search",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+    ],
+)

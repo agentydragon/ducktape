@@ -1,7 +1,5 @@
 """Ember agent package."""
 
-# gazelle:ignore
-
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -38,9 +36,9 @@ py_binary(
 
 py_binary(
     name = "ember-python",
-    srcs = ["python_session.py"],
-    main = "python_session.py",
-    deps = ["@pypi//jupyter_client"],
+    srcs = ["ember_python_main.py"],
+    main = "ember_python_main.py",
+    deps = [":python_session"],
 )
 
 py_test(
@@ -49,6 +47,7 @@ py_test(
     data = [":data_files"],
     imports = [".."],
     deps = [
+        ":__init__",
         ":system_prompt",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -83,6 +82,7 @@ py_test(
 ruff_test(
     name = "ruff",
     srcs = [
+        ":__init__",
         ":app",
         ":config",
         ":handlers",
@@ -125,6 +125,12 @@ oci_load(
 )
 
 py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     visibility = ["//:__subpackages__"],
@@ -133,7 +139,6 @@ py_library(
         ":runtime",
         "@pypi//fastapi",
         "@pypi//pydantic",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -144,7 +149,7 @@ py_library(
     deps = [
         ":secrets",
         ":system_prompt",
-        "//openai_utils:model",
+        "//openai_utils:types",
         "@pypi//openai",
         "@pypi//pydantic",
     ],
@@ -155,7 +160,9 @@ py_library(
     srcs = ["handlers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
         "//openai_utils:model",
         "@pypi//pydantic",
     ],
@@ -182,8 +189,10 @@ py_library(
         ":config",
         ":matrix_client",
         "//mcp_infra:prefix",
+        "//mcp_infra/compositor:server",
+        "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/exec:direct",
-        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//pydantic",
     ],
 )
@@ -206,7 +215,10 @@ py_library(
         ":mcp_tools",
         ":python_session",
         "//agent_core:agent",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
         "//agent_core:mcp_provider",
+        "//openai_utils:client_factory",
         "//openai_utils:model",
         "@pypi//fastmcp",
     ],
@@ -223,4 +235,11 @@ py_library(
     srcs = ["system_prompt.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//jinja2"],
+)
+
+py_library(
+    name = "ember_python_main",
+    srcs = ["ember_python_main.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":python_session"],
 )

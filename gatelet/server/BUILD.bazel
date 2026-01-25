@@ -1,7 +1,8 @@
 """Gatelet server package."""
 
-# gazelle:ignore
-# gazelle:python_library_naming_convention $package_name$_lib
+# NOTE: No aggregator target - use specific per-file targets like :app, :config, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
@@ -11,181 +12,201 @@ py_binary(
     imports = ["../.."],
     main = "__main__.py",
     visibility = ["//gatelet:__pkg__"],
-    deps = [":server_lib"],
+    deps = [
+        ":app",
+        "@pypi//uvicorn",
+    ],
 )
 
 py_library(
-    name = "server_lib",
-    srcs = [
-        # server
-        "app.py",
-        "config.py",
-        "database.py",
-        "lifespan.py",
-        "models.py",
-        "prompts.py",
-        "security.py",
-        "shared.py",
-        # auth
-        "auth/dependencies.py",
-        "auth/handlers.py",
-        "auth/key_auth.py",
-        "auth/webhook_auth.py",
-        # endpoints
-        "endpoints/activitywatch.py",
-        "endpoints/admin.py",
-        "endpoints/challenge.py",
-        "endpoints/homeassistant.py",
-        "endpoints/webhook_receive.py",
-        "endpoints/webhook_view.py",
-        # migrations
-        "migrations/env.py",
-        "migrations/versions/001_initial_schema.py",
-        "migrations/versions/002_normalize_webhook_payload.py",
-        # tests (utilities only, not test files)
-        "tests/activitywatch_sample.py",
-        "tests/utils.py",
-    ],
+    name = "__main__",
+    srcs = ["__main__.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
     data = glob([
         "**/*.css",
         "**/*.html",
         "**/*.jinja2",
     ]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
+    visibility = ["//gatelet:__subpackages__"],
     deps = [
-        "@pypi//alembic",
-        "@pypi//aqipy",
-        "@pypi//asyncpg",
-        "@pypi//aw_client",
-        "@pypi//aw_core",
-        "@pypi//compact_json",
-        "@pypi//cryptography",
+        ":database",
+        ":lifespan",
+        ":models",
+        "//gatelet/server/auth:handlers",
+        "//gatelet/server/auth:webhook_auth",
+        "//gatelet/server/endpoints:admin",
+        "//gatelet/server/endpoints:challenge",
+        "//gatelet/server/endpoints:homeassistant",
+        "//gatelet/server/endpoints:webhook_receive",
+        "//gatelet/server/endpoints:webhook_view",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
-        "@pypi//fastapi_sessions",
-        "@pypi//fastapi_users",
-        "@pypi//fastapi_users_db_sqlalchemy",
-        "@pypi//geopy",
-        "@pypi//google_api_python_client",
-        "@pypi//google_auth",
-        "@pypi//homeassistant_api",
-        "@pypi//jinja2",
-        "@pypi//meteostat",
-        "@pypi//oura",
-        "@pypi//passlib",
-        "@pypi//psycopg2_binary",
-        "@pypi//pydantic",
-        "@pypi//pyowm",
-        "@pypi//python_metar",
-        "@pypi//python_multipart",
         "@pypi//sqlalchemy",
-        "@pypi//tomlkit",
-        "@pypi//uvicorn",
     ],
 )
 
-# Common test dependencies
-_TEST_DEPS = [
-    ":server_lib",
-    "//gatelet:manage_lib",
-    "//gatelet:reporter_lib",
-    "@pypi//asgi_lifespan",
-    "@pypi//httpx",
-    "@pypi//playwright",
-    "@pypi//pyhamcrest",
-    "@pypi//pytest",
-    "@pypi//pytest_asyncio",  # keep
-    "@pypi//pytest_bazel",
-    "@pypi//testcontainers",
-]
-
-_TEST_DATA = ["//gatelet:gatelet.toml"]
-
-py_test(
-    name = "test_server_core",
-    srcs = [
-        "conftest.py",
-        "pytest_runner.py",
-        "test_admin_webhook_e2e.py",
-        "test_report_battery.py",
-        "test_report_event.py",
-    ],
-    data = _TEST_DATA,
+py_library(
+    name = "config",
+    srcs = ["config.py"],
     imports = ["../.."],
-    main = "pytest_runner.py",
-    tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    visibility = ["//gatelet:__subpackages__"],
+    deps = ["@pypi//pydantic"],
 )
 
-py_test(
-    name = "test_auth",
-    srcs = [
-        "auth/test_handlers.py",
-        "auth/test_key_auth.py",
-        "auth/test_key_path_auth.py",
-        "auth/test_webhook_auth.py",
-        "conftest.py",
-        "pytest_runner.py",
-    ],
-    data = _TEST_DATA,
+py_library(
+    name = "database",
+    srcs = ["database.py"],
     imports = ["../.."],
-    main = "pytest_runner.py",
-    tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//sqlalchemy",
+    ],
 )
 
-py_test(
-    name = "test_endpoints_admin",
-    srcs = [
-        "conftest.py",
-        "endpoints/test_admin_cr_sessions.py",
-        "endpoints/test_admin_keys.py",
-        "endpoints/test_admin_login.py",
-        "endpoints/test_admin_logs.py",
-        "endpoints/test_admin_sessions.py",
-        "pytest_runner.py",
-    ],
-    data = _TEST_DATA,
+py_library(
+    name = "lifespan",
+    srcs = ["lifespan.py"],
     imports = ["../.."],
-    main = "pytest_runner.py",
-    tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        ":config",
+        ":database",
+        "//gatelet/server/auth:dependencies",
+        "//gatelet/server/endpoints:activitywatch",
+        "//gatelet/server/endpoints:homeassistant",
+        "//gatelet/server/endpoints:webhook_view",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
 )
 
-py_test(
-    name = "test_endpoints_webhook",
-    srcs = [
-        "conftest.py",
-        "endpoints/test_webhook_receive.py",
-        "endpoints/test_webhook_view.py",
-        "pytest_runner.py",
-    ],
-    data = _TEST_DATA,
+py_library(
+    name = "models",
+    srcs = ["models.py"],
     imports = ["../.."],
-    main = "pytest_runner.py",
-    tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    visibility = ["//gatelet:__subpackages__"],
+    deps = ["@pypi//sqlalchemy"],
 )
 
-py_test(
-    name = "test_endpoints_other",
-    srcs = [
-        "conftest.py",
-        "endpoints/test_activitywatch.py",
-        "endpoints/test_challenge.py",
-        "endpoints/test_compute_correct_option.py",
-        "endpoints/test_homeassistant.py",
-        "pytest_runner.py",
-    ],
-    data = _TEST_DATA,
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
     imports = ["../.."],
-    main = "pytest_runner.py",
-    tags = ["requires_docker"],
-    deps = _TEST_DEPS,
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        ":config",
+        ":models",
+    ],
+)
+
+py_library(
+    name = "security",
+    srcs = ["security.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = ["@pypi//passlib"],
+)
+
+py_library(
+    name = "shared",
+    srcs = ["shared.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [":config"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        ":app",
+        ":config",
+        ":database",
+        ":models",
+        "//gatelet/server/endpoints:webhook_view",
+        "//gatelet/server/tests:utils",
+        "@pypi//asgi_lifespan",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "pytest_runner",
+    srcs = ["pytest_runner.py"],
+    imports = ["../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = ["@pypi//pytest_bazel"],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":server_lib"],
+    srcs = [
+        ":app",
+        ":config",
+        ":database",
+        ":lifespan",
+        ":models",
+        ":prompts",
+        ":security",
+        ":shared",
+    ],
+)
+
+py_test(
+    name = "test_admin_webhook_e2e",
+    srcs = ["test_admin_webhook_e2e.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        "//gatelet:manage",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_report_battery",
+    srcs = ["test_report_battery.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        "//gatelet:reporter",
+        "//gatelet/server/tests:utils",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_report_event",
+    srcs = ["test_report_event.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        "//gatelet:reporter",
+        "//gatelet/server/tests:utils",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
 )

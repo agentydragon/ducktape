@@ -1,0 +1,38 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle-managed per-file py_library targets
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":types"],
+)
+
+py_library(
+    name = "nodes",
+    srcs = ["nodes.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":types",
+        # NOTE: //tana/graph:workspace is TYPE_CHECKING only - would create cycle
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "search",
+    srcs = ["search.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//:__subpackages__"],
+)

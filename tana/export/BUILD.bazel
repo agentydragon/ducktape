@@ -1,0 +1,72 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+# Gazelle-managed per-file py_library and py_binary targets
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":convert"],
+)
+
+py_binary(
+    name = "convert",
+    srcs = ["convert.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tana/domain:constants",
+        "//tana/domain:nodes",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+        "//tana/graph:wrappers",
+        "//tana/io:json",
+        "//tana/query:core",
+        "//tana/query:nodes",
+        "//tana/render:html_utils",
+        "//tana/render:inline_refs",
+    ],
+)
+
+py_binary(
+    name = "export_node_subset",
+    srcs = ["export_node_subset.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":convert",
+        "//tana/domain:constants",
+        "//tana/domain:nodes",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+        "//tana/graph:wrappers",
+    ],
+)
+
+py_binary(
+    name = "materialize_searches",
+    srcs = ["materialize_searches.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tana:workspace",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+        "//tana/query/search:materializer",
+        "//tana/query/search:parser",
+    ],
+)
+
+py_library(
+    name = "sample",
+    srcs = ["sample.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "tana_issues_to_tanapaste",
+    srcs = ["tana_issues_to_tanapaste.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":convert",
+        "//tana:workspace",
+        "//tana/query:filters",
+    ],
+)

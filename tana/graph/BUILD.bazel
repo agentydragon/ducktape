@@ -1,0 +1,22 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle-managed per-file py_library targets
+
+py_library(
+    name = "workspace",
+    srcs = ["workspace.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":wrappers",
+        "//tana/domain:constants",
+        "//tana/domain:nodes",
+        "//tana/domain:types",
+    ],
+)
+
+py_library(
+    name = "wrappers",
+    srcs = ["wrappers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//tana/domain:nodes"],
+)

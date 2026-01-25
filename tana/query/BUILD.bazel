@@ -1,0 +1,37 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle-managed per-file py_library targets
+
+py_library(
+    name = "core",
+    srcs = ["core.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tana/domain:nodes",
+        "//tana/domain:types",
+    ],
+)
+
+py_library(
+    name = "filters",
+    srcs = ["filters.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":nodes",
+        "//tana/domain:nodes",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+    ],
+)
+
+py_library(
+    name = "nodes",
+    srcs = ["nodes.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":core",
+        "//tana/domain:constants",
+        "//tana/domain:nodes",
+        "//tana/graph:workspace",
+    ],
+)

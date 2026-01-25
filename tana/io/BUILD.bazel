@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle-managed per-file py_library targets
+
+py_library(
+    name = "json",
+    srcs = ["json.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tana/graph:workspace",
+        "@pypi//pydantic",
+    ],
+)

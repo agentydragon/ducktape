@@ -1,92 +1,29 @@
-# gazelle:ignore
-# Monolithic py_library with internal imports between files in the same target.
-# Gazelle can't validate these internal dependencies.
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
+# NOTE: No aggregator target - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
-    name = "tana",
-    srcs = [
-        "domain/constants.py",
-        "domain/nodes.py",
-        "domain/search.py",
-        "domain/types.py",
-        "export/cli.py",
-        "export/convert.py",
-        "export/export_node_subset.py",
-        "export/headless_autoexport/record_from_profile.py",
-        "export/materialize_searches.py",
-        "export/sample.py",
-        "export/tana_issues_to_tanapaste.py",
-        "graph/workspace.py",
-        "graph/wrappers.py",
-        "io/json.py",
-        "query/core.py",
-        "query/filters.py",
-        "query/nodes.py",
-        "query/search/evaluator.py",
-        "query/search/materializer.py",
-        "query/search/parser.py",
-        "render/html.py",
-        "render/inline_refs.py",
-        "workspace.py",
-    ],
-    imports = [".."],
-    visibility = ["//visibility:public"],
+    name = "workspace",
+    srcs = ["workspace.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "@pypi//playwright",
-        "@pypi//pydantic",
+        "//tana/domain:nodes",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+        "//tana/io:json",
+        "//tana/query/search:materializer",
     ],
-)
-
-py_binary(
-    name = "tana-export",
-    srcs = ["export/cli.py"],
-    imports = [".."],
-    main = "export/cli.py",
-    deps = [":tana"],
-)
-
-py_binary(
-    name = "tana-export-convert",
-    srcs = ["export/convert.py"],
-    imports = [".."],
-    main = "export/convert.py",
-    deps = [":tana"],
-)
-
-py_binary(
-    name = "tana-export-searches",
-    srcs = ["export/materialize_searches.py"],
-    imports = [".."],
-    main = "export/materialize_searches.py",
-    deps = [":tana"],
-)
-
-py_binary(
-    name = "tana-export-issues",
-    srcs = ["export/tana_issues_to_tanapaste.py"],
-    imports = [".."],
-    main = "export/tana_issues_to_tanapaste.py",
-    deps = [":tana"],
 )
 
 py_test(
-    name = "test_tana",
+    name = "test_convert",
     srcs = ["test_convert.py"],
     data = glob(["testdata/**/*"]),
-    imports = [".."],
-    main = "test_convert.py",
     deps = [
-        ":tana",
+        "//tana/export:convert",
+        "//tana/io:json",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":tana"],
 )

@@ -7,7 +7,7 @@ exports_files(["gatelet.toml"])
 
 # Reporter is a standalone CLI tool - doesn't depend on server
 py_library(
-    name = "reporter_lib",
+    name = "reporter",
     srcs = ["reporter.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
@@ -20,37 +20,43 @@ py_library(
 )
 
 py_binary(
-    name = "reporter",
-    srcs = ["reporter.py"],
+    name = "reporter_bin",
+    srcs = ["reporter_main.py"],
     imports = [".."],
-    main = "reporter.py",
+    main = "reporter_main.py",
     visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//httpx",
-        "@pypi//psutil",
-        "@pypi//pydantic",
-        "@pypi//tomlkit",
-    ],
+    deps = [":reporter"],
 )
 
 # Management utility - depends on server
 py_library(
-    name = "manage_lib",
+    name = "manage",
     srcs = ["manage.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//gatelet/server",
+        "//gatelet/server:config",
+        "//gatelet/server:models",
+        "//gatelet/server:security",
         "@pypi//sqlalchemy",
         "@pypi//tomlkit",
     ],
 )
 
+py_binary(
+    name = "manage_bin",
+    srcs = ["manage_main.py"],
+    imports = [".."],
+    main = "manage_main.py",
+    visibility = ["//:__subpackages__"],
+    deps = [":manage"],
+)
+
 ruff_test(
     name = "ruff",
     srcs = [
-        ":manage_lib",
-        ":reporter_lib",
+        ":manage",
+        ":reporter",
     ],
 )
 
@@ -97,17 +103,6 @@ py_binary(
     srcs = ["aw_summary.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//aw_client"],
-)
-
-py_binary(
-    name = "manage",
-    srcs = ["manage.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//gatelet/server:server_lib",
-        "@pypi//sqlalchemy",
-        "@pypi//tomlkit",
-    ],
 )
 
 py_library(

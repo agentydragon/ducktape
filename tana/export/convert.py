@@ -22,7 +22,7 @@ from tana.graph.wrappers import is_wrapper
 from tana.io.json import load_workspace
 from tana.query.core import get_tuple_value
 from tana.query.nodes import get_image_url
-from tana.render.html import DATE_SPAN_PATTERN, NODE_SPAN_PATTERN, find_inline_node_refs, html_to_markdown
+from tana.render.html_utils import DATE_SPAN_PATTERN, NODE_SPAN_PATTERN, find_inline_node_refs, html_to_markdown
 from tana.render.inline_refs import parse_inline_date
 
 # ──────────────────────────  Headline  ────────────────────────── #

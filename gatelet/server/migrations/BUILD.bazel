@@ -1,0 +1,15 @@
+"""Gatelet server migrations."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    imports = ["../../.."],
+    visibility = ["//gatelet:__subpackages__"],
+    deps = [
+        "//gatelet/server:models",
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

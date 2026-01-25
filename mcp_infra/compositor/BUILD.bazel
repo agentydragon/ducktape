@@ -35,7 +35,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":server",
+        # NOTE: :server is TYPE_CHECKING-only (for Compositor type hint), not a runtime dep
         "//mcp_infra:mount_types",
         "//mcp_infra:prefix",
         "//mcp_infra:snapshots",
@@ -90,7 +90,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":server",
+        # NOTE: :server is TYPE_CHECKING-only (for Compositor type hint), not a runtime dep
         "//mcp_infra:mcp_types",
         "//mcp_infra:mount_types",
         "//mcp_infra:prefix",

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pygit2
 import pytest
+import pytest_bazel
 import yaml
 from click.testing import CliRunner
 
@@ -271,3 +272,7 @@ sys.exit(0)
         output = json.loads(result.stdout)
         # New API format - continue:true means allowed
         assert output.get("continue") is True
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

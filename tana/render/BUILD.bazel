@@ -1,0 +1,19 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+# Gazelle-managed per-file py_library targets
+
+py_library(
+    name = "inline_refs",
+    srcs = ["inline_refs.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "html_utils",
+    srcs = ["html_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":inline_refs",
+        "//tana/domain:types",
+    ],
+)
