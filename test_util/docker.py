@@ -29,7 +29,7 @@ def load_bazel_image(load_script_path: str, image_tag: str) -> str:
     Raises:
         RuntimeError: If loading the image fails.
     """
-    load_script = runfiles.get_path(f"_main/{load_script_path}")
+    load_script = runfiles.get_required_path(f"_main/{load_script_path}")
 
     result = subprocess.run(
         [load_script],

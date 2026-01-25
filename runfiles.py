@@ -15,8 +15,8 @@ if _RUNFILES_OPT is None:
 RUNFILES: runfiles.Runfiles = _RUNFILES_OPT
 
 
-def get_path(rlocation: str) -> Path:
-    """Get path to a file or directory from runfiles.
+def get_required_path(rlocation: str) -> Path:
+    """Get path to a file or directory from runfiles, checking it exists.
 
     Args:
         rlocation: Runfiles path (e.g., "_main/tools/claude_hooks/session_start")
