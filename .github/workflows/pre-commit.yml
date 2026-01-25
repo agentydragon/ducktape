@@ -37,6 +37,9 @@ jobs:
         with:
           tflint_version: v0.53.0
 
+      - name: Initialize TFLint plugins
+        run: tflint --init --config=cluster/.tflint.hcl
+
       # kubeconform for kubeconform-precommit-hook (not hermetic via Bazel)
       # Other tools (kustomize, flux, helm, kubeseal) are hermetic via @multitool
       - name: Install kubeconform

@@ -1,6 +1,6 @@
 load("presets.py", "py_library")
 
-"""Policies package - policy types, presets, and standalone policy programs."""
+# Policies package - policy types, presets, and standalone policy programs.
 
 # gazelle:map_kind py_binary py_library approve_all.py
 # gazelle:map_kind py_binary py_library default_policy.py
