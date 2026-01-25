@@ -82,13 +82,12 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         "BAZELISK_PATH": str(vars.bazelisk_path),
         "BAZEL_PROXY_BAZELRC": str(vars.bazel_proxy_rc),
         "BAZEL_REPO_ROOT": str(vars.repo_root),
-        "NODE_EXTRA_CA_CERTS": combined_ca,
-        "REQUESTS_CA_BUNDLE": combined_ca,
-        "CURL_CA_BUNDLE": combined_ca,
-        "SSL_CERT_FILE": combined_ca,
     }
+    ca_config = dict.fromkeys(
+        ["NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"], combined_ca
+    )
     exports.extend(["", "# Bazel proxy configuration"])
-    exports.extend(_exports_from_dict(bazel_config))
+    exports.extend(_exports_from_dict(bazel_config | ca_config))
 
     # Proxy env vars for subprocesses (point to local auth-forwarding proxy)
     # These override Anthropic's original proxy vars so subprocesses use our local proxy
