@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import pytest_bazel
 import yaml
 from click.testing import CliRunner
 
@@ -174,3 +175,7 @@ def foo(x):
         # Should have fixed "fix-me" to "fixed"
         assert "fixed" in formatted_content
         assert "fix-me" not in formatted_content
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

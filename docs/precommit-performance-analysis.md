@@ -4,17 +4,18 @@ Analysis of pre-commit hook execution times and implemented optimizations.
 
 ## Current State (After Optimization)
 
-| Hook               | Time  | Notes                                              |
-| ------------------ | ----- | -------------------------------------------------- |
-| bazel-precommit    | ~42s  | 22s build + 14s parallel batches (16 batches)      |
-| checkov            | ~13s  | Terraform security scanner                         |
-| terraform_validate | ~11s  | Terraform validation                               |
-| terraform_tflint   | ~4s   | Terraform linting                                  |
-| markdownlint-cli2  | ~3s   | Markdown linting                                   |
-| other hooks        | ~5s   | YAML/AST/TOML checks, ruff, etc.                   |
-| **Total**          | ~78s  | Down from ~160s (parallel execution via script-path) |
+| Hook               | Time | Notes                                                |
+| ------------------ | ---- | ---------------------------------------------------- |
+| bazel-precommit    | ~42s | 22s build + 14s parallel batches (16 batches)        |
+| checkov            | ~13s | Terraform security scanner                           |
+| terraform_validate | ~11s | Terraform validation                                 |
+| terraform_tflint   | ~4s  | Terraform linting                                    |
+| markdownlint-cli2  | ~3s  | Markdown linting                                     |
+| other hooks        | ~5s  | YAML/AST/TOML checks, ruff, etc.                     |
+| **Total**          | ~78s | Down from ~160s (parallel execution via script-path) |
 
 Per-batch breakdown (runs in parallel):
+
 - prettier: ~6s (100+ files)
 - ruff: ~1s (60+ files)
 - buildifier: ~0.2s

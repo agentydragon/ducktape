@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest_bazel
 from fastmcp.client import Client
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -47,3 +48,7 @@ async def test_broadcast_continues_after_session_failure(make_buffered_client):
         assert target_uri in batch.resources["notifier"].updated, (
             "expected resources_updated for the active session despite one failing client"
         )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

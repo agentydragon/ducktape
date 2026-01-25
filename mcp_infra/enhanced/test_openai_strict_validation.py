@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -127,3 +128,7 @@ def test_strict_mode_rejects_nested_set_in_defs(mcp: EnhancedFastMCP):
         def nested_set_tool(input: InputWithNestedSet) -> str:
             """Tool with nested model containing set."""
             return str(input.inner.ids)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
