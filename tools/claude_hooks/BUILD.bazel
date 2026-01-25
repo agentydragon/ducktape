@@ -113,10 +113,11 @@ py_test(
     deps = [
         ":claude_hooks",
         "//net_util",
+        "//test_util:runfiles",
+        "//tools/claude_hooks/testing:runfiles_util",
         "@pypi//cryptography",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -146,11 +147,12 @@ py_test(
     ],
     deps = [
         ":claude_hooks",
+        "//test_util:runfiles",
         "//tools/claude_hooks/testing:forwarding_tls_proxy",
+        "//tools/claude_hooks/testing:runfiles_util",
         "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 

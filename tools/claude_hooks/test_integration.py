@@ -26,23 +26,11 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-from python.runfiles import runfiles
 
 from net_util.net import pick_free_port
+from test_util.runfiles import get_binary
 from tools.claude_hooks import proxy_setup, supervisor_setup
-
-# Runfiles for locating binaries in Bazel test mode
-_RUNFILES = runfiles.Create()
-_RUN_AUTH_PROXY = "_main/tools/claude_hooks/proxy/run_auth_proxy"
-
-
-def _get_runfiles_binary(rlocation: str) -> str:
-    """Get path to a binary from runfiles."""
-    path = _RUNFILES.Rlocation(rlocation)
-    if not path:
-        raise RuntimeError(f"Could not locate {rlocation} in runfiles")
-    return path
-
+from tools.claude_hooks.testing import runfiles_util
 
 # =============================================================================
 # Test Fixtures: Mock TLS-Inspecting Proxy
@@ -253,7 +241,7 @@ def isolated_env(tmp_path: Path, mock_tls_proxy: MockTLSProxy, monkeypatch: pyte
     monkeypatch.setenv("CLAUDE_HOOKS_BAZEL_PROXY_PORT", str(test_proxy_port))
 
     # Set CLAUDE_AUTH_PROXY_CMD to use the runfiles binary (same approach as test_e2e)
-    monkeypatch.setenv("CLAUDE_AUTH_PROXY_CMD", _get_runfiles_binary(_RUN_AUTH_PROXY))
+    monkeypatch.setenv("CLAUDE_AUTH_PROXY_CMD", get_binary(runfiles_util.RUN_AUTH_PROXY))
 
     # Set https_proxy env var pointing to mock proxy
     proxy_url = f"http://testuser:testpass@127.0.0.1:{mock_tls_proxy.port}"
