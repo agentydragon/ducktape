@@ -138,6 +138,7 @@ py_test(
         "external",  # Requires network access (but now works without it!)
     ],
     deps = [
+        ":claude_hooks",
         "//tools/claude_hooks/testing:forwarding_tls_proxy",
         "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
