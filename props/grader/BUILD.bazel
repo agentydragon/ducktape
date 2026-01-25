@@ -223,7 +223,7 @@ py_test(
     ],
     deps = [
         ":conftest",
-        "//agent_core_testing:__init__",
+        "//agent_core_testing:responses",
         "//props/db:models",
         "//props/db:session",
         "//props/db:snapshots",

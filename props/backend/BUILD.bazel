@@ -85,7 +85,7 @@ py_binary(
     srcs = ["export_schema.py"],
     main = "export_schema.py",
     visibility = ["//:__subpackages__"],
-    deps = [":__init__"],
+    deps = [":app"],
 )
 
 genrule(

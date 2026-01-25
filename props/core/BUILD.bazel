@@ -189,6 +189,7 @@ py_test(
     srcs = ["test_rationale.py"],
     imports = ["../.."],
     deps = [
+        "//props:conftest",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
@@ -264,7 +265,8 @@ py_test(
     deps = [
         ":eval_api_models",
         ":ids",
-        "//agent_core_testing:__init__",
+        "//agent_core_testing:responses",
+        "//agent_core_testing:steps",
         "//props/core/models:examples",
         "//props/critic_dev:shared",
         "//props/critic_dev/optimize:main_lib",

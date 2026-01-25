@@ -68,6 +68,13 @@ py_library(
     name = "__init__",
     srcs = ["__init__.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        ":db",
+        ":e2e",
+        ":ground_truth",
+        ":runs",
+        ":scopes",
+    ],
 )
 
 py_library(
@@ -91,7 +98,7 @@ py_library(
     srcs = ["e2e.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core_testing:__init__",
+        "//agent_core_testing:openai_mock",
         "//openai_utils:model",
         "//props/core:ids",
         "//props/critic_dev/improve:main_lib",

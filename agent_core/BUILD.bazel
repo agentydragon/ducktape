@@ -107,6 +107,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":events",
+        ":handler",
         ":loop_control",
         ":tool_provider",
         "//openai_utils:model",

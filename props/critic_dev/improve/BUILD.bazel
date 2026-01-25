@@ -100,7 +100,8 @@ py_test(
         "requires_docker",
     ],
     deps = [
-        "//agent_core_testing:__init__",
+        "//agent_core_testing:responses",
+        "//agent_core_testing:steps",
         "//props/db:agent_definition_ids",
         "//props/db:examples",
         "//props/db:models",

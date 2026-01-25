@@ -37,6 +37,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props/db:__subpackages__"],
     deps = [
+        ":_models",
         "//props/core:ids",
         "@pypi//pyyaml",
     ],
