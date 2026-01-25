@@ -16,7 +16,6 @@ py_library(
     deps = [
         ":constants",
         ":types",
-        # NOTE: //tana/graph:workspace is TYPE_CHECKING only - would create cycle
         "@pypi//pydantic",
     ],
 )

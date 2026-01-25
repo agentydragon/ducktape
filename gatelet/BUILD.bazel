@@ -7,7 +7,7 @@ exports_files(["gatelet.toml"])
 
 # Reporter is a standalone CLI tool - doesn't depend on server
 py_library(
-    name = "reporter",
+    name = "reporter_lib",
     srcs = ["reporter.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
@@ -20,17 +20,17 @@ py_library(
 )
 
 py_binary(
-    name = "reporter_bin",
+    name = "reporter",
     srcs = ["reporter_main.py"],
     imports = [".."],
     main = "reporter_main.py",
     visibility = ["//:__subpackages__"],
-    deps = [":reporter"],
+    deps = [":reporter_lib"],
 )
 
 # Management utility - depends on server
 py_library(
-    name = "manage",
+    name = "manage_lib",
     srcs = ["manage.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
@@ -44,19 +44,19 @@ py_library(
 )
 
 py_binary(
-    name = "manage_bin",
+    name = "manage",
     srcs = ["manage_main.py"],
     imports = [".."],
     main = "manage_main.py",
     visibility = ["//:__subpackages__"],
-    deps = [":manage"],
+    deps = [":manage_lib"],
 )
 
 ruff_test(
     name = "ruff",
     srcs = [
-        ":manage",
-        ":reporter",
+        ":manage_lib",
+        ":reporter_lib",
     ],
 )
 

@@ -175,7 +175,7 @@ py_test(
     deps = [
         ":conftest",
         ":models",
-        "//gatelet:manage",
+        "//gatelet:manage_lib",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -189,7 +189,7 @@ py_test(
     deps = [
         ":conftest",
         ":models",
-        "//gatelet:reporter",
+        "//gatelet:reporter_lib",
         "//gatelet/server/tests:utils",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
@@ -203,7 +203,7 @@ py_test(
     deps = [
         ":conftest",
         ":models",
-        "//gatelet:reporter",
+        "//gatelet:reporter_lib",
         "//gatelet/server/tests:utils",
         "@pypi//httpx",
         "@pypi//pytest_bazel",

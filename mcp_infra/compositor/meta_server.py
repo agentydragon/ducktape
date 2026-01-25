@@ -10,7 +10,7 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import ServerEntry
 
 if TYPE_CHECKING:
-    from mcp_infra.compositor.server import Compositor
+    from mcp_infra.compositor.server import Compositor  # gazelle:ignore mcp_infra.compositor.server
 
 
 class CompositorMetaServer(EnhancedFastMCP):

@@ -216,5 +216,6 @@ py_test(
         "//mcp_infra/testing:fixtures",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

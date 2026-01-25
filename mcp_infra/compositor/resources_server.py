@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Final, Literal, cast
 
 if TYPE_CHECKING:
-    from mcp_infra.compositor.server import Compositor
+    from mcp_infra.compositor.server import Compositor  # gazelle:ignore mcp_infra.compositor.server
 
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource

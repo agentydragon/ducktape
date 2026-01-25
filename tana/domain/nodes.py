@@ -10,7 +10,7 @@ from tana.domain.constants import LANGUAGE_KEY_ID
 from tana.domain.types import NodeId
 
 if TYPE_CHECKING:
-    from tana.graph.workspace import TanaGraph
+    from tana.graph.workspace import TanaGraph  # gazelle:ignore tana.graph.workspace
 
 
 class Props(BaseModel):
