@@ -148,6 +148,7 @@ py_test(
     deps = [
         ":claude_hooks",
         "//:runfiles",
+        "//net_util",
         "//tools/claude_hooks/testing:forwarding_tls_proxy",
         "//tools/claude_hooks/testing:runfiles_util",
         "//tools/claude_hooks/testing:shell_helpers",

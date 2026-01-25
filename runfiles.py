@@ -5,14 +5,19 @@ Provides helpers to locate binaries and data files in Bazel runfiles.
 
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
 
 from python.runfiles import runfiles
 
-_RUNFILES_OPT = runfiles.Create()
-if _RUNFILES_OPT is None:
-    raise RuntimeError("Could not create runfiles - are you running via Bazel?")
-RUNFILES: runfiles.Runfiles = _RUNFILES_OPT
+
+@cache
+def _get_runfiles() -> runfiles.Runfiles:
+    """Get runfiles instance (lazily initialized, cached)."""
+    r = runfiles.Create()
+    if r is None:
+        raise RuntimeError("Could not create runfiles - are you running via Bazel?")
+    return r
 
 
 def get_required_path(rlocation: str) -> Path:
@@ -27,7 +32,7 @@ def get_required_path(rlocation: str) -> Path:
     Raises:
         RuntimeError: If the path cannot be located or doesn't exist.
     """
-    resolved = RUNFILES.Rlocation(rlocation)
+    resolved = _get_runfiles().Rlocation(rlocation)
     if not resolved:
         raise RuntimeError(f"Could not resolve runfiles path: {rlocation}")
     path = Path(resolved)

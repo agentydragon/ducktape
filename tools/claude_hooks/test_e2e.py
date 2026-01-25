@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from net_util.net import pick_free_port
 from runfiles import get_required_path
 from tools.claude_hooks.testing import runfiles_util, shell_helpers
 from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy, UpstreamProxyConfig
@@ -106,23 +107,14 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
     return dirs
 
 
-def _pick_free_port() -> int:
-    """Pick an available ephemeral port."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("127.0.0.1", 0))
-    port: int = sock.getsockname()[1]
-    sock.close()
-    return port
-
-
 @pytest.fixture
 def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) -> dict[str, str]:
     """Set up environment for running the session start hook."""
     proxy_url = f"http://proxy_user:test_jwt_token@127.0.0.1:{forwarding_proxy.port}"
 
     # Pick isolated ports for supervisor and bazel proxy
-    supervisor_port = _pick_free_port()
-    bazel_proxy_port = _pick_free_port()
+    supervisor_port = pick_free_port()
+    bazel_proxy_port = pick_free_port()
 
     use_wheel = os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1"
 
@@ -377,8 +369,8 @@ class TestPodmanIntegration:
         proxy_url = f"http://proxy_user:test_jwt_token@127.0.0.1:{forwarding_proxy.port}"
 
         # Pick isolated ports for supervisor and bazel proxy
-        supervisor_port = _pick_free_port()
-        bazel_proxy_port = _pick_free_port()
+        supervisor_port = pick_free_port()
+        bazel_proxy_port = pick_free_port()
 
         use_wheel = os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1"
 
