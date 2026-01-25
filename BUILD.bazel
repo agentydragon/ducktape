@@ -76,6 +76,14 @@ py_library(
     visibility = ["//:__subpackages__"],
 )
 
+# Runfiles utilities for locating binaries and data files
+py_library(
+    name = "runfiles",
+    srcs = ["runfiles.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@rules_python//python/runfiles"],
+)
+
 # ESLint configuration as js_library
 # This makes the config and its npm dependencies available to the ESLint aspect
 # no-lint: This is a config file, not a target to lint (avoids aspect self-application)

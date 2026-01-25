@@ -1,25 +1,16 @@
-"""Shared utilities: runfiles (general) and test helpers (testonly)."""
+"""Test utilities for shared testing infrastructure."""
 
 load("@rules_python//python:defs.bzl", "py_library")
 
-py_library(
-    name = "runfiles",
-    srcs = ["runfiles.py"],
-    imports = [".."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@rules_python//python/runfiles",
-    ],
-)
+package(default_testonly = True)
 
 py_library(
     name = "test_util",
-    testonly = True,
     srcs = ["docker.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":runfiles",
+        "//:runfiles",
         "@pypi//docker",
         "@pypi//pytest",
     ],

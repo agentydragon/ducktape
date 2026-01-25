@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from test_util.runfiles import get_binary
+from runfiles import get_path
 from tools.claude_hooks.testing import runfiles_util, shell_helpers
 from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy, UpstreamProxyConfig
 
@@ -160,7 +160,7 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
 
     if not use_wheel:
         # Bazel test mode: use runfiles binaries
-        env["CLAUDE_AUTH_PROXY_CMD"] = get_binary(runfiles_util.RUN_AUTH_PROXY)
+        env["CLAUDE_AUTH_PROXY_CMD"] = str(get_path(runfiles_util.RUN_AUTH_PROXY))
     # When use_wheel=True, console scripts (claude-session-start, claude-auth-proxy) are in PATH
 
     return env
@@ -224,7 +224,7 @@ def run_session_start_hook(
         cmd = "claude-session-start"
     else:
         # Run via runfiles binary (Bazel test mode)
-        cmd = get_binary(runfiles_util.SESSION_START)
+        cmd = get_path(runfiles_util.SESSION_START)
 
     result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
 
@@ -414,7 +414,7 @@ class TestPodmanIntegration:
 
         if not use_wheel:
             # Bazel test mode: use runfiles binaries
-            env["CLAUDE_AUTH_PROXY_CMD"] = get_binary(runfiles_util.RUN_AUTH_PROXY)
+            env["CLAUDE_AUTH_PROXY_CMD"] = str(get_path(runfiles_util.RUN_AUTH_PROXY))
 
         return env
 

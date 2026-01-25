@@ -15,24 +15,6 @@ if _RUNFILES_OPT is None:
 RUNFILES: runfiles.Runfiles = _RUNFILES_OPT
 
 
-def get_binary(rlocation: str) -> str:
-    """Get path to a binary from runfiles.
-
-    Args:
-        rlocation: Runfiles path (e.g., "_main/tools/claude_hooks/session_start")
-
-    Returns:
-        Absolute path to the binary as a string.
-
-    Raises:
-        RuntimeError: If the binary cannot be located in runfiles.
-    """
-    path = RUNFILES.Rlocation(rlocation)
-    if not path:
-        raise RuntimeError(f"Could not locate {rlocation} in runfiles")
-    return path
-
-
 def get_path(rlocation: str) -> Path:
     """Get path to a file or directory from runfiles.
 

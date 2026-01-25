@@ -28,7 +28,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from net_util.net import pick_free_port
-from test_util.runfiles import get_binary
+from runfiles import get_path
 from tools.claude_hooks import proxy_setup, supervisor_setup
 from tools.claude_hooks.testing import runfiles_util
 
@@ -241,7 +241,7 @@ def isolated_env(tmp_path: Path, mock_tls_proxy: MockTLSProxy, monkeypatch: pyte
     monkeypatch.setenv("CLAUDE_HOOKS_BAZEL_PROXY_PORT", str(test_proxy_port))
 
     # Set CLAUDE_AUTH_PROXY_CMD to use the runfiles binary (same approach as test_e2e)
-    monkeypatch.setenv("CLAUDE_AUTH_PROXY_CMD", get_binary(runfiles_util.RUN_AUTH_PROXY))
+    monkeypatch.setenv("CLAUDE_AUTH_PROXY_CMD", str(get_path(runfiles_util.RUN_AUTH_PROXY)))
 
     # Set https_proxy env var pointing to mock proxy
     proxy_url = f"http://testuser:testpass@127.0.0.1:{mock_tls_proxy.port}"

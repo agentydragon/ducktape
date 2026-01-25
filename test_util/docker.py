@@ -14,7 +14,7 @@ from pathlib import Path
 import docker
 import pytest
 
-from test_util import runfiles as runfiles_util
+import runfiles
 
 
 def get_runfiles_path(relative_path: str) -> Path:
@@ -26,7 +26,7 @@ def get_runfiles_path(relative_path: str) -> Path:
     Returns:
         Absolute path to the file from runfiles.
     """
-    return runfiles_util.get_path(f"_main/{relative_path}")
+    return runfiles.get_path(f"_main/{relative_path}")
 
 
 def load_bazel_image(load_script_path: str, image_tag: str) -> str:
