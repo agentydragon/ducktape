@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -17,3 +18,7 @@ async def test_unmount_pinned_server_errors_and_kept(compositor, make_simple_mcp
     # Verify server is still mounted by checking server entries
     entries = await compositor.server_entries()
     assert backend_prefix in entries, "pinned server should remain mounted after failed unmount"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

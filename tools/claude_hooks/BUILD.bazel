@@ -4,16 +4,6 @@ load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
-    name = "auth_proxy",
-    srcs = [
-        "proxy/auth_forwarding_proxy.py",
-        "proxy/run_auth_proxy.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "claude_hooks",
     srcs = [
         "bazel_wrapper.py",
@@ -43,7 +33,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":auth_proxy",
         "//tools:build_info",
         "//tools:env_utils",
         "@pypi//cryptography",
@@ -130,6 +119,8 @@ py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
+        ":session_start",
+        "//tools/claude_hooks/proxy:run_auth_proxy",
         "//tools/claude_hooks/testdata/test_workspace:workspace_files",
     ],
     # Inherit proxy env vars so ForwardingTLSProxy can chain through hook's bazel proxy
@@ -154,6 +145,7 @@ py_test(
         "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

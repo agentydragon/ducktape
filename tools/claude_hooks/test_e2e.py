@@ -15,7 +15,6 @@ import shutil
 import signal
 import socket
 import subprocess
-import sys
 import time
 import urllib.parse
 from collections.abc import Generator
@@ -24,9 +23,33 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import runfiles
 
 from tools.claude_hooks.testing import shell_helpers
 from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy, UpstreamProxyConfig
+
+# Runfiles for locating binaries in Bazel test mode
+_RUNFILES = runfiles.Create()
+
+
+def _get_runfiles_binary(rlocation: str) -> str:
+    """Get path to a binary from runfiles.
+
+    Args:
+        rlocation: Runfiles path (e.g., "_main/tools/claude_hooks/session_start")
+
+    Returns:
+        Absolute path to the binary.
+    """
+    path = _RUNFILES.Rlocation(rlocation)
+    if not path:
+        raise RuntimeError(f"Could not locate {rlocation} in runfiles")
+    return path
+
+
+# Runfiles paths for binaries
+_SESSION_START = "_main/tools/claude_hooks/session_start"
+_RUN_AUTH_PROXY = "_main/tools/claude_hooks/proxy/run_auth_proxy"
 
 
 @dataclass
@@ -159,9 +182,8 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
         env["JAVA_HOME"] = java_home
 
     if not use_wheel:
-        # Bazel test mode: need PYTHONPATH and custom proxy command
-        env["PYTHONPATH"] = os.pathsep.join(sys.path)
-        env["CLAUDE_AUTH_PROXY_CMD"] = f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy"
+        # Bazel test mode: use runfiles binaries
+        env["CLAUDE_AUTH_PROXY_CMD"] = _get_runfiles_binary(_RUN_AUTH_PROXY)
     # When use_wheel=True, console scripts (claude-session-start, claude-auth-proxy) are in PATH
 
     return env
@@ -222,14 +244,12 @@ def run_session_start_hook(
 
     if os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1":
         # Run installed console script (tests wheel packaging)
-        cmd = ["claude-session-start"]
-        # Don't pass PYTHONPATH - use wheel's installed packages
-        env = {k: v for k, v in env.items() if k != "PYTHONPATH"}
+        cmd = "claude-session-start"
     else:
-        # Run via python -m (Bazel test mode)
-        cmd = [sys.executable, "-m", "tools.claude_hooks.session_start"]
+        # Run via runfiles binary (Bazel test mode)
+        cmd = _get_runfiles_binary(_SESSION_START)
 
-    result = subprocess.run(cmd, check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
+    result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
 
     # Print hook output for debugging (pytest captures and shows on failure)
     print(f"\n=== Hook stdout ===\n{result.stdout}")
@@ -416,9 +436,8 @@ class TestPodmanIntegration:
             env["JAVA_HOME"] = java_home
 
         if not use_wheel:
-            # Bazel test mode: need PYTHONPATH and custom proxy command
-            env["PYTHONPATH"] = os.pathsep.join(sys.path)
-            env["CLAUDE_AUTH_PROXY_CMD"] = f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy"
+            # Bazel test mode: use runfiles binaries
+            env["CLAUDE_AUTH_PROXY_CMD"] = _get_runfiles_binary(_RUN_AUTH_PROXY)
 
         return env
 

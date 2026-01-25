@@ -379,6 +379,12 @@ class ForwardingTLSProxy:
         server_ctx = ssl.create_default_context()
         if upstream.ca_bundle and Path(upstream.ca_bundle).exists():
             server_ctx.load_verify_locations(upstream.ca_bundle)
+        else:
+            # No CA bundle available - disable verification for test proxy
+            # This happens in CI when HTTPS_PROXY is set but SSL_CERT_FILE is not
+            logger.debug("No CA bundle for upstream proxy, disabling certificate verification")
+            server_ctx.check_hostname = False
+            server_ctx.verify_mode = ssl.CERT_NONE
         return server_ctx.wrap_socket(proxy_sock, server_hostname=target_host)
 
     def _handle_client(self, client_sock: socket.socket) -> None:

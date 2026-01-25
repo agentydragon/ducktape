@@ -1,0 +1,19 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "auth_proxy",
+    srcs = [
+        "auth_forwarding_proxy.py",
+        "run_auth_proxy.py",
+    ],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "run_auth_proxy",
+    srcs = ["run_auth_proxy.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":auth_proxy"],
+)

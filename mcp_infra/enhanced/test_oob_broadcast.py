@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import anyio
+import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types
@@ -77,3 +78,7 @@ async def test_notifying_fastmcp_multisession_broadcast() -> None:
     assert "resource://multi/test" in rec2.updated
     assert rec1.list_changed >= 1
     assert rec2.list_changed >= 1
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

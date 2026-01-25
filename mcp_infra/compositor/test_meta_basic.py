@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest_bazel
+
 from mcp_infra.resource_utils import read_text_json_typed
 from mcp_infra.snapshots import RunningServerEntry, ServerEntry
 
@@ -18,3 +20,7 @@ async def test_compositor_meta_resources_available(make_compositor, make_simple_
         )
         entry: ServerEntry = await read_text_json_typed(client, state_uri, ServerEntry)
         assert isinstance(entry, RunningServerEntry)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

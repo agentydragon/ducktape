@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp.exceptions import ToolError
 
 from mcp_infra.compositor.admin import DetachServerArgs
@@ -40,3 +41,7 @@ async def test_admin_cannot_detach_pinned_server(compositor, compositor_admin_to
     # Verify meta server still present after failed detach
     states_after = await compositor.server_entries()
     assert COMPOSITOR_META_MOUNT_PREFIX in states_after
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

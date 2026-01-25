@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest_bazel
+
 from mcp_infra.resource_utils import read_text_json_typed
 from mcp_infra.snapshots import RunningServerEntry, ServerEntry
 
@@ -35,3 +37,7 @@ async def test_meta_presents_inproc_mounts(make_compositor, make_simple_mcp):
         assert isinstance(entry, RunningServerEntry)
         assert entry.initialize is not None
         assert isinstance(entry.tools, list)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

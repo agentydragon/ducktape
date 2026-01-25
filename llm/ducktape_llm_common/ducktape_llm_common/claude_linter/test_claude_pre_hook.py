@@ -4,6 +4,7 @@
 import json
 from pathlib import Path
 
+import pytest_bazel
 from click.testing import CliRunner
 
 from ducktape_llm_common.claude_linter.cli import cli
@@ -151,3 +152,7 @@ class TestPreHook:
         result = run_pre_hook("not valid json")
         assert result.exit_code == 1
         assert "Invalid JSON input" in result.output
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

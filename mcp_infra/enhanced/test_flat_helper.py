@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from pydantic import Field
@@ -94,3 +95,7 @@ async def test_tool_flat_explicit_models(list_tools_via_client):
     tool = next(t for t in tools if t.name == "echo")
     props = (tool.inputSchema or {}).get("properties", {})
     assert set(props) >= {"msg", "upper"}
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
