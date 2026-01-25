@@ -1,27 +1,29 @@
-# gazelle:ignore
+# NOTE: No aggregator target - use specific per-file targets like :settings, :session_start
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+# === Base modules (no internal deps) ===
+
 py_library(
-    name = "claude_hooks",
-    srcs = [
-        "bazel_wrapper.py",
-        "bazelisk_setup.py",
-        "binary_tools.py",
-        "env_file.py",
-        "errors.py",
-        "nix_setup.py",
-        "paths.py",
-        "podman_service.py",
-        "proxy_credentials.py",
-        "proxy_setup.py",
-        "proxy_vars.py",
-        "resources.py",
-        "session_start.py",
-        "streaming.py",
-        "supervisor_setup.py",
-    ],
+    name = "errors",
+    srcs = ["errors.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "streaming",
+    srcs = ["streaming.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "resources",
+    srcs = ["resources.py"],
     data = [
         "config/bazelrc.mako",
         "config/env.mako",
@@ -33,17 +35,142 @@ py_library(
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "proxy_vars",
+    srcs = ["proxy_vars.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "binary_tools",
+    srcs = ["binary_tools.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
     deps = [
-        "//tools:build_info",
-        "//tools:env_utils",
-        "@pypi//cryptography",
-        "@pypi//mako",
         "@pypi//platformdirs",
         "@pypi//pydantic",
-        "@pypi//pyjwt",
-        "@pypi//supervisor",
+        "@pypi//pydantic_settings",
     ],
 )
+
+py_library(
+    name = "proxy_credentials",
+    srcs = ["proxy_credentials.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pyjwt"],
+)
+
+# === Modules with internal deps ===
+
+py_library(
+    name = "env_file",
+    srcs = ["env_file.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":proxy_vars",
+        ":settings",
+    ],
+)
+
+py_library(
+    name = "bazelisk_setup",
+    srcs = ["bazelisk_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [":settings"],
+)
+
+py_library(
+    name = "nix_setup",
+    srcs = ["nix_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":resources",
+        ":settings",
+        ":streaming",
+    ],
+)
+
+py_library(
+    name = "proxy_setup",
+    srcs = ["proxy_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":proxy_credentials",
+        ":resources",
+        ":settings",
+        "//tools/claude_hooks/supervisor:client",
+        "@pypi//cryptography",
+        "@pypi//mako",
+    ],
+)
+
+py_library(
+    name = "podman_service",
+    srcs = ["podman_service.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":settings",
+        "//tools/claude_hooks/supervisor:client",
+    ],
+)
+
+# === Binaries ===
+
+py_binary(
+    name = "bazel_wrapper",
+    srcs = ["bazel_wrapper.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":settings",
+        "//tools/claude_hooks/supervisor:client",
+    ],
+)
+
+py_binary(
+    name = "session_start",
+    srcs = ["session_start.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bazelisk_setup",
+        ":binary_tools",
+        ":env_file",
+        ":errors",
+        ":nix_setup",
+        ":podman_service",
+        ":proxy_setup",
+        ":settings",
+        "//tools:build_info",
+        "//tools:env_utils",
+        "//tools/claude_hooks/supervisor:setup",
+        "@pypi//pydantic",
+    ],
+)
+
+# === Packaging ===
 
 py_package(
     name = "claude_hooks_pkg",
@@ -51,8 +178,28 @@ py_package(
         "tools",
         "tools.claude_hooks",
         "tools.claude_hooks.proxy",
+        "tools.claude_hooks.supervisor",
     ],
-    deps = [":claude_hooks"],
+    deps = [
+        ":bazel_wrapper",
+        ":bazelisk_setup",
+        ":binary_tools",
+        ":env_file",
+        ":errors",
+        ":nix_setup",
+        ":podman_service",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":resources",
+        ":session_start",
+        ":settings",
+        ":streaming",
+        "//tools/claude_hooks/proxy:auth_proxy",
+        "//tools/claude_hooks/proxy:run_auth_proxy",
+        "//tools/claude_hooks/supervisor:client",
+        "//tools/claude_hooks/supervisor:setup",
+    ],
 )
 
 py_wheel(
@@ -72,19 +219,23 @@ py_wheel(
         "mako",
         "platformdirs",
         "pydantic",
+        "pydantic-settings",
         "pyjwt",
         "supervisor",
+        "tenacity",
     ],
     version = "0.1.0",
     deps = [":claude_hooks_pkg"],
 )
+
+# === Tests ===
 
 py_test(
     name = "test_session_start",
     srcs = ["test_session_start.py"],
     imports = ["../.."],
     deps = [
-        ":claude_hooks",
+        ":session_start",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -95,7 +246,7 @@ py_test(
     srcs = ["test_proxy.py"],
     imports = ["../.."],
     deps = [
-        ":claude_hooks",
+        ":proxy_credentials",
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -112,10 +263,14 @@ py_test(
     imports = ["../.."],
     tags = ["integration"],
     deps = [
-        ":claude_hooks",
+        ":proxy_setup",
+        ":settings",
         "//:runfiles",
         "//net_util",
+        "//tools/claude_hooks/supervisor:client",
+        "//tools/claude_hooks/supervisor:setup",
         "//tools/claude_hooks/testing:runfiles_util",
+        "//tools/claude_hooks/testing:supervisor_cleanup",
         "@pypi//cryptography",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -147,7 +302,8 @@ py_test(
         "external",  # Requires network access (but now works without it!)
     ],
     deps = [
-        ":claude_hooks",
+        ":proxy_vars",
+        ":settings",
         "//:runfiles",
         "//net_util",
         "//tools/claude_hooks/testing:forwarding_tls_proxy",
@@ -158,116 +314,24 @@ py_test(
     ],
 )
 
+# === Linting ===
+
 ruff_test(
     name = "ruff",
-    srcs = [":claude_hooks"],
-)
-
-py_binary(
-    name = "bazel_wrapper",
-    srcs = ["bazel_wrapper.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":claude_hooks"],
-)
-
-py_library(
-    name = "bazelisk_setup",
-    srcs = ["bazelisk_setup.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":claude_hooks",
-        "@pypi//mako",
-    ],
-)
-
-py_library(
-    name = "binary_tools",
-    srcs = ["binary_tools.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "env_file",
-    srcs = ["env_file.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "errors",
-    srcs = ["errors.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "nix_setup",
-    srcs = ["nix_setup.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":claude_hooks"],
-)
-
-py_library(
-    name = "paths",
-    srcs = ["paths.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//platformdirs"],
-)
-
-py_library(
-    name = "podman_service",
-    srcs = ["podman_service.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":claude_hooks"],
-)
-
-py_library(
-    name = "proxy_credentials",
-    srcs = ["proxy_credentials.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pyjwt"],
-)
-
-py_library(
-    name = "proxy_setup",
-    srcs = ["proxy_setup.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":claude_hooks",
-        "@pypi//cryptography",
-        "@pypi//mako",
-    ],
-)
-
-py_library(
-    name = "resources",
-    srcs = ["resources.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_binary(
-    name = "session_start",
-    srcs = ["session_start.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":claude_hooks",
-        "//tools:build_info",
-        "//tools:env_utils",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "streaming",
-    srcs = ["streaming.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "supervisor_setup",
-    srcs = ["supervisor_setup.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":claude_hooks",
-        "@pypi//pydantic",
-        "@pypi//supervisor",
+    srcs = [
+        ":bazel_wrapper",
+        ":bazelisk_setup",
+        ":binary_tools",
+        ":env_file",
+        ":errors",
+        ":nix_setup",
+        ":podman_service",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":resources",
+        ":session_start",
+        ":settings",
+        ":streaming",
     ],
 )

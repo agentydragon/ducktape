@@ -77,19 +77,28 @@ See <proxy-alternatives.md> for details.
 - [Network Configuration](https://docs.anthropic.com/en/docs/claude-code/security#network-access) - Proxy and network egress details
 - [Enterprise Configuration](https://docs.anthropic.com/en/docs/claude-code/enterprise) - TLS certificate configuration
 
+## Configuration
+
+All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with the `DUCKTAPE_CLAUDE_HOOKS_` prefix:
+
+| Environment Variable                     | Default                             | Description                 |
+| ---------------------------------------- | ----------------------------------- | --------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`   | `~/.config/claude-hooks/supervisor` | Supervisor config directory |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`  | `19001`                             | Supervisor TCP port         |
+| `DUCKTAPE_CLAUDE_HOOKS_BAZEL_PROXY_DIR`  | `~/.cache/claude-hooks/bazel-proxy` | Proxy cache directory       |
+| `DUCKTAPE_CLAUDE_HOOKS_BAZEL_PROXY_PORT` | `18081`                             | Local proxy port            |
+| `DUCKTAPE_CLAUDE_HOOKS_SKIP_BAZELISK`    | `false`                             | Skip bazelisk download      |
+| `DUCKTAPE_CLAUDE_HOOKS_SKIP_NIX`         | `false`                             | Skip nix installation       |
+| `DUCKTAPE_CLAUDE_HOOKS_SKIP_PODMAN`      | `false`                             | Skip podman setup           |
+
+See `settings.py` for the full configuration schema.
+
 ## Dependencies
 
-This package has the following dependencies (see BUILD.bazel):
+See BUILD.bazel for the full dependency list. Key runtime requirements:
 
-- cryptography (TLS certificate parsing)
-- mako (template rendering)
-- pproxy (proxy server)
-- pyjwt (JWT decoding)
-- supervisor (process management)
-
-**Runtime**: Requires `keytool` (from JDK) for Java truststore creation.
-
-**Note**: Requires Python 3.13+ for `ssl.SSLSocket.get_unverified_chain()` API.
+- **keytool** (from JDK) for Java truststore creation
+- **Python 3.13+** for `ssl.SSLSocket.get_unverified_chain()` API
 
 ## Usage
 
@@ -232,7 +241,7 @@ This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.att
 
 Configuration via environment variable:
 
-- `CLAUDE_HOOKS_SUPERVISOR_PORT`: Override TCP port (default: 19001)
+- `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`: Override TCP port (default: 19001)
 
 ## Development
 

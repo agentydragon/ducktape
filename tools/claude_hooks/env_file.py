@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from tools.claude_hooks import settings
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 
 
@@ -100,7 +101,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     # Exported so tests can chain through the real upstream when testing the hook
     if vars.upstream_proxy_url:
         exports.extend(["", "# Original upstream proxy (for tests that need to chain through)"])
-        exports.extend(_exports_from_dict({"CLAUDE_HOOKS_UPSTREAM_PROXY_URL": vars.upstream_proxy_url}))
+        exports.extend(_exports_from_dict({settings.ENV_UPSTREAM_PROXY_URL: vars.upstream_proxy_url}))
 
     # Docker/Podman configuration
     if vars.docker_host or vars.podman_env:

@@ -39,6 +39,7 @@ py_library(
 py_library(
     name = "net",
     srcs = ["net.py"],
-    visibility = ["//:__subpackages__"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
     deps = ["@pypi//tenacity"],
 )

@@ -1,0 +1,44 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//net_util:net",
+        "//tools/claude_hooks:errors",
+        "//tools/claude_hooks:settings",
+        "@pypi//pydantic",
+        "@pypi//supervisor",
+    ],
+)
+
+py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        "//net_util:net",
+        "//tools/claude_hooks:errors",
+        "//tools/claude_hooks:settings",
+    ],
+)
+
+py_test(
+    name = "test_supervisor",
+    srcs = ["test_supervisor.py"],
+    imports = ["../../.."],
+    tags = ["integration"],
+    deps = [
+        ":client",
+        ":setup",
+        "//net_util:net",
+        "//tools/claude_hooks:settings",
+        "//tools/claude_hooks/testing:supervisor_cleanup",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

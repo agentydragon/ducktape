@@ -26,6 +26,7 @@ import pytest_bazel
 
 from net_util.net import pick_free_port
 from runfiles import get_required_path
+from tools.claude_hooks import settings
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.testing import runfiles_util, shell_helpers
 from tools.claude_hooks.testing.forwarding_tls_proxy import ForwardingTLSProxy, UpstreamProxyConfig
@@ -117,7 +118,7 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
     supervisor_port = pick_free_port()
     bazel_proxy_port = pick_free_port()
 
-    use_wheel = os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1"
+    use_wheel = os.environ.get(settings.ENV_USE_WHEEL) == "1"
 
     env = os.environ.copy()
     env.update(
@@ -131,14 +132,14 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
             "XDG_CACHE_HOME": str(isolated_dirs.cache),
             "XDG_CONFIG_HOME": str(isolated_dirs.config),
             # Isolated ports (avoid conflicts between tests)
-            "CLAUDE_HOOKS_SUPERVISOR_PORT": str(supervisor_port),
-            "CLAUDE_HOOKS_BAZEL_PROXY_PORT": str(bazel_proxy_port),
+            settings.ENV_SUPERVISOR_PORT: str(supervisor_port),
+            settings.ENV_BAZEL_PROXY_PORT: str(bazel_proxy_port),
             # Disable nix installation (speeds up tests, avoids network)
-            "CLAUDE_HOOKS_SKIP_NIX": "1",
+            settings.ENV_SKIP_NIX: "1",
             # Disable podman setup (requires claude_hooks wheel install)
-            "CLAUDE_HOOKS_SKIP_PODMAN": "1",
+            settings.ENV_SKIP_PODMAN: "1",
             # Skip bazelisk download (tests use system bazel)
-            "CLAUDE_HOOKS_SKIP_BAZELISK": "1",
+            settings.ENV_SKIP_BAZELISK: "1",
             # Proxy configuration (simulating Claude Code web)
             **dict.fromkeys(PROXY_ENV_VARS, proxy_url),
         }
@@ -150,7 +151,7 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
 
     if not use_wheel:
         # Bazel test mode: use runfiles binaries
-        env["CLAUDE_AUTH_PROXY_CMD"] = str(get_required_path(runfiles_util.RUN_AUTH_PROXY))
+        env[settings.ENV_AUTH_PROXY_CMD] = str(get_required_path(runfiles_util.RUN_AUTH_PROXY))
     # When use_wheel=True, console scripts (claude-session-start, claude-auth-proxy) are in PATH
 
     return env
@@ -202,14 +203,14 @@ def run_session_start_hook(
     """Run the session start hook with given environment.
 
     By default, runs via `python -m tools.claude_hooks.session_start` for Bazel tests.
-    Set CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-session-start` console
+    Set DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-session-start` console
     script instead - this tests the actual wheel packaging.
 
     Prints hook stdout/stderr for debugging (visible in CI logs on any test failure).
     """
     hook_input = make_hook_input(project_dir, source)
 
-    if os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1":
+    if os.environ.get(settings.ENV_USE_WHEEL) == "1":
         # Run installed console script (tests wheel packaging)
         cmd = "claude-session-start"
     else:
@@ -242,7 +243,7 @@ class TestFullSessionStartHook:
         # Skip bazelisk download - ForwardingTLSProxy doesn't handle cross-host redirects
         # (github.com -> objects.githubusercontent.com). Tests use system bazel instead.
         env = hook_env.copy()
-        env["CLAUDE_HOOKS_SKIP_BAZELISK"] = "1"
+        env[settings.ENV_SKIP_BAZELISK] = "1"
         result = run_session_start_hook(isolated_dirs.project, env)
 
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
@@ -252,7 +253,7 @@ class TestFullSessionStartHook:
         bazel_proxy_dir = isolated_dirs.cache / "claude-hooks" / "bazel-proxy"
         assert (bazel_proxy_dir / "bazelrc").exists(), "bazelrc not created"
         assert (bazel_proxy_dir / "anthropic_ca.pem").exists(), "CA not extracted"
-        # Note: bazel wrapper is skipped in this test (CLAUDE_HOOKS_SKIP_BAZELISK=1)
+        # Note: bazel wrapper is skipped in this test (DUCKTAPE_CLAUDE_HOOKS_SKIP_BAZELISK=1)
 
         # Verify supervisor started
         # platformdirs respects XDG_CONFIG_HOME
@@ -266,7 +267,7 @@ class TestFullSessionStartHook:
         # Skip bazelisk download - ForwardingTLSProxy doesn't handle cross-host redirects
         # Use system bazel instead (required via skipif above)
         env = hook_env.copy()
-        env["CLAUDE_HOOKS_SKIP_BAZELISK"] = "1"
+        env[settings.ENV_SKIP_BAZELISK] = "1"
         result = run_session_start_hook(isolated_dirs.project, env)
         assert result.returncode == 0, f"Hook failed: {result.stderr}"
 
@@ -279,15 +280,10 @@ class TestFullSessionStartHook:
         shutil.copytree(testdata_workspace, workspace)
 
         # Run bazel build in a shell that sources the env file (like Claude Code would)
-        # platformdirs respects XDG_CACHE_HOME
-        bazel_proxy_dir = isolated_dirs.cache / "claude-hooks" / "bazel-proxy"
+        # The env file adds the wrapper dir to PATH, sets proxy vars to local auth-proxy,
+        # and exports truststore configuration. The wrapper injects --bazelrc and falls
+        # back to system bazel if bazelisk isn't installed.
         build_env = hook_env.copy()
-        build_env["BAZEL_SYSTEM_BAZELRC_PATH"] = str(bazel_proxy_dir / "bazelrc")
-
-        # Remove direct proxy env vars - bazel should use the local auth-forwarding proxy
-        # configured in bazelrc, not the ForwardingTLSProxy which requires auth
-        for var in ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"]:
-            build_env.pop(var, None)
 
         # Use shared helper to run bazel through env file (mimics Claude Code behavior)
         result = shell_helpers.run_with_env_file(
@@ -313,7 +309,7 @@ class TestFullSessionStartHook:
         # Skip bazelisk download - this test focuses on stale socket recovery
         # and ForwardingTLSProxy doesn't handle cross-host redirects (github -> objects.githubusercontent)
         env = hook_env.copy()
-        env["CLAUDE_HOOKS_SKIP_BAZELISK"] = "1"
+        env[settings.ENV_SKIP_BAZELISK] = "1"
         result = run_session_start_hook(isolated_dirs.project, env)
 
         assert result.returncode == 0, f"Hook failed with stale socket:\nstderr: {result.stderr}"
@@ -324,7 +320,7 @@ class TestFullSessionStartHook:
         # Skip bazelisk download - this test focuses on resume event handling
         # and ForwardingTLSProxy doesn't handle cross-host redirects (github -> objects.githubusercontent)
         env = hook_env.copy()
-        env["CLAUDE_HOOKS_SKIP_BAZELISK"] = "1"
+        env[settings.ENV_SKIP_BAZELISK] = "1"
         result = run_session_start_hook(isolated_dirs.project, env, source="resume")
 
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
@@ -370,7 +366,7 @@ class TestPodmanIntegration:
         supervisor_port = pick_free_port()
         bazel_proxy_port = pick_free_port()
 
-        use_wheel = os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1"
+        use_wheel = os.environ.get(settings.ENV_USE_WHEEL) == "1"
 
         env = os.environ.copy()
         env.update(
@@ -389,12 +385,12 @@ class TestPodmanIntegration:
                 "XDG_CACHE_HOME": str(isolated_dirs.cache),
                 "XDG_CONFIG_HOME": str(isolated_dirs.config),
                 # Isolated ports (avoid conflicts between tests)
-                "CLAUDE_HOOKS_SUPERVISOR_PORT": str(supervisor_port),
-                "CLAUDE_HOOKS_BAZEL_PROXY_PORT": str(bazel_proxy_port),
+                settings.ENV_SUPERVISOR_PORT: str(supervisor_port),
+                settings.ENV_BAZEL_PROXY_PORT: str(bazel_proxy_port),
                 # Disable nix and bazelisk (speeds up tests)
-                "CLAUDE_HOOKS_SKIP_NIX": "1",
-                "CLAUDE_HOOKS_SKIP_BAZELISK": "1",
-                # NOTE: NOT setting CLAUDE_HOOKS_SKIP_PODMAN - podman is enabled
+                settings.ENV_SKIP_NIX: "1",
+                settings.ENV_SKIP_BAZELISK: "1",
+                # NOTE: NOT setting ENV_SKIP_PODMAN - podman is enabled
             }
         )
 
@@ -404,7 +400,7 @@ class TestPodmanIntegration:
 
         if not use_wheel:
             # Bazel test mode: use runfiles binaries
-            env["CLAUDE_AUTH_PROXY_CMD"] = str(get_required_path(runfiles_util.RUN_AUTH_PROXY))
+            env[settings.ENV_AUTH_PROXY_CMD] = str(get_required_path(runfiles_util.RUN_AUTH_PROXY))
 
         return env
 

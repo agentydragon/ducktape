@@ -22,20 +22,10 @@ from pydantic import BaseModel
 
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
-from tools.claude_hooks import (
-    bazelisk_setup,
-    binary_tools,
-    env_file,
-    nix_setup,
-    paths,
-    podman_service,
-    proxy_setup,
-    supervisor_setup,
-)
+from tools.claude_hooks import bazelisk_setup, binary_tools, env_file, nix_setup, podman_service, proxy_setup
 from tools.claude_hooks.errors import DirenvError, SkipError
-
-LOG_FILE = paths.get_cache_dir() / "session-start.log"
-TIMESTAMP_FILE = paths.get_cache_dir() / "session-hook-last-run"
+from tools.claude_hooks.settings import HookSettings
+from tools.claude_hooks.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +193,7 @@ def format_environment_summary() -> str:
     return "\n".join(lines)
 
 
-def emit_session_context(collector: LogCollector) -> None:
+def emit_session_context(collector: LogCollector, log_file: Path) -> None:
     """Emit compact context summary for Claude Code transcript.
 
     This goes to stdout and gets injected as context for the agent.
@@ -239,7 +229,7 @@ def emit_session_context(collector: LogCollector) -> None:
         )
         lines.append("  Capabilities: read repo, read CI logs, list workflow runs, view PR status.")
 
-    lines.append(f"Full log: {LOG_FILE}")
+    lines.append(f"Full log: {log_file}")
 
     print("\n".join(lines))
     sys.stdout.flush()
@@ -323,12 +313,12 @@ class LogCollector(logging.handlers.MemoryHandler):
         return [self.format(r) for r in self.buffer if r.levelno >= logging.ERROR]
 
 
-def setup_logging() -> LogCollector:
+def setup_logging(settings: HookSettings) -> LogCollector:
     """Configure root logger so all modules in tools.claude_hooks get handlers.
 
     Returns LogCollector for use in emit_session_context.
     """
-    paths.get_cache_dir().mkdir(parents=True, exist_ok=True)
+    log_file = settings.get_cache_dir() / "session-start.log"
 
     formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
     collector = LogCollector()
@@ -342,11 +332,14 @@ def setup_logging() -> LogCollector:
     stdout_handler.setFormatter(formatter)
     root_logger.addHandler(stdout_handler)
 
-    file_handler = logging.FileHandler(LOG_FILE, mode="a")
+    file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
     root_logger.addHandler(collector)
+
+    # Attach log_file to collector so callers can access it
+    collector.log_file = log_file  # type: ignore[attr-defined]
 
     return collector
 
@@ -367,7 +360,7 @@ async def run_in_thread(func, *args):
 # ============================================================================
 
 
-async def run_web_mode(hook_input: HookInput) -> None:
+async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     """Web mode with parallelized operations.
 
     Uses asyncio to parallelize independent installations (git hook, cluster
@@ -376,11 +369,12 @@ async def run_web_mode(hook_input: HookInput) -> None:
     Writes CLAUDE_ENV_FILE once at the end with all collected environment
     variables.
     """
-    collector = setup_logging()
+    collector = setup_logging(settings)
+    log_file = collector.log_file  # type: ignore[attr-defined]
 
     logger.info("Session start hook")
     logger.info("Hook: %s", __file__)
-    logger.info("Log:  %s", LOG_FILE)
+    logger.info("Log:  %s", log_file)
     logger.info("Hook input: %s", hook_input.model_dump_json())
     logger.info("Full environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
     logger.info("Setting up dev environment...")
@@ -398,7 +392,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
 
     # Start supervisor (required by proxy and podman)
-    supervisor_task = asyncio.create_task(run_in_thread(supervisor_setup.start))
+    supervisor_task = asyncio.create_task(run_in_thread(supervisor_setup.start, settings))
 
     # Wrappers that depend on supervisor being ready
     # TODO: Handle upstream dependency failures more gracefully.
@@ -412,7 +406,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         if exc := supervisor_task.exception():
             raise exc
         supervisor_result = supervisor_task.result()
-        return proxy_setup.setup_bazel_proxy(supervisor_result.client)
+        return proxy_setup.setup_bazel_proxy(settings, supervisor_result.client)
 
     async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor)."""
@@ -420,14 +414,26 @@ async def run_web_mode(hook_input: HookInput) -> None:
         if exc := supervisor_task.exception():
             raise exc
         supervisor_result = supervisor_task.result()
-        return podman_service.setup_podman(supervisor_result.client)
+        return podman_service.setup_podman(settings, supervisor_result.client)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
-        """Install bazelisk and wrapper."""
-        if os.environ.get("CLAUDE_HOOKS_SKIP_BAZELISK"):
-            logger.info("Skipping bazelisk installation (CLAUDE_HOOKS_SKIP_BAZELISK set)")
-            raise SkipError("Bazelisk", "CLAUDE_HOOKS_SKIP_BAZELISK")
-        return bazelisk_setup.install_bazelisk_and_wrapper()
+        """Install bazelisk and wrapper as separate tasks.
+
+        Always installs the wrapper. Optionally downloads bazelisk unless
+        DUCKTAPE_CLAUDE_HOOKS_SKIP_BAZELISK is set.
+        """
+        wrapper_path = bazelisk_setup.install_wrapper(settings)
+        skipped = settings.skip_bazelisk
+        if not skipped:
+            bazelisk_setup.install_bazelisk(settings)
+        else:
+            logger.info("Skipping bazelisk download (skip_bazelisk=True)")
+        return bazelisk_setup.BazeliskSetup(
+            bazelisk_path=settings.get_bazelisk_path(),
+            wrapper_path=wrapper_path,
+            settings=settings,
+            bazelisk_skipped=skipped,
+        )
 
     def setup_buildbuddy() -> str | None:
         """Configure BuildBuddy remote cache if BUILDBUDDY_API_KEY is set.
@@ -467,7 +473,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         setup_podman_with_supervisor(),
         run_in_thread(install_git_precommit_hook, project_dir),
         run_in_thread(binary_tools.install_cluster_tools),
-        run_in_thread(nix_setup.install_nix),
+        run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
         run_in_thread(setup_buildbuddy),
         return_exceptions=True,
@@ -508,7 +514,8 @@ async def run_web_mode(hook_input: HookInput) -> None:
 
     # Generate timestamp
     hook_timestamp = datetime.now()
-    TIMESTAMP_FILE.write_text(f"{hook_timestamp.isoformat()}\n")
+    timestamp_file = settings.get_cache_dir() / "session-hook-last-run"
+    timestamp_file.write_text(f"{hook_timestamp.isoformat()}\n")
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
 
     # Proxy setup is required - propagate failure with clear error message
@@ -518,19 +525,19 @@ async def run_web_mode(hook_input: HookInput) -> None:
     # At this point, proxy_result is ProxySetup (type narrowed by the check above)
 
     # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
-    combined_ca = proxy_setup._get_bazel_combined_ca()
+    combined_ca = settings.get_bazel_combined_ca()
     if not combined_ca.exists():
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
     nix_paths = nix_setup.get_nix_paths(nix_store_bin) if nix_store_bin else []
 
     env_vars = env_file.EnvVars(
-        proxy_port=proxy_setup._get_bazel_proxy_port(),
+        proxy_port=settings.get_bazel_proxy_port(),
         repo_root=project_dir,
         combined_ca=combined_ca,
-        bazel_wrapper_dir=bazelisk_setup._get_wrapper_path().parent,
-        bazelisk_path=bazelisk_setup._get_bazelisk_path(),
-        bazel_proxy_rc=proxy_setup._get_bazel_proxy_rc(),
+        bazel_wrapper_dir=settings.get_wrapper_dir(),
+        bazelisk_path=settings.get_bazelisk_path(),
+        bazel_proxy_rc=settings.get_bazel_proxy_rc(),
         upstream_proxy_url=original_upstream_proxy,
         nix_paths=nix_paths,
         docker_host=docker_host,
@@ -555,10 +562,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
     logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_status, ca_status)
     logger.info("Nix: %s", get_nix_status())
     if not isinstance(podman_result, BaseException):
-        podman_status = (
-            "running" if podman_result.supervisor.is_service_running("podman", wait_for_start=False) else "not running"
-        )
-        logger.info("Podman: %s", podman_status)
+        logger.info("Podman: %s", podman_result.status)
 
     # Emit all collected guidance
     if not isinstance(supervisor_task.result(), BaseException):
@@ -573,7 +577,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         print(podman_result.guidance)
         sys.stdout.flush()
 
-    emit_session_context(collector)
+    emit_session_context(collector, log_file)
 
 
 async def async_main() -> None:
@@ -587,7 +591,8 @@ async def async_main() -> None:
         raise
 
     if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
-        await run_web_mode(hook_input)
+        settings = HookSettings()
+        await run_web_mode(hook_input, settings)
     else:
         await run_cli_mode(hook_input)
 

@@ -8,15 +8,10 @@ from __future__ import annotations
 
 import base64
 import contextlib
-import inspect
-import os
-import signal
 import socket
 import ssl
 import threading
-import time
 from collections.abc import Generator
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -27,14 +22,15 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from net_util.net import pick_free_port
+from net_util.net import pick_free_port, wait_for_port
 from runfiles import get_required_path
-from tools.claude_hooks import proxy_setup, supervisor_setup
+from tools.claude_hooks import proxy_setup, settings
+from tools.claude_hooks.proxy_setup import BAZEL_PROXY_SERVICE
+from tools.claude_hooks.settings import HookSettings
+from tools.claude_hooks.supervisor.client import is_running as supervisor_is_running
+from tools.claude_hooks.supervisor.setup import start as supervisor_start
 from tools.claude_hooks.testing import runfiles_util
-
-# =============================================================================
-# Test Fixtures: Mock TLS-Inspecting Proxy
-# =============================================================================
+from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup
 
 
 @pytest.fixture(scope="session")
@@ -201,255 +197,98 @@ def mock_tls_proxy(
     proxy.stop()
 
 
-# =============================================================================
-# Test Fixtures: Isolated Test Environment
-# =============================================================================
-
-
-@dataclass
-class IsolatedEnv:
-    """Isolated test environment with temporary directories and ports."""
-
-    supervisor_dir: Path
-    bazel_proxy_dir: Path
-    proxy_port: int
-    upstream_proxy_port: int
-    proxy_url: str
-
-
 @pytest.fixture
-def isolated_env(tmp_path: Path, mock_tls_proxy: MockTLSProxy, monkeypatch: pytest.MonkeyPatch) -> IsolatedEnv:
-    """Fixture that sets up isolated directories and env vars for testing.
+def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """Fixture that sets up isolated directories for testing.
 
-    Uses environment variable overrides (proper DI) instead of monkeypatching.
-    The claude_hooks modules read these env vars via getter functions.
+    Returns (supervisor_dir, bazel_proxy_dir) tuple.
     """
-    # Create isolated directories
     supervisor_dir = tmp_path / "supervisor"
     supervisor_dir.mkdir()
     bazel_proxy_dir = tmp_path / "bazel-proxy"
     bazel_proxy_dir.mkdir()
 
-    # Use different ports for the local proxy and supervisor to avoid conflicts
-    test_proxy_port = pick_free_port()
     supervisor_port = pick_free_port()
+    proxy_port = pick_free_port()
 
-    # Set environment variables for DI (read by getter functions in the modules)
-    monkeypatch.setenv("CLAUDE_HOOKS_SUPERVISOR_DIR", str(supervisor_dir))
-    monkeypatch.setenv("CLAUDE_HOOKS_SUPERVISOR_PORT", str(supervisor_port))
-    monkeypatch.setenv("CLAUDE_HOOKS_BAZEL_PROXY_DIR", str(bazel_proxy_dir))
-    monkeypatch.setenv("CLAUDE_HOOKS_BAZEL_PROXY_PORT", str(test_proxy_port))
+    monkeypatch.setenv(settings.ENV_SUPERVISOR_DIR, str(supervisor_dir))
+    monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
+    monkeypatch.setenv(settings.ENV_BAZEL_PROXY_DIR, str(bazel_proxy_dir))
+    monkeypatch.setenv(settings.ENV_BAZEL_PROXY_PORT, str(proxy_port))
+    monkeypatch.setenv(settings.ENV_AUTH_PROXY_CMD, str(get_required_path(runfiles_util.RUN_AUTH_PROXY)))
 
-    # Set CLAUDE_AUTH_PROXY_CMD to use the runfiles binary (same approach as test_e2e)
-    monkeypatch.setenv("CLAUDE_AUTH_PROXY_CMD", str(get_required_path(runfiles_util.RUN_AUTH_PROXY)))
+    return supervisor_dir, bazel_proxy_dir
 
-    # Set https_proxy env var pointing to mock proxy
+
+@pytest.fixture
+def hook_settings(
+    isolated_dirs: tuple[Path, Path], mock_tls_proxy: MockTLSProxy, monkeypatch: pytest.MonkeyPatch
+) -> HookSettings:
+    """Fixture that creates HookSettings with upstream proxy configured."""
     proxy_url = f"http://testuser:testpass@127.0.0.1:{mock_tls_proxy.port}"
     monkeypatch.setenv("https_proxy", proxy_url)
-
-    return IsolatedEnv(
-        supervisor_dir=supervisor_dir,
-        bazel_proxy_dir=bazel_proxy_dir,
-        proxy_port=test_proxy_port,
-        upstream_proxy_port=mock_tls_proxy.port,
-        proxy_url=proxy_url,
-    )
-
-
-def _stop_supervisor_by_pidfile(pidfile: Path) -> None:
-    """Stop supervisor process by reading and killing from pidfile."""
-    if not pidfile.exists():
-        return
-    try:
-        pid = int(pidfile.read_text().strip())
-        os.kill(pid, signal.SIGTERM)
-        time.sleep(0.5)
-        # Force kill if still running
-        with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
-        time.sleep(0.2)
-    except (ValueError, ProcessLookupError, OSError):
-        pass
-    # Clean up pidfile
-    with contextlib.suppress(OSError):
-        pidfile.unlink()
+    return HookSettings()
 
 
 @pytest.fixture(autouse=True)
-def cleanup_supervisor(isolated_env: IsolatedEnv) -> Generator[None]:
+def cleanup_supervisor_fixture(isolated_dirs: tuple[Path, Path]) -> Generator[None]:
     """Fixture that ensures supervisor is stopped before and after test."""
-    # Clean up BEFORE test to handle stale supervisor from previous runs
-    pidfile = isolated_env.supervisor_dir / "supervisord.pid"
-    _stop_supervisor_by_pidfile(pidfile)
-
-    yield
-
-    # Clean up AFTER test
-    _stop_supervisor_by_pidfile(pidfile)
-
-
-def _wait_for_port(port: int, timeout: float = 5.0) -> bool:
-    """Wait for a port to be listening."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-                return True
-        except (OSError, TimeoutError):
-            time.sleep(0.2)
-    return False
-
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
+    supervisor_dir, _ = isolated_dirs
+    with supervisor_cleanup(supervisor_dir / "supervisord.pid"):
+        yield
 
 
 class TestProxySetup:
     """Integration tests for proxy setup."""
 
-    def test_supervisor_starts_and_proxy_runs(
-        self, isolated_env: IsolatedEnv, mock_ca_cert: tuple[bytes, bytes]
-    ) -> None:
+    def test_supervisor_starts_and_proxy_runs(self, hook_settings: HookSettings) -> None:
         """Test that setup_bazel_proxy starts supervisor and proxy service."""
-        # Run the proxy setup
-        supervisor_result = supervisor_setup.start()
-        proxy_setup.ensure_proxy_running(supervisor_result.client)
+        supervisor_result = supervisor_start(hook_settings)
+        proxy_setup.ensure_proxy_running(hook_settings, supervisor_result.client)
 
-        # Verify supervisor is running
-        assert supervisor_setup.is_running(), "Supervisor should be running"
+        assert supervisor_is_running(hook_settings), "Supervisor should be running"
+        assert supervisor_result.client.is_service_running(BAZEL_PROXY_SERVICE), "bazel-proxy service should be running"
+        wait_for_port("127.0.0.1", hook_settings.get_bazel_proxy_port(), timeout_secs=5)
 
-        # Verify proxy service is running
-        assert supervisor_result.client.is_service_running("bazel-proxy"), "bazel-proxy service should be running"
-
-        # Verify we can connect to the local proxy port
-        assert _wait_for_port(isolated_env.proxy_port, timeout=5), "Proxy should be listening"
-
-    def test_ca_extraction(self, isolated_env: IsolatedEnv, mock_ca_cert: tuple[bytes, bytes]) -> None:
+    def test_ca_extraction(self, hook_settings: HookSettings) -> None:
         """Test that CA certificate is extracted from TLS chain."""
-        # First start supervisor and the proxy
-        supervisor_result = supervisor_setup.start()
-        proxy_setup.ensure_proxy_running(supervisor_result.client)
-        assert _wait_for_port(isolated_env.proxy_port, timeout=5)
+        supervisor_result = supervisor_start(hook_settings)
+        proxy_setup.ensure_proxy_running(hook_settings, supervisor_result.client)
+        wait_for_port("127.0.0.1", hook_settings.get_bazel_proxy_port(), timeout_secs=5)
 
-        # Now extract CA (this connects through our local proxy to the mock upstream)
-        proxy_setup._extract_proxy_ca()
+        proxy_setup._extract_proxy_ca(hook_settings)
 
-        # Verify CA file was created
-        ca_file = isolated_env.bazel_proxy_dir / "anthropic_ca.pem"
+        ca_file = hook_settings.get_bazel_ca_file()
         assert ca_file.exists(), "CA file should be created"
 
-        # Verify it contains 'Anthropic' (from our mock cert)
         ca_content = ca_file.read_text()
         assert "BEGIN CERTIFICATE" in ca_content
 
-        # Parse and verify it's our mock CA
         cert = x509.load_pem_x509_certificate(ca_content.encode())
         cn_value = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         cn = cn_value if isinstance(cn_value, str) else cn_value.decode()
         assert "TLS Inspection CA" in cn, f"Expected 'TLS Inspection CA' in CN, got: {cn}"
 
-    def test_credential_rotation(self, isolated_env: IsolatedEnv) -> None:
-        """Test that credential changes trigger proxy restart."""
-        # Start supervisor and proxy with initial credentials
-        supervisor_result = supervisor_setup.start()
+    def test_credential_rotation(
+        self, hook_settings: HookSettings, mock_tls_proxy: MockTLSProxy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that credential changes are written to file (hot-reload)."""
+        supervisor_result = supervisor_start(hook_settings)
         client = supervisor_result.client
-        proxy_setup.ensure_proxy_running(client)
-        assert _wait_for_port(isolated_env.proxy_port, timeout=5)
+        proxy_setup.ensure_proxy_running(hook_settings, client)
+        wait_for_port("127.0.0.1", hook_settings.get_bazel_proxy_port(), timeout_secs=5)
 
-        # Cache original credentials file content
-        creds_file = isolated_env.bazel_proxy_dir / "upstream_proxy"
-        original_creds = creds_file.read_text()
-        initial_info = client.get_process_info("bazel-proxy")
-        initial_start_time = initial_info.start
+        creds_file = hook_settings.get_bazel_creds_file()
+        assert creds_file.exists(), "Creds file should exist"
+        assert "testuser" in creds_file.read_text(), "Initial creds should have original credentials"
 
-        # Change credentials (simulate rotation)
-        new_proxy_url = f"http://newuser:newpass@127.0.0.1:{isolated_env.upstream_proxy_port}"
-        os.environ["https_proxy"] = new_proxy_url
+        new_proxy_url = f"http://newuser:newpass@127.0.0.1:{mock_tls_proxy.port}"
+        monkeypatch.setenv("https_proxy", new_proxy_url)
 
-        # Call ensure_proxy_running - should detect change and restart
-        refreshed = proxy_setup.ensure_proxy_running(client)
+        proxy_setup.ensure_proxy_running(hook_settings, client)
 
-        # Verify it detected the change
-        assert refreshed, "Should have detected credential change"
-
-        # Verify credentials file updated
-        new_creds = creds_file.read_text()
-        assert new_creds != original_creds, "Credentials file should be updated"
-        assert "newuser" in new_creds or new_proxy_url == new_creds.strip()
-
-        # Verify proxy was restarted (start time should be different)
-        time.sleep(0.5)  # Give supervisor time to update
-        new_info = client.get_process_info("bazel-proxy")
-        assert new_info.start >= initial_start_time, "Proxy should have been restarted"
-
-
-class TestSupervisorSetup:
-    """Integration tests for supervisor management."""
-
-    def test_supervisor_lifecycle(self, isolated_env: IsolatedEnv) -> None:
-        """Test supervisor start/stop lifecycle."""
-        # Initially not running
-        assert not supervisor_setup.is_running()
-
-        # Start supervisor
-        supervisor_setup.start()
-        assert supervisor_setup.is_running()
-
-        # Start again should be idempotent
-        supervisor_setup.start()
-        assert supervisor_setup.is_running()
-
-    def test_add_and_check_service(self, isolated_env: IsolatedEnv) -> None:
-        """Test adding a service to supervisor."""
-        supervisor_result = supervisor_setup.start()
-
-        # Add a simple service (sleep command)
-        supervisor_result.client.add_service(
-            name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir
-        )
-
-        # Check it's running
-        assert supervisor_result.client.is_service_running("test-service")
-
-    def test_update_service(self, isolated_env: IsolatedEnv) -> None:
-        """Test updating a service config."""
-        supervisor_result = supervisor_setup.start()
-
-        # Add initial service
-        supervisor_result.client.add_service(
-            name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir
-        )
-
-        # Get initial PID
-        initial_info = supervisor_result.client.get_process_info("test-service")
-        initial_pid = initial_info.pid
-
-        # Update with different command
-        supervisor_result.client.update_service(
-            name="test-service", command="sleep 7200", directory=isolated_env.supervisor_dir
-        )
-
-        # Verify restarted (PID should have changed since process was stopped and restarted)
-        new_info = supervisor_result.client.get_process_info("test-service")
-        assert new_info.pid != initial_pid, f"Service should have been restarted (PID unchanged: {initial_pid})"
-
-
-class TestRobustness:
-    """Tests for robustness fixes."""
-
-    def test_strict_connect_parsing(self) -> None:
-        """Test that CONNECT response parsing is strict."""
-        source = inspect.getsource(proxy_setup._extract_proxy_ca)
-        assert 'status_line.startswith(b"HTTP/")' in source, "Should check for HTTP/ prefix"
-        assert 'b" 200 "' in source, "Should check for space-delimited 200"
-
-    def test_single_cert_chain_allowed(self) -> None:
-        """Test that single-cert chains are now allowed."""
-        source = inspect.getsource(proxy_setup._extract_proxy_ca)
-        # Should NOT require 2+ certs anymore
-        assert "len(cert_chain_der) < 2" not in source, "Should not require 2+ certs"
-        assert "at least 2 certs" not in source.lower(), "Should not require 2+ certs"
+        assert "newuser" in creds_file.read_text(), "Creds file should have new credentials"
+        assert client.is_service_running(BAZEL_PROXY_SERVICE), "Proxy should still be running"
 
 
 if __name__ == "__main__":

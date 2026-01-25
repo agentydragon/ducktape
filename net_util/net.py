@@ -6,6 +6,12 @@ from typing import Literal, overload
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 
+def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    """Check if a TCP port is in use by attempting to connect."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex((host, port)) == 0
+
+
 def wait_for_port(host: str, port: int, *, timeout_secs: float = 10.0, interval_secs: float = 0.25) -> None:
     """Block until host:port accepts TCP connections or timeout.
 

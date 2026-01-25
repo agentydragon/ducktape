@@ -18,13 +18,9 @@ import subprocess
 import sys
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
-from mako.template import Template
-
-from tools.claude_hooks import paths, proxy_setup
-from tools.claude_hooks.resources import CONFIG_FILES
+from tools.claude_hooks.settings import HookSettings
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +33,16 @@ class BazeliskSetup:
 
     bazelisk_path: Path
     wrapper_path: Path
+    settings: HookSettings
+    bazelisk_skipped: bool = False
 
     @property
     def status(self) -> str:
         """Get status string for logging."""
-        version = get_bazelisk_version()
+        if self.bazelisk_skipped:
+            return "skipped (wrapper installed)"
+
+        version = get_bazelisk_version(self.settings)
         if not version:
             return "not installed"
 
@@ -53,24 +54,9 @@ class BazeliskSetup:
         return f"{version} (no wrapper)"
 
 
-def _get_bazelisk_path() -> Path:
-    """Get the bazelisk binary path."""
-    return paths.get_bazel_proxy_dir() / "bazelisk"
-
-
-def _get_wrapper_dir() -> Path:
-    """Get the wrapper directory (added to PATH)."""
-    return paths.get_bazel_proxy_dir() / "bin"
-
-
-def _get_wrapper_path() -> Path:
-    """Get the wrapper script path."""
-    return _get_wrapper_dir() / "bazel"
-
-
-def get_bazelisk_version() -> str | None:
+def get_bazelisk_version(settings: HookSettings) -> str | None:
     """Get bazelisk version string, or None if not installed/working."""
-    bazelisk_path = _get_bazelisk_path()
+    bazelisk_path = settings.get_bazelisk_path()
     if not bazelisk_path.exists():
         return None
     result = subprocess.run([bazelisk_path, "version"], capture_output=True, text=True, check=False)
@@ -103,20 +89,20 @@ def get_bazelisk_url() -> str:
     return f"https://github.com/bazelbuild/bazelisk/releases/download/v{BAZELISK_VERSION}/{binary}"
 
 
-def install_bazelisk() -> Path:
+def install_bazelisk(settings: HookSettings) -> Path:
     """Download bazelisk to private location, returning the binary path.
 
     Installs to ~/.cache/bazel-proxy/bazelisk (private, not on PATH).
     The wrapper script in ~/.cache/bazel-proxy/bin/bazel will call this.
     Skips download if already installed.
     """
-    bazel_proxy_dir = paths.get_bazel_proxy_dir()
-    bazelisk_path = _get_bazelisk_path()
+    bazel_proxy_dir = settings.get_bazel_proxy_dir()
+    bazelisk_path = settings.get_bazelisk_path()
 
     bazel_proxy_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if already installed
-    if get_bazelisk_version():
+    if get_bazelisk_version(settings):
         logger.info("Bazelisk already installed: %s", bazelisk_path)
         return bazelisk_path
 
@@ -125,7 +111,7 @@ def install_bazelisk() -> Path:
 
     # Create SSL context with combined CA bundle (includes proxy's TLS inspection CA)
     # Use only our combined bundle to avoid issues with missing system CAs in sandboxes
-    combined_ca = proxy_setup._get_bazel_combined_ca()
+    combined_ca = settings.get_bazel_combined_ca()
     ssl_context: ssl.SSLContext | None = None
     if combined_ca.exists():
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -147,7 +133,7 @@ def install_bazelisk() -> Path:
     return bazelisk_path
 
 
-def install_wrapper() -> Path:
+def install_wrapper(settings: HookSettings) -> Path:
     """Install wrapper script that sets proxy env vars before calling bazelisk.
 
     The wrapper is in ~/.cache/bazel-proxy/bin/bazel and calls the real
@@ -157,8 +143,8 @@ def install_wrapper() -> Path:
 
     The wrapper reads configuration from environment variables (set via get_env_script).
     """
-    wrapper_dir = _get_wrapper_dir()
-    wrapper_path = _get_wrapper_path()
+    wrapper_dir = settings.get_wrapper_dir()
+    wrapper_path = settings.get_wrapper_path()
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
@@ -180,56 +166,3 @@ exec "{sys.executable}" -m tools.claude_hooks.bazel_wrapper "$@"
     logger.info("Created bazelisk symlink at %s", bazelisk_symlink)
 
     return wrapper_path
-
-
-def get_env_script(
-    proxy_port: int, repo_root: Path, hook_timestamp: datetime, combined_ca: Path, nix_paths: list[Path] | None = None
-) -> str:
-    """Get bash script fragment to add wrapper dir to PATH and set config env vars.
-
-    This should be written to CLAUDE_ENV_FILE.
-
-    Args:
-        proxy_port: Port for the local Bazel proxy
-        repo_root: Path to the repository root for error messages
-        hook_timestamp: Session start hook timestamp
-        combined_ca: Path to combined CA bundle for Node.js
-        nix_paths: List of nix-related paths to add to PATH (optional)
-    """
-    local_proxy = f"http://localhost:{proxy_port}"
-
-    exports = {
-        "BAZELISK_PATH": _get_bazelisk_path(),
-        "BAZEL_LOCAL_PROXY": local_proxy,
-        "BAZEL_PROXY_BAZELRC": proxy_setup._get_bazel_proxy_rc(),  # Wrapper injects as --bazelrc
-        "DUCKTAPE_REPO_ROOT": repo_root,
-        "DUCKTAPE_SESSION_START_HOOK_TS": hook_timestamp.isoformat(),
-        # Props e2e test configuration (podman + host networking)
-        "PGHOST": "127.0.0.1",
-        "PGPORT": "5433",
-        "AGENT_PGHOST": "127.0.0.1",
-        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
-        "PROPS_REGISTRY_PROXY_PORT": "5051",
-        "PROPS_DOCKER_NETWORK": "host",
-        "NODE_EXTRA_CA_CERTS": combined_ca,
-    }
-
-    # Build list of paths to prepend to PATH (wrapper dir first, then nix paths)
-    prepend_paths = [_get_wrapper_dir(), *(nix_paths or [])]
-
-    # Render env script from template
-    # Pass shlex.quote as 'sh' filter for shell escaping
-    template = Template(CONFIG_FILES.joinpath("env.mako").read_text(), imports=["from shlex import quote as sh"])
-    result: str = template.render(prepend_paths=prepend_paths, exports=exports)
-    return result
-
-
-def install_bazelisk_and_wrapper() -> BazeliskSetup:
-    """Install bazelisk and wrapper script.
-
-    Returns:
-        BazeliskSetup with paths and status information
-    """
-    bazelisk_path = install_bazelisk()
-    wrapper_path = install_wrapper()
-    return BazeliskSetup(bazelisk_path=bazelisk_path, wrapper_path=wrapper_path)

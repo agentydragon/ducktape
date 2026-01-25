@@ -6,6 +6,9 @@ just tunnels the encrypted traffic through.
 
 This is needed because Anthropic's proxy returns non-standard 401 responses
 instead of 407, which breaks Java/Bazel's built-in proxy authentication.
+
+Reads upstream proxy URL from a file on each connection, enabling credential
+hot-reload without restarting the proxy.
 """
 
 from __future__ import annotations
@@ -16,8 +19,39 @@ import logging
 import select
 import socket
 import threading
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class UpstreamConfig:
+    """Upstream proxy configuration."""
+
+    host: str
+    port: int
+    auth_header: str
+
+
+def parse_upstream_url(url: str) -> UpstreamConfig:
+    """Parse upstream proxy URL into config with auth header."""
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        raise ValueError(f"Invalid upstream URL: {url}")
+
+    host = parsed.hostname
+    port = parsed.port or 80
+
+    auth_header = ""
+    if parsed.username:
+        password = parsed.password or ""
+        auth_str = f"{parsed.username}:{password}"
+        auth_b64 = base64.b64encode(auth_str.encode()).decode()
+        auth_header = f"Proxy-Authorization: Basic {auth_b64}\r\n"
+
+    return UpstreamConfig(host=host, port=port, auth_header=auth_header)
 
 
 class AuthForwardingProxy:
@@ -31,24 +65,22 @@ class AuthForwardingProxy:
     3. Upstream returns: HTTP/1.1 200 Connection Established
     4. Proxy returns: HTTP/1.1 200 Connection Established
     5. Bidirectional tunneling of encrypted data (no inspection)
+
+    Reads upstream proxy URL from creds_file on each connection for hot-reload.
     """
 
-    def __init__(self, listen_port: int, upstream_host: str, upstream_port: int, username: str, password: str):
+    def __init__(self, listen_port: int, creds_file: Path):
         self.listen_port = listen_port
-        self.upstream_host = upstream_host
-        self.upstream_port = upstream_port
-        self.username = username
-        self.password = password
-
-        # Precompute auth header
-        auth_str = f"{username}:{password}"
-        auth_b64 = base64.b64encode(auth_str.encode()).decode()
-        self.proxy_auth_header = f"Proxy-Authorization: Basic {auth_b64}\r\n"
-
+        self.creds_file = creds_file
         self.server_socket: socket.socket | None = None
         self._running = False
         self._thread: threading.Thread | None = None
         self._connections: list[socket.socket] = []
+
+    def _get_upstream_config(self) -> UpstreamConfig:
+        """Read upstream config from creds file."""
+        url = self.creds_file.read_text().strip()
+        return parse_upstream_url(url)
 
     def start(self) -> None:
         """Start the proxy server."""
@@ -61,12 +93,8 @@ class AuthForwardingProxy:
         self._running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
-        logger.info(
-            "Auth forwarding proxy started on 127.0.0.1:%d -> %s:%d",
-            self.listen_port,
-            self.upstream_host,
-            self.upstream_port,
-        )
+
+        logger.info("Auth forwarding proxy started on 127.0.0.1:%d (creds: %s)", self.listen_port, self.creds_file)
 
     def stop(self) -> None:
         """Stop the proxy server."""
@@ -123,13 +151,15 @@ class AuthForwardingProxy:
             target = parts[1]
             logger.debug("CONNECT request for %s", target)
 
+            # Get upstream config (re-read from file each connection for hot-reload)
+            config = self._get_upstream_config()
+
             # Connect to upstream proxy
-            upstream_sock = socket.create_connection((self.upstream_host, self.upstream_port), timeout=30)
+            upstream_sock = socket.create_connection((config.host, config.port), timeout=30)
 
             # Forward CONNECT to upstream WITH auth header
-            # Build new request with Proxy-Authorization added
             upstream_request = f"{request_line}\r\n"
-            upstream_request += self.proxy_auth_header
+            upstream_request += config.auth_header
 
             # Copy other headers from client (except Proxy-Authorization if present)
             for line in lines[1:]:

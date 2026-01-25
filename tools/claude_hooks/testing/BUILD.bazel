@@ -26,3 +26,11 @@ py_library(
     imports = ["../../.."],
     visibility = ["//tools/claude_hooks:__subpackages__"],
 )
+
+py_library(
+    name = "supervisor_cleanup",
+    testonly = True,
+    srcs = ["supervisor_cleanup.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+)

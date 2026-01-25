@@ -8,8 +8,8 @@ import shutil
 import urllib.request
 from pathlib import Path
 
-from tools.claude_hooks import paths
 from tools.claude_hooks.resources import CONFIG_FILES
+from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.streaming import run_streaming
 
 logger = logging.getLogger(__name__)
@@ -42,9 +42,9 @@ def setup_nix_path(nix_store_bin: Path) -> None:
         logger.info("Added to PATH: %s", ", ".join(map(str, paths)))
 
 
-def _write_nix_conf() -> Path:
+def _write_nix_conf(settings: HookSettings) -> Path:
     """Write nix.conf to shared cache directory, return path."""
-    cache_dir = paths.get_cache_dir()
+    cache_dir = settings.get_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
     nix_conf_path = cache_dir / "nix.conf"
 
@@ -57,10 +57,10 @@ def _write_nix_conf() -> Path:
 NIX_INSTALL_SCRIPT = Path("/tmp/nix-install.sh")
 
 
-def install_nix() -> Path:
+def install_nix(settings: HookSettings) -> Path:
     """Install nix if not present. Returns the nix store bin path."""
     # Write nix.conf to shared cache directory
-    nix_conf = _write_nix_conf()
+    nix_conf = _write_nix_conf(settings)
     os.environ["NIX_USER_CONF_FILES"] = str(nix_conf)
     logger.info("Using nix.conf: %s", nix_conf)
 

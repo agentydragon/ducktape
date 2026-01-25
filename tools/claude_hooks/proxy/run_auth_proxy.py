@@ -9,6 +9,7 @@ import argparse
 import logging
 import signal
 import sys
+from pathlib import Path
 from types import FrameType
 
 from tools.claude_hooks.proxy.auth_forwarding_proxy import AuthForwardingProxy
@@ -20,10 +21,7 @@ def main() -> int:
     """Run the auth-forwarding proxy."""
     parser = argparse.ArgumentParser(description="Run auth-forwarding proxy for Bazel")
     parser.add_argument("--listen-port", type=int, required=True, help="Local port to listen on")
-    parser.add_argument("--upstream-host", required=True, help="Upstream proxy host")
-    parser.add_argument("--upstream-port", type=int, required=True, help="Upstream proxy port")
-    parser.add_argument("--username", required=True, help="Username for upstream proxy")
-    parser.add_argument("--password", required=True, help="Password/JWT for upstream proxy")
+    parser.add_argument("--creds-file", type=Path, required=True, help="Path to file containing upstream proxy URL")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
 
     args = parser.parse_args()
@@ -33,14 +31,13 @@ def main() -> int:
         level=getattr(logging, args.log_level.upper()), format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
 
+    # Validate creds file exists
+    if not args.creds_file.exists():
+        logger.error("Credentials file not found: %s", args.creds_file)
+        return 1
+
     # Create and start proxy
-    proxy = AuthForwardingProxy(
-        listen_port=args.listen_port,
-        upstream_host=args.upstream_host,
-        upstream_port=args.upstream_port,
-        username=args.username,
-        password=args.password,
-    )
+    proxy = AuthForwardingProxy(listen_port=args.listen_port, creds_file=args.creds_file)
 
     # Handle shutdown signals
     def shutdown_handler(signum: int, frame: FrameType | None) -> None:
