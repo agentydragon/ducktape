@@ -15,10 +15,11 @@ import shutil
 import ssl
 import stat
 import subprocess
-import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+from python.runfiles import runfiles
 
 from tools.claude_hooks.settings import HookSettings
 
@@ -133,6 +134,23 @@ def install_bazelisk(settings: HookSettings) -> Path:
     return bazelisk_path
 
 
+def _get_bazel_wrapper_from_runfiles() -> Path:
+    """Get bazel_wrapper binary path from Bazel runfiles.
+
+    Raises RuntimeError if not in Bazel environment or binary not found.
+    """
+    r = runfiles.Create()
+    if r is None:
+        raise RuntimeError("Not running in Bazel environment (runfiles.Create() returned None)")
+    resolved = r.Rlocation("_main/tools/claude_hooks/bazel_wrapper")
+    if not resolved:
+        raise RuntimeError("Could not resolve bazel_wrapper in runfiles")
+    path = Path(resolved)
+    if not path.exists():
+        raise RuntimeError(f"bazel_wrapper not found at {path}")
+    return path
+
+
 def install_wrapper(settings: HookSettings) -> Path:
     """Install wrapper script that sets proxy env vars before calling bazelisk.
 
@@ -148,11 +166,9 @@ def install_wrapper(settings: HookSettings) -> Path:
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create a shell wrapper that uses the same Python as the current process
-    # and invokes the bazel_wrapper module. Using -m ensures the package is found
-    # whether installed via wheel or running from source with PYTHONPATH.
+    bazel_wrapper_bin = _get_bazel_wrapper_from_runfiles()
     wrapper_script = f"""#!/bin/sh
-exec "{sys.executable}" -m tools.claude_hooks.bazel_wrapper "$@"
+exec "{bazel_wrapper_bin}" "$@"
 """
     wrapper_path.write_text(wrapper_script)
     wrapper_path.chmod(0o755)

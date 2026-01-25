@@ -153,6 +153,7 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
         # Bazel test mode: use runfiles binaries
         env[settings.ENV_AUTH_PROXY_CMD] = str(get_required_path(runfiles_util.RUN_AUTH_PROXY))
     # When use_wheel=True, console scripts (claude-session-start, claude-auth-proxy) are in PATH
+    # Note: bazel_wrapper auto-detects runfiles, no env var override needed
 
     return env
 
