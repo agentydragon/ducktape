@@ -190,6 +190,10 @@ class SupervisorClient:
         all_info = cast(list[dict[str, object]], self._proxy.supervisor.getAllProcessInfo())
         return [ProcessInfo.model_validate(info) for info in all_info]
 
+    def service_exists(self, name: str) -> bool:
+        """Check if a service is registered with supervisor."""
+        return any(p.name == name for p in self.get_all_process_info())
+
     def reload_config(self) -> tuple[list[str], list[str], list[str]]:
         """Reload config files. Returns (added, changed, removed) process names."""
         result = cast(list[list[list[str]]], self._proxy.supervisor.reloadConfig())
@@ -229,15 +233,10 @@ class SupervisorClient:
             raise SupervisorError(f"supervisord not running, cannot add service {name}")
 
         # Check if service already exists
-        try:
+        if self.service_exists(name):
             info = self.get_process_info(name)
             logger.info("Service %s already exists (state=%s)", name, info.statename)
             return
-        except xmlrpc.client.Fault as e:
-            if e.faultCode != Faults.BAD_NAME:
-                # Some other error - not "service doesn't exist"
-                raise ProxyServiceError(f"Failed to check service {name}: {e}") from e
-            # Service doesn't exist yet, proceed to add it
 
         write_service_config(self._settings, name, command, directory, environment)
 
@@ -290,6 +289,10 @@ class SupervisorClient:
             return False
 
         try:
+            if not self.service_exists(service_name):
+                logger.debug("Service %s not registered", service_name)
+                return False
+
             deadline = time.time() + timeout if wait_for_start else time.time()
             last_state = None
 
@@ -306,14 +309,7 @@ class SupervisorClient:
                 # Service exists but not running (STOPPED, EXITED, FATAL, BACKOFF, etc.)
                 return False
 
-        except xmlrpc.client.Fault as e:
-            if e.faultCode == Faults.BAD_NAME:
-                # Service doesn't exist yet - expected on first run, not a warning
-                logger.debug("Service %s not registered yet", service_name)
-            else:
-                logger.warning("Service check failed for %s: %s", service_name, e)
-            return False
-        except (ConnectionError, OSError) as e:
+        except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
             logger.warning("Service check failed for %s: %s", service_name, e)
             return False
 
