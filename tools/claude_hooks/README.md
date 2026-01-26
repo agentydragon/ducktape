@@ -26,6 +26,7 @@ HTTP_PROXY=...  # same
 Most tools (curl, pip, npm, git, etc.) work correctly with Anthropic's proxy. Only Bazel needs special handling due to Java's proxy authentication limitations.
 
 By preserving the original proxy env vars:
+
 - Tools continue to use Anthropic's proxy directly
 - JWT token refreshes are automatically picked up
 - The bazel wrapper reads fresh credentials on each invocation

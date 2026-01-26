@@ -341,7 +341,11 @@ class MockAnthropicProxy:
                 self.max_workers,
             )
         else:
-            logger.info("MockAnthropicProxy started on port %d (direct connections, max_workers=%d)", self.port, self.max_workers)
+            logger.info(
+                "MockAnthropicProxy started on port %d (direct connections, max_workers=%d)",
+                self.port,
+                self.max_workers,
+            )
 
     def stop(self) -> None:
         """Stop the proxy server."""
@@ -561,7 +565,9 @@ class MockAnthropicProxy:
             # Bidirectional forward
             bytes_forwarded = self._forward_bidirectional(client_ssl, server_ssl, target_host)
             self.stats.record_success(bytes_forwarded)
-            logger.info("[conn %d] Completed %s:%d, %d bytes forwarded", conn_id, target_host, target_port, bytes_forwarded)
+            logger.info(
+                "[conn %d] Completed %s:%d, %d bytes forwarded", conn_id, target_host, target_port, bytes_forwarded
+            )
 
         except TimeoutError as e:
             error_msg = f"Timeout connecting to {target_host}:{target_port}: {e}"

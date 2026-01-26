@@ -244,7 +244,9 @@ def _cleanup_supervisor(config_dir: Path) -> None:
             pidfile.unlink()
 
 
-def run_session_start_hook(project_dir: Path, source: HookSource = HookSource.STARTUP) -> subprocess.CompletedProcess[str]:
+def run_session_start_hook(
+    project_dir: Path, source: HookSource = HookSource.STARTUP
+) -> subprocess.CompletedProcess[str]:
     """Run the session start hook (inherits environment from os.environ via monkeypatch).
 
     By default, runs via `python -m tools.claude_hooks.session_start` for Bazel tests.
