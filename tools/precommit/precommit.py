@@ -330,6 +330,16 @@ async def run_tflint(files: list[Path], repo_root: Path) -> ValidationResult:
     tf_dirs = {f.parent for f in tf_files}
     config_path = repo_root / "cluster" / ".tflint.hcl"
 
+    # Initialize plugins (downloads terraform ruleset if not cached)
+    init_proc = await asyncio.create_subprocess_exec(
+        tflint_bin,
+        "--init",
+        f"--config={config_path}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await init_proc.communicate()
+
     # Run tflint on each directory
     tasks = []
     for tf_dir in tf_dirs:

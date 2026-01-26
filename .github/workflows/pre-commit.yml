@@ -32,13 +32,8 @@ jobs:
         with:
           tofu_version: 1.9.0
 
-      - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@v4
-        with:
-          tflint_version: v0.53.0
-
-      - name: Initialize TFLint plugins
-        run: tflint --init --config=cluster/.tflint.hcl
+      # NOTE: tflint is hermetic via @multitool//tools/tflint in bazel precommit
+      # Plugin init is handled by precommit.py (run_tflint runs --init)
 
       # kubeconform for kubeconform-precommit-hook (not hermetic via Bazel)
       # Other tools (kustomize, flux, helm, kubeseal) are hermetic via @multitool
@@ -57,6 +52,19 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
             experimental-features = nix-command flakes
+
+      # Cache Nix store to speed up nixfmt and avoid tarball-cache race conditions
+      - name: Restore Nix cache
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      # Pre-warm Nix cache to avoid race conditions in pre-commit
+      # The nixfmt-nix hook runs `nix run nixpkgs#nixfmt` which can fail if
+      # Nix's tarball-cache isn't properly initialized (GitHub Actions issue)
+      - name: Pre-warm Nix for nixfmt
+        run: nix run nixpkgs#nixfmt -- --version
 
       - name: Configure OpenTofu for pre-commit
         run: |

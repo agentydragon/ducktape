@@ -15,6 +15,7 @@ import shutil
 import ssl
 import stat
 import subprocess
+import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,21 +135,24 @@ def install_bazelisk(settings: HookSettings) -> Path:
     return bazelisk_path
 
 
-def _get_bazel_wrapper_from_runfiles() -> Path:
+def _get_bazel_wrapper_from_runfiles() -> Path | None:
     """Get bazel_wrapper binary path from Bazel runfiles.
 
-    Raises RuntimeError if not in Bazel environment or binary not found.
+    Returns None if not in Bazel environment or binary not found.
     """
-    r = runfiles.Create()
-    if r is None:
-        raise RuntimeError("Not running in Bazel environment (runfiles.Create() returned None)")
-    resolved = r.Rlocation("_main/tools/claude_hooks/bazel_wrapper")
-    if not resolved:
-        raise RuntimeError("Could not resolve bazel_wrapper in runfiles")
-    path = Path(resolved)
-    if not path.exists():
-        raise RuntimeError(f"bazel_wrapper not found at {path}")
-    return path
+    try:
+        r = runfiles.Create()
+        if r is None:
+            return None
+        resolved = r.Rlocation("_main/tools/claude_hooks/bazel_wrapper")
+        if not resolved:
+            return None
+        path = Path(resolved)
+        if not path.exists():
+            return None
+        return path
+    except Exception:
+        return None
 
 
 def install_wrapper(settings: HookSettings) -> Path:
@@ -160,19 +164,33 @@ def install_wrapper(settings: HookSettings) -> Path:
     Includes health checks for supervisor and proxy service.
 
     The wrapper reads configuration from environment variables (set via get_env_script).
+
+    When running from Bazel runfiles (test mode), uses the runfiles binary.
+    When running from an installed wheel, invokes the bazel_wrapper module via Python.
     """
     wrapper_dir = settings.get_wrapper_dir()
     wrapper_path = settings.get_wrapper_path()
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
+    # Try runfiles first (Bazel test mode)
     bazel_wrapper_bin = _get_bazel_wrapper_from_runfiles()
-    wrapper_script = f"""#!/bin/sh
+    if bazel_wrapper_bin is not None:
+        wrapper_script = f"""#!/bin/sh
 exec "{bazel_wrapper_bin}" "$@"
 """
+        logger.info("Installed bazel wrapper at %s (runfiles mode)", wrapper_path)
+    else:
+        # Running from installed wheel - use Python module invocation
+        # This works because the wheel includes tools.claude_hooks.bazel_wrapper
+        python_path = sys.executable
+        wrapper_script = f"""#!/bin/sh
+exec "{python_path}" -m tools.claude_hooks.bazel_wrapper "$@"
+"""
+        logger.info("Installed bazel wrapper at %s (wheel mode)", wrapper_path)
+
     wrapper_path.write_text(wrapper_script)
     wrapper_path.chmod(0o755)
-    logger.info("Installed bazel wrapper at %s with health checks", wrapper_path)
 
     # Create bazelisk symlink for pre-commit hooks
     bazelisk_symlink = wrapper_dir / "bazelisk"
