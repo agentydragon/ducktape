@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
+from tools.claude_hooks.settings import ENV_SUPERVISOR_PORT
 
 
 def _exports_from_dict(env_vars: dict[str, str]) -> list[str]:
@@ -31,6 +32,7 @@ class EnvVars:
 
     # Bazel configuration
     proxy_port: int
+    supervisor_port: int  # Needed by bazel_wrapper to connect to supervisor
     repo_root: Path
     combined_ca: Path
     bazel_wrapper_dir: Path
@@ -81,6 +83,8 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         "BAZELISK_PATH": str(vars.bazelisk_path),
         "BAZEL_PROXY_BAZELRC": str(vars.bazel_proxy_rc),
         "BAZEL_REPO_ROOT": str(vars.repo_root),
+        # Supervisor port needed by bazel_wrapper to connect to supervisor
+        ENV_SUPERVISOR_PORT: str(vars.supervisor_port),
     }
     ca_config = dict.fromkeys(SSL_CA_ENV_VARS, combined_ca)
     exports.extend(["", "# Bazel proxy configuration"])

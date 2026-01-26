@@ -553,6 +553,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     env_vars = env_file.EnvVars(
         proxy_port=settings.get_bazel_proxy_port(),
+        supervisor_port=settings.get_supervisor_port(),
         repo_root=project_dir,
         combined_ca=combined_ca,
         bazel_wrapper_dir=settings.get_wrapper_dir(),

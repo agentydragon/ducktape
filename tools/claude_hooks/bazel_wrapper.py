@@ -83,13 +83,38 @@ def warn_if_credentials_expiring(settings: HookSettings) -> None:
         logger.info("JWT valid for %.0f min", minutes_remaining)
 
 
+def _setup_logging(settings: HookSettings) -> None:
+    """Configure logging to both stderr and file.
+
+    File logging persists even if the subprocess is killed (e.g., by test timeout),
+    making it available for artifact collection.
+    """
+    formatter = logging.Formatter("[bazel-proxy] %(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
+
+    # Always log to stderr
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(formatter)
+
+    # Also log to file in supervisor directory (persists on timeout)
+    log_file = settings.get_supervisor_dir() / "bazel-wrapper.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_file, mode="a")
+    file_handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(stderr_handler)
+    root_logger.addHandler(file_handler)
+
+    logger.info("bazel_wrapper started, log file: %s", log_file)
+
+
 def main() -> None:
     """Main entry point."""
-    logging.basicConfig(
-        level=logging.INFO, format="[bazel-proxy] %(message)s", handlers=[logging.StreamHandler(sys.stderr)]
-    )
-
     settings = HookSettings()
+
+    # Set up logging early so all debug info is captured to file
+    _setup_logging(settings)
 
     # Log debug info to help diagnose wheel mode timeout issues
     _log_debug_info(settings)

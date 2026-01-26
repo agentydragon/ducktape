@@ -209,14 +209,9 @@ py_package(
 py_wheel(
     name = "claude_hooks_wheel",
     distribution = "claude_hooks",
-    entry_points = {
-        "console_scripts": [
-            "claude-session-start = tools.claude_hooks.session_start:main",
-            "bazel = tools.claude_hooks.bazel_wrapper:main",
-            "bazelisk = tools.claude_hooks.bazel_wrapper:main",
-            "claude-auth-proxy = tools.claude_hooks.proxy.run_auth_proxy:main",
-        ],
-    },
+    # Only claude-session-start is a console script. Other commands are invoked via
+    # sys.executable -m (bazel wrapper, auth proxy) to ensure correct Python environment.
+    entry_points = {"console_scripts": ["claude-session-start = tools.claude_hooks.session_start:main"]},
     python_requires = ">=3.13",
     requires = [
         "cryptography",

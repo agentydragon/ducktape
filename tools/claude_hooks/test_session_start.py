@@ -319,39 +319,56 @@ class TestFullSessionStartHook:
         output_base = isolated_dirs.cache / "bazel_output_base"
         output_base.mkdir(parents=True, exist_ok=True)
 
+        # Collect logs helper - needs to run even on timeout
+        def collect_logs() -> None:
+            supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
+            cache_dir = isolated_dirs.cache / "claude-hooks"
+            outputs_dir = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/test-outputs"))
+            outputs_dir.mkdir(parents=True, exist_ok=True)
+            # Note: mock_proxy_log is already in outputs_dir (created by fixture), no need to copy
+            all_logs = [
+                (supervisor_dir / "supervisord.log", "supervisord.log"),
+                (supervisor_dir / "bazel-proxy.log", "bazel-proxy.log"),
+                (supervisor_dir / "bazel-proxy.err.log", "bazel-proxy.err.log"),
+                (supervisor_dir / "bazel-wrapper.log", "bazel-wrapper.log"),
+                (cache_dir / "session-start.log", "session-start.log"),
+            ]
+            if mock_anthropic_proxy.log_file.exists():
+                all_logs.append((mock_anthropic_proxy.log_file, "mock-anthropic-proxy.log"))
+            for log_path, log_name in all_logs:
+                if log_path.exists():
+                    dest = outputs_dir / log_name
+                    if log_path.resolve() != dest.resolve():
+                        shutil.copy(log_path, dest)
+
         # Run bazel build in a shell that sources the env file (like Claude Code would)
         # The env file adds the wrapper dir to PATH, sets proxy vars to local auth-proxy,
         # and exports truststore configuration. The wrapper injects --bazelrc and falls
         # back to system bazel if bazelisk isn't installed.
         # --output_base isolates this Bazel from the test-running Bazel.
-        result = shell_helpers.run_with_env_file(
-            command=f"bazel --output_base={output_base} build //:hello",
-            env_file=isolated_dirs.env_file,
-            cwd=workspace,
-            check=False,
-            timeout=300,
-        )
+        # Timeout: 60s is ~2-3x expected time for minimal build in bazel mode
+        result: subprocess.CompletedProcess[str] | None = None
+        timeout_error: subprocess.TimeoutExpired | None = None
+        try:
+            result = shell_helpers.run_with_env_file(
+                command=f"bazel --output_base={output_base} build //:hello",
+                env_file=isolated_dirs.env_file,
+                cwd=workspace,
+                check=False,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired as e:
+            timeout_error = e
+        finally:
+            # Always collect logs - critical for debugging CI failures
+            collect_logs()
 
-        # Collect logs to TEST_UNDECLARED_OUTPUTS_DIR for artifact collection
-        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
-        cache_dir = isolated_dirs.cache / "claude-hooks"
-        outputs_dir = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/test-outputs"))
-        outputs_dir.mkdir(parents=True, exist_ok=True)
-        # Note: mock_proxy_log is already in outputs_dir (created by fixture), no need to copy
-        all_logs = [
-            (supervisor_dir / "supervisord.log", "supervisord.log"),
-            (supervisor_dir / "bazel-proxy.log", "bazel-proxy.log"),
-            (supervisor_dir / "bazel-proxy.err.log", "bazel-proxy.err.log"),
-            (cache_dir / "session-start.log", "session-start.log"),
-        ]
-        if mock_anthropic_proxy.log_file.exists():
-            all_logs.append((mock_anthropic_proxy.log_file, "mock-anthropic-proxy.log"))
-        for log_path, log_name in all_logs:
-            if log_path.exists():
-                dest = outputs_dir / log_name
-                if log_path.resolve() != dest.resolve():
-                    shutil.copy(log_path, dest)
+        if timeout_error:
+            stdout = timeout_error.stdout.decode() if timeout_error.stdout else "(no stdout)"
+            stderr = timeout_error.stderr.decode() if timeout_error.stderr else "(no stderr)"
+            pytest.fail(f"Bazel build timed out after 60s:\nstdout: {stdout}\nstderr: {stderr}")
 
+        assert result is not None, "Bazel build returned no result"
         assert result.returncode == 0, f"Bazel build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
