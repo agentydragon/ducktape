@@ -179,12 +179,14 @@ py_binary(
 py_package(
     name = "claude_hooks_pkg",
     packages = [
+        "net_util",
         "tools",
         "tools.claude_hooks",
         "tools.claude_hooks.proxy",
         "tools.claude_hooks.supervisor",
     ],
     deps = [
+        "//net_util:net",
         ":bazel_wrapper",
         ":bazelisk_setup",
         ":binary_tools",
