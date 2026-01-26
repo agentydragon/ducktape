@@ -29,6 +29,7 @@ Usage in tests:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import time
@@ -94,10 +95,8 @@ def load_and_push_image(
         yield AgentImage(repo_name=repo_name, local_tag=local_tag, registry_tag=registry_tag)
     finally:
         # Cleanup: remove registry tag
-        try:
+        with contextlib.suppress(docker.errors.ImageNotFound):
             docker_client.images.remove(registry_tag, force=True)
-        except docker.errors.ImageNotFound:
-            pass
 
 
 # --- Registry configuration ---

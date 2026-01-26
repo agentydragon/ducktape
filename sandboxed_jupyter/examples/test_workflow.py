@@ -7,10 +7,10 @@ import time
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 import yaml
 
 from mcp_infra.json_helpers import read_line_json_dict, send_line_json
-import pytest_bazel
 
 # Constants for readability in comparisons and timing
 STARTUP_DRAIN_SECS = 5.0

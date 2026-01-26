@@ -148,10 +148,8 @@ def test_db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig
             print(f"\n\n=== KEEPING TEST DATABASE: {db_name} ===")
             print(f"Database config: {test_config}")
             print(f"Connect with: psql {test_config.admin_url()}")
-            postgres_engine.dispose()
-            return
-
-        _terminate_and_drop_db(postgres_engine, db_name)
+        else:
+            _terminate_and_drop_db(postgres_engine, db_name)
         postgres_engine.dispose()
 
 

@@ -33,6 +33,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator, Callable
@@ -42,14 +43,13 @@ from dataclasses import dataclass
 import aiodocker
 import pytest_asyncio
 import uvicorn
-
 from fastapi import FastAPI
 
 from openai_utils.model import OpenAIModelProto
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import llm
-from props.orchestration.agent_registry import AgentRegistry
 from props.db.config import DatabaseConfig
+from props.orchestration.agent_registry import AgentRegistry
 from props.testing.fake_openai_server import FakeOpenAIServer
 
 
@@ -152,10 +152,8 @@ class _ProxyServer:
                     await asyncio.wait_for(self._task, timeout=5.0)
                 except TimeoutError:
                     self._task.cancel()
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await self._task
-                    except asyncio.CancelledError:
-                        pass
             logger.info("LLM proxy stopped")
 
 

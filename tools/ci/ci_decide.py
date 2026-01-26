@@ -193,10 +193,7 @@ def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
         f.write(query)
         f.flush()
         result = subprocess.run(
-            ["bazelisk", "query", f"--query_file={f.name}"],
-            check=False,
-            capture_output=True,
-            text=True,
+            ["bazelisk", "query", f"--query_file={f.name}"], check=False, capture_output=True, text=True
         )
     return bool(result.stdout.strip())
 

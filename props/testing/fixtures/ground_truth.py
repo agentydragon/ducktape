@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy.orm import Session
 
-from props.db.examples import Example
-from props.db.models import FalsePositiveOccurrenceORM, TruePositiveOccurrenceORM
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
+from props.db.examples import Example
+from props.db.models import FalsePositiveOccurrenceORM, TruePositiveOccurrenceORM
 
 
 def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> list[tuple[str, str]]:

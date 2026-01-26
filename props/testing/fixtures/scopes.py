@@ -2,11 +2,11 @@
 
 import pytest
 
+from props.core.ids import SnapshotSlug
+from props.core.models.examples import SingleFileSetExample, WholeSnapshotExample
 from props.db.config import DatabaseConfig
 from props.db.models import FileSet, FileSetMember
 from props.db.session import get_session
-from props.core.ids import SnapshotSlug
-from props.core.models.examples import SingleFileSetExample, WholeSnapshotExample
 
 
 @pytest.fixture
