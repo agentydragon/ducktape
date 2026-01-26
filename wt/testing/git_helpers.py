@@ -42,11 +42,8 @@ def add_and_commit(
 
     repo.index.write()
 
-    # Create commit
     tree = repo.index.write_tree()
     signature = pygit2.Signature(author_name or TestData.Git.USER_NAME, author_email or TestData.Git.USER_EMAIL)
-
-    # Get parent commit(s)
     parents = [repo.head.target] if not repo.head_is_unborn else []
 
     return repo.create_commit("HEAD", signature, signature, message, tree, parents)
@@ -80,13 +77,10 @@ def add_worktree(repo: pygit2.Repository, worktree_path: Path, branch: str) -> N
         worktree_path: Path where worktree should be created
         branch: Branch name for the worktree
     """
-    # Get or create branch reference
     branch_ref = repo.lookup_branch(branch)
     if branch_ref is None:
-        # Create branch from HEAD
         commit = repo.head.peel(pygit2.Commit)
         branch_ref = repo.branches.local.create(branch, commit)
 
-    # Add worktree - name is typically the last component of the path
     worktree_name = worktree_path.name
     repo.add_worktree(worktree_name, worktree_path, branch_ref)

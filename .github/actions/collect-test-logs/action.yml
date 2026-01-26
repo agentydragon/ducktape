@@ -1,21 +1,12 @@
-# Composite action for collecting and uploading failed Bazel test logs
-#
-# Collects test.log and test.xml files from failed tests and uploads as artifact.
-# Only collects logs from tests that have failures or errors.
-#
-# Usage:
-#   - uses: ./.github/actions/collect-test-logs
-#     if: failure()
-#     with:
-#       artifact-name: my-test-logs
+# Collects all files in bazel-testlogs directory (including undeclared outputs) as an artifact.
 name: Collect Test Logs
-description: Collect and upload failed Bazel test logs
+description: Collect and upload all Bazel test logs
 
 inputs:
   artifact-name:
     description: "Name for the uploaded artifact (will have -$run_id appended)"
     required: false
-    default: "failed-test-logs"
+    default: "test-logs"
   retention-days:
     description: "Number of days to retain the artifact"
     required: false
@@ -24,76 +15,10 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Collect and print failed test logs
-      shell: bash
-      run: |
-        mkdir -p failed-test-logs
-
-        # Get actual testlogs path (bazel-testlogs symlink may not work in all cases)
-        TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
-        echo "Looking for test logs in: $TESTLOGS_DIR"
-
-        if [ ! -d "$TESTLOGS_DIR" ]; then
-          echo "Warning: testlogs directory not found at $TESTLOGS_DIR"
-          exit 0
-        fi
-
-        echo ""
-        echo "=================================================="
-        echo "FAILED TEST LOGS"
-        echo "=================================================="
-
-        # Find all test.xml files and process failed tests
-        find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
-          test_dir=$(dirname "$xml")
-          # Check if test.xml contains failures or errors (non-zero count)
-          if grep -qE '(failures|errors)="[1-9][0-9]*"' "$xml"; then
-            # Preserve test path structure relative to testlogs dir
-            target_path="${test_dir#$TESTLOGS_DIR/}"
-
-            # Collect logs to failed-test-logs directory
-            echo "Collecting logs for failed test: $target_path"
-            mkdir -p "failed-test-logs/$target_path"
-            cp "$test_dir/test.log" "failed-test-logs/$target_path/" 2>/dev/null || true
-            cp "$test_dir/test.xml" "failed-test-logs/$target_path/" 2>/dev/null || true
-            # Also collect undeclared outputs (test-generated files from TEST_UNDECLARED_OUTPUTS_DIR)
-            if [ -d "$test_dir/test.outputs" ]; then
-              cp -r "$test_dir/test.outputs" "failed-test-logs/$target_path/" 2>/dev/null || true
-              echo "  Also collected test.outputs/"
-            fi
-            if [ -f "$test_dir/outputs.zip" ]; then
-              cp "$test_dir/outputs.zip" "failed-test-logs/$target_path/" 2>/dev/null || true
-              echo "  Also collected outputs.zip"
-            fi
-
-            # Print test log to console for immediate visibility
-            echo ""
-            echo "=================================================="
-            echo "FAILED TEST: $target_path"
-            echo "=================================================="
-
-            if [ -f "$test_dir/test.log" ]; then
-              echo "--- Test log (last 500 lines) ---"
-              tail -n 500 "$test_dir/test.log"
-              echo ""
-            else
-              echo "Warning: test.log not found for $target_path"
-            fi
-          fi
-        done
-
-        echo ""
-        echo "=================================================="
-        echo "END OF FAILED TEST LOGS"
-        echo "=================================================="
-        echo ""
-        echo "Collected failed test logs:"
-        find failed-test-logs -type f 2>/dev/null || echo "No files collected"
-
-    - name: Upload failed test logs
+    - name: Upload test logs
       uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}-${{ github.run_id }}
-        path: failed-test-logs/
+        path: bazel-testlogs/
         if-no-files-found: ignore
         retention-days: ${{ inputs.retention-days }}

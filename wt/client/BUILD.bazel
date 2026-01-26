@@ -29,6 +29,7 @@ py_library(
     srcs = ["handlers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":cd_utils",
         "@pypi//click",
         "@pypi//psutil",
     ],
@@ -57,6 +58,7 @@ py_library(
     srcs = ["wt_client.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//wt/shared:error_handling",
         "@pypi//click",
         "@pypi//psutil",
         "@pypi//pydantic",

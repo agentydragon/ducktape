@@ -22,9 +22,7 @@ class TranscriptHandler(BaseHandler):
         if self._path.exists():
             raise FileExistsError(f"Transcript already exists: {self._path}")
 
-    # ---- Event helpers ----
     def _write_event(self, evt: TranscriptEvent) -> None:
-        # Create parent directory if needed (lazy initialization)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         rec = evt.model_dump(mode="json", exclude_none=True)
         # Timestamped envelope (events.jsonl)

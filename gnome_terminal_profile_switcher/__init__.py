@@ -140,14 +140,11 @@ def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
 
 
 def create_auto_profile():
-    # Create new profile
     auto_uuid = uuid.uuid4()
 
-    # Add to profile list in gsettings
     gsettings_profiles = GSettingsProfiles()
     gsettings_profiles.profile_uuids = gsettings_profiles.profile_uuids | {auto_uuid}
 
-    # Set profile name
     auto_dconf = ProfileDConf(auto_uuid)
     auto_dconf.visible_name = AUTO_PROFILE_NAME
     return auto_uuid

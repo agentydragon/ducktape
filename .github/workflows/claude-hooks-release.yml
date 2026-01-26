@@ -120,7 +120,7 @@ jobs:
             //tools/claude_hooks:all
 
       - uses: ./.github/actions/collect-test-logs
-        if: failure()
+        if: always()
         with:
           artifact-name: claude-hooks-test-logs
 
@@ -204,6 +204,11 @@ jobs:
             --test_env=CI=true \
             --test_env=JAVA_HOME \
             --test_env=PATH
+
+      - uses: ./.github/actions/collect-test-logs
+        if: always()
+        with:
+          artifact-name: wheel-test-logs
 
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV

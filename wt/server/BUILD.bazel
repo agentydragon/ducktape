@@ -18,7 +18,9 @@ py_test(
     deps = [
         ":conftest",
         ":rpc",
+        "//wt/server/handlers:status_handler",
         "//wt/shared:protocol",
+        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -54,6 +56,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//wt/shared:env",
+        "//wt/shared:error_handling",
         "@pypi//pygithub",
     ],
 )
@@ -154,6 +157,7 @@ py_library(
     srcs = ["worktree_service.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//wt/shared:error_handling",
         "@pypi//psutil",
         "@pypi//pygit2",
     ],

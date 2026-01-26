@@ -85,6 +85,12 @@ jobs:
           # For testcontainers bridge networking (e2e tests)
           PROPS_E2E_HOST_HOSTNAME: host.docker.internal
         run: |
+          TARGETS="${{ inputs.targets }}"
+          if [[ -z "$TARGETS" ]]; then
+            echo "No targets specified, skipping tests"
+            exit 0
+          fi
+
           PROFILE_FLAG=""
           if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
             PROFILE_FLAG="--config=ci-profile"
@@ -98,12 +104,12 @@ jobs:
             --test_env=PGDATABASE=postgres \
             --test_env=PROPS_E2E_HOST_HOSTNAME=host.docker.internal \
             $PROFILE_FLAG \
-            ${{ inputs.targets }}
+            $TARGETS
 
       - uses: ./.github/actions/collect-test-logs
-        if: failure()
+        if: always()
         with:
-          artifact-name: failed-test-logs
+          artifact-name: test-logs
 
       - name: Upload coverage report
         if: always()

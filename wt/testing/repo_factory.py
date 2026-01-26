@@ -39,30 +39,23 @@ class GitRepoFactory:
         repo_path = self.base_path / name
         repo_path.mkdir(exist_ok=True)
 
-        # Initialize repository
         repo = pygit2.init_repository(str(repo_path), initial_head=TestData.Branches.MAIN)
-
-        # Configure git user
         repo.config["user.name"] = TestData.Git.USER_NAME
         repo.config["user.email"] = TestData.Git.USER_EMAIL
 
-        # Create initial files
         files = initial_files or {"README.md": TestData.Files.README_CONTENT}
         for filename, content in files.items():
             (repo_path / filename).write_text(content)
             repo.index.add(filename)
 
-        # Make initial commit
         repo.index.write()
         signature = TestData.Git.signature()
         tree = repo.index.write_tree()
         _initial_commit = repo.create_commit("HEAD", signature, signature, TestData.Commits.INITIAL, tree, [])
 
-        # Create additional branches if requested
         if branches:
             self._create_branches(repo, repo_path, branches, commits_per_branch, signature)
 
-        # Create worktrees if requested
         if with_worktrees:
             self._create_worktrees(repo, repo_path, with_worktrees, branches)
 
@@ -81,13 +74,11 @@ class GitRepoFactory:
 
         for branch_name in branches:
             if branch_name == TestData.Branches.MAIN:
-                continue  # Skip main branch as it already exists
+                continue
 
-            # Create branch from main
             branch_ref = repo.references.create(f"refs/heads/{branch_name}", main_commit)
             repo.checkout(branch_ref)
 
-            # Make commits on this branch
             for i in range(commits_per_branch):
                 filename = f"{branch_name}-{i}.txt"
                 content = f"Content for {branch_name} commit {i + 1}"
@@ -98,12 +89,9 @@ class GitRepoFactory:
 
                 tree = repo.index.write_tree()
                 commit_message = TestData.Commits.feature(f"{branch_name}-{i + 1}")
-
-                # Get parent commit
                 parent_commit = repo.head.target
                 repo.create_commit("HEAD", signature, signature, commit_message, tree, [parent_commit])
 
-        # Switch back to main
         repo.checkout("refs/heads/main")
 
     def _create_worktrees(
@@ -111,30 +99,24 @@ class GitRepoFactory:
     ) -> None:
         """Create worktrees for branches using pygit2."""
         if isinstance(with_worktrees, bool) and with_worktrees:
-            # Create worktrees for all non-main branches
             worktree_names = [b for b in (branches or []) if b != TestData.Branches.MAIN]
         elif isinstance(with_worktrees, list):
-            # Create worktrees with specified names (copy list to avoid aliasing param)
             worktree_names = list(with_worktrees)
         else:
             return
 
-        # Create worktrees directory
         worktrees_dir = repo_path / TestData.Paths.WORKTREES_DIR_NAME
         worktrees_dir.mkdir(exist_ok=True)
 
         for worktree_name in worktree_names:
             worktree_path = worktrees_dir / worktree_name
-            branch_name = worktree_name  # Assume worktree name matches branch name
+            branch_name = worktree_name
 
-            # Get or create branch reference
             branch_ref = repo.lookup_branch(branch_name)
             if branch_ref is None:
-                # Create branch from HEAD
                 commit = repo.head.peel(pygit2.Commit)
                 branch_ref = repo.branches.local.create(branch_name, commit)
 
-            # Add worktree using pygit2
             repo.add_worktree(worktree_name, str(worktree_path), branch_ref)
 
 

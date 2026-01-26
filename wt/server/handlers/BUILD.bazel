@@ -1,0 +1,18 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "status_handler",
+    srcs = ["status_handler.py"],
+    imports = ["../../.."],
+    visibility = ["//wt:__subpackages__"],
+    deps = [
+        "//wt/server:git_manager",
+        "//wt/server:github_watcher",
+        "//wt/server:rpc",
+        "//wt/server:services",
+        "//wt/server:worktree_ids",
+        "//wt/shared:configuration",
+        "//wt/shared:env",
+        "//wt/shared:protocol",
+    ],
+)
