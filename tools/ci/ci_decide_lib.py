@@ -19,7 +19,7 @@ from pathlib import Path
 import pygit2
 from pydantic import BaseModel, Field
 
-from fmt_util import log_truncated
+from fmt_util import format_limited_list
 from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 
@@ -245,7 +245,7 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
         return CIDecision(all_targets=True, workflows=sorted(workflows.keys()), infra_changed=True)
 
     changed_files = get_changed_files(repo, base_commit)
-    log_truncated(logger, "Changed files", changed_files)
+    logger.info("Changed files: %s", format_limited_list(sorted(changed_files), 20))
 
     infra_changed = has_infra_changes(changed_files)
     if infra_changed:
@@ -262,7 +262,7 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
     elif not targets:
         logger.info("No Bazel targets affected")
     else:
-        log_truncated(logger, f"Found {len(targets)} affected targets", targets)
+        logger.info("Found %d affected targets: %s", len(targets), format_limited_list(targets, 20))
         # Filter out platform-incompatible targets for Linux CI
         targets = filter_platform_incompatible(targets)
         if infra_changed:

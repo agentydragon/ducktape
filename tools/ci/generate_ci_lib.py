@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
 
-from tools.ci.models import WorkflowConfig, WorkflowManifest
+from tools.ci.models import Job, Step, Workflow, WorkflowConfig, WorkflowManifest
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
@@ -30,49 +28,7 @@ HEADER = """\
 BAZEL_DIFF_VERSION = "12.1.1"
 
 
-class GHAStep(BaseModel):
-    """A step in a GitHub Actions job."""
-
-    name: str | None = None
-    id: str | None = None
-    uses: str | None = None
-    run: str | None = None
-    if_cond: str | None = Field(None, alias="if", serialization_alias="if")
-    with_args: dict[str, Any] | None = Field(None, alias="with", serialization_alias="with")
-
-    model_config = {"populate_by_name": True}
-
-
-class GHAJob(BaseModel):
-    """A job in a GitHub Actions workflow."""
-
-    name: str | None = None
-    runs_on: str | None = Field(None, alias="runs-on", serialization_alias="runs-on")
-    timeout_minutes: int | None = Field(None, alias="timeout-minutes", serialization_alias="timeout-minutes")
-    needs: str | None = None
-    if_cond: str | None = Field(None, alias="if", serialization_alias="if")
-    uses: str | None = None
-    with_args: dict[str, str] | None = Field(None, alias="with", serialization_alias="with")
-    secrets: str | None = None
-    outputs: dict[str, str] | None = None
-    steps: list[GHAStep] | None = None
-
-    model_config = {"populate_by_name": True}
-
-
-class GHAWorkflow(BaseModel):
-    """A GitHub Actions workflow file."""
-
-    name: str
-    on: dict[str, Any] = Field(serialization_alias="on")
-    concurrency: dict[str, Any]
-    permissions: dict[str, str]
-    jobs: dict[str, GHAJob]
-
-    model_config = {"populate_by_name": True}
-
-
-COMPUTE_TARGETS_JOB = GHAJob(
+COMPUTE_TARGETS_JOB = Job(
     name="Compute affected targets",
     runs_on="ubuntu-latest",
     timeout_minutes=30,
@@ -82,17 +38,17 @@ COMPUTE_TARGETS_JOB = GHAJob(
         "infra_changed": "${{ steps.decide.outputs.infra_changed }}",
     },
     steps=[
-        GHAStep(uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
-        GHAStep(uses="astral-sh/setup-uv@v4"),
-        GHAStep(uses="bazelbuild/setup-bazelisk@v3"),
-        GHAStep(uses="actions/setup-java@v4", with_args={"distribution": "temurin", "java-version": "21"}),
-        GHAStep(
+        Step(uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
+        Step(uses="astral-sh/setup-uv@v4"),
+        Step(uses="bazelbuild/setup-bazelisk@v3"),
+        Step(uses="actions/setup-java@v4", with_args={"distribution": "temurin", "java-version": "21"}),
+        Step(
             name="Cache bazel-diff JAR",
             id="cache-bazel-diff",
             uses="actions/cache@v4",
             with_args={"path": "bazel-diff.jar", "key": f"bazel-diff-{BAZEL_DIFF_VERSION}"},
         ),
-        GHAStep(
+        Step(
             name="Download bazel-diff",
             if_cond="steps.cache-bazel-diff.outputs.cache-hit != 'true'",
             run=(
@@ -100,7 +56,7 @@ COMPUTE_TARGETS_JOB = GHAJob(
                 f'  "https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"'
             ),
         ),
-        GHAStep(
+        Step(
             name="Cache bazel-diff hashes",
             uses="actions/cache@v4",
             with_args={
@@ -109,17 +65,17 @@ COMPUTE_TARGETS_JOB = GHAJob(
                 "restore-keys": "bazel-diff-hashes-",
             },
         ),
-        GHAStep(
+        Step(
             name="Set bazel-diff env",
             run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
             'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV',
         ),
-        GHAStep(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
+        Step(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
     ],
 )
 
 
-def build_workflow_job(name: str, config: WorkflowConfig) -> GHAJob:
+def build_workflow_job(name: str, config: WorkflowConfig) -> Job:
     """Build a job definition from workflow config."""
     with_args: dict[str, str] = {}
     if config.targets:
@@ -127,7 +83,7 @@ def build_workflow_job(name: str, config: WorkflowConfig) -> GHAJob:
     if config.inputs:
         with_args.update(config.inputs)
 
-    return GHAJob(
+    return Job(
         needs="compute-targets",
         if_cond=f"contains(fromJson(needs.compute-targets.outputs.workflows), '{name}')",
         uses=f"./.github/workflows/{name}.yml",
@@ -136,13 +92,13 @@ def build_workflow_job(name: str, config: WorkflowConfig) -> GHAJob:
     )
 
 
-def generate_ci_config(manifest: WorkflowManifest) -> GHAWorkflow:
+def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
     """Generate the complete ci.yml config."""
-    jobs: dict[str, GHAJob] = {"compute-targets": COMPUTE_TARGETS_JOB}
+    jobs: dict[str, Job] = {"compute-targets": COMPUTE_TARGETS_JOB}
     for name, config in manifest.workflows.items():
         jobs[name] = build_workflow_job(name, config)
 
-    return GHAWorkflow(
+    return Workflow(
         name="CI",
         on={
             "push": {"branches": ["main", "master", "devel"]},

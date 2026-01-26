@@ -21,7 +21,7 @@ from pathlib import Path
 import pygit2
 from pydantic import BaseModel, Field, computed_field
 
-from fmt_util import log_truncated
+from fmt_util import format_limited_list
 from tools.ci.bazel_query import run_query
 
 logger = logging.getLogger(__name__)
@@ -358,7 +358,7 @@ def compute_affected_for_pr(repo: pygit2.Repository, workspace: Path) -> tuple[A
         return FULL_BUILD, set()
 
     changed_files = get_changed_files(repo, base_commit)
-    log_truncated(logger, "Changed files", changed_files)
+    logger.info("Changed files: %s", format_limited_list(sorted(changed_files), 20))
 
     if has_infra_changes(changed_files):
         logger.info("Infrastructure change detected, running all targets")
@@ -372,7 +372,7 @@ def compute_affected_for_pr(repo: pygit2.Repository, workspace: Path) -> tuple[A
         logger.info("No Bazel targets affected")
         return NO_CHANGES, changed_files
 
-    log_truncated(logger, f"Found {len(targets)} affected targets", targets)
+    logger.info("Found %d affected targets: %s", len(targets), format_limited_list(targets, 20))
     return AffectedTargets(targets=targets, has_changes=True), changed_files
 
 

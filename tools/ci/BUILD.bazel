@@ -62,7 +62,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":models",
-        "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
 )

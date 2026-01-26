@@ -6,8 +6,7 @@ used across multiple packages (props, tools/ci, gmail_archiver, etc.).
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 
 
 def format_limited_list(
@@ -39,29 +38,27 @@ def format_limited_list(
     return separator.join(shown) + overflow_format.format(remaining=remaining)
 
 
-def log_truncated(
-    logger: logging.Logger,
-    label: str,
-    items: Collection[str],
-    limit: int = 20,
-    *,
-    separator: str = ", ",
-    overflow_format: str = " ... and {remaining} more",
-) -> None:
-    """Log a collection with truncation, using format_limited_list.
+def format_truncation_suffix(total: int, shown: int, item_name: str = "") -> str:
+    """Return '... and N more {item_name}' or empty string if all shown.
+
+    Use this when displaying items one-by-one with a footer for overflow.
 
     Args:
-        logger: Logger instance to use
-        label: Label prefix for the log line
-        items: Items to log
-        limit: Maximum number of items to show
-        separator: String between items
-        overflow_format: Format string with {remaining} placeholder
+        total: Total number of items
+        shown: Number of items shown
+        item_name: Optional name for items (e.g., "files", "errors")
 
-    Example:
-        log_truncated(logger, "Changed files", files, 10)
-        # Logs: "Changed files: a.py, b.py, c.py ... and 7 more"
+    Examples:
+        >>> format_truncation_suffix(10, 5, "files")
+        '... and 5 more files'
+        >>> format_truncation_suffix(10, 5)
+        '... and 5 more'
+        >>> format_truncation_suffix(3, 5)
+        ''
     """
-    items_list = list(items)
-    formatted = format_limited_list(items_list, limit, separator=separator, overflow_format=overflow_format)
-    logger.info("%s: %s", label, formatted)
+    if total <= shown:
+        return ""
+    remaining = total - shown
+    if item_name:
+        return f"... and {remaining} more {item_name}"
+    return f"... and {remaining} more"

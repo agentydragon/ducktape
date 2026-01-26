@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel
 
+from fmt_util import format_truncation_suffix
 from gmail_archiver.gmail_api_models import SystemLabel
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
@@ -116,8 +117,8 @@ class DoorDashPlanner:
             plan.add_message(f"Skipping {len(unparseable)} emails with unrecognized format:")
             for msg in unparseable[:5]:
                 plan.add_message(f"  - {msg.subject[:60]}...")
-            if len(unparseable) > 5:
-                plan.add_message(f"  ... and {len(unparseable) - 5} more")
+            if suffix := format_truncation_suffix(len(unparseable), 5):
+                plan.add_message(suffix)
 
         for order_emails in by_order.values():
             # Sort by email type priority (highest priority = most final)
