@@ -1,7 +1,7 @@
 """Proxy credential parsing and JWT expiry checking.
 
 Pure functions for parsing proxy URLs and checking credential expiry.
-No pproxy dependency - can be used by both proxy_setup and bazel_wrapper.
+Used by proxy_setup and bazel_wrapper.
 """
 
 from __future__ import annotations
@@ -22,9 +22,9 @@ def parse_proxy_url(proxy_url: str) -> ParseResult:
 
 
 def build_upstream_uri(proxy: ParseResult) -> str:
-    """Build pproxy-compatible URI for upstream proxy with auth.
+    """Build URI with credentials for upstream proxy (legacy format).
 
-    pproxy uses #username:password suffix for authentication.
+    Uses #username:password suffix format.
     """
     host = proxy.hostname
     port = proxy.port or 80

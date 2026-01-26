@@ -11,10 +11,12 @@ import json
 import logging
 import logging.handlers
 import os
+import shutil
 import subprocess
 import sys
 import traceback
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
@@ -30,6 +32,15 @@ from tools.claude_hooks.supervisor import setup as supervisor_setup
 logger = logging.getLogger(__name__)
 
 
+class HookSource(StrEnum):
+    """Source of the SessionStart hook event."""
+
+    STARTUP = "startup"
+    RESUME = "resume"
+    CLEAR = "clear"
+    COMPACT = "compact"
+
+
 class HookInput(BaseModel):
     """Input passed to Claude Code hooks via stdin.
 
@@ -43,7 +54,7 @@ class HookInput(BaseModel):
     transcript_path: str
     permission_mode: Literal["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"] = "default"
     hook_event_name: Literal["SessionStart"]
-    source: Literal["startup", "resume", "clear", "compact"]
+    source: HookSource
 
 
 # ============================================================================
@@ -380,10 +391,6 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     logger.info("Setting up dev environment...")
     logger.info(format_environment_summary())
 
-    # Capture original upstream proxy before any setup modifies it
-    # This is exported so tests can chain through the real upstream
-    original_upstream_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-
     # Get required environment variables (fail early if missing)
     env_file_path = env_utils.get_required_env_path("CLAUDE_ENV_FILE")
 
@@ -531,14 +538,26 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     nix_paths = nix_setup.get_nix_paths(nix_store_bin) if nix_store_bin else []
 
+    # Determine bazelisk_path: use system_bazel if skip_bazelisk, otherwise downloaded bazelisk
+    if isinstance(bazelisk_result, bazelisk_setup.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
+        if settings.system_bazel is not None:
+            bazelisk_path = settings.system_bazel
+        else:
+            # Auto-detect system bazelisk/bazel
+            auto_bazel = shutil.which("bazelisk") or shutil.which("bazel")
+            if not auto_bazel:
+                raise RuntimeError("skip_bazelisk=True but no bazelisk/bazel found on PATH")
+            bazelisk_path = Path(auto_bazel)
+    else:
+        bazelisk_path = settings.get_bazelisk_path()
+
     env_vars = env_file.EnvVars(
         proxy_port=settings.get_bazel_proxy_port(),
         repo_root=project_dir,
         combined_ca=combined_ca,
         bazel_wrapper_dir=settings.get_wrapper_dir(),
-        bazelisk_path=settings.get_bazelisk_path(),
+        bazelisk_path=bazelisk_path,
         bazel_proxy_rc=settings.get_bazel_proxy_rc(),
-        upstream_proxy_url=original_upstream_proxy,
         nix_paths=nix_paths,
         docker_host=docker_host,
         podman_env=podman_env,

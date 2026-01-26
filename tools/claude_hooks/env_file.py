@@ -10,8 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from tools.claude_hooks import settings
-from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
+from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 
 
 def _exports_from_dict(env_vars: dict[str, str]) -> list[str]:
@@ -37,9 +36,6 @@ class EnvVars:
     bazel_wrapper_dir: Path
     bazelisk_path: Path
     bazel_proxy_rc: Path
-
-    # Upstream proxy (original proxy before hook rewrites)
-    upstream_proxy_url: str | None
 
     # Nix paths
     nix_paths: list[Path]
@@ -86,22 +82,14 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         "BAZEL_PROXY_BAZELRC": str(vars.bazel_proxy_rc),
         "BAZEL_REPO_ROOT": str(vars.repo_root),
     }
-    ca_config = dict.fromkeys(
-        ["NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"], combined_ca
-    )
+    ca_config = dict.fromkeys(SSL_CA_ENV_VARS, combined_ca)
     exports.extend(["", "# Bazel proxy configuration"])
     exports.extend(_exports_from_dict(bazel_config | ca_config))
 
-    # Proxy env vars for subprocesses (point to local auth-forwarding proxy)
-    # These override Anthropic's original proxy vars so subprocesses use our local proxy
-    exports.extend(["", "# Proxy env vars for subprocesses (point to local auth-forwarding proxy)"])
-    exports.extend(_exports_from_dict(dict.fromkeys(PROXY_ENV_VARS, local_proxy)))
-
-    # Upstream proxy (original before hook rewrites HTTPS_PROXY)
-    # Exported so tests can chain through the real upstream when testing the hook
-    if vars.upstream_proxy_url:
-        exports.extend(["", "# Original upstream proxy (for tests that need to chain through)"])
-        exports.extend(_exports_from_dict({settings.ENV_UPSTREAM_PROXY_URL: vars.upstream_proxy_url}))
+    # NOTE: We intentionally do NOT export HTTPS_PROXY/HTTP_PROXY here.
+    # Anthropic sets these in the container with fresh JWT credentials.
+    # Only the bazel wrapper overrides them for its subprocess.
+    # See README.md "Our Design Principle" section.
 
     # Docker/Podman configuration
     if vars.docker_host or vars.podman_env:

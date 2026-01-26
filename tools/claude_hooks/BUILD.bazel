@@ -79,6 +79,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":proxy_setup",
         ":proxy_vars",
         ":settings",
     ],
@@ -237,9 +238,35 @@ py_wheel(
 py_test(
     name = "test_session_start",
     srcs = ["test_session_start.py"],
-    imports = ["../.."],
-    deps = [
+    data = [
         ":session_start",
+        "//tools/claude_hooks/proxy:run_auth_proxy",
+        "//tools/claude_hooks/testdata/test_workspace:workspace_files",
+    ],
+    # Inherit proxy env vars so MockAnthropicProxy can chain through real proxy
+    env_inherit = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "NODE_EXTRA_CA_CERTS",
+    ],
+    imports = ["../.."],
+    tags = [
+        "e2e",
+        "external",
+    ],
+    deps = [
+        ":proxy_setup",
+        ":proxy_vars",
+        ":session_start",
+        ":settings",
+        "//:runfiles",
+        "//net_util",
+        "//tools/claude_hooks/testing:fixtures",
+        "//tools/claude_hooks/testing:mock_anthropic_proxy",
+        "//tools/claude_hooks/testing:runfiles_util",
+        "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -264,6 +291,12 @@ py_test(
         # The proxy binary is spawned as a subprocess by supervisor
         "//tools/claude_hooks/proxy:run_auth_proxy",
     ],
+    env_inherit = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+    ],
     imports = ["../.."],
     tags = ["integration"],
     deps = [
@@ -273,6 +306,8 @@ py_test(
         "//net_util",
         "//tools/claude_hooks/supervisor:client",
         "//tools/claude_hooks/supervisor:setup",
+        "//tools/claude_hooks/testing:fixtures",
+        "//tools/claude_hooks/testing:mock_anthropic_proxy",
         "//tools/claude_hooks/testing:runfiles_util",
         "//tools/claude_hooks/testing:supervisor_cleanup",
         "@pypi//cryptography",
@@ -281,42 +316,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_e2e",
-    srcs = ["test_e2e.py"],
-    data = [
-        ":session_start",
-        "//tools/claude_hooks/proxy:run_auth_proxy",
-        "//tools/claude_hooks/testdata/test_workspace:workspace_files",
-    ],
-    # Inherit proxy env vars so ForwardingTLSProxy can chain through hook's bazel proxy
-    # (in gVisor/Claude Code web, DNS doesn't work - must CONNECT via proxy)
-    # After session_start hook runs, HTTPS_PROXY points to the local auth-forwarding proxy (B)
-    # which already knows how to talk to Anthropic's proxy (A) with proper auth
-    env_inherit = [
-        "HTTPS_PROXY",
-        "https_proxy",
-        "SSL_CERT_FILE",
-        "REQUESTS_CA_BUNDLE",
-        "NODE_EXTRA_CA_CERTS",
-    ],
-    imports = ["../.."],
-    tags = [
-        "e2e",
-        "external",  # Requires network access (but now works without it!)
-    ],
-    deps = [
-        ":proxy_vars",
-        ":settings",
-        "//:runfiles",
-        "//net_util",
-        "//tools/claude_hooks/testing:forwarding_tls_proxy",
-        "//tools/claude_hooks/testing:runfiles_util",
-        "//tools/claude_hooks/testing:shell_helpers",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
 
 # === Linting ===
 

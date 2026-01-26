@@ -37,8 +37,8 @@ ENV_PODMAN_SOCKET = _env_name("podman_socket")
 ENV_SKIP_BAZELISK = _env_name("skip_bazelisk")
 ENV_SKIP_NIX = _env_name("skip_nix")
 ENV_SKIP_PODMAN = _env_name("skip_podman")
+ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_USE_WHEEL = _env_name("use_wheel")
-ENV_UPSTREAM_PROXY_URL = _env_name("upstream_proxy_url")
 ENV_AUTH_PROXY_CMD = _env_name("auth_proxy_cmd")
 
 
@@ -69,10 +69,10 @@ class HookSettings(BaseSettings):
     skip_bazelisk: bool = Field(default=False, description="Skip bazelisk download (use system bazel)")
     skip_nix: bool = Field(default=False, description="Skip nix installation")
     skip_podman: bool = Field(default=False, description="Skip podman setup")
+    system_bazel: Path | None = Field(default=None, description="Path to system bazel (used when skip_bazelisk=True)")
 
     # Test configuration
     use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
-    upstream_proxy_url: str | None = Field(default=None, description="Upstream proxy URL for tests")
     auth_proxy_cmd: str = Field(default="claude-auth-proxy", description="Command to run auth proxy")
 
     def get_cache_dir(self) -> Path:

@@ -2,10 +2,38 @@
 
 Session hooks and Bazel proxy for Claude Code web environments.
 
+## Anthropic's TLS-Inspecting Proxy
+
+Claude Code on the web runs in sandboxed containers with network egress controlled through a TLS-inspecting proxy. Key characteristics:
+
+### Environment Setup (by Anthropic)
+
+Anthropic configures the container environment with:
+
+```bash
+HTTPS_PROXY=http://<container_id>:<jwt_token>@<proxy_host>:<port>
+HTTP_PROXY=...  # same
+```
+
+- **JWT authentication**: Credentials are embedded in the proxy URL as username:password
+- **Token refresh**: Anthropic may refresh JWT tokens during long sessions
+- **TLS inspection**: Proxy terminates TLS to inspect traffic, re-encrypts with Anthropic CA
+
+### Our Design Principle
+
+**We do NOT overwrite `HTTPS_PROXY` / `HTTP_PROXY` environment variables.**
+
+Most tools (curl, pip, npm, git, etc.) work correctly with Anthropic's proxy. Only Bazel needs special handling due to Java's proxy authentication limitations.
+
+By preserving the original proxy env vars:
+- Tools continue to use Anthropic's proxy directly
+- JWT token refreshes are automatically picked up
+- The bazel wrapper reads fresh credentials on each invocation
+
 ## Components
 
 - **Session Start Hook**: Sets up the development environment for Claude Code web sessions
-- **Bazel Proxy**: Local proxy that adds authentication for TLS-inspecting proxies
+- **Bazel Proxy**: Local proxy that adds authentication for Bazel only (not global)
 
 ## Session Start Hook
 
@@ -71,11 +99,12 @@ This local proxy acts as an authentication intermediary. See <proxy-alternatives
 
 ## References
 
-See <proxy-alternatives.md> for details.
+See <proxy-alternatives.md> for analysis of why alternatives don't work.
 
-- [Claude Code on the Web](https://docs.anthropic.com/en/docs/claude-code/claude-code-on-the-web) - Container environment overview
-- [Network Configuration](https://docs.anthropic.com/en/docs/claude-code/security#network-access) - Proxy and network egress details
-- [Enterprise Configuration](https://docs.anthropic.com/en/docs/claude-code/enterprise) - TLS certificate configuration
+- [Claude Code on the Web](https://www.anthropic.com/news/claude-code-on-the-web) - Product announcement
+- [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing) - Network isolation architecture
+- [Enterprise Network Configuration](https://docs.anthropic.com/en/docs/claude-code/corporate-proxy) - Proxy and CA configuration
+- [Network Security](https://docs.anthropic.com/en/docs/claude-code/security#network-access) - Egress controls
 
 ## Configuration
 
@@ -135,30 +164,64 @@ the proxy setup steps described above.
 For debugging only. Normal operation uses supervisor:
 
 ```bash
-# Read credentials from file (in normal operation, comes from https_proxy env var)
-pproxy -l http://127.0.0.1:18081/ -r http://upstream:port#user:pass/
+# The auth proxy reads upstream URL from a file (enables credential hot-reload)
+# File format: http://username:password@host:port
+claude-auth-proxy --listen-port 18081 --creds-file /path/to/upstream_proxy
 ```
 
 ## How It Works
 
-1. Session hook reads `https_proxy` from environment
-2. Builds pproxy command with credentials embedded in upstream URI
-3. Registers pproxy as a supervisor service
-4. pproxy listens for CONNECT requests on local port
-5. pproxy forwards to upstream with `Proxy-Authorization: Basic ...` header
+### Proxy Architecture
 
-Credential refresh: handled during proxy startup via `proxy_setup.ensure_proxy_running()`,
-which detects credential changes and updates the supervisor service config.
+```
+Most tools (curl, pip, npm, etc.)
+    │
+    └──► HTTPS_PROXY (Anthropic's proxy) ──► Internet
+         (unchanged, fresh JWT)
+
+Bazel/Bazelisk
+    │
+    └──► bazel wrapper
+           │
+           ├── 1. Reads HTTPS_PROXY (fresh JWT from Anthropic)
+           ├── 2. Writes to creds file (~/.cache/.../upstream_proxy)
+           ├── 3. Sets HTTPS_PROXY=localhost:18081 for subprocess only
+           └── 4. Execs bazelisk
+                   │
+                   └──► Auth-forwarding proxy (localhost:18081)
+                          │
+                          ├── Reads creds file on each connection
+                          ├── Adds Proxy-Authorization header
+                          └──► Anthropic's proxy ──► Internet
+```
+
+### Flow Details
+
+1. **Session hook** starts the auth-forwarding proxy daemon via supervisor
+2. **Bazel wrapper** (invoked instead of bazel directly):
+   - Reads current `HTTPS_PROXY` from environment (Anthropic's proxy with fresh JWT)
+   - Writes upstream URL to credentials file (for the long-running proxy daemon)
+   - Sets `HTTPS_PROXY=localhost:18081` for the bazel subprocess only
+   - Execs bazelisk with proxy configuration
+3. **Auth proxy** (long-running daemon):
+   - Reads credentials file on each connection (picks up fresh JWT)
+   - Forwards CONNECT requests to Anthropic's proxy with auth header
+
+### Why This Design
+
+- **Fresh credentials**: Bazel wrapper reads `HTTPS_PROXY` on each invocation, so JWT refreshes are picked up
+- **No global override**: Other tools continue to use Anthropic's proxy directly
+- **Hot-reload**: Auth proxy reads creds file per-connection, enabling credential updates without restart
 
 ## Lifecycle Management
 
-The proxy (pproxy) runs under supervisor:
+The proxy (auth_forwarding_proxy) runs under supervisor:
 
 - **Process Manager**: supervisord (`~/.config/claude-hooks/supervisor/supervisord.conf`)
 - **Service Config**: `~/.config/claude-hooks/supervisor/conf.d/bazel-proxy.conf`
 - **Logging**: Stdout/stderr to `~/.config/claude-hooks/supervisor/bazel-proxy.{log,err.log}`
 - **Auto-restart**: Supervisor automatically restarts on crashes
-- **Credentials**: Embedded in command (service config updated on refresh)
+- **Credentials**: Read from file on each connection (hot-reload)
 
 ## Verification
 

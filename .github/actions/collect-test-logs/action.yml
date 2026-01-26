@@ -56,6 +56,15 @@ runs:
             mkdir -p "failed-test-logs/$target_path"
             cp "$test_dir/test.log" "failed-test-logs/$target_path/" 2>/dev/null || true
             cp "$test_dir/test.xml" "failed-test-logs/$target_path/" 2>/dev/null || true
+            # Also collect undeclared outputs (test-generated files from TEST_UNDECLARED_OUTPUTS_DIR)
+            if [ -d "$test_dir/test.outputs" ]; then
+              cp -r "$test_dir/test.outputs" "failed-test-logs/$target_path/" 2>/dev/null || true
+              echo "  Also collected test.outputs/"
+            fi
+            if [ -f "$test_dir/outputs.zip" ]; then
+              cp "$test_dir/outputs.zip" "failed-test-logs/$target_path/" 2>/dev/null || true
+              echo "  Also collected outputs.zip"
+            fi
 
             # Print test log to console for immediate visibility
             echo ""

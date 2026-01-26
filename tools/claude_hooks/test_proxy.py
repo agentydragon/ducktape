@@ -60,7 +60,7 @@ class TestBuildUpstreamUri:
     def test_with_credentials(self) -> None:
         proxy = parse_proxy_url("http://user:pass@proxy.example.com:8080")
         uri = build_upstream_uri(proxy)
-        # pproxy format: http://host:port#user:pass
+        # Legacy format: http://host:port#user:pass
         assert uri == "http://proxy.example.com:8080#user:pass"
 
     def test_username_only(self) -> None:

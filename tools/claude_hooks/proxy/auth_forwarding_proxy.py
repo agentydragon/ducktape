@@ -19,6 +19,7 @@ import logging
 import select
 import socket
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -69,13 +70,17 @@ class AuthForwardingProxy:
     Reads upstream proxy URL from creds_file on each connection for hot-reload.
     """
 
-    def __init__(self, listen_port: int, creds_file: Path):
+    def __init__(self, listen_port: int, creds_file: Path, max_workers: int = 100):
         self.listen_port = listen_port
         self.creds_file = creds_file
+        self.max_workers = max_workers
         self.server_socket: socket.socket | None = None
         self._running = False
         self._thread: threading.Thread | None = None
+        self._executor: ThreadPoolExecutor | None = None
         self._connections: list[socket.socket] = []
+        self._conn_counter = 0
+        self._conn_lock = threading.Lock()
 
     def _get_upstream_config(self) -> UpstreamConfig:
         """Read upstream config from creds file."""
@@ -87,20 +92,28 @@ class AuthForwardingProxy:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind(("127.0.0.1", self.listen_port))
-        self.server_socket.listen(10)
+        self.server_socket.listen(50)  # Increased backlog for concurrent connections
         self.server_socket.settimeout(0.5)
 
+        self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="proxy")
         self._running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
-        logger.info("Auth forwarding proxy started on 127.0.0.1:%d (creds: %s)", self.listen_port, self.creds_file)
+        logger.info(
+            "Auth forwarding proxy started on 127.0.0.1:%d (creds: %s, max_workers: %d)",
+            self.listen_port,
+            self.creds_file,
+            self.max_workers,
+        )
 
     def stop(self) -> None:
         """Stop the proxy server."""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
+        if self._executor:
+            self._executor.shutdown(wait=False, cancel_futures=True)
         for conn in self._connections:
             with contextlib.suppress(OSError):
                 conn.close()
@@ -114,7 +127,8 @@ class AuthForwardingProxy:
             try:
                 client_sock, _ = self.server_socket.accept()  # type: ignore[union-attr]
                 self._connections.append(client_sock)
-                threading.Thread(target=self._handle_client, args=(client_sock,), daemon=True).start()
+                # Use thread pool instead of spawning unlimited threads
+                self._executor.submit(self._handle_client, client_sock)  # type: ignore[union-attr]
             except TimeoutError:
                 continue
             except OSError:
@@ -122,6 +136,10 @@ class AuthForwardingProxy:
 
     def _handle_client(self, client_sock: socket.socket) -> None:
         """Handle a single client connection."""
+        with self._conn_lock:
+            self._conn_counter += 1
+            conn_id = self._conn_counter
+
         upstream_sock: socket.socket | None = None
 
         try:
@@ -149,13 +167,19 @@ class AuthForwardingProxy:
                 return
 
             target = parts[1]
-            logger.debug("CONNECT request for %s", target)
+            logger.info("[conn %d] CONNECT request for %s", conn_id, target)
 
             # Get upstream config (re-read from file each connection for hot-reload)
             config = self._get_upstream_config()
 
-            # Connect to upstream proxy
+            # Connect to upstream proxy (30s timeout for connection only)
+            logger.info("[conn %d] Connecting to upstream %s:%d", conn_id, config.host, config.port)
             upstream_sock = socket.create_connection((config.host, config.port), timeout=30)
+            logger.info("[conn %d] Connected to upstream", conn_id)
+
+            # Clear timeout - upstream may need time to connect to target before responding
+            # We'll rely on the client to timeout if the whole operation takes too long
+            upstream_sock.settimeout(None)
 
             # Forward CONNECT to upstream WITH auth header
             upstream_request = f"{request_line}\r\n"
@@ -181,23 +205,29 @@ class AuthForwardingProxy:
                 upstream_response += chunk
 
             upstream_response_str = upstream_response.decode("utf-8", errors="replace")
-            logger.debug("Upstream response: %s", upstream_response_str.split("\r\n")[0])
+            logger.info("[conn %d] Upstream response: %s", conn_id, upstream_response_str.split("\r\n")[0])
 
             # Check if upstream accepted the connection
             if not upstream_response_str.startswith("HTTP/1.1 200"):
-                logger.error("Upstream rejected CONNECT: %s", upstream_response_str.split("\r\n")[0])
+                logger.error("[conn %d] Upstream rejected CONNECT: %s", conn_id, upstream_response_str.split("\r\n")[0])
                 # Forward upstream's rejection to client
                 client_sock.sendall(upstream_response)
                 return
 
             # Forward 200 OK to client
+            logger.info("[conn %d] Sending 200 to client, starting tunnel", conn_id)
             client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+
+            # Clear socket timeouts for tunnel phase (downloads can take a long time)
+            client_sock.settimeout(None)
+            upstream_sock.settimeout(None)
 
             # Now tunnel data bidirectionally (no inspection)
             self._tunnel_bidirectional(client_sock, upstream_sock)
+            logger.info("[conn %d] Tunnel completed for %s", conn_id, target)
 
         except (OSError, ValueError) as e:
-            logger.error("Error handling client: %s", e)
+            logger.error("[conn %d] Error handling client: %s", conn_id, e)
             with contextlib.suppress(OSError):
                 client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
         finally:
@@ -205,6 +235,9 @@ class AuthForwardingProxy:
                 if sock:
                     with contextlib.suppress(OSError):
                         sock.close()
+            # Remove from connections list to allow garbage collection
+            with contextlib.suppress(ValueError):
+                self._connections.remove(client_sock)
 
     def _tunnel_bidirectional(self, client_sock: socket.socket, upstream_sock: socket.socket) -> None:
         """Tunnel data bidirectionally between client and upstream."""

@@ -52,10 +52,14 @@ SYSTEM_JAVA_CACERTS = [
     Path("/usr/lib/jvm/default-java/lib/security/cacerts"),
 ]
 SYSTEM_CA_BUNDLES = [
-    Path("/etc/ssl/certs/ca-certificates.crt"),
-    Path("/etc/pki/tls/certs/ca-bundle.crt"),
-    Path("/etc/ssl/ca-bundle.pem"),
+    Path("/etc/ssl/certs/ca-certificates.crt"),  # Debian/Ubuntu
+    Path("/etc/pki/tls/certs/ca-bundle.crt"),  # RHEL/CentOS
+    Path("/etc/ssl/ca-bundle.pem"),  # OpenSUSE
+    Path("/etc/ssl/cert.pem"),  # macOS, Alpine
 ]
+
+# Environment variables for SSL CA bundle configuration (all should point to same CA bundle)
+SSL_CA_ENV_VARS = ["SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS"]
 
 # Maximum size for HTTP CONNECT response (protects against malformed proxy responses)
 MAX_CONNECT_RESPONSE_SIZE = 64 * 1024  # 64 KB
@@ -113,7 +117,11 @@ class ProxySetup:
 
 
 def _get_https_proxy() -> str | None:
-    """Get https_proxy from environment (case-insensitive)."""
+    """Get https_proxy from environment (case-insensitive).
+
+    This reads Anthropic's proxy URL which includes JWT credentials.
+    We do NOT overwrite these env vars - they're read fresh each time.
+    """
     return os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
 
 

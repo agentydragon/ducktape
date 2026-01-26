@@ -1,12 +1,11 @@
-"""TLS-intercepting proxy that forwards to real destinations.
+"""Mock of Anthropic's TLS-inspecting egress proxy for testing.
 
-Unlike MockTLSProxy which only does TLS handshake and closes, this proxy
-actually forwards traffic to real servers while doing TLS MITM. This enables
-e2e testing of the full proxy chain including actual BCR fetches.
+Simulates the behavior of Anthropic's production proxy:
+- Requires Basic auth on CONNECT requests
+- Performs TLS interception with a mock CA matching real CA format
+- Forwards traffic to real destinations (or chains through upstream proxy)
 
-Supports chaining through an upstream proxy (detected via HTTPS_PROXY env var),
-which is required in environments like gVisor where direct internet access is
-blocked and all traffic must go through a corporate proxy.
+Used for e2e testing of the session_start hook and bazel proxy infrastructure.
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ import ssl
 import tempfile
 import threading
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -29,6 +29,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+
+from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +70,7 @@ class UpstreamProxyConfig:
             return None
 
         # Get CA bundle for verifying upstream proxy's TLS
-        ca_bundle = (
-            os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("CURL_CA_BUNDLE")
-        )
+        ca_bundle = next((v for var in SSL_CA_ENV_VARS if (v := os.environ.get(var))), None)
 
         return cls(
             host=parsed.hostname,
@@ -84,11 +84,16 @@ class UpstreamProxyConfig:
 def generate_mock_ca() -> tuple[bytes, bytes]:
     """Generate a self-signed CA cert matching Anthropic's real CA format.
 
-    The real Anthropic CA has:
+    The real Anthropic CA (from /usr/local/share/ca-certificates/swp-ca-production.crt) has:
     - Subject: O=Anthropic, CN=sandbox-egress-production TLS Inspection CA
     - Self-signed (issuer = subject)
     - RSA 2048-bit key
     - 10-year validity
+    - KeyUsage: critical - Certificate Sign, CRL Sign
+    - ExtendedKeyUsage: TLS Web Server Authentication
+    - BasicConstraints: critical - CA:TRUE
+    - SubjectKeyIdentifier
+    - AuthorityKeyIdentifier (self-referential for self-signed)
 
     Returns (cert_pem, key_pem) tuple.
     """
@@ -102,6 +107,25 @@ def generate_mock_ca() -> tuple[bytes, bytes]:
         ]
     )
 
+    # SubjectKeyIdentifier is required for CA certs (used by AKI in issued certs)
+    ski = x509.SubjectKeyIdentifier.from_public_key(key.public_key())
+
+    # AuthorityKeyIdentifier - self-referential for self-signed CA
+    aki = x509.AuthorityKeyIdentifier.from_issuer_public_key(key.public_key())
+
+    # KeyUsage is required for CA certs - allows signing certs and CRLs
+    key_usage = x509.KeyUsage(
+        key_cert_sign=True,
+        crl_sign=True,
+        digital_signature=False,
+        content_commitment=False,
+        key_encipherment=False,
+        data_encipherment=False,
+        key_agreement=False,
+        encipher_only=False,
+        decipher_only=False,
+    )
+
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -111,6 +135,10 @@ def generate_mock_ca() -> tuple[bytes, bytes]:
         .not_valid_before(datetime.now(UTC))
         .not_valid_after(datetime.now(UTC) + timedelta(days=3650))  # 10 years like real CA
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(key_usage, critical=True)
+        .add_extension(x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+        .add_extension(ski, critical=False)
+        .add_extension(aki, critical=False)
         .sign(key, hashes.SHA256())
     )
 
@@ -124,11 +152,16 @@ def generate_mock_ca() -> tuple[bytes, bytes]:
 def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -> tuple[bytes, bytes]:
     """Generate a server certificate signed by the CA for a specific hostname.
 
-    Matches real Anthropic proxy behavior:
+    Matches real Anthropic proxy server certs (inspected via TLS interception):
     - Subject CN = target hostname (truncated to 64 chars if needed)
     - Issuer = Anthropic CA
     - 24h validity (real proxy caches and rotates multiple certs per hostname)
-    - SAN with DNS name (full hostname, no length limit)
+    - KeyUsage: critical - Digital Signature, Key Encipherment
+    - ExtendedKeyUsage: TLS Web Server Authentication
+    - BasicConstraints: critical - CA:FALSE
+    - SubjectKeyIdentifier
+    - AuthorityKeyIdentifier pointing to CA's SubjectKeyIdentifier
+    - SubjectAlternativeName with DNS name
 
     Returns (cert_pem, key_pem) tuple.
     """
@@ -141,6 +174,25 @@ def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -
     cn_hostname = hostname[:64] if len(hostname) > 64 else hostname
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn_hostname)])
 
+    # SubjectKeyIdentifier for this server cert
+    ski = x509.SubjectKeyIdentifier.from_public_key(server_key.public_key())
+
+    # AuthorityKeyIdentifier links this cert to the CA (required for chain validation)
+    aki = x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key())  # type: ignore[arg-type]
+
+    # KeyUsage for TLS server certificates
+    key_usage = x509.KeyUsage(
+        digital_signature=True,
+        key_encipherment=True,
+        key_cert_sign=False,
+        crl_sign=False,
+        content_commitment=False,
+        data_encipherment=False,
+        key_agreement=False,
+        encipher_only=False,
+        decipher_only=False,
+    )
+
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -149,6 +201,11 @@ def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.now(UTC))
         .not_valid_after(datetime.now(UTC) + timedelta(days=1))
+        .add_extension(key_usage, critical=True)
+        .add_extension(x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(ski, critical=False)
+        .add_extension(aki, critical=False)
         .add_extension(x509.SubjectAlternativeName([x509.DNSName(hostname)]), critical=False)
         .sign(ca_key, hashes.SHA256())  # type: ignore[arg-type]
     )
@@ -189,7 +246,7 @@ class ConnectionStats:
             self.total_connections += 1
 
 
-class ForwardingTLSProxy:
+class MockAnthropicProxy:
     """A TLS-intercepting proxy that forwards traffic to real destinations.
 
     - Requires Basic auth on CONNECT requests (like Anthropic's proxy)
@@ -201,26 +258,28 @@ class ForwardingTLSProxy:
 
     def __init__(
         self,
+        *,
+        upstream_proxy: UpstreamProxyConfig | None,
         listen_port: int = 0,
         require_auth: bool = True,
         username: str = "testuser",
         password: str = "testpass",
         temp_dir: Path | None = None,
-        upstream_proxy: UpstreamProxyConfig | None = None,
+        max_workers: int = 100,
     ):
         self.listen_port = listen_port
         self.require_auth = require_auth
         self.username = username
         self.password = password
         self.temp_dir = temp_dir
-
-        # Auto-detect upstream proxy from environment if not explicitly provided
-        self.upstream_proxy = upstream_proxy if upstream_proxy is not None else UpstreamProxyConfig.from_env()
+        self.max_workers = max_workers
+        self.upstream_proxy = upstream_proxy
 
         self.server_socket: socket.socket | None = None
         self.port: int = 0
         self._running = False
         self._thread: threading.Thread | None = None
+        self._executor: ThreadPoolExecutor | None = None
         self._connections: list[socket.socket] = []
 
         # CA cert/key for TLS interception
@@ -234,10 +293,28 @@ class ForwardingTLSProxy:
         # Connection statistics for debugging
         self.stats = ConnectionStats()
 
+        # Semaphore to limit concurrent outbound connections
+        # This prevents overwhelming target servers when many parallel connections come in
+        self._outbound_semaphore = threading.Semaphore(20)
+
     @property
     def ca_cert_pem(self) -> bytes:
         """Get the CA certificate PEM."""
         return self._ca_cert_pem
+
+    @property
+    def url(self) -> str:
+        """Get the proxy URL with credentials."""
+        return f"http://{self.username}:{self.password}@127.0.0.1:{self.port}"
+
+    def __enter__(self) -> MockAnthropicProxy:
+        """Start proxy and return self for context manager use."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
+        """Stop proxy on context exit."""
+        self.stop()
 
     def start(self) -> None:
         """Start the proxy server."""
@@ -251,31 +328,35 @@ class ForwardingTLSProxy:
         self.server_socket.listen(50)  # Increased backlog for concurrent connections
         self.server_socket.settimeout(0.5)
 
+        self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="mock-proxy")
         self._running = True
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
         if self.upstream_proxy:
             logger.info(
-                "ForwardingTLSProxy started on port %d (chaining through upstream %s:%d)",
+                "MockAnthropicProxy started on port %d (chaining through upstream %s:%d, max_workers=%d)",
                 self.port,
                 self.upstream_proxy.host,
                 self.upstream_proxy.port,
+                self.max_workers,
             )
         else:
-            logger.info("ForwardingTLSProxy started on port %d (direct connections)", self.port)
+            logger.info("MockAnthropicProxy started on port %d (direct connections, max_workers=%d)", self.port, self.max_workers)
 
     def stop(self) -> None:
         """Stop the proxy server."""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
+        if self._executor:
+            self._executor.shutdown(wait=False, cancel_futures=True)
         for conn in self._connections:
             with contextlib.suppress(OSError):
                 conn.close()
         if self.server_socket:
             self.server_socket.close()
         logger.info(
-            "ForwardingTLSProxy stopped. Stats: %d total, %d success, %d failed, %d bytes",
+            "MockAnthropicProxy stopped. Stats: %d total, %d success, %d failed, %d bytes",
             self.stats.total_connections,
             self.stats.successful_connections,
             self.stats.failed_connections,
@@ -291,7 +372,8 @@ class ForwardingTLSProxy:
                 client_sock, _addr = self.server_socket.accept()  # type: ignore[union-attr]
                 self._connections.append(client_sock)
                 self.stats.record_connection()
-                threading.Thread(target=self._handle_client, args=(client_sock,), daemon=True).start()
+                # Use thread pool instead of spawning unlimited threads
+                self._executor.submit(self._handle_client, client_sock)  # type: ignore[union-attr]
             except TimeoutError:
                 continue
             except OSError:
@@ -428,7 +510,8 @@ class ForwardingTLSProxy:
                 target_host = target
                 target_port = 443
 
-            logger.debug("CONNECT %s:%d", target_host, target_port)
+            conn_id = self.stats.total_connections
+            logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
 
             # Check auth header
             if self.require_auth:
@@ -448,11 +531,24 @@ class ForwardingTLSProxy:
                     self.stats.record_failure(f"Auth failed for {target_host}:{target_port}")
                     return
 
-            # Send 200 Connection Established
-            client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            # Connect to real target BEFORE sending 200 (so we can return error if connection fails)
+            # Use semaphore to limit concurrent outbound connections and prevent overwhelming targets
+            logger.info("[conn %d] Waiting for outbound slot for %s:%d", conn_id, target_host, target_port)
+            with self._outbound_semaphore:
+                logger.info("[conn %d] Connecting to target %s:%d", conn_id, target_host, target_port)
+                try:
+                    server_ssl = self._connect_to_target(target_host, target_port)
+                    logger.info("[conn %d] Connected to target %s:%d", conn_id, target_host, target_port)
+                except Exception as e:
+                    error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
+                    logger.warning("[conn %d] %s", conn_id, error_msg)
+                    self.stats.record_failure(error_msg)
+                    client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+                    return
 
-            # Connect to real target (directly or via upstream proxy)
-            server_ssl = self._connect_to_target(target_host, target_port)
+            # Send 200 Connection Established (only after successful connection to target)
+            logger.info("[conn %d] Sending 200 to client for %s:%d", conn_id, target_host, target_port)
+            client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
 
             # Generate server cert for this hostname and wrap client connection
             # Include CA cert in chain so clients can extract it via get_unverified_chain()
@@ -465,7 +561,7 @@ class ForwardingTLSProxy:
             # Bidirectional forward
             bytes_forwarded = self._forward_bidirectional(client_ssl, server_ssl, target_host)
             self.stats.record_success(bytes_forwarded)
-            logger.debug("Connection to %s:%d completed, %d bytes forwarded", target_host, target_port, bytes_forwarded)
+            logger.info("[conn %d] Completed %s:%d, %d bytes forwarded", conn_id, target_host, target_port, bytes_forwarded)
 
         except TimeoutError as e:
             error_msg = f"Timeout connecting to {target_host}:{target_port}: {e}"
@@ -484,10 +580,20 @@ class ForwardingTLSProxy:
             logger.warning(error_msg)
             self.stats.record_failure(error_msg)
         finally:
-            for sock in [client_ssl, server_ssl, client_sock]:
-                if sock:
-                    with contextlib.suppress(OSError):
-                        sock.close()
+            # Close SSL sockets first (they close underlying sockets too)
+            if server_ssl:
+                with contextlib.suppress(OSError):
+                    server_ssl.close()
+            if client_ssl:
+                with contextlib.suppress(OSError):
+                    client_ssl.close()
+            elif client_sock:
+                # Only close raw socket if SSL wrapping didn't happen
+                with contextlib.suppress(OSError):
+                    client_sock.close()
+            # Remove from connections list to allow garbage collection
+            with contextlib.suppress(ValueError):
+                self._connections.remove(client_sock)
 
     def _forward_bidirectional(self, client_ssl: ssl.SSLSocket, server_ssl: ssl.SSLSocket, target_host: str) -> int:
         """Forward data bidirectionally between client and server.

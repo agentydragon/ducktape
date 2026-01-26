@@ -14,7 +14,7 @@
 
 ## Supervisor Health Check Eventlistener
 
-**Problem**: No proactive health monitoring for pproxy - if it crashes, supervisor restarts it but we only notice on next bazel invocation.
+**Problem**: No proactive health monitoring for auth proxy - if it crashes, supervisor restarts it but we only notice on next bazel invocation.
 
 **Solution**: Add custom eventlistener that:
 

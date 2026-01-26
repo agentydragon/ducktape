@@ -1,13 +1,26 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "forwarding_tls_proxy",
+    name = "mock_anthropic_proxy",
     testonly = True,
-    srcs = ["forwarding_tls_proxy.py"],
+    srcs = ["mock_anthropic_proxy.py"],
     imports = ["../../.."],
     visibility = ["//tools/claude_hooks:__subpackages__"],
     deps = [
+        "//tools/claude_hooks:proxy_setup",
         "@pypi//cryptography",
+    ],
+)
+
+py_test(
+    name = "test_mock_anthropic_proxy",
+    srcs = ["test_mock_anthropic_proxy.py"],
+    imports = ["../../.."],
+    deps = [
+        ":fixtures",
+        ":mock_anthropic_proxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -33,4 +46,16 @@ py_library(
     srcs = ["supervisor_cleanup.py"],
     imports = ["../../.."],
     visibility = ["//tools/claude_hooks:__subpackages__"],
+)
+
+py_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = ["fixtures.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+    deps = [
+        ":mock_anthropic_proxy",
+        "@pypi//pytest",
+    ],
 )
