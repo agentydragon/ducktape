@@ -15,6 +15,7 @@ import shutil
 import ssl
 import stat
 import subprocess
+import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -182,8 +183,6 @@ exec "{bazel_wrapper_bin}" "$@"
     else:
         # Running from installed wheel - use Python module invocation
         # This works because the wheel includes tools.claude_hooks.bazel_wrapper
-        import sys
-
         python_path = sys.executable
         wrapper_script = f"""#!/bin/sh
 exec "{python_path}" -m tools.claude_hooks.bazel_wrapper "$@"
