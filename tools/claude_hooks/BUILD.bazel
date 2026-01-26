@@ -186,7 +186,6 @@ py_package(
         "tools.claude_hooks.supervisor",
     ],
     deps = [
-        "//net_util:net",
         ":bazel_wrapper",
         ":bazelisk_setup",
         ":binary_tools",
@@ -201,6 +200,7 @@ py_package(
         ":session_start",
         ":settings",
         ":streaming",
+        "//net_util:net",
         "//tools/claude_hooks/proxy:auth_proxy",
         "//tools/claude_hooks/proxy:run_auth_proxy",
         "//tools/claude_hooks/supervisor:client",

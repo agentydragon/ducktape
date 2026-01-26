@@ -20,10 +20,7 @@ def run_query_with_file(query: str, *, check: bool = False) -> subprocess.Comple
         f.write(query)
         f.flush()
         return subprocess.run(
-            ["bazelisk", "query", f"--query_file={f.name}"],
-            check=check,
-            capture_output=True,
-            text=True,
+            ["bazelisk", "query", f"--query_file={f.name}"], check=check, capture_output=True, text=True
         )
 
 
