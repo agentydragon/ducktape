@@ -25,6 +25,7 @@
 #
 # Root-level targets
 # gazelle:resolve py bazel_util //:bazel_util
+# gazelle:resolve py fmt_util //:fmt_util
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
@@ -81,6 +82,13 @@ py_library(
     srcs = ["runfiles.py"],
     visibility = ["//visibility:public"],
     deps = ["@rules_python//python/runfiles"],
+)
+
+# Formatting utilities for truncated collections
+py_library(
+    name = "fmt_util",
+    srcs = ["fmt_util.py"],
+    visibility = ["//visibility:public"],
 )
 
 # ESLint configuration as js_library

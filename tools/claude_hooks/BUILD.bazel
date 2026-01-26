@@ -167,6 +167,7 @@ py_binary(
         ":podman_service",
         ":proxy_setup",
         ":settings",
+        "//:fmt_util",
         "//tools:build_info",
         "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",

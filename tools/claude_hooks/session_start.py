@@ -22,6 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from fmt_util import format_limited_list
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import bazelisk_setup, binary_tools, env_file, nix_setup, podman_service, proxy_setup
@@ -123,10 +124,7 @@ async def run_cli_mode(hook_input: HookInput) -> None:
                 if var:
                     exports.append(f"+{var}")
         if exports:
-            print(
-                f"direnv: export {' '.join(exports[:5])}"
-                + (f" ... (+{len(exports) - 5} more)" if len(exports) > 5 else "")
-            )
+            print(f"direnv: export {format_limited_list(exports, 5, separator=' ')}")
 
 
 # ============================================================================
@@ -268,19 +266,21 @@ def install_git_precommit_hook(project_dir: Path) -> None:
         logger.info("Git pre-commit hook already installed")
         return
 
-    # Ensure pre-commit is installed (version from .pre-commit-config.yaml comment)
+    # Ensure pre-commit and its dependencies are installed
+    # ansible-lint hook requires ansible package
+    # TODO: Deduplicate this setup with CI setup steps (see .github/workflows/*.yml)
     try:
         subprocess.run(["pre-commit", "--version"], capture_output=True, check=True, timeout=5)
         logger.info("pre-commit already available")
     except (FileNotFoundError, subprocess.CalledProcessError):
-        logger.info("Installing pre-commit==4.0.1 via pip")
+        logger.info("Installing pre-commit==4.0.1 and ansible via pip")
         try:
             result = subprocess.run(
-                ["pip", "install", "--user", "pre-commit==4.0.1"],
+                ["pip", "install", "--user", "pre-commit==4.0.1", "ansible"],
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=120,
             )
             if result.returncode != 0:
                 logger.warning("Failed to install pre-commit: %s", result.stderr)
