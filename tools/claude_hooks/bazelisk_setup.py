@@ -79,13 +79,10 @@ def get_bazelisk_url() -> str:
     else:
         raise RuntimeError(f"Unsupported architecture: {machine}")
 
-    if system == "linux":
-        binary = f"bazelisk-linux-{arch}"
-    elif system == "darwin":
-        binary = f"bazelisk-darwin-{arch}"
-    else:
+    if system not in ("linux", "darwin"):
         raise RuntimeError(f"Unsupported OS: {system}")
 
+    binary = f"bazelisk-{system}-{arch}"
     return f"https://github.com/bazelbuild/bazelisk/releases/download/v{BAZELISK_VERSION}/{binary}"
 
 

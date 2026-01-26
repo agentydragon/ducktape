@@ -24,19 +24,23 @@ py_library(
     ],
 )
 
-# === Modules with internal deps ===
+# === Library modules ===
 
 py_library(
-    name = "bazel_diff",
-    srcs = ["bazel_diff.py"],
+    name = "bazel_diff_lib",
+    srcs = ["bazel_diff_lib.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = [":bazel_query"],
+    deps = [
+        ":bazel_query",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
 )
 
 py_library(
-    name = "ci_decide",
-    srcs = ["ci_decide.py"],
+    name = "ci_decide_lib",
+    srcs = ["ci_decide_lib.py"],
     data = ["workflows.yaml"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
@@ -49,8 +53,8 @@ py_library(
 )
 
 py_library(
-    name = "generate_ci",
-    srcs = ["generate_ci.py"],
+    name = "generate_ci_lib",
+    srcs = ["generate_ci_lib.py"],
     data = ["workflows.yaml"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
@@ -61,15 +65,44 @@ py_library(
     ],
 )
 
+# === Exec stubs ===
+
+py_library(
+    name = "bazel_diff",
+    srcs = ["bazel_diff.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":bazel_diff_lib"],
+)
+
+py_library(
+    name = "ci_decide",
+    srcs = ["ci_decide.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":ci_decide_lib"],
+)
+
+py_library(
+    name = "generate_ci",
+    srcs = ["generate_ci.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":generate_ci_lib"],
+)
+
 # === Linting ===
 
 ruff_test(
     name = "ruff",
     srcs = [
         ":bazel_diff",
+        ":bazel_diff_lib",
         ":bazel_query",
         ":ci_decide",
+        ":ci_decide_lib",
         ":generate_ci",
+        ":generate_ci_lib",
         ":models",
     ],
 )
