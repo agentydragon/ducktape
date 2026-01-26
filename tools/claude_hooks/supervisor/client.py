@@ -38,7 +38,7 @@ class TimeoutTransport(xmlrpc.client.Transport):
         super().__init__()
         self.timeout = timeout
 
-    def make_connection(self, host: str) -> http.client.HTTPConnection:
+    def make_connection(self, host: tuple[str, dict[str, str]] | str) -> http.client.HTTPConnection:
         conn = super().make_connection(host)
         conn.timeout = self.timeout
         return conn
@@ -306,7 +306,14 @@ class SupervisorClient:
                 # Service exists but not running (STOPPED, EXITED, FATAL, BACKOFF, etc.)
                 return False
 
-        except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
+        except xmlrpc.client.Fault as e:
+            if e.faultCode == Faults.BAD_NAME:
+                # Service doesn't exist yet - expected on first run, not a warning
+                logger.debug("Service %s not registered yet", service_name)
+            else:
+                logger.warning("Service check failed for %s: %s", service_name, e)
+            return False
+        except (ConnectionError, OSError) as e:
             logger.warning("Service check failed for %s: %s", service_name, e)
             return False
 

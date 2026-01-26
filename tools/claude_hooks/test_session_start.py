@@ -258,7 +258,7 @@ def run_session_start_hook(
         cmd = "claude-session-start"
     else:
         # Run via runfiles binary (Bazel test mode)
-        cmd = get_required_path(runfiles_util.SESSION_START)
+        cmd = str(get_required_path(runfiles_util.SESSION_START))
 
     result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, timeout=300)
 
@@ -347,10 +347,10 @@ class TestFullSessionStartHook:
         # back to system bazel if bazelisk isn't installed.
         # --output_base isolates this Bazel from the test-running Bazel.
         # Timeout: 60s is ~2-3x expected time for minimal build in bazel mode
-        result: subprocess.CompletedProcess[str] | None = None
+        build_result: subprocess.CompletedProcess[str] | None = None
         timeout_error: subprocess.TimeoutExpired | None = None
         try:
-            result = shell_helpers.run_with_env_file(
+            build_result = shell_helpers.run_with_env_file(
                 command=f"bazel --output_base={output_base} build //:hello",
                 env_file=isolated_dirs.env_file,
                 cwd=workspace,
@@ -368,8 +368,10 @@ class TestFullSessionStartHook:
             stderr = timeout_error.stderr.decode() if timeout_error.stderr else "(no stderr)"
             pytest.fail(f"Bazel build timed out after 60s:\nstdout: {stdout}\nstderr: {stderr}")
 
-        assert result is not None, "Bazel build returned no result"
-        assert result.returncode == 0, f"Bazel build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        assert build_result is not None, "Bazel build returned no result"
+        assert build_result.returncode == 0, (
+            f"Bazel build failed:\nstdout: {build_result.stdout}\nstderr: {build_result.stderr}"
+        )
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:

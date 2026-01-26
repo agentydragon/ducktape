@@ -120,7 +120,9 @@ def install_bazelisk(settings: HookSettings) -> Path:
         ssl_context.load_verify_locations(combined_ca)
         logger.info("Using combined CA bundle for bazelisk download: %s", combined_ca)
     else:
-        logger.warning("Combined CA bundle not found at %s, using default SSL context", combined_ca)
+        # During parallel initialization, CA bundle may not be created yet.
+        # Default SSL context works fine for github.com downloads.
+        logger.info("Combined CA bundle not found at %s, using default SSL context", combined_ca)
 
     # Download with proxy support (urllib respects https_proxy env var)
     with urllib.request.urlopen(url, timeout=60, context=ssl_context) as response:
