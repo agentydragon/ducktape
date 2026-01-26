@@ -270,6 +270,7 @@ bazel run //path/to:binary_target
 # Do NOT use these (INCORRECT - they may not have correct paths/deps):
 # pytest path/to/test_*.py
 # python -m path.to.module
+# direnv exec . python -m ...
 ```
 
 Bazel properly sets up PYTHONPATH, dependencies, and the test environment. Direct pytest/python invocations may fail to find modules or have incorrect configurations.

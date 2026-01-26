@@ -10,7 +10,6 @@ import tomli
 import tomli_w
 from pydantic import BaseModel, Field
 
-from llm.claude_linter_v2.rule_registry import RuleRegistry
 from llm.claude_linter_v2.config.models import (
     AccessControlRule,
     AutofixCategory,
@@ -24,6 +23,7 @@ from llm.claude_linter_v2.config.models import (
     SubagentStopHookConfig,
     TaskProfile,
 )
+from llm.claude_linter_v2.rule_registry import RuleRegistry
 
 
 class LogLevel(StrEnum):

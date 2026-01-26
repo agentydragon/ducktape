@@ -8,6 +8,7 @@
 
 # gazelle:python_root
 # gazelle:python_generation_mode file
+# gazelle:python_default_visibility NONE
 #
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
@@ -39,7 +40,8 @@ load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//:filter_wheels.bzl", "filter_system_packages")
 
-package(default_visibility = ["//visibility:public"])
+# Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
+# so targets default to private. Public targets explicitly set visibility.
 
 # Link workspace npm packages
 npm_link_all_packages(name = "node_modules")
@@ -109,6 +111,7 @@ js_library(
     name = "prettierrc",
     srcs = [".prettierrc.cjs"],
     tags = ["no-lint"],
+    visibility = ["//tools:__subpackages__"],
     deps = [
         ":node_modules/prettier-plugin-svelte",
         ":node_modules/svelte",
@@ -218,7 +221,7 @@ py_package(
         "openai_utils",
     ],
     deps = [
-        "//difftree:difftree_lib",
+        "//difftree:__main__",
         "//git_commit_ai:git_commit_ai_lib",
     ],
 )

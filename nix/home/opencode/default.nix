@@ -19,15 +19,14 @@
 #   Model                         | Reasoning | Tools | Context | Size/GPU | Notes
 #   ------------------------------|-----------|-------|---------|----------|---------------------------
 #   === CONFIGURED (vLLM) ===
-#   deepseek-r1-32b               | ✓         | ✓     | 128k    | ~17 GB   | Best reasoning 32B, start-vllm-deepseek-r1.sh
-#   deepseek-r1-70b               | ✓         | ✓     | 64k     | ~38 GB   | Best quality, start-vllm-deepseek-r1-70b.sh
-#   qwen3-32b                     | ✓         | ✓     | 128k    | ~17 GB   | General model, start-vllm-qwen3-32b.sh
+#   deepseek-r1-32b               | ✓         | ✓     | 128k    | ~17 GB   | Best reasoning, start-vllm-deepseek-r1.sh
 #   qwen3-coder-awq               | ✗         | ✓     | 262k    | ~8.5 GB  | AWQ removes thinking, start-vllm-awq.sh
 #   === CONFIGURED (Ollama) ===
 #   qwen3-coder-long              | ✗*        | ✓     | 131k    | ~19 GB   | *thinking untested
 #   llama3.3:70b                  | ✗         | ✓     | 32k     | ~38 GB   | Reliable tools, no thinking
-#   === DOWNLOADED (available) ===
-#   (All thinking+tools models are now configured above)
+#   === DOWNLOADED (not yet configured) ===
+#   deepseek-r1-distill-llama-70b | ✓         | ✓     | 128k    | ~19 GB   | Best quality, needs TP=2
+#   qwen3-32b-awq                 | ✓         | ✓     | 128k    | ~17 GB   | General model, thinking works
 #
 # See model-download-list.md for download status and benchmarks.
 {
@@ -71,38 +70,6 @@ let
           # Start: ~/code/ducktape/experimental/local-llm/start-vllm-deepseek-r1.sh
           "deepseek-r1-32b" = {
             name = "DeepSeek R1 Distill Qwen 32B (vLLM)";
-            reasoning = true;
-            tool_call = true;
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 131072;
-              output = 8192;
-            };
-          };
-
-          # DeepSeek R1 Distill Llama 70B - best quality distillation
-          # Requires TP=2 (both GPUs), ~38 GB total
-          # Start: ~/code/ducktape/experimental/local-llm/start-vllm-deepseek-r1-70b.sh
-          "deepseek-r1-70b" = {
-            name = "DeepSeek R1 Distill Llama 70B (vLLM)";
-            reasoning = true;
-            tool_call = true;
-            interleaved = {
-              field = "reasoning_content";
-            };
-            limit = {
-              context = 65536; # Reduced to fit 64GB with 38GB weights
-              output = 8192;
-            };
-          };
-
-          # Qwen3 32B AWQ - general model with thinking + tools
-          # Good all-around model, not code-specialized
-          # Start: ~/code/ducktape/experimental/local-llm/start-vllm-qwen3-32b.sh
-          "qwen3-32b" = {
-            name = "Qwen3 32B AWQ (vLLM)";
             reasoning = true;
             tool_call = true;
             interleaved = {

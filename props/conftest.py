@@ -14,9 +14,12 @@ from mcp_infra.testing.fixtures import *  # noqa: F403
 
 # Import fixtures from our testing package for pytest discovery
 # Re-export factory functions (not fixtures, but commonly used in tests)
-from props.testing.fixtures.db import (  # noqa: F401
+# Testcontainers fixtures - imported directly from defining module
+from props.testing.fixtures.db import (  # noqa: F401  # noqa: F401
     TEST_FIXTURES_PATH,
     admin_engine,
+    postgres_base_config,
+    postgres_container,
     pytest_addoption,
     session_monkeypatch,
     synced_readonly_session,
@@ -31,6 +34,9 @@ from props.testing.fixtures.e2e import (  # noqa: F401
     noop_openai_client,
     success_termination,
 )
+
+# Import e2e container fixture directly from its module
+from props.testing.fixtures.e2e_container import e2e_stack  # noqa: F401
 from props.testing.fixtures.ground_truth import (  # noqa: F401
     example_multi_tp_orm,
     example_subtract_orm,
@@ -61,12 +67,6 @@ from props.testing.fixtures.runs import (  # noqa: F401
     test_validation_snapshot_slug,
 )
 from props.testing.fixtures.scopes import all_files_scope, subtract_file_example  # noqa: F401
-
-# Testcontainers fixtures - imported directly from defining module
-from props.testing.fixtures.db import postgres_base_config, postgres_container  # noqa: F401
-
-# Import e2e container fixture directly from its module
-from props.testing.fixtures.e2e_container import e2e_stack  # noqa: F401
 
 # Re-export mocks for direct imports
 from props.testing.mocks import PropsMock  # noqa: F401

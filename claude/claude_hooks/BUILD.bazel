@@ -2,29 +2,78 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+# NOTE: No aggregator target - use specific per-file targets like :actions, :base, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+# =============================================================================
+# Library targets (per-file)
+# =============================================================================
+
 py_library(
-    name = "claude_hooks",
-    srcs = [
-        "__init__.py",
-        "actions.py",
-        "base.py",
-        "config.py",
-        "inputs.py",
-        "logging_context.py",
-        "precommit_autofix.py",
-        "tool_models.py",
+    name = "actions",
+    srcs = ["actions.py"],
+    imports = [".."],
+    deps = ["@pypi//typing_extensions"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = [".."],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "tool_models",
+    srcs = ["tool_models.py"],
+    imports = [".."],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "logging_context",
+    srcs = ["logging_context.py"],
+    imports = [".."],
+)
+
+py_library(
+    name = "inputs",
+    srcs = ["inputs.py"],
+    imports = [".."],
+    deps = [
+        ":tool_models",
+        "@pypi//pydantic",
     ],
-    data = glob(["testdata/**"]),
+)
+
+py_library(
+    name = "base",
+    srcs = ["base.py"],
+    imports = [".."],
+    deps = [
+        ":actions",
+        ":inputs",
+        ":logging_context",
+        "@pypi//platformdirs",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_library(
+    name = "precommit_autofix",
+    srcs = ["precommit_autofix.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":actions",
+        ":base",
+        ":config",
+        ":inputs",
+        ":logging_context",
+        ":tool_models",
         "@pypi//platformdirs",
-        "@pypi//pre_commit",
-        "@pypi//pydantic",
         "@pypi//pygit2",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-        "@pypi//typing_extensions",
     ],
 )
 
@@ -34,38 +83,173 @@ py_binary(
     imports = [".."],
     main = "precommit_autofix.py",
     deps = [
-        ":claude_hooks",
+        ":actions",
+        ":base",
+        ":config",
+        ":inputs",
+        ":logging_context",
+        ":tool_models",
         "@pypi//platformdirs",
         "@pypi//pygit2",
     ],
 )
 
-py_test(
-    name = "test_claude_hooks",
-    srcs = [
-        "conftest.py",
-        "test_autofixer.py",
-        "test_helpers.py",
-        "test_input_parsing.py",
-        "test_integration.py",
-        "test_models.py",
-        "test_precommit_integration.py",
-        "test_precommit_syntax_check.py",
-        "test_protocol_actions.py",
-    ],
+# =============================================================================
+# Test support
+# =============================================================================
+
+py_library(
+    name = "test_helpers",
+    testonly = True,
+    srcs = ["test_helpers.py"],
     imports = [".."],
-    main = "conftest.py",
+    deps = [":inputs"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    data = glob(["testdata/**"]),
+    imports = [".."],
     deps = [
-        ":claude_hooks",
+        ":config",
+        ":inputs",
+        ":precommit_autofix",
+        ":tool_models",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],
 )
 
+# =============================================================================
+# Tests (per-file)
+# =============================================================================
+
+py_test(
+    name = "test_autofixer",
+    srcs = ["test_autofixer.py"],
+    imports = [".."],
+    deps = [
+        ":actions",
+        ":config",
+        ":conftest",
+        ":precommit_autofix",
+        ":tool_models",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_helpers_test",
+    srcs = ["test_helpers.py"],
+    imports = [".."],
+    main = "test_helpers.py",
+    deps = [
+        ":inputs",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_input_parsing",
+    srcs = ["test_input_parsing.py"],
+    data = glob(["testdata/**"]),
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":test_helpers",
+        ":tool_models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    imports = [".."],
+    deps = [
+        ":actions",
+        ":conftest",
+        ":precommit_autofix",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_models",
+    srcs = ["test_models.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":inputs",
+        ":tool_models",
+        "@pypi//pyhamcrest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_precommit_integration",
+    srcs = ["test_precommit_integration.py"],
+    imports = [".."],
+    deps = [
+        ":actions",
+        ":conftest",
+        ":inputs",
+        ":precommit_autofix",
+        ":tool_models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_precommit_syntax_check",
+    srcs = ["test_precommit_syntax_check.py"],
+    imports = [".."],
+    deps = [
+        ":actions",
+        ":conftest",
+        ":inputs",
+        ":precommit_autofix",
+        ":tool_models",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_protocol_actions",
+    srcs = ["test_protocol_actions.py"],
+    imports = [".."],
+    deps = [
+        ":actions",
+        ":conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# =============================================================================
+# Lint
+# =============================================================================
+
 ruff_test(
     name = "ruff",
-    srcs = [":claude_hooks"],
+    srcs = [
+        ":actions",
+        ":base",
+        ":config",
+        ":inputs",
+        ":logging_context",
+        ":precommit_autofix",
+        ":tool_models",
+    ],
 )

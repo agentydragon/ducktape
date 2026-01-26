@@ -1,8 +1,2 @@
-load("@rules_python//python:defs.bzl", "py_library")
-
-py_library(
-    name = "custom_components_init",
-    srcs = ["__init__.py"],
-    imports = [".."],
-    visibility = ["//homeassistant/iaqi/custom_components/indoor_aqi:__pkg__"],
-)
+# NOTE: No __init__.py in this directory - Bazel auto-generates init stubs.
+# The indoor_aqi subdirectory has the actual custom component code.

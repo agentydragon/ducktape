@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from llm.claude_code_api import HookEventName
+from llm.claude_linter_v2.hooks.exceptions import HookBugError
 from llm.claude_outcomes import (
     HookError,
     HookOutcome,
@@ -18,7 +19,6 @@ from llm.claude_outcomes import (
     StopPrevent,
     SubagentStopAllow,
 )
-from llm.claude_linter_v2.hooks.exceptions import HookBugError
 
 logger = logging.getLogger(__name__)
 

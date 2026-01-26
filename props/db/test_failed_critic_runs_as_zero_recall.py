@@ -9,7 +9,12 @@ from props.core.splits import Split
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.examples import Example
 from props.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
-from props.testing.fixtures.runs import make_critic_run, make_grader_run, make_grader_run_with_credit, make_reported_issues
+from props.testing.fixtures.runs import (
+    make_critic_run,
+    make_grader_run,
+    make_grader_run_with_credit,
+    make_reported_issues,
+)
 
 
 def test_failed_critic_run_appears_with_zero_credit(synced_test_session: Session, example_subtract_orm: Example):

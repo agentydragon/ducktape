@@ -19,6 +19,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pygit2
@@ -178,13 +179,25 @@ def run_bazel_diff(
 
 
 def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
-    """Check if affected targets intersect with a Bazel pattern."""
+    """Check if affected targets intersect with a Bazel pattern.
+
+    Uses --query_file to avoid "Argument list too long" errors with large target sets.
+    """
     if not targets:
         return False
 
     targets_str = " ".join(targets)
     query = f"set({targets_str}) intersect {pattern}"
-    result = subprocess.run(["bazelisk", "query", query], check=False, capture_output=True, text=True)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".query", delete_on_close=False) as f:
+        f.write(query)
+        f.flush()
+        result = subprocess.run(
+            ["bazelisk", "query", f"--query_file={f.name}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
     return bool(result.stdout.strip())
 
 

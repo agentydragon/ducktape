@@ -101,7 +101,7 @@ py_test(
         "//props/db:models",
         "//props/db:session",
         "//props/db:snapshots",
-        "//props/testing/fixtures:__init__",
+        "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -121,7 +121,7 @@ py_test(
         "//props/db:models",
         "//props/db:session",
         "//props/db:snapshots",
-        "//props/testing/fixtures:__init__",
+        "//props/testing/fixtures:runs",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -195,7 +195,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    visibility = ["//:__subpackages__"],
+    visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core/models:examples",
         "//props/db:examples",
@@ -203,7 +203,7 @@ py_library(
         "//props/db:session",
         "//props/db:snapshots",
         "//props/orchestration:agent_credentials",
-        "//props/testing/fixtures:__init__",
+        "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],

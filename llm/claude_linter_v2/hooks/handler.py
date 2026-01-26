@@ -24,17 +24,6 @@ from llm.claude_code_api import (
     SubagentStopRequest,
     WriteToolCall,
 )
-from llm.claude_outcomes import (
-    HookOutcome,
-    NotificationAcknowledge,
-    PostToolNotifyLLM,
-    PostToolSuccess,
-    PreToolApprove,
-    PreToolDeny,
-    StopAllow,
-    StopPrevent,
-    SubagentStopAllow,
-)
 from llm.claude_linter_v2.access.context import PredicateContext
 from llm.claude_linter_v2.access.rule_engine import RuleEngine
 from llm.claude_linter_v2.check_python import check_python_file
@@ -51,6 +40,9 @@ from llm.claude_linter_v2.config.models import (
 )
 from llm.claude_linter_v2.diff.categorizer import ViolationCategory
 from llm.claude_linter_v2.diff.intelligence import DiffIntelligence
+from llm.claude_linter_v2.hooks.exceptions import HookBugError
+from llm.claude_linter_v2.hooks.formatting import format_access_denial, format_llm_message
+from llm.claude_linter_v2.hooks.validation import validate_hook_outcome
 from llm.claude_linter_v2.linters.python_formatter import PythonFormatter
 from llm.claude_linter_v2.llm_analyzer import LLMAnalyzer
 from llm.claude_linter_v2.notifications import close_desktop_notification, send_desktop_notification
@@ -59,9 +51,17 @@ from llm.claude_linter_v2.session.manager import SessionManager
 from llm.claude_linter_v2.session.violations import ViolationTracker
 from llm.claude_linter_v2.types import SessionID
 from llm.claude_linter_v2.utils.gitignore import get_git_tracked_files
-from llm.claude_linter_v2.hooks.exceptions import HookBugError
-from llm.claude_linter_v2.hooks.formatting import format_access_denial, format_llm_message
-from llm.claude_linter_v2.hooks.validation import validate_hook_outcome
+from llm.claude_outcomes import (
+    HookOutcome,
+    NotificationAcknowledge,
+    PostToolNotifyLLM,
+    PostToolSuccess,
+    PreToolApprove,
+    PreToolDeny,
+    StopAllow,
+    StopPrevent,
+    SubagentStopAllow,
+)
 
 logger = logging.getLogger(__name__)
 

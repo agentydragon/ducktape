@@ -15,7 +15,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//homeassistant/iaqi/custom_components:custom_components_init",
         "@pypi_homeassistant//homeassistant",
     ],
 )
