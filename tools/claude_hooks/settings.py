@@ -39,7 +39,6 @@ ENV_SKIP_NIX = _env_name("skip_nix")
 ENV_SKIP_PODMAN = _env_name("skip_podman")
 ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_USE_WHEEL = _env_name("use_wheel")
-ENV_AUTH_PROXY_CMD = _env_name("auth_proxy_cmd")
 
 
 class HookSettings(BaseSettings):
@@ -73,7 +72,6 @@ class HookSettings(BaseSettings):
 
     # Test configuration
     use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
-    auth_proxy_cmd: str = Field(default="claude-auth-proxy", description="Command to run auth proxy")
 
     def get_cache_dir(self) -> Path:
         """Get base cache directory for claude-hooks (auto-created)."""

@@ -302,13 +302,11 @@ py_test(
     deps = [
         ":proxy_setup",
         ":settings",
-        "//:runfiles",
         "//net_util",
         "//tools/claude_hooks/supervisor:client",
         "//tools/claude_hooks/supervisor:setup",
         "//tools/claude_hooks/testing:fixtures",
         "//tools/claude_hooks/testing:mock_anthropic_proxy",
-        "//tools/claude_hooks/testing:runfiles_util",
         "//tools/claude_hooks/testing:supervisor_cleanup",
         "@pypi//cryptography",
         "@pypi//pytest",

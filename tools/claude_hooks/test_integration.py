@@ -15,13 +15,11 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from net_util.net import pick_free_port, wait_for_port
-from runfiles import get_required_path
 from tools.claude_hooks import proxy_setup, settings
 from tools.claude_hooks.proxy_setup import BAZEL_PROXY_SERVICE
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import is_running as supervisor_is_running
 from tools.claude_hooks.supervisor.setup import start as supervisor_start
-from tools.claude_hooks.testing import runfiles_util
 from tools.claude_hooks.testing.fixtures import MockProxyFixture
 from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup
 
@@ -47,7 +45,6 @@ def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
     monkeypatch.setenv(settings.ENV_BAZEL_PROXY_DIR, str(bazel_proxy_dir))
     monkeypatch.setenv(settings.ENV_BAZEL_PROXY_PORT, str(proxy_port))
-    monkeypatch.setenv(settings.ENV_AUTH_PROXY_CMD, str(get_required_path(runfiles_util.RUN_AUTH_PROXY)))
 
     return supervisor_dir, bazel_proxy_dir
 

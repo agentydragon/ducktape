@@ -16,6 +16,7 @@ import shutil
 import socket
 import ssl
 import subprocess
+import sys
 import textwrap
 import time
 from dataclasses import dataclass
@@ -350,10 +351,16 @@ def _get_proxy_service_env() -> dict[str, str]:
 
 
 def _build_auth_proxy_command(settings: HookSettings) -> str:
-    """Build command to run custom auth-forwarding proxy."""
+    """Build command to run custom auth-forwarding proxy.
+
+    Uses sys.executable -m to run the module. This works in both:
+    - Bazel mode: PYTHONPATH is set and forwarded via _get_proxy_service_env()
+    - Wheel mode: the package is installed, so the module is importable
+    """
     proxy_port = settings.get_bazel_proxy_port()
     creds_file = settings.get_bazel_creds_file()
-    return f"{settings.auth_proxy_cmd} --listen-port {proxy_port} --creds-file {creds_file}"
+    auth_proxy_cmd = f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy"
+    return f"{auth_proxy_cmd} --listen-port {proxy_port} --creds-file {creds_file}"
 
 
 def _write_creds_file(settings: HookSettings, https_proxy: str) -> None:

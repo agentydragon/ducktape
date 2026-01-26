@@ -188,10 +188,6 @@ def _setup_hook_env(
     if skip_podman:
         monkeypatch.setenv(settings.ENV_SKIP_PODMAN, "1")
 
-    # Bazel test mode: use runfiles binaries (unless testing wheel)
-    if os.environ.get(settings.ENV_USE_WHEEL) != "1":
-        monkeypatch.setenv(settings.ENV_AUTH_PROXY_CMD, str(get_required_path(runfiles_util.RUN_AUTH_PROXY)))
-
 
 @pytest.fixture
 def hook_env(
