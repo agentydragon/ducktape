@@ -274,6 +274,22 @@ class SupervisorClient:
         except (ConnectionError, OSError) as e:
             raise ProxyServiceError(f"Failed to communicate with supervisor: {e}") from e
 
+    def get_service_state(self, service_name: str) -> ProcessState | None:
+        """Get the current state of a service.
+
+        Returns None if supervisor isn't running or service doesn't exist.
+        """
+        if not is_running(self._settings):
+            return None
+
+        try:
+            if not self.service_exists(service_name):
+                return None
+            return self.get_process_info(service_name).statename
+        except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
+            logger.warning("Failed to get service state for %s: %s", service_name, e)
+            return None
+
     def is_service_running(self, service_name: str, wait_for_start: bool = True, timeout: float = 5.0) -> bool:
         """Check if a specific service is running under supervisor.
 
@@ -285,33 +301,26 @@ class SupervisorClient:
         Returns:
             True if service is running, False otherwise
         """
-        if not is_running(self._settings):
-            return False
+        if not wait_for_start:
+            return self.get_service_state(service_name) == ProcessState.RUNNING
 
-        try:
-            if not self.service_exists(service_name):
-                logger.debug("Service %s not registered", service_name)
+        deadline = time.time() + timeout
+        last_state = None
+
+        while time.time() < deadline:
+            state = self.get_service_state(service_name)
+            if state != last_state:
+                logger.info("Service %s: state=%s", service_name, state)
+                last_state = state
+            if state == ProcessState.RUNNING:
+                return True
+            if state != ProcessState.STARTING:
+                # Not starting, won't become running - fail fast
                 return False
+            time.sleep(0.2)
 
-            deadline = time.time() + timeout if wait_for_start else time.time()
-            last_state = None
-
-            while True:
-                info = self.get_process_info(service_name)
-                if info.statename != last_state:
-                    logger.info("Service %s: state=%s", service_name, info.statename)
-                    last_state = info.statename
-                if info.statename == ProcessState.RUNNING:
-                    return True
-                if info.statename == ProcessState.STARTING and time.time() < deadline:
-                    time.sleep(0.2)
-                    continue
-                # Service exists but not running (STOPPED, EXITED, FATAL, BACKOFF, etc.)
-                return False
-
-        except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
-            logger.warning("Service check failed for %s: %s", service_name, e)
-            return False
+        # Timed out while STARTING
+        return False
 
     def restart_service(self, service_name: str) -> None:
         """Restart a specific service under supervisor.

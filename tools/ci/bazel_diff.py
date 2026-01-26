@@ -39,14 +39,14 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import os
-import re
-import subprocess
-import tempfile
-import urllib.request
-from dataclasses import dataclass
+import os  # noqa: E402
+import re  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+import urllib.request  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
 
-from tools.ci.bazel_query import run_query_with_file
+from tools.ci.bazel_query import run_query_with_file  # noqa: E402
 
 BAZEL_DIFF_VERSION = "12.1.1"
 BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"

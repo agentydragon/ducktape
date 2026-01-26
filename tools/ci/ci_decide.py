@@ -23,15 +23,22 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import json
-import os
-import re
-import subprocess
+import json  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+import subprocess  # noqa: E402
 
-import pygit2
-from pydantic import BaseModel, Field
-from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets
-from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
+import pygit2  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
+from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets  # noqa: E402
+from tools.ci.models import (  # noqa: E402
+    AlwaysTrigger,
+    BazelPatternTrigger,
+    PathPatternTrigger,
+    WorkflowConfig,
+    WorkflowManifest,
+)
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
 INFRA_PATTERNS = [
@@ -43,6 +50,7 @@ INFRA_PATTERNS = [
     r"^tools/bazel",
     r"^WORKSPACE",
 ]
+
 
 class CIDecision(BaseModel):
     """Result of CI decision computation."""

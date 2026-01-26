@@ -23,12 +23,13 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import argparse
-from typing import Any
+import argparse  # noqa: E402
+from typing import Any  # noqa: E402
 
-import yaml
-from pydantic import BaseModel, Field
-from tools.ci.models import WorkflowConfig, WorkflowManifest
+import yaml  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
+from tools.ci.models import WorkflowConfig, WorkflowManifest  # noqa: E402
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
