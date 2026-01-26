@@ -204,8 +204,10 @@ jobs:
       always() &&
       needs.test.result == 'success' &&
       needs.wheel-test.result == 'success' &&
-      github.event_name == 'push' &&
-      (needs.check-release.outputs.release_needed == 'true' || inputs.force_release == true)
+      (
+        (github.event_name == 'push' && needs.check-release.outputs.release_needed == 'true') ||
+        (github.event_name == 'workflow_dispatch' && inputs.force_release == true)
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
