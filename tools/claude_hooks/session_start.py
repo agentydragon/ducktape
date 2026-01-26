@@ -268,19 +268,21 @@ def install_git_precommit_hook(project_dir: Path) -> None:
         logger.info("Git pre-commit hook already installed")
         return
 
-    # Ensure pre-commit is installed (version from .pre-commit-config.yaml comment)
+    # Ensure pre-commit and its dependencies are installed
+    # ansible-lint hook requires ansible package
+    # TODO: Deduplicate this setup with CI setup steps (see .github/workflows/*.yml)
     try:
         subprocess.run(["pre-commit", "--version"], capture_output=True, check=True, timeout=5)
         logger.info("pre-commit already available")
     except (FileNotFoundError, subprocess.CalledProcessError):
-        logger.info("Installing pre-commit==4.0.1 via pip")
+        logger.info("Installing pre-commit==4.0.1 and ansible via pip")
         try:
             result = subprocess.run(
-                ["pip", "install", "--user", "pre-commit==4.0.1"],
+                ["pip", "install", "--user", "pre-commit==4.0.1", "ansible"],
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=120,
             )
             if result.returncode != 0:
                 logger.warning("Failed to install pre-commit: %s", result.stderr)

@@ -96,6 +96,7 @@ Style and convention rules for this repository. Package-specific elaborations be
 - **Paths**: Prefer `pathlib.Path` objects; only call `str(path)` when an external API requires a string.
 - **No string forward references**: Avoid string-based forward references in type annotations. Reorder classes or split files to remove cycles. When cross-module cycles exist, use `if TYPE_CHECKING:` imports with real symbols (not quoted names). Do not rely on `model_rebuild()` where reordering can avoid forward refs.
 - **No unnecessary `__init__.py`**: Do not create `__init__.py` files for packages that only contain Bazel targets. Bazel auto-generates stub `__init__.py` files via `imports = [...]` in `py_library`/`py_test` rules. Only create `__init__.py` when you need to expose a public API or configure the package namespace.
+- **Prefer sets for unordered collections**: When a collection's order is semantically irrelevant (changed files, unique IDs, tags), use `set[T]` instead of `list[T]`. Sets make the "no duplicates, order doesn't matter" intent explicit and provide O(1) membership testing. Use lists only when order matters or duplicates are valid.
 
 ## Testing
 
