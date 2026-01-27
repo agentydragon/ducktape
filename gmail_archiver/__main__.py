@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
+from fmt_util import format_truncation_suffix
 from gmail_archiver.cli.common import DryRunDefaultTrueOption, TokenFileOption, get_client
 from gmail_archiver.cli.filters import filters_app
 from gmail_archiver.cli.labels import labels_app
@@ -189,8 +190,8 @@ def download_matching(
             orphaned_list = sorted(orphaned_ids)[:10]
             for msg_id in orphaned_list:
                 console.print(f"  - {msg_id}.eml")
-            if len(orphaned_ids) > 10:
-                console.print(f"  ... and {len(orphaned_ids) - 10} more")
+            if suffix := format_truncation_suffix(len(orphaned_ids), 10):
+                console.print(suffix)
 
             console.print()
             delete_confirm = typer.confirm("Delete these orphaned files?", default=False)
@@ -218,8 +219,8 @@ def download_matching(
         sample_table.add_row(str(idx), msg.sender[:30], msg.subject[:50], (msg.date_header or "")[:20])
 
     console.print(sample_table)
-    if len(all_message_ids) > sample_size:
-        console.print(f"... and {len(all_message_ids) - sample_size} more emails\n")
+    if suffix := format_truncation_suffix(len(all_message_ids), sample_size, "emails"):
+        console.print(suffix + "\n")
 
     existing_preview = {f.stem for f in output_dir.glob("*.eml")} if output_dir.exists() else set()
     to_download_count = len([msg_id for msg_id in all_message_ids if msg_id not in existing_preview])
@@ -283,8 +284,8 @@ def download_matching(
         console.print(f"\n[bold red]✗[/bold red] Failed to download {len(all_failed)} emails:")
         for msg_id, error in all_failed[:10]:  # Show first 10
             console.print(f"  - {msg_id}: {error[:80]}")
-        if len(all_failed) > 10:
-            console.print(f"  ... and {len(all_failed) - 10} more failures")
+        if suffix := format_truncation_suffix(len(all_failed), 10, "failures"):
+            console.print(suffix)
 
 
 def parse_gmail_link(url: str) -> str | None:

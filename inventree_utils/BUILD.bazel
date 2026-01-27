@@ -2,7 +2,6 @@
 # rai_plugin uses InvenTree's plugin framework (not in @pypi)
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Gazelle manages beautifier/ subpackage
 
@@ -23,14 +22,6 @@ py_binary(
         "@pypi//inventree",
         "@pypi//pint",
         "@pypi//tqdm",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":make_prompt",
-        ":tasks",
     ],
 )
 

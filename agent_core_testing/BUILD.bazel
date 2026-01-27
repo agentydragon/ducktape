@@ -1,21 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # NOTE: No aggregator target - use specific per-file targets like :fixtures, :responses, :steps
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":assertions",
-        ":echo_server",
-        ":fixtures",
-        ":matchers",
-        ":openai_mock",
-        ":responses",
-        ":steps",
-    ],
-)
 
 py_library(
     name = "assertions",

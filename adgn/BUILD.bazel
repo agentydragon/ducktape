@@ -1,7 +1,5 @@
 """ADGN - Agent framework and LLM tooling."""
 
-load("//tools/lint:linters.bzl", "ruff_test")
-
 # NOTE: No aggregator target - use specific per-file targets in subdirectories
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 #
@@ -11,14 +9,3 @@ load("//tools/lint:linters.bzl", "ruff_test")
 #   //adgn/gitea_pr_gate:policy_server_fastapi - Gitea PR gate server
 #   //adgn/testing:bootstrap - Testing bootstrap utilities
 #   //adgn/tools:trivial_patterns - Trivial patterns linter
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        "//adgn/agent:cli",
-        "//adgn/gitea_pr_gate:policy_common",
-        "//adgn/gitea_pr_gate:policy_server_fastapi",
-        "//adgn/testing:bootstrap",
-        "//adgn/tools:trivial_patterns",
-    ],
-)

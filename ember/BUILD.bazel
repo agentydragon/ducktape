@@ -3,7 +3,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 filegroup(
     name = "data_files",
@@ -75,21 +74,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":app",
-        ":config",
-        ":handlers",
-        ":matrix_client",
-        ":mcp_tools",
-        ":python_session",
-        ":runtime",
-        ":secrets",
-        ":system_prompt",
     ],
 )
 

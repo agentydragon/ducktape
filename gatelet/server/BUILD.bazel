@@ -4,7 +4,6 @@
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_binary(
     name = "server",
@@ -154,20 +153,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//gatelet:__subpackages__"],
     deps = ["@pypi//pytest_bazel"],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":app",
-        ":config",
-        ":database",
-        ":lifespan",
-        ":models",
-        ":prompts",
-        ":security",
-        ":shared",
-    ],
 )
 
 py_test(

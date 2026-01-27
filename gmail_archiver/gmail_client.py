@@ -14,6 +14,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from fmt_util import format_truncation_suffix
+
 from .gmail_api_models import (
     CreateFilterRequest,
     GmailFilter,
@@ -425,8 +427,8 @@ class GmailClient:
             print(f"Warning: Failed to fetch {len(all_errors)} messages:", file=sys.stderr)
             for req_id, error in all_errors[:5]:  # Show first 5
                 print(f"  - Request {req_id}: {error}", file=sys.stderr)
-            if len(all_errors) > 5:
-                print(f"  ... and {len(all_errors) - 5} more errors", file=sys.stderr)
+            if suffix := format_truncation_suffix(len(all_errors), 5, "errors"):
+                print(suffix, file=sys.stderr)
 
         return emails
 

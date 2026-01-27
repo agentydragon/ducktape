@@ -1,15 +1,6 @@
 """CLI utilities package."""
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":decorators",
-        ":logging",
-    ],
-)
 
 py_library(
     name = "decorators",

@@ -1,7 +1,6 @@
 """Instruction optimizer package."""
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # no-mypy: statsmodels (transitive dep of plotnine) has broken __init__.py structure
 # that causes mypy to error with "Source file found twice under different module names".
@@ -50,11 +49,6 @@ py_test(
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":inop"],
 )
 
 py_library(

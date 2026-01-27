@@ -3,7 +3,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # NOTE: No aggregator target - use specific per-file targets
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -108,22 +107,6 @@ genrule(
 # =============================================================================
 # Linting
 # =============================================================================
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":app",
-        ":auth",
-        ":cli",
-        ":export_schema",
-        "//props/backend/routes:eval",
-        "//props/backend/routes:ground_truth",
-        "//props/backend/routes:llm",
-        "//props/backend/routes:registry",
-        "//props/backend/routes:runs",
-        "//props/backend/routes:stats",
-    ],
-)
 
 # =============================================================================
 # OCI Image

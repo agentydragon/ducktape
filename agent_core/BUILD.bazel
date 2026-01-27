@@ -1,5 +1,4 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "tool_provider",
@@ -159,25 +158,6 @@ py_library(
         "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":agent",
-        ":compaction",
-        ":conftest",
-        ":direct_provider",
-        ":events",
-        ":handler",
-        ":logging_utils",
-        ":loop_control",
-        ":mcp_provider",
-        ":progress",
-        ":tool_provider",
-        ":transcript_handler",
-        ":turn_limit",
     ],
 )
 

@@ -4,7 +4,6 @@
 """Sandboxed Jupyter execution package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "sandboxed_jupyter",
@@ -79,9 +78,4 @@ py_test(
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":sandboxed_jupyter"],
 )

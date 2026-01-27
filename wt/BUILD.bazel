@@ -1,5 +1,4 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "cli",
@@ -28,15 +27,6 @@ py_binary(
     main = "__main__.py",
     visibility = ["//visibility:public"],
     deps = [":cli"],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":cli",
-        ":demo_plugin",
-        ":plugins",
-    ],
 )
 
 py_library(

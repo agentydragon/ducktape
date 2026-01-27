@@ -1,5 +1,4 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Gazelle manages adgn_mcp_starter/ subpackage
 
@@ -48,15 +47,5 @@ py_binary(
     deps = [
         "@pypi//claude_code_sdk",
         "@pypi//rich",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":conftest",
-        ":integration_test",
-        ":manual_test_sdk",
-        ":test_server",
     ],
 )

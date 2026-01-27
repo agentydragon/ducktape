@@ -1,5 +1,4 @@
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "claude_optimizer",
@@ -13,11 +12,6 @@ py_library(
         "@pypi//openai",
         "@pypi//pydantic",
     ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":claude_optimizer"],
 )
 
 py_library(

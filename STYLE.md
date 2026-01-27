@@ -64,6 +64,25 @@ Style and convention rules for this repository. Package-specific elaborations be
 
 - **Prefer exceptions over error lists**: Functions that validate or check preconditions should raise exceptions on failure, not return lists of errors. Exceptions provide immediate control flow, clear error types, and standard patterns for callers.
 - **Let exceptions propagate**: Self-explanatory exceptions with actionable messages should propagate to the existing error boundary (CLI wrapper, request handler, FastMCP tool handler) rather than being caught and reformatted at each call site. Define error boundaries once (e.g., in a CLI entry point or request middleware), not repeatedly throughout the code. FastMCP already converts unhandled exceptions to MCP errors with the exception message - use this pattern. Only catch exceptions when you need to transform them, add context, or handle them differently than the default boundary.
+- **Exceptions are for exceptional things**: Don't use exceptions for expected control flow. Prefer: query preconditions first, then execute without catch. Avoid: execute with catch, then parse what went wrong from the exception.
+
+  ```python
+  # ❌ Using exception for expected control flow
+  try:
+      info = supervisor.get_process_info(name)
+      return info.state == "RUNNING"
+  except Fault as e:
+      if e.faultCode == BAD_NAME:
+          return False  # Service doesn't exist - but this was foreseeable
+      raise
+
+  # ✓ Query preconditions first
+  if not supervisor.service_exists(name):
+      return False
+  info = supervisor.get_process_info(name)
+  return info.state == "RUNNING"
+  ```
+
 - **Strict data mapping**: When parsing enums/typed values from persistence or inputs, do not ignore invalid values. Validate early or raise; do not `continue` on exceptions.
 - **Prefer functional style**: Use concise comprehensions and idiomatic patterns. Keep public interfaces typed with Pydantic where appropriate.
 - **Prefer precise types**: Use discriminated unions, Protocols, TypedDicts, or concrete Pydantic models for heterogeneous values. `Any`/`object` is acceptable only when a field truly allows any value and no stronger contract exists; document such cases.
@@ -77,6 +96,7 @@ Style and convention rules for this repository. Package-specific elaborations be
 - **Paths**: Prefer `pathlib.Path` objects; only call `str(path)` when an external API requires a string.
 - **No string forward references**: Avoid string-based forward references in type annotations. Reorder classes or split files to remove cycles. When cross-module cycles exist, use `if TYPE_CHECKING:` imports with real symbols (not quoted names). Do not rely on `model_rebuild()` where reordering can avoid forward refs.
 - **No unnecessary `__init__.py`**: Do not create `__init__.py` files for packages that only contain Bazel targets. Bazel auto-generates stub `__init__.py` files via `imports = [...]` in `py_library`/`py_test` rules. Only create `__init__.py` when you need to expose a public API or configure the package namespace.
+- **Prefer sets for unordered collections**: When a collection's order is semantically irrelevant (changed files, unique IDs, tags), use `set[T]` instead of `list[T]`. Sets make the "no duplicates, order doesn't matter" intent explicit and provide O(1) membership testing. Use lists only when order matters or duplicates are valid.
 
 ## Testing
 

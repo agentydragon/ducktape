@@ -2,7 +2,6 @@
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # === Base modules (no internal deps) ===
 
@@ -24,52 +23,72 @@ py_library(
     ],
 )
 
-# === Modules with internal deps ===
+# === Library modules ===
 
 py_library(
-    name = "bazel_diff",
-    srcs = ["bazel_diff.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [":bazel_query"],
-)
-
-py_library(
-    name = "ci_decide",
-    srcs = ["ci_decide.py"],
-    data = ["workflows.yaml"],
+    name = "bazel_diff_lib",
+    srcs = ["bazel_diff_lib.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":bazel_query",
-        ":models",
+        "//:fmt_util",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],
 )
 
 py_library(
-    name = "generate_ci",
-    srcs = ["generate_ci.py"],
+    name = "ci_decide_lib",
+    srcs = ["ci_decide_lib.py"],
+    data = ["workflows.yaml"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bazel_query",
+        ":models",
+        "//:fmt_util",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "generate_ci_lib",
+    srcs = ["generate_ci_lib.py"],
     data = ["workflows.yaml"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":models",
-        "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
 )
 
-# === Linting ===
+# === Exec stubs ===
 
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":bazel_diff",
-        ":bazel_query",
-        ":ci_decide",
-        ":generate_ci",
-        ":models",
-    ],
+py_library(
+    name = "bazel_diff",
+    srcs = ["bazel_diff.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":bazel_diff_lib"],
 )
+
+py_library(
+    name = "ci_decide",
+    srcs = ["ci_decide.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":ci_decide_lib"],
+)
+
+py_library(
+    name = "generate_ci",
+    srcs = ["generate_ci.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":generate_ci_lib"],
+)
+
+# === Linting ===

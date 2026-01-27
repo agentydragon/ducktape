@@ -79,13 +79,10 @@ def get_bazelisk_url() -> str:
     else:
         raise RuntimeError(f"Unsupported architecture: {machine}")
 
-    if system == "linux":
-        binary = f"bazelisk-linux-{arch}"
-    elif system == "darwin":
-        binary = f"bazelisk-darwin-{arch}"
-    else:
+    if system not in ("linux", "darwin"):
         raise RuntimeError(f"Unsupported OS: {system}")
 
+    binary = f"bazelisk-{system}-{arch}"
     return f"https://github.com/bazelbuild/bazelisk/releases/download/v{BAZELISK_VERSION}/{binary}"
 
 
@@ -120,7 +117,9 @@ def install_bazelisk(settings: HookSettings) -> Path:
         ssl_context.load_verify_locations(combined_ca)
         logger.info("Using combined CA bundle for bazelisk download: %s", combined_ca)
     else:
-        logger.warning("Combined CA bundle not found at %s, using default SSL context", combined_ca)
+        # During parallel initialization, CA bundle may not be created yet.
+        # Default SSL context works fine for github.com downloads.
+        logger.info("Combined CA bundle not found at %s, using default SSL context", combined_ca)
 
     # Download with proxy support (urllib respects https_proxy env var)
     with urllib.request.urlopen(url, timeout=60, context=ssl_context) as response:

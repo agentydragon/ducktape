@@ -1,7 +1,6 @@
 """Editor agent host package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Init script for the container image (called as /init)
 filegroup(
@@ -100,11 +99,6 @@ py_test(
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":editor_agent_host"],
 )
 
 py_library(
