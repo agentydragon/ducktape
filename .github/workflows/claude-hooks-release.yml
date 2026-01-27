@@ -40,7 +40,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_needed: ${{ steps.check.outputs.release_needed }}
-      reason: ${{ steps.check.outputs.reason }}
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -57,12 +56,8 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: claude-hooks
-          bazel_target_pattern: "//tools/claude_hooks/..."
-
-      - name: Log result
-        run: |
-          echo "Release needed: ${{ steps.check.outputs.release_needed }}"
-          echo "Reason: ${{ steps.check.outputs.reason }}"
+          bazel_target: //tools/claude_hooks:wheel
+          latest_release_tag: claude-hooks-latest
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()
@@ -165,7 +160,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build //tools/claude_hooks:claude_hooks_wheel
+        run: bazel build //tools/claude_hooks:wheel
 
       - name: Install wheel
         run: uv tool install bazel-bin/tools/claude_hooks/claude_hooks-*.whl
@@ -214,18 +209,13 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Log release reason
-        run: |
-          echo "Proceeding with release"
-          echo "Reason: ${{ needs.check-release.outputs.reason }}"
-
       - uses: ./.github/actions/setup-bazel
         id: bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build //tools/claude_hooks:claude_hooks_wheel
+        run: bazel build //tools/claude_hooks:wheel
 
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
@@ -265,19 +255,11 @@ jobs:
             | cut -f1 \
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
 
-      - name: Update latest release for branch
+      - name: Update latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Determine the latest tag based on branch
-          if [[ "${{ github.ref_name }}" == "devel" ]]; then
-            TAG="claude-hooks-latest-devel"
-          elif [[ "${{ github.ref_name }}" == "main" ]]; then
-            TAG="claude-hooks-latest-main"
-          else
-            echo "Not on devel or main, skipping latest release"
-            exit 0
-          fi
+          TAG="claude-hooks-latest"
 
           # Delete existing release if it exists (we'll recreate it)
           if gh release view "$TAG" >/dev/null 2>&1; then

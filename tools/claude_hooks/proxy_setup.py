@@ -80,7 +80,7 @@ class ProxySetup:
         """Get human-readable proxy status."""
         if not self.settings.get_bazel_truststore().exists():
             return "not configured"
-        if self.supervisor.is_service_running(BAZEL_PROXY_SERVICE, wait_for_start=False):
+        if self.supervisor.is_service_running(BAZEL_PROXY_SERVICE):
             return f"running (port {self.port})"
         return "configured (not running)"
 
@@ -374,20 +374,36 @@ def _write_creds_file(settings: HookSettings, https_proxy: str) -> None:
     logger.debug("Wrote proxy credentials to %s", creds_file)
 
 
-def _wait_for_proxy(settings: HookSettings, timeout_seconds: float = 5.0) -> bool:
-    """Wait for proxy to start listening, return True if successful."""
+def _wait_for_proxy_running(settings: HookSettings, supervisor: SupervisorClient, timeout_seconds: float = 5.0) -> None:
+    """Wait for proxy port to be listening AND supervisor to report RUNNING.
+
+    Raises:
+        ProxyServiceError: If proxy does not become ready within timeout.
+    """
     proxy_port = settings.get_bazel_proxy_port()
-    for _ in range(int(timeout_seconds / 0.5)):
-        time.sleep(0.5)
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            conn_result = sock.connect_ex(("127.0.0.1", proxy_port))
-            sock.close()
-            if conn_result == 0:
-                return True
-        except OSError:
-            pass  # Expected: connection refused during startup
-    return False
+    deadline = time.monotonic() + timeout_seconds
+    port_ready = False
+
+    while time.monotonic() < deadline:
+        time.sleep(0.2)
+
+        if not port_ready:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                conn_result = sock.connect_ex(("127.0.0.1", proxy_port))
+                sock.close()
+                port_ready = conn_result == 0
+            except OSError:
+                pass
+
+        if port_ready and supervisor.is_service_running(BAZEL_PROXY_SERVICE):
+            return
+
+    state = supervisor.get_service_state(BAZEL_PROXY_SERVICE)
+    raise ProxyServiceError(
+        f"Bazel proxy did not become ready within {timeout_seconds}s "
+        f"(port_listening={port_ready}, supervisor_state={state})"
+    )
 
 
 def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorClient) -> None:
@@ -423,19 +439,15 @@ def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorClient) -
         supervisor.update_service(
             name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
         )
-        if not _wait_for_proxy(settings):
-            raise ProxyServiceError("Bazel proxy did not start listening after restart")
-        logger.info("Bazel proxy restarted successfully")
-        return
+    else:
+        # Start proxy service for the first time
+        logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
+        supervisor.add_service(
+            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+        )
 
-    # Start proxy service
-    logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
-    supervisor.add_service(
-        name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
-    )
-    if not _wait_for_proxy(settings):
-        raise ProxyServiceError("Bazel proxy did not start listening in time")
-    logger.info("Bazel proxy started successfully")
+    _wait_for_proxy_running(settings, supervisor)
+    logger.info("Bazel proxy running successfully")
 
 
 def _get_local_registry_path() -> Path | None:

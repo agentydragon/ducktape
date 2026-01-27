@@ -240,6 +240,20 @@ def _cleanup_supervisor(config_dir: Path) -> None:
             pidfile.unlink()
 
 
+def _get_outputs_dir() -> Path:
+    """Get the test outputs directory for log collection."""
+    return Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/test-outputs"))
+
+
+def _write_output_log(name: str, content: str) -> Path:
+    """Write content to a log file in the outputs directory."""
+    outputs_dir = _get_outputs_dir()
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = outputs_dir / name
+    log_path.write_text(content)
+    return log_path
+
+
 def run_session_start_hook(
     project_dir: Path, source: HookSource = HookSource.STARTUP
 ) -> subprocess.CompletedProcess[str]:
@@ -249,7 +263,7 @@ def run_session_start_hook(
     Set DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-session-start` console
     script instead - this tests the actual wheel packaging.
 
-    Prints hook stdout/stderr for debugging (visible in CI logs on any test failure).
+    Hook output is written to log files in TEST_UNDECLARED_OUTPUTS_DIR for debugging.
     """
     hook_input = make_hook_input(project_dir, source)
 
@@ -258,13 +272,14 @@ def run_session_start_hook(
         cmd = "claude-session-start"
     else:
         # Run via runfiles binary (Bazel test mode)
-        cmd = get_required_path(runfiles_util.SESSION_START)
+        cmd = str(get_required_path(runfiles_util.SESSION_START))
 
     result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, timeout=300)
 
-    # Print hook output for debugging (pytest captures and shows on failure)
-    print(f"\n=== Hook stdout ===\n{result.stdout}")
-    print(f"\n=== Hook stderr ===\n{result.stderr}")
+    # Write hook output to log files for debugging (collected as CI artifacts)
+    stdout_log = _write_output_log("hook-stdout.log", result.stdout)
+    stderr_log = _write_output_log("hook-stderr.log", result.stderr)
+    print(f"Hook output written to: {stdout_log}, {stderr_log}")
 
     return result
 
@@ -346,30 +361,17 @@ class TestFullSessionStartHook:
         # and exports truststore configuration. The wrapper injects --bazelrc and falls
         # back to system bazel if bazelisk isn't installed.
         # --output_base isolates this Bazel from the test-running Bazel.
-        # Timeout: 60s is ~2-3x expected time for minimal build in bazel mode
-        result: subprocess.CompletedProcess[str] | None = None
-        timeout_error: subprocess.TimeoutExpired | None = None
         try:
-            result = shell_helpers.run_with_env_file(
+            shell_helpers.run_with_env_file(
                 command=f"bazel --output_base={output_base} build //:hello",
                 env_file=isolated_dirs.env_file,
                 cwd=workspace,
-                check=False,
+                check=True,
                 timeout=60,
             )
-        except subprocess.TimeoutExpired as e:
-            timeout_error = e
         finally:
             # Always collect logs - critical for debugging CI failures
             collect_logs()
-
-        if timeout_error:
-            stdout = timeout_error.stdout.decode() if timeout_error.stdout else "(no stdout)"
-            stderr = timeout_error.stderr.decode() if timeout_error.stderr else "(no stderr)"
-            pytest.fail(f"Bazel build timed out after 60s:\nstdout: {stdout}\nstderr: {stderr}")
-
-        assert result is not None, "Bazel build returned no result"
-        assert result.returncode == 0, f"Bazel build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:

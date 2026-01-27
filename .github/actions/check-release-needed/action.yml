@@ -1,26 +1,23 @@
 name: Check Release Needed
 description: |
-  Check if a release is needed by comparing against the last release tag.
+  Check if a release is needed by comparing against the floating latest tag.
   Uses bazel-diff to determine if there are actual target changes.
 
 inputs:
   package_prefix:
     description: "Package name prefix used in release tags (e.g., 'ducktape', 'claude-hooks')"
     required: true
-  bazel_target_pattern:
-    description: "Bazel target pattern to check for changes (e.g., '//tools/claude_hooks/...', '//:ducktape_wheel')"
+  bazel_target:
+    description: "Bazel wheel target to check for changes (e.g., '//:wheel')"
+    required: true
+  latest_release_tag:
+    description: "Floating tag pointing to the last release (e.g., 'ducktape-latest')"
     required: true
 
 outputs:
   release_needed:
     description: "'true' if release is needed, 'false' otherwise"
     value: ${{ steps.check.outputs.release_needed }}
-  base_sha:
-    description: "The base commit SHA (last release commit, or empty if first release)"
-    value: ${{ steps.check.outputs.base_sha }}
-  reason:
-    description: "Human-readable reason for the decision"
-    value: ${{ steps.check.outputs.reason }}
 
 runs:
   using: composite
@@ -30,12 +27,34 @@ runs:
       run: |
         git fetch --tags --force
 
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - name: Cache bazel-diff JAR
+      id: cache-bazel-diff
+      uses: actions/cache@v4
+      with:
+        path: bazel-diff.jar
+        key: bazel-diff-12.1.1
+
+    - name: Download bazel-diff
+      if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl -fsSL -o bazel-diff.jar \
+          "https://github.com/Tinder/bazel-diff/releases/download/12.1.1/bazel-diff_deploy.jar"
+
     - name: Check if release needed
       id: check
       shell: bash
       env:
-        RELEASE_MODE: "1"
         PACKAGE_PREFIX: ${{ inputs.package_prefix }}
-        BAZEL_TARGET_PATTERN: ${{ inputs.bazel_target_pattern }}
+        BAZEL_WHEEL_TARGET: ${{ inputs.bazel_target }}
+        LATEST_RELEASE_TAG: ${{ inputs.latest_release_tag }}
+        BAZEL_DIFF_JAR: ${{ github.workspace }}/bazel-diff.jar
+        CI_PUSH_STRATEGY: incremental
       run: |
-        python3 tools/ci/bazel_diff.py
+        uv run tools/ci/check_release.py

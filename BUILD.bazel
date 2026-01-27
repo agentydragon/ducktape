@@ -236,7 +236,7 @@ py_package(
 )
 
 py_wheel(
-    name = "ducktape_wheel",
+    name = "wheel",
     distribution = "ducktape",
     entry_points = {
         "console_scripts": [

@@ -277,7 +277,7 @@ def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) 
     if not socket_path.exists():
         return False
     try:
-        return supervisor.is_service_running(PODMAN_SERVICE, wait_for_start=False)
+        return supervisor.is_service_running(PODMAN_SERVICE)
     except Exception:
         return False
 

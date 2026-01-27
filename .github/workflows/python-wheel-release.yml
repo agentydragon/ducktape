@@ -7,6 +7,10 @@ name: Python Wheel Release
 
 on:
   workflow_call:
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache (optional)"
+        required: false
     inputs:
       package_name:
         description: "Package name for release tag prefix (e.g., 'ducktape')"
@@ -17,7 +21,7 @@ on:
         required: true
         type: string
       bazel_target:
-        description: "Bazel target to build (e.g., '//:ducktape_wheel')"
+        description: "Bazel target to build (e.g., '//:wheel')"
         required: true
         type: string
       wheel_path:
@@ -34,10 +38,9 @@ on:
         type: string
         default: ""
       latest_release_tag:
-        description: "Optional stable tag for a 'latest' release (e.g., 'claude-hooks-latest-devel'). If provided, creates/updates this release with the same wheel."
-        required: false
+        description: "Floating tag for the 'latest' release (e.g., 'ducktape-latest'). Creates/updates this release with the same wheel."
+        required: true
         type: string
-        default: ""
 
 jobs:
   build-and-release:
@@ -68,8 +71,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ inputs.apt_packages }}
 
-      - uses: ./.github/actions/bazel-cache
-        id: bazel-cache
+      - uses: ./.github/actions/setup-bazel
+        id: bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
         run: bazel build ${{ inputs.bazel_target }}
@@ -97,15 +102,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Keep last 10 releases with this package prefix (excluding latest tag)
+          # TODO: Replace this fragile grep pipeline with a Python script using
+          # `gh api` + JSON parsing for more reliable release filtering.
           gh release list --limit 100 \
             | grep "^${{ inputs.package_name }}-" \
-            | grep -v "^${{ inputs.latest_release_tag || 'NOMATCH' }}" \
+            | grep -v "^${{ inputs.latest_release_tag }}" \
             | tail -n +11 \
             | cut -f1 \
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
 
       - name: Update latest release
-        if: inputs.latest_release_tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -133,5 +139,6 @@ jobs:
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}
+          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}

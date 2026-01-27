@@ -166,6 +166,7 @@ py_binary(
         ":podman_service",
         ":proxy_setup",
         ":settings",
+        "//:fmt_util",
         "//tools:build_info",
         "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",
@@ -208,7 +209,7 @@ py_package(
 )
 
 py_wheel(
-    name = "claude_hooks_wheel",
+    name = "wheel",
     distribution = "claude_hooks",
     # Only claude-session-start is a console script. Other commands are invoked via
     # sys.executable -m (bazel wrapper, auth proxy) to ensure correct Python environment.
