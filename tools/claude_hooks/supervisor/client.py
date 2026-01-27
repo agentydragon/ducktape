@@ -32,12 +32,11 @@ XMLRPC_TIMEOUT = 30
 
 
 class TimeoutTransport(xmlrpc.client.Transport):
-    """Thread-safe XML-RPC transport with configurable timeout.
+    """XML-RPC transport with configurable timeout.
 
-    Creates a fresh HTTPConnection per request to avoid CannotSendRequest("Idle")
-    errors when the same ServerProxy is used from multiple threads (via
-    asyncio.to_thread). The default Transport caches a single HTTPConnection,
-    which is not thread-safe.
+    xmlrpc.client.ServerProxy doesn't expose a timeout parameter, so we
+    subclass Transport to set it on the HTTPConnection. This is the standard
+    workaround for this stdlib gap.
     """
 
     def __init__(self, timeout: float = XMLRPC_TIMEOUT):
@@ -45,9 +44,6 @@ class TimeoutTransport(xmlrpc.client.Transport):
         self.timeout = timeout
 
     def make_connection(self, host: tuple[str, dict[str, str]] | str) -> http.client.HTTPConnection:
-        # Clear cached connection to force a fresh one each time.
-        # The parent's make_connection returns the cached _connection if set.
-        self.close()
         conn = super().make_connection(host)
         conn.timeout = self.timeout
         return conn
