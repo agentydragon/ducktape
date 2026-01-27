@@ -50,8 +50,6 @@ py_library(
         ":bazel_query",
         ":diff_utils",
         ":github_actions",
-        "//:fmt_util",
-        "@pypi//pydantic",
         "@pypi//pygit2",
     ],
 )

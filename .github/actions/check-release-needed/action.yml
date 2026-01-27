@@ -34,7 +34,6 @@ runs:
       id: check
       shell: bash
       env:
-        RELEASE_MODE: "1"
         PACKAGE_PREFIX: ${{ inputs.package_prefix }}
         BAZEL_TARGET_PATTERN: ${{ inputs.bazel_target_pattern }}
       run: |
