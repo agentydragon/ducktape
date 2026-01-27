@@ -270,4 +270,3 @@ gpt-image-1-mini:
   output_usd_per_1m_tokens: 0.0
   context_window_tokens: 128000
   max_output_tokens: 0
-
