@@ -75,7 +75,8 @@ COMPUTE_TARGETS_JOB = Job(
             name="Set CI env",
             run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
             'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV\n'
-            'echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV',
+            'echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV\n'
+            'echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV',
         ),
         Step(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
         Step(
