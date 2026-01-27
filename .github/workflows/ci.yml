@@ -77,6 +77,12 @@ jobs:
           name: bazel-query-logs-${{ github.run_id }}
           path: bazel-query-logs
           if-no-files-found: ignore
+      - name: Upload targets file
+        uses: actions/upload-artifact@v4
+        with:
+          name: targets
+          path: targets.txt
+          if-no-files-found: error
   bazel-build:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')

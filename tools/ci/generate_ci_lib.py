@@ -89,6 +89,11 @@ COMPUTE_TARGETS_JOB = Job(
                 "if-no-files-found": "ignore",
             },
         ),
+        Step(
+            name="Upload targets file",
+            uses="actions/upload-artifact@v4",
+            with_args={"name": "targets", "path": "targets.txt", "if-no-files-found": "error"},
+        ),
     ],
 )
 
@@ -162,20 +167,22 @@ class OutOfDateError(Exception):
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Generate ci.yml from workflows.yaml")
-    parser.add_argument("--check", action="store_true", help="Check if ci.yml is up to date")
+    parser.add_argument("--check", action="store_true", help="Check if ci.yml is semantically up to date")
     args = parser.parse_args()
 
     manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
-    generated = generate_ci_yml(manifest)
 
     if args.check:
         if not CI_YML.exists():
             raise FileNotFoundError(f"{CI_YML} does not exist")
-        current = CI_YML.read_text()
-        if current != generated:
+        # Compare parsed models to ignore formatting differences (prettier, etc.)
+        expected = generate_ci_config(manifest)
+        current = Workflow.model_validate(yaml.safe_load(CI_YML.read_text()))
+        if current != expected:
             raise OutOfDateError(f"{CI_YML} is out of date. Run 'uv run tools/ci/generate_ci.py' to update.")
         print(f"{CI_YML} is up to date")
         return
 
+    generated = generate_ci_yml(manifest)
     CI_YML.write_text(generated)
     print(f"Generated {CI_YML}")

@@ -57,6 +57,12 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Download targets artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: targets
+        continue-on-error: true # May not exist for workflow_dispatch
+
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -85,10 +91,18 @@ jobs:
           # For testcontainers bridge networking (e2e tests)
           PROPS_E2E_HOST_HOSTNAME: host.docker.internal
         run: |
-          TARGETS="${{ inputs.targets }}"
-          if [[ -z "$TARGETS" ]]; then
-            echo "No targets specified, skipping tests"
-            exit 0
+          # Use target_pattern_file if artifact exists (avoids shell arg length limits)
+          if [[ -f targets.txt ]]; then
+            TARGET_ARG="--target_pattern_file=targets.txt"
+            echo "Using targets from artifact file"
+          else
+            TARGETS="${{ inputs.targets }}"
+            if [[ -z "$TARGETS" ]]; then
+              echo "No targets specified, skipping tests"
+              exit 0
+            fi
+            TARGET_ARG="$TARGETS"
+            echo "Using targets from input: $TARGET_ARG"
           fi
 
           PROFILE_FLAG=""
@@ -104,7 +118,7 @@ jobs:
             --test_env=PGDATABASE=postgres \
             --test_env=PROPS_E2E_HOST_HOSTNAME=host.docker.internal \
             $PROFILE_FLAG \
-            $TARGETS
+            $TARGET_ARG
 
       - uses: ./.github/actions/collect-test-logs
         if: always()

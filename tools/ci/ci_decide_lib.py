@@ -59,6 +59,17 @@ class CIDecision(BaseModel):
             f.write(f"workflows={json.dumps(self.workflows)}\n")
             f.write(f"infra_changed={'true' if self.infra_changed else 'false'}\n")
 
+    def write_targets_file(self, targets_path: Path) -> None:
+        """Write targets to file for --target_pattern_file usage.
+
+        Writes one target per line. For all_targets, writes "//...".
+        This avoids shell argument length limits when passing many targets.
+        """
+        if self.all_targets:
+            targets_path.write_text("//...\n")
+        else:
+            targets_path.write_text("\n".join(self.targets) + "\n" if self.targets else "")
+
 
 def get_base_commit(repo: pygit2.Repository) -> pygit2.Commit | None:
     """Determine base commit for comparison."""
@@ -300,6 +311,11 @@ def main() -> None:
     decision = compute_decision(manifest.workflows, workspace)
 
     decision.write_to_github_output(output_path)
+
+    # Write targets file for artifact upload (avoids shell argument length limits)
+    targets_file = workspace / "targets.txt"
+    decision.write_targets_file(targets_file)
+    logger.info("Wrote targets to %s", targets_file)
 
     logger.info("\nDecision: %d workflows to run", len(decision.workflows))
     for w in decision.workflows:
