@@ -17,7 +17,7 @@ on:
         required: true
         type: string
       bazel_target:
-        description: "Bazel target to build (e.g., '//:ducktape_wheel')"
+        description: "Bazel target to build (e.g., '//:wheel')"
         required: true
         type: string
       wheel_path:

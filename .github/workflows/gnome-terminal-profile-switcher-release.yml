@@ -36,7 +36,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: gnome-terminal-profile-switcher
-          bazel_target: //gnome_terminal_profile_switcher:gnome_terminal_profile_switcher_wheel
+          bazel_target: //gnome_terminal_profile_switcher:wheel
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
@@ -49,7 +49,7 @@ jobs:
     with:
       package_name: gnome-terminal-profile-switcher
       wheel_name: gnome_terminal_profile_switcher
-      bazel_target: //gnome_terminal_profile_switcher:gnome_terminal_profile_switcher_wheel
+      bazel_target: //gnome_terminal_profile_switcher:wheel
       wheel_path: bazel-bin/gnome_terminal_profile_switcher
       release_body: |
         gnome-terminal-profile-switcher wheel.

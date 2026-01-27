@@ -8,7 +8,7 @@ inputs:
     description: "Package name prefix used in release tags (e.g., 'ducktape', 'claude-hooks')"
     required: true
   bazel_target:
-    description: "Bazel wheel target to check for changes (e.g., '//:ducktape_wheel')"
+    description: "Bazel wheel target to check for changes (e.g., '//:wheel')"
     required: true
 
 outputs:

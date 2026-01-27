@@ -3,6 +3,10 @@
 Generates ci.yml and per-package release workflow files,
 eliminating duplication in job definitions.
 
+The generated YAML may differ in formatting from what prettier produces.
+The pre-commit hook will normalize formatting on commit; the --check mode
+compares parsed models to ignore such differences.
+
 This module provides the implementation logic. See generate_ci.py for the CLI entry point.
 """
 
@@ -190,7 +194,7 @@ def generate_release_config(name: str, config: ReleaseConfig) -> Workflow:
 
     release_with: dict[str, str] = {
         "package_name": name,
-        "wheel_name": config.wheel_name,
+        "wheel_name": name.replace("-", "_"),
         "bazel_target": config.bazel_target,
         "wheel_path": config.wheel_path,
         "release_body": config.release_body,

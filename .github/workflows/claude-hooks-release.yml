@@ -56,7 +56,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: claude-hooks
-          bazel_target: //tools/claude_hooks:claude_hooks_wheel
+          bazel_target: //tools/claude_hooks:wheel
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()
@@ -159,7 +159,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build //tools/claude_hooks:claude_hooks_wheel
+        run: bazel build //tools/claude_hooks:wheel
 
       - name: Install wheel
         run: uv tool install bazel-bin/tools/claude_hooks/claude_hooks-*.whl
@@ -214,7 +214,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build //tools/claude_hooks:claude_hooks_wheel
+        run: bazel build //tools/claude_hooks:wheel
 
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV

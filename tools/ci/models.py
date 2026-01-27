@@ -52,28 +52,21 @@ class WorkflowConfig(BaseModel):
     secrets: list[str] = Field(default_factory=list)
 
 
-def _parse_bazel_label(label: str) -> tuple[str, str]:
-    """Parse a Bazel label into (package, target) parts.
+def _parse_bazel_package(label: str) -> str:
+    """Extract the package path from a Bazel label.
 
     Examples:
-        "//:ducktape_wheel" -> ("", "ducktape_wheel")
-        "//headscale_cleanup:headscale_cleanup_wheel" -> ("headscale_cleanup", "headscale_cleanup_wheel")
+        "//:wheel" -> ""
+        "//headscale_cleanup:wheel" -> "headscale_cleanup"
     """
-    label = label.removeprefix("//")
-    if ":" in label:
-        package, target = label.split(":", 1)
-    else:
-        package = label
-        target = label.rsplit("/", 1)[-1]
-    return package, target
+    return label.removeprefix("//").split(":")[0]
 
 
 class ReleaseConfig(BaseModel):
     """Configuration for a package release workflow.
 
-    wheel_name and wheel_path are derived from bazel_target:
-    - wheel_name = target name with _wheel suffix stripped
-    - wheel_path = bazel-bin/<package> (or just bazel-bin for root targets)
+    wheel_path is derived from bazel_target's package path.
+    wheel_name is passed explicitly via generate_release_config (from the manifest key).
     """
 
     bazel_target: str
@@ -82,13 +75,8 @@ class ReleaseConfig(BaseModel):
     latest_release_tag: str | None = None
 
     @property
-    def wheel_name(self) -> str:
-        _, target = _parse_bazel_label(self.bazel_target)
-        return target.removesuffix("_wheel")
-
-    @property
     def wheel_path(self) -> str:
-        package, _ = _parse_bazel_label(self.bazel_target)
+        package = _parse_bazel_package(self.bazel_target)
         return f"bazel-bin/{package}" if package else "bazel-bin"
 
 

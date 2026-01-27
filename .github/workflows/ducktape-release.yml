@@ -36,7 +36,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: ducktape
-          bazel_target: //:ducktape_wheel
+          bazel_target: //:wheel
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
@@ -49,7 +49,7 @@ jobs:
     with:
       package_name: ducktape
       wheel_name: ducktape
-      bazel_target: //:ducktape_wheel
+      bazel_target: //:wheel
       wheel_path: bazel-bin
       release_body: |
         ducktape wheel containing:

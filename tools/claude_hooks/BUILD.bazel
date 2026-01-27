@@ -209,7 +209,7 @@ py_package(
 )
 
 py_wheel(
-    name = "claude_hooks_wheel",
+    name = "wheel",
     distribution = "claude_hooks",
     # Only claude-session-start is a console script. Other commands are invoked via
     # sys.executable -m (bazel wrapper, auth proxy) to ensure correct Python environment.
