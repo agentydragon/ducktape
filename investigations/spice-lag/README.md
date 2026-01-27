@@ -208,21 +208,21 @@ Pass through one GPU but use Looking Glass to capture its framebuffer and displa
 
 ## Measurement Tool
 
-`measure_latency.py` - Automated input-to-display latency measurement.
+`measure_latency.py` - Automated input-to-display latency measurement (Wayland/GNOME).
 
 **How it works:**
 
-1. Records SPICE window at 60fps with ffmpeg
-2. Sends keystroke at known time via xdotool
+1. Records screen via GNOME Shell Screencast D-Bus API
+2. Sends keystroke at known time via ydotool
 3. Frame-diffs consecutive frames to detect when character appears
 4. Reports latency in milliseconds
 
 **Setup on atlas (SPICE client machine):**
 
 ```bash
-# xdotool is installed via ansible/atlas.yaml
-# If not yet installed, run:
-cd ~/code/ducktape/ansible && ansible-playbook atlas.yaml --tags packages
+# ydotool, gstreamer plugins installed via ansible/atlas.yaml
+cd ~/code/ducktape/ansible && ansible-playbook atlas.yaml --tags packages,ydotool,users
+# Reboot or re-login for input group membership to take effect
 ```
 
 **Setup in VM (wyrm) via SPICE:**
@@ -243,7 +243,6 @@ cd ~/code/ducktape
 
 - `--samples N` - Number of measurements
 - `--fps N` - Recording framerate (higher = more precision)
-- `--crop T,B,L,R` - Crop margins to exclude clock/notifications
 - `--keep-video` - Keep recordings for debugging
 
 ## Next Steps

@@ -117,5 +117,3 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [":generate_ci_lib"],
 )
-
-# === Linting ===
