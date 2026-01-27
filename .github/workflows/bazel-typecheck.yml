@@ -61,6 +61,12 @@ jobs:
 
       - name: Typecheck
         run: |
+          TARGETS="${{ inputs.targets }}"
+          if [[ -z "$TARGETS" ]]; then
+            # No Bazel targets affected (e.g., only workflow YAML changed).
+            echo "No targets specified, skipping typecheck"
+            exit 0
+          fi
           PROFILE_FLAG=""
           if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
             PROFILE_FLAG="--config=ci-profile"
@@ -68,7 +74,7 @@ jobs:
           # Use local strategy for mypy to avoid sandbox copying (saves ~50% disk)
           # mypy_runner.py copies upstream caches via shutil.copy(), not symlinks
           # With sandbox, this happens twice: once by Bazel, once by mypy_runner
-          bazel build --keep_going --config=typecheck --strategy=mypy=local $PROFILE_FLAG ${{ inputs.targets }}
+          bazel build --keep_going --config=typecheck --strategy=mypy=local $PROFILE_FLAG $TARGETS
 
       - name: Upload Bazel profile
         if: inputs.enable_profiling && always()

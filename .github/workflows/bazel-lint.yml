@@ -62,11 +62,17 @@ jobs:
 
       - name: Lint
         run: |
+          TARGETS="${{ inputs.targets }}"
+          if [[ -z "$TARGETS" ]]; then
+            # No Bazel targets affected (e.g., only workflow YAML changed).
+            echo "No targets specified, skipping lint"
+            exit 0
+          fi
           PROFILE_FLAG=""
           if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
             PROFILE_FLAG="--config=ci-profile"
           fi
-          bazel build --keep_going --config=lint $PROFILE_FLAG ${{ inputs.targets }}
+          bazel build --keep_going --config=lint $PROFILE_FLAG $TARGETS
 
       - name: Upload Bazel profile
         if: inputs.enable_profiling && always()

@@ -92,9 +92,15 @@ jobs:
           PROPS_E2E_HOST_HOSTNAME: host.docker.internal
         run: |
           # Use target_pattern_file if artifact exists (avoids shell arg length limits)
-          if [[ -f targets.txt ]]; then
+          if [[ -f targets.txt ]] && [[ -s targets.txt ]]; then
             TARGET_ARG="--target_pattern_file=targets.txt"
             echo "Using targets from artifact file"
+          elif [[ -f targets.txt ]]; then
+            # Empty targets.txt means no Bazel targets were affected (e.g.,
+            # only workflow YAML files changed). Skip rather than letting
+            # bazel exit 4 on zero matched targets.
+            echo "targets.txt is empty, skipping tests"
+            exit 0
           else
             TARGETS="${{ inputs.targets }}"
             if [[ -z "$TARGETS" ]]; then
