@@ -30,7 +30,7 @@ from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from tools.claude_hooks.resources import CONFIG_FILES
 from tools.claude_hooks.settings import HookSettings
-from tools.claude_hooks.supervisor.client import SupervisorClient
+from tools.claude_hooks.supervisor.client import ProcessState, SupervisorClient
 
 logger = logging.getLogger(__name__)
 
@@ -69,53 +69,17 @@ MAX_CONNECT_RESPONSE_SIZE = 64 * 1024  # 64 KB
 
 @dataclass
 class ProxySetup:
-    """Result of bazel proxy setup."""
+    """Result of bazel proxy setup.
+
+    Status and guidance are snapshotted at setup time rather than
+    querying supervisor on each access.
+    """
 
     port: int
     combined_ca: Path
-    supervisor: SupervisorClient
-    settings: HookSettings
-
-    @property
-    def status(self) -> str:
-        """Get human-readable proxy status."""
-        if not self.settings.get_bazel_truststore().exists():
-            return "not configured"
-        if self.supervisor.is_service_running(BAZEL_PROXY_SERVICE):
-            return f"running (port {self.port})"
-        return "configured (not running)"
-
-    @property
-    def ca_status(self) -> str:
-        """Get CA bundle status."""
-        return "custom CA" if self.combined_ca.exists() else "system"
-
-    @property
-    def guidance(self) -> str:
-        """Get proxy configuration guidance."""
-        if not _get_https_proxy():
-            return ""
-
-        info = self.supervisor.get_process_info(BAZEL_PROXY_SERVICE)
-        service_status = info.statename if info else "UNKNOWN"
-        ca_info = f"Custom CA bundle: {self.combined_ca}" if self.combined_ca.exists() else "Using system CA bundle"
-
-        return textwrap.dedent(
-            f"""\
-            Bazel Proxy Configuration
-            =========================
-            Local proxy port: {self.port}
-            Service status: {service_status}
-            {ca_info}
-
-            The proxy handles:
-            - Authentication forwarding to upstream proxy
-            - TLS inspection CA certificate management
-            - Java truststore configuration for Bazel
-
-            Environment variables are automatically configured in CLAUDE_ENV_FILE.
-            """
-        )
+    status: str
+    ca_status: str
+    guidance: str
 
 
 def _get_https_proxy() -> str | None:
@@ -389,12 +353,12 @@ async def _wait_for_proxy_running(
         await asyncio.sleep(0.2)
 
         if not port_ready:
-            port_ready = await asyncio.to_thread(is_port_in_use, proxy_port)
+            port_ready = is_port_in_use(proxy_port)
 
-        if port_ready and await asyncio.to_thread(supervisor.is_service_running, BAZEL_PROXY_SERVICE):
+        if port_ready and await supervisor.is_service_running(BAZEL_PROXY_SERVICE):
             return
 
-    state = await asyncio.to_thread(supervisor.get_service_state, BAZEL_PROXY_SERVICE)
+    state = await supervisor.get_service_state(BAZEL_PROXY_SERVICE)
     raise ProxyServiceError(
         f"Bazel proxy did not become ready within {timeout_seconds}s "
         f"(port_listening={port_ready}, supervisor_state={state})"
@@ -422,30 +386,22 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
     _write_creds_file(settings, https_proxy)
 
     # If proxy is already running, we're done (it will pick up new creds)
-    if await asyncio.to_thread(supervisor.is_service_running, BAZEL_PROXY_SERVICE):
+    if await supervisor.is_service_running(BAZEL_PROXY_SERVICE):
         return
 
     # Service exists but not running (FATAL/STOPPED/EXITED) - restart it
     command = _build_auth_proxy_command(settings)
     proxy_port = settings.get_bazel_proxy_port()
-    if await asyncio.to_thread(supervisor.service_exists, BAZEL_PROXY_SERVICE):
+    if await supervisor.service_exists(BAZEL_PROXY_SERVICE):
         logger.info("Restarting proxy service on port %d", proxy_port)
-        await asyncio.to_thread(
-            supervisor.update_service,
-            name=BAZEL_PROXY_SERVICE,
-            command=command,
-            directory=proxy_dir,
-            environment=_get_proxy_service_env(),
+        await supervisor.update_service(
+            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
         )
     else:
         # Start proxy service for the first time
         logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
-        await asyncio.to_thread(
-            supervisor.add_service,
-            name=BAZEL_PROXY_SERVICE,
-            command=command,
-            directory=proxy_dir,
-            environment=_get_proxy_service_env(),
+        await supervisor.add_service(
+            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
         )
 
     await _wait_for_proxy_running(settings, supervisor)
@@ -533,6 +489,45 @@ def _create_combined_ca_bundle(settings: HookSettings) -> None:
     logger.info("Created combined CA bundle at %s", combined_ca)
 
 
+async def _snapshot_proxy_status(settings: HookSettings, supervisor: SupervisorClient, port: int) -> str:
+    """Snapshot the current proxy status."""
+    if not settings.get_bazel_truststore().exists():
+        return "not configured"
+    if await supervisor.is_service_running(BAZEL_PROXY_SERVICE):
+        return f"running (port {port})"
+    return "configured (not running)"
+
+
+async def _snapshot_proxy_guidance(supervisor: SupervisorClient, port: int, combined_ca: Path) -> str:
+    """Snapshot the proxy configuration guidance."""
+    if not _get_https_proxy():
+        return ""
+
+    try:
+        info = await supervisor.get_process_info(BAZEL_PROXY_SERVICE)
+        service_status = info.statename
+    except Exception:
+        service_status = ProcessState.UNKNOWN
+    ca_info = f"Custom CA bundle: {combined_ca}" if combined_ca.exists() else "Using system CA bundle"
+
+    return textwrap.dedent(
+        f"""\
+        Bazel Proxy Configuration
+        =========================
+        Local proxy port: {port}
+        Service status: {service_status}
+        {ca_info}
+
+        The proxy handles:
+        - Authentication forwarding to upstream proxy
+        - TLS inspection CA certificate management
+        - Java truststore configuration for Bazel
+
+        Environment variables are automatically configured in CLAUDE_ENV_FILE.
+        """
+    )
+
+
 async def setup_bazel_proxy(settings: HookSettings, supervisor: SupervisorClient) -> ProxySetup:
     """Set up the complete Bazel proxy environment for TLS-inspecting proxies.
 
@@ -548,14 +543,14 @@ async def setup_bazel_proxy(settings: HookSettings, supervisor: SupervisorClient
     tools/proxy_config/defs.bzl which reads BAZEL_PROXY_PORT env var.
 
     Returns:
-        ProxySetup with port, CA path, and status information
+        ProxySetup with port, CA path, and snapshotted status/guidance
     """
     port = settings.get_bazel_proxy_port()
     combined_ca = settings.get_bazel_combined_ca()
 
     if not _get_https_proxy():
         logger.info("No https_proxy set, Bazel proxy setup not needed")
-        return ProxySetup(port=port, combined_ca=combined_ca, supervisor=supervisor, settings=settings)
+        return ProxySetup(port=port, combined_ca=combined_ca, status="not configured", ca_status="system", guidance="")
 
     logger.info("Setting up Bazel proxy for TLS-inspecting proxy...")
 
@@ -577,8 +572,13 @@ async def setup_bazel_proxy(settings: HookSettings, supervisor: SupervisorClient
     # Step 5: Write bazelrc configuration
     _write_bazel_config(settings)
 
+    # Snapshot status and guidance at setup completion
+    status = await _snapshot_proxy_status(settings, supervisor, port)
+    ca_status = "custom CA" if combined_ca.exists() else "system"
+    guidance = await _snapshot_proxy_guidance(supervisor, port, combined_ca)
+
     logger.info("Bazel proxy setup complete")
-    return ProxySetup(port=port, combined_ca=combined_ca, supervisor=supervisor, settings=settings)
+    return ProxySetup(port=port, combined_ca=combined_ca, status=status, ca_status=ca_status, guidance=guidance)
 
 
 def is_configured(settings: HookSettings) -> bool:

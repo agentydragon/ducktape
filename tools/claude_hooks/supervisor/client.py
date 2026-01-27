@@ -1,26 +1,28 @@
-"""Supervisor XML-RPC client with typed wrappers.
+"""Async supervisor XML-RPC client with typed wrappers.
 
-Provides typed access to supervisor daemon via XML-RPC API.
+Provides typed async access to supervisor daemon via XML-RPC API,
+using httpx for native asyncio support. Uses Connection: close to
+handle supervisor's HTTP/1.0 XML-RPC server.
 """
 
 from __future__ import annotations
 
+import asyncio
 import configparser
-import http.client
 import logging
 import os
 import shlex
-import time
 import xmlrpc.client
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
+import httpx
 from pydantic import BaseModel
 from supervisor.xmlrpc import Faults
 
 from net_util.net import is_port_in_use
-from tools.claude_hooks.errors import ProxyServiceError, SupervisorError
+from tools.claude_hooks.errors import ProxyServiceError
 
 if TYPE_CHECKING:
     from tools.claude_hooks.settings import HookSettings
@@ -29,24 +31,6 @@ logger = logging.getLogger(__name__)
 
 # Timeout for XML-RPC calls to supervisor (seconds)
 XMLRPC_TIMEOUT = 30
-
-
-class TimeoutTransport(xmlrpc.client.Transport):
-    """XML-RPC transport with configurable timeout.
-
-    xmlrpc.client.ServerProxy doesn't expose a timeout parameter, so we
-    subclass Transport to set it on the HTTPConnection. This is the standard
-    workaround for this stdlib gap.
-    """
-
-    def __init__(self, timeout: float = XMLRPC_TIMEOUT):
-        super().__init__()
-        self.timeout = timeout
-
-    def make_connection(self, host: tuple[str, dict[str, str]] | str) -> http.client.HTTPConnection:
-        conn = super().make_connection(host)
-        conn.timeout = self.timeout
-        return conn
 
 
 # Supervisor process state names (see https://supervisord.org/subprocess.html#process-states)
@@ -89,7 +73,22 @@ class SupervisorState(BaseModel):
     statename: str
 
 
-def is_running(settings: HookSettings) -> bool:
+async def _xmlrpc_call(url: str, method: str, params: tuple[Any, ...], request_timeout: float) -> Any:
+    """Make an async XML-RPC call using httpx.
+
+    Supervisor's XML-RPC server uses HTTP/1.0, so we use Connection: close
+    to avoid httpx expecting keep-alive behavior. Proxy is disabled since
+    supervisor always runs on localhost.
+    """
+    body = xmlrpc.client.dumps(params, method)
+    async with httpx.AsyncClient(timeout=request_timeout, trust_env=False) as client:
+        response = await client.post(url, content=body, headers={"Content-Type": "text/xml", "Connection": "close"})
+    response.raise_for_status()
+    result, _ = xmlrpc.client.loads(response.content)
+    return result[0] if len(result) == 1 else result
+
+
+async def is_running(settings: HookSettings) -> bool:
     """Check if supervisord is running."""
     port = settings.get_supervisor_port()
     pidfile = settings.get_supervisor_pidfile()
@@ -114,9 +113,9 @@ def is_running(settings: HookSettings) -> bool:
 
     try:
         client = SupervisorClient(settings)
-        client.get_state()
+        await client.get_state()
         return True
-    except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
+    except (ConnectionError, OSError, xmlrpc.client.Fault, httpx.ConnectError) as e:
         logger.debug("Supervisor XML-RPC check failed: %s", e)
         return False
 
@@ -167,79 +166,73 @@ def write_service_config(
 
 
 class SupervisorClient:
-    """Typed wrapper around supervisor XML-RPC client."""
+    """Async typed wrapper around supervisor XML-RPC API.
+
+    Uses httpx with Connection: close for compatibility with
+    supervisor's HTTP/1.0 XML-RPC server.
+    """
 
     def __init__(self, settings: HookSettings, timeout: float = XMLRPC_TIMEOUT) -> None:
         self._settings = settings
-        url = self._get_url()
-        logger.info("SupervisorClient connecting to %s (timeout=%ds)", url, timeout)
-        transport = TimeoutTransport(timeout=timeout)
-        self._proxy = xmlrpc.client.ServerProxy(url, transport=transport)
+        self._url = f"http://127.0.0.1:{settings.get_supervisor_port()}/RPC2"
+        self._timeout = timeout
+        logger.info("SupervisorClient connecting to %s (timeout=%ds)", self._url, timeout)
 
-    def _get_port(self) -> int:
-        return self._settings.get_supervisor_port()
+    async def _call(self, method: str, *params: Any) -> Any:
+        """Make an XML-RPC call to supervisor."""
+        return await _xmlrpc_call(self._url, method, params, self._timeout)
 
-    def _get_url(self) -> str:
-        return f"http://127.0.0.1:{self._get_port()}"
-
-    def get_state(self) -> SupervisorState:
+    async def get_state(self) -> SupervisorState:
         """Get supervisor daemon state."""
-        return SupervisorState.model_validate(self._proxy.supervisor.getState())
+        return SupervisorState.model_validate(await self._call("supervisor.getState"))
 
-    def get_process_info(self, name: str) -> ProcessInfo:
+    async def get_process_info(self, name: str) -> ProcessInfo:
         """Get info for a specific process."""
-        return ProcessInfo.model_validate(self._proxy.supervisor.getProcessInfo(name))
+        return ProcessInfo.model_validate(await self._call("supervisor.getProcessInfo", name))
 
-    def get_all_process_info(self) -> list[ProcessInfo]:
+    async def get_all_process_info(self) -> list[ProcessInfo]:
         """Get info for all processes."""
-        all_info = cast(list[dict[str, object]], self._proxy.supervisor.getAllProcessInfo())
+        all_info = cast(list[dict[str, object]], await self._call("supervisor.getAllProcessInfo"))
         return [ProcessInfo.model_validate(info) for info in all_info]
 
-    def service_exists(self, name: str) -> bool:
+    async def service_exists(self, name: str) -> bool:
         """Check if a service is registered with supervisor."""
-        return any(p.name == name for p in self.get_all_process_info())
+        return any(p.name == name for p in await self.get_all_process_info())
 
-    def reload_config(self) -> tuple[list[str], list[str], list[str]]:
+    async def reload_config(self) -> tuple[list[str], list[str], list[str]]:
         """Reload config files. Returns (added, changed, removed) process names."""
-        result = cast(list[list[list[str]]], self._proxy.supervisor.reloadConfig())
+        # reloadConfig returns [[added, changed, removed]]
+        result = cast(list[list[list[str]]], await self._call("supervisor.reloadConfig"))
         added, changed, removed = result[0]
         return (added, changed, removed)
 
-    def add_process_group(self, name: str) -> bool:
+    async def add_process_group(self, name: str) -> bool:
         """Add a process group. Returns True on success."""
-        return bool(self._proxy.supervisor.addProcessGroup(name))
+        return bool(await self._call("supervisor.addProcessGroup", name))
 
-    def remove_process_group(self, name: str) -> bool:
+    async def remove_process_group(self, name: str) -> bool:
         """Remove a process group. Returns True on success."""
-        return bool(self._proxy.supervisor.removeProcessGroup(name))
+        return bool(await self._call("supervisor.removeProcessGroup", name))
 
-    def start_process(self, name: str, wait: bool = True) -> bool:
+    async def start_process(self, name: str, wait: bool = True) -> bool:
         """Start a process. Returns True on success."""
-        return bool(self._proxy.supervisor.startProcess(name, wait))
+        return bool(await self._call("supervisor.startProcess", name, wait))
 
-    def stop_process(self, name: str, wait: bool = True) -> bool:
+    async def stop_process(self, name: str, wait: bool = True) -> bool:
         """Stop a process. Returns True on success."""
-        return bool(self._proxy.supervisor.stopProcess(name, wait))
+        return bool(await self._call("supervisor.stopProcess", name, wait))
 
-    def add_service(self, name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> None:
+    async def add_service(
+        self, name: str, command: str, directory: Path, environment: dict[str, str] | None = None
+    ) -> None:
         """Add a service to supervisor (idempotent - safe to call multiple times).
 
-        Args:
-            name: Service name (used in supervisorctl commands)
-            command: Command to run
-            directory: Working directory
-            environment: Environment variables (optional)
-
         Raises:
-            SupervisorError: If supervisor is not running.
             ProxyServiceError: If service cannot be added.
         """
-        if not is_running(self._settings):
-            raise SupervisorError(f"supervisord not running, cannot add service {name}")
-
         # Check if service already exists
-        if self.service_exists(name):
-            info = self.get_process_info(name)
+        if await self.service_exists(name):
+            info = await self.get_process_info(name)
             logger.info("Service %s already exists (state=%s)", name, info.statename)
             return
 
@@ -247,19 +240,19 @@ class SupervisorClient:
 
         # Reload supervisor config via XML-RPC
         try:
-            added, changed, removed = self.reload_config()
+            added, changed, removed = await self.reload_config()
             logger.info("Reloaded config: added=%s, changed=%s, removed=%s", added, changed, removed)
 
             # Retry add_process_group with small delays to handle supervisor timing race
             last_error: xmlrpc.client.Fault | None = None
             for attempt in range(3):
                 try:
-                    self.add_process_group(name)
+                    await self.add_process_group(name)
                     logger.info("Added and started service: %s", name)
-                    # Verify the service was actually registered
-                    time.sleep(0.1)  # Brief delay for supervisor to update state
+                    # Brief delay for supervisor to update state
+                    await asyncio.sleep(0.1)
                     try:
-                        info = self.get_process_info(name)
+                        info = await self.get_process_info(name)
                         logger.info("Service %s verified: state=%s", name, info.statename)
                     except xmlrpc.client.Fault as verify_err:
                         logger.warning("Service %s added but not found in verification: %s", name, verify_err)
@@ -270,7 +263,7 @@ class SupervisorClient:
                         return
                     if e.faultCode == Faults.BAD_NAME and attempt < 2:
                         # Supervisor may not be ready yet, retry after small delay
-                        time.sleep(0.2)
+                        await asyncio.sleep(0.2)
                         last_error = e
                         continue
                     raise ProxyServiceError(f"Failed to add service {name}: {e}") from e
@@ -279,45 +272,34 @@ class SupervisorClient:
         except (ConnectionError, OSError) as e:
             raise ProxyServiceError(f"Failed to communicate with supervisor: {e}") from e
 
-    def get_service_state(self, service_name: str) -> ProcessState | None:
+    async def get_service_state(self, service_name: str) -> ProcessState | None:
         """Get the current state of a service.
 
-        Returns None if supervisor isn't running or service doesn't exist.
-        Raises on connection/communication errors.
+        Returns None if service doesn't exist.
         """
-        if not is_running(self._settings):
+        if not await self.service_exists(service_name):
             return None
+        return (await self.get_process_info(service_name)).statename
 
-        if not self.service_exists(service_name):
-            return None
-        return self.get_process_info(service_name).statename
+    async def is_service_running(self, service_name: str) -> bool:
+        """Check if a specific service is currently running."""
+        return await self.get_service_state(service_name) == ProcessState.RUNNING
 
-    def is_service_running(self, service_name: str) -> bool:
-        """Check if a specific service is currently running.
-
-        Pure query - returns the current state without waiting.
-        """
-        return self.get_service_state(service_name) == ProcessState.RUNNING
-
-    def restart_service(self, service_name: str) -> None:
+    async def restart_service(self, service_name: str) -> None:
         """Restart a specific service under supervisor.
 
         Raises:
-            SupervisorError: If supervisor is not running.
             ProxyServiceError: If service cannot be restarted.
         """
-        if not is_running(self._settings):
-            raise SupervisorError("supervisord not running")
-
         try:
             try:
-                self.stop_process(service_name)
+                await self.stop_process(service_name)
             except xmlrpc.client.Fault as e:
                 # BAD_NAME means service doesn't exist, NOT_RUNNING means already stopped
                 if e.faultCode not in (Faults.BAD_NAME, Faults.NOT_RUNNING):
                     raise
-            time.sleep(0.3)
-            self.start_process(service_name)
+            await asyncio.sleep(0.3)
+            await self.start_process(service_name)
             logger.info("Restarted service: %s", service_name)
         except (xmlrpc.client.Fault, ConnectionError, OSError) as e:
             raise ProxyServiceError(f"Failed to restart {service_name}: {e}") from e
@@ -326,13 +308,11 @@ class SupervisorClient:
         """Get the current command for a service from its config file.
 
         Note: The supervisor XML-RPC API doesn't expose the command, so we read
-        from the config file directly.
-
-        Returns None if the service config doesn't exist.
+        from the config file directly. This is a sync operation (filesystem only).
         """
         return read_service_command(self._settings, name)
 
-    def update_service(
+    async def update_service(
         self, name: str, command: str, directory: Path, environment: dict[str, str] | None = None
     ) -> None:
         """Update an existing service's config and restart it.
@@ -340,29 +320,26 @@ class SupervisorClient:
         Rewrites the config file, reloads supervisor, removes the old process group,
         and adds the new one. This ensures the new command takes effect.
         """
-        if not is_running(self._settings):
-            raise SupervisorError(f"supervisord not running, cannot update service {name}")
-
         write_service_config(self._settings, name, command, directory, environment)
 
         # Stop the running process
         try:
-            self.stop_process(name)
+            await self.stop_process(name)
         except xmlrpc.client.Fault as e:
             if e.faultCode not in (Faults.BAD_NAME, Faults.NOT_RUNNING):
                 raise
 
         # Reread config files
-        self.reload_config()
+        await self.reload_config()
 
         # Remove old process group (unloads old config)
         try:
-            self.remove_process_group(name)
+            await self.remove_process_group(name)
         except xmlrpc.client.Fault as e:
             # STILL_RUNNING shouldn't happen after stop, BAD_NAME means not loaded
             if e.faultCode != Faults.BAD_NAME:
                 raise
 
         # Add new process group (loads new config)
-        self.add_process_group(name)
+        await self.add_process_group(name)
         logger.info("Updated service: %s", name)

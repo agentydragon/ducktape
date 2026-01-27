@@ -145,7 +145,7 @@ async def start(settings: HookSettings) -> SupervisorSetup:
     Raises:
         SupervisorError: If supervisor cannot be started.
     """
-    if is_running(settings):
+    if await is_running(settings):
         logger.info("supervisord already running")
         return SupervisorSetup(client=SupervisorClient(settings), settings=settings)
 
@@ -212,7 +212,7 @@ async def start(settings: HookSettings) -> SupervisorSetup:
     # Wait for supervisor to be ready (up to 5 seconds)
     for i in range(20):
         await asyncio.sleep(0.25)
-        if await asyncio.to_thread(is_running, settings):
+        if await is_running(settings):
             logger.info("supervisord started successfully")
             return SupervisorSetup(client=SupervisorClient(settings), settings=settings)
         if i % 4 == 3:  # Log every second

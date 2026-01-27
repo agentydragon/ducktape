@@ -9,6 +9,7 @@ py_library(
         "//net_util:net",
         "//tools/claude_hooks:errors",
         "//tools/claude_hooks:settings",
+        "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//supervisor",
     ],

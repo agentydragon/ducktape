@@ -71,8 +71,10 @@ async def test_supervisor_starts_and_proxy_runs(hook_settings: HookSettings) -> 
     supervisor_result = await supervisor_start(hook_settings)
     await proxy_setup.ensure_proxy_running(hook_settings, supervisor_result.client)
 
-    assert supervisor_is_running(hook_settings), "Supervisor should be running"
-    assert supervisor_result.client.is_service_running(BAZEL_PROXY_SERVICE), "bazel-proxy service should be running"
+    assert await supervisor_is_running(hook_settings), "Supervisor should be running"
+    assert await supervisor_result.client.is_service_running(BAZEL_PROXY_SERVICE), (
+        "bazel-proxy service should be running"
+    )
     wait_for_port("127.0.0.1", hook_settings.get_bazel_proxy_port(), timeout_secs=5)
 
 
@@ -115,7 +117,7 @@ async def test_credential_rotation(
     await proxy_setup.ensure_proxy_running(hook_settings, client)
 
     assert "newuser" in creds_file.read_text(), "Creds file should have new credentials"
-    assert client.is_service_running(BAZEL_PROXY_SERVICE), "Proxy should still be running"
+    assert await client.is_service_running(BAZEL_PROXY_SERVICE), "Proxy should still be running"
 
 
 if __name__ == "__main__":

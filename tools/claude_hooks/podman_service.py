@@ -59,40 +59,15 @@ def _write_config_conservative(path: Path, content: str, description: str) -> No
 
 @dataclass
 class PodmanSetup:
-    """Result of podman setup."""
+    """Result of podman setup.
+
+    Status and guidance are snapshotted at setup time.
+    """
 
     socket_url: str
-    supervisor: SupervisorClient
-    settings: HookSettings
+    status: str
+    guidance: str
     env_vars: dict[str, str] = field(default_factory=dict)
-
-    @property
-    def status(self) -> ProcessState:
-        """Get podman process state from supervisor."""
-        info = self.supervisor.get_process_info(PODMAN_SERVICE)
-        return info.statename
-
-    @property
-    def guidance(self) -> str:
-        """Get podman usage guidance for gVisor sandbox."""
-        podman_dir = self.settings.get_podman_dir()
-        return textwrap.dedent(
-            f"""\
-            Podman in gVisor Sandbox
-            ========================
-            Podman is configured with gVisor-specific workarounds.
-            Running under supervisor (state: {self.status}). DOCKER_HOST={self.socket_url}
-
-            Use fully qualified image names (docker.io/library/...)
-
-            Configuration Applied:
-            ----------------------
-            - VFS storage driver (gVisor has no overlay fs)
-            - Isolated config: {podman_dir}
-            - userns = "host"
-            - run.oci.keep_original_groups=1 annotation (auto-applied)
-            """
-        )
 
 
 def is_podman_available() -> bool:
@@ -219,6 +194,37 @@ def _get_socket_path(settings: HookSettings) -> Path:
     return Path(f"/tmp/claude-podman-{dir_hash}.sock")
 
 
+async def _snapshot_podman_guidance(
+    supervisor: SupervisorClient, settings: HookSettings, socket_url: str
+) -> tuple[str, str]:
+    """Snapshot podman status and guidance. Returns (status, guidance)."""
+    try:
+        info = await supervisor.get_process_info(PODMAN_SERVICE)
+        status: str = info.statename
+    except Exception:
+        status = ProcessState.UNKNOWN
+
+    podman_dir = settings.get_podman_dir()
+    guidance = textwrap.dedent(
+        f"""\
+        Podman in gVisor Sandbox
+        ========================
+        Podman is configured with gVisor-specific workarounds.
+        Running under supervisor (state: {status}). DOCKER_HOST={socket_url}
+
+        Use fully qualified image names (docker.io/library/...)
+
+        Configuration Applied:
+        ----------------------
+        - VFS storage driver (gVisor has no overlay fs)
+        - Isolated config: {podman_dir}
+        - userns = "host"
+        - run.oci.keep_original_groups=1 annotation (auto-applied)
+        """
+    )
+    return status, guidance
+
+
 async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> PodmanSetup:
     """Set up podman storage and start service.
 
@@ -226,7 +232,7 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
     Idempotent: if podman service is already running, returns immediately.
 
     Returns:
-        PodmanSetup with socket URL, supervisor client, and env vars to export
+        PodmanSetup with socket URL, snapshotted status/guidance, and env vars
 
     Raises:
         SkipError: If skip_podman is True in settings.
@@ -240,10 +246,11 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
     socket_url = f"unix://{socket_path}"
 
     # Check if podman service is already running (idempotent case)
-    if await asyncio.to_thread(_is_podman_service_healthy, supervisor, socket_path):
+    if await _is_podman_service_healthy(supervisor, socket_path):
         logger.info("Podman service already running, skipping setup")
         env_vars = _get_podman_env_vars(settings)
-        return PodmanSetup(socket_url=socket_url, supervisor=supervisor, settings=settings, env_vars=env_vars)
+        status, guidance = await _snapshot_podman_guidance(supervisor, settings, socket_url)
+        return PodmanSetup(socket_url=socket_url, status=status, guidance=guidance, env_vars=env_vars)
 
     if not is_podman_available():
         logger.info("Podman not found, installing...")
@@ -254,7 +261,8 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
     socket_url, service_env = await start_podman_service(settings, supervisor, env_vars)
     env_vars.update(service_env)
     logger.info("Podman service started: DOCKER_HOST=%s", socket_url)
-    return PodmanSetup(socket_url=socket_url, supervisor=supervisor, settings=settings, env_vars=env_vars)
+    status, guidance = await _snapshot_podman_guidance(supervisor, settings, socket_url)
+    return PodmanSetup(socket_url=socket_url, status=status, guidance=guidance, env_vars=env_vars)
 
 
 def _get_podman_env_vars(settings: HookSettings) -> dict[str, str]:
@@ -267,7 +275,7 @@ def _get_podman_env_vars(settings: HookSettings) -> dict[str, str]:
     }
 
 
-def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) -> bool:
+async def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) -> bool:
     """Check if podman service is running and socket exists.
 
     Used for idempotency: skip setup if service is already healthy.
@@ -275,7 +283,7 @@ def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) 
     if not socket_path.exists():
         return False
     try:
-        return supervisor.is_service_running(PODMAN_SERVICE)
+        return await supervisor.is_service_running(PODMAN_SERVICE)
     except Exception:
         return False
 
@@ -302,8 +310,7 @@ async def start_podman_service(
 
     # Start podman system service (--time=0 means never timeout, keep running)
     # Pass config env vars so podman uses our isolated paths
-    await asyncio.to_thread(
-        supervisor.add_service,
+    await supervisor.add_service(
         name=PODMAN_SERVICE,
         command=f"podman system service --time=0 {socket_url}",
         directory=Path.home(),
@@ -327,7 +334,7 @@ async def _wait_for_socket(settings: HookSettings, socket_path: Path, supervisor
         PodmanServiceError: If service enters a terminal failure state.
     """
     while True:
-        info = await asyncio.to_thread(supervisor.get_process_info, PODMAN_SERVICE)
+        info = await supervisor.get_process_info(PODMAN_SERVICE)
 
         if socket_path.exists() and info.statename == ProcessState.RUNNING:
             return

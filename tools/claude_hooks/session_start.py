@@ -29,7 +29,6 @@ from tools.claude_hooks import bazelisk_setup, binary_tools, env_file, nix_setup
 from tools.claude_hooks.errors import DirenvError, SkipError
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor import setup as supervisor_setup
-from tools.claude_hooks.supervisor.client import SupervisorClient
 
 logger = logging.getLogger(__name__)
 
@@ -410,19 +409,13 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # of re-raising, so only the original upstream error surfaces once.
     async def setup_proxy_with_supervisor() -> proxy_setup.ProxySetup:
         """Set up bazel proxy (depends on supervisor)."""
-        await supervisor_task
-        if exc := supervisor_task.exception():
-            raise exc
-        # Each consumer gets its own SupervisorClient to avoid sharing
-        # a single HTTPConnection across threads (not thread-safe).
-        return await proxy_setup.setup_bazel_proxy(settings, SupervisorClient(settings))
+        supervisor_result = await supervisor_task
+        return await proxy_setup.setup_bazel_proxy(settings, supervisor_result.client)
 
     async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor)."""
-        await supervisor_task
-        if exc := supervisor_task.exception():
-            raise exc
-        return await podman_service.setup_podman(settings, SupervisorClient(settings))
+        supervisor_result = await supervisor_task
+        return await podman_service.setup_podman(settings, supervisor_result.client)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper as separate tasks.
