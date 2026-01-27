@@ -96,6 +96,7 @@
           - gdm3 # GNOME Display Manager
           - zsh
           - spice-client-gtk # For SPICE console connections
+          - xdotool # For X11 automation (SPICE latency measurement)
         state: present
         install_recommends: false
       tags: [packages, desktop, virtualization]

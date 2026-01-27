@@ -82,11 +82,7 @@ def filter_compatible_targets(targets: list[str]) -> list[str]:
         return targets
 
     query = f"set({' '.join(targets)})"
-    result = run_cquery(query, check=False)
-
-    if result.returncode != 0:
-        # cquery failed - return original targets
-        return targets
+    result = run_cquery(query)
 
     return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
 
@@ -103,10 +99,6 @@ def filter_to_rules(targets: list[str]) -> list[str]:
         return targets
 
     query = f"kind('rule', set({' '.join(targets)}))"
-    result = run_query(query, check=False)
-
-    if result.returncode != 0:
-        # Query failed - return original targets (will fail at build time with better error)
-        return targets
+    result = run_query(query)
 
     return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]

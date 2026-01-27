@@ -40,16 +40,13 @@ INFRA_PATTERNS = [
 class CIDecision(BaseModel):
     """Result of CI decision computation."""
 
-    targets: list[str] = Field(default_factory=list)  # List of affected Bazel targets
-    all_targets: bool = False  # True means "//..." (rebuild everything)
+    targets: list[str] = Field(default_factory=list)  # Affected targets, or ["//..."] for all
     workflows: list[str] = Field(default_factory=list)
     infra_changed: bool = False
 
     @property
     def targets_str(self) -> str:
         """Return targets as space-separated string for GitHub Actions output."""
-        if self.all_targets:
-            return "//..."
         return " ".join(self.targets)
 
     def write_to_github_output(self, output_path: Path) -> None:
@@ -62,13 +59,10 @@ class CIDecision(BaseModel):
     def write_targets_file(self, targets_path: Path) -> None:
         """Write targets to file for --target_pattern_file usage.
 
-        Writes one target per line. For all_targets, writes "//...".
+        Writes one target per line.
         This avoids shell argument length limits when passing many targets.
         """
-        if self.all_targets:
-            targets_path.write_text("//...\n")
-        else:
-            targets_path.write_text("\n".join(self.targets) + "\n" if self.targets else "")
+        targets_path.write_text("\n".join(self.targets) + "\n" if self.targets else "")
 
 
 def get_base_commit(repo: pygit2.Repository) -> pygit2.Commit | None:
@@ -253,7 +247,7 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
 
     if not base_commit:
         logger.info("No base commit (new branch or initial commit), triggering all workflows")
-        return CIDecision(all_targets=True, workflows=sorted(workflows.keys()), infra_changed=True)
+        return CIDecision(targets=["//..."], workflows=sorted(workflows.keys()), infra_changed=True)
 
     changed_files = get_changed_files(repo, base_commit)
     logger.info("Changed files: %s", format_limited_list(sorted(changed_files), 20))
@@ -265,11 +259,9 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
     jar_path = get_bazel_diff_jar()
     targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
 
-    all_targets = False
     if targets is None:
         logger.info("bazel-diff failed, building all targets")
-        targets = []
-        all_targets = True
+        targets = ["//..."]
     elif not targets:
         logger.info("No Bazel targets affected")
     else:
@@ -283,10 +275,10 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
         # Filter out platform-incompatible targets for Linux CI
         targets = filter_platform_incompatible(targets)
         if infra_changed:
-            all_targets = True
+            targets = ["//..."]
 
     triggered = get_triggered_workflows(workflows, targets, changed_files)
-    return CIDecision(targets=targets, all_targets=all_targets, workflows=triggered, infra_changed=infra_changed)
+    return CIDecision(targets=targets, workflows=triggered, infra_changed=infra_changed)
 
 
 def main() -> None:
