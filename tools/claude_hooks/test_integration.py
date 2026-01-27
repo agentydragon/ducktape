@@ -18,10 +18,9 @@ from net_util.net import pick_free_port, wait_for_port
 from tools.claude_hooks import proxy_setup, settings
 from tools.claude_hooks.proxy_setup import BAZEL_PROXY_SERVICE
 from tools.claude_hooks.settings import HookSettings
-from tools.claude_hooks.supervisor.client import is_running as supervisor_is_running
 from tools.claude_hooks.supervisor.setup import start as supervisor_start
 from tools.claude_hooks.testing.fixtures import MockProxyFixture
-from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup
+from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup, supervisor_is_running
 
 # Register fixtures from module (pytest-native, no direct name import needed)
 pytest_plugins = ["tools.claude_hooks.testing.fixtures"]

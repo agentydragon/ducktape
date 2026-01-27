@@ -124,11 +124,6 @@ async def try_connect(settings: HookSettings) -> SupervisorClient | None:
         return None
 
 
-async def is_running(settings: HookSettings) -> bool:
-    """Check if supervisord is running."""
-    return await try_connect(settings) is not None
-
-
 def get_service_config_path(settings: HookSettings, name: str) -> Path:
     """Get the path to a service's config file."""
     return settings.get_supervisor_dir() / "conf.d" / f"{name}.conf"

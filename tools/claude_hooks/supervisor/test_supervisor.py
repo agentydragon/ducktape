@@ -16,9 +16,8 @@ import pytest_bazel
 from net_util.net import pick_free_port
 from tools.claude_hooks import settings
 from tools.claude_hooks.settings import HookSettings
-from tools.claude_hooks.supervisor.client import is_running as supervisor_is_running
 from tools.claude_hooks.supervisor.setup import start as supervisor_start
-from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup
+from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup, supervisor_is_running
 
 
 @pytest.fixture
@@ -74,9 +73,14 @@ async def test_add_and_check_service(isolated_supervisor_env: Path, hook_setting
         name="test-service", command="sleep 3600", directory=isolated_supervisor_env
     )
 
-    # Brief delay for supervisor to transition service from STARTING to RUNNING
-    await asyncio.sleep(0.5)
-    assert await supervisor_result.client.is_service_running("test-service")
+    # Poll until service transitions from STARTING to RUNNING (CI can be slow)
+    for _ in range(20):
+        if await supervisor_result.client.is_service_running("test-service"):
+            break
+        await asyncio.sleep(0.25)
+    else:
+        state = await supervisor_result.client.get_service_state("test-service")
+        raise AssertionError(f"test-service not running after 5s (state={state})")
 
 
 async def test_update_service(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
