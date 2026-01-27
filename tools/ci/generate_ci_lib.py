@@ -143,9 +143,8 @@ def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
     )
 
 
-def generate_ci_yml(manifest: WorkflowManifest) -> str:
+def generate_ci_yml(workflow: Workflow) -> str:
     """Generate the complete ci.yml content."""
-    workflow = generate_ci_config(manifest)
     config = workflow.model_dump(by_alias=True, exclude_none=True)
 
     # Custom representer for multiline strings
@@ -171,18 +170,17 @@ def main() -> None:
     args = parser.parse_args()
 
     manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
+    expected = generate_ci_config(manifest)
 
     if args.check:
         if not CI_YML.exists():
             raise FileNotFoundError(f"{CI_YML} does not exist")
         # Compare parsed models to ignore formatting differences (prettier, etc.)
-        expected = generate_ci_config(manifest)
         current = Workflow.model_validate(yaml.safe_load(CI_YML.read_text()))
         if current != expected:
             raise OutOfDateError(f"{CI_YML} is out of date. Run 'uv run tools/ci/generate_ci.py' to update.")
         print(f"{CI_YML} is up to date")
         return
 
-    generated = generate_ci_yml(manifest)
-    CI_YML.write_text(generated)
+    CI_YML.write_text(generate_ci_yml(expected))
     print(f"Generated {CI_YML}")
