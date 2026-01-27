@@ -127,12 +127,12 @@ def run_bazel_diff(
     head_commit = repo.head.peel(pygit2.Commit)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        base_json = get_or_generate_hashes(repo, jar_path, workspace, base_commit, cache_dir)
-        head_json = get_or_generate_hashes(repo, jar_path, workspace, head_commit, cache_dir)
+    base_json = get_or_generate_hashes(repo, jar_path, workspace, base_commit, cache_dir)
+    head_json = get_or_generate_hashes(repo, jar_path, workspace, head_commit, cache_dir)
 
-        # Compute impacted targets (stderr passes through to process stderr)
-        logger.info("Computing impacted targets...")
+    # Compute impacted targets (stderr passes through to process stderr)
+    logger.info("Computing impacted targets...")
+    try:
         result = subprocess.run(
             ["java", "-jar", jar_path, "get-impacted-targets", "-sh", base_json, "-fh", head_json],
             check=True,
@@ -140,8 +140,7 @@ def run_bazel_diff(
             stdout=subprocess.PIPE,
             text=True,
         )
-
-        return [t for t in result.stdout.strip().split("\n") if t]
-
     except subprocess.CalledProcessError as e:
         raise BazelDiffError(f"bazel-diff get-impacted-targets failed with exit code {e.returncode}") from e
+
+    return [t for t in result.stdout.strip().split("\n") if t]

@@ -15,12 +15,6 @@ outputs:
   release_needed:
     description: "'true' if release is needed, 'false' otherwise"
     value: ${{ steps.check.outputs.release_needed }}
-  base_sha:
-    description: "The base commit SHA (last release commit, or empty if first release)"
-    value: ${{ steps.check.outputs.base_sha }}
-  reason:
-    description: "Human-readable reason for the decision"
-    value: ${{ steps.check.outputs.reason }}
 
 runs:
   using: composite

@@ -40,7 +40,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_needed: ${{ steps.check.outputs.release_needed }}
-      reason: ${{ steps.check.outputs.reason }}
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -58,11 +57,6 @@ jobs:
         with:
           package_prefix: claude-hooks
           bazel_target_pattern: "//tools/claude_hooks/..."
-
-      - name: Log result
-        run: |
-          echo "Release needed: ${{ steps.check.outputs.release_needed }}"
-          echo "Reason: ${{ steps.check.outputs.reason }}"
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()
@@ -213,11 +207,6 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
-      - name: Log release reason
-        run: |
-          echo "Proceeding with release"
-          echo "Reason: ${{ needs.check-release.outputs.reason }}"
 
       - uses: ./.github/actions/setup-bazel
         id: bazel

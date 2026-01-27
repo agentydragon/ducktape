@@ -89,18 +89,7 @@ def get_last_release_commit(repo: pygit2.Repository, package_prefix: str) -> pyg
     return ref.peel(pygit2.Commit)
 
 
-class ReleaseDecision(BaseModel):
-    """Result of release decision computation."""
-
-    release_needed: bool
-    base_sha: str
-    reason: str
-
-    def to_outputs(self) -> dict[str, str | bool]:
-        return {"release_needed": self.release_needed, "base_sha": self.base_sha, "reason": self.reason}
-
-
-def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -> ReleaseDecision:
+def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -> bool:
     """Compute whether a release is needed for a package.
 
     Checks if the specific wheel target is in the affected targets list.
@@ -108,44 +97,28 @@ def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -
     base_commit = get_last_release_commit(repo, env.package_prefix)
 
     if not base_commit:
-        return ReleaseDecision(release_needed=True, base_sha="", reason="first release (no previous release found)")
+        logger.info("First release (no previous release found)")
+        return True
 
-    base_sha = str(base_commit.id)
-    logger.info("Last release commit: %s", base_sha)
+    logger.info("Last release commit: %s", str(base_commit.id)[:8])
 
     changed_files = get_changed_files(repo, base_commit)
     logger.info("Changed files since last release: %d", len(changed_files))
 
     if has_infra_changes(changed_files):
-        return ReleaseDecision(
-            release_needed=True, base_sha=base_sha, reason="infrastructure files changed, assuming release needed"
-        )
+        logger.info("Infrastructure files changed, assuming release needed")
+        return True
 
     jar_path = Path("/tmp/bazel-diff.jar")
     download_bazel_diff(jar_path)
 
     cache_dir = env.ci.workspace / ".bazel-diff-cache"
     targets = run_bazel_diff(repo, jar_path, env.ci.workspace, base_commit, cache_dir)
-
-    if targets is None:
-        return ReleaseDecision(
-            release_needed=True, base_sha=base_sha, reason="bazel-diff failed, assuming release needed"
-        )
-
-    if not targets:
-        return ReleaseDecision(
-            release_needed=False, base_sha=base_sha, reason="no Bazel targets affected since last release"
-        )
-
     logger.info("Found %d affected targets total", len(targets))
 
-    if env.wheel_target not in targets:
-        return ReleaseDecision(
-            release_needed=False, base_sha=base_sha, reason=f"target {env.wheel_target} not in affected targets"
-        )
-
-    logger.info("Target %s is affected", env.wheel_target)
-    return ReleaseDecision(release_needed=True, base_sha=base_sha, reason=f"target {env.wheel_target} changed")
+    needed = env.wheel_target in targets
+    logger.info("Target %s %s", env.wheel_target, "changed" if needed else "not in affected targets")
+    return needed
 
 
 def main() -> None:
@@ -158,5 +131,5 @@ def main() -> None:
     logger.info("Wheel target: %s", env.wheel_target)
 
     repo = pygit2.Repository(env.ci.workspace)
-    decision = compute_release_decision(env, repo)
-    env.ci.write_outputs(decision.to_outputs())
+    release_needed = compute_release_decision(env, repo)
+    env.ci.write_outputs({"release_needed": release_needed})

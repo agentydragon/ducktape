@@ -28,7 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_needed: ${{ steps.check.outputs.release_needed }}
-      reason: ${{ steps.check.outputs.reason }}
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -44,11 +43,6 @@ jobs:
         with:
           package_prefix: gnome-terminal-profile-switcher
           bazel_target_pattern: "//gnome_terminal_profile_switcher/..."
-
-      - name: Log result
-        run: |
-          echo "Release needed: ${{ steps.check.outputs.release_needed }}"
-          echo "Reason: ${{ steps.check.outputs.reason }}"
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

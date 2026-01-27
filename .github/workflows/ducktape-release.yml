@@ -29,7 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_needed: ${{ steps.check.outputs.release_needed }}
-      reason: ${{ steps.check.outputs.reason }}
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -45,12 +44,6 @@ jobs:
         with:
           package_prefix: ducktape
           bazel_target_pattern: "//:ducktape_wheel"
-
-      - name: Log result
-        run: |
-          echo "Release needed: ${{ steps.check.outputs.release_needed }}"
-          echo "Reason: ${{ steps.check.outputs.reason }}"
-          echo "Base SHA: ${{ steps.check.outputs.base_sha }}"
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()
