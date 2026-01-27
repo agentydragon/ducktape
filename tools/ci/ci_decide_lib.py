@@ -108,6 +108,9 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
 
         logger.info("Found %d affected targets: %s", len(targets), format_limited_list(targets, 20))
         if infra_changed:
+            # //... already excludes manual-tagged targets by default in Bazel.
+            # No first-party targets currently have non-Linux platform constraints,
+            # so the platform filter from filter_for_ci is not needed here either.
             targets = ["//..."]
 
     triggered = {name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files)}
