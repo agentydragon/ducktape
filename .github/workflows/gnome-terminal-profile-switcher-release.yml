@@ -29,19 +29,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - id: bazel-cache
-        uses: ./.github/actions/bazel-cache
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
       - name: Check if release needed
         id: check
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: gnome-terminal-profile-switcher
           bazel_target: //gnome_terminal_profile_switcher:wheel
+          latest_release_tag: gnome-terminal-profile-switcher-latest
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}
+          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
   release:
     needs: check
     if: needs.check.outputs.release_needed == 'true' || inputs.force_release == true
@@ -55,4 +59,6 @@ jobs:
         gnome-terminal-profile-switcher wheel.
 
         **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
+      latest_release_tag: gnome-terminal-profile-switcher-latest
       apt_packages: libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev pkg-config
+    secrets: inherit

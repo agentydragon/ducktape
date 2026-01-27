@@ -29,19 +29,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - id: bazel-cache
-        uses: ./.github/actions/bazel-cache
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
       - name: Check if release needed
         id: check
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: ducktape
           bazel_target: //:wheel
+          latest_release_tag: ducktape-latest
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}
+          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
   release:
     needs: check
     if: needs.check.outputs.release_needed == 'true' || inputs.force_release == true
@@ -56,3 +60,5 @@ jobs:
         - `git-commit-ai` - AI-powered commit message generator
         - `difftree` - Tree-style visualization of diffs
         - `gmail-archiver` - Gmail email auto-archiving tool
+      latest_release_tag: ducktape-latest
+    secrets: inherit

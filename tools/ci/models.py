@@ -66,13 +66,13 @@ class ReleaseConfig(BaseModel):
     """Configuration for a package release workflow.
 
     wheel_path is derived from bazel_target's package path.
-    wheel_name is passed explicitly via generate_release_config (from the manifest key).
+    wheel_name and latest_release_tag are computed from the manifest key
+    in generate_release_config.
     """
 
     bazel_target: str
     release_body: str
     apt_packages: list[str] = Field(default_factory=list)
-    latest_release_tag: str | None = None
 
     @property
     def wheel_path(self) -> str:

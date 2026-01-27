@@ -9,6 +9,7 @@ This module provides the implementation logic. See check_release.py for the CLI 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pygit2
@@ -27,6 +28,7 @@ class ReleaseEnvironment(BaseModel):
     ci: CIEnvironment
     package_prefix: str
     wheel_target: str
+    latest_release_tag: str
 
     @classmethod
     def from_env(cls) -> ReleaseEnvironment:
@@ -35,39 +37,19 @@ class ReleaseEnvironment(BaseModel):
             ci=CIEnvironment.from_env(),
             package_prefix=get_required_env("PACKAGE_PREFIX"),
             wheel_target=get_required_env("BAZEL_WHEEL_TARGET"),
+            latest_release_tag=get_required_env("LATEST_RELEASE_TAG"),
         )
 
 
-def get_last_release_commit(repo: pygit2.Repository, package_prefix: str) -> pygit2.Commit | None:
-    """Find the commit of the last release for a package using pygit2."""
-    # Get all tags matching the pattern
-    matching_tags = []
-    for ref_name in repo.references:
-        if ref_name.startswith("refs/tags/") and package_prefix in ref_name:
-            tag_name = ref_name.replace("refs/tags/", "")
-            if tag_name.startswith(f"{package_prefix}-") and "latest" not in tag_name:
-                matching_tags.append((tag_name, ref_name))
-
-    if not matching_tags:
-        return None
-
-    # Sort by creatordate (most recent first) - get commit time
-    def get_commit_time(tag_info: tuple[str, str]) -> int:
-        ref = repo.references.get(tag_info[1])
-        if ref is None:
-            return 0
-        target = ref.peel(pygit2.Commit)
-        return target.commit_time
-
-    matching_tags.sort(key=get_commit_time, reverse=True)
-
-    latest_tag = matching_tags[0][0]
-    logger.info("Found last release tag: %s", latest_tag)
-
-    ref = repo.references.get(f"refs/tags/{latest_tag}")
+def get_last_release_commit(repo: pygit2.Repository, latest_release_tag: str) -> pygit2.Commit | None:
+    """Find the commit of the last release by looking up the floating latest tag."""
+    ref = repo.references.get(f"refs/tags/{latest_release_tag}")
     if ref is None:
+        logger.info("No existing release tag '%s' found", latest_release_tag)
         return None
-    return ref.peel(pygit2.Commit)
+    commit = ref.peel(pygit2.Commit)
+    logger.info("Found release tag '%s' at %s", latest_release_tag, str(commit.id)[:8])
+    return commit
 
 
 def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -> bool:
@@ -75,7 +57,7 @@ def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -
 
     Checks if the specific wheel target is in the affected targets list.
     """
-    base_commit = get_last_release_commit(repo, env.package_prefix)
+    base_commit = get_last_release_commit(repo, env.latest_release_tag)
 
     if not base_commit:
         logger.info("First release (no previous release found)")
@@ -90,7 +72,7 @@ def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -
         logger.info("Infrastructure files changed, assuming release needed")
         return True
 
-    jar_path = Path("/tmp/bazel-diff.jar")
+    jar_path = Path(os.environ.get("BAZEL_DIFF_JAR", "/tmp/bazel-diff.jar"))
     download_bazel_diff(jar_path)
 
     cache_dir = env.ci.workspace / ".bazel-diff-cache"
@@ -110,6 +92,7 @@ def main() -> None:
 
     logger.info("Checking if release needed for %s", env.package_prefix)
     logger.info("Wheel target: %s", env.wheel_target)
+    logger.info("Latest release tag: %s", env.latest_release_tag)
 
     repo = pygit2.Repository(env.ci.workspace)
     release_needed = compute_release_decision(env, repo)

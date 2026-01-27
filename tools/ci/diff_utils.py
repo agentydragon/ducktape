@@ -39,7 +39,13 @@ def get_changed_files(repo: pygit2.Repository, base_commit: pygit2.Commit) -> se
 
 
 def has_infra_changes(changed_files: set[str]) -> bool:
-    """Check if any changed files match infrastructure patterns."""
+    """Check if any changed files match infrastructure patterns.
+
+    TODO: This conservatively treats any infra change as affecting all packages,
+    which means e.g. updating an unrelated pip dependency triggers releases for
+    all packages. Consider checking whether the wheel's transitive deps actually
+    overlap with what changed.
+    """
     compiled = [re.compile(p) for p in INFRA_PATTERNS]
     return any(r.match(f) for r in compiled for f in changed_files)
 

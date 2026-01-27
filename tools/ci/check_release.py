@@ -5,11 +5,12 @@
 # ///
 """Check if a release is needed for a specific package.
 
-Compares against the last release tag using bazel-diff to determine
+Compares against the floating latest release tag using bazel-diff to determine
 if the package's wheel target has been affected.
 
 Usage:
     PACKAGE_PREFIX=ducktape BAZEL_WHEEL_TARGET="//:wheel" \
+        LATEST_RELEASE_TAG=ducktape-latest \
         uv run tools/ci/check_release.py
 """
 

@@ -57,6 +57,7 @@ jobs:
         with:
           package_prefix: claude-hooks
           bazel_target: //tools/claude_hooks:wheel
+          latest_release_tag: claude-hooks-latest
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()
@@ -254,19 +255,11 @@ jobs:
             | cut -f1 \
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
 
-      - name: Update latest release for branch
+      - name: Update latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Determine the latest tag based on branch
-          if [[ "${{ github.ref_name }}" == "devel" ]]; then
-            TAG="claude-hooks-latest-devel"
-          elif [[ "${{ github.ref_name }}" == "main" ]]; then
-            TAG="claude-hooks-latest-main"
-          else
-            echo "Not on devel or main, skipping latest release"
-            exit 0
-          fi
+          TAG="claude-hooks-latest"
 
           # Delete existing release if it exists (we'll recreate it)
           if gh release view "$TAG" >/dev/null 2>&1; then

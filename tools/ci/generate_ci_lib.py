@@ -150,25 +150,36 @@ def generate_ci_yml(workflow: Workflow) -> str:
 
 def generate_release_config(name: str, config: ReleaseConfig) -> Workflow:
     """Generate a release workflow for a package."""
+    latest_release_tag = f"{name}-latest"
+
     check_job = Job(
         name="Check if release needed",
         runs_on="ubuntu-latest",
         outputs={"release_needed": "${{ steps.check.outputs.release_needed }}"},
         steps=[
             Step(name="Check out code", uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
-            Step(uses="./.github/actions/bazel-cache", id="bazel-cache"),
+            Step(
+                uses="./.github/actions/setup-bazel",
+                id="bazel",
+                with_args={"buildbuddy_api_key": "${{ secrets.BUILDBUDDY_API_KEY }}"},
+            ),
             Step(
                 name="Check if release needed",
                 id="check",
                 uses="./.github/actions/check-release-needed",
-                with_args={"package_prefix": name, "bazel_target": config.bazel_target},
+                with_args={
+                    "package_prefix": name,
+                    "bazel_target": config.bazel_target,
+                    "latest_release_tag": latest_release_tag,
+                },
             ),
             Step(
                 uses="./.github/actions/bazel-cache-save",
                 if_cond="always()",
                 with_args={
-                    "cache-hit": "${{ steps.bazel-cache.outputs.cache-hit }}",
-                    "cache-key": "${{ steps.bazel-cache.outputs.cache-key }}",
+                    "cache-hit": "${{ steps.bazel.outputs.cache-hit }}",
+                    "cache-key": "${{ steps.bazel.outputs.cache-key }}",
+                    "skip_cache": "${{ steps.bazel.outputs.buildbuddy-enabled }}",
                 },
             ),
         ],
@@ -180,17 +191,17 @@ def generate_release_config(name: str, config: ReleaseConfig) -> Workflow:
         "bazel_target": config.bazel_target,
         "wheel_path": config.wheel_path,
         "release_body": config.release_body,
+        "latest_release_tag": latest_release_tag,
     }
     if config.apt_packages:
         release_with["apt_packages"] = " ".join(config.apt_packages)
-    if config.latest_release_tag:
-        release_with["latest_release_tag"] = config.latest_release_tag
 
     release_job = Job(
         needs="check",
         if_cond="needs.check.outputs.release_needed == 'true' || inputs.force_release == true",
         uses="./.github/workflows/python-wheel-release.yml",
         with_args=release_with,
+        secrets="inherit",
     )
 
     return Workflow(
