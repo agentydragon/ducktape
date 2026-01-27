@@ -58,16 +58,6 @@ def run_query(query: str) -> list[str]:
     return _run_bazel_query_cmd(["bazelisk", "query"], query)
 
 
-def run_cquery(query: str) -> list[str]:
-    """Run a bazel cquery and return matching targets.
-
-    cquery respects target_compatible_with constraints, unlike query.
-    Uses starlark output to get clean labels without configuration hash suffix.
-    Raises CalledProcessError on failure.
-    """
-    return _run_bazel_query_cmd(["bazelisk", "cquery", "--output=starlark", "--starlark:expr=target.label"], query)
-
-
 def query_intersection(targets: list[str], pattern: str) -> list[str]:
     """Query targets that intersect with a pattern. Returns matching targets."""
     if not targets:
@@ -78,15 +68,24 @@ def query_intersection(targets: list[str], pattern: str) -> list[str]:
 
 
 def filter_compatible_targets(targets: list[str]) -> list[str]:
-    """Filter targets to only those compatible with the current platform.
+    """Filter targets that are incompatible with Linux (the CI platform).
 
-    Uses bazel cquery which respects target_compatible_with constraints.
+    Uses bazel query attr() to find targets constrained to non-Linux platforms
+    and subtracts them. This avoids cquery, which loads configurations and can
+    trigger compilation of transitive dependencies (e.g. pip packages needing
+    meson/system headers) that aren't available on the CI runner.
+
+    Currently matches @platforms//os:macos. If a target were constrained to
+    @platforms//os:linux, it would NOT be excluded (that's compatible).
     """
     if not targets:
         return targets
 
-    query = f"set({' '.join(targets)})"
-    return run_cquery(query)
+    target_set = f"set({' '.join(targets)})"
+    # Exclude targets constrained to non-Linux platforms.
+    # attr() matches the string representation of target_compatible_with.
+    query = f"{target_set} except attr(target_compatible_with, '@platforms//os:macos', {target_set})"
+    return run_query(query)
 
 
 def filter_to_rules(targets: list[str]) -> list[str]:

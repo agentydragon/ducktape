@@ -52,10 +52,9 @@ class CIDecision(BaseModel):
 
 
 def filter_platform_incompatible(targets: list[str]) -> list[str]:
-    """Filter out targets that are incompatible with the CI platform.
+    """Filter out targets that have target_compatible_with constraints.
 
-    Uses bazel cquery to check target_compatible_with constraints.
-    Targets incompatible with the current platform are excluded.
+    Uses bazel query attr() to find and exclude targets with platform constraints.
 
     TODO: This currently runs on a Linux CI runner and filters out macOS-only targets.
     To support macOS targets, partition the filtered-out targets by platform constraint
