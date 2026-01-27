@@ -15,24 +15,15 @@ let
       ollama = {
         name = "Ollama Local";
         base_url = "http://localhost:11434/v1";
+        wire_api = "responses";
       };
       vllm = {
         name = "vLLM Local";
         base_url = "http://localhost:8000/v1";
-      };
-    };
-
-    # Profiles for local models
-    profiles = {
-      # GPT-OSS-20B via Ollama (simpler setup)
-      gpt-oss-ollama = {
-        model_provider = "ollama";
-        model = "gpt-oss:20b"; # 128K native context
-      };
-      # GPT-OSS-20B via vLLM (better throughput)
-      gpt-oss-vllm = {
-        model_provider = "vllm";
-        model = "gpt-oss-20b";
+        # vLLM's Responses API has incorrect GPT-OSS handling:
+        # https://github.com/vllm-project/vllm/issues/28262
+        # Returns reasoning_text in format Codex can't parse.
+        wire_api = "chat";
       };
     };
 
@@ -56,13 +47,22 @@ let
           web_search_request = true;
         };
       };
-      oss = {
+      # GPT-OSS-20B via vLLM with Responses API
+      gpt-oss = {
         model = "gpt-oss-20b";
         model_provider = "vllm";
         model_reasoning_effort = "high";
-        # TODO: Consider enabling local web‑search (`web_search_cached`) feature:
-        # features = { web_search_cached = true; };
-        # web_search = "cached";
+        features = {
+          web_search_request = false;
+        };
+      };
+      # GPT-OSS-20B via Ollama
+      gpt-oss-ollama = {
+        model = "gpt-oss:20b";
+        model_provider = "ollama";
+        features = {
+          web_search_request = false;
+        };
       };
     };
     # Persist command history to disk.

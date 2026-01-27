@@ -41,6 +41,12 @@
     '';
   };
 
+  # git-commit-ai configuration for local LLM
+  xdg.configFile."ducktape/git_commit_ai.yml".text = ''
+    model: gpt-oss-20b
+    base_url: http://localhost:8000/v1
+  '';
+
   # Dev toolchains on HDD (saves ~11GB on root SSD)
   # mkForce to override defaults from home.nix
   home.sessionVariables = {

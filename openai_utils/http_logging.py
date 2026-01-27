@@ -1,7 +1,7 @@
 """OpenAI client wrappers with verbatim HTTP logging (masked auth).
 
-This module provides small helpers to construct OpenAI/AsyncOpenAI clients
-that log raw HTTP requests/responses to a JSONL file for diagnostics.
+This module provides helpers to construct httpx clients and OpenAI clients
+that log raw HTTP requests/responses for diagnostics.
 
 Notes
 - Authorization header is masked (***).
@@ -10,14 +10,8 @@ Notes
 - Log format: one JSON object per line with keys {kind, ...} where kind is
   "request" or "response".
 
-Typical usage
-
-from pathlib import Path
-from openai_utils.http_logging import make_logged_async_openai
-
-client = make_logged_async_openai(Path("./openai_http.jsonl"))
-# pass `client` where an AsyncOpenAI is expected
-
+For typical usage, prefer ``openai_utils.client_factory.build_client()`` which
+handles logging configuration automatically.
 """
 
 from __future__ import annotations
@@ -29,7 +23,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +39,7 @@ async def _log_write(path: Path, record: dict[str, Any]) -> None:
 
 async def _on_request(req: httpx.Request, *, path: Path) -> None:  # pragma: no cover - HTTP hook
     headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
-    try:
-        body = req.content or b""
-    except Exception as e:
-        logger.debug("failed to read request body for logging: %s", e)
-        body = b""
+    body = req.content or b""
     await _log_write(
         path,
         {
@@ -66,22 +55,13 @@ async def _on_request(req: httpx.Request, *, path: Path) -> None:  # pragma: no 
 async def _on_response(resp: httpx.Response, *, path: Path) -> None:  # pragma: no cover - HTTP hook
     req = resp.request
     headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
-    try:
-        req_body = req.content or b""
-    except Exception as e:
-        logger.debug("failed to read request body for logging: %s", e)
-        req_body = b""
-    # Safely read response body for streaming responses
-    resp_body_bytes: bytes = b""
+    req_body = req.content or b""
+    # Read response body; may fail if stream already consumed
     try:
         resp_body_bytes = await resp.aread()
-    except Exception as e:
-        logger.debug("failed to aread response body: %s", e)
-        try:
-            resp_body_bytes = resp.content
-        except Exception as e2:
-            logger.debug("failed to access response.content: %s", e2)
-            resp_body_bytes = b""
+    except (httpx.StreamConsumed, httpx.StreamClosed, httpx.ReadError) as e:
+        logger.debug("failed to read response body: %s", e)
+        resp_body_bytes = b""
     await _log_write(
         path,
         {
@@ -98,12 +78,7 @@ async def _on_response(resp: httpx.Response, *, path: Path) -> None:  # pragma: 
 
 async def _log_request_to_logger(req: httpx.Request, *, logger: logging.Logger) -> None:  # pragma: no cover - HTTP hook
     headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
-    try:
-        body = req.content or b""
-    except Exception as e:
-        logger.debug("failed to read request body for logging: %s", e)
-        body = b""
-
+    body = req.content or b""
     logger.debug(
         "OpenAI Request: %s %s\nHeaders: %s\nBody: %s",
         req.method,
@@ -118,24 +93,13 @@ async def _log_response_to_logger(
 ) -> None:  # pragma: no cover - HTTP hook
     req = resp.request
     headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in req.headers.items()}
-    try:
-        req_body = req.content or b""
-    except Exception as e:
-        logger.debug("failed to read request body for logging: %s", e)
-        req_body = b""
-
-    # Safely read response body for streaming responses
-    resp_body_bytes: bytes = b""
+    req_body = req.content or b""
+    # Read response body; may fail if stream already consumed
     try:
         resp_body_bytes = await resp.aread()
-    except Exception as e:
-        logger.debug("failed to aread response body: %s", e)
-        try:
-            resp_body_bytes = resp.content
-        except Exception as e2:
-            logger.debug("failed to access response.content: %s", e2)
-            resp_body_bytes = b""
-
+    except (httpx.StreamConsumed, httpx.StreamClosed, httpx.ReadError) as e:
+        logger.debug("failed to read response body: %s", e)
+        resp_body_bytes = b""
     logger.debug(
         "OpenAI Response: %d %s\nRequest Headers: %s\nRequest Body: %s\nResponse Headers: %s\nResponse Body: %s",
         resp.status_code,
@@ -147,30 +111,27 @@ async def _log_response_to_logger(
     )
 
 
-def make_logged_async_openai(log_path: Path | str) -> AsyncOpenAI:
-    """Create an AsyncOpenAI client that logs raw HTTP traffic to log_path.
+def make_logging_httpx_async_client(log_path: Path) -> httpx.AsyncClient:
+    """Return an ``httpx.AsyncClient`` with request/response logging.
 
-    The returned client owns an httpx.AsyncClient with event hooks installed.
-    The caller is responsible for closing the OpenAI client when done.
+    The client is *ready* to be passed to :class:`AsyncOpenAI` as its
+    ``http_client`` argument.  No :class:`AsyncOpenAI` instance is created
+    here - that keeps the functionality focused on HTTP log handling.
     """
-    p = Path(log_path)
-    http = httpx.AsyncClient(
-        event_hooks={"request": [partial(_on_request, path=p)], "response": [partial(_on_response, path=p)]}
+    return httpx.AsyncClient(
+        event_hooks={
+            "request": [partial(_on_request, path=log_path)],
+            "response": [partial(_on_response, path=log_path)],
+        }
     )
-    return AsyncOpenAI(http_client=http)
 
 
-def make_logger_logged_async_openai(logger_name: str = "openai.http") -> AsyncOpenAI:
-    """Create an AsyncOpenAI client that logs raw HTTP traffic to a Python logger at DEBUG level.
-
-    The returned client owns an httpx.AsyncClient with event hooks installed.
-    The caller is responsible for closing the OpenAI client when done.
-    """
+def make_logger_logging_httpx_async_client(logger_name: str = "openai.http") -> httpx.AsyncClient:
+    """Return an httpx.AsyncClient that logs raw HTTP traffic to a Python logger at DEBUG level."""
     target_logger = logging.getLogger(logger_name)
-    http = httpx.AsyncClient(
+    return httpx.AsyncClient(
         event_hooks={
             "request": [partial(_log_request_to_logger, logger=target_logger)],
             "response": [partial(_log_response_to_logger, logger=target_logger)],
         }
     )
-    return AsyncOpenAI(http_client=http)

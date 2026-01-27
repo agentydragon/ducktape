@@ -125,6 +125,13 @@ class ReasoningSummaryItem(BaseModel):
     type: Literal["summary_text"] = "summary_text"
 
 
+class ReasoningContentItem(BaseModel):
+    """Content item within a reasoning block (contains actual reasoning text)."""
+
+    text: str
+    type: Literal["reasoning_text"] = "reasoning_text"
+
+
 class ReasoningItem(BaseModel):
     """Our internal reasoning item representation.
 
@@ -135,6 +142,7 @@ class ReasoningItem(BaseModel):
     type: Literal["reasoning"] = "reasoning"
     id: str | None = None
     summary: list[ReasoningSummaryItem] = Field(default_factory=list)
+    content: list[ReasoningContentItem] = Field(default_factory=list)
     # Don't serialize status for input - use Field(exclude=True) or model_dump(exclude={'status'})
     model_config = ConfigDict(extra="allow")
 
@@ -323,6 +331,9 @@ class ResponsesResult(BaseModel):
                         id=item.id,
                         summary=[ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
                         if item.summary
+                        else [],
+                        content=[ReasoningContentItem(text=c.text, type=c.type) for c in item.content]
+                        if item.content
                         else [],
                         # Don't include status - it causes "Unknown parameter" error when sent back as input
                     )
