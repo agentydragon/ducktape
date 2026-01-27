@@ -44,6 +44,7 @@ def _run_bazel_query_cmd(cmd: list[str | Path], query: str) -> list[str]:
     (query_dir / "exit_code").write_text(str(result.returncode))
 
     if result.returncode != 0:
+        logger.error("Query failed (exit %d). stderr:\n%s", result.returncode, result.stderr)
         raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
 
     return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
