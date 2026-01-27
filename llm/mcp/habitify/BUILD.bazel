@@ -4,7 +4,6 @@
 # Per-file py_library targets (Gazelle-compatible pattern)
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # --- Base types (no internal deps) ---
 
@@ -230,22 +229,3 @@ py_test(
 )
 
 # --- Lint ---
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":__main__",
-        ":cli",
-        ":cli_utils",
-        ":config",
-        ":constants",
-        ":context",
-        ":date_utils",
-        ":habit_resolver",
-        ":habitify_client",
-        ":server",
-        ":testing_models",
-        ":tools",
-        ":types",
-    ],
-)

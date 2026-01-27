@@ -1,6 +1,5 @@
 # gazelle:ignore
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # NOTE: No aggregator target - use specific per-file targets like :actions, :base, etc.
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -240,16 +239,3 @@ py_test(
 # =============================================================================
 # Lint
 # =============================================================================
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":actions",
-        ":base",
-        ":config",
-        ":inputs",
-        ":logging_context",
-        ":precommit_autofix",
-        ":tool_models",
-    ],
-)

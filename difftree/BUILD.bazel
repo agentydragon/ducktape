@@ -1,6 +1,5 @@
 # gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # NOTE: No aggregator target - use specific per-file targets like :config, :parser, etc.
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -215,15 +214,3 @@ py_test(
 # =============================================================================
 # Lint
 # =============================================================================
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":__main__",
-        ":config",
-        ":diff_tree",
-        ":parser",
-        ":progress_bar",
-        ":tree",
-    ],
-)

@@ -4,7 +4,6 @@
 """Python detectors package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "py_detectors",
@@ -66,11 +65,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":py_detectors"],
 )
 
 py_library(

@@ -1,6 +1,5 @@
 # gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Gazelle will create per-file py_library targets
 # Subdirectories (cli/, planners/) will get their own BUILD files
@@ -36,26 +35,6 @@ py_binary(
         "@pypi//typer_slim",
     ],
     # deps will be filled by Gazelle
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":date_patterns",
-        ":dirs",
-        ":event_classifier",
-        ":filter_planner",
-        ":filter_sync",
-        ":gmail_api_models",
-        ":gmail_archiver",
-        ":gmail_client",
-        ":gmail_yaml_filters_models",
-        ":html_utils",
-        ":inbox",
-        ":models",
-        ":plan",
-        ":plan_display",
-    ],
 )
 
 py_library(

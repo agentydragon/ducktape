@@ -8,7 +8,6 @@ TODO: This package is being phased out. Remaining modules should move to:
 """
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # =============================================================================
 # Leaf modules (no props.core deps)
@@ -283,19 +282,3 @@ py_test(
 )
 
 # Collect all library targets for ruff
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":agent_helpers",
-        ":agent_pkg_utils",
-        ":agent_types",
-        ":agent_workspace",
-        ":display",
-        ":docker_env",
-        ":exceptions",
-        ":ids",
-        ":oci_utils",
-        ":runs_context",
-        ":splits",
-    ],
-)

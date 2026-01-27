@@ -1,5 +1,4 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "types",
@@ -125,24 +124,6 @@ py_library(
     deps = [
         "@pypi//openai",
         "@pypi//pytest",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":builders",
-        ":client_factory",
-        ":conftest",
-        ":errors",
-        ":http_logging",
-        ":json_schema",
-        ":model",
-        ":model_metadata",
-        ":pydantic_strict_mode",
-        ":retry",
-        ":text_extraction",
-        ":types",
     ],
 )
 

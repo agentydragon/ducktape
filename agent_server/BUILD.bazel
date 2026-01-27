@@ -3,7 +3,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["conftest.py"])
 
@@ -358,17 +357,6 @@ py_test(
 # E2E tests moved to agent_server/e2e/BUILD.bazel
 
 # --- Linting ---
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":agent_types",
-        ":approvals",
-        ":logging_config",
-        ":presets",
-        ":ui_asserts",
-    ],
-)
 
 # --- OCI Runtime Image ---
 

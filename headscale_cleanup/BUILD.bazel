@@ -1,6 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "__main__",
@@ -53,12 +52,4 @@ py_wheel(
     ],
     version = "0.1.0",
     deps = [":headscale_cleanup_pkg"],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":__main__",
-        ":cli",
-    ],
 )

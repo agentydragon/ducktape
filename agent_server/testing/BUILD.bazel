@@ -1,21 +1,8 @@
 """Testing utilities package for agent_server."""
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 package(default_testonly = True)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":approval_policy_testdata",
-        ":chat_stubs",
-        ":fixtures",
-        ":helpers",
-        ":steps",
-        ":typed_asserts",
-    ],
-)
 
 py_library(
     name = "approval_policy_testdata",

@@ -1,6 +1,5 @@
 # gazelle:ignore
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "dbus_fast_example",
@@ -28,9 +27,4 @@ py_test(
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":dbus_fast_example"],
 )

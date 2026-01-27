@@ -2,7 +2,6 @@
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # === Base modules (no internal deps) ===
 
@@ -62,14 +61,3 @@ py_library(
 )
 
 # === Linting ===
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":bazel_diff",
-        ":bazel_query",
-        ":ci_decide",
-        ":generate_ci",
-        ":models",
-    ],
-)

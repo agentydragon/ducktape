@@ -1,7 +1,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["gatelet.toml"])
 
@@ -50,14 +49,6 @@ py_binary(
     main = "manage_main.py",
     visibility = ["//:__subpackages__"],
     deps = [":manage_lib"],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":manage_lib",
-        ":reporter_lib",
-    ],
 )
 
 # --- OCI Image ---

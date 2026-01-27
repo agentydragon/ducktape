@@ -1,16 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Gazelle will create per-file py_library targets
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":bootstrap_handler",
-        ":builder",
-        ":init_runner",
-    ],
-)
 
 py_library(
     name = "bootstrap_handler",

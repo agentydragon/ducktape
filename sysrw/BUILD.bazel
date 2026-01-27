@@ -1,7 +1,6 @@
 """System rewriter package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Gazelle will create per-file py_library targets
 # Subdirectories (anthropic/, templates/, tools/) have their own BUILD files
@@ -39,27 +38,6 @@ py_test(
     deps = [
         ":conftest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":cli",
-        ":compare_eval_vs_ccr",
-        ":conftest",
-        ":constants",
-        ":extract_common",
-        ":extract_dataset",
-        ":extract_dataset_ccr",
-        ":extract_dataset_crush",
-        ":leaderboard",
-        ":openai_typing",
-        ":prompts",
-        ":run_eval",
-        ":schemas",
-        ":translation",
-        ":validation",
     ],
 )
 

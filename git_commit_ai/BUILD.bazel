@@ -3,7 +3,6 @@
 # gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Gazelle manages git_ro/ and testing/ subpackages
 
@@ -44,17 +43,6 @@ py_binary(
         "//cli_util:decorators",
         "@pypi//pygit2",
         "@pypi//typer",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":agent_backend",
-        ":config",
-        ":conftest",
-        ":editor",
-        ":git_commit_ai",
     ],
 )
 

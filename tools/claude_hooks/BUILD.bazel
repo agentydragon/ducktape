@@ -3,7 +3,6 @@
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # === Base modules (no internal deps) ===
 
@@ -311,23 +310,3 @@ py_test(
 )
 
 # === Linting ===
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":bazel_wrapper",
-        ":bazelisk_setup",
-        ":binary_tools",
-        ":env_file",
-        ":errors",
-        ":nix_setup",
-        ":podman_service",
-        ":proxy_credentials",
-        ":proxy_setup",
-        ":proxy_vars",
-        ":resources",
-        ":session_start",
-        ":settings",
-        ":streaming",
-    ],
-)

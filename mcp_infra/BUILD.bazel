@@ -1,5 +1,4 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Shared test utilities (non-Docker)
 py_library(
@@ -29,28 +28,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [
-        ":_markers",
-        ":calltool",
-        ":client_helpers",
-        ":config_loader",
-        ":conftest",
-        ":constants",
-        ":flat_tool",
-        ":mcp_types",
-        ":mount_types",
-        ":mounted",
-        ":naming",
-        ":prefix",
-        ":resource_utils",
-        ":snapshots",
-        ":tool_schemas",
-        ":urls",
     ],
 )
 

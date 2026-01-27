@@ -84,7 +84,7 @@ Unified Bazel build system for all Python packages:
 | TypeScript | 36    | -        | 36          | -      | -        |
 | JavaScript | 14    | -        | 14          | -      | -        |
 
-**Bazel Targets:** 183 py_library, 115 py_test, 46 ruff_test
+**Bazel Targets:** 183 py_library, 115 py_test
 
 Run `bazel run //tools/orphans:find_orphans` to list orphaned files.
 
@@ -385,9 +385,7 @@ MODULE.bazel
 
 tools/lint/linters.bzl
   → lint_ruff_aspect(binary = "@multitool//tools/ruff")
-
-BUILD.bazel files
-  → ruff_test(name = "ruff", srcs = [":my_lib"])
+  NOTE: ruff_test targets removed - ruff is now enforced via pre-commit hook
 ```
 
 ### Ruff Configuration
@@ -734,9 +732,8 @@ The pre-commit framework manages all git hooks. Install with `pre-commit install
 ### Ongoing Maintenance
 
 1. **Check for orphans periodically**: `bazel run //tools/orphans:find_orphans`
-2. **Add ruff_test to new packages**: Every BUILD.bazel with py_library should have ruff_test
-3. **Keep requirements_bazel.txt updated**: Run `bazel run //:requirements.update` after adding deps
-4. **Test with `bazel test //...`**: Ensure all non-manual tests pass before commits
+2. **Keep requirements_bazel.txt updated**: Run `bazel run //:requirements.update` after adding deps
+3. **Test with `bazel test //...`**: Ensure all non-manual tests pass before commits
 
 ### Git Pre-commit Hook (Recommended)
 

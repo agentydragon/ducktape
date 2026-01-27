@@ -2,7 +2,6 @@
 # Uses @pypi_homeassistant hub, not the main @pypi
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "indoor_aqi",
@@ -79,9 +78,4 @@ py_test(
     imports = ["../.."],
     main = "test_sensor_simple.py",
     deps = _TEST_DEPS,
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":indoor_aqi"],
 )

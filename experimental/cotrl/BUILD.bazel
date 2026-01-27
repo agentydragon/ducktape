@@ -1,6 +1,5 @@
 # gazelle:ignore
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 
 # Experimental LLM RL scripts - not a proper package, just standalone scripts
 py_library(
@@ -43,9 +42,4 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-ruff_test(
-    name = "ruff",
-    srcs = [":cotrl"],
 )
