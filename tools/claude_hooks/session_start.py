@@ -399,7 +399,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
 
     # Start supervisor (required by proxy and podman)
-    supervisor_task = asyncio.create_task(run_in_thread(supervisor_setup.start, settings))
+    supervisor_task = asyncio.create_task(supervisor_setup.start(settings))
 
     # Wrappers that depend on supervisor being ready
     # TODO: Handle upstream dependency failures more gracefully.
@@ -413,7 +413,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         if exc := supervisor_task.exception():
             raise exc
         supervisor_result = supervisor_task.result()
-        return proxy_setup.setup_bazel_proxy(settings, supervisor_result.client)
+        return await proxy_setup.setup_bazel_proxy(settings, supervisor_result.client)
 
     async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor)."""
@@ -421,7 +421,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         if exc := supervisor_task.exception():
             raise exc
         supervisor_result = supervisor_task.result()
-        return podman_service.setup_podman(settings, supervisor_result.client)
+        return await podman_service.setup_podman(settings, supervisor_result.client)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper as separate tasks.

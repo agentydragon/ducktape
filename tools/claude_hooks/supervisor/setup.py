@@ -8,13 +8,12 @@ limitations in gVisor sandbox where hard linking Unix sockets fails with EOPNOTS
 
 from __future__ import annotations
 
+import asyncio
 import configparser
 import logging
 import os
-import subprocess
 import sys
 import textwrap
-import time
 from dataclasses import dataclass
 
 from net_util.net import is_port_in_use
@@ -140,11 +139,8 @@ def _dump_supervisor_debug_info(settings: HookSettings) -> str:
     return "\n".join(lines)
 
 
-def start(settings: HookSettings) -> SupervisorSetup:
+async def start(settings: HookSettings) -> SupervisorSetup:
     """Start supervisord if not already running.
-
-    Args:
-        settings: Hook configuration settings
 
     Raises:
         SupervisorError: If supervisor cannot be started.
@@ -190,23 +186,22 @@ def start(settings: HookSettings) -> SupervisorSetup:
     logger.info("  dir: %s", supervisor_dir)
 
     try:
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            stdin=asyncio.subprocess.DEVNULL,
             start_new_session=True,
             cwd=supervisor_dir,
         )
         # Give it a tiny bit to check if it crashes immediately
-        time.sleep(0.1)
-        returncode = process.poll()
-        if returncode is not None and returncode != 0:
+        await asyncio.sleep(0.1)
+        if process.returncode is not None and process.returncode != 0:
             # Process exited with error - read log for details
             # Note: exit code 0 is SUCCESS (daemon forked and parent exited normally)
             log_content = supervisor_log.read_text() if supervisor_log.exists() else "(log not found)"
             raise SupervisorError(
-                f"supervisord exited immediately with code {returncode}\n"
+                f"supervisord exited immediately with code {process.returncode}\n"
                 f"Command: {' '.join(cmd)}\n"
                 f"Log: {log_content[-1000:]}"
             )
@@ -216,8 +211,8 @@ def start(settings: HookSettings) -> SupervisorSetup:
 
     # Wait for supervisor to be ready (up to 5 seconds)
     for i in range(20):
-        time.sleep(0.25)
-        if is_running(settings):
+        await asyncio.sleep(0.25)
+        if await asyncio.to_thread(is_running, settings):
             logger.info("supervisord started successfully")
             return SupervisorSetup(client=SupervisorClient(settings), settings=settings)
         if i % 4 == 3:  # Log every second
