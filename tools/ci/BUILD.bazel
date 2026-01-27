@@ -17,7 +17,10 @@ py_library(
     srcs = ["github_actions.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//tools:env_utils",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -50,9 +53,10 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":bazel_query",
         ":diff_utils",
         ":github_actions",
+        "//tools:env_utils",
+        "@pypi//pydantic",
         "@pypi//pygit2",
     ],
 )
@@ -69,6 +73,7 @@ py_library(
         ":github_actions",
         ":models",
         "//:fmt_util",
+        "//tools:env_utils",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],

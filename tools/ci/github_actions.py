@@ -13,7 +13,41 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from tools.env_utils import get_required_env_path
+
 _logger = logging.getLogger(__name__)
+
+
+# === GitHub Actions Environment ===
+
+
+class CIEnvironment(BaseModel):
+    """GitHub Actions CI environment variables.
+
+    Captures GHA-provided env vars at startup and threads through as DI.
+    """
+
+    workspace: Path
+    output_path: Path
+    event_name: str
+    base_ref: str
+
+    @classmethod
+    def from_env(cls) -> CIEnvironment:
+        """Load CI environment from os.environ. Raises on missing required vars."""
+        return cls(
+            workspace=Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd()),
+            output_path=get_required_env_path("GITHUB_OUTPUT"),
+            event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
+            base_ref=os.environ.get("GITHUB_BASE_REF", ""),
+        )
+
+    @property
+    def is_pull_request(self) -> bool:
+        return self.event_name == "pull_request"
+
+
+# === Output Utilities ===
 
 
 def format_output(outputs: dict[str, str]) -> str:
@@ -26,40 +60,14 @@ def bool_output(value: bool) -> str:
     return "true" if value else "false"
 
 
-def write_outputs(outputs: dict[str, str]) -> None:
-    """Write outputs to GITHUB_OUTPUT file and log them.
-
-    Raises RuntimeError if GITHUB_OUTPUT is not set (expected in CI).
-    """
-    output_file = os.environ.get("GITHUB_OUTPUT")
-    if not output_file:
-        raise RuntimeError("GITHUB_OUTPUT not set")
-    Path(output_file).write_text(format_output(outputs))
+def write_outputs(output_path: Path, outputs: dict[str, str]) -> None:
+    """Write outputs to GitHub Actions output file and log them."""
+    output_path.write_text(format_output(outputs))
     for key, value in outputs.items():
         _logger.info("%s=%s", key, value)
 
 
-def get_output_path() -> Path:
-    """Get GITHUB_OUTPUT path. Raises RuntimeError if not set."""
-    output_path_str = os.environ.get("GITHUB_OUTPUT")
-    if not output_path_str:
-        raise RuntimeError("GITHUB_OUTPUT environment variable not set")
-    return Path(output_path_str)
-
-
-def get_workspace() -> Path:
-    """Get GITHUB_WORKSPACE path, falling back to cwd."""
-    return Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())
-
-
-def get_event_name() -> str:
-    """Get GITHUB_EVENT_NAME (e.g., 'pull_request', 'push')."""
-    return os.environ.get("GITHUB_EVENT_NAME", "")
-
-
-def get_base_ref() -> str:
-    """Get GITHUB_BASE_REF (base branch for pull requests)."""
-    return os.environ.get("GITHUB_BASE_REF", "")
+# === Workflow Schema Models ===
 
 
 class Step(BaseModel):

@@ -67,15 +67,6 @@ def run_cquery(query: str) -> list[str]:
     return _run_bazel_query_cmd(["bazelisk", "cquery", "--output=starlark", "--starlark:expr=target.label"], query)
 
 
-def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
-    """Check if affected targets intersect with a Bazel pattern."""
-    if not targets:
-        return False
-
-    query = f"set({' '.join(targets)}) intersect {pattern}"
-    return bool(run_query(query))
-
-
 def query_intersection(targets: list[str], pattern: str) -> list[str]:
     """Query targets that intersect with a pattern. Returns matching targets."""
     if not targets:
@@ -83,6 +74,11 @@ def query_intersection(targets: list[str], pattern: str) -> list[str]:
 
     query = f"set({' '.join(targets)}) intersect {pattern}"
     return run_query(query)
+
+
+def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
+    """Check if affected targets intersect with a Bazel pattern."""
+    return bool(query_intersection(targets, pattern))
 
 
 def filter_compatible_targets(targets: list[str]) -> list[str]:

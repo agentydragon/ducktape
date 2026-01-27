@@ -7,14 +7,15 @@ Used by both ci_decide_lib.py and bazel_diff_lib.py.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pygit2
 
-from tools.ci.github_actions import get_base_ref, get_event_name
+if TYPE_CHECKING:
+    from tools.ci.github_actions import CIEnvironment
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +44,13 @@ def has_infra_changes(changed_files: set[str]) -> bool:
     return any(r.match(f) for r in compiled for f in changed_files)
 
 
-def get_ci_base_commit(repo: pygit2.Repository) -> pygit2.Commit | None:
+def get_ci_base_commit(repo: pygit2.Repository, env: CIEnvironment) -> pygit2.Commit | None:
     """Determine base commit for CI comparison (merge-base for PRs, HEAD~1 for pushes)."""
-    event_name = get_event_name()
-
-    if event_name == "pull_request":
-        base_ref = get_base_ref()
-        if not base_ref:
+    if env.is_pull_request:
+        if not env.base_ref:
             return None
         try:
-            remote_ref = repo.references.get(f"refs/remotes/origin/{base_ref}")
+            remote_ref = repo.references.get(f"refs/remotes/origin/{env.base_ref}")
             if remote_ref is None:
                 return None
             base_commit = remote_ref.peel(pygit2.Commit)
@@ -119,16 +117,15 @@ class BazelDiffError(Exception):
     """Error running bazel-diff."""
 
 
-def run_bazel_diff(repo: pygit2.Repository, jar_path: Path, workspace: Path, base_commit: pygit2.Commit) -> list[str]:
+def run_bazel_diff(
+    repo: pygit2.Repository, jar_path: Path, workspace: Path, base_commit: pygit2.Commit, cache_dir: Path
+) -> list[str]:
     """Run bazel-diff to compute impacted targets.
 
     Returns list of targets, or empty list if no changes.
     Raises BazelDiffError on failure.
     """
     head_commit = repo.head.peel(pygit2.Commit)
-
-    # Use cache directory for hash files (persisted via GitHub Actions cache)
-    cache_dir = Path(os.environ.get("BAZEL_DIFF_CACHE_DIR", str(workspace / ".bazel-diff-cache")))
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     try:

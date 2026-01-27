@@ -9,18 +9,35 @@ This module provides the implementation logic. See bazel_diff.py for the CLI ent
 from __future__ import annotations
 
 import logging
-import os
-import sys
 import urllib.request
 from pathlib import Path
 
 import pygit2
+from pydantic import BaseModel
 
-from tools.ci.bazel_query import query_intersection
 from tools.ci.diff_utils import get_changed_files, has_infra_changes, run_bazel_diff
-from tools.ci.github_actions import bool_output, get_workspace, write_outputs
+from tools.ci.github_actions import CIEnvironment, bool_output, write_outputs
+from tools.env_utils import get_required_env
 
 logger = logging.getLogger(__name__)
+
+
+class ReleaseEnvironment(BaseModel):
+    """Environment for release checks."""
+
+    ci: CIEnvironment
+    package_prefix: str
+    wheel_target: str
+
+    @classmethod
+    def from_env(cls) -> ReleaseEnvironment:
+        """Load release environment from os.environ."""
+        return cls(
+            ci=CIEnvironment.from_env(),
+            package_prefix=get_required_env("PACKAGE_PREFIX"),
+            wheel_target=get_required_env("BAZEL_TARGET_PATTERN"),
+        )
+
 
 BAZEL_DIFF_VERSION = "12.1.1"
 BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"
@@ -77,14 +94,13 @@ def _release_output(needed: bool, base_sha: str, reason: str) -> dict[str, str]:
     return {"release_needed": bool_output(needed), "base_sha": base_sha, "reason": reason}
 
 
-def compute_release_decision(
-    repo: pygit2.Repository, workspace: Path, package_prefix: str, target_pattern: str
-) -> dict[str, str]:
+def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -> dict[str, str]:
     """Compute whether a release is needed for a package.
 
+    Checks if the specific wheel target is in the affected targets list.
     Returns outputs dict with release_needed, base_sha, and reason.
     """
-    base_commit = get_last_release_commit(repo, package_prefix)
+    base_commit = get_last_release_commit(repo, env.package_prefix)
 
     if not base_commit:
         return _release_output(True, "", "first release (no previous release found)")
@@ -101,7 +117,8 @@ def compute_release_decision(
     jar_path = Path("/tmp/bazel-diff.jar")
     download_bazel_diff(jar_path)
 
-    targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
+    cache_dir = env.ci.workspace / ".bazel-diff-cache"
+    targets = run_bazel_diff(repo, jar_path, env.ci.workspace, base_commit, cache_dir)
 
     if targets is None:
         return _release_output(True, base_sha, "bazel-diff failed, assuming release needed")
@@ -111,17 +128,12 @@ def compute_release_decision(
 
     logger.info("Found %d affected targets total", len(targets))
 
-    matching = query_intersection(targets, target_pattern)
-    if not matching:
-        return _release_output(False, base_sha, f"no targets matching {target_pattern} changed since last release")
+    # Check if the specific wheel target is in the affected targets
+    if env.wheel_target not in targets:
+        return _release_output(False, base_sha, f"target {env.wheel_target} not in affected targets")
 
-    logger.info("Found %d matching targets:", len(matching))
-    for t in matching[:10]:
-        logger.info("  %s", t)
-    if len(matching) > 10:
-        logger.info("  ... and %d more", len(matching) - 10)
-
-    return _release_output(True, base_sha, f"{len(matching)} targets matching {target_pattern} changed")
+    logger.info("Target %s is affected", env.wheel_target)
+    return _release_output(True, base_sha, f"target {env.wheel_target} changed")
 
 
 def main() -> None:
@@ -129,18 +141,11 @@ def main() -> None:
     # Configure logging to stderr
     logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
 
-    package_prefix = os.environ.get("PACKAGE_PREFIX", "")
-    target_pattern = os.environ.get("BAZEL_TARGET_PATTERN", "")
+    env = ReleaseEnvironment.from_env()
 
-    if not package_prefix or not target_pattern:
-        logger.error("Error: PACKAGE_PREFIX and BAZEL_TARGET_PATTERN must be set")
-        sys.exit(1)
+    logger.info("Checking if release needed for %s", env.package_prefix)
+    logger.info("Wheel target: %s", env.wheel_target)
 
-    logger.info("Checking if release needed for %s", package_prefix)
-    logger.info("Target pattern: %s", target_pattern)
-
-    workspace = get_workspace()
-    repo = pygit2.Repository(workspace)
-
-    outputs = compute_release_decision(repo, workspace, package_prefix, target_pattern)
-    write_outputs(outputs)
+    repo = pygit2.Repository(env.ci.workspace)
+    outputs = compute_release_decision(env, repo)
+    write_outputs(env.ci.output_path, outputs)

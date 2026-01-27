@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from pathlib import Path
 
@@ -20,14 +19,10 @@ from pydantic import BaseModel, Field
 
 from fmt_util import format_limited_list
 from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets, filter_to_rules
-from tools.ci.diff_utils import (
-    get_changed_files,
-    get_ci_base_commit as get_base_commit,
-    has_infra_changes,
-    run_bazel_diff,
-)
-from tools.ci.github_actions import bool_output, format_output, get_output_path, get_workspace
+from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
+from tools.ci.github_actions import CIEnvironment, bool_output, format_output
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
+from tools.env_utils import get_optional_env_path, get_required_existing_path
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +30,7 @@ logger = logging.getLogger(__name__)
 class CIDecision(BaseModel):
     """Result of CI decision computation."""
 
-    targets: list[str] = Field(default_factory=list)  # Affected targets, or ["//..."] for all
+    targets: list[str] = Field(default_factory=list, description="Affected targets, or ['//...'] for all")
     workflows: list[str] = Field(default_factory=list)
     infra_changed: bool = False
 
@@ -97,26 +92,15 @@ def should_trigger(name: str, config: WorkflowConfig, targets: list[str], change
 
 def get_triggered_workflows(
     workflows: dict[str, WorkflowConfig], targets: list[str], changed_files: set[str]
-) -> list[str]:
+) -> set[str]:
     """Determine which workflows should run based on changes."""
-    return sorted(name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files))
+    return {name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files)}
 
 
-def get_bazel_diff_jar() -> Path:
-    """Get path to bazel-diff JAR from environment."""
-    jar_path_str = os.environ.get("BAZEL_DIFF_JAR")
-    if not jar_path_str:
-        raise RuntimeError("BAZEL_DIFF_JAR environment variable not set")
-    jar_path = Path(jar_path_str)
-    if not jar_path.exists():
-        raise FileNotFoundError(f"bazel-diff JAR not found at {jar_path}")
-    return jar_path
-
-
-def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> CIDecision:
+def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -> CIDecision:
     """Compute CI decision based on changes."""
-    repo = pygit2.Repository(workspace)
-    base_commit = get_base_commit(repo)
+    repo = pygit2.Repository(env.workspace)
+    base_commit = get_ci_base_commit(repo, env)
 
     if not base_commit:
         logger.info("No base commit (new branch or initial commit), triggering all workflows")
@@ -129,8 +113,9 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
     if infra_changed:
         logger.info("Infrastructure change detected")
 
-    jar_path = get_bazel_diff_jar()
-    targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
+    jar_path = get_required_existing_path("BAZEL_DIFF_JAR")
+    cache_dir = get_optional_env_path("BAZEL_DIFF_CACHE_DIR") or (env.workspace / ".bazel-diff-cache")
+    targets = run_bazel_diff(repo, jar_path, env.workspace, base_commit, cache_dir)
 
     if not targets:
         logger.info("No Bazel targets affected")
@@ -148,7 +133,7 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
             targets = ["//..."]
 
     triggered = get_triggered_workflows(workflows, targets, changed_files)
-    return CIDecision(targets=targets, workflows=triggered, infra_changed=infra_changed)
+    return CIDecision(targets=targets, workflows=sorted(triggered), infra_changed=infra_changed)
 
 
 def main() -> None:
@@ -156,25 +141,18 @@ def main() -> None:
     # Configure logging to stderr
     logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
 
-    output_path = get_output_path()
-
-    manifest_path_str = os.environ.get("CI_WORKFLOWS_MANIFEST")
-    if not manifest_path_str:
-        raise RuntimeError("CI_WORKFLOWS_MANIFEST environment variable not set")
-    manifest_path = Path(manifest_path_str)
-    if not manifest_path.exists():
-        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+    env = CIEnvironment.from_env()
+    manifest_path = get_required_existing_path("CI_WORKFLOWS_MANIFEST")
 
     manifest = WorkflowManifest.from_yaml(manifest_path)
     logger.info("Loaded %d workflow definitions", len(manifest.workflows))
 
-    workspace = get_workspace()
-    decision = compute_decision(manifest.workflows, workspace)
+    decision = compute_decision(env, manifest.workflows)
 
-    output_path.write_text(decision.to_github_output())
+    env.output_path.write_text(decision.to_github_output())
 
     # Write targets file for artifact upload (avoids shell argument length limits)
-    targets_file = workspace / "targets.txt"
+    targets_file = env.workspace / "targets.txt"
     decision.write_targets_file(targets_file)
     logger.info("Wrote targets to %s", targets_file)
 
