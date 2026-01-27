@@ -278,17 +278,14 @@ class SupervisorClient:
         """Get the current state of a service.
 
         Returns None if supervisor isn't running or service doesn't exist.
+        Raises on connection/communication errors.
         """
         if not is_running(self._settings):
             return None
 
-        try:
-            if not self.service_exists(service_name):
-                return None
-            return self.get_process_info(service_name).statename
-        except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
-            logger.warning("Failed to get service state for %s: %s", service_name, e)
+        if not self.service_exists(service_name):
             return None
+        return self.get_process_info(service_name).statename
 
     def is_service_running(self, service_name: str, wait_for_start: bool = True, timeout: float = 5.0) -> bool:
         """Check if a specific service is running under supervisor.
