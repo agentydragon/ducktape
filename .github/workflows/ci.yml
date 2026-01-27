@@ -56,11 +56,12 @@ jobs:
           path: .bazel-diff-cache
           key: bazel-diff-hashes-${{ github.sha }}
           restore-keys: bazel-diff-hashes-
-      - name: Set bazel-diff env
+      - name: Set CI env
         run: |-
           echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
           echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
           echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV
+          echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV
       - name: Compute CI decision
         id: decide
         run: uv run tools/ci/ci_decide.py

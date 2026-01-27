@@ -52,10 +52,51 @@ class WorkflowConfig(BaseModel):
     secrets: list[str] = Field(default_factory=list)
 
 
+def _parse_bazel_label(label: str) -> tuple[str, str]:
+    """Parse a Bazel label into (package, target) parts.
+
+    Examples:
+        "//:ducktape_wheel" -> ("", "ducktape_wheel")
+        "//headscale_cleanup:headscale_cleanup_wheel" -> ("headscale_cleanup", "headscale_cleanup_wheel")
+    """
+    label = label.removeprefix("//")
+    if ":" in label:
+        package, target = label.split(":", 1)
+    else:
+        package = label
+        target = label.rsplit("/", 1)[-1]
+    return package, target
+
+
+class ReleaseConfig(BaseModel):
+    """Configuration for a package release workflow.
+
+    wheel_name and wheel_path are derived from bazel_target:
+    - wheel_name = target name with _wheel suffix stripped
+    - wheel_path = bazel-bin/<package> (or just bazel-bin for root targets)
+    """
+
+    bazel_target: str
+    release_body: str
+    apt_packages: list[str] = Field(default_factory=list)
+    latest_release_tag: str | None = None
+
+    @property
+    def wheel_name(self) -> str:
+        _, target = _parse_bazel_label(self.bazel_target)
+        return target.removesuffix("_wheel")
+
+    @property
+    def wheel_path(self) -> str:
+        package, _ = _parse_bazel_label(self.bazel_target)
+        return f"bazel-bin/{package}" if package else "bazel-bin"
+
+
 class WorkflowManifest(BaseModel):
     """Collection of all workflow configurations."""
 
     workflows: dict[str, WorkflowConfig]
+    releases: dict[str, ReleaseConfig] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, path: Path) -> WorkflowManifest:

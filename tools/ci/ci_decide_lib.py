@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from fmt_util import format_limited_list
 from tools.ci.bazel_query import filter_compatible_targets, filter_to_rules, query_intersection
 from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
-from tools.ci.github_actions import CIEnvironment
+from tools.ci.github_actions import CIEnvironment, PushStrategy
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from tools.env_utils import get_optional_env_path, get_required_existing_path
 
@@ -31,14 +31,14 @@ class CIDecision(BaseModel):
     """Result of CI decision computation."""
 
     targets: list[str] = Field(default_factory=list, description="Affected targets, or ['//...'] for all")
-    workflows: list[str] = Field(default_factory=list)
+    workflows: set[str] = Field(default_factory=set)
     infra_changed: bool = False
 
     def to_outputs(self) -> dict[str, str | bool]:
         """Format decision as GitHub Actions output dict."""
         return {
             "targets": " ".join(self.targets),
-            "workflows": json.dumps(self.workflows),
+            "workflows": json.dumps(sorted(self.workflows)),
             "infra_changed": self.infra_changed,
         }
 
@@ -56,6 +56,10 @@ def filter_platform_incompatible(targets: list[str]) -> list[str]:
 
     Uses bazel cquery to check target_compatible_with constraints.
     Targets incompatible with the current platform are excluded.
+
+    TODO: This currently runs on a Linux CI runner and filters out macOS-only targets.
+    To support macOS targets, partition the filtered-out targets by platform constraint
+    and fan them out to platform-specific runners (e.g. macos-latest) as separate jobs.
     """
     if not targets:
         return targets
@@ -91,11 +95,16 @@ def should_trigger(name: str, config: WorkflowConfig, targets: list[str], change
 def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -> CIDecision:
     """Compute CI decision based on changes."""
     repo = pygit2.Repository(env.workspace)
+
+    if not env.is_pull_request and env.push_strategy == PushStrategy.FULL:
+        logger.info("Push with full strategy: building all targets")
+        return CIDecision(targets=["//..."], workflows=set(workflows.keys()), infra_changed=True)
+
     base_commit = get_ci_base_commit(repo, env)
 
     if not base_commit:
         logger.info("No base commit (new branch or initial commit), triggering all workflows")
-        return CIDecision(targets=["//..."], workflows=sorted(workflows.keys()), infra_changed=True)
+        return CIDecision(targets=["//..."], workflows=set(workflows.keys()), infra_changed=True)
 
     changed_files = get_changed_files(repo, base_commit)
     logger.info("Changed files: %s", format_limited_list(sorted(changed_files), 20))
@@ -124,7 +133,7 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
             targets = ["//..."]
 
     triggered = {name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files)}
-    return CIDecision(targets=targets, workflows=sorted(triggered), infra_changed=infra_changed)
+    return CIDecision(targets=targets, workflows=triggered, infra_changed=infra_changed)
 
 
 def main() -> None:
@@ -148,5 +157,5 @@ def main() -> None:
     logger.info("Wrote targets to %s", targets_file)
 
     logger.info("\nDecision: %d workflows to run", len(decision.workflows))
-    for w in decision.workflows:
+    for w in sorted(decision.workflows):
         logger.info("  - %s", w)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Mapping
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,13 @@ _logger = logging.getLogger(__name__)
 # === GitHub Actions Environment ===
 
 
+class PushStrategy(StrEnum):
+    """How to determine affected targets on push events."""
+
+    INCREMENTAL = "incremental"  # Compare HEAD vs HEAD~1
+    FULL = "full"  # Build/test all targets (//...)
+
+
 class CIEnvironment(BaseModel):
     """GitHub Actions CI environment variables.
 
@@ -32,6 +40,7 @@ class CIEnvironment(BaseModel):
     output_path: Path
     event_name: str
     base_ref: str
+    push_strategy: PushStrategy
 
     @classmethod
     def from_env(cls) -> CIEnvironment:
@@ -41,6 +50,7 @@ class CIEnvironment(BaseModel):
             output_path=get_required_env_path("GITHUB_OUTPUT"),
             event_name=get_required_env("GITHUB_EVENT_NAME"),
             base_ref=os.environ.get("GITHUB_BASE_REF", ""),
+            push_strategy=PushStrategy(get_required_env("CI_PUSH_STRATEGY")),
         )
 
     @property

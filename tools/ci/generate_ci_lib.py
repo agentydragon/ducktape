@@ -1,6 +1,6 @@
-"""Generate .github/workflows/ci.yml from workflows.yaml.
+"""Generate .github/workflows/ from workflows.yaml.
 
-This script reads the workflow definitions and generates the CI workflow file,
+Generates ci.yml and per-package release workflow files,
 eliminating duplication in job definitions.
 
 This module provides the implementation logic. See generate_ci.py for the CLI entry point.
@@ -14,12 +14,13 @@ from pathlib import Path
 import yaml
 
 from tools.ci.github_actions import Job, Step, Workflow
-from tools.ci.models import WorkflowConfig, WorkflowManifest
+from tools.ci.models import ReleaseConfig, WorkflowConfig, WorkflowManifest
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
 WORKFLOWS_YAML = SCRIPT_DIR / "workflows.yaml"
-CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+CI_YML = WORKFLOWS_DIR / "ci.yml"
 
 HEADER = """\
 # AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
@@ -67,10 +68,11 @@ COMPUTE_TARGETS_JOB = Job(
             },
         ),
         Step(
-            name="Set bazel-diff env",
+            name="Set CI env",
             run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
             'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV\n'
-            'echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV',
+            'echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV\n'
+            'echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV',
         ),
         Step(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
         Step(
@@ -160,28 +162,109 @@ def generate_ci_yml(workflow: Workflow) -> str:
     return HEADER + yaml_content
 
 
+def generate_release_config(name: str, config: ReleaseConfig) -> Workflow:
+    """Generate a release workflow for a package."""
+    check_job = Job(
+        name="Check if release needed",
+        runs_on="ubuntu-latest",
+        outputs={"release_needed": "${{ steps.check.outputs.release_needed }}"},
+        steps=[
+            Step(name="Check out code", uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
+            Step(uses="./.github/actions/bazel-cache", id="bazel-cache"),
+            Step(
+                name="Check if release needed",
+                id="check",
+                uses="./.github/actions/check-release-needed",
+                with_args={"package_prefix": name, "bazel_target_pattern": config.bazel_target},
+            ),
+            Step(
+                uses="./.github/actions/bazel-cache-save",
+                if_cond="always()",
+                with_args={
+                    "cache-hit": "${{ steps.bazel-cache.outputs.cache-hit }}",
+                    "cache-key": "${{ steps.bazel-cache.outputs.cache-key }}",
+                },
+            ),
+        ],
+    )
+
+    release_with: dict[str, str] = {
+        "package_name": name,
+        "wheel_name": config.wheel_name,
+        "bazel_target": config.bazel_target,
+        "wheel_path": config.wheel_path,
+        "release_body": config.release_body,
+    }
+    if config.apt_packages:
+        release_with["apt_packages"] = " ".join(config.apt_packages)
+    if config.latest_release_tag:
+        release_with["latest_release_tag"] = config.latest_release_tag
+
+    release_job = Job(
+        needs="check",
+        if_cond="needs.check.outputs.release_needed == 'true' || inputs.force_release == true",
+        uses="./.github/workflows/python-wheel-release.yml",
+        with_args=release_with,
+    )
+
+    return Workflow(
+        name=f"{name} Release",
+        on={
+            "push": {"branches": ["devel", "main"]},
+            "workflow_dispatch": {
+                "inputs": {
+                    "force_release": {
+                        "description": "Force release even if no changes detected",
+                        "required": False,
+                        "default": False,
+                        "type": "boolean",
+                    }
+                }
+            },
+        },
+        concurrency={"group": "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": True},
+        permissions={"contents": "write"},
+        jobs={"check": check_job, "release": release_job},
+    )
+
+
 class OutOfDateError(Exception):
     """CI workflow file is out of date."""
 
 
+def check_workflow(path: Path, expected: Workflow) -> None:
+    """Check if a workflow file is semantically up to date."""
+    if not path.exists():
+        raise FileNotFoundError(f"{path} does not exist")
+    current = Workflow.model_validate(yaml.safe_load(path.read_text()))
+    if current != expected:
+        raise OutOfDateError(f"{path} is out of date. Run 'uv run tools/ci/generate_ci.py' to update.")
+
+
+def write_workflow(path: Path, workflow: Workflow) -> None:
+    """Write a workflow file."""
+    path.write_text(generate_ci_yml(workflow))
+    print(f"Generated {path}")
+
+
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Generate ci.yml from workflows.yaml")
-    parser.add_argument("--check", action="store_true", help="Check if ci.yml is semantically up to date")
+    parser = argparse.ArgumentParser(description="Generate workflow files from workflows.yaml")
+    parser.add_argument("--check", action="store_true", help="Check if workflow files are semantically up to date")
     args = parser.parse_args()
 
     manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
-    expected = generate_ci_config(manifest)
+
+    # Build all expected workflows
+    expected_files: dict[Path, Workflow] = {CI_YML: generate_ci_config(manifest)}
+    for name, config in manifest.releases.items():
+        expected_files[WORKFLOWS_DIR / f"{name}-release.yml"] = generate_release_config(name, config)
 
     if args.check:
-        if not CI_YML.exists():
-            raise FileNotFoundError(f"{CI_YML} does not exist")
-        # Compare parsed models to ignore formatting differences (prettier, etc.)
-        current = Workflow.model_validate(yaml.safe_load(CI_YML.read_text()))
-        if current != expected:
-            raise OutOfDateError(f"{CI_YML} is out of date. Run 'uv run tools/ci/generate_ci.py' to update.")
-        print(f"{CI_YML} is up to date")
+        for path, expected in expected_files.items():
+            check_workflow(path, expected)
+        print(f"All {len(expected_files)} workflow files are up to date")
         return
 
-    CI_YML.write_text(generate_ci_yml(expected))
-    print(f"Generated {CI_YML}")
+    for path, workflow in expected_files.items():
+        write_workflow(path, workflow)
