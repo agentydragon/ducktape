@@ -9,13 +9,13 @@ Handles:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
 import shutil
 import socket
 import ssl
-import subprocess
 import sys
 import textwrap
 import time
@@ -26,6 +26,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 from mako.template import Template
 
+from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from tools.claude_hooks.resources import CONFIG_FILES
 from tools.claude_hooks.settings import HookSettings
@@ -281,7 +282,7 @@ def _get_cert_attr(name: x509.Name, oid: x509.ObjectIdentifier) -> str:
         return ""
 
 
-def _create_java_truststore(settings: HookSettings) -> None:
+async def _create_java_truststore(settings: HookSettings) -> None:
     """Create a Java truststore with the system CAs plus the proxy CA.
 
     Uses keytool (from JDK) to import the CA certificate into a copy of
@@ -313,28 +314,26 @@ def _create_java_truststore(settings: HookSettings) -> None:
         truststore.chmod(0o644)
 
         # Import the proxy CA using keytool
-        result = subprocess.run(
-            [
-                "keytool",
-                "-importcert",
-                "-trustcacerts",
-                "-alias",
-                "anthropic-tls-inspection",
-                "-file",
-                str(ca_file),
-                "-keystore",
-                str(truststore),
-                "-storepass",
-                TRUSTSTORE_PASSWORD,
-                "-noprompt",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
+        process = await asyncio.create_subprocess_exec(
+            "keytool",
+            "-importcert",
+            "-trustcacerts",
+            "-alias",
+            "anthropic-tls-inspection",
+            "-file",
+            str(ca_file),
+            "-keystore",
+            str(truststore),
+            "-storepass",
+            TRUSTSTORE_PASSWORD,
+            "-noprompt",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
+        _, stderr = await process.communicate()
 
-        if result.returncode != 0:
-            raise TruststoreError(f"keytool failed: {result.stderr}")
+        if process.returncode != 0:
+            raise TruststoreError(f"keytool failed: {stderr.decode()}")
 
         logger.info("Created custom Java truststore at %s", truststore)
 
@@ -374,23 +373,35 @@ def _write_creds_file(settings: HookSettings, https_proxy: str) -> None:
     logger.debug("Wrote proxy credentials to %s", creds_file)
 
 
-def _wait_for_proxy(settings: HookSettings, timeout_seconds: float = 5.0) -> bool:
-    """Wait for proxy to start listening, return True if successful."""
+async def _wait_for_proxy_running(
+    settings: HookSettings, supervisor: SupervisorClient, timeout_seconds: float = 5.0
+) -> None:
+    """Wait for proxy port to be listening AND supervisor to report RUNNING.
+
+    Raises:
+        ProxyServiceError: If proxy does not become ready within timeout.
+    """
     proxy_port = settings.get_bazel_proxy_port()
-    for _ in range(int(timeout_seconds / 0.5)):
-        time.sleep(0.5)
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            conn_result = sock.connect_ex(("127.0.0.1", proxy_port))
-            sock.close()
-            if conn_result == 0:
-                return True
-        except OSError:
-            pass  # Expected: connection refused during startup
-    return False
+    deadline = time.monotonic() + timeout_seconds
+    port_ready = False
+
+    while time.monotonic() < deadline:
+        await asyncio.sleep(0.2)
+
+        if not port_ready:
+            port_ready = await asyncio.to_thread(is_port_in_use, proxy_port)
+
+        if port_ready and await asyncio.to_thread(supervisor.is_service_running, BAZEL_PROXY_SERVICE):
+            return
+
+    state = await asyncio.to_thread(supervisor.get_service_state, BAZEL_PROXY_SERVICE)
+    raise ProxyServiceError(
+        f"Bazel proxy did not become ready within {timeout_seconds}s "
+        f"(port_listening={port_ready}, supervisor_state={state})"
+    )
 
 
-def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorClient) -> None:
+async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorClient) -> None:
     """Ensure proxy is running with current credentials.
 
     Writes the current https_proxy URL to the credentials file. The proxy
@@ -411,31 +422,34 @@ def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorClient) -
     _write_creds_file(settings, https_proxy)
 
     # If proxy is already running, we're done (it will pick up new creds)
-    if supervisor.is_service_running(BAZEL_PROXY_SERVICE):
+    if await asyncio.to_thread(supervisor.is_service_running, BAZEL_PROXY_SERVICE):
         return
 
     # Service exists but not running (FATAL/STOPPED/EXITED) - restart it
     command = _build_auth_proxy_command(settings)
     proxy_port = settings.get_bazel_proxy_port()
-    current_command = supervisor.get_service_command(BAZEL_PROXY_SERVICE)
-    if current_command is not None:
+    if await asyncio.to_thread(supervisor.service_exists, BAZEL_PROXY_SERVICE):
         logger.info("Restarting proxy service on port %d", proxy_port)
-        supervisor.update_service(
-            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+        await asyncio.to_thread(
+            supervisor.update_service,
+            name=BAZEL_PROXY_SERVICE,
+            command=command,
+            directory=proxy_dir,
+            environment=_get_proxy_service_env(),
         )
-        if not _wait_for_proxy(settings):
-            raise ProxyServiceError("Bazel proxy did not start listening after restart")
-        logger.info("Bazel proxy restarted successfully")
-        return
+    else:
+        # Start proxy service for the first time
+        logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
+        await asyncio.to_thread(
+            supervisor.add_service,
+            name=BAZEL_PROXY_SERVICE,
+            command=command,
+            directory=proxy_dir,
+            environment=_get_proxy_service_env(),
+        )
 
-    # Start proxy service
-    logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
-    supervisor.add_service(
-        name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
-    )
-    if not _wait_for_proxy(settings):
-        raise ProxyServiceError("Bazel proxy did not start listening in time")
-    logger.info("Bazel proxy started successfully")
+    await _wait_for_proxy_running(settings, supervisor)
+    logger.info("Bazel proxy running successfully")
 
 
 def _get_local_registry_path() -> Path | None:
@@ -519,7 +533,7 @@ def _create_combined_ca_bundle(settings: HookSettings) -> None:
     logger.info("Created combined CA bundle at %s", combined_ca)
 
 
-def setup_bazel_proxy(settings: HookSettings, supervisor: SupervisorClient) -> ProxySetup:
+async def setup_bazel_proxy(settings: HookSettings, supervisor: SupervisorClient) -> ProxySetup:
     """Set up the complete Bazel proxy environment for TLS-inspecting proxies.
 
     This is needed when running behind Anthropic's TLS-inspecting proxy
@@ -549,13 +563,13 @@ def setup_bazel_proxy(settings: HookSettings, supervisor: SupervisorClient) -> P
     settings.get_bazel_proxy_dir().mkdir(parents=True, exist_ok=True)
 
     # Step 1: Start local proxy first (needed for CA extraction)
-    ensure_proxy_running(settings, supervisor)
+    await ensure_proxy_running(settings, supervisor)
 
-    # Step 2: Extract the TLS inspection CA (via local proxy)
-    _extract_proxy_ca(settings)
+    # Step 2: Extract the TLS inspection CA (blocking SSL/socket ops, run in thread)
+    await asyncio.to_thread(_extract_proxy_ca, settings)
 
     # Step 3: Create Java truststore with the CA
-    _create_java_truststore(settings)
+    await _create_java_truststore(settings)
 
     # Step 4: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(settings)

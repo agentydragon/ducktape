@@ -19,11 +19,14 @@ Requirements:
 """
 
 import argparse
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+from PIL import Image
 
 
 def find_spice_window() -> str | None:
@@ -118,8 +121,6 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
     Returns dict with timing info.
     """
 
-    from PIL import Image
-
     # Extract frames using ffmpeg
     frame_dir = video_path.parent / "frames"
     frame_dir.mkdir(exist_ok=True)
@@ -150,7 +151,7 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
 
         if prev_img is not None:
             # Compute absolute difference
-            diff = sum(abs(a - b) for a, b in zip(img.tobytes(), prev_img.tobytes()))
+            diff = sum(abs(a - b) for a, b in zip(img.tobytes(), prev_img.tobytes(), strict=False))
             diff_normalized = diff / (img.width * img.height)
             diffs.append((i, diff_normalized))
 
@@ -333,8 +334,6 @@ Example:
 
     # Cleanup
     if not args.keep_video:
-        import shutil
-
         shutil.rmtree(work_dir, ignore_errors=True)
     else:
         print(f"\nVideo files kept in: {work_dir}")

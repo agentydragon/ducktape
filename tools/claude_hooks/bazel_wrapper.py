@@ -4,6 +4,7 @@ Reads configuration from environment variables set by bazelisk_setup.py.
 Provides auto-recovery: restarts supervisor and proxy if not running.
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -121,7 +122,7 @@ def main() -> None:
 
     try:
         logger.info("Calling ensure_proxy_running...")
-        proxy_setup.ensure_proxy_running(settings, SupervisorClient(settings))
+        asyncio.run(proxy_setup.ensure_proxy_running(settings, SupervisorClient(settings)))
         logger.info("ensure_proxy_running completed successfully")
         warn_if_credentials_expiring(settings)
     except BazelProxyError as e:
