@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import platform
 import shutil
-import ssl
 import stat
 import subprocess
 import sys
@@ -106,23 +105,9 @@ def install_bazelisk(settings: HookSettings) -> Path:
     url = get_bazelisk_url()
     logger.info("Downloading Bazelisk from %s", url)
 
-    # Create SSL context with combined CA bundle (includes proxy's TLS inspection CA)
-    # Use only our combined bundle to avoid issues with missing system CAs in sandboxes
-    combined_ca = settings.get_bazel_combined_ca()
-    ssl_context: ssl.SSLContext | None = None
-    if combined_ca.exists():
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ssl_context.check_hostname = True
-        ssl_context.verify_mode = ssl.CERT_REQUIRED
-        ssl_context.load_verify_locations(combined_ca)
-        logger.info("Using combined CA bundle for bazelisk download: %s", combined_ca)
-    else:
-        # During parallel initialization, CA bundle may not be created yet.
-        # Default SSL context works fine for github.com downloads.
-        logger.info("Combined CA bundle not found at %s, using default SSL context", combined_ca)
-
-    # Download with proxy support (urllib respects https_proxy env var)
-    with urllib.request.urlopen(url, timeout=60, context=ssl_context) as response:
+    # urllib respects HTTPS_PROXY env var and uses system CA bundle (SSL_CERT_FILE).
+    # In CC web, system CAs already include the Anthropic TLS inspection CA.
+    with urllib.request.urlopen(url, timeout=60) as response:
         bazelisk_path.write_bytes(response.read())
 
     # Make executable
