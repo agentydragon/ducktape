@@ -9,13 +9,12 @@ This module provides the implementation logic. See check_release.py for the CLI 
 from __future__ import annotations
 
 import logging
-import urllib.request
 from pathlib import Path
 
 import pygit2
 from pydantic import BaseModel
 
-from tools.ci.diff_utils import get_changed_files, has_infra_changes, run_bazel_diff
+from tools.ci.diff_utils import download_bazel_diff, get_changed_files, has_infra_changes, run_bazel_diff
 from tools.ci.github_actions import CIEnvironment
 from tools.env_utils import get_required_env
 
@@ -37,24 +36,6 @@ class ReleaseEnvironment(BaseModel):
             package_prefix=get_required_env("PACKAGE_PREFIX"),
             wheel_target=get_required_env("BAZEL_TARGET_PATTERN"),
         )
-
-
-BAZEL_DIFF_VERSION = "12.1.1"
-BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"
-
-
-def download_bazel_diff(dest: Path) -> None:
-    """Download bazel-diff JAR if not already present.
-
-    Raises on download failure.
-    """
-    if dest.exists():
-        logger.info("bazel-diff already downloaded at %s", dest)
-        return
-
-    logger.info("Downloading bazel-diff v%s...", BAZEL_DIFF_VERSION)
-    urllib.request.urlretrieve(BAZEL_DIFF_URL, dest)
-    logger.info("Downloaded to %s", dest)
 
 
 def get_last_release_commit(repo: pygit2.Repository, package_prefix: str) -> pygit2.Commit | None:

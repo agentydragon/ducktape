@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -74,6 +75,21 @@ def get_ci_base_commit(repo: pygit2.Repository, env: CIEnvironment) -> pygit2.Co
     except (KeyError, pygit2.GitError):
         pass
     return None
+
+
+BAZEL_DIFF_VERSION = "12.1.1"
+BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"
+
+
+def download_bazel_diff(dest: Path) -> None:
+    """Download bazel-diff JAR if not already present."""
+    if dest.exists():
+        logger.info("bazel-diff already downloaded at %s", dest)
+        return
+
+    logger.info("Downloading bazel-diff v%s...", BAZEL_DIFF_VERSION)
+    urllib.request.urlretrieve(BAZEL_DIFF_URL, dest)
+    logger.info("Downloaded to %s", dest)
 
 
 def checkout_commit(repo: pygit2.Repository, commit: pygit2.Commit) -> None:
