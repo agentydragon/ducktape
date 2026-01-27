@@ -1,7 +1,7 @@
 """Shared utilities for bazel-diff based CI tools.
 
 Contains git utilities, infrastructure pattern detection, and bazel-diff execution.
-Used by both ci_decide_lib.py and bazel_diff_lib.py.
+Used by both ci_decide_lib.py and check_release_lib.py.
 """
 
 from __future__ import annotations
@@ -34,8 +34,7 @@ INFRA_PATTERNS = [
 def get_changed_files(repo: pygit2.Repository, base_commit: pygit2.Commit) -> set[str]:
     """Get set of files changed between base commit and HEAD."""
     head_commit = repo.head.peel(pygit2.Commit)
-    diff = repo.diff(base_commit, head_commit)
-    return {delta.new_file.path for delta in diff.deltas}
+    return {delta.new_file.path for delta in repo.diff(base_commit, head_commit).deltas}
 
 
 def has_infra_changes(changed_files: set[str]) -> bool:

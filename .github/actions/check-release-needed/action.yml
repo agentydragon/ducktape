@@ -37,4 +37,4 @@ runs:
         PACKAGE_PREFIX: ${{ inputs.package_prefix }}
         BAZEL_TARGET_PATTERN: ${{ inputs.bazel_target_pattern }}
       run: |
-        python3 tools/ci/bazel_diff.py
+        uv run tools/ci/check_release.py

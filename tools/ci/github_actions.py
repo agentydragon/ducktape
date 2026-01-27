@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from tools.env_utils import get_required_env_path
+from tools.env_utils import get_required_env, get_required_env_path
 
 _logger = logging.getLogger(__name__)
 
@@ -38,13 +38,19 @@ class CIEnvironment(BaseModel):
         return cls(
             workspace=Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd()),
             output_path=get_required_env_path("GITHUB_OUTPUT"),
-            event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
+            event_name=get_required_env("GITHUB_EVENT_NAME"),
             base_ref=os.environ.get("GITHUB_BASE_REF", ""),
         )
 
     @property
     def is_pull_request(self) -> bool:
         return self.event_name == "pull_request"
+
+    def write_outputs(self, outputs: dict[str, str]) -> None:
+        """Write outputs to GitHub Actions output file and log them."""
+        self.output_path.write_text(format_output(outputs))
+        for key, value in outputs.items():
+            _logger.info("%s=%s", key, value)
 
 
 # === Output Utilities ===
@@ -58,13 +64,6 @@ def format_output(outputs: dict[str, str]) -> str:
 def bool_output(value: bool) -> str:
     """Format bool as GitHub Actions output string."""
     return "true" if value else "false"
-
-
-def write_outputs(output_path: Path, outputs: dict[str, str]) -> None:
-    """Write outputs to GitHub Actions output file and log them."""
-    output_path.write_text(format_output(outputs))
-    for key, value in outputs.items():
-        _logger.info("%s=%s", key, value)
 
 
 # === Workflow Schema Models ===

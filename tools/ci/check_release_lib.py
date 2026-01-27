@@ -3,7 +3,7 @@
 Compares against last release tag for a specific package to determine
 if a new release is needed.
 
-This module provides the implementation logic. See bazel_diff.py for the CLI entry point.
+This module provides the implementation logic. See check_release.py for the CLI entry point.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import pygit2
 from pydantic import BaseModel
 
 from tools.ci.diff_utils import get_changed_files, has_infra_changes, run_bazel_diff
-from tools.ci.github_actions import CIEnvironment, bool_output, write_outputs
+from tools.ci.github_actions import CIEnvironment, bool_output
 from tools.env_utils import get_required_env
 
 logger = logging.getLogger(__name__)
@@ -148,4 +148,4 @@ def main() -> None:
 
     repo = pygit2.Repository(env.ci.workspace)
     outputs = compute_release_decision(env, repo)
-    write_outputs(env.ci.output_path, outputs)
+    env.ci.write_outputs(outputs)

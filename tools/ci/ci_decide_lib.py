@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from fmt_util import format_limited_list
 from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets, filter_to_rules
 from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
-from tools.ci.github_actions import CIEnvironment, bool_output, format_output
+from tools.ci.github_actions import CIEnvironment, bool_output
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from tools.env_utils import get_optional_env_path, get_required_existing_path
 
@@ -34,15 +34,13 @@ class CIDecision(BaseModel):
     workflows: list[str] = Field(default_factory=list)
     infra_changed: bool = False
 
-    def to_github_output(self) -> str:
-        """Format decision as GitHub Actions output content."""
-        return format_output(
-            {
-                "targets": " ".join(self.targets),
-                "workflows": json.dumps(self.workflows),
-                "infra_changed": bool_output(self.infra_changed),
-            }
-        )
+    def to_outputs(self) -> dict[str, str]:
+        """Format decision as GitHub Actions output dict."""
+        return {
+            "targets": " ".join(self.targets),
+            "workflows": json.dumps(self.workflows),
+            "infra_changed": bool_output(self.infra_changed),
+        }
 
     def write_targets_file(self, targets_path: Path) -> None:
         """Write targets to file for --target_pattern_file usage.
@@ -90,13 +88,6 @@ def should_trigger(name: str, config: WorkflowConfig, targets: list[str], change
     return False
 
 
-def get_triggered_workflows(
-    workflows: dict[str, WorkflowConfig], targets: list[str], changed_files: set[str]
-) -> set[str]:
-    """Determine which workflows should run based on changes."""
-    return {name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files)}
-
-
 def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -> CIDecision:
     """Compute CI decision based on changes."""
     repo = pygit2.Repository(env.workspace)
@@ -132,7 +123,7 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
         if infra_changed:
             targets = ["//..."]
 
-    triggered = get_triggered_workflows(workflows, targets, changed_files)
+    triggered = {name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files)}
     return CIDecision(targets=targets, workflows=sorted(triggered), infra_changed=infra_changed)
 
 
@@ -149,7 +140,7 @@ def main() -> None:
 
     decision = compute_decision(env, manifest.workflows)
 
-    env.output_path.write_text(decision.to_github_output())
+    env.write_outputs(decision.to_outputs())
 
     # Write targets file for artifact upload (avoids shell argument length limits)
     targets_file = env.workspace / "targets.txt"

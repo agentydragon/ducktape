@@ -48,8 +48,8 @@ py_library(
 )
 
 py_library(
-    name = "bazel_diff_lib",
-    srcs = ["bazel_diff_lib.py"],
+    name = "check_release_lib",
+    srcs = ["check_release_lib.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -95,11 +95,11 @@ py_library(
 # === Exec stubs ===
 
 py_library(
-    name = "bazel_diff",
-    srcs = ["bazel_diff.py"],
+    name = "check_release",
+    srcs = ["check_release.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = [":bazel_diff_lib"],
+    deps = [":check_release_lib"],
 )
 
 py_library(
