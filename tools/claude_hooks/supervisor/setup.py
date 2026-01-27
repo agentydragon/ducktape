@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import SupervisorError
 from tools.claude_hooks.settings import HookSettings
-from tools.claude_hooks.supervisor.client import SupervisorClient, is_running
+from tools.claude_hooks.supervisor.client import SupervisorClient, try_connect
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ def _write_config(settings: HookSettings) -> None:
 def _cleanup_stale_supervisor_files(settings: HookSettings) -> None:
     """Clean up stale supervisor pidfile.
 
-    Called before starting supervisord when is_running() returns False
+    Called before starting supervisord when try_connect() returns None
     but the pidfile still exists (stale state).
     """
     pidfile = settings.get_supervisor_pidfile()
@@ -145,9 +145,10 @@ async def start(settings: HookSettings) -> SupervisorSetup:
     Raises:
         SupervisorError: If supervisor cannot be started.
     """
-    if await is_running(settings):
+    existing_client = await try_connect(settings)
+    if existing_client:
         logger.info("supervisord already running")
-        return SupervisorSetup(client=SupervisorClient(settings), settings=settings)
+        return SupervisorSetup(client=existing_client, settings=settings)
 
     logger.info("Starting supervisord...")
 
@@ -212,9 +213,10 @@ async def start(settings: HookSettings) -> SupervisorSetup:
     # Wait for supervisor to be ready (up to 5 seconds)
     for i in range(20):
         await asyncio.sleep(0.25)
-        if await is_running(settings):
+        client = await try_connect(settings)
+        if client:
             logger.info("supervisord started successfully")
-            return SupervisorSetup(client=SupervisorClient(settings), settings=settings)
+            return SupervisorSetup(client=client, settings=settings)
         if i % 4 == 3:  # Log every second
             logger.debug("Waiting for supervisord... (%d/20)", i + 1)
 

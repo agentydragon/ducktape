@@ -88,17 +88,21 @@ async def _xmlrpc_call(url: str, method: str, params: tuple[Any, ...], request_t
     return result[0] if len(result) == 1 else result
 
 
-async def is_running(settings: HookSettings) -> bool:
-    """Check if supervisord is running."""
+async def try_connect(settings: HookSettings) -> SupervisorClient | None:
+    """Try to connect to a running supervisord.
+
+    Returns a connected client if supervisor is reachable, None otherwise.
+    Performs quick pre-checks (port, pidfile) before attempting XML-RPC.
+    """
     port = settings.get_supervisor_port()
     pidfile = settings.get_supervisor_pidfile()
 
-    logger.debug("is_running check: port=%d, pidfile=%s", port, pidfile)
+    logger.debug("try_connect check: port=%d, pidfile=%s", port, pidfile)
 
     # Quick check: port must be listening
     if not is_port_in_use(port):
         logger.info("Supervisor port %d not listening", port)
-        return False
+        return None
     logger.debug("Port %d is in use", port)
 
     # Check pidfile and if process is alive
@@ -109,15 +113,20 @@ async def is_running(settings: HookSettings) -> bool:
             os.kill(pid, 0)
         except (ValueError, ProcessLookupError, PermissionError):
             logger.debug("Supervisor pidfile exists but process not running")
-            return False
+            return None
 
     try:
         client = SupervisorClient(settings)
         await client.get_state()
-        return True
+        return client
     except (ConnectionError, OSError, xmlrpc.client.Fault, httpx.ConnectError) as e:
         logger.debug("Supervisor XML-RPC check failed: %s", e)
-        return False
+        return None
+
+
+async def is_running(settings: HookSettings) -> bool:
+    """Check if supervisord is running."""
+    return await try_connect(settings) is not None
 
 
 def get_service_config_path(settings: HookSettings, name: str) -> Path:
