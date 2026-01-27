@@ -34,7 +34,7 @@ class ReleaseEnvironment(BaseModel):
         return cls(
             ci=CIEnvironment.from_env(),
             package_prefix=get_required_env("PACKAGE_PREFIX"),
-            wheel_target=get_required_env("BAZEL_TARGET_PATTERN"),
+            wheel_target=get_required_env("BAZEL_WHEEL_TARGET"),
         )
 
 

@@ -36,7 +36,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: ducktape
-          bazel_target_pattern: //:ducktape_wheel
+          bazel_target: //:ducktape_wheel
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:

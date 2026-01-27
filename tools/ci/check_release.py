@@ -9,7 +9,7 @@ Compares against the last release tag using bazel-diff to determine
 if the package's wheel target has been affected.
 
 Usage:
-    PACKAGE_PREFIX=ducktape BAZEL_TARGET_PATTERN="//:ducktape_wheel" \
+    PACKAGE_PREFIX=ducktape BAZEL_WHEEL_TARGET="//:ducktape_wheel" \
         uv run tools/ci/check_release.py
 """
 

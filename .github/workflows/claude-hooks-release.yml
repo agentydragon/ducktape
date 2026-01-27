@@ -56,7 +56,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: claude-hooks
-          bazel_target_pattern: "//tools/claude_hooks/..."
+          bazel_target: //tools/claude_hooks:claude_hooks_wheel
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

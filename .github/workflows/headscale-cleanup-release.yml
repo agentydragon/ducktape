@@ -36,7 +36,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: headscale-cleanup
-          bazel_target_pattern: //headscale_cleanup:headscale_cleanup_wheel
+          bazel_target: //headscale_cleanup:headscale_cleanup_wheel
       - uses: ./.github/actions/bazel-cache-save
         if: always()
         with:

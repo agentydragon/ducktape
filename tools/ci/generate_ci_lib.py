@@ -175,7 +175,7 @@ def generate_release_config(name: str, config: ReleaseConfig) -> Workflow:
                 name="Check if release needed",
                 id="check",
                 uses="./.github/actions/check-release-needed",
-                with_args={"package_prefix": name, "bazel_target_pattern": config.bazel_target},
+                with_args={"package_prefix": name, "bazel_target": config.bazel_target},
             ),
             Step(
                 uses="./.github/actions/bazel-cache-save",

@@ -7,8 +7,8 @@ inputs:
   package_prefix:
     description: "Package name prefix used in release tags (e.g., 'ducktape', 'claude-hooks')"
     required: true
-  bazel_target_pattern:
-    description: "Bazel target pattern to check for changes (e.g., '//tools/claude_hooks/...', '//:ducktape_wheel')"
+  bazel_target:
+    description: "Bazel wheel target to check for changes (e.g., '//:ducktape_wheel')"
     required: true
 
 outputs:
@@ -29,6 +29,6 @@ runs:
       shell: bash
       env:
         PACKAGE_PREFIX: ${{ inputs.package_prefix }}
-        BAZEL_TARGET_PATTERN: ${{ inputs.bazel_target_pattern }}
+        BAZEL_WHEEL_TARGET: ${{ inputs.bazel_target }}
       run: |
         uv run tools/ci/check_release.py
