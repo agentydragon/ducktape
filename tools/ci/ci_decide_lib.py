@@ -162,7 +162,9 @@ def main() -> None:
     output_path = Path(output_path_str)
 
     manifest_path_str = os.environ.get("CI_WORKFLOWS_MANIFEST")
-    manifest_path = Path(manifest_path_str) if manifest_path_str else Path(__file__).parent / "workflows.yaml"
+    if not manifest_path_str:
+        raise RuntimeError("CI_WORKFLOWS_MANIFEST environment variable not set")
+    manifest_path = Path(manifest_path_str)
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifest not found: {manifest_path}")
 
