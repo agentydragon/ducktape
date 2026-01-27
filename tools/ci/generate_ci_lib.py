@@ -75,27 +75,9 @@ COMPUTE_TARGETS_JOB = Job(
             name="Set CI env",
             run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
             'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV\n'
-            'echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV\n'
             'echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV',
         ),
         Step(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
-        Step(
-            name="Debug query logs directory",
-            if_cond="always()",
-            run='echo "BAZEL_QUERY_LOG_DIR=$BAZEL_QUERY_LOG_DIR"\n'
-            'echo "PWD=$PWD"\n'
-            'ls -la "$BAZEL_QUERY_LOG_DIR" 2>/dev/null || echo "Directory does not exist"',
-        ),
-        Step(
-            name="Upload bazel query logs",
-            if_cond="failure()",
-            uses="actions/upload-artifact@v4",
-            with_args={
-                "name": "bazel-query-logs-${{ github.run_id }}",
-                "path": "bazel-query-logs",
-                "if-no-files-found": "ignore",
-            },
-        ),
         Step(
             name="Upload targets file",
             uses="actions/upload-artifact@v4",

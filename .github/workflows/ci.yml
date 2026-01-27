@@ -60,24 +60,10 @@ jobs:
         run: |-
           echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
           echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
-          echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV
           echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV
       - name: Compute CI decision
         id: decide
         run: uv run tools/ci/ci_decide.py
-      - name: Debug query logs directory
-        run: |-
-          echo "BAZEL_QUERY_LOG_DIR=$BAZEL_QUERY_LOG_DIR"
-          echo "PWD=$PWD"
-          ls -la "$BAZEL_QUERY_LOG_DIR" 2>/dev/null || echo "Directory does not exist"
-        if: always()
-      - name: Upload bazel query logs
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: bazel-query-logs-${{ github.run_id }}
-          path: bazel-query-logs
-          if-no-files-found: ignore
       - name: Upload targets file
         uses: actions/upload-artifact@v4
         with:
