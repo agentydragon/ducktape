@@ -80,7 +80,7 @@ class ProxySetup:
         """Get human-readable proxy status."""
         if not self.settings.get_bazel_truststore().exists():
             return "not configured"
-        if self.supervisor.is_service_running(BAZEL_PROXY_SERVICE, wait_for_start=False):
+        if self.supervisor.is_service_running(BAZEL_PROXY_SERVICE):
             return f"running (port {self.port})"
         return "configured (not running)"
 

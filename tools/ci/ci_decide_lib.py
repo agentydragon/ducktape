@@ -13,7 +13,6 @@ import json
 import logging
 import os
 import re
-import subprocess
 from pathlib import Path
 
 import pygit2
@@ -21,20 +20,16 @@ from pydantic import BaseModel, Field
 
 from fmt_util import format_limited_list
 from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets, filter_to_rules
+from tools.ci.diff_utils import (
+    get_changed_files,
+    get_ci_base_commit as get_base_commit,
+    has_infra_changes,
+    run_bazel_diff,
+)
+from tools.ci.github_actions import bool_output, format_output
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 
 logger = logging.getLogger(__name__)
-
-# Infrastructure patterns that affect all targets (caching may be invalid)
-INFRA_PATTERNS = [
-    r"^MODULE\.bazel$",
-    r"^MODULE\.bazel\.lock$",
-    r"^requirements_bazel\.txt$",
-    r"^\.bazelrc$",
-    r"^\.bazelversion$",
-    r"^tools/bazel",
-    r"^WORKSPACE",
-]
 
 
 class CIDecision(BaseModel):
@@ -46,12 +41,13 @@ class CIDecision(BaseModel):
 
     def to_github_output(self) -> str:
         """Format decision as GitHub Actions output content."""
-        outputs = {
-            "targets": " ".join(self.targets),
-            "workflows": json.dumps(self.workflows),
-            "infra_changed": "true" if self.infra_changed else "false",
-        }
-        return "".join(f"{k}={v}\n" for k, v in outputs.items())
+        return format_output(
+            {
+                "targets": " ".join(self.targets),
+                "workflows": json.dumps(self.workflows),
+                "infra_changed": bool_output(self.infra_changed),
+            }
+        )
 
     def write_targets_file(self, targets_path: Path) -> None:
         """Write targets to file for --target_pattern_file usage.
@@ -60,55 +56,6 @@ class CIDecision(BaseModel):
         This avoids shell argument length limits when passing many targets.
         """
         targets_path.write_text("\n".join(self.targets) + "\n" if self.targets else "")
-
-
-def get_base_commit(repo: pygit2.Repository) -> pygit2.Commit | None:
-    """Determine base commit for comparison."""
-    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
-
-    if event_name == "pull_request":
-        base_ref = os.environ.get("GITHUB_BASE_REF", "")
-        if not base_ref:
-            return None
-        try:
-            remote_ref = repo.references.get(f"refs/remotes/origin/{base_ref}")
-            if remote_ref is None:
-                return None
-            base_commit = remote_ref.peel(pygit2.Commit)
-            merge_base_oid = repo.merge_base(base_commit.id, repo.head.target)
-            if merge_base_oid is None:
-                return None
-            logger.info("Pull request: comparing against merge-base %s", str(merge_base_oid)[:8])
-            obj = repo.get(merge_base_oid)
-            if not isinstance(obj, pygit2.Commit):
-                return None
-            return obj
-        except (KeyError, pygit2.GitError):
-            return None
-
-    # Push event: compare against parent commit
-    try:
-        head_commit = repo.head.peel(pygit2.Commit)
-        if head_commit.parents:
-            parent = head_commit.parents[0]
-            logger.info("Push: comparing against HEAD~1 (%s)", str(parent.id)[:8])
-            return parent
-    except (KeyError, pygit2.GitError):
-        pass
-    return None
-
-
-def get_changed_files(repo: pygit2.Repository, base_commit: pygit2.Commit) -> set[str]:
-    """Get set of files changed between base commit and HEAD."""
-    head_commit = repo.head.peel(pygit2.Commit)
-    diff = repo.diff(base_commit, head_commit)
-    return {delta.new_file.path for delta in diff.deltas}
-
-
-def has_infra_changes(changed_files: set[str]) -> bool:
-    """Check if any changed files match infrastructure patterns."""
-    compiled = [re.compile(p) for p in INFRA_PATTERNS]
-    return any(r.match(f) for r in compiled for f in changed_files)
 
 
 def filter_platform_incompatible(targets: list[str]) -> list[str]:
@@ -125,77 +72,6 @@ def filter_platform_incompatible(targets: list[str]) -> list[str]:
     if excluded:
         logger.info("Filtered out %d platform-incompatible targets", excluded)
     return compatible
-
-
-def checkout_commit(repo: pygit2.Repository, commit: pygit2.Commit) -> None:
-    """Checkout a specific commit, updating the working directory."""
-    repo.checkout_tree(commit, strategy=pygit2.GIT_CHECKOUT_FORCE)
-    repo.set_head(commit.id)
-
-
-def get_or_generate_hashes(
-    repo: pygit2.Repository, jar_path: Path, workspace: Path, commit: pygit2.Commit, cache_dir: Path
-) -> Path:
-    """Get cached hashes or generate them for a commit.
-
-    Returns path to the hash JSON file.
-    """
-    sha = str(commit.id)
-    cached_path = cache_dir / f"{sha}.json"
-
-    if cached_path.exists():
-        logger.info("Using cached hashes for %s", sha[:8])
-        return cached_path
-
-    logger.info("Generating hashes for %s...", sha[:8])
-    current_head = repo.head.peel(pygit2.Commit)
-    checkout_commit(repo, commit)
-
-    try:
-        subprocess.run(
-            ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", cached_path],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        # Always restore to original HEAD
-        checkout_commit(repo, current_head)
-
-    return cached_path
-
-
-def run_bazel_diff(
-    repo: pygit2.Repository, jar_path: Path, workspace: Path, base_commit: pygit2.Commit
-) -> list[str] | None:
-    """Run bazel-diff to compute impacted targets.
-
-    Returns list of targets, empty list if no changes, or None on failure.
-    """
-    head_commit = repo.head.peel(pygit2.Commit)
-
-    # Use cache directory for hash files (persisted via GitHub Actions cache)
-    cache_dir = Path(os.environ.get("BAZEL_DIFF_CACHE_DIR", str(workspace / ".bazel-diff-cache")))
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        base_json = get_or_generate_hashes(repo, jar_path, workspace, base_commit, cache_dir)
-        head_json = get_or_generate_hashes(repo, jar_path, workspace, head_commit, cache_dir)
-
-        # Compute impacted targets
-        logger.info("Computing impacted targets...")
-        result = subprocess.run(
-            ["java", "-jar", jar_path, "get-impacted-targets", "-sh", base_json, "-fh", head_json],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        return [t for t in result.stdout.strip().split("\n") if t]
-
-    except subprocess.CalledProcessError as e:
-        logger.error("bazel-diff failed: %s", e.stderr or e.stdout or e)
-        return None
 
 
 def should_trigger(name: str, config: WorkflowConfig, targets: list[str], changed_files: set[str]) -> bool:
@@ -256,10 +132,7 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
     jar_path = get_bazel_diff_jar()
     targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
 
-    if targets is None:
-        logger.info("bazel-diff failed, building all targets")
-        targets = ["//..."]
-    elif not targets:
+    if not targets:
         logger.info("No Bazel targets affected")
     else:
         # Filter source files - bazel-diff returns labels like //:foo.py that aren't buildable

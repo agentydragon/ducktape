@@ -13,7 +13,8 @@ from pathlib import Path
 
 import yaml
 
-from tools.ci.models import Job, Step, Workflow, WorkflowConfig, WorkflowManifest
+from tools.ci.github_actions import Job, Step, Workflow
+from tools.ci.models import WorkflowConfig, WorkflowManifest
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent.parent

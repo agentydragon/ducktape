@@ -12,9 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-import subprocess
 import sys
-import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -23,22 +21,13 @@ from pydantic import BaseModel, Field, computed_field
 
 from fmt_util import format_limited_list
 from tools.ci.bazel_query import filter_to_rules, run_query
+from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
+from tools.ci.github_actions import bool_output, write_outputs
 
 logger = logging.getLogger(__name__)
 
 BAZEL_DIFF_VERSION = "12.1.1"
 BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"
-
-# Infrastructure patterns that require full build (changes affect all targets)
-INFRA_PATTERNS = [
-    r"^MODULE\.bazel$",
-    r"^MODULE\.bazel\.lock$",
-    r"^requirements_bazel\.txt$",
-    r"^\.bazelrc$",
-    r"^\.bazelversion$",
-    r"^tools/bazel",  # More specific than "tools/" to avoid triggering on tools/ci changes
-    r"^WORKSPACE",
-]
 
 # Path patterns for conditional job triggers (CI mode only)
 PATH_PATTERNS = {
@@ -71,62 +60,26 @@ class AffectedTargets(BaseModel):
         return " ".join(self.targets) if self.targets else ""
 
 
-def bool_str(value: bool) -> str:
-    """Convert bool to GitHub Actions output string."""
-    return "true" if value else "false"
-
-
-def write_outputs(outputs: dict[str, str]) -> None:
-    """Write all key-value pairs to GitHub Actions output.
-
-    Opens with 'w' to ensure a clean write (no stale entries from prior runs).
-    """
-    output_file = os.environ.get("GITHUB_OUTPUT")
-    if output_file:
-        with Path(output_file).open("w") as f:
-            f.writelines(f"{key}={value}\n" for key, value in outputs.items())
-    for key, value in outputs.items():
-        logger.info("%s=%s", key, value)
-
-
 def output_results(affected: AffectedTargets, intersections: dict[str, bool]) -> None:
     """Output all results to GitHub Actions output."""
-    outputs = {"targets": affected.targets_str, "has_changes": bool_str(affected.has_changes)}
+    outputs = {"targets": affected.targets_str, "has_changes": bool_output(affected.has_changes)}
     for var, val in intersections.items():
-        outputs[var] = bool_str(val)
+        outputs[var] = bool_output(val)
     write_outputs(outputs)
 
 
-def download_bazel_diff(dest: Path) -> bool:
-    """Download bazel-diff JAR.
+def download_bazel_diff(dest: Path) -> None:
+    """Download bazel-diff JAR if not already present.
 
-    Returns True on success, False on failure.
+    Raises on download failure.
     """
     if dest.exists():
         logger.info("bazel-diff already downloaded at %s", dest)
-        return True
+        return
 
     logger.info("Downloading bazel-diff v%s...", BAZEL_DIFF_VERSION)
-    try:
-        urllib.request.urlretrieve(BAZEL_DIFF_URL, dest)
-        logger.info("Downloaded to %s", dest)
-        return True
-    except Exception as e:
-        logger.error("Failed to download bazel-diff: %s", e)
-        return False
-
-
-def get_changed_files(repo: pygit2.Repository, base_commit: pygit2.Commit) -> set[str]:
-    """Get set of files changed between base_commit and HEAD using pygit2."""
-    head_commit = repo.head.peel(pygit2.Commit)
-    diff = repo.diff(base_commit, head_commit)
-    return {delta.new_file.path for delta in diff.deltas}
-
-
-def has_infra_changes(changed_files: set[str]) -> bool:
-    """Check if any changed files match infrastructure patterns."""
-    compiled = [re.compile(p) for p in INFRA_PATTERNS]
-    return any(r.match(f) for r in compiled for f in changed_files)
+    urllib.request.urlretrieve(BAZEL_DIFF_URL, dest)
+    logger.info("Downloaded to %s", dest)
 
 
 def get_last_release_commit(repo: pygit2.Repository, package_prefix: str) -> pygit2.Commit | None:
@@ -159,127 +112,6 @@ def get_last_release_commit(repo: pygit2.Repository, package_prefix: str) -> pyg
     if ref is None:
         return None
     return ref.peel(pygit2.Commit)
-
-
-def get_ci_base_commit(repo: pygit2.Repository) -> pygit2.Commit | None:
-    """Determine base commit for CI comparison (merge-base for PRs, HEAD~1 for pushes)."""
-    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
-
-    if event_name == "pull_request":
-        base_ref = os.environ.get("GITHUB_BASE_REF", "")
-        if not base_ref:
-            return None
-        try:
-            remote_ref = repo.references.get(f"refs/remotes/origin/{base_ref}")
-            if remote_ref is None:
-                return None
-            base_commit = remote_ref.peel(pygit2.Commit)
-            merge_base_oid = repo.merge_base(base_commit.id, repo.head.target)
-            if merge_base_oid is None:
-                return None
-            obj = repo.get(merge_base_oid)
-            if not isinstance(obj, pygit2.Commit):
-                return None
-            logger.info("Pull request: comparing against merge-base %s", str(merge_base_oid)[:8])
-            return obj
-        except (KeyError, pygit2.GitError):
-            return None
-
-    # Push event: compare against parent commit
-    try:
-        head_commit = repo.head.peel(pygit2.Commit)
-        if head_commit.parents:
-            parent = head_commit.parents[0]
-            logger.info("Push: comparing against HEAD~1 (%s)", str(parent.id)[:8])
-            return parent
-    except (KeyError, pygit2.GitError):
-        pass
-    return None
-
-
-def checkout_commit(repo: pygit2.Repository, commit: pygit2.Commit) -> None:
-    """Checkout a specific commit, updating the working directory."""
-    repo.checkout_tree(commit, strategy=pygit2.GIT_CHECKOUT_FORCE)
-    repo.set_head(commit.id)
-
-
-def run_bazel_diff(
-    jar_path: Path, workspace: Path, repo: pygit2.Repository, base_commit: pygit2.Commit
-) -> list[str] | None:
-    """Run bazel-diff to compute impacted targets.
-
-    Returns:
-        List of impacted targets, or None on failure (triggers full build fallback)
-    """
-    current_commit = repo.head.peel(pygit2.Commit)
-    current_sha = str(current_commit.id)
-    base_sha = str(base_commit.id)
-
-    with tempfile.TemporaryDirectory() as tmpdir_str:
-        tmpdir = Path(tmpdir_str)
-        base_json = tmpdir / "base.json"
-        head_json = tmpdir / "head.json"
-        targets_file = tmpdir / "targets.txt"
-
-        # Generate hashes for base commit
-        logger.info("Generating hashes for base commit %s...", base_sha[:8])
-        checkout_commit(repo, base_commit)
-
-        try:
-            subprocess.run(
-                ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", base_json],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError:
-            logger.warning("Base hash generation failed, falling back to full build")
-            checkout_commit(repo, current_commit)
-            return None
-
-        # Generate hashes for head commit
-        logger.info("Generating hashes for head commit %s...", current_sha[:8])
-        checkout_commit(repo, current_commit)
-
-        try:
-            subprocess.run(
-                ["java", "-jar", jar_path, "generate-hashes", "-w", workspace, "-b", "bazelisk", head_json],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError:
-            logger.warning("Head hash generation failed, falling back to full build")
-            return None
-
-        # Compute impacted targets
-        logger.info("Computing impacted targets...")
-        try:
-            subprocess.run(
-                [
-                    "java",
-                    "-jar",
-                    jar_path,
-                    "get-impacted-targets",
-                    "-sh",
-                    base_json,
-                    "-fh",
-                    head_json,
-                    "-o",
-                    targets_file,
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError:
-            logger.warning("Target diff failed, falling back to full build")
-            return None
-
-        if not targets_file.exists() or targets_file.stat().st_size == 0:
-            return []
-
-        return [t for t in targets_file.read_text().strip().split("\n") if t]
 
 
 def check_intersection(targets: list[str], pattern: str) -> bool:
@@ -348,9 +180,7 @@ def compute_affected_for_pr(repo: pygit2.Repository, workspace: Path) -> tuple[A
     Returns tuple of (affected, changed_files).
     """
     jar_path = Path("/tmp/bazel-diff.jar")
-    if not download_bazel_diff(jar_path):
-        logger.warning("Failed to download bazel-diff, running full build")
-        return FULL_BUILD, set()
+    download_bazel_diff(jar_path)
 
     base_commit = get_ci_base_commit(repo)
     if not base_commit:
@@ -364,7 +194,7 @@ def compute_affected_for_pr(repo: pygit2.Repository, workspace: Path) -> tuple[A
         logger.info("Infrastructure change detected, running all targets")
         return FULL_BUILD, changed_files
 
-    targets = run_bazel_diff(jar_path, workspace, repo, base_commit)
+    targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
     if targets is None:
         return FULL_BUILD, changed_files
 
@@ -402,6 +232,60 @@ def run_ci_mode() -> None:
     output_results(affected, intersections)
 
 
+def _release_output(needed: bool, base_sha: str, reason: str) -> dict[str, str]:
+    """Build release mode output dict."""
+    return {"release_needed": bool_output(needed), "base_sha": base_sha, "reason": reason}
+
+
+def compute_release_decision(
+    repo: pygit2.Repository, workspace: Path, package_prefix: str, target_pattern: str
+) -> dict[str, str]:
+    """Compute whether a release is needed for a package.
+
+    Returns outputs dict with release_needed, base_sha, and reason.
+    """
+    base_commit = get_last_release_commit(repo, package_prefix)
+
+    if not base_commit:
+        return _release_output(True, "", "first release (no previous release found)")
+
+    base_sha = str(base_commit.id)
+    logger.info("Last release commit: %s", base_sha)
+
+    changed_files = get_changed_files(repo, base_commit)
+    logger.info("Changed files since last release: %d", len(changed_files))
+
+    if has_infra_changes(changed_files):
+        return _release_output(True, base_sha, "infrastructure files changed, assuming release needed")
+
+    jar_path = Path("/tmp/bazel-diff.jar")
+    download_bazel_diff(jar_path)
+
+    targets = run_bazel_diff(repo, jar_path, workspace, base_commit)
+
+    if targets is None:
+        return _release_output(True, base_sha, "bazel-diff failed, assuming release needed")
+
+    if not targets:
+        return _release_output(False, base_sha, "no Bazel targets affected since last release")
+
+    logger.info("Found %d affected targets total", len(targets))
+
+    if not check_intersection(targets, target_pattern):
+        return _release_output(False, base_sha, f"no targets matching {target_pattern} changed since last release")
+
+    query = f"set({' '.join(targets)}) intersect {target_pattern}"
+    result = run_query(query)
+    matching = [t for t in result.stdout.strip().split("\n") if t]
+    logger.info("Found %d matching targets:", len(matching))
+    for t in matching[:10]:
+        logger.info("  %s", t)
+    if len(matching) > 10:
+        logger.info("  ... and %d more", len(matching) - 10)
+
+    return _release_output(True, base_sha, f"{len(matching)} targets matching {target_pattern} changed")
+
+
 def run_release_mode() -> None:
     """Run in release mode: check if release is needed for a specific package."""
     package_prefix = os.environ.get("PACKAGE_PREFIX", "")
@@ -417,84 +301,8 @@ def run_release_mode() -> None:
     workspace = Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())
     repo = pygit2.Repository(workspace)
 
-    # Find the last release commit
-    base_commit = get_last_release_commit(repo, package_prefix)
-
-    if not base_commit:
-        write_outputs({"release_needed": "true", "base_sha": "", "reason": "first release (no previous release found)"})
-        return
-
-    base_sha = str(base_commit.id)
-    logger.info("Last release commit: %s", base_sha)
-
-    # Check for infrastructure changes first
-    changed_files = get_changed_files(repo, base_commit)
-    logger.info("Changed files since last release: %d", len(changed_files))
-
-    if has_infra_changes(changed_files):
-        write_outputs(
-            {
-                "release_needed": "true",
-                "base_sha": base_sha,
-                "reason": "infrastructure files changed, assuming release needed",
-            }
-        )
-        return
-
-    # Download bazel-diff
-    jar_path = Path("/tmp/bazel-diff.jar")
-    if not download_bazel_diff(jar_path):
-        write_outputs(
-            {
-                "release_needed": "true",
-                "base_sha": base_sha,
-                "reason": "failed to download bazel-diff, assuming release needed",
-            }
-        )
-        return
-
-    # Run bazel-diff
-    targets = run_bazel_diff(jar_path, workspace, repo, base_commit)
-
-    if targets is None:
-        write_outputs(
-            {"release_needed": "true", "base_sha": base_sha, "reason": "bazel-diff failed, assuming release needed"}
-        )
-        return
-
-    if not targets:
-        write_outputs(
-            {"release_needed": "false", "base_sha": base_sha, "reason": "no Bazel targets affected since last release"}
-        )
-        return
-
-    logger.info("Found %d affected targets total", len(targets))
-
-    # Check if any targets match the pattern
-    if check_intersection(targets, target_pattern):
-        query = f"set({' '.join(targets)}) intersect {target_pattern}"
-        result = run_query(query)
-        matching = [t for t in result.stdout.strip().split("\n") if t]
-        logger.info("Found %d matching targets:", len(matching))
-        for t in matching[:10]:
-            logger.info("  %s", t)
-        if len(matching) > 10:
-            logger.info("  ... and %d more", len(matching) - 10)
-        write_outputs(
-            {
-                "release_needed": "true",
-                "base_sha": base_sha,
-                "reason": f"{len(matching)} targets matching {target_pattern} changed",
-            }
-        )
-    else:
-        write_outputs(
-            {
-                "release_needed": "false",
-                "base_sha": base_sha,
-                "reason": f"no targets matching {target_pattern} changed since last release",
-            }
-        )
+    outputs = compute_release_decision(repo, workspace, package_prefix, target_pattern)
+    write_outputs(outputs)
 
 
 def main() -> None:

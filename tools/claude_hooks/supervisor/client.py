@@ -287,20 +287,21 @@ class SupervisorClient:
             return None
         return self.get_process_info(service_name).statename
 
-    def is_service_running(self, service_name: str, wait_for_start: bool = True, timeout: float = 5.0) -> bool:
-        """Check if a specific service is running under supervisor.
+    def is_service_running(self, service_name: str) -> bool:
+        """Check if a specific service is currently running.
 
-        Args:
-            service_name: Name of the service to check
-            wait_for_start: If True, wait for service to transition from STARTING to RUNNING
-            timeout: Maximum time to wait for STARTING->RUNNING transition
-
-        Returns:
-            True if service is running, False otherwise
+        Pure query - returns the current state without waiting.
         """
-        if not wait_for_start:
-            return self.get_service_state(service_name) == ProcessState.RUNNING
+        return self.get_service_state(service_name) == ProcessState.RUNNING
 
+    def wait_for_running(self, service_name: str, timeout: float = 5.0) -> bool:
+        """Wait for a service to reach RUNNING state.
+
+        Polls the service state until it becomes RUNNING, exits STARTING state,
+        or times out.
+
+        Returns True if service reached RUNNING state, False otherwise.
+        """
         deadline = time.time() + timeout
         last_state = None
 
