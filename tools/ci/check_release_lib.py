@@ -16,7 +16,7 @@ import pygit2
 from pydantic import BaseModel
 
 from tools.ci.diff_utils import get_changed_files, has_infra_changes, run_bazel_diff
-from tools.ci.github_actions import CIEnvironment, bool_output
+from tools.ci.github_actions import CIEnvironment
 from tools.env_utils import get_required_env
 
 logger = logging.getLogger(__name__)
@@ -89,21 +89,26 @@ def get_last_release_commit(repo: pygit2.Repository, package_prefix: str) -> pyg
     return ref.peel(pygit2.Commit)
 
 
-def _release_output(needed: bool, base_sha: str, reason: str) -> dict[str, str]:
-    """Build release mode output dict."""
-    return {"release_needed": bool_output(needed), "base_sha": base_sha, "reason": reason}
+class ReleaseDecision(BaseModel):
+    """Result of release decision computation."""
+
+    release_needed: bool
+    base_sha: str
+    reason: str
+
+    def to_outputs(self) -> dict[str, str | bool]:
+        return {"release_needed": self.release_needed, "base_sha": self.base_sha, "reason": self.reason}
 
 
-def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -> dict[str, str]:
+def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -> ReleaseDecision:
     """Compute whether a release is needed for a package.
 
     Checks if the specific wheel target is in the affected targets list.
-    Returns outputs dict with release_needed, base_sha, and reason.
     """
     base_commit = get_last_release_commit(repo, env.package_prefix)
 
     if not base_commit:
-        return _release_output(True, "", "first release (no previous release found)")
+        return ReleaseDecision(release_needed=True, base_sha="", reason="first release (no previous release found)")
 
     base_sha = str(base_commit.id)
     logger.info("Last release commit: %s", base_sha)
@@ -112,7 +117,9 @@ def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -
     logger.info("Changed files since last release: %d", len(changed_files))
 
     if has_infra_changes(changed_files):
-        return _release_output(True, base_sha, "infrastructure files changed, assuming release needed")
+        return ReleaseDecision(
+            release_needed=True, base_sha=base_sha, reason="infrastructure files changed, assuming release needed"
+        )
 
     jar_path = Path("/tmp/bazel-diff.jar")
     download_bazel_diff(jar_path)
@@ -121,24 +128,28 @@ def compute_release_decision(env: ReleaseEnvironment, repo: pygit2.Repository) -
     targets = run_bazel_diff(repo, jar_path, env.ci.workspace, base_commit, cache_dir)
 
     if targets is None:
-        return _release_output(True, base_sha, "bazel-diff failed, assuming release needed")
+        return ReleaseDecision(
+            release_needed=True, base_sha=base_sha, reason="bazel-diff failed, assuming release needed"
+        )
 
     if not targets:
-        return _release_output(False, base_sha, "no Bazel targets affected since last release")
+        return ReleaseDecision(
+            release_needed=False, base_sha=base_sha, reason="no Bazel targets affected since last release"
+        )
 
     logger.info("Found %d affected targets total", len(targets))
 
-    # Check if the specific wheel target is in the affected targets
     if env.wheel_target not in targets:
-        return _release_output(False, base_sha, f"target {env.wheel_target} not in affected targets")
+        return ReleaseDecision(
+            release_needed=False, base_sha=base_sha, reason=f"target {env.wheel_target} not in affected targets"
+        )
 
     logger.info("Target %s is affected", env.wheel_target)
-    return _release_output(True, base_sha, f"target {env.wheel_target} changed")
+    return ReleaseDecision(release_needed=True, base_sha=base_sha, reason=f"target {env.wheel_target} changed")
 
 
 def main() -> None:
     """Main entry point - check if release is needed for a specific package."""
-    # Configure logging to stderr
     logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
 
     env = ReleaseEnvironment.from_env()
@@ -147,5 +158,5 @@ def main() -> None:
     logger.info("Wheel target: %s", env.wheel_target)
 
     repo = pygit2.Repository(env.ci.workspace)
-    outputs = compute_release_decision(env, repo)
-    env.ci.write_outputs(outputs)
+    decision = compute_release_decision(env, repo)
+    env.ci.write_outputs(decision.to_outputs())

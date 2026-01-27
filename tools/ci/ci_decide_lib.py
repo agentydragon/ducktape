@@ -18,9 +18,9 @@ import pygit2
 from pydantic import BaseModel, Field
 
 from fmt_util import format_limited_list
-from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets, filter_to_rules
+from tools.ci.bazel_query import filter_compatible_targets, filter_to_rules, query_intersection
 from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
-from tools.ci.github_actions import CIEnvironment, bool_output
+from tools.ci.github_actions import CIEnvironment
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from tools.env_utils import get_optional_env_path, get_required_existing_path
 
@@ -34,12 +34,12 @@ class CIDecision(BaseModel):
     workflows: list[str] = Field(default_factory=list)
     infra_changed: bool = False
 
-    def to_outputs(self) -> dict[str, str]:
+    def to_outputs(self) -> dict[str, str | bool]:
         """Format decision as GitHub Actions output dict."""
         return {
             "targets": " ".join(self.targets),
             "workflows": json.dumps(self.workflows),
-            "infra_changed": bool_output(self.infra_changed),
+            "infra_changed": self.infra_changed,
         }
 
     def write_targets_file(self, targets_path: Path) -> None:
@@ -82,7 +82,7 @@ def should_trigger(name: str, config: WorkflowConfig, targets: list[str], change
                 logger.info("Path pattern '%s' matched -> triggers %s", pattern, name)
                 return True
         case BazelPatternTrigger(pattern=pattern):
-            if targets and check_bazel_intersection(targets, pattern):
+            if targets and query_intersection(targets, pattern):
                 return True
 
     return False

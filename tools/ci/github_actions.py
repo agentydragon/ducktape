@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -46,24 +47,15 @@ class CIEnvironment(BaseModel):
     def is_pull_request(self) -> bool:
         return self.event_name == "pull_request"
 
-    def write_outputs(self, outputs: dict[str, str]) -> None:
-        """Write outputs to GitHub Actions output file and log them."""
-        self.output_path.write_text(format_output(outputs))
-        for key, value in outputs.items():
+    def write_outputs(self, outputs: Mapping[str, str | bool]) -> None:
+        """Write outputs to GitHub Actions output file and log them.
+
+        Bool values are formatted as "true"/"false".
+        """
+        formatted = {k: ("true" if v else "false") if isinstance(v, bool) else v for k, v in outputs.items()}
+        self.output_path.write_text("".join(f"{k}={v}\n" for k, v in formatted.items()))
+        for key, value in formatted.items():
             _logger.info("%s=%s", key, value)
-
-
-# === Output Utilities ===
-
-
-def format_output(outputs: dict[str, str]) -> str:
-    """Format outputs dict as GitHub Actions output file content."""
-    return "".join(f"{k}={v}\n" for k, v in outputs.items())
-
-
-def bool_output(value: bool) -> str:
-    """Format bool as GitHub Actions output string."""
-    return "true" if value else "false"
 
 
 # === Workflow Schema Models ===

@@ -294,32 +294,6 @@ class SupervisorClient:
         """
         return self.get_service_state(service_name) == ProcessState.RUNNING
 
-    def wait_for_running(self, service_name: str, timeout: float = 5.0) -> bool:
-        """Wait for a service to reach RUNNING state.
-
-        Polls the service state until it becomes RUNNING, exits STARTING state,
-        or times out.
-
-        Returns True if service reached RUNNING state, False otherwise.
-        """
-        deadline = time.time() + timeout
-        last_state = None
-
-        while time.time() < deadline:
-            state = self.get_service_state(service_name)
-            if state != last_state:
-                logger.info("Service %s: state=%s", service_name, state)
-                last_state = state
-            if state == ProcessState.RUNNING:
-                return True
-            if state != ProcessState.STARTING:
-                # Not starting, won't become running - fail fast
-                return False
-            time.sleep(0.2)
-
-        # Timed out while STARTING
-        return False
-
     def restart_service(self, service_name: str) -> None:
         """Restart a specific service under supervisor.
 

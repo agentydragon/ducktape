@@ -76,11 +76,6 @@ def query_intersection(targets: list[str], pattern: str) -> list[str]:
     return run_query(query)
 
 
-def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
-    """Check if affected targets intersect with a Bazel pattern."""
-    return bool(query_intersection(targets, pattern))
-
-
 def filter_compatible_targets(targets: list[str]) -> list[str]:
     """Filter targets to only those compatible with the current platform.
 
