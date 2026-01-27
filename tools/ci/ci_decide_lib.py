@@ -18,7 +18,7 @@ import pygit2
 from pydantic import BaseModel, Field
 
 from fmt_util import format_limited_list
-from tools.ci.bazel_query import filter_compatible_targets, filter_to_rules, query_intersection
+from tools.ci.bazel_query import filter_for_ci, query_intersection
 from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
 from tools.ci.github_actions import CIEnvironment, PushStrategy
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
@@ -49,25 +49,6 @@ class CIDecision(BaseModel):
         This avoids shell argument length limits when passing many targets.
         """
         targets_path.write_text("\n".join(self.targets) + "\n" if self.targets else "")
-
-
-def filter_platform_incompatible(targets: list[str]) -> list[str]:
-    """Filter out targets that have target_compatible_with constraints.
-
-    Uses bazel query attr() to find and exclude targets with platform constraints.
-
-    TODO: This currently runs on a Linux CI runner and filters out macOS-only targets.
-    To support macOS targets, partition the filtered-out targets by platform constraint
-    and fan them out to platform-specific runners (e.g. macos-latest) as separate jobs.
-    """
-    if not targets:
-        return targets
-
-    compatible = filter_compatible_targets(targets)
-    excluded = len(targets) - len(compatible)
-    if excluded:
-        logger.info("Filtered out %d platform-incompatible targets", excluded)
-    return compatible
 
 
 def should_trigger(name: str, config: WorkflowConfig, targets: list[str], changed_files: set[str]) -> bool:
@@ -119,15 +100,13 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
     if not targets:
         logger.info("No Bazel targets affected")
     else:
-        # Filter source files - bazel-diff returns labels like //:foo.py that aren't buildable
         raw_count = len(targets)
-        targets = filter_to_rules(targets)
-        if len(targets) < raw_count:
-            logger.info("Filtered %d source files from %d bazel-diff targets", raw_count - len(targets), raw_count)
+        targets = filter_for_ci(targets)
+        filtered = raw_count - len(targets)
+        if filtered:
+            logger.info("Filtered %d targets (source files, platform-incompatible, manual)", filtered)
 
         logger.info("Found %d affected targets: %s", len(targets), format_limited_list(targets, 20))
-        # Filter out platform-incompatible targets for Linux CI
-        targets = filter_platform_incompatible(targets)
         if infra_changed:
             targets = ["//..."]
 

@@ -67,37 +67,23 @@ def query_intersection(targets: list[str], pattern: str) -> list[str]:
     return run_query(query)
 
 
-def filter_compatible_targets(targets: list[str]) -> list[str]:
-    """Filter targets that are incompatible with Linux (the CI platform).
+def filter_for_ci(targets: list[str]) -> list[str]:
+    """Filter targets for CI: keep only buildable, compatible, non-manual targets.
 
-    Uses bazel query attr() to find targets constrained to non-Linux platforms
-    and subtracts them. This avoids cquery, which loads configurations and can
-    trigger compilation of transitive dependencies (e.g. pip packages needing
-    meson/system headers) that aren't available on the CI runner.
-
-    Currently matches @platforms//os:macos. If a target were constrained to
-    @platforms//os:linux, it would NOT be excluded (that's compatible).
+    Combines three filters into a single bazel query invocation:
+    - kind('rule', ...) — exclude source file labels (not buildable)
+    - except attr(target_compatible_with, macos) — exclude platform-incompatible
+    - except attr(tags, 'manual') — exclude targets needing special setup
+      (e.g. system libraries). Release workflows build these explicitly.
     """
     if not targets:
         return targets
 
     target_set = f"set({' '.join(targets)})"
-    # Exclude targets constrained to non-Linux platforms.
-    # attr() matches the string representation of target_compatible_with.
-    query = f"{target_set} except attr(target_compatible_with, '@platforms//os:macos', {target_set})"
-    return run_query(query)
-
-
-def filter_to_rules(targets: list[str]) -> list[str]:
-    """Filter targets to only rule targets (exclude source files).
-
-    bazel-diff can return source file labels like //:foo.py or //pkg:BUILD.bazel.
-    These are valid Bazel labels but cannot be built directly - only rule targets
-    (py_library, py_test, etc.) can be built. This filters the list to keep only
-    buildable rule targets.
-    """
-    if not targets:
-        return targets
-
-    query = f"kind('rule', set({' '.join(targets)}))"
+    query = (
+        f"let targets = {target_set} in "
+        f"kind('rule', $targets) "
+        f"except attr(target_compatible_with, '@platforms//os:macos', $targets) "
+        f"except attr(tags, 'manual', $targets)"
+    )
     return run_query(query)
