@@ -161,8 +161,8 @@ def main() -> None:
         raise RuntimeError("GITHUB_OUTPUT environment variable not set")
     output_path = Path(output_path_str)
 
-    script_dir = Path(__file__).parent
-    manifest_path = script_dir / "workflows.yaml"
+    manifest_path_str = os.environ.get("CI_WORKFLOWS_MANIFEST")
+    manifest_path = Path(manifest_path_str) if manifest_path_str else Path(__file__).parent / "workflows.yaml"
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifest not found: {manifest_path}")
 
