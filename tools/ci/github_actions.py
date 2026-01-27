@@ -39,6 +39,29 @@ def write_outputs(outputs: dict[str, str]) -> None:
         _logger.info("%s=%s", key, value)
 
 
+def get_output_path() -> Path:
+    """Get GITHUB_OUTPUT path. Raises RuntimeError if not set."""
+    output_path_str = os.environ.get("GITHUB_OUTPUT")
+    if not output_path_str:
+        raise RuntimeError("GITHUB_OUTPUT environment variable not set")
+    return Path(output_path_str)
+
+
+def get_workspace() -> Path:
+    """Get GITHUB_WORKSPACE path, falling back to cwd."""
+    return Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())
+
+
+def get_event_name() -> str:
+    """Get GITHUB_EVENT_NAME (e.g., 'pull_request', 'push')."""
+    return os.environ.get("GITHUB_EVENT_NAME", "")
+
+
+def get_base_ref() -> str:
+    """Get GITHUB_BASE_REF (base branch for pull requests)."""
+    return os.environ.get("GITHUB_BASE_REF", "")
+
+
 class Step(BaseModel):
     """A step in a GitHub Actions job."""
 

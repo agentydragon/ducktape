@@ -17,10 +17,12 @@ def _get_query_log_dir() -> Path:
     return Path(os.environ.get("BAZEL_QUERY_LOG_DIR", "/tmp/bazel-query-logs"))
 
 
-def _run_bazel_query_cmd(cmd: list[str | Path], query: str, *, check: bool = True) -> subprocess.CompletedProcess:
+def _run_bazel_query_cmd(cmd: list[str | Path], query: str) -> list[str]:
     """Run a bazel query command using --query_file to avoid "Argument list too long" errors.
 
     Query files are saved to BAZEL_QUERY_LOG_DIR for CI artifact capture on failure.
+    Returns list of targets from stdout.
+    Raises CalledProcessError on failure.
     """
     # Save query to log directory for CI artifacts
     query_log_dir = _get_query_log_dir()
@@ -41,26 +43,28 @@ def _run_bazel_query_cmd(cmd: list[str | Path], query: str, *, check: bool = Tru
     (query_dir / "stderr").write_text(result.stderr)
     (query_dir / "exit_code").write_text(str(result.returncode))
 
-    if check and result.returncode != 0:
+    if result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
 
-    return result
+    return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
 
 
-def run_query(query: str, *, check: bool = True) -> subprocess.CompletedProcess:
-    """Run a bazel query using --query_file to avoid "Argument list too long" errors."""
-    return _run_bazel_query_cmd(["bazelisk", "query"], query, check=check)
+def run_query(query: str) -> list[str]:
+    """Run a bazel query and return matching targets.
+
+    Raises CalledProcessError on failure.
+    """
+    return _run_bazel_query_cmd(["bazelisk", "query"], query)
 
 
-def run_cquery(query: str, *, check: bool = True) -> subprocess.CompletedProcess:
-    """Run a bazel cquery using --query_file.
+def run_cquery(query: str) -> list[str]:
+    """Run a bazel cquery and return matching targets.
 
     cquery respects target_compatible_with constraints, unlike query.
     Uses starlark output to get clean labels without configuration hash suffix.
+    Raises CalledProcessError on failure.
     """
-    return _run_bazel_query_cmd(
-        ["bazelisk", "cquery", "--output=starlark", "--starlark:expr=target.label"], query, check=check
-    )
+    return _run_bazel_query_cmd(["bazelisk", "cquery", "--output=starlark", "--starlark:expr=target.label"], query)
 
 
 def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
@@ -69,8 +73,16 @@ def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
         return False
 
     query = f"set({' '.join(targets)}) intersect {pattern}"
-    result = run_query(query)
-    return bool(result.stdout.strip())
+    return bool(run_query(query))
+
+
+def query_intersection(targets: list[str], pattern: str) -> list[str]:
+    """Query targets that intersect with a pattern. Returns matching targets."""
+    if not targets:
+        return []
+
+    query = f"set({' '.join(targets)}) intersect {pattern}"
+    return run_query(query)
 
 
 def filter_compatible_targets(targets: list[str]) -> list[str]:
@@ -82,9 +94,7 @@ def filter_compatible_targets(targets: list[str]) -> list[str]:
         return targets
 
     query = f"set({' '.join(targets)})"
-    result = run_cquery(query)
-
-    return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
+    return run_cquery(query)
 
 
 def filter_to_rules(targets: list[str]) -> list[str]:
@@ -99,6 +109,4 @@ def filter_to_rules(targets: list[str]) -> list[str]:
         return targets
 
     query = f"kind('rule', set({' '.join(targets)}))"
-    result = run_query(query)
-
-    return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
+    return run_query(query)

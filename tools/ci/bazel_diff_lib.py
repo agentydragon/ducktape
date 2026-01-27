@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pygit2
 
-from tools.ci.bazel_query import run_query
+from tools.ci.bazel_query import query_intersection
 from tools.ci.diff_utils import get_changed_files, has_infra_changes, run_bazel_diff
-from tools.ci.github_actions import bool_output, write_outputs
+from tools.ci.github_actions import bool_output, get_workspace, write_outputs
 
 logger = logging.getLogger(__name__)
 
@@ -72,17 +72,6 @@ def get_last_release_commit(repo: pygit2.Repository, package_prefix: str) -> pyg
     return ref.peel(pygit2.Commit)
 
 
-def check_intersection(targets: list[str], pattern: str) -> bool:
-    """Check if affected targets intersect with a pattern using bazel query."""
-    if not targets:
-        return False
-
-    # Full build (//...) checks pattern directly; otherwise compute set intersection
-    query = pattern if targets == ["//..."] else f"set({' '.join(targets)}) intersect {pattern}"
-    result = run_query(query)
-    return bool(result.stdout.strip())
-
-
 def _release_output(needed: bool, base_sha: str, reason: str) -> dict[str, str]:
     """Build release mode output dict."""
     return {"release_needed": bool_output(needed), "base_sha": base_sha, "reason": reason}
@@ -122,12 +111,10 @@ def compute_release_decision(
 
     logger.info("Found %d affected targets total", len(targets))
 
-    if not check_intersection(targets, target_pattern):
+    matching = query_intersection(targets, target_pattern)
+    if not matching:
         return _release_output(False, base_sha, f"no targets matching {target_pattern} changed since last release")
 
-    query = f"set({' '.join(targets)}) intersect {target_pattern}"
-    result = run_query(query)
-    matching = [t for t in result.stdout.strip().split("\n") if t]
     logger.info("Found %d matching targets:", len(matching))
     for t in matching[:10]:
         logger.info("  %s", t)
@@ -152,7 +139,7 @@ def main() -> None:
     logger.info("Checking if release needed for %s", package_prefix)
     logger.info("Target pattern: %s", target_pattern)
 
-    workspace = Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())
+    workspace = get_workspace()
     repo = pygit2.Repository(workspace)
 
     outputs = compute_release_decision(repo, workspace, package_prefix, target_pattern)

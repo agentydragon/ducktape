@@ -38,7 +38,10 @@ py_library(
     srcs = ["diff_utils.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pygit2"],
+    deps = [
+        ":github_actions",
+        "@pypi//pygit2",
+    ],
 )
 
 py_library(

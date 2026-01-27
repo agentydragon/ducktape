@@ -26,7 +26,7 @@ from tools.ci.diff_utils import (
     has_infra_changes,
     run_bazel_diff,
 )
-from tools.ci.github_actions import bool_output, format_output
+from tools.ci.github_actions import bool_output, format_output, get_output_path, get_workspace
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 
 logger = logging.getLogger(__name__)
@@ -156,10 +156,7 @@ def main() -> None:
     # Configure logging to stderr
     logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
 
-    output_path_str = os.environ.get("GITHUB_OUTPUT")
-    if not output_path_str:
-        raise RuntimeError("GITHUB_OUTPUT environment variable not set")
-    output_path = Path(output_path_str)
+    output_path = get_output_path()
 
     manifest_path_str = os.environ.get("CI_WORKFLOWS_MANIFEST")
     if not manifest_path_str:
@@ -171,7 +168,7 @@ def main() -> None:
     manifest = WorkflowManifest.from_yaml(manifest_path)
     logger.info("Loaded %d workflow definitions", len(manifest.workflows))
 
-    workspace = Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())
+    workspace = get_workspace()
     decision = compute_decision(manifest.workflows, workspace)
 
     output_path.write_text(decision.to_github_output())

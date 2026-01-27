@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pygit2
 
+from tools.ci.github_actions import get_base_ref, get_event_name
+
 logger = logging.getLogger(__name__)
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
@@ -43,10 +45,10 @@ def has_infra_changes(changed_files: set[str]) -> bool:
 
 def get_ci_base_commit(repo: pygit2.Repository) -> pygit2.Commit | None:
     """Determine base commit for CI comparison (merge-base for PRs, HEAD~1 for pushes)."""
-    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    event_name = get_event_name()
 
     if event_name == "pull_request":
-        base_ref = os.environ.get("GITHUB_BASE_REF", "")
+        base_ref = get_base_ref()
         if not base_ref:
             return None
         try:
