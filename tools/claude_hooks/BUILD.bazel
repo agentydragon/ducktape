@@ -116,6 +116,7 @@ py_library(
         ":proxy_credentials",
         ":resources",
         ":settings",
+        "//net_util:net",
         "//tools/claude_hooks/supervisor:client",
         "@pypi//cryptography",
         "@pypi//mako",
@@ -166,6 +167,7 @@ py_binary(
         ":podman_service",
         ":proxy_setup",
         ":settings",
+        "//:fmt_util",
         "//tools:build_info",
         "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",
@@ -208,7 +210,7 @@ py_package(
 )
 
 py_wheel(
-    name = "claude_hooks_wheel",
+    name = "wheel",
     distribution = "claude_hooks",
     # Only claude-session-start is a console script. Other commands are invoked via
     # sys.executable -m (bazel wrapper, auth proxy) to ensure correct Python environment.
@@ -229,6 +231,14 @@ py_wheel(
 )
 
 # === Tests ===
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pytest"],
+)
 
 py_test(
     name = "test_session_start",
@@ -252,6 +262,7 @@ py_test(
         "external",
     ],
     deps = [
+        ":conftest",
         ":proxy_setup",
         ":proxy_vars",
         ":session_start",
@@ -263,6 +274,7 @@ py_test(
         "//tools/claude_hooks/testing:runfiles_util",
         "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -295,6 +307,7 @@ py_test(
     imports = ["../.."],
     tags = ["integration"],
     deps = [
+        ":conftest",
         ":proxy_setup",
         ":settings",
         "//net_util",
@@ -305,6 +318,7 @@ py_test(
         "//tools/claude_hooks/testing:supervisor_cleanup",
         "@pypi//cryptography",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

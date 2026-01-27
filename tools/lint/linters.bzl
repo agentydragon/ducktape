@@ -49,6 +49,7 @@ eslint = lint_eslint_aspect(
 # NOTE: Prettier is a formatter, not a linter - handled via //tools/format:format
 # Run formatting with: bazel run //tools/format
 
+# Test rule factories - use these in BUILD.bazel files:
 #   load("//tools/lint:linters.bzl", "eslint_test")
 #   eslint_test(name = "eslint", srcs = [":my_library"])
 # NOTE: ruff_test removed - ruff is enforced via pre-commit hook

@@ -6,13 +6,12 @@ Uses isolated configuration to avoid conflicts with system podman.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib.resources
 import logging
 import shutil
-import subprocess
 import textwrap
-import time
 from dataclasses import dataclass, field
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -101,12 +100,12 @@ def is_podman_available() -> bool:
     return shutil.which("podman") is not None
 
 
-def install_podman() -> None:
+async def install_podman() -> None:
     """Install podman via apt if not already installed.
 
     Raises:
         FileNotFoundError: If apt-get is not available.
-        subprocess.TimeoutExpired: If apt operations time out.
+        TimeoutError: If apt operations time out.
         PodmanInstallError: If installation fails for other reasons.
     """
     if is_podman_available():
@@ -116,16 +115,20 @@ def install_podman() -> None:
     logger.info("Installing podman via apt...")
 
     # Update apt cache (non-fatal if it fails)
-    result = subprocess.run(["apt-get", "update"], check=False, capture_output=True, text=True, timeout=120)
-    if result.returncode != 0:
-        logger.warning("apt-get update failed: %s", result.stderr)
+    process = await asyncio.create_subprocess_exec(
+        "apt-get", "update", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    _, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+    if process.returncode != 0:
+        logger.warning("apt-get update failed: %s", stderr.decode())
 
     # Install podman
-    result = subprocess.run(
-        ["apt-get", "install", "-y", "podman"], check=False, capture_output=True, text=True, timeout=300
+    process = await asyncio.create_subprocess_exec(
+        "apt-get", "install", "-y", "podman", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
-    if result.returncode != 0:
-        raise PodmanInstallError(f"apt-get install podman failed: {result.stderr}")
+    _, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+    if process.returncode != 0:
+        raise PodmanInstallError(f"apt-get install podman failed: {stderr.decode()}")
     logger.info("Podman installed successfully")
 
     # Verify installation
@@ -216,15 +219,11 @@ def _get_socket_path(settings: HookSettings) -> Path:
     return Path(f"/tmp/claude-podman-{dir_hash}.sock")
 
 
-def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> PodmanSetup:
+async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> PodmanSetup:
     """Set up podman storage and start service.
 
     If podman is not installed, attempts to install it via apt.
     Idempotent: if podman service is already running, returns immediately.
-
-    Args:
-        settings: Hook configuration settings
-        supervisor: Supervisor client for managing services
 
     Returns:
         PodmanSetup with socket URL, supervisor client, and env vars to export
@@ -235,25 +234,24 @@ def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> Podman
     """
     if settings.skip_podman:
         logger.info("Skipping podman setup (skip_podman=True)")
-        raise SkipError("Podman", "DUCKTAPE_CLAUDE_HOOKS_SKIP_PODMAN")
+        raise SkipError("Podman")
 
     socket_path = _get_socket_path(settings)
     socket_url = f"unix://{socket_path}"
 
     # Check if podman service is already running (idempotent case)
-    if _is_podman_service_healthy(supervisor, socket_path):
+    if await asyncio.to_thread(_is_podman_service_healthy, supervisor, socket_path):
         logger.info("Podman service already running, skipping setup")
-        # Still need to return env vars for the session
         env_vars = _get_podman_env_vars(settings)
         return PodmanSetup(socket_url=socket_url, supervisor=supervisor, settings=settings, env_vars=env_vars)
 
     if not is_podman_available():
         logger.info("Podman not found, installing...")
-        install_podman()
+        await install_podman()
 
     logger.info("Configuring podman...")
     env_vars = setup_podman_storage(settings)
-    socket_url, service_env = start_podman_service(settings, supervisor, env_vars)
+    socket_url, service_env = await start_podman_service(settings, supervisor, env_vars)
     env_vars.update(service_env)
     logger.info("Podman service started: DOCKER_HOST=%s", socket_url)
     return PodmanSetup(socket_url=socket_url, supervisor=supervisor, settings=settings, env_vars=env_vars)
@@ -277,20 +275,15 @@ def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) 
     if not socket_path.exists():
         return False
     try:
-        return supervisor.is_service_running(PODMAN_SERVICE, wait_for_start=False)
+        return supervisor.is_service_running(PODMAN_SERVICE)
     except Exception:
         return False
 
 
-def start_podman_service(
+async def start_podman_service(
     settings: HookSettings, supervisor: SupervisorClient, env_vars: dict[str, str]
 ) -> tuple[str, dict[str, str]]:
     """Start podman system service under supervisor.
-
-    Args:
-        settings: Hook configuration settings
-        supervisor: Supervisor client for adding services
-        env_vars: Environment variables for podman config paths
 
     Provides Docker-compatible API at Unix socket.
     Does NOT start infrastructure containers (PostgreSQL, Registry, Proxy).
@@ -309,7 +302,8 @@ def start_podman_service(
 
     # Start podman system service (--time=0 means never timeout, keep running)
     # Pass config env vars so podman uses our isolated paths
-    supervisor.add_service(
+    await asyncio.to_thread(
+        supervisor.add_service,
         name=PODMAN_SERVICE,
         command=f"podman system service --time=0 {socket_url}",
         directory=Path.home(),
@@ -317,64 +311,51 @@ def start_podman_service(
     )
 
     # Wait for socket to be ready
-    _wait_for_socket(settings, socket_path, supervisor, timeout=10)
+    async with asyncio.timeout(10):
+        await _wait_for_socket(settings, socket_path, supervisor)
 
     logger.info("Podman service ready at %s", socket_url)
     return socket_url, {"DOCKER_HOST": socket_url}
 
 
-def _wait_for_socket(
-    settings: HookSettings, socket_path: Path, supervisor: SupervisorClient, timeout: int = 10
-) -> None:
+async def _wait_for_socket(settings: HookSettings, socket_path: Path, supervisor: SupervisorClient) -> None:
     """Wait for Unix socket to be created and service to be running.
 
-    Args:
-        settings: Hook configuration settings
-        socket_path: Path to Unix socket
-        supervisor: Supervisor client for checking service status
-        timeout: Maximum wait time in seconds
+    Caller should wrap with asyncio.timeout() to set deadline.
 
     Raises:
-        TimeoutError: If socket doesn't become ready in time, with diagnostic info
+        PodmanServiceError: If service enters a terminal failure state.
     """
-    last_info: ProcessInfo | None = None
-    for _i in range(timeout * 10):  # Check every 0.1s
-        info = supervisor.get_process_info(PODMAN_SERVICE)
-        last_info = info
+    while True:
+        info = await asyncio.to_thread(supervisor.get_process_info, PODMAN_SERVICE)
 
-        # Check for success: socket exists and service running
         if socket_path.exists() and info.statename == ProcessState.RUNNING:
             return
 
-        # Check for terminal failure states - no point waiting
+        # Terminal failure states — no point waiting
         if info.statename in (ProcessState.FATAL, ProcessState.BACKOFF, ProcessState.EXITED):
-            break
+            _log_podman_failure(info)
+            podman_dir = settings.get_podman_dir()
+            hint = (
+                "Common cause: storage driver mismatch. "
+                f"If podman was previously used with a different driver, run: "
+                f"rm -rf {podman_dir / 'storage'} {podman_dir / 'runroot'}"
+            )
+            raise TimeoutError(
+                f"Podman service entered {info.statename} (socket_exists={socket_path.exists()}). {hint}"
+            )
 
-        time.sleep(0.1)
+        await asyncio.sleep(0.1)
 
-    # Build diagnostic message
-    socket_exists = socket_path.exists()
-    last_state = last_info.statename if last_info else ProcessState.UNKNOWN
-    diag = f"socket_exists={socket_exists}, last_service_state={last_state}"
 
-    # Log full process info and log file contents for visibility
-    if last_info and last_state in (ProcessState.FATAL, ProcessState.BACKOFF, ProcessState.EXITED):
-        logger.error("Podman service failed: %s", last_info.model_dump())
-        # Read and log the actual podman log files
-        for logfile_attr in ("stdout_logfile", "stderr_logfile"):
-            logfile = getattr(last_info, logfile_attr, None)
-            if logfile:
-                logpath = Path(logfile)
-                if logpath.exists():
-                    content = logpath.read_text()
-                    if content.strip():
-                        logger.error("Podman %s:\n%s", logfile_attr, content)
-
-    # Common cause: storage driver mismatch from pre-existing state
-    podman_dir = settings.get_podman_dir()
-    hint = (
-        "Common cause: storage driver mismatch. "
-        f"If podman was previously used with a different driver, run: "
-        f"rm -rf {podman_dir / 'storage'} {podman_dir / 'runroot'}"
-    )
-    raise TimeoutError(f"Podman socket {socket_path} did not become ready in {timeout}s ({diag}). {hint}")
+def _log_podman_failure(info: ProcessInfo) -> None:
+    """Log diagnostic info for a failed podman service."""
+    logger.error("Podman service failed: %s", info.model_dump())
+    for logfile_attr in ("stdout_logfile", "stderr_logfile"):
+        logfile = getattr(info, logfile_attr, None)
+        if logfile:
+            logpath = Path(logfile)
+            if logpath.exists():
+                content = logpath.read_text()
+                if content.strip():
+                    logger.error("Podman %s:\n%s", logfile_attr, content)

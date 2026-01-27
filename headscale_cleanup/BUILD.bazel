@@ -38,7 +38,7 @@ py_package(
 )
 
 py_wheel(
-    name = "headscale_cleanup_wheel",
+    name = "wheel",
     distribution = "headscale_cleanup",
     entry_points = {
         "console_scripts": [

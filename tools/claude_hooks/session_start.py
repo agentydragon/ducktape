@@ -22,6 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from fmt_util import format_limited_list
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import bazelisk_setup, binary_tools, env_file, nix_setup, podman_service, proxy_setup
@@ -123,10 +124,7 @@ async def run_cli_mode(hook_input: HookInput) -> None:
                 if var:
                     exports.append(f"+{var}")
         if exports:
-            print(
-                f"direnv: export {' '.join(exports[:5])}"
-                + (f" ... (+{len(exports) - 5} more)" if len(exports) > 5 else "")
-            )
+            print(f"direnv: export {format_limited_list(exports, 5, separator=' ')}")
 
 
 # ============================================================================
@@ -236,7 +234,7 @@ def emit_session_context(collector: LogCollector, log_file: Path) -> None:
         lines.append("GitHub CI Access:")
         lines.append("  DUCKTAPE_CI_READ_GITHUB_TOKEN is set - GitHub PAT with read access to ducktape repo.")
         lines.append(
-            "  Use via: curl -H 'Authorization: token $DUCKTAPE_CI_READ_GITHUB_TOKEN' https://api.github.com/..."
+            "  Use via: curl -H 'Authorization: Bearer $DUCKTAPE_CI_READ_GITHUB_TOKEN' https://api.github.com/..."
         )
         lines.append("  Capabilities: read repo, read CI logs, list workflow runs, view PR status.")
 
@@ -268,19 +266,21 @@ def install_git_precommit_hook(project_dir: Path) -> None:
         logger.info("Git pre-commit hook already installed")
         return
 
-    # Ensure pre-commit is installed (version from .pre-commit-config.yaml comment)
+    # Ensure pre-commit and its dependencies are installed
+    # ansible-lint hook requires ansible package
+    # TODO: Deduplicate this setup with CI setup steps (see .github/workflows/*.yml)
     try:
         subprocess.run(["pre-commit", "--version"], capture_output=True, check=True, timeout=5)
         logger.info("pre-commit already available")
     except (FileNotFoundError, subprocess.CalledProcessError):
-        logger.info("Installing pre-commit==4.0.1 via pip")
+        logger.info("Installing pre-commit==4.0.1 and ansible via pip")
         try:
             result = subprocess.run(
-                ["pip", "install", "--user", "pre-commit==4.0.1"],
+                ["pip", "install", "--user", "pre-commit==4.0.1", "ansible"],
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=120,
             )
             if result.returncode != 0:
                 logger.warning("Failed to install pre-commit: %s", result.stderr)
@@ -399,7 +399,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
 
     # Start supervisor (required by proxy and podman)
-    supervisor_task = asyncio.create_task(run_in_thread(supervisor_setup.start, settings))
+    supervisor_task = asyncio.create_task(supervisor_setup.start(settings))
 
     # Wrappers that depend on supervisor being ready
     # TODO: Handle upstream dependency failures more gracefully.
@@ -413,7 +413,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         if exc := supervisor_task.exception():
             raise exc
         supervisor_result = supervisor_task.result()
-        return proxy_setup.setup_bazel_proxy(settings, supervisor_result.client)
+        return await proxy_setup.setup_bazel_proxy(settings, supervisor_result.client)
 
     async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor)."""
@@ -421,7 +421,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         if exc := supervisor_task.exception():
             raise exc
         supervisor_result = supervisor_task.result()
-        return podman_service.setup_podman(settings, supervisor_result.client)
+        return await podman_service.setup_podman(settings, supervisor_result.client)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper as separate tasks.

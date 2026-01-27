@@ -13,6 +13,17 @@ py_library(
 )
 
 py_library(
+    name = "github_actions",
+    srcs = ["github_actions.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tools:env_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "models",
     srcs = ["models.py"],
     imports = ["../.."],
@@ -23,41 +34,86 @@ py_library(
     ],
 )
 
-# === Modules with internal deps ===
+# === Library modules ===
 
 py_library(
-    name = "bazel_diff",
-    srcs = ["bazel_diff.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [":bazel_query"],
-)
-
-py_library(
-    name = "ci_decide",
-    srcs = ["ci_decide.py"],
-    data = ["workflows.yaml"],
+    name = "diff_utils",
+    srcs = ["diff_utils.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":bazel_query",
-        ":models",
+        ":github_actions",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "check_release_lib",
+    srcs = ["check_release_lib.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":diff_utils",
+        ":github_actions",
+        "//tools:env_utils",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],
 )
 
 py_library(
-    name = "generate_ci",
-    srcs = ["generate_ci.py"],
+    name = "ci_decide_lib",
+    srcs = ["ci_decide_lib.py"],
     data = ["workflows.yaml"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":bazel_query",
+        ":diff_utils",
+        ":github_actions",
         ":models",
+        "//:fmt_util",
+        "//tools:env_utils",
         "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "generate_ci_lib",
+    srcs = ["generate_ci_lib.py"],
+    data = ["workflows.yaml"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":github_actions",
+        ":models",
         "@pypi//pyyaml",
     ],
 )
 
-# === Linting ===
+# === Exec stubs ===
+
+py_library(
+    name = "check_release",
+    srcs = ["check_release.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":check_release_lib"],
+)
+
+py_library(
+    name = "ci_decide",
+    srcs = ["ci_decide.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":ci_decide_lib"],
+)
+
+py_library(
+    name = "generate_ci",
+    srcs = ["generate_ci.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":generate_ci_lib"],
+)

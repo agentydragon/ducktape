@@ -34,7 +34,7 @@ py_package(
 )
 
 py_wheel(
-    name = "gnome_terminal_profile_switcher_wheel",
+    name = "wheel",
     distribution = "gnome_terminal_profile_switcher",
     entry_points = {
         "console_scripts": ["switch-gnome-terminal-profile = gnome_terminal_profile_switcher.main:main"],

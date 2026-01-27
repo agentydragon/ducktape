@@ -38,7 +38,7 @@ class TimeoutTransport(xmlrpc.client.Transport):
         super().__init__()
         self.timeout = timeout
 
-    def make_connection(self, host: str) -> http.client.HTTPConnection:
+    def make_connection(self, host: tuple[str, dict[str, str]] | str) -> http.client.HTTPConnection:
         conn = super().make_connection(host)
         conn.timeout = self.timeout
         return conn
@@ -190,6 +190,10 @@ class SupervisorClient:
         all_info = cast(list[dict[str, object]], self._proxy.supervisor.getAllProcessInfo())
         return [ProcessInfo.model_validate(info) for info in all_info]
 
+    def service_exists(self, name: str) -> bool:
+        """Check if a service is registered with supervisor."""
+        return any(p.name == name for p in self.get_all_process_info())
+
     def reload_config(self) -> tuple[list[str], list[str], list[str]]:
         """Reload config files. Returns (added, changed, removed) process names."""
         result = cast(list[list[list[str]]], self._proxy.supervisor.reloadConfig())
@@ -229,15 +233,10 @@ class SupervisorClient:
             raise SupervisorError(f"supervisord not running, cannot add service {name}")
 
         # Check if service already exists
-        try:
+        if self.service_exists(name):
             info = self.get_process_info(name)
             logger.info("Service %s already exists (state=%s)", name, info.statename)
             return
-        except xmlrpc.client.Fault as e:
-            if e.faultCode != Faults.BAD_NAME:
-                # Some other error - not "service doesn't exist"
-                raise ProxyServiceError(f"Failed to check service {name}: {e}") from e
-            # Service doesn't exist yet, proceed to add it
 
         write_service_config(self._settings, name, command, directory, environment)
 
@@ -275,40 +274,25 @@ class SupervisorClient:
         except (ConnectionError, OSError) as e:
             raise ProxyServiceError(f"Failed to communicate with supervisor: {e}") from e
 
-    def is_service_running(self, service_name: str, wait_for_start: bool = True, timeout: float = 5.0) -> bool:
-        """Check if a specific service is running under supervisor.
+    def get_service_state(self, service_name: str) -> ProcessState | None:
+        """Get the current state of a service.
 
-        Args:
-            service_name: Name of the service to check
-            wait_for_start: If True, wait for service to transition from STARTING to RUNNING
-            timeout: Maximum time to wait for STARTING->RUNNING transition
-
-        Returns:
-            True if service is running, False otherwise
+        Returns None if supervisor isn't running or service doesn't exist.
+        Raises on connection/communication errors.
         """
         if not is_running(self._settings):
-            return False
+            return None
 
-        try:
-            deadline = time.time() + timeout if wait_for_start else time.time()
-            last_state = None
+        if not self.service_exists(service_name):
+            return None
+        return self.get_process_info(service_name).statename
 
-            while True:
-                info = self.get_process_info(service_name)
-                if info.statename != last_state:
-                    logger.info("Service %s: state=%s", service_name, info.statename)
-                    last_state = info.statename
-                if info.statename == ProcessState.RUNNING:
-                    return True
-                if info.statename == ProcessState.STARTING and time.time() < deadline:
-                    time.sleep(0.2)
-                    continue
-                # Service exists but not running (STOPPED, EXITED, FATAL, BACKOFF, etc.)
-                return False
+    def is_service_running(self, service_name: str) -> bool:
+        """Check if a specific service is currently running.
 
-        except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
-            logger.warning("Service check failed for %s: %s", service_name, e)
-            return False
+        Pure query - returns the current state without waiting.
+        """
+        return self.get_service_state(service_name) == ProcessState.RUNNING
 
     def restart_service(self, service_name: str) -> None:
         """Restart a specific service under supervisor.

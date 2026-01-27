@@ -56,13 +56,30 @@ jobs:
           path: .bazel-diff-cache
           key: bazel-diff-hashes-${{ github.sha }}
           restore-keys: bazel-diff-hashes-
-      - name: Set bazel-diff env
+      - name: Set CI env
         run: |-
           echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
           echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
+          echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV
+          echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV
+          echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV
       - name: Compute CI decision
         id: decide
         run: uv run tools/ci/ci_decide.py
+      - name: Upload targets file
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: targets
+          path: targets.txt
+          if-no-files-found: ignore
+      - name: Upload query logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bazel-query-logs-${{ github.run_id }}
+          path: bazel-query-logs
+          if-no-files-found: ignore
   bazel-build:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')

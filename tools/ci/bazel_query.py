@@ -2,92 +2,102 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import subprocess
-import tempfile
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
-def run_query_with_file(query: str, *, check: bool = False) -> subprocess.CompletedProcess:
-    """Run a bazel query using --query_file to avoid "Argument list too long" errors.
+def _get_query_log_dir() -> Path:
+    """Get the query log directory, reading env var at call time (not import time)."""
+    return Path(os.environ.get("BAZEL_QUERY_LOG_DIR", "/tmp/bazel-query-logs"))
 
-    Args:
-        query: The Bazel query string.
-        check: If True, raise CalledProcessError on non-zero exit.
 
-    Returns:
-        CompletedProcess with stdout/stderr captured.
+def _run_bazel_query_cmd(cmd: list[str | Path], query: str) -> list[str]:
+    """Run a bazel query command using --query_file to avoid "Argument list too long" errors.
+
+    Query files are saved to BAZEL_QUERY_LOG_DIR for CI artifact capture on failure.
+    Returns list of targets from stdout.
+    Raises CalledProcessError on failure.
     """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".query", delete_on_close=False) as f:
-        f.write(query)
-        f.flush()
-        return subprocess.run(
-            ["bazelisk", "query", f"--query_file={f.name}"], check=check, capture_output=True, text=True
-        )
+    # Save query to log directory for CI artifacts
+    query_log_dir = _get_query_log_dir()
+    logger.info(
+        "Saving query to: %s (env BAZEL_QUERY_LOG_DIR=%s)", query_log_dir, os.environ.get("BAZEL_QUERY_LOG_DIR")
+    )
+    query_log_dir.mkdir(parents=True, exist_ok=True)
+    # Each query gets its own subdirectory
+    timestamp = datetime.now().strftime("%H%M%S")
+    query_dir = query_log_dir / f"{timestamp}_{uuid.uuid4().hex[:8]}"
+    query_dir.mkdir()
+    query_file = query_dir / "query"
+    query_file.write_text(query)
+
+    result = subprocess.run([*cmd, f"--query_file={query_file}"], check=False, capture_output=True, text=True)
+
+    (query_dir / "stdout").write_text(result.stdout)
+    (query_dir / "stderr").write_text(result.stderr)
+    (query_dir / "exit_code").write_text(str(result.returncode))
+
+    if result.returncode != 0:
+        logger.error("Query failed (exit %d). stderr:\n%s", result.returncode, result.stderr)
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+
+    return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
 
 
-def run_cquery_with_file(query: str, *, check: bool = False) -> subprocess.CompletedProcess:
-    """Run a bazel cquery using --query_file to avoid "Argument list too long" errors.
+def run_query(query: str) -> list[str]:
+    """Run a bazel query and return matching targets.
 
-    cquery respects target_compatible_with constraints, unlike query.
-
-    Args:
-        query: The Bazel query string.
-        check: If True, raise CalledProcessError on non-zero exit.
-
-    Returns:
-        CompletedProcess with stdout/stderr captured.
+    Raises CalledProcessError on failure.
     """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".query", delete_on_close=False) as f:
-        f.write(query)
-        f.flush()
-        return subprocess.run(
-            ["bazelisk", "cquery", f"--query_file={f.name}", "--output=label"],
-            check=check,
-            capture_output=True,
-            text=True,
-        )
+    return _run_bazel_query_cmd(["bazelisk", "query"], query)
 
 
-def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
-    """Check if affected targets intersect with a Bazel pattern.
-
-    Uses --query_file to avoid "Argument list too long" errors with large target sets.
-
-    Args:
-        targets: List of Bazel target labels.
-        pattern: Bazel query pattern to intersect with.
-
-    Returns:
-        True if there's any intersection, False otherwise.
-    """
+def query_intersection(targets: list[str], pattern: str) -> list[str]:
+    """Query targets that intersect with a pattern. Returns matching targets."""
     if not targets:
-        return False
+        return []
 
-    targets_str = " ".join(targets)
-    query = f"set({targets_str}) intersect {pattern}"
-    result = run_query_with_file(query)
-    return bool(result.stdout.strip())
+    query = f"set({' '.join(targets)}) intersect {pattern}"
+    return run_query(query)
 
 
 def filter_compatible_targets(targets: list[str]) -> list[str]:
-    """Filter targets to only those compatible with the current platform.
+    """Filter targets that are incompatible with Linux (the CI platform).
 
-    Uses bazel cquery which respects target_compatible_with constraints.
+    Uses bazel query attr() to find targets constrained to non-Linux platforms
+    and subtracts them. This avoids cquery, which loads configurations and can
+    trigger compilation of transitive dependencies (e.g. pip packages needing
+    meson/system headers) that aren't available on the CI runner.
 
-    Args:
-        targets: List of Bazel target labels.
-
-    Returns:
-        List of targets compatible with the current platform.
+    Currently matches @platforms//os:macos. If a target were constrained to
+    @platforms//os:linux, it would NOT be excluded (that's compatible).
     """
     if not targets:
         return targets
 
-    targets_str = " ".join(targets)
-    query = f"set({targets_str})"
-    result = run_cquery_with_file(query)
+    target_set = f"set({' '.join(targets)})"
+    # Exclude targets constrained to non-Linux platforms.
+    # attr() matches the string representation of target_compatible_with.
+    query = f"{target_set} except attr(target_compatible_with, '@platforms//os:macos', {target_set})"
+    return run_query(query)
 
-    if result.returncode != 0:
-        # cquery failed - return original targets
+
+def filter_to_rules(targets: list[str]) -> list[str]:
+    """Filter targets to only rule targets (exclude source files).
+
+    bazel-diff can return source file labels like //:foo.py or //pkg:BUILD.bazel.
+    These are valid Bazel labels but cannot be built directly - only rule targets
+    (py_library, py_test, etc.) can be built. This filters the list to keep only
+    buildable rule targets.
+    """
+    if not targets:
         return targets
 
-    return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
+    query = f"kind('rule', set({' '.join(targets)}))"
+    return run_query(query)

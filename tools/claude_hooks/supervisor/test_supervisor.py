@@ -53,52 +53,43 @@ def cleanup_supervisor_fixture(isolated_supervisor_env: Path) -> Generator[None]
         yield
 
 
-class TestSupervisorLifecycle:
-    """Tests for supervisor start/stop lifecycle."""
+async def test_supervisor_lifecycle(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+    """Test supervisor start/stop lifecycle."""
+    assert not supervisor_is_running(hook_settings)
 
-    def test_supervisor_lifecycle(self, isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
-        """Test supervisor start/stop lifecycle."""
-        assert not supervisor_is_running(hook_settings)
+    await supervisor_start(hook_settings)
+    assert supervisor_is_running(hook_settings)
 
-        supervisor_start(hook_settings)
-        assert supervisor_is_running(hook_settings)
-
-        # Start again should be idempotent
-        supervisor_start(hook_settings)
-        assert supervisor_is_running(hook_settings)
+    # Start again should be idempotent
+    await supervisor_start(hook_settings)
+    assert supervisor_is_running(hook_settings)
 
 
-class TestSupervisorServices:
-    """Tests for supervisor service management."""
+async def test_add_and_check_service(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+    """Test adding a service to supervisor."""
+    supervisor_result = await supervisor_start(hook_settings)
 
-    def test_add_and_check_service(self, isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
-        """Test adding a service to supervisor."""
-        supervisor_result = supervisor_start(hook_settings)
+    supervisor_result.client.add_service(name="test-service", command="sleep 3600", directory=isolated_supervisor_env)
 
-        supervisor_result.client.add_service(
-            name="test-service", command="sleep 3600", directory=isolated_supervisor_env
-        )
+    assert supervisor_result.client.is_service_running("test-service")
 
-        assert supervisor_result.client.is_service_running("test-service")
 
-    def test_update_service(self, isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
-        """Test updating a service config."""
-        supervisor_result = supervisor_start(hook_settings)
+async def test_update_service(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+    """Test updating a service config."""
+    supervisor_result = await supervisor_start(hook_settings)
 
-        supervisor_result.client.add_service(
-            name="test-service", command="sleep 3600", directory=isolated_supervisor_env
-        )
+    supervisor_result.client.add_service(name="test-service", command="sleep 3600", directory=isolated_supervisor_env)
 
-        initial_info = supervisor_result.client.get_process_info("test-service")
-        initial_pid = initial_info.pid
+    initial_info = supervisor_result.client.get_process_info("test-service")
+    initial_pid = initial_info.pid
 
-        supervisor_result.client.update_service(
-            name="test-service", command="sleep 7200", directory=isolated_supervisor_env
-        )
+    supervisor_result.client.update_service(
+        name="test-service", command="sleep 7200", directory=isolated_supervisor_env
+    )
 
-        # Verify restarted (PID should have changed)
-        new_info = supervisor_result.client.get_process_info("test-service")
-        assert new_info.pid != initial_pid, f"Service should have been restarted (PID unchanged: {initial_pid})"
+    # Verify restarted (PID should have changed)
+    new_info = supervisor_result.client.get_process_info("test-service")
+    assert new_info.pid != initial_pid, f"Service should have been restarted (PID unchanged: {initial_pid})"
 
 
 if __name__ == "__main__":

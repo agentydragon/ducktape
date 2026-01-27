@@ -25,6 +25,12 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Download targets artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: targets
+        continue-on-error: true # May not exist for workflow_dispatch
+
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -42,7 +48,16 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build
-        run: bazel build --keep_going ${{ inputs.targets }}
+        run: |
+          # Use target_pattern_file if artifact exists (avoids shell arg length limits)
+          if [[ -f targets.txt ]]; then
+            TARGET_ARG="--target_pattern_file=targets.txt"
+            echo "Using targets from artifact file"
+          else
+            TARGET_ARG="${{ inputs.targets }}"
+            echo "Using targets from input: $TARGET_ARG"
+          fi
+          bazel build --keep_going $TARGET_ARG
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

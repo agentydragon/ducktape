@@ -17,11 +17,7 @@ def create_server_from_env():
     """Factory that reads from environment - not a trivial passthrough."""
     import os
 
-    return Server(
-        host=os.getenv("HOST", "localhost"),
-        port=int(os.getenv("PORT", "8080")),
-        config={},
-    )
+    return Server(host=os.getenv("HOST", "localhost"), port=int(os.getenv("PORT", "8080")), config={})
 
 
 def transform_and_create(data: dict):
