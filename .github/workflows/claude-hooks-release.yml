@@ -119,9 +119,10 @@ jobs:
         with:
           artifact-name: claude-hooks-test-logs
 
+      # Skip when all tests were remote-cached (no local XML outputs).
       - name: Test Report
         uses: dorny/test-reporter@v2
-        if: always()
+        if: always() && hashFiles('bazel-testlogs/**/test.xml') != ''
         with:
           name: Claude Hooks Test Results
           path: "bazel-testlogs/**/test.xml"
