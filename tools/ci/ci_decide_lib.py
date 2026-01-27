@@ -44,17 +44,14 @@ class CIDecision(BaseModel):
     workflows: list[str] = Field(default_factory=list)
     infra_changed: bool = False
 
-    @property
-    def targets_str(self) -> str:
-        """Return targets as space-separated string for GitHub Actions output."""
-        return " ".join(self.targets)
-
-    def write_to_github_output(self, output_path: Path) -> None:
-        """Write decision to GitHub Actions output file."""
-        with output_path.open("a") as f:
-            f.write(f"targets={self.targets_str}\n")
-            f.write(f"workflows={json.dumps(self.workflows)}\n")
-            f.write(f"infra_changed={'true' if self.infra_changed else 'false'}\n")
+    def to_github_output(self) -> str:
+        """Format decision as GitHub Actions output content."""
+        outputs = {
+            "targets": " ".join(self.targets),
+            "workflows": json.dumps(self.workflows),
+            "infra_changed": "true" if self.infra_changed else "false",
+        }
+        return "".join(f"{k}={v}\n" for k, v in outputs.items())
 
     def write_targets_file(self, targets_path: Path) -> None:
         """Write targets to file for --target_pattern_file usage.
@@ -302,7 +299,7 @@ def main() -> None:
     workspace = Path(os.environ.get("GITHUB_WORKSPACE") or Path.cwd())
     decision = compute_decision(manifest.workflows, workspace)
 
-    decision.write_to_github_output(output_path)
+    output_path.write_text(decision.to_github_output())
 
     # Write targets file for artifact upload (avoids shell argument length limits)
     targets_file = workspace / "targets.txt"
