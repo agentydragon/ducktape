@@ -21,6 +21,7 @@ import re
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -149,7 +150,7 @@ def resolve_formatter_bin(formatter: str) -> str:
     return bin_path
 
 
-FORMATTER_COMMANDS: dict[str, callable[[str, bool], list[str]]] = {
+FORMATTER_COMMANDS: dict[str, Callable[[str, bool], list[str]]] = {
     "prettier": lambda bin_path, check: [bin_path, "--check" if check else "--write"],
     "ruff": lambda bin_path, check: [bin_path, "format", *(["--check"] if check else [])],
     "shfmt": lambda bin_path, check: [bin_path, "-d" if check else "-w"],
@@ -286,7 +287,7 @@ async def run_pytest_main_check(files: list[Path], repo_root: Path) -> Validatio
 
 
 async def run_subprocess_validation(
-    name: str, bin_rlocation: str, files: list[Path], file_filter: callable
+    name: str, bin_rlocation: str, files: list[Path], file_filter: Callable[[Path], bool]
 ) -> ValidationResult:
     """Run a subprocess validation if any files match the filter."""
     if not any(file_filter(f) for f in files):
@@ -421,10 +422,15 @@ async def run_checkov(files: list[Path]) -> ValidationResult:
     )
     elapsed = time.perf_counter() - start
 
-    # Check for failures
-    failed_checks = report.failed_checks if report else []
+    # Check for failures — checkov runner.run() can return Report or list[Report]
+    if isinstance(report, list):
+        failed_checks = [c for r in report for c in r.failed_checks]
+    elif report:
+        failed_checks = report.failed_checks
+    else:
+        failed_checks = []
     if failed_checks:
-        output_lines = [f"{c.resource}: {c.check_id} - {c.check.name}" for c in failed_checks]
+        output_lines = [f"{c.resource}: {c.check_id}" for c in failed_checks]
         return ValidationResult(name, elapsed, False, "\n".join(output_lines))
 
     return ValidationResult(name, elapsed, True, "")
@@ -508,15 +514,15 @@ async def main_async() -> int:
     validate_results = await run_validate(files, repo_root)
 
     validate_failed = []
-    for result in validate_results:
-        if result.skipped:
+    for vresult in validate_results:
+        if vresult.skipped:
             continue
-        status = "✓" if result.success else "✗"
-        print(f"{status} {result.name}: {result.elapsed:.1f}s")
-        if not result.success:
-            validate_failed.append(result)
-            if result.output:
-                print(result.output, file=sys.stderr)
+        status = "✓" if vresult.success else "✗"
+        print(f"{status} {vresult.name}: {vresult.elapsed:.1f}s")
+        if not vresult.success:
+            validate_failed.append(vresult)
+            if vresult.output:
+                print(vresult.output, file=sys.stderr)
 
     elapsed_total = time.perf_counter() - start_total
     print(f"\nTotal: {elapsed_total:.1f}s")

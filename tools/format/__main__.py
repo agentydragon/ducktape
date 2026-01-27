@@ -26,6 +26,7 @@ import re
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -158,7 +159,7 @@ def resolve_formatter_bin(formatter: str) -> str:
 
 
 # Formatter command builders
-FORMATTER_COMMANDS: dict[str, callable[[str, bool], list[str]]] = {
+FORMATTER_COMMANDS: dict[str, Callable[[str, bool], list[str]]] = {
     "prettier": lambda bin_path, check: [bin_path, "--check" if check else "--write"],
     "ruff": lambda bin_path, check: [bin_path, "format", *(["--check"] if check else [])],
     "shfmt": lambda bin_path, check: [bin_path, "-d" if check else "-w"],
