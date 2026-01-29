@@ -10,6 +10,7 @@ TODO: Eventually unify tool installation via direnv/devenv instead of
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import shutil
 import stat
@@ -88,14 +89,14 @@ def get_bazelisk_url() -> str:
 def install_bazelisk(settings: HookSettings) -> Path:
     """Download bazelisk to private location, returning the binary path.
 
-    Installs to ~/.cache/bazel-proxy/bazelisk (private, not on PATH).
-    The wrapper script in ~/.cache/bazel-proxy/bin/bazel will call this.
+    Installs to ~/.cache/claude-hooks/auth-proxy/bazelisk (private, not on PATH).
+    The wrapper script in ~/.cache/claude-hooks/auth-proxy/bin/bazel will call this.
     Skips download if already installed.
     """
-    bazel_proxy_dir = settings.get_bazel_proxy_dir()
+    auth_proxy_dir = settings.get_auth_proxy_dir()
     bazelisk_path = settings.get_bazelisk_path()
 
-    bazel_proxy_dir.mkdir(parents=True, exist_ok=True)
+    auth_proxy_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if already installed
     if get_bazelisk_version(settings):
@@ -120,15 +121,15 @@ def install_bazelisk(settings: HookSettings) -> Path:
 def install_wrapper(settings: HookSettings) -> Path:
     """Install wrapper script that sets proxy env vars before calling bazelisk.
 
-    The wrapper is in ~/.cache/bazel-proxy/bin/bazel and calls the real
-    bazelisk at ~/.cache/bazel-proxy/bazelisk.
+    The wrapper is in ~/.cache/claude-hooks/auth-proxy/bin/bazel and calls the real
+    bazelisk at ~/.cache/claude-hooks/auth-proxy/bazelisk.
     Also creates a bazelisk symlink for pre-commit hooks.
     Includes health checks for supervisor and proxy service.
 
     The wrapper reads configuration from environment variables (set via get_env_script).
 
     Uses sys.executable -m to invoke the bazel_wrapper module. This works in both:
-    - Bazel mode: PYTHONPATH is set up by Bazel runfiles
+    - Bazel mode: PYTHONPATH is baked into the wrapper script at install time
     - Wheel mode: The package is installed in the Python environment
     """
     wrapper_dir = settings.get_wrapper_dir()
@@ -136,10 +137,13 @@ def install_wrapper(settings: HookSettings) -> Path:
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use sys.executable -m for both Bazel and wheel mode
-    # This is more robust than using the runfiles binary path which may not be accessible
-    # from subprocesses that don't inherit runfiles manifest
-    wrapper_script = f"""#!/bin/sh
+    # Use sys.executable -m for both Bazel and wheel mode.
+    # Bake PYTHONPATH into the script so the wrapper can find dependencies (e.g. PyJWT)
+    # without leaking it into every agent subprocess via the env file.
+    # In wheel mode PYTHONPATH is unset, so no export line is emitted.
+    pythonpath = os.environ.get("PYTHONPATH")
+    pythonpath_line = f'\nexport PYTHONPATH="{pythonpath}"' if pythonpath else ""
+    wrapper_script = f"""#!/bin/sh{pythonpath_line}
 exec "{sys.executable}" -m tools.claude_hooks.bazel_wrapper "$@"
 """
     logger.info("Installed bazel wrapper at %s (using %s)", wrapper_path, sys.executable)

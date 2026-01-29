@@ -172,7 +172,7 @@ class EmberRuntime:
                 message_text = "\n".join(f"{event.sender}: {event.body}" for event in events)
                 logger.info("Received Matrix batch:\n%s", message_text)
                 # nio sets room_id on events at runtime but it's not in type stubs
-                room_ids = {event.room_id for event in events if event.room_id}  # type: ignore[attr-defined]
+                room_ids = {event.room_id for event in events if event.room_id}
 
                 # Set typing indicator
                 if room_ids:

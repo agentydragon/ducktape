@@ -21,17 +21,8 @@ py_library(
 )
 
 py_library(
-    name = "resources",
-    srcs = ["resources.py"],
-    data = [
-        "config/bazelrc.mako",
-        "config/env.mako",
-        "config/nix.conf",
-        "config/podman/containers.conf",
-        "config/podman/policy.json",
-        "config/podman/registries.conf",
-        "config/podman/storage.conf",
-    ],
+    name = "debug",
+    srcs = ["debug.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
 )
@@ -44,15 +35,17 @@ py_library(
 )
 
 py_library(
-    name = "binary_tools",
-    srcs = ["binary_tools.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "settings",
     srcs = ["settings.py"],
+    data = [
+        "config/bazelrc.mako",
+        "config/env.mako",
+        "config/nix.conf",
+        "config/podman/containers.conf",
+        "config/podman/policy.json",
+        "config/podman/registries.conf",
+        "config/podman/storage.conf",
+    ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
@@ -100,7 +93,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":resources",
+        ":errors",
         ":settings",
         ":streaming",
     ],
@@ -113,8 +106,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":errors",
-        ":proxy_credentials",
-        ":resources",
+        ":proxy_vars",
         ":settings",
         "//net_util:net",
         "//tools/claude_hooks/supervisor:client",
@@ -130,6 +122,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":errors",
+        ":proxy_setup",
+        ":proxy_vars",
         ":settings",
         "//tools/claude_hooks/supervisor:client",
     ],
@@ -143,11 +137,14 @@ py_binary(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":debug",
+        ":env_file",
         ":errors",
         ":proxy_credentials",
         ":proxy_setup",
         ":proxy_vars",
         ":settings",
+        "//tools:env_utils",
         "//tools/claude_hooks/supervisor:client",
     ],
 )
@@ -160,11 +157,12 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":bazelisk_setup",
-        ":binary_tools",
+        ":debug",
         ":env_file",
         ":errors",
         ":nix_setup",
         ":podman_service",
+        ":proxy_credentials",
         ":proxy_setup",
         ":settings",
         "//:fmt_util",
@@ -183,13 +181,12 @@ py_package(
         "net_util",
         "tools",
         "tools.claude_hooks",
-        "tools.claude_hooks.proxy",
+        "tools.claude_hooks.auth_proxy",
         "tools.claude_hooks.supervisor",
     ],
     deps = [
         ":bazel_wrapper",
         ":bazelisk_setup",
-        ":binary_tools",
         ":env_file",
         ":errors",
         ":nix_setup",
@@ -197,13 +194,12 @@ py_package(
         ":proxy_credentials",
         ":proxy_setup",
         ":proxy_vars",
-        ":resources",
         ":session_start",
         ":settings",
         ":streaming",
         "//net_util:net",
-        "//tools/claude_hooks/proxy:auth_proxy",
-        "//tools/claude_hooks/proxy:run_auth_proxy",
+        "//tools/claude_hooks/auth_proxy:main",
+        "//tools/claude_hooks/auth_proxy:proxy",
         "//tools/claude_hooks/supervisor:client",
         "//tools/claude_hooks/supervisor:setup",
     ],
@@ -245,10 +241,10 @@ py_test(
     srcs = ["test_session_start.py"],
     data = [
         ":session_start",
-        "//tools/claude_hooks/proxy:run_auth_proxy",
+        "//tools/claude_hooks/auth_proxy:run",
         "//tools/claude_hooks/testdata/test_workspace:workspace_files",
     ],
-    # Inherit proxy env vars so MockAnthropicProxy can chain through real proxy
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
     env_inherit = [
         "HTTPS_PROXY",
         "https_proxy",
@@ -257,6 +253,8 @@ py_test(
         "NODE_EXTRA_CA_CERTS",
     ],
     imports = ["../.."],
+    # local: podman needs user namespaces (newuidmap), blocked by linux-sandbox
+    local = True,
     tags = [
         "e2e",
         "external",
@@ -268,10 +266,9 @@ py_test(
         ":session_start",
         ":settings",
         "//:runfiles",
-        "//net_util",
+        "//net_util:net",
         "//tools/claude_hooks/testing:fixtures",
-        "//tools/claude_hooks/testing:mock_anthropic_proxy",
-        "//tools/claude_hooks/testing:runfiles_util",
+        "//tools/claude_hooks/testing:mock_egress_proxy",
         "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -296,7 +293,7 @@ py_test(
     srcs = ["test_integration.py"],
     data = [
         # The proxy binary is spawned as a subprocess by supervisor
-        "//tools/claude_hooks/proxy:run_auth_proxy",
+        "//tools/claude_hooks/auth_proxy:run",
     ],
     env_inherit = [
         "HTTPS_PROXY",
@@ -310,12 +307,11 @@ py_test(
         ":conftest",
         ":proxy_setup",
         ":settings",
-        "//net_util",
+        "//net_util:net",
         "//tools/claude_hooks/supervisor:client",
         "//tools/claude_hooks/supervisor:setup",
         "//tools/claude_hooks/testing:fixtures",
-        "//tools/claude_hooks/testing:mock_anthropic_proxy",
-        "//tools/claude_hooks/testing:supervisor_cleanup",
+        "//tools/claude_hooks/testing:mock_egress_proxy",
         "@pypi//cryptography",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

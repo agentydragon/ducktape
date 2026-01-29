@@ -1,4 +1,4 @@
-"""Tests for MockAnthropicProxy test utility."""
+"""Tests for MockEgressProxy test utility."""
 
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ from collections.abc import Generator
 import pytest
 import pytest_bazel
 
-from tools.claude_hooks.testing.fixtures import MockProxyFixture
-from tools.claude_hooks.testing.mock_anthropic_proxy import MockAnthropicProxy
+from tools.claude_hooks.testing.fixtures import MockEgressProxyFixture
+from tools.claude_hooks.testing.mock_egress_proxy import MockEgressProxy
 
 # Register fixtures from module (pytest-native, no direct name import needed)
 pytest_plugins = ["tools.claude_hooks.testing.fixtures"]
 
 
 @pytest.fixture
-def proxy_socket(mock_anthropic_proxy: MockProxyFixture) -> Generator[socket.socket]:
+def proxy_socket(mock_egress_proxy: MockEgressProxyFixture) -> Generator[socket.socket]:
     """Socket connected to the mock proxy."""
-    sock = socket.create_connection(("127.0.0.1", mock_anthropic_proxy.proxy.port), timeout=5)
+    sock = socket.create_connection(("127.0.0.1", mock_egress_proxy.proxy.port), timeout=5)
     try:
         yield sock
     finally:
@@ -28,7 +28,7 @@ def proxy_socket(mock_anthropic_proxy: MockProxyFixture) -> Generator[socket.soc
 
 def test_proxy_starts_and_stops() -> None:
     """Test basic proxy lifecycle via context manager."""
-    with MockAnthropicProxy(upstream_proxy=None, listen_port=0, require_auth=False) as proxy:
+    with MockEgressProxy(upstream_proxy=None, listen_port=0, require_auth=False) as proxy:
         assert proxy.port > 0
         assert proxy.ca_cert_pem
 

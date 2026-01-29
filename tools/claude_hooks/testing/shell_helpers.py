@@ -1,9 +1,12 @@
-"""Shared utilities for running shell commands with Claude Code environment."""
+"""Shared utilities for running shell commands and locating runfiles in tests."""
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+
+# Runfiles paths for binaries
+SESSION_START = "_main/tools/claude_hooks/session_start"
 
 
 def run_with_env_file(

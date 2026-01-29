@@ -9,34 +9,24 @@ filegroup(
     visibility = ["//editor_agent/runtime:__pkg__"],
 )
 
+# NOTE: No aggregator target - use specific per-file targets like :agent_runner, :cli, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
 py_library(
-    name = "editor_agent_host",
-    srcs = [
-        "agent_runner.py",
-        "cli.py",
-        "runner.py",
-        "submit_server.py",
-    ],
+    name = "cli",
+    srcs = ["cli.py"],
     data = glob(["definition/**/*"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core:agent",
-        "//agent_core:mcp_provider",
-        "//agent_pkg/host:bootstrap_handler",
+        ":agent_runner",
+        ":runner",
+        ":submit_server",
         "//agent_pkg/host:builder",
-        "//agent_pkg/host:init_runner",
         "//cli_util:decorators",
         "//cli_util:logging",
-        "//editor_agent/runtime:editor_agent_runtime",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor:server",
-        "//mcp_infra/display:rich_display",
-        "//mcp_infra/exec:docker",
-        "//net_util",
-        "//openai_utils:model",
+        "//openai_utils:client_factory",
         "@pypi//aiodocker",
-        "@pypi//fastmcp",
         "@pypi//typer",
     ],
 )

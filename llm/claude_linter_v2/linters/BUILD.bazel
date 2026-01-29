@@ -3,20 +3,20 @@ load("@rules_python//python:defs.bzl", "py_library")
 py_library(
     name = "python_ast",
     srcs = ["python_ast.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
+    deps = ["//llm/claude_linter_v2/config:models"],
 )
 
 py_library(
     name = "python_formatter",
     srcs = ["python_formatter.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
+    deps = ["//llm/claude_linter_v2/config:models"],
 )
 
 py_library(
     name = "python_ruff",
     srcs = ["python_ruff.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
+    deps = ["//llm/claude_linter_v2/config:models"],
 )

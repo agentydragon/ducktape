@@ -101,7 +101,7 @@ class AuthForwardingProxy:
         self._thread.start()
 
         logger.info(
-            "Auth forwarding proxy started on 127.0.0.1:%d (creds: %s, max_workers: %d)",
+            "Auth proxy started on 127.0.0.1:%d (creds: %s, max_workers: %d)",
             self.listen_port,
             self.creds_file,
             self.max_workers,
@@ -119,7 +119,7 @@ class AuthForwardingProxy:
                 conn.close()
         if self.server_socket:
             self.server_socket.close()
-        logger.info("Auth forwarding proxy stopped")
+        logger.info("Auth proxy stopped")
 
     def _serve(self) -> None:
         """Main server loop."""

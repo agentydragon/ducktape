@@ -238,12 +238,12 @@ async def test_close_continues_on_per_server_failure(make_simple_mcp):
         await comp.mount_inproc(MCPMountPrefix("backend2"), backend2)
 
         # Break one mount's cleanup
-        mount1 = comp._mounts["backend1"]
+        mount1 = comp._mounts[MCPMountPrefix("backend1")]
 
         async def failing_cleanup():
             raise RuntimeError("Simulated cleanup failure")
 
-        mount1.cleanup = failing_cleanup
+        mount1.cleanup = failing_cleanup  # type: ignore[method-assign]
 
         # Store initial state
         entries_before = await comp.server_entries()

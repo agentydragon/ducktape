@@ -11,11 +11,16 @@ Environment Variables (in priority order):
 
 from __future__ import annotations
 
+import importlib.resources
+from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from platformdirs import user_cache_dir, user_config_dir
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Config files bundled with the package (templates, etc.)
+CONFIG_FILES: Traversable = importlib.resources.files("tools.claude_hooks.config")
 
 # Environment variable prefix (matches model_config.env_prefix)
 ENV_PREFIX = "DUCKTAPE_CLAUDE_HOOKS_"
@@ -30,8 +35,8 @@ def _env_name(field: str) -> str:
 # These are computed from field names to stay in sync with pydantic-settings
 ENV_SUPERVISOR_DIR = _env_name("supervisor_dir")
 ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
-ENV_BAZEL_PROXY_DIR = _env_name("bazel_proxy_dir")
-ENV_BAZEL_PROXY_PORT = _env_name("bazel_proxy_port")
+ENV_AUTH_PROXY_DIR = _env_name("auth_proxy_dir")
+ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
 ENV_PODMAN_DIR = _env_name("podman_dir")
 ENV_PODMAN_SOCKET = _env_name("podman_socket")
 ENV_SKIP_BAZELISK = _env_name("skip_bazelisk")
@@ -56,13 +61,13 @@ class HookSettings(BaseSettings):
 
     # Directory overrides (test isolation)
     supervisor_dir: Path | None = Field(default=None, description="Override supervisor config directory")
-    bazel_proxy_dir: Path | None = Field(default=None, description="Override bazel proxy cache directory")
+    auth_proxy_dir: Path | None = Field(default=None, description="Override auth proxy cache directory")
     podman_dir: Path | None = Field(default=None, description="Override podman config directory")
     podman_socket: Path | None = Field(default=None, description="Override podman socket path")
 
     # Port overrides
     supervisor_port: int | None = Field(default=None, description="Override supervisor TCP port")
-    bazel_proxy_port: int | None = Field(default=None, description="Override bazel proxy port")
+    auth_proxy_port: int | None = Field(default=None, description="Override auth proxy port")
 
     # Feature flags (skip installations for testing)
     skip_bazelisk: bool = Field(default=False, description="Skip bazelisk download (use system bazel)")
@@ -95,15 +100,15 @@ class HookSettings(BaseSettings):
         """Get supervisor port with default."""
         return self.supervisor_port if self.supervisor_port is not None else 19001
 
-    def get_bazel_proxy_dir(self) -> Path:
-        """Get bazel proxy cache directory."""
-        if self.bazel_proxy_dir is not None:
-            return self.bazel_proxy_dir
-        return self.get_cache_dir() / "bazel-proxy"
+    def get_auth_proxy_dir(self) -> Path:
+        """Get auth proxy cache directory."""
+        if self.auth_proxy_dir is not None:
+            return self.auth_proxy_dir
+        return self.get_cache_dir() / "auth-proxy"
 
-    def get_bazel_proxy_port(self) -> int:
-        """Get bazel proxy port with default."""
-        return self.bazel_proxy_port if self.bazel_proxy_port is not None else 18081
+    def get_auth_proxy_port(self) -> int:
+        """Get auth proxy port with default."""
+        return self.auth_proxy_port if self.auth_proxy_port is not None else 18081
 
     def get_podman_dir(self) -> Path:
         """Get podman configuration and storage directory."""
@@ -120,34 +125,34 @@ class HookSettings(BaseSettings):
         """
         return Path(user_config_dir(appname="containers", ensure_exists=False))
 
-    # Bazel proxy file paths (centralized to avoid duplication)
-    def get_bazel_combined_ca(self) -> Path:
+    # Auth proxy file paths (centralized to avoid duplication)
+    def get_auth_proxy_combined_ca(self) -> Path:
         """Get path to combined CA bundle (system CAs + proxy CA)."""
-        return self.get_bazel_proxy_dir() / "combined_ca.pem"
+        return self.get_auth_proxy_dir() / "combined_ca.pem"
 
-    def get_bazel_proxy_rc(self) -> Path:
-        """Get path to bazel proxy rc file."""
-        return self.get_bazel_proxy_dir() / "bazelrc"
+    def get_auth_proxy_rc(self) -> Path:
+        """Get path to auth proxy bazelrc file."""
+        return self.get_auth_proxy_dir() / "bazelrc"
 
-    def get_bazel_creds_file(self) -> Path:
+    def get_auth_proxy_creds_file(self) -> Path:
         """Get path to upstream proxy credentials file."""
-        return self.get_bazel_proxy_dir() / "upstream_proxy"
+        return self.get_auth_proxy_dir() / "upstream_proxy"
 
-    def get_bazel_ca_file(self) -> Path:
+    def get_auth_proxy_ca_file(self) -> Path:
         """Get path to extracted Anthropic CA file."""
-        return self.get_bazel_proxy_dir() / "anthropic_ca.pem"
+        return self.get_auth_proxy_dir() / "anthropic_ca.pem"
 
-    def get_bazel_truststore(self) -> Path:
+    def get_auth_proxy_truststore(self) -> Path:
         """Get path to Java truststore with proxy CA."""
-        return self.get_bazel_proxy_dir() / "cacerts.jks"
+        return self.get_auth_proxy_dir() / "cacerts.jks"
 
     def get_bazelisk_path(self) -> Path:
         """Get the bazelisk binary path."""
-        return self.get_bazel_proxy_dir() / "bazelisk"
+        return self.get_auth_proxy_dir() / "bazelisk"
 
     def get_wrapper_dir(self) -> Path:
         """Get the wrapper directory (added to PATH)."""
-        return self.get_bazel_proxy_dir() / "bin"
+        return self.get_auth_proxy_dir() / "bin"
 
     def get_wrapper_path(self) -> Path:
         """Get the wrapper script path."""

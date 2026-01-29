@@ -9,7 +9,7 @@ py_library(
 )
 
 py_library(
-    name = "optimizer_lib",
+    name = "optimizer",
     srcs = ["optimizer.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],

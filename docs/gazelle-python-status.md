@@ -6,8 +6,8 @@ Gazelle Python is **fully configured and operational**. The repository has ~95% 
 
 ### What Works
 
-- `//:gazelle` target builds and runs successfully
-- `//:modules_map` generates wheel metadata correctly
+- `//tools:gazelle` target builds and runs successfully
+- `//tools:modules_map` generates wheel metadata correctly
 - `gazelle_python.yaml` manifest is populated with 500+ module mappings
 - Go dependencies download without network issues
 - System packages are filtered via `filter_wheels.bzl`
@@ -16,13 +16,13 @@ Gazelle Python is **fully configured and operational**. The repository has ~95% 
 
 ```bash
 # Preview changes
-bazel run //:gazelle -- --mode=diff
+bazel run //tools:gazelle -- --mode=diff
 
 # Apply changes
-bazel run //:gazelle
+bazel run //tools:gazelle
 
 # Update manifest after requirements changes
-bazel run //:gazelle_python_manifest.update
+bazel run //tools:gazelle_python_manifest.update
 ```
 
 ## Configuration
@@ -34,7 +34,7 @@ bazel run //:gazelle_python_manifest.update
 2. **Configuration Files**:
    - `gazelle_python.yaml` - generated manifest mapping imports to PyPI packages
    - `filter_wheels.bzl` - filters system packages (pygobject, dbus-python, pycairo)
-   - `//:gazelle` target in root `BUILD.bazel`
+   - `//tools:gazelle` target in `tools/BUILD.bazel`
 
 3. **Directives** (in root `BUILD.bazel`):
    - `# gazelle:python_generation_mode file` - per-file targets
@@ -170,6 +170,6 @@ Renamed `py_library` from `:optimizer` to `:optimizer_lib` to avoid conflict wit
 
 All known Gazelle blockers have been fixed. Gazelle can be used opportunistically:
 
-1. Run `bazel run //:gazelle -- --mode=diff` to preview changes
+1. Run `bazel run //tools:gazelle -- --mode=diff` to preview changes
 2. Manually apply sensible changes
 3. Fix any errors in excluded packages manually

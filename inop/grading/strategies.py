@@ -3,7 +3,7 @@
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from inop.config import OptimizerConfig
 from inop.engine.models import (
@@ -110,26 +110,22 @@ class FileBasedGradingStrategy(GradingStrategy):
         files = artifacts.get("files", {})
         t_mgr = TruncationManager(config)
 
-        # Convert to list format for truncation
-        file_list = [{"path": path, "content": content} for path, content in files.items()]
+        file_list = [FileInfo(path=path, content=content) for path, content in files.items()]
 
         # Truncate individual files
-        truncated_files = []
-        for file_info in file_list:
-            truncated_content = t_mgr.truncate_text(
-                file_info["content"], config.truncation.max_file_size_grading, "... [truncated for grading]"
+        truncated_files = [
+            FileInfo(
+                path=fi.path,
+                content=t_mgr.truncate_text(
+                    fi.content, config.truncation.max_file_size_grading, "... [truncated for grading]"
+                ),
             )
-            truncated_files.append({"path": file_info["path"], "content": truncated_content})
+            for fi in file_list
+        ]
 
         # Further truncate by total token count
-        truncated_union = t_mgr.truncate_files_by_tokens(truncated_files, config.tokens.max_files_tokens)
-        # Normalize to list[dict[str, Any]] for downstream JSON
-        if truncated_union and isinstance(truncated_union[0], FileInfo):
-            tu = cast(list[FileInfo], truncated_union)
-            normalized_files: list[dict[str, Any]] = [{"path": fi.path, "content": fi.content} for fi in tu]
-        else:
-            td = cast(list[dict[str, str]], truncated_union)
-            normalized_files = [{"path": d["path"], "content": d["content"]} for d in td]
+        result = t_mgr.truncate_files_by_tokens(truncated_files, config.tokens.max_files_tokens)
+        normalized_files: list[dict[str, Any]] = [fi.model_dump() for fi in result]
 
         return {"type": "file_based", "files": normalized_files, "criteria": self.criteria}
 

@@ -83,6 +83,7 @@ py_library(
         ":types",
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//python_dotenv",
     ],
 )
 
@@ -206,6 +207,7 @@ py_test(
     deps = [
         ":conftest",
         ":types",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -221,6 +223,7 @@ py_test(
         ":conftest",
         ":habitify_client",
         ":types",
+        "@pypi//httpx",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

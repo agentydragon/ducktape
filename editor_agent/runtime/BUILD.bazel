@@ -2,16 +2,17 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
+# NOTE: No aggregator target - use specific per-file targets like :cli, :constants
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
 py_library(
-    name = "editor_agent_runtime",
-    srcs = [
-        "cli.py",
-        "constants.py",
-    ],
+    name = "cli",
+    srcs = ["cli.py"],
     data = glob(["docs/**/*.md"]),
     imports = ["../.."],
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
     deps = [
+        ":constants",
         "//agent_pkg/runtime:mcp",
         "//agent_pkg/runtime:output",
         "//cli_util:decorators",

@@ -4,65 +4,8 @@ load("@rules_python//python:defs.bzl", "py_library")
 
 package(default_testonly = True)
 
-py_library(
-    name = "fixtures",
-    srcs = [
-        "db.py",
-        "e2e.py",
-        "e2e_container.py",
-        "e2e_infra.py",
-        "ground_truth.py",
-        "runs.py",
-        "scopes.py",
-    ],
-    data = glob(["testdata/**"]),
-    imports = ["../../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//agent_core_testing:openai_mock",
-        "//mcp_infra:prefix",
-        "//openai_utils:model",
-        # props orchestration modules
-        "//props/orchestration:agent_registry",
-        "//props/core:agent_types",
-        "//props/core:agent_workspace",
-        "//props/core:eval_api_models",
-        "//props/core:ids",
-        # props.core/db modules
-        "//props/db:agent_definition_ids",
-        "//props/db:config",
-        "//props/db:examples",
-        "//props/db:models",
-        "//props/db:session",
-        "//props/db:setup",
-        "//props/db:snapshots",
-        "//props/db/sync",
-        # props.core/models modules
-        "//props/core/models:examples",
-        "//props/core/models:true_positive",
-        "//props/core/models:types",
-        # props.core/critic_dev modules (optimizer and improvement agents)
-        "//props/critic_dev:shared",
-        "//props/critic_dev/improve:improve_agent",
-        "//props/critic_dev/improve:main_lib",
-        # props.testing for fake_openai_server
-        "//props/testing:fake_openai_server",
-        # props.backend for e2e_container (AuthMiddleware, llm routes)
-        "//props/backend:auth",
-        "//props/backend/routes:llm",
-        # test_util for load_bazel_image
-        "//test_util",
-        "@pypi//aiodocker",
-        "@pypi//docker",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
-        "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
-        "@pypi//uvicorn",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets like :db, :e2e, :ground_truth, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
     name = "db",

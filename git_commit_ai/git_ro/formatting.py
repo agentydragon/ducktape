@@ -128,6 +128,8 @@ def diff_to_changed_files(diff: pygit2.Diff) -> list[ChangedFileItem]:
     """
     items: list[ChangedFileItem] = []
     for p in diff:
+        if p is None:
+            continue
         d = p.delta
         # For renames, preserve both paths
         if d.status == pygit2.GIT_DELTA_RENAMED:
@@ -185,6 +187,8 @@ def diff_to_file_stats(diff: pygit2.Diff) -> list[StatItem]:
     """
     out: list[StatItem] = []
     for patch in diff:
+        if patch is None:
+            continue
         delta = patch.delta
         additions, deletions = _count_patch_lines(patch)
 

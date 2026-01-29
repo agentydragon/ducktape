@@ -1,31 +1,31 @@
-"""Exception classes for bazel proxy infrastructure."""
+"""Exception classes for auth proxy infrastructure."""
 
 
-class BazelProxyError(Exception):
-    """Base exception for bazel proxy errors."""
+class AuthProxyError(Exception):
+    """Base exception for auth proxy errors."""
 
 
-class SupervisorError(BazelProxyError):
+class SupervisorError(AuthProxyError):
     """Failed to start/communicate with supervisor."""
 
 
-class ProxyServiceError(BazelProxyError):
+class ProxyServiceError(AuthProxyError):
     """Failed to start/restart proxy service."""
 
 
-class CaExtractionError(BazelProxyError):
+class CaExtractionError(AuthProxyError):
     """Failed to extract TLS inspection CA certificate."""
 
 
-class TruststoreError(BazelProxyError):
+class TruststoreError(AuthProxyError):
     """Failed to create Java truststore."""
 
 
-class CaBundleError(BazelProxyError):
+class CaBundleError(AuthProxyError):
     """Failed to create combined CA bundle."""
 
 
-class MissingEnvVarError(BazelProxyError):
+class MissingEnvVarError(AuthProxyError):
     """Required environment variable not set."""
 
     def __init__(self, name: str) -> None:

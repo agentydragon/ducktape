@@ -174,7 +174,7 @@ bazel build //adgn:adgn
 
 ### Python BUILD.bazel Patterns (Gazelle-compatible)
 
-This repository uses **Gazelle-compatible patterns** for Python BUILD files. This enables automatic BUILD file generation and maintenance via `bazel run //:gazelle`.
+This repository uses **Gazelle-compatible patterns** for Python BUILD files. This enables automatic BUILD file generation and maintenance via `bazel run //tools:gazelle`.
 
 **Key pattern: One `py_library` per `.py` file (no aggregators)**
 
@@ -214,8 +214,8 @@ py_library(
 **Running Gazelle:**
 
 ```bash
-bazel run //:gazelle              # Update BUILD files
-bazel run //:gazelle -- --mode=diff  # Preview changes
+bazel run //tools:gazelle              # Update BUILD files
+bazel run //tools:gazelle -- --mode=diff  # Preview changes
 ```
 
 ### Rust (Finance tools)

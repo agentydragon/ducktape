@@ -1,4 +1,4 @@
-"""CLI entry point for running the auth-forwarding proxy.
+"""CLI entry point for running the auth proxy.
 
 This script is invoked by supervisor to run the proxy as a long-running service.
 """
@@ -12,14 +12,15 @@ import sys
 from pathlib import Path
 from types import FrameType
 
-from tools.claude_hooks.proxy.auth_forwarding_proxy import AuthForwardingProxy
+from tools.claude_hooks.auth_proxy.proxy import AuthForwardingProxy
+from tools.claude_hooks.debug import log_entrypoint_debug
 
 logger = logging.getLogger(__name__)
 
 
 def main() -> int:
-    """Run the auth-forwarding proxy."""
-    parser = argparse.ArgumentParser(description="Run auth-forwarding proxy for Bazel")
+    """Run the auth proxy."""
+    parser = argparse.ArgumentParser(description="Run auth proxy for Bazel")
     parser.add_argument("--listen-port", type=int, required=True, help="Local port to listen on")
     parser.add_argument("--creds-file", type=Path, required=True, help="Path to file containing upstream proxy URL")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
@@ -30,6 +31,8 @@ def main() -> int:
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper()), format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
+
+    log_entrypoint_debug("auth_proxy")
 
     # Validate creds file exists
     if not args.creds_file.exists():

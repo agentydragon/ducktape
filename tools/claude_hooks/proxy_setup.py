@@ -1,41 +1,36 @@
-"""Bazel proxy setup for Claude Code web's TLS-inspecting proxy.
+"""Auth proxy setup for Claude Code web's TLS-inspecting proxy.
 
 Handles:
-- Extracting the Anthropic TLS inspection CA certificate from the proxy
+- Loading the Anthropic TLS inspection CA certificate from the filesystem
 - Creating a Java truststore with the CA for Bazel
-- Starting the local bazel proxy wrapper
+- Starting the local auth proxy
 - Writing bazelrc configuration
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import os
 import shutil
-import socket
-import ssl
 import sys
 import textwrap
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
-from cryptography.hazmat.primitives.serialization import Encoding
 from mako.template import Template
 
-from net_util.net import is_port_in_use
+from net_util.net import async_wait_for_port, is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
-from tools.claude_hooks.resources import CONFIG_FILES
-from tools.claude_hooks.settings import HookSettings
+from tools.claude_hooks.proxy_vars import get_upstream_proxy_url
+from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
 from tools.claude_hooks.supervisor.client import ProcessState, SupervisorClient
 
 logger = logging.getLogger(__name__)
 
-# Bazel proxy configuration
-BAZEL_PROXY_SERVICE = "bazel-proxy"  # supervisor service name
+# Auth proxy supervisor service name
+AUTH_PROXY_SERVICE = "auth-proxy"
 
 # Pre-installed Anthropic CA on Claude Code web containers
 ANTHROPIC_CA_PREINSTALLED = Path("/usr/local/share/ca-certificates/swp-ca-production.crt")
@@ -63,13 +58,10 @@ SYSTEM_CA_BUNDLES = [
 # Environment variables for SSL CA bundle configuration (all should point to same CA bundle)
 SSL_CA_ENV_VARS = ["SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS"]
 
-# Maximum size for HTTP CONNECT response (protects against malformed proxy responses)
-MAX_CONNECT_RESPONSE_SIZE = 64 * 1024  # 64 KB
-
 
 @dataclass
 class ProxySetup:
-    """Result of bazel proxy setup.
+    """Result of auth proxy setup.
 
     Status and guidance are snapshotted at setup time rather than
     querying supervisor on each access.
@@ -80,15 +72,6 @@ class ProxySetup:
     status: str
     ca_status: str
     guidance: str
-
-
-def _get_https_proxy() -> str | None:
-    """Get https_proxy from environment (case-insensitive).
-
-    This reads Anthropic's proxy URL which includes JWT credentials.
-    We do NOT overwrite these env vars - they're read fresh each time.
-    """
-    return os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
 
 
 def _find_system_file(candidates: list[Path], description: str) -> Path:
@@ -129,112 +112,28 @@ def _is_anthropic_tls_inspection_ca(cert: x509.Certificate) -> bool:
     return org == ANTHROPIC_CA_ORG and ANTHROPIC_CA_CN_SUBSTRING in cn
 
 
-def _try_load_ca_from_filesystem(settings: HookSettings) -> bool:
-    """Try to load CA from pre-installed filesystem location.
+def _extract_proxy_ca(settings: HookSettings) -> None:
+    """Load the TLS inspection CA certificate from the filesystem.
 
-    Claude Code web containers have the CA pre-installed at:
-    /usr/local/share/ca-certificates/swp-ca-production.crt
+    Claude Code web containers have the Anthropic CA pre-installed.
+    The path can be overridden via the ANTHROPIC_CA_PATH env var.
 
-    Returns True if CA was loaded successfully, False otherwise.
+    Raises:
+        CaExtractionError: If CA could not be loaded from filesystem.
     """
     ca_path = os.environ.get("ANTHROPIC_CA_PATH")
     ca_file = Path(ca_path) if ca_path else ANTHROPIC_CA_PREINSTALLED
 
     if not ca_file.exists():
-        return False
+        raise CaExtractionError(f"Anthropic CA not found at {ca_file}")
 
-    try:
-        ca_pem = ca_file.read_text()
-        # Verify it's a valid PEM certificate with expected subject
-        cert = x509.load_pem_x509_certificate(ca_pem.encode())
-        if not _is_anthropic_tls_inspection_ca(cert):
-            logger.warning("CA at %s is not an Anthropic TLS Inspection CA", ca_file)
-            return False
+    ca_pem = ca_file.read_text()
+    cert = x509.load_pem_x509_certificate(ca_pem.encode())
+    if not _is_anthropic_tls_inspection_ca(cert):
+        raise CaExtractionError(f"CA at {ca_file} is not an Anthropic TLS Inspection CA")
 
-        logger.info("Loaded Anthropic CA from filesystem: %s", ca_file)
-        settings.get_bazel_ca_file().write_text(ca_pem)
-        return True
-    except (OSError, ValueError) as e:
-        logger.warning("Failed to load CA from %s: %s", ca_file, e)
-        return False
-
-
-def _extract_proxy_ca(settings: HookSettings) -> None:
-    """Extract the TLS inspection CA certificate.
-
-    First tries to load from the pre-installed filesystem location (faster, no network).
-    Falls back to extracting from the TLS chain via proxy connection.
-
-    Uses Python 3.13+ ssl.SSLSocket.get_unverified_chain() for cert chain access.
-
-    Raises:
-        CaExtractionError: If CA could not be extracted.
-    """
-    # Prefer filesystem (pre-installed on Claude Code web containers)
-    if _try_load_ca_from_filesystem(settings):
-        return
-
-    # Fall back to extracting from TLS chain
-    proxy_port = settings.get_bazel_proxy_port()
-    logger.info("Extracting TLS inspection CA via local proxy localhost:%d", proxy_port)
-
-    sock = None
-    ssl_sock = None
-    try:
-        # Connect to local proxy
-        sock = socket.create_connection(("127.0.0.1", proxy_port), timeout=30)
-
-        # Send HTTP CONNECT request through proxy
-        connect_request = b"CONNECT bcr.bazel.build:443 HTTP/1.1\r\nHost: bcr.bazel.build:443\r\n\r\n"
-        sock.sendall(connect_request)
-
-        # Read CONNECT response
-        response = b""
-        while b"\r\n\r\n" not in response:
-            if len(response) > MAX_CONNECT_RESPONSE_SIZE:
-                raise CaExtractionError("Proxy CONNECT response too large")
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            response += chunk
-
-        status_line = response.split(b"\r\n", 1)[0]
-        if not status_line.startswith(b"HTTP/") or b" 200 " not in status_line:
-            raise CaExtractionError(f"CONNECT failed: {status_line.decode(errors='replace')}")
-
-        # Use stdlib ssl with verification disabled (we want to inspect the proxy's cert)
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        ssl_sock = ctx.wrap_socket(sock, server_hostname="bcr.bazel.build")
-
-        # Get certificate chain (Python 3.13+ API)
-        cert_chain_der = ssl_sock.get_unverified_chain()
-
-        if not cert_chain_der:
-            raise CaExtractionError("No certificates in chain")
-
-        # Find the Anthropic TLS inspection CA in the chain
-        # Match on subject: O=Anthropic AND CN contains "TLS Inspection CA"
-        for i, der_bytes in enumerate(cert_chain_der):
-            cert = x509.load_der_x509_certificate(der_bytes)
-            if _is_anthropic_tls_inspection_ca(cert):
-                cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
-                logger.info("Found Anthropic TLS inspection CA at position %d: %s", i, cn)
-                pem_cert = cert.public_bytes(Encoding.PEM).decode()
-                settings.get_bazel_ca_file().write_text(pem_cert)
-                return
-
-        raise CaExtractionError("Could not find Anthropic TLS inspection CA in chain")
-
-    except (OSError, ssl.SSLError) as e:
-        raise CaExtractionError(f"Failed to extract proxy CA: {e}") from e
-    finally:
-        if ssl_sock is not None:
-            with contextlib.suppress(ssl.SSLError):
-                ssl_sock.close()
-        elif sock is not None:
-            sock.close()
+    logger.info("Loaded Anthropic CA from filesystem: %s", ca_file)
+    settings.get_auth_proxy_ca_file().write_text(ca_pem)
 
 
 def _get_cert_attr(name: x509.Name, oid: x509.ObjectIdentifier) -> str:
@@ -258,8 +157,8 @@ async def _create_java_truststore(settings: HookSettings) -> None:
     Raises:
         TruststoreError: If truststore could not be created.
     """
-    ca_file = settings.get_bazel_ca_file()
-    truststore = settings.get_bazel_truststore()
+    ca_file = settings.get_auth_proxy_ca_file()
+    truststore = settings.get_auth_proxy_truststore()
 
     if not ca_file.exists():
         raise TruststoreError("No CA file to add to truststore")
@@ -314,15 +213,15 @@ def _get_proxy_service_env() -> dict[str, str]:
 
 
 def _build_auth_proxy_command(settings: HookSettings) -> str:
-    """Build command to run custom auth-forwarding proxy.
+    """Build command to run auth proxy.
 
     Uses sys.executable -m to run the module. This works in both:
     - Bazel mode: PYTHONPATH is set and forwarded via _get_proxy_service_env()
     - Wheel mode: the package is installed, so the module is importable
     """
-    proxy_port = settings.get_bazel_proxy_port()
-    creds_file = settings.get_bazel_creds_file()
-    auth_proxy_cmd = f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy"
+    proxy_port = settings.get_auth_proxy_port()
+    creds_file = settings.get_auth_proxy_creds_file()
+    auth_proxy_cmd = f"{sys.executable} -m tools.claude_hooks.auth_proxy.main"
     return f"{auth_proxy_cmd} --listen-port {proxy_port} --creds-file {creds_file}"
 
 
@@ -331,7 +230,7 @@ def _write_creds_file(settings: HookSettings, https_proxy: str) -> None:
 
     The proxy reads this file on each connection for hot-reload.
     """
-    creds_file = settings.get_bazel_creds_file()
+    creds_file = settings.get_auth_proxy_creds_file()
     creds_file.parent.mkdir(parents=True, exist_ok=True)
     creds_file.write_text(https_proxy)
     logger.debug("Wrote proxy credentials to %s", creds_file)
@@ -345,24 +244,18 @@ async def _wait_for_proxy_running(
     Raises:
         ProxyServiceError: If proxy does not become ready within timeout.
     """
-    proxy_port = settings.get_bazel_proxy_port()
-    deadline = time.monotonic() + timeout_seconds
-    port_ready = False
-
-    while time.monotonic() < deadline:
-        await asyncio.sleep(0.2)
-
-        if not port_ready:
-            port_ready = is_port_in_use(proxy_port)
-
-        if port_ready and await supervisor.is_service_running(BAZEL_PROXY_SERVICE):
-            return
-
-    state = await supervisor.get_service_state(BAZEL_PROXY_SERVICE)
-    raise ProxyServiceError(
-        f"Bazel proxy did not become ready within {timeout_seconds}s "
-        f"(port_listening={port_ready}, supervisor_state={state})"
-    )
+    proxy_port = settings.get_auth_proxy_port()
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            await async_wait_for_port("127.0.0.1", proxy_port, timeout_secs=timeout_seconds)
+            await supervisor.wait_for_service_running(AUTH_PROXY_SERVICE)
+    except TimeoutError:
+        port_ready = is_port_in_use(proxy_port)
+        state = await supervisor.get_service_state(AUTH_PROXY_SERVICE)
+        raise ProxyServiceError(
+            f"Auth proxy did not become ready within {timeout_seconds}s "
+            f"(port_listening={port_ready}, supervisor_state={state})"
+        )
 
 
 async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorClient) -> None:
@@ -375,10 +268,10 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
     Raises:
         ProxyServiceError: If https_proxy not set or proxy fails to start.
     """
-    proxy_dir = settings.get_bazel_proxy_dir()
+    proxy_dir = settings.get_auth_proxy_dir()
     proxy_dir.mkdir(parents=True, exist_ok=True)
 
-    https_proxy = _get_https_proxy()
+    https_proxy = get_upstream_proxy_url()
     if not https_proxy:
         raise ProxyServiceError("No https_proxy environment variable set")
 
@@ -386,26 +279,26 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
     _write_creds_file(settings, https_proxy)
 
     # If proxy is already running, we're done (it will pick up new creds)
-    if await supervisor.is_service_running(BAZEL_PROXY_SERVICE):
+    if await supervisor.is_service_running(AUTH_PROXY_SERVICE):
         return
 
     # Service exists but not running (FATAL/STOPPED/EXITED) - restart it
     command = _build_auth_proxy_command(settings)
-    proxy_port = settings.get_bazel_proxy_port()
-    if await supervisor.service_exists(BAZEL_PROXY_SERVICE):
+    proxy_port = settings.get_auth_proxy_port()
+    if await supervisor.service_exists(AUTH_PROXY_SERVICE):
         logger.info("Restarting proxy service on port %d", proxy_port)
         await supervisor.update_service(
-            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+            name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
         )
     else:
         # Start proxy service for the first time
-        logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
+        logger.info("Starting auth proxy on port %d via supervisor", proxy_port)
         await supervisor.add_service(
-            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+            name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
         )
 
     await _wait_for_proxy_running(settings, supervisor)
-    logger.info("Bazel proxy running successfully")
+    logger.info("Auth proxy running successfully")
 
 
 def _get_local_registry_path() -> Path | None:
@@ -420,14 +313,11 @@ def _get_local_registry_path() -> Path | None:
 
 
 def _write_bazel_config(settings: HookSettings) -> None:
-    """Write Bazel proxy config to separate file.
-
-    The caller should set BAZEL_SYSTEM_BAZELRC_PATH env var to include this file.
-    """
-    truststore = settings.get_bazel_truststore()
-    combined_ca = settings.get_bazel_combined_ca()
-    proxy_rc = settings.get_bazel_proxy_rc()
-    proxy_port = settings.get_bazel_proxy_port()
+    """Write Bazel config to separate file for auth proxy integration."""
+    truststore = settings.get_auth_proxy_truststore()
+    combined_ca = settings.get_auth_proxy_combined_ca()
+    proxy_rc = settings.get_auth_proxy_rc()
+    proxy_port = settings.get_auth_proxy_port()
 
     if not truststore.exists():
         logger.warning("No truststore, skipping bazelrc")
@@ -466,11 +356,11 @@ def _create_combined_ca_bundle(settings: HookSettings) -> None:
     Raises:
         CaBundleError: If bundle could not be created.
     """
-    combined_ca = settings.get_bazel_combined_ca()
-    bazel_ca_file = settings.get_bazel_ca_file()
+    combined_ca = settings.get_auth_proxy_combined_ca()
+    ca_file_path = settings.get_auth_proxy_ca_file()
 
     # Prefer pre-installed Anthropic CA, fall back to extracted one
-    ca_file = ANTHROPIC_CA_PREINSTALLED if ANTHROPIC_CA_PREINSTALLED.exists() else bazel_ca_file
+    ca_file = ANTHROPIC_CA_PREINSTALLED if ANTHROPIC_CA_PREINSTALLED.exists() else ca_file_path
     if not ca_file.exists():
         raise CaBundleError("No CA file to add to bundle")
 
@@ -491,20 +381,20 @@ def _create_combined_ca_bundle(settings: HookSettings) -> None:
 
 async def _snapshot_proxy_status(settings: HookSettings, supervisor: SupervisorClient, port: int) -> str:
     """Snapshot the current proxy status."""
-    if not settings.get_bazel_truststore().exists():
+    if not settings.get_auth_proxy_truststore().exists():
         return "not configured"
-    if await supervisor.is_service_running(BAZEL_PROXY_SERVICE):
+    if await supervisor.is_service_running(AUTH_PROXY_SERVICE):
         return f"running (port {port})"
     return "configured (not running)"
 
 
 async def _snapshot_proxy_guidance(supervisor: SupervisorClient, port: int, combined_ca: Path) -> str:
     """Snapshot the proxy configuration guidance."""
-    if not _get_https_proxy():
+    if not get_upstream_proxy_url():
         return ""
 
     try:
-        info = await supervisor.get_process_info(BAZEL_PROXY_SERVICE)
+        info = await supervisor.get_process_info(AUTH_PROXY_SERVICE)
         service_status = info.statename
     except Exception:
         service_status = ProcessState.UNKNOWN
@@ -512,9 +402,9 @@ async def _snapshot_proxy_guidance(supervisor: SupervisorClient, port: int, comb
 
     return textwrap.dedent(
         f"""\
-        Bazel Proxy Configuration
-        =========================
-        Local proxy port: {port}
+        Auth Proxy Configuration
+        ========================
+        Auth proxy port: {port}
         Service status: {service_status}
         {ca_info}
 
@@ -528,40 +418,40 @@ async def _snapshot_proxy_guidance(supervisor: SupervisorClient, port: int, comb
     )
 
 
-async def setup_bazel_proxy(settings: HookSettings, supervisor: SupervisorClient) -> ProxySetup:
-    """Set up the complete Bazel proxy environment for TLS-inspecting proxies.
+async def setup_auth_proxy(settings: HookSettings, supervisor: SupervisorClient) -> ProxySetup:
+    """Set up the complete auth proxy environment for TLS-inspecting proxies.
 
     This is needed when running behind Anthropic's TLS-inspecting proxy
     (Claude Code web). Steps:
-    1. Start local proxy (handles auth to upstream)
-    2. Extract the TLS inspection CA (via local proxy)
+    1. Start auth proxy (handles auth to upstream)
+    2. Extract the TLS inspection CA (via auth proxy)
     3. Create Java truststore with the CA
     4. Create combined CA bundle for SSL tools
     5. Write bazelrc configuration to use the proxy
 
     Note: Proxy env for Bazel rules is handled by the module extension in
-    tools/proxy_config/defs.bzl which reads BAZEL_PROXY_PORT env var.
+    tools/claude_hooks/auth_proxy/proxy_config_defs.bzl which reads AUTH_PROXY_PORT env var.
 
     Returns:
         ProxySetup with port, CA path, and snapshotted status/guidance
     """
-    port = settings.get_bazel_proxy_port()
-    combined_ca = settings.get_bazel_combined_ca()
+    port = settings.get_auth_proxy_port()
+    combined_ca = settings.get_auth_proxy_combined_ca()
 
-    if not _get_https_proxy():
-        logger.info("No https_proxy set, Bazel proxy setup not needed")
+    if not get_upstream_proxy_url():
+        logger.info("No https_proxy set, auth proxy setup not needed")
         return ProxySetup(port=port, combined_ca=combined_ca, status="not configured", ca_status="system", guidance="")
 
-    logger.info("Setting up Bazel proxy for TLS-inspecting proxy...")
+    logger.info("Setting up auth proxy for TLS-inspecting proxy...")
 
     # Ensure proxy dir exists
-    settings.get_bazel_proxy_dir().mkdir(parents=True, exist_ok=True)
+    settings.get_auth_proxy_dir().mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Start local proxy first (needed for CA extraction)
+    # Step 1: Start auth proxy first (needed for CA extraction)
     await ensure_proxy_running(settings, supervisor)
 
-    # Step 2: Extract the TLS inspection CA (blocking SSL/socket ops, run in thread)
-    await asyncio.to_thread(_extract_proxy_ca, settings)
+    # Step 2: Load the TLS inspection CA from filesystem
+    _extract_proxy_ca(settings)
 
     # Step 3: Create Java truststore with the CA
     await _create_java_truststore(settings)
@@ -577,10 +467,10 @@ async def setup_bazel_proxy(settings: HookSettings, supervisor: SupervisorClient
     ca_status = "custom CA" if combined_ca.exists() else "system"
     guidance = await _snapshot_proxy_guidance(supervisor, port, combined_ca)
 
-    logger.info("Bazel proxy setup complete")
+    logger.info("Auth proxy setup complete")
     return ProxySetup(port=port, combined_ca=combined_ca, status=status, ca_status=ca_status, guidance=guidance)
 
 
 def is_configured(settings: HookSettings) -> bool:
-    """Check if Bazel proxy is configured."""
-    return settings.get_bazel_truststore().exists()
+    """Check if auth proxy is configured."""
+    return settings.get_auth_proxy_truststore().exists()

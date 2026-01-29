@@ -6,54 +6,17 @@ without requiring the full proxy infrastructure.
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Generator
-from pathlib import Path
-
-import pytest
 import pytest_bazel
 
-from net_util.net import pick_free_port
-from tools.claude_hooks import settings
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.setup import start as supervisor_start
-from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup, supervisor_is_running
+from tools.claude_hooks.testing.fixtures import IsolatedSupervisorDirs, supervisor_is_running
+
+# Register shared fixtures (isolated_dirs, hook_settings)
+pytest_plugins = ["tools.claude_hooks.testing.fixtures"]
 
 
-@pytest.fixture
-def isolated_supervisor_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Fixture that sets up isolated directories for supervisor testing.
-
-    Returns the supervisor directory path.
-    """
-    supervisor_dir = tmp_path / "supervisor"
-    supervisor_dir.mkdir()
-    bazel_proxy_dir = tmp_path / "bazel-proxy"
-    bazel_proxy_dir.mkdir()
-
-    supervisor_port = pick_free_port()
-
-    monkeypatch.setenv(settings.ENV_SUPERVISOR_DIR, str(supervisor_dir))
-    monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
-    monkeypatch.setenv(settings.ENV_BAZEL_PROXY_DIR, str(bazel_proxy_dir))
-
-    return supervisor_dir
-
-
-@pytest.fixture
-def hook_settings(isolated_supervisor_env: Path) -> HookSettings:
-    """Fixture that creates HookSettings after env vars are configured."""
-    return HookSettings()
-
-
-@pytest.fixture(autouse=True)
-def cleanup_supervisor_fixture(isolated_supervisor_env: Path) -> Generator[None]:
-    """Fixture that ensures supervisor is stopped before and after test."""
-    with supervisor_cleanup(isolated_supervisor_env / "supervisord.pid"):
-        yield
-
-
-async def test_supervisor_lifecycle(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+async def test_supervisor_lifecycle(isolated_dirs: IsolatedSupervisorDirs, hook_settings: HookSettings) -> None:
     """Test supervisor start/stop lifecycle."""
     assert not await supervisor_is_running(hook_settings)
 
@@ -65,37 +28,30 @@ async def test_supervisor_lifecycle(isolated_supervisor_env: Path, hook_settings
     assert await supervisor_is_running(hook_settings)
 
 
-async def test_add_and_check_service(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+async def test_add_and_check_service(isolated_dirs: IsolatedSupervisorDirs, hook_settings: HookSettings) -> None:
     """Test adding a service to supervisor."""
     supervisor_result = await supervisor_start(hook_settings)
 
     await supervisor_result.client.add_service(
-        name="test-service", command="sleep 3600", directory=isolated_supervisor_env
+        name="test-service", command="sleep 3600", directory=isolated_dirs.supervisor_dir
     )
 
-    # Poll until service transitions from STARTING to RUNNING (CI can be slow)
-    for _ in range(20):
-        if await supervisor_result.client.is_service_running("test-service"):
-            break
-        await asyncio.sleep(0.25)
-    else:
-        state = await supervisor_result.client.get_service_state("test-service")
-        raise AssertionError(f"test-service not running after 5s (state={state})")
+    await supervisor_result.client.wait_for_service_running("test-service")
 
 
-async def test_update_service(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+async def test_update_service(isolated_dirs: IsolatedSupervisorDirs, hook_settings: HookSettings) -> None:
     """Test updating a service config."""
     supervisor_result = await supervisor_start(hook_settings)
 
     await supervisor_result.client.add_service(
-        name="test-service", command="sleep 3600", directory=isolated_supervisor_env
+        name="test-service", command="sleep 3600", directory=isolated_dirs.supervisor_dir
     )
 
     initial_info = await supervisor_result.client.get_process_info("test-service")
     initial_pid = initial_info.pid
 
     await supervisor_result.client.update_service(
-        name="test-service", command="sleep 7200", directory=isolated_supervisor_env
+        name="test-service", command="sleep 7200", directory=isolated_dirs.supervisor_dir
     )
 
     # Verify restarted (PID should have changed)

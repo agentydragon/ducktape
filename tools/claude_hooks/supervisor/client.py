@@ -11,7 +11,6 @@ import asyncio
 import configparser
 import logging
 import os
-import shlex
 import xmlrpc.client
 from enum import StrEnum
 from pathlib import Path
@@ -157,7 +156,8 @@ def write_service_config(
     }
     if environment:
         # Supervisor environment format: KEY="value",KEY2="value2"
-        env_parts = [f"{k}={shlex.quote(v)}" for k, v in environment.items()]
+        # Must use double quotes — supervisor doesn't accept single quotes (shlex.quote).
+        env_parts = [f'{k}="{v}"' for k, v in environment.items()]
         section_content["environment"] = ",".join(env_parts)
 
     config = configparser.ConfigParser()
@@ -288,6 +288,16 @@ class SupervisorClient:
     async def is_service_running(self, service_name: str) -> bool:
         """Check if a specific service is currently running."""
         return await self.get_service_state(service_name) == ProcessState.RUNNING
+
+    async def wait_for_service_running(self, service_name: str, *, interval: float = 0.25) -> None:
+        """Poll until a service reports RUNNING.
+
+        Callers should wrap with asyncio.timeout() to enforce a deadline.
+        """
+        running = await self.is_service_running(service_name)
+        while not running:
+            await asyncio.sleep(interval)
+            running = await self.is_service_running(service_name)
 
     async def restart_service(self, service_name: str) -> None:
         """Restart a specific service under supervisor.

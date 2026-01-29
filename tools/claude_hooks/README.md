@@ -1,6 +1,15 @@
 # Claude Web Hooks
 
-Session hooks and Bazel proxy for Claude Code web environments.
+Session hooks and auth proxy for Claude Code web environments.
+
+## Glossary
+
+| Concept                            | Canonical term        | Rationale                                                                                                                         |
+| ---------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Anthropic's Envoy gateway          | **egress proxy**      | Matches Anthropic's own docs ("egress controls"). Unambiguous.                                                                    |
+| Local auth-adding proxy            | **auth proxy**        | Describes function. Short.                                                                                                        |
+| Mock TLS MITM for tests            | **mock egress proxy** | Says what it simulates.                                                                                                           |
+| "The proxy this proxy forwards to" | **upstream proxy**    | Standard networking term. Context-dependent (auth proxy's upstream = egress proxy; mock's upstream = auth proxy or egress proxy). |
 
 ## Anthropic's TLS-Inspecting Proxy
 
@@ -34,7 +43,7 @@ By preserving the original proxy env vars:
 ## Components
 
 - **Session Start Hook**: Sets up the development environment for Claude Code web sessions
-- **Bazel Proxy**: Local proxy that adds authentication for Bazel only (not global)
+- **Auth Proxy**: Adds authentication headers for Bazel's proxy connections (not global)
 
 ## Session Start Hook
 
@@ -47,12 +56,12 @@ The hook runs at the start of each Claude Code web session and:
 3. Extracts the TLS inspection CA from the proxy via Python 3.13+ ssl APIs
 4. Creates a Java truststore with the CA using keytool
 5. Creates combined CA bundle (system CAs + proxy CA)
-6. Writes bazelrc to `~/.cache/bazel-proxy/bazelrc`
+6. Writes bazelrc to `~/.cache/claude-hooks/auth-proxy/bazelrc`
 
 ### Bazel Setup (via `bazelisk_setup.py`)
 
 7. Downloads and installs Bazelisk
-8. Creates wrapper script at `~/.cache/bazel-proxy/bin/bazel`
+8. Creates wrapper script at `~/.cache/claude-hooks/auth-proxy/bin/bazel`
 
 ### Git Hooks
 
@@ -60,8 +69,7 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Development Tools
 
-10. Installs cluster tools (opentofu, tflint) via `binary_tools.py`
-11. Installs nix via `nix_setup.py` (for nix eval, flake operations, nixfmt)
+10. Installs nix via `nix_setup.py` (for nix eval, flake operations, nixfmt)
 
 Note: flux, kustomize, kubeseal, helm are now Bazel-managed via `@multitool//tools/*`.
 Nix formatting uses `nix run nixpkgs#nixfmt` via the NixOS/nixfmt pre-commit hook.
@@ -73,9 +81,9 @@ Nix formatting uses `nix run nixpkgs#nixfmt` via the NixOS/nixfmt pre-commit hoo
 
 See `.claude/settings.json` for hook configuration.
 
-# Bazel Proxy
+# Auth Proxy
 
-A local proxy that adds authentication headers for upstream TLS-inspecting proxies, enabling Bazel to access the Bazel Central Registry (BCR).
+An auth proxy that adds authentication headers for upstream TLS-inspecting proxies, enabling Bazel to access the Bazel Central Registry (BCR).
 
 ## Why This Exists
 
@@ -91,7 +99,7 @@ A local proxy that adds authentication headers for upstream TLS-inspecting proxi
 
 ### The Solution
 
-This local proxy acts as an authentication intermediary. See <proxy-alternatives.md> for detailed analysis of why alternatives (JVM settings, credential helpers, etc.) don't work.
+The auth proxy acts as an authentication intermediary. See <proxy-alternatives.md> for detailed analysis of why alternatives (JVM settings, credential helpers, etc.) don't work.
 
 - Accepts unauthenticated CONNECT requests from Bazel on `localhost:18081`
 - Forwards them to the upstream proxy with proper `Proxy-Authorization: Basic` headers
@@ -111,15 +119,15 @@ See <proxy-alternatives.md> for analysis of why alternatives don't work.
 
 All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with the `DUCKTAPE_CLAUDE_HOOKS_` prefix:
 
-| Environment Variable                     | Default                             | Description                 |
-| ---------------------------------------- | ----------------------------------- | --------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`   | `~/.config/claude-hooks/supervisor` | Supervisor config directory |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`  | `19001`                             | Supervisor TCP port         |
-| `DUCKTAPE_CLAUDE_HOOKS_BAZEL_PROXY_DIR`  | `~/.cache/claude-hooks/bazel-proxy` | Proxy cache directory       |
-| `DUCKTAPE_CLAUDE_HOOKS_BAZEL_PROXY_PORT` | `18081`                             | Local proxy port            |
-| `DUCKTAPE_CLAUDE_HOOKS_SKIP_BAZELISK`    | `false`                             | Skip bazelisk download      |
-| `DUCKTAPE_CLAUDE_HOOKS_SKIP_NIX`         | `false`                             | Skip nix installation       |
-| `DUCKTAPE_CLAUDE_HOOKS_SKIP_PODMAN`      | `false`                             | Skip podman setup           |
+| Environment Variable                    | Default                             | Description                 |
+| --------------------------------------- | ----------------------------------- | --------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`  | `~/.config/claude-hooks/supervisor` | Supervisor config directory |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001`                             | Supervisor TCP port         |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`  | `~/.cache/claude-hooks/auth-proxy`  | Proxy cache directory       |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT` | `18081`                             | Auth proxy port             |
+| `DUCKTAPE_CLAUDE_HOOKS_SKIP_BAZELISK`   | `false`                             | Skip bazelisk download      |
+| `DUCKTAPE_CLAUDE_HOOKS_SKIP_NIX`        | `false`                             | Skip nix installation       |
+| `DUCKTAPE_CLAUDE_HOOKS_SKIP_PODMAN`     | `false`                             | Skip podman setup           |
 
 See `settings.py` for the full configuration schema.
 
@@ -138,19 +146,19 @@ The proxy runs under supervisor for automatic restarts and easy log access:
 
 ```bash
 # View proxy status (use the Python that has supervisor installed)
-python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf status bazel-proxy
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf status auth-proxy
 
 # Restart proxy (e.g., after credential refresh)
-python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf restart bazel-proxy
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf restart auth-proxy
 
 # View proxy logs (stdout)
-tail -f ~/.config/claude-hooks/supervisor/bazel-proxy.log
+tail -f ~/.config/claude-hooks/supervisor/auth-proxy.log
 
 # View proxy errors (stderr)
-tail -f ~/.config/claude-hooks/supervisor/bazel-proxy.err.log
+tail -f ~/.config/claude-hooks/supervisor/auth-proxy.err.log
 
 # Stop proxy
-python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf stop bazel-proxy
+python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf stop auth-proxy
 ```
 
 **Note**: Use the same Python interpreter that has the `supervisor` package installed. In Claude Code web environments, this is typically the interpreter from the claude-hooks uv tool environment.
@@ -189,7 +197,7 @@ Bazel/Bazelisk
            ├── 3. Sets HTTPS_PROXY=localhost:18081 for subprocess only
            └── 4. Execs bazelisk
                    │
-                   └──► Auth-forwarding proxy (localhost:18081)
+                   └──► Auth proxy (localhost:18081)
                           │
                           ├── Reads creds file on each connection
                           ├── Adds Proxy-Authorization header
@@ -198,7 +206,7 @@ Bazel/Bazelisk
 
 ### Flow Details
 
-1. **Session hook** starts the auth-forwarding proxy daemon via supervisor
+1. **Session hook** starts the auth proxy daemon via supervisor
 2. **Bazel wrapper** (invoked instead of bazel directly):
    - Reads current `HTTPS_PROXY` from environment (Anthropic's proxy with fresh JWT)
    - Writes upstream URL to credentials file (for the long-running proxy daemon)
@@ -216,11 +224,11 @@ Bazel/Bazelisk
 
 ## Lifecycle Management
 
-The proxy (auth_forwarding_proxy) runs under supervisor:
+The auth proxy runs under supervisor:
 
 - **Process Manager**: supervisord (`~/.config/claude-hooks/supervisor/supervisord.conf`)
-- **Service Config**: `~/.config/claude-hooks/supervisor/conf.d/bazel-proxy.conf`
-- **Logging**: Stdout/stderr to `~/.config/claude-hooks/supervisor/bazel-proxy.{log,err.log}`
+- **Service Config**: `~/.config/claude-hooks/supervisor/conf.d/auth-proxy.conf`
+- **Logging**: Stdout/stderr to `~/.config/claude-hooks/supervisor/auth-proxy.{log,err.log}`
 - **Auto-restart**: Supervisor automatically restarts on crashes
 - **Credentials**: Read from file on each connection (hot-reload)
 
@@ -239,8 +247,8 @@ curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -
 bazel info
 
 # Check proxy logs
-tail -20 ~/.config/claude-hooks/supervisor/bazel-proxy.log
-tail -20 ~/.config/claude-hooks/supervisor/bazel-proxy.err.log
+tail -20 ~/.config/claude-hooks/supervisor/auth-proxy.log
+tail -20 ~/.config/claude-hooks/supervisor/auth-proxy.err.log
 ```
 
 ## Files
@@ -249,18 +257,18 @@ Supervisor files (in `~/.config/claude-hooks/supervisor/`):
 
 - `supervisord.conf` - Supervisor main configuration
 - `supervisord.{log,pid}` - Supervisor daemon state
-- `conf.d/bazel-proxy.conf` - Proxy service configuration
-- `bazel-proxy.{log,err.log}` - Proxy stdout/stderr logs
+- `conf.d/auth-proxy.conf` - Proxy service configuration
+- `auth-proxy.{log,err.log}` - Proxy stdout/stderr logs
 
 Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file).
 
-Setup files (in `~/.cache/bazel-proxy/`, created by `proxy_setup.py`):
+Setup files (in `~/.cache/claude-hooks/auth-proxy/`, created by `proxy_setup.py`):
 
 - `upstream_proxy` - Upstream proxy credentials (read on each connection)
 - `anthropic_ca.pem` - Extracted TLS inspection CA
 - `combined_ca.pem` - System CAs + Anthropic CA bundle
 - `cacerts.jks` - Java truststore with CA
-- `bazelrc` - Bazel proxy configuration (loaded via BAZEL_SYSTEM_BAZELRC_PATH)
+- `bazelrc` - Auth proxy configuration (loaded via BAZEL_SYSTEM_BAZELRC_PATH)
 
 ## Known Limitations
 
@@ -306,6 +314,52 @@ This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.att
 Configuration via environment variable:
 
 - `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`: Override TCP port (default: 19001)
+
+## Test Environments
+
+### How Tests Work in Each Environment
+
+**GitHub Actions CI** (no egress proxy):
+
+- `HTTPS_PROXY` is not set
+- `MockEgressProxy` connects directly to the internet
+- The auth proxy is started by the test's session start hook but never receives traffic
+  (nothing points `HTTPS_PROXY` at it — the mock connects directly)
+- DNS resolution works directly
+
+**Claude Code Web** (gVisor sandbox with egress proxy):
+
+- `HTTPS_PROXY` is set to `http://CONTAINER:JWT@host:port` by Anthropic
+- The bazel wrapper rewrites `HTTPS_PROXY=http://localhost:18081` before exec'ing bazelisk
+- `env_inherit` in BUILD.bazel passes the **rewritten** `HTTPS_PROXY` to the test process
+- `MockEgressProxy` detects `HTTPS_PROXY=localhost:18081` via `EgressProxyConfig.from_env()`
+  and chains through: mock → auth proxy (18081) → egress proxy → internet
+- DNS does NOT work directly (all traffic must go through egress proxy)
+
+**Developer laptop** (no proxy):
+
+- Same as CI — `MockEgressProxy` connects directly
+
+### Proxy Chain in Tests (Claude Code Web)
+
+```
+test client (e.g. bazel, podman)
+    │
+    └──► mock egress proxy (random port, TLS MITM)
+           │ simulates Anthropic's TLS inspection
+           │ chains through HTTPS_PROXY if set
+           └──► auth proxy (localhost:18081, no TLS)
+                  │ adds Proxy-Authorization: Basic
+                  └──► egress proxy (21.x.x.x:15004)
+                         │ TLS inspection, JWT validation
+                         └──► internet
+```
+
+### The `env_inherit` + Bazel Wrapper Interaction
+
+The BUILD.bazel target has `env_inherit = ["HTTPS_PROXY", ...]`. When tests run via the `bazel` command (which is actually the bazel wrapper), the wrapper rewrites `HTTPS_PROXY` to `localhost:18081` before exec'ing bazelisk. So the test process inherits the rewritten value, not the original egress proxy URL.
+
+This is correct behavior: it means the mock egress proxy chains through the auth proxy, which adds credentials and forwards to the real egress proxy. The full chain works.
 
 ## Development
 

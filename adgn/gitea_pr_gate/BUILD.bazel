@@ -13,7 +13,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":policy_common",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//prometheus_client",

@@ -198,7 +198,7 @@ TODO(prvak): Store everything in JSON file in deterministic order.
 TODO: currently broken
 
 ```bash
-bazel run //:buildifier
+bazel run //tools:buildifier
 ```
 
 ## Some useful stuff

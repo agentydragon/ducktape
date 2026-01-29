@@ -1,5 +1,7 @@
 """Ember agent package."""
 
+# gazelle:resolve py ember //ember:system_prompt
+
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")

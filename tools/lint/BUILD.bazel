@@ -56,15 +56,14 @@ prettier_bin.prettier_binary(
     ],
 )
 
-# Buildifier targets for BUILD/Starlark linting
-# Run: bazel run //:buildifier (fix mode)
-# Run: bazel run //:buildifier.check (check mode)
+# Format Bazel files
 buildifier(
     name = "buildifier",
     lint_mode = "fix",
     mode = "fix",
 )
 
+# Check Bazel formatting
 buildifier(
     name = "buildifier.check",
     lint_mode = "warn",

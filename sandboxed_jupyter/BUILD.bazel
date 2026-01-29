@@ -24,7 +24,7 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra/seatbelt:compile",
         "//mcp_infra/seatbelt:model",
-        "//net_util",
+        "//net_util:net",
         "@pypi//ipykernel",
         "@pypi//jupyter_mcp_server",
         "@pypi//jupyter_server",

@@ -1,10 +1,10 @@
-# Bazel Proxy Authentication Alternatives
+# Bazel Auth Proxy Alternatives
 
-Analysis of alternatives to the local proxy approach for Claude Code web's authenticated TLS-inspecting proxy. See <README.md> for the main documentation.
+Analysis of alternatives to the auth proxy approach for Claude Code web's authenticated TLS-inspecting proxy. See <README.md> for the main documentation.
 
-## Current Approach: Local Proxy (`proxy.py`)
+## Current Approach: Auth Proxy (`proxy.py`)
 
-The current implementation runs a local async TCP proxy on `localhost:18081` that:
+The current implementation runs an auth proxy on `localhost:18081` that:
 
 1. Receives unauthenticated CONNECT requests from Bazel/Bazelisk
 2. Adds `Proxy-Authorization: Basic <base64(user:pass)>` header
@@ -99,7 +99,7 @@ Not for HTTPS proxy tunneling.
 
 **Pros**:
 
-- Would work without local proxy
+- Would work without auth proxy
 - Fixes the root cause
 
 **Cons**:
@@ -116,7 +116,7 @@ Not for HTTPS proxy tunneling.
 
 **Why it fails**: Requires changes to Claude Code web infrastructure, not user-controllable.
 
-### 7. Keep Local Proxy ✓ (Current)
+### 7. Keep Auth Proxy ✓ (Current)
 
 **Pros**:
 
@@ -132,7 +132,7 @@ Not for HTTPS proxy tunneling.
 
 ## Complexity Reduction Options
 
-While keeping the local proxy, we could simplify:
+While keeping the auth proxy, we could simplify:
 
 ### A. Eliminate Credential File Refresh
 
@@ -157,7 +157,7 @@ Instead of separate proxy + wrapper, single binary that:
 
 ## Conclusion
 
-The local proxy approach is the **least complex viable solution** given:
+The auth proxy approach is the **least complex viable solution** given:
 
 1. Non-standard proxy authentication behavior (401 + www-authenticate + Bearer)
 2. Java/Bazel's expectation of RFC-compliant proxy auth (407 + Proxy-Authenticate)

@@ -14,7 +14,7 @@ from rich.rule import Rule
 from openai_utils.client_factory import get_async_openai
 
 from . import compare_eval_vs_ccr, extract_dataset_ccr, extract_dataset_crush, leaderboard, run_eval
-from .templates import validate_template_file
+from .templates.loader import validate_template_file
 
 app = typer.Typer(help="System rewriter toolkit: extract datasets, run evals, and compare against CCR.")
 

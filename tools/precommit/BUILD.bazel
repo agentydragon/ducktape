@@ -12,15 +12,16 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
-    name = "check_terraform_centralization_lib",
+    name = "check_terraform_centralization",
     srcs = ["check_terraform_centralization.py"],
     visibility = ["//visibility:public"],
 )
 
 py_binary(
-    name = "check_terraform_centralization",
+    name = "run_check_terraform_centralization",
     srcs = ["check_terraform_centralization.py"],
     visibility = ["//visibility:public"],
+    deps = [":check_terraform_centralization"],
 )
 
 # Unified precommit: format + validate in one Bazel invocation
@@ -53,8 +54,8 @@ py_binary(
     },
     visibility = ["//visibility:public"],
     deps = [
-        ":check_terraform_centralization_lib",
-        "//tools:check_pytest_main_lib",
+        ":check_terraform_centralization",
+        "//tools:check_pytest_main",
         "//tools:env_utils",
         "@pypi//checkov",
         "@pypi//pygit2",
@@ -94,8 +95,8 @@ py_binary(
     main = "precommit.py",
     visibility = ["//visibility:public"],
     deps = [
-        ":check_terraform_centralization_lib",
-        "//tools:check_pytest_main_lib",
+        ":check_terraform_centralization",
+        "//tools:check_pytest_main",
         "//tools:env_utils",
         "@pypi//checkov",
         "@pypi//pygit2",

@@ -1,6 +1,6 @@
 """Unified session start hook for Claude Code (web and CLI).
 
-Web mode (CLAUDE_CODE_REMOTE=true): Sets up Bazel proxy and git hooks.
+Web mode (CLAUDE_CODE_REMOTE=true): Sets up auth proxy and git hooks.
 CLI mode: Loads direnv environment.
 """
 
@@ -11,6 +11,7 @@ import json
 import logging
 import logging.handlers
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -25,7 +26,8 @@ from pydantic import BaseModel
 from fmt_util import format_limited_list
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
-from tools.claude_hooks import bazelisk_setup, binary_tools, env_file, nix_setup, podman_service, proxy_setup
+from tools.claude_hooks import bazelisk_setup, env_file, nix_setup, podman_service, proxy_setup
+from tools.claude_hooks.debug import log_entrypoint_debug
 from tools.claude_hooks.errors import DirenvError, SkipError
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor import setup as supervisor_setup
@@ -89,10 +91,10 @@ async def run_cli_mode(hook_input: HookInput) -> None:
     # Print direnv-style loading banner
     print(f"direnv: loading {envrc}")
 
-    # Use direnv to export the environment
+    # Use direnv to export the environment as JSON
     try:
         result = await asyncio.create_subprocess_exec(
-            "direnv", "export", "bash", cwd=envrc.parent, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            "direnv", "export", "json", cwd=envrc.parent, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=30)
     except FileNotFoundError:
@@ -106,29 +108,24 @@ async def run_cli_mode(hook_input: HookInput) -> None:
 
     stdout_str = stdout.decode()
 
-    # direnv export bash outputs shell commands like:
-    # export VAR="value"; export VAR2="value2";
-    env_file = os.environ.get("CLAUDE_ENV_FILE")
-    if not env_file:
+    env_file_path = os.environ.get("CLAUDE_ENV_FILE")
+    if not env_file_path:
         print("direnv: CLAUDE_ENV_FILE not available", file=sys.stderr)
         return
 
-    # Write the exports to CLAUDE_ENV_FILE
     if stdout_str.strip():
-        Path(env_file).write_text(stdout_str)
+        env_vars: dict[str, str] = json.loads(stdout_str)
+        # Write as shell export statements for CLAUDE_ENV_FILE
+        lines = [f"export {key}={shlex.quote(value)}" for key, value in sorted(env_vars.items())]
+        Path(env_file_path).write_text("\n".join(lines) + "\n")
         # Print direnv-style export banner (summarize changes)
-        exports = []
-        for part in stdout_str.split("export "):
-            if "=" in part:
-                var = part.split("=")[0].strip()
-                if var:
-                    exports.append(f"+{var}")
+        exports = [f"+{key}" for key in sorted(env_vars)]
         if exports:
             print(f"direnv: export {format_limited_list(exports, 5, separator=' ')}")
 
 
 # ============================================================================
-# Web mode: Bazel proxy and environment setup
+# Web mode: Auth proxy and environment setup
 # ============================================================================
 
 
@@ -387,7 +384,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     logger.info("Hook: %s", __file__)
     logger.info("Log:  %s", log_file)
     logger.info("Hook input: %s", hook_input.model_dump_json())
-    logger.info("Full environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
+    log_entrypoint_debug("session_start")
     logger.info("Setting up dev environment...")
     logger.info(format_environment_summary())
 
@@ -408,9 +405,9 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # Consider: skip downstream tasks silently or return a sentinel value instead
     # of re-raising, so only the original upstream error surfaces once.
     async def setup_proxy_with_supervisor() -> proxy_setup.ProxySetup:
-        """Set up bazel proxy (depends on supervisor)."""
+        """Set up auth proxy (depends on supervisor)."""
         supervisor_result = await supervisor_task
-        return await proxy_setup.setup_bazel_proxy(settings, supervisor_result.client)
+        return await proxy_setup.setup_auth_proxy(settings, supervisor_result.client)
 
     async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor)."""
@@ -473,7 +470,6 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         setup_proxy_with_supervisor(),
         setup_podman_with_supervisor(),
         run_in_thread(install_git_precommit_hook, project_dir),
-        run_in_thread(binary_tools.install_cluster_tools),
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
         run_in_thread(setup_buildbuddy),
@@ -483,16 +479,13 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
     podman_result: podman_service.PodmanSetup | BaseException = results[1]
     git_result: None | BaseException = results[2]
-    cluster_result: None | BaseException = results[3]
-    nix_result: Path | None | BaseException = results[4]
-    bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[5]
-    buildbuddy_result: str | None | BaseException = results[6]
+    nix_result: Path | None | BaseException = results[3]
+    bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[4]
+    buildbuddy_result: str | None | BaseException = results[5]
 
-    # Log non-critical failures (git, cluster tools, bazelisk, nix, podman, buildbuddy)
+    # Log non-critical failures (git, bazelisk, nix, podman, buildbuddy)
     if isinstance(git_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", git_result)
-    if isinstance(cluster_result, BaseException):
-        logger.warning("Failed to install cluster tools: %s", cluster_result)
     if isinstance(bazelisk_result, BaseException):
         logger.warning("Failed to install bazelisk: %s", bazelisk_result)
     if isinstance(buildbuddy_result, BaseException):
@@ -500,7 +493,9 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     # Extract artifacts
     nix_store_bin: Path | None = None if isinstance(nix_result, BaseException) else nix_result
-    if isinstance(nix_result, BaseException):
+    if isinstance(nix_result, SkipError):
+        logger.info("Nix setup skipped: %s", nix_result)
+    elif isinstance(nix_result, BaseException):
         logger.warning("Failed to install nix: %s", nix_result)
 
     docker_host: str | None = None
@@ -526,7 +521,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # At this point, proxy_result is ProxySetup (type narrowed by the check above)
 
     # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
-    combined_ca = settings.get_bazel_combined_ca()
+    combined_ca = settings.get_auth_proxy_combined_ca()
     if not combined_ca.exists():
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
@@ -546,13 +541,13 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         bazelisk_path = settings.get_bazelisk_path()
 
     env_vars = env_file.EnvVars(
-        proxy_port=settings.get_bazel_proxy_port(),
+        proxy_port=settings.get_auth_proxy_port(),
         supervisor_port=settings.get_supervisor_port(),
         repo_root=project_dir,
         combined_ca=combined_ca,
         bazel_wrapper_dir=settings.get_wrapper_dir(),
         bazelisk_path=bazelisk_path,
-        bazel_proxy_rc=settings.get_bazel_proxy_rc(),
+        auth_proxy_rc=settings.get_auth_proxy_rc(),
         nix_paths=nix_paths,
         docker_host=docker_host,
         podman_env=podman_env,

@@ -1,54 +1,20 @@
+# gazelle:resolve py llm.claude_linter.cli //llm/claude_linter:cli
+# gazelle:resolve py llm.claude_linter.cli.cli //llm/claude_linter:cli
+
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-py_library(
-    name = "claude_linter",
-    srcs = [
-        "cli.py",
-        "config.py",
-        "models.py",
-        "precommit_runner.py",
-        "registry.py",
-    ],
-    imports = [".."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//llm:core",
-        "@pypi//click",
-        "@pypi//platformdirs",
-        "@pypi//pydantic",
-        "@pypi//pygit2",
-        "@pypi//pyyaml",
-        "@pypi//ruff",
-    ],
-)
-
-py_binary(
-    name = "claude-linter",
-    srcs = ["cli.py"],
-    main = "cli.py",
-    deps = [
-        ":claude_linter",
-        "@pypi//click",
-    ],
-)
-
-py_test(
-    name = "test_claude_linter",
-    srcs = ["test_claude_linter.py"],
-    main = "test_claude_linter.py",
-    deps = [
-        ":claude_linter",
-        ":conftest",
-        "@pypi//click",
-        "@pypi//pytest_bazel",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets like :cli, :config
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    visibility = ["//:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
+        ":config",
+        ":models",
+        ":precommit_runner",
+        "//llm:claude_code_api",
         "@pypi//click",
         "@pypi//platformdirs",
         "@pypi//pydantic",
@@ -69,7 +35,10 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//llm:claude_code_api",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -88,6 +57,16 @@ py_library(
     visibility = ["//:__subpackages__"],
 )
 
+py_binary(
+    name = "claude-linter",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    deps = [
+        ":cli",
+        "@pypi//click",
+    ],
+)
+
 py_library(
     name = "conftest",
     testonly = True,
@@ -101,10 +80,22 @@ py_library(
 )
 
 py_test(
+    name = "test_claude_linter",
+    srcs = ["test_claude_linter.py"],
+    main = "test_claude_linter.py",
+    deps = [
+        ":cli",
+        ":conftest",
+        "@pypi//click",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_claude_post_hook",
     srcs = ["test_claude_post_hook.py"],
     deps = [
-        ":claude_linter",
+        ":cli",
         ":conftest",
         "@pypi//click",
         "@pypi//pytest",
@@ -117,8 +108,9 @@ py_test(
     name = "test_claude_pre_hook",
     srcs = ["test_claude_pre_hook.py"],
     deps = [
-        ":claude_linter",
+        ":cli",
         ":conftest",
+        ":precommit_runner",
         "@pypi//click",
         "@pypi//pytest_bazel",
     ],
@@ -128,7 +120,7 @@ py_test(
     name = "test_hooks",
     srcs = ["test_hooks.py"],
     deps = [
-        ":claude_linter",
+        ":cli",
         ":conftest",
         "@pypi//click",
         "@pypi//pygit2",

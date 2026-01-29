@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import importlib.resources
 import logging
+import os
 import shutil
 import textwrap
 from dataclasses import dataclass, field
@@ -17,6 +18,8 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from tools.claude_hooks.errors import SkipError
+from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
+from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import ProcessInfo, ProcessState, SupervisorClient
 
@@ -266,13 +269,25 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
 
 
 def _get_podman_env_vars(settings: HookSettings) -> dict[str, str]:
-    """Get podman env vars for already-configured setup."""
+    """Get podman env vars for already-configured setup.
+
+    Includes container config paths and any proxy/SSL env vars from the
+    current environment. The podman daemon runs under supervisor which
+    doesn't inherit env vars implicitly — they must be passed explicitly.
+    Without proxy vars, the daemon can't pull images through a TLS proxy.
+    """
     podman_dir = settings.get_podman_dir()
-    return {
+    env_vars: dict[str, str] = {
         "CONTAINERS_STORAGE_CONF": str(podman_dir / "storage.conf"),
         "CONTAINERS_CONF": str(podman_dir / "containers.conf"),
         "CONTAINERS_REGISTRIES_CONF": str(podman_dir / "registries.conf"),
     }
+    # Pass proxy and SSL CA env vars so the daemon can pull images through
+    # the TLS-inspecting proxy (e.g., Anthropic's egress proxy)
+    for var in PROXY_ENV_VARS + SSL_CA_ENV_VARS:
+        if value := os.environ.get(var):
+            env_vars[var] = value
+    return env_vars
 
 
 async def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) -> bool:

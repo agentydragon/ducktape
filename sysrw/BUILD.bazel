@@ -46,7 +46,13 @@ py_binary(
     srcs = ["cli.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":compare_eval_vs_ccr",
+        ":extract_dataset_ccr",
+        ":extract_dataset_crush",
+        ":leaderboard",
+        ":run_eval",
         "//openai_utils:client_factory",
+        "//sysrw/templates:loader",
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
@@ -93,6 +99,7 @@ py_binary(
     srcs = ["leaderboard.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//sysrw/templates:loader",
         "@pypi//pydantic",
         "@pypi//rich",
     ],

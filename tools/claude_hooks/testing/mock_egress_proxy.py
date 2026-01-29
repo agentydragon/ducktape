@@ -1,11 +1,11 @@
-"""Mock of Anthropic's TLS-inspecting egress proxy for testing.
+"""Mock egress proxy for testing.
 
-Simulates the behavior of Anthropic's production proxy:
+Simulates the behavior of Anthropic's TLS-inspecting egress proxy:
 - Requires Basic auth on CONNECT requests
 - Performs TLS interception with a mock CA matching real CA format
 - Forwards traffic to real destinations (or chains through upstream proxy)
 
-Used for e2e testing of the session_start hook and bazel proxy infrastructure.
+Used for e2e testing of the session_start hook and auth proxy infrastructure.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import base64
 import contextlib
 import logging
 import os
-import select
 import socket
 import ssl
 import tempfile
@@ -31,12 +30,13 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
+from tools.claude_hooks.proxy_vars import get_upstream_proxy_url
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class UpstreamProxyConfig:
+class EgressProxyConfig:
     """Configuration for upstream proxy."""
 
     host: str
@@ -46,27 +46,21 @@ class UpstreamProxyConfig:
     ca_bundle: str | None = None  # Path to CA bundle for verifying upstream TLS
 
     @classmethod
-    def from_env(cls, exclude_localhost: bool = True) -> UpstreamProxyConfig | None:
+    def from_env(cls) -> EgressProxyConfig | None:
         """Parse upstream proxy from environment variables.
 
         Looks for HTTPS_PROXY or https_proxy in format:
         http://user:pass@host:port or http://host:port
 
-        Args:
-            exclude_localhost: If True, ignore proxies pointing to localhost/127.0.0.1
-                              (to avoid self-referential loops in test environments)
+        Localhost proxies (e.g. the auth proxy at localhost:18081)
+        are valid upstream targets — they forward to the real egress proxy.
         """
-        proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        proxy_url = get_upstream_proxy_url()
         if not proxy_url:
             return None
 
         parsed = urllib.parse.urlparse(proxy_url)
         if not parsed.hostname:
-            return None
-
-        # Skip localhost proxies to avoid chaining through ourselves in tests
-        if exclude_localhost and parsed.hostname in ("localhost", "127.0.0.1", "::1"):
-            logger.debug("Ignoring localhost proxy %s (exclude_localhost=True)", proxy_url)
             return None
 
         # Get CA bundle for verifying upstream proxy's TLS
@@ -246,7 +240,7 @@ class ConnectionStats:
             self.total_connections += 1
 
 
-class MockAnthropicProxy:
+class MockEgressProxy:
     """A TLS-intercepting proxy that forwards traffic to real destinations.
 
     - Requires Basic auth on CONNECT requests (like Anthropic's proxy)
@@ -259,7 +253,7 @@ class MockAnthropicProxy:
     def __init__(
         self,
         *,
-        upstream_proxy: UpstreamProxyConfig | None,
+        upstream_proxy: EgressProxyConfig | None,
         listen_port: int = 0,
         require_auth: bool = True,
         username: str = "testuser",
@@ -307,7 +301,7 @@ class MockAnthropicProxy:
         """Get the proxy URL with credentials."""
         return f"http://{self.username}:{self.password}@127.0.0.1:{self.port}"
 
-    def __enter__(self) -> MockAnthropicProxy:
+    def __enter__(self) -> MockEgressProxy:
         """Start proxy and return self for context manager use."""
         self.start()
         return self
@@ -334,7 +328,7 @@ class MockAnthropicProxy:
         self._thread.start()
         if self.upstream_proxy:
             logger.info(
-                "MockAnthropicProxy started on port %d (chaining through upstream %s:%d, max_workers=%d)",
+                "MockEgressProxy started on port %d (chaining through upstream %s:%d, max_workers=%d)",
                 self.port,
                 self.upstream_proxy.host,
                 self.upstream_proxy.port,
@@ -342,9 +336,7 @@ class MockAnthropicProxy:
             )
         else:
             logger.info(
-                "MockAnthropicProxy started on port %d (direct connections, max_workers=%d)",
-                self.port,
-                self.max_workers,
+                "MockEgressProxy started on port %d (direct connections, max_workers=%d)", self.port, self.max_workers
             )
 
     def stop(self) -> None:
@@ -360,7 +352,7 @@ class MockAnthropicProxy:
         if self.server_socket:
             self.server_socket.close()
         logger.info(
-            "MockAnthropicProxy stopped. Stats: %d total, %d success, %d failed, %d bytes",
+            "MockEgressProxy stopped. Stats: %d total, %d success, %d failed, %d bytes",
             self.stats.total_connections,
             self.stats.successful_connections,
             self.stats.failed_connections,
@@ -604,52 +596,48 @@ class MockAnthropicProxy:
     def _forward_bidirectional(self, client_ssl: ssl.SSLSocket, server_ssl: ssl.SSLSocket, target_host: str) -> int:
         """Forward data bidirectionally between client and server.
 
+        Uses blocking sockets with two threads (one per direction) instead of
+        non-blocking select(). This avoids SSL-specific issues where select()
+        monitors OS-level socket readability but not SSL internal buffers, and
+        where sendall() on non-blocking SSL sockets can corrupt the state
+        machine with partial record writes.
+
         Returns total bytes forwarded.
         """
-        sockets = [client_ssl, server_ssl]
         bytes_forwarded = 0
+        lock = threading.Lock()
+        done = threading.Event()
 
-        # Set non-blocking for select
-        client_ssl.setblocking(False)
-        server_ssl.setblocking(False)
-
-        try:
-            while True:
-                try:
-                    readable, _, errored = select.select(sockets, [], sockets, 30.0)
-                except (ValueError, OSError) as e:
-                    # Socket closed during select
-                    logger.debug("Select error for %s: %s", target_host, e)
-                    break
-
-                if errored:
-                    logger.debug("Socket error condition for %s", target_host)
-                    break
-
-                if not readable:
-                    # Timeout - check if connection is still alive
-                    continue
-
-                for sock in readable:
+        def _forward_one_direction(from_sock: ssl.SSLSocket, to_sock: ssl.SSLSocket) -> None:
+            nonlocal bytes_forwarded
+            try:
+                while not done.is_set():
                     try:
-                        data = sock.recv(65536)  # Larger buffer for efficiency
-                        if not data:
-                            return bytes_forwarded  # Connection closed gracefully
-
-                        # Forward to the other socket
-                        other = server_ssl if sock is client_ssl else client_ssl
-                        other.sendall(data)
+                        data = from_sock.recv(65536)
+                    except TimeoutError:
+                        continue
+                    if not data:
+                        break
+                    to_sock.sendall(data)
+                    with lock:
                         bytes_forwarded += len(data)
-                    except ssl.SSLWantReadError:
-                        continue
-                    except ssl.SSLWantWriteError:
-                        continue
-                    except (OSError, ssl.SSLError) as e:
-                        logger.debug("Forward error for %s: %s", target_host, e)
-                        return bytes_forwarded
+            except (OSError, ssl.SSLError) as e:
+                logger.debug("Forward error for %s: %s", target_host, e)
+            finally:
+                done.set()
 
-        except (OSError, ssl.SSLError) as e:
-            logger.debug("Bidirectional forward error for %s: %s", target_host, e)
+        # Use blocking sockets with a timeout so threads can check the done flag
+        client_ssl.setblocking(True)
+        server_ssl.setblocking(True)
+        client_ssl.settimeout(1.0)
+        server_ssl.settimeout(1.0)
+
+        c2s = threading.Thread(target=_forward_one_direction, args=(client_ssl, server_ssl), daemon=True)
+        s2c = threading.Thread(target=_forward_one_direction, args=(server_ssl, client_ssl), daemon=True)
+        c2s.start()
+        s2c.start()
+        c2s.join(timeout=120)
+        s2c.join(timeout=120)
 
         return bytes_forwarded
 

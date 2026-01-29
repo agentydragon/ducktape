@@ -1,20 +1,7 @@
-"""Network utilities package."""
-
 load("@rules_python//python:defs.bzl", "py_library")
 
-py_library(
-    name = "net_util",
-    srcs = [
-        "docker.py",
-        "net.py",
-    ],
-    imports = [".."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//aiodocker",
-        "@pypi//tenacity",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets like :docker, :net
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
     name = "docker",

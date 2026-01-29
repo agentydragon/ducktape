@@ -1,4 +1,6 @@
 # gazelle:python_library_naming_convention $package_name$_lib
+# gazelle:resolve py difftree.__main__ //difftree:__main__
+# gazelle:resolve py difftree.__main__.main //difftree:__main__
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # NOTE: No aggregator target - use specific per-file targets like :config, :parser, etc.

@@ -4,25 +4,25 @@ This generates a proxy_env.bzl file that can be loaded by BUILD files.
 The content differs based on whether we're on Claude Code web (with TLS proxy)
 or local development (no proxy needed).
 
-Detection: checks if ~/.cache/bazel-proxy/combined_ca.pem exists.
+Detection: checks if ~/.cache/claude-hooks/auth-proxy/combined_ca.pem exists.
 The session hook creates this file when setting up the TLS-inspecting proxy.
 """
 
-# Fixed paths matching tools/claude_hooks/paths.py (get_bazel_proxy_dir())
-# platformdirs.user_cache_dir("claude-hooks") + "bazel-proxy"
-_BAZEL_PROXY_PORT = "18081"
-_BAZEL_COMBINED_CA = "/root/.cache/claude-hooks/bazel-proxy/combined_ca.pem"
+# Fixed paths matching tools/claude_hooks/settings.py (get_auth_proxy_dir())
+# platformdirs.user_cache_dir("claude-hooks") + "auth-proxy"
+_AUTH_PROXY_PORT = "18081"
+_AUTH_PROXY_COMBINED_CA = "/root/.cache/claude-hooks/auth-proxy/combined_ca.pem"
 
 def _proxy_config_repo_impl(repository_ctx):
     """Generate proxy_env.bzl based on proxy file existence."""
 
     # Detect proxy by checking if the CA bundle exists
     # The session hook creates this file when setting up the proxy
-    ca_path = repository_ctx.path(_BAZEL_COMBINED_CA)
+    ca_path = repository_ctx.path(_AUTH_PROXY_COMBINED_CA)
 
     if ca_path.exists:
         # Claude Code web with TLS-inspecting proxy
-        local_proxy = "http://localhost:{}".format(_BAZEL_PROXY_PORT)
+        local_proxy = "http://localhost:{}".format(_AUTH_PROXY_PORT)
         content = '''\
 # Auto-generated proxy config for Claude Code web
 PROXY_ENV = {{
@@ -33,7 +33,7 @@ PROXY_ENV = {{
     "SSL_CERT_FILE": "{ca}",
     "REQUESTS_CA_BUNDLE": "{ca}",
 }}
-'''.format(proxy = local_proxy, ca = _BAZEL_COMBINED_CA)
+'''.format(proxy = local_proxy, ca = _AUTH_PROXY_COMBINED_CA)
     else:
         # Local development - no proxy needed
         content = """# Default proxy config for local development

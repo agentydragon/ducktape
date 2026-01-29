@@ -2,7 +2,7 @@
 
 Includes:
 - HookInput parsing tests (unit)
-- Full hook subprocess tests (e2e) with MockAnthropicProxy simulating Anthropic's proxy
+- Full hook subprocess tests (e2e) with MockEgressProxy simulating Anthropic's egress proxy
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ from tools.claude_hooks import settings
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.session_start import HookInput, HookSource
-from tools.claude_hooks.testing import runfiles_util, shell_helpers
-from tools.claude_hooks.testing.fixtures import MockProxyFixture
-from tools.claude_hooks.testing.mock_anthropic_proxy import MockAnthropicProxy
+from tools.claude_hooks.testing import shell_helpers
+from tools.claude_hooks.testing.fixtures import MockEgressProxyFixture, collect_supervisor_logs
+from tools.claude_hooks.testing.mock_egress_proxy import MockEgressProxy
 
 # Register fixtures from module (pytest-native, no direct name import needed)
 pytest_plugins = ["tools.claude_hooks.testing.fixtures"]
@@ -96,6 +96,7 @@ class IsolatedDirs:
     project: Path
     cache: Path
     config: Path
+    runtime: Path
     env_file: Path
 
 
@@ -107,12 +108,14 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
         project=tmp_path / "project",
         cache=tmp_path / "cache",
         config=tmp_path / "config",
+        runtime=tmp_path / "runtime",
         env_file=tmp_path / "env.sh",
     )
     dirs.home.mkdir()
     dirs.project.mkdir()
     dirs.cache.mkdir()
     dirs.config.mkdir()
+    dirs.runtime.mkdir()
     (dirs.project / ".git").mkdir()
     dirs.env_file.touch()
     return dirs
@@ -130,7 +133,7 @@ def system_bazel() -> str:
 def _setup_hook_env(
     monkeypatch: pytest.MonkeyPatch,
     isolated_dirs: IsolatedDirs,
-    mock_proxy: MockAnthropicProxy,
+    mock_proxy: MockEgressProxy,
     system_bazel: str,
     *,
     skip_podman: bool = True,
@@ -151,9 +154,9 @@ def _setup_hook_env(
     system_cas = system_ca_path.read_bytes() if system_ca_path else b""
     combined_ca_path.write_bytes(system_cas + b"\n" + mock_proxy.ca_cert_pem)
 
-    # Pick isolated ports for supervisor and bazel proxy
+    # Pick isolated ports for supervisor and auth proxy
     supervisor_port = pick_free_port()
-    bazel_proxy_port = pick_free_port()
+    auth_proxy_port = pick_free_port()
 
     # Required for web mode
     monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
@@ -164,10 +167,11 @@ def _setup_hook_env(
     monkeypatch.setenv("HOME", str(isolated_dirs.home))
     monkeypatch.setenv("XDG_CACHE_HOME", str(isolated_dirs.cache))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(isolated_dirs.config))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(isolated_dirs.runtime))
 
     # Isolated ports (avoid conflicts between tests)
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
-    monkeypatch.setenv(settings.ENV_BAZEL_PROXY_PORT, str(bazel_proxy_port))
+    monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(auth_proxy_port))
 
     # Disable nix and bazelisk (speeds up tests)
     monkeypatch.setenv(settings.ENV_SKIP_NIX, "1")
@@ -185,6 +189,11 @@ def _setup_hook_env(
     for var in SSL_CA_ENV_VARS:
         monkeypatch.setenv(var, str(combined_ca_path))
 
+    # Point _extract_proxy_ca to the mock CA on the filesystem
+    mock_ca_path = isolated_dirs.cache / "mock-anthropic-ca.crt"
+    mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
+    monkeypatch.setenv("ANTHROPIC_CA_PATH", str(mock_ca_path))
+
     if skip_podman:
         monkeypatch.setenv(settings.ENV_SKIP_PODMAN, "1")
 
@@ -193,11 +202,11 @@ def _setup_hook_env(
 def hook_env(
     monkeypatch: pytest.MonkeyPatch,
     isolated_dirs: IsolatedDirs,
-    mock_anthropic_proxy: MockProxyFixture,
+    mock_egress_proxy: MockEgressProxyFixture,
     system_bazel: str,
 ) -> None:
     """Set up environment for running the session start hook (podman disabled)."""
-    _setup_hook_env(monkeypatch, isolated_dirs, mock_anthropic_proxy.proxy, system_bazel, skip_podman=True)
+    _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, skip_podman=True)
 
 
 def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:
@@ -272,7 +281,7 @@ def run_session_start_hook(
         cmd = "claude-session-start"
     else:
         # Run via runfiles binary (Bazel test mode)
-        cmd = str(get_required_path(runfiles_util.SESSION_START))
+        cmd = str(get_required_path(shell_helpers.SESSION_START))
 
     result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, timeout=300)
 
@@ -304,9 +313,9 @@ class TestFullSessionStartHook:
 
         # Verify key artifacts created
         # platformdirs respects XDG_CACHE_HOME
-        bazel_proxy_dir = isolated_dirs.cache / "claude-hooks" / "bazel-proxy"
-        assert (bazel_proxy_dir / "bazelrc").exists(), "bazelrc not created"
-        assert (bazel_proxy_dir / "anthropic_ca.pem").exists(), "CA not extracted"
+        auth_proxy_dir = isolated_dirs.cache / "claude-hooks" / "auth-proxy"
+        assert (auth_proxy_dir / "bazelrc").exists(), "bazelrc not created"
+        assert (auth_proxy_dir / "anthropic_ca.pem").exists(), "CA not extracted"
 
         # Verify supervisor started
         # platformdirs respects XDG_CONFIG_HOME
@@ -316,7 +325,7 @@ class TestFullSessionStartHook:
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not shutil.which("bazel") and not shutil.which("bazelisk"), reason="bazel/bazelisk required")
     def test_bazel_build_after_hook(
-        self, isolated_dirs: IsolatedDirs, hook_env: None, mock_anthropic_proxy: MockProxyFixture
+        self, isolated_dirs: IsolatedDirs, hook_env: None, mock_egress_proxy: MockEgressProxyFixture
     ) -> None:
         """Run hook, then verify bazel can build through the proxy."""
         result = run_session_start_hook(isolated_dirs.project)
@@ -324,7 +333,7 @@ class TestFullSessionStartHook:
 
         # Copy testdata workspace to test location
         # This is a minimal bzlmod workspace with no external dependencies, so the mock
-        # MockAnthropicProxy (which can't do real DNS/forwarding) isn't a blocker.
+        # MockEgressProxy (which can't do real DNS/forwarding) isn't a blocker.
         test_file_dir = Path(__file__).parent
         testdata_workspace = test_file_dir / "testdata" / "test_workspace"
         workspace = isolated_dirs.project / "test_workspace"
@@ -334,33 +343,12 @@ class TestFullSessionStartHook:
         output_base = isolated_dirs.cache / "bazel_output_base"
         output_base.mkdir(parents=True, exist_ok=True)
 
-        # Collect logs helper - needs to run even on timeout
-        def collect_logs() -> None:
-            supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
-            cache_dir = isolated_dirs.cache / "claude-hooks"
-            outputs_dir = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/test-outputs"))
-            outputs_dir.mkdir(parents=True, exist_ok=True)
-            # Note: mock_proxy_log is already in outputs_dir (created by fixture), no need to copy
-            all_logs = [
-                (supervisor_dir / "supervisord.log", "supervisord.log"),
-                (supervisor_dir / "bazel-proxy.log", "bazel-proxy.log"),
-                (supervisor_dir / "bazel-proxy.err.log", "bazel-proxy.err.log"),
-                (supervisor_dir / "bazel-wrapper.log", "bazel-wrapper.log"),
-                (cache_dir / "session-start.log", "session-start.log"),
-            ]
-            if mock_anthropic_proxy.log_file.exists():
-                all_logs.append((mock_anthropic_proxy.log_file, "mock-anthropic-proxy.log"))
-            for log_path, log_name in all_logs:
-                if log_path.exists():
-                    dest = outputs_dir / log_name
-                    if log_path.resolve() != dest.resolve():
-                        shutil.copy(log_path, dest)
-
         # Run bazel build in a shell that sources the env file (like Claude Code would)
         # The env file adds the wrapper dir to PATH, sets proxy vars to local auth-proxy,
         # and exports truststore configuration. The wrapper injects --bazelrc and falls
         # back to system bazel if bazelisk isn't installed.
         # --output_base isolates this Bazel from the test-running Bazel.
+        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
         try:
             shell_helpers.run_with_env_file(
                 command=f"bazel --output_base={output_base} build //:hello",
@@ -371,7 +359,7 @@ class TestFullSessionStartHook:
             )
         finally:
             # Always collect logs - critical for debugging CI failures
-            collect_logs()
+            collect_supervisor_logs(supervisor_dir)
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
@@ -399,7 +387,7 @@ def _can_use_podman() -> bool:
     """Check if podman is available for use.
 
     Returns True if podman is already installed.
-    Installing via apt-get requires root, which we want to avoid.
+    The test target uses local=True so podman can create user namespaces.
     """
     return bool(shutil.which("podman"))
 
@@ -431,11 +419,11 @@ class TestPodmanIntegration:
         self,
         monkeypatch: pytest.MonkeyPatch,
         isolated_dirs: IsolatedDirs,
-        mock_anthropic_proxy: MockProxyFixture,
+        mock_egress_proxy: MockEgressProxyFixture,
         system_bazel: str,
     ) -> None:
         """Set up environment for running session start hook WITH podman enabled."""
-        _setup_hook_env(monkeypatch, isolated_dirs, mock_anthropic_proxy.proxy, system_bazel, skip_podman=False)
+        _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, skip_podman=False)
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
@@ -451,11 +439,11 @@ class TestPodmanIntegration:
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
     def test_podman_can_run_container(
-        self, isolated_dirs: IsolatedDirs, podman_hook_env: None, mock_anthropic_proxy: MockProxyFixture
+        self, isolated_dirs: IsolatedDirs, podman_hook_env: None, mock_egress_proxy: MockEgressProxyFixture
     ) -> None:
         """Verify podman can run a container after session start hook.
 
-        Runs podman through the MockAnthropicProxy to verify the full proxy chain works,
+        Runs podman through the MockEgressProxy to verify the full proxy chain works,
         including CA certificate configuration for container registry pulls.
         """
         result = run_session_start_hook(isolated_dirs.project)
@@ -464,6 +452,10 @@ class TestPodmanIntegration:
 
         socket_path = _extract_docker_host_socket(isolated_dirs.env_file)
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
+
+        # Collect supervisor logs (including podman daemon) for CI debugging
+        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
+        collect_supervisor_logs(supervisor_dir)
 
         # Verify we can run podman hello-world through the proxy
         # The gVisor annotation is auto-applied via containers.conf
@@ -477,7 +469,7 @@ class TestPodmanIntegration:
         )
 
         # Include proxy stats in failure message for debugging
-        proxy = mock_anthropic_proxy.proxy
+        proxy = mock_egress_proxy.proxy
         proxy_stats = (
             f"\nProxy stats: {proxy.stats.total_connections} total, "
             f"{proxy.stats.successful_connections} success, "

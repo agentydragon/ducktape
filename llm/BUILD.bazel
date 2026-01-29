@@ -29,6 +29,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":claude_code_api",
+        "@pypi//platformdirs",
     ],
 )
 

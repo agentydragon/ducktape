@@ -126,7 +126,7 @@ use_repo(npm, "npm_ducktape")
 
 # Proxy configuration for Claude Code web vs local development
 # Generates @proxy_config//:proxy_env.bzl with PROXY_ENV dict
-proxy_config = use_extension("//tools/proxy_config:defs.bzl", "proxy_config")
+proxy_config = use_extension("//tools/claude_hooks/auth_proxy:proxy_config_defs.bzl", "proxy_config")
 use_repo(proxy_config, "proxy_config")
 
 # Custom multitool lockfile with newer ruff (0.14.0 vs 0.8.3 in aspect_rules_lint)

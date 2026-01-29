@@ -6,6 +6,7 @@ Centralizes all environment variable exports into a single file write.
 from __future__ import annotations
 
 import shlex
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -13,13 +14,21 @@ from pathlib import Path
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from tools.claude_hooks.settings import ENV_SUPERVISOR_PORT
 
+# Runtime env var names (written by session hook, read by bazel_wrapper)
+ENV_AUTH_PROXY_PORT = "AUTH_PROXY_PORT"
+ENV_AUTH_PROXY_URL = "AUTH_PROXY_URL"
+ENV_AUTH_PROXY_BAZELRC = "AUTH_PROXY_BAZELRC"
+ENV_BAZELISK_PATH = "BAZELISK_PATH"
+ENV_BAZEL_REPO_ROOT = "BAZEL_REPO_ROOT"
 
-def _exports_from_dict(env_vars: dict[str, str]) -> list[str]:
+
+def _exports_from_dict(env_vars: Mapping[str, str | Path]) -> list[str]:
     """Generate export lines from a dict of env var name -> value.
 
     Properly shell-escapes values to handle special characters.
+    Accepts both str and Path values.
     """
-    return [f"export {name}={shlex.quote(value)}" for name, value in env_vars.items()]
+    return [f"export {name}={shlex.quote(str(value))}" for name, value in env_vars.items()]
 
 
 @dataclass
@@ -30,14 +39,14 @@ class EnvVars:
     throughout the session hook setup and written once at the end.
     """
 
-    # Bazel configuration
+    # Auth proxy and Bazel configuration
     proxy_port: int
     supervisor_port: int  # Needed by bazel_wrapper to connect to supervisor
     repo_root: Path
     combined_ca: Path
     bazel_wrapper_dir: Path
     bazelisk_path: Path
-    bazel_proxy_rc: Path
+    auth_proxy_rc: Path
 
     # Nix paths
     nix_paths: list[Path]
@@ -73,22 +82,21 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         nix_path_str = ":".join(str(p) for p in vars.nix_paths)
         exports.append(f'export PATH="{nix_path_str}:$PATH"')
 
-    # Bazel proxy configuration
+    # Auth proxy configuration
     local_proxy = f"http://localhost:{vars.proxy_port}"
-    combined_ca = str(vars.combined_ca)
 
-    bazel_config = {
-        "BAZEL_PROXY_PORT": str(vars.proxy_port),
-        "BAZEL_LOCAL_PROXY": local_proxy,
-        "BAZELISK_PATH": str(vars.bazelisk_path),
-        "BAZEL_PROXY_BAZELRC": str(vars.bazel_proxy_rc),
-        "BAZEL_REPO_ROOT": str(vars.repo_root),
+    auth_proxy_config: dict[str, str | Path] = {
+        ENV_AUTH_PROXY_PORT: str(vars.proxy_port),
+        ENV_AUTH_PROXY_URL: local_proxy,
+        ENV_BAZELISK_PATH: vars.bazelisk_path,
+        ENV_AUTH_PROXY_BAZELRC: vars.auth_proxy_rc,
+        ENV_BAZEL_REPO_ROOT: vars.repo_root,
         # Supervisor port needed by bazel_wrapper to connect to supervisor
         ENV_SUPERVISOR_PORT: str(vars.supervisor_port),
     }
-    ca_config = dict.fromkeys(SSL_CA_ENV_VARS, combined_ca)
-    exports.extend(["", "# Bazel proxy configuration"])
-    exports.extend(_exports_from_dict(bazel_config | ca_config))
+    ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
+    exports.extend(["", "# Auth proxy configuration"])
+    exports.extend(_exports_from_dict(auth_proxy_config | ca_config))
 
     # NOTE: We intentionally do NOT export HTTPS_PROXY/HTTP_PROXY here.
     # Anthropic sets these in the container with fresh JWT credentials.

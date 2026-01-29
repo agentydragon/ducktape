@@ -322,7 +322,7 @@ Claude Code web start
 
 ### Bazel Module Extension for Proxy
 
-The `tools/proxy_config/defs.bzl` module extension generates `@proxy_config//:proxy_env.bzl`:
+The `tools/claude_hooks/auth_proxy/proxy_config_defs.bzl` module extension generates `@proxy_config//:proxy_env.bzl`:
 
 - **On Claude Code web:** Detects proxy by checking if `~/.cache/bazel-proxy/combined_ca.pem` exists
 - **On local dev:** Empty `PROXY_ENV = {}`

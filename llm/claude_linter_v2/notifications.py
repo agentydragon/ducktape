@@ -3,6 +3,8 @@
 Requires the optional 'notifications' extra: pip install ducktape-llm-common[notifications]
 """
 
+# gazelle:ignore dbus
+
 import logging
 
 logger = logging.getLogger(__name__)

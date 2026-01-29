@@ -63,7 +63,7 @@ from .schemas import (
     ResponsesAssistantMessage,
     Sample,
 )
-from .templates import validate_template_file
+from .templates.loader import validate_template_file
 from .translation import anthropic_messages_to_standard, anthropic_to_chat_messages
 
 # Config
