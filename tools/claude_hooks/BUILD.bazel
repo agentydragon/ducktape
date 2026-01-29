@@ -165,6 +165,7 @@ py_binary(
         ":proxy_credentials",
         ":proxy_setup",
         ":settings",
+        "//:fmt_util",
         "//tools:build_info",
         "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",

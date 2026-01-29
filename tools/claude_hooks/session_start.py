@@ -23,6 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from fmt_util import format_limited_list
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import bazelisk_setup, env_file, nix_setup, podman_service, proxy_setup
@@ -120,9 +121,7 @@ async def run_cli_mode(hook_input: HookInput) -> None:
         # Print direnv-style export banner (summarize changes)
         exports = [f"+{key}" for key in sorted(env_vars)]
         if exports:
-            shown = " ".join(exports[:5])
-            suffix = f" (+{len(exports) - 5} more)" if len(exports) > 5 else ""
-            print(f"direnv: export {shown}{suffix}")
+            print(f"direnv: export {format_limited_list(exports, 5, separator=' ')}")
 
 
 # ============================================================================
