@@ -38,6 +38,9 @@ py_binary(
     main = "cli.py",
     visibility = ["//:__subpackages__"],
     deps = [
+        ":agent_runner",
+        ":runner",
+        ":submit_server",
         "//agent_pkg/host:builder",
         "//cli_util:decorators",
         "//cli_util:logging",
