@@ -68,7 +68,9 @@ py_test(
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
+        ":agent_runner",
         ":conftest",
+        ":submit_server",
         "//agent_core_testing:responses",
         "//agent_core_testing:steps",
         "@pypi//pyhamcrest",

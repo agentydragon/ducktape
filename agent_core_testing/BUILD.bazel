@@ -107,6 +107,9 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":assertions",
+        ":echo_server",
+        ":responses",
         "//mcp_infra:prefix",
         "//mcp_infra/exec:models",
         "//openai_utils:model",

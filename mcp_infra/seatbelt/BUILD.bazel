@@ -4,6 +4,7 @@ py_library(
     name = "compile",
     srcs = ["compile.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":model"],
 )
 
 py_library(

@@ -67,6 +67,10 @@ py_library(
     srcs = ["upload_lcsc_images.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":cli_util",
+        ":inventree_util",
+        ":iter_util",
+        ":lcsc_util",
         "@pypi//beautifulsoup4",
         "@pypi//inventree",
         "@pypi//requests",
@@ -79,7 +83,13 @@ py_binary(
     srcs = ["__main__.py"],
     main = "__main__.py",
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//structlog"],
+    deps = [
+        ":assign_jellybean",
+        ":config",
+        ":fix_lcsc_links",
+        ":upload_lcsc_images",
+        "@pypi//structlog",
+    ],
 )
 
 py_test(

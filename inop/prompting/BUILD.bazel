@@ -15,6 +15,10 @@ py_library(
     name = "pe_controller",
     srcs = ["pe_controller.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+    ],
 )
 
 py_library(

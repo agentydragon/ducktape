@@ -7,6 +7,7 @@ py_binary(
     srcs = ["launcher.py"],
     main = "launcher.py",
     visibility = ["//visibility:public"],
+    deps = [":server"],
 )
 
 py_test(

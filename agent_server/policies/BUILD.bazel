@@ -55,4 +55,5 @@ py_library(
     name = "scaffold",
     srcs = ["scaffold.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":policy_types"],
 )

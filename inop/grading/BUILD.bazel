@@ -7,6 +7,7 @@ py_library(
     deps = [
         ":strategies",
         "//inop:config",
+        "//inop/io:logging_utils",
         "//openai_utils:model",
         "//openai_utils:types",
     ],

@@ -17,6 +17,7 @@ py_library(
         "//mcp_infra:config_loader",
         "//mcp_infra/compositor",
         "//mcp_infra/display:rich_display",
+        "//openai_utils:client_factory",
         "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//rich",
@@ -29,5 +30,11 @@ py_binary(
     srcs = ["cli.py"],
     main = "cli.py",
     visibility = ["//visibility:public"],
-    deps = [":cli"],
+    deps = [
+        ":cli",
+        "//openai_utils:client_factory",
+        "@pypi//fastmcp",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
 )

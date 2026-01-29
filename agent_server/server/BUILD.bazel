@@ -156,6 +156,7 @@ py_library(
     deps = [
         ":bus",
         ":protocol",
+        ":state",
         "//agent_core:events",
         "//agent_server/mcp/ui",
         "//agent_server/persist:events",

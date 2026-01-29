@@ -28,6 +28,7 @@ py_library(
     name = "requirement_templates",
     srcs = ["requirement_templates.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":generic_graders"],
 )
 
 py_library(

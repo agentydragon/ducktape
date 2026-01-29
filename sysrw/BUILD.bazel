@@ -74,6 +74,10 @@ py_library(
     name = "extract_common",
     srcs = ["extract_common.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":openai_typing",
+    ],
 )
 
 py_binary(

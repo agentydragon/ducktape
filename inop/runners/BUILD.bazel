@@ -4,6 +4,10 @@ py_library(
     name = "base",
     srcs = ["base.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop/engine:models",
+        "//inop/io:logging_utils",
+    ],
 )
 
 py_library(
