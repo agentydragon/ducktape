@@ -215,6 +215,7 @@ py_wheel(
     python_requires = ">=3.13",
     requires = [
         "cryptography",
+        "httpx",
         "mako",
         "platformdirs",
         "pydantic",
