@@ -26,7 +26,7 @@
 #
 # Root-level targets
 # gazelle:resolve py bazel_util //:bazel_util
-# gazelle:resolve py fmt_util //:fmt_util
+# gazelle:resolve py fmt_util.fmt_util //fmt_util:fmt_util
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
@@ -77,13 +77,6 @@ py_library(
     srcs = ["runfiles.py"],
     visibility = ["//visibility:public"],
     deps = ["@rules_python//python/runfiles"],
-)
-
-# Formatting utilities for truncated collections
-py_library(
-    name = "fmt_util",
-    srcs = ["fmt_util.py"],
-    visibility = ["//visibility:public"],
 )
 
 # ESLint configuration as js_library
@@ -172,6 +165,7 @@ py_package(
         "agent_core",
         "cli_util",
         "difftree",
+        "fmt_util",
         "git_commit_ai",
         "gmail_archiver",
         "gmail_archiver.cli",

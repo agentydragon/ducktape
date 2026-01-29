@@ -165,7 +165,7 @@ py_binary(
         ":proxy_credentials",
         ":proxy_setup",
         ":settings",
-        "//:fmt_util",
+        "//fmt_util",
         "//tools:build_info",
         "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",
@@ -178,6 +178,7 @@ py_binary(
 py_package(
     name = "claude_hooks_pkg",
     packages = [
+        "fmt_util",
         "net_util",
         "tools",
         "tools.claude_hooks",

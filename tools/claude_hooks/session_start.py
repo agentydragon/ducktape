@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from fmt_util import format_limited_list
+from fmt_util.fmt_util import format_limited_list
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import bazelisk_setup, env_file, nix_setup, podman_service, proxy_setup

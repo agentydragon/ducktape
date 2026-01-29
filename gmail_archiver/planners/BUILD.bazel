@@ -75,7 +75,7 @@ py_library(
     srcs = ["doordash.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//:fmt_util",
+        "//fmt_util",
         "//gmail_archiver:gmail_api_models",
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",

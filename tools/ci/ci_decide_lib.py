@@ -17,7 +17,7 @@ from pathlib import Path
 import pygit2
 from pydantic import BaseModel, Field
 
-from fmt_util import format_limited_list
+from fmt_util.fmt_util import format_limited_list
 from tools.ci.bazel_query import filter_for_ci, query_intersection
 from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
 from tools.ci.github_actions import CIEnvironment, PushStrategy

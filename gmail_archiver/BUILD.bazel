@@ -17,7 +17,7 @@ py_binary(
         ":models",
         ":plan",
         ":plan_display",
-        "//:fmt_util",
+        "//fmt_util",
         "//gmail_archiver/cli:common",
         "//gmail_archiver/cli:filters",
         "//gmail_archiver/cli:labels",
@@ -101,7 +101,7 @@ py_library(
     deps = [
         ":gmail_api_models",
         ":models",
-        "//:fmt_util",
+        "//fmt_util",
         "@pypi//google_api_python_client",
         "@pypi//google_auth",
     ],

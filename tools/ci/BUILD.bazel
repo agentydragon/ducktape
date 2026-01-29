@@ -72,7 +72,7 @@ py_library(
         ":diff_utils",
         ":github_actions",
         ":models",
-        "//:fmt_util",
+        "//fmt_util",
         "//tools:env_utils",
         "@pypi//pydantic",
         "@pypi//pygit2",

@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
-from fmt_util import format_truncation_suffix
+from fmt_util.fmt_util import format_truncation_suffix
 from gmail_archiver.cli.common import DryRunDefaultTrueOption, TokenFileOption, get_client
 from gmail_archiver.cli.filters import filters_app
 from gmail_archiver.cli.labels import labels_app

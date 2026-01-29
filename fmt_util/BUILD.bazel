@@ -1,0 +1,11 @@
+# NOTE: No aggregator target - use specific per-file targets like :fmt_util
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "fmt_util",
+    srcs = ["fmt_util.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
