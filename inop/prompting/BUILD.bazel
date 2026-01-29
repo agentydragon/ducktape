@@ -25,6 +25,10 @@ py_library(
     name = "prompt_engineer",
     srcs = ["prompt_engineer.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop/engine:models",
+        "//inop/io:logging_utils",
+    ],
 )
 
 py_library(

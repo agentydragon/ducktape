@@ -19,6 +19,7 @@ py_library(
     srcs = ["generic_graders.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":scoresheet",
         "@pypi//openai",
         "@pypi//pydantic",
     ],

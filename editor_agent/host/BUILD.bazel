@@ -58,6 +58,8 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":conftest",
+        ":runner",
+        ":submit_server",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

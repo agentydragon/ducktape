@@ -105,6 +105,7 @@ py_binary(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":admin_app",
         ":app",
         "@pypi//fastapi",
         "@pypi//httpx",
