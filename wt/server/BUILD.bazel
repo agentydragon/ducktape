@@ -137,6 +137,10 @@ py_library(
 py_library(
     name = "worktree_ids",
     srcs = ["worktree_ids.py"],
+    deps = [
+        "//wt/shared:configuration",
+        "//wt/shared:protocol",
+    ],
 )
 
 py_library(

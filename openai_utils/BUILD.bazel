@@ -57,6 +57,7 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":model",
         "@pypi//pydantic",
         "@pypi//pydantic_core",
     ],

@@ -120,6 +120,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
+        ":models",
         "@pypi//pydantic",
     ],
 )
