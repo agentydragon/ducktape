@@ -18,7 +18,7 @@
 - [ ] Add to small laptop installation: nmap, other hacking tools
 - [ ] Start Signal minimized (difficult: settings in encrypted sqlite)
 - [ ] Consider adding apt-file (heavy dependency)
-- [ ] Get rid of login_event_webhook_reporter (have activitywatch; might combine with halinuxcompanion)
+- [ ] Combine ActivityWatch + HALinuxCompanion to report: session events (login/logout, lock/unlock, suspend/resume), battery charge level, and other device telemetry
 
 ## Neovim
 

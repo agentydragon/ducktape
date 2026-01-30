@@ -103,7 +103,6 @@ in
     ./modules/gnome-workspace-shortcuts.nix
     ./modules/flameshot-screenshots.nix
     ./modules/datetime-format.nix
-    ./services/login-event-webhook-reporter.nix
     ./services/activitywatch.nix
   ];
   nixpkgs.config.allowUnfree = true;
