@@ -24,7 +24,7 @@ Utility scripts symlinked to `~/.local/bin/`:
 
 - Theme switchers (`set_dark_theme`, `set_light_theme`)
 - Backup utilities (`duplicity`)
-- Git utilities (`git-purge-file`)
+
 
 ## Commands
 

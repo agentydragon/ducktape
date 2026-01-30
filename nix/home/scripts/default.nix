@@ -42,13 +42,6 @@ let
     echo
   '';
 
-  # Purge a file from git history (uses filter-branch)
-  git-purge-file = pkgs.writeShellScriptBin "git-purge-file" ''
-    # TODO: usage; spaces in name!
-    COMMAND="git rm --cached --ignore-unmatch '$1'"
-    git filter-branch -f --index-filter "$COMMAND" --prune-empty --tag-name-filter cat -- --all
-  '';
-
   # Theme switchers (depend on switch_gnome_terminal_profile - may be obsolete)
   set_dark_theme = pkgs.writeShellScriptBin "set_dark_theme" ''
     switch_gnome_terminal_profile --profile='Solarized Dark'
@@ -61,7 +54,6 @@ in
 {
   home.packages = [
     duplicity
-    git-purge-file
     set_dark_theme
     set_light_theme
   ];
