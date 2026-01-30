@@ -1,7 +1,6 @@
 # gazelle:ignore
 # gazelle:python_library_naming_convention $package_name$_lib
-load("@rules_python//python:defs.bzl", "py_library")
-load("@rules_python//python:python.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "external_system",

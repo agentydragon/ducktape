@@ -29,8 +29,8 @@ py_library(
     srcs = ["e2e.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//openai_utils/testing:openai_mock",
         "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
         "//props/core:ids",
         "//props/critic_dev/improve:main",
         "@pypi//pytest",
