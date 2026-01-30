@@ -323,7 +323,7 @@ py_test(
         "REQUESTS_CA_BUNDLE",
     ],
     imports = ["../.."],
-    tags = ["integration"],
+    tags = ["e2e"],
     deps = [
         ":conftest",
         ":proxy_setup",
