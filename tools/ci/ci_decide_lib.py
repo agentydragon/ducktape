@@ -72,6 +72,38 @@ def should_trigger(name: str, config: WorkflowConfig, targets: list[str], change
     return False
 
 
+def _compute_affected_targets(
+    repo: pygit2.Repository, env: CIEnvironment, base_commit: pygit2.Commit, changed_files: set[str]
+) -> tuple[list[str], bool]:
+    """Compute affected Bazel targets and whether infrastructure changed.
+
+    Returns (targets, infra_changed). Short-circuits to ["//..."] when
+    infrastructure files changed, avoiding a bazel-diff run that would fail
+    if the parent commit's BUILD graph is incompatible with the current one.
+    """
+    infra_changed = has_infra_changes(changed_files)
+    if infra_changed:
+        logger.info("Infrastructure change detected, building all targets")
+        return ["//..."], True
+
+    jar_path = get_required_existing_path("BAZEL_DIFF_JAR")
+    cache_dir = get_optional_env_path("BAZEL_DIFF_CACHE_DIR") or (env.workspace / ".bazel-diff-cache")
+    targets = run_bazel_diff(repo, jar_path, env.workspace, base_commit, cache_dir)
+
+    if not targets:
+        logger.info("No Bazel targets affected")
+        return targets, False
+
+    raw_count = len(targets)
+    targets = filter_for_ci(targets)
+    filtered = raw_count - len(targets)
+    if filtered:
+        logger.info("Filtered %d targets (source files, platform-incompatible, manual)", filtered)
+
+    logger.info("Found %d affected targets: %s", len(targets), format_limited_list(targets, 20))
+    return targets, False
+
+
 def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -> CIDecision:
     """Compute CI decision based on changes."""
     repo = pygit2.Repository(env.workspace)
@@ -89,29 +121,7 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
     changed_files = get_changed_files(repo, base_commit)
     logger.info("Changed files: %s", format_limited_list(sorted(changed_files), 20))
 
-    infra_changed = has_infra_changes(changed_files)
-    if infra_changed:
-        logger.info("Infrastructure change detected")
-
-    jar_path = get_required_existing_path("BAZEL_DIFF_JAR")
-    cache_dir = get_optional_env_path("BAZEL_DIFF_CACHE_DIR") or (env.workspace / ".bazel-diff-cache")
-    targets = run_bazel_diff(repo, jar_path, env.workspace, base_commit, cache_dir)
-
-    if not targets:
-        logger.info("No Bazel targets affected")
-    else:
-        raw_count = len(targets)
-        targets = filter_for_ci(targets)
-        filtered = raw_count - len(targets)
-        if filtered:
-            logger.info("Filtered %d targets (source files, platform-incompatible, manual)", filtered)
-
-        logger.info("Found %d affected targets: %s", len(targets), format_limited_list(targets, 20))
-        if infra_changed:
-            # //... already excludes manual-tagged targets by default in Bazel.
-            # No first-party targets currently have non-Linux platform constraints,
-            # so the platform filter from filter_for_ci is not needed here either.
-            targets = ["//..."]
+    targets, infra_changed = _compute_affected_targets(repo, env, base_commit, changed_files)
 
     triggered = {name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files)}
     return CIDecision(targets=targets, workflows=triggered, infra_changed=infra_changed)
