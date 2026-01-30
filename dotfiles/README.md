@@ -24,7 +24,6 @@ Utility scripts symlinked to `~/.local/bin/`:
 
 - Backup utilities (`duplicity`)
 
-
 Theme switchers (`set_dark_theme`, `set_light_theme`) migrated to Nix (`nix/home/modules/solarized.nix`).
 
 ## Commands

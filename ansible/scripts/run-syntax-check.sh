@@ -5,6 +5,12 @@
 
 set -euo pipefail
 
+# Skip if ansible-playbook is not available or broken
+if ! ansible-playbook --version &>/dev/null; then
+  echo "Skipping: ansible-playbook not available or broken in this environment"
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Change to ansible directory (parent of scripts)
 cd "$SCRIPT_DIR/.."

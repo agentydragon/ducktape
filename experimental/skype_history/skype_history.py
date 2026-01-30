@@ -3,13 +3,14 @@
 import argparse
 import datetime
 import sqlite3
-import sys
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Read Skype chat history from a local SQLite database.")
     parser.add_argument("--db", required=True, help="Path to the Skype main.db SQLite database")
-    parser.add_argument("--person", help="Filter messages to those from a person whose display name contains this string")
+    parser.add_argument(
+        "--person", help="Filter messages to those from a person whose display name contains this string"
+    )
     args = parser.parse_args()
 
     conn = sqlite3.connect(args.db)
