@@ -25,7 +25,6 @@ py_binary(
     main = "reporter_main.py",
     visibility = ["//:__subpackages__"],
     deps = [
-        ":reporter",
         ":reporter_lib",
     ],
 )
@@ -52,7 +51,6 @@ py_binary(
     main = "manage_main.py",
     visibility = ["//:__subpackages__"],
     deps = [
-        ":manage",
         ":manage_lib",
     ],
 )
