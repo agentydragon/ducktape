@@ -50,7 +50,7 @@ def _setup_logging(settings: HookSettings) -> None:
     File logging persists even if the subprocess is killed (e.g., by test timeout),
     making it available for artifact collection.
     """
-    formatter = logging.Formatter("[auth-proxy] %(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
+    formatter = logging.Formatter("[bazel-wrapper] %(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
 
     # Always log to stderr
     stderr_handler = logging.StreamHandler(sys.stderr)
