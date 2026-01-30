@@ -56,7 +56,7 @@ class _SlowOutput(BaseModel):
 
 @pytest.fixture
 def slow_server() -> FlatModelMixin:
-    """FastMCP server with two slow async tools for parallel call testing."""
+    """FastMCP server with a slow async tool for parallel call testing."""
     mcp = FlatModelMixin("dummy")
 
     @mcp.flat_model()
@@ -64,12 +64,6 @@ def slow_server() -> FlatModelMixin:
         """Slow tool that takes 0.30s."""
         await asyncio.sleep(0.30)
         return _SlowOutput(ok=True, tool="slow", args={})
-
-    @mcp.flat_model()
-    async def slow2(input: _EmptyInput) -> _SlowOutput:
-        """Second slow tool that takes 0.30s."""
-        await asyncio.sleep(0.30)
-        return _SlowOutput(ok=True, tool="slow2", args={})
 
     return mcp
 
@@ -156,14 +150,6 @@ async def test_tool_error_continues_turn(compositor, mcp_tool_provider, validati
 # --- Parallel tool call tests ---
 
 
-class SlowInput(BaseModel):
-    """Empty input for slow() tool."""
-
-
-class Slow2Input(BaseModel):
-    """Empty input for slow2() tool."""
-
-
 class OneShotSyntheticHandler(BaseHandler):
     """Handler that injects synthetic output once, then aborts."""
 
@@ -185,8 +171,8 @@ async def test_parallel_tool_calls_reduce_wall_time(
     # Mount slow server and capture Mounted object
     mounted_slow = await compositor.mount_inproc(MCPMountPrefix("dummy"), slow_server)
 
-    tc1 = responses_factory.mcp_tool_call(mounted_slow.prefix, "slow", SlowInput())
-    tc2 = responses_factory.mcp_tool_call(mounted_slow.prefix, "slow2", Slow2Input())
+    tc1 = responses_factory.mcp_tool_call(mounted_slow.prefix, "slow", _EmptyInput(), call_id="call_1")
+    tc2 = responses_factory.mcp_tool_call(mounted_slow.prefix, "slow", _EmptyInput(), call_id="call_2")
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
