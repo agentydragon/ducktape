@@ -86,7 +86,7 @@
     shell: /bin/zsh
 
 # Remove default Ubuntu directories (only if empty)
-# I have custom dirs configured via user-dirs.dirs
+# Custom dirs are configured via xdg.userDirs in nix/home/home.nix
 - name: Check if default Ubuntu directories are empty
   ansible.builtin.find:
     paths: "/home/{{ cli_effective_user }}/{{ item }}"
