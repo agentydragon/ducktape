@@ -11,8 +11,8 @@ import pytest
 # - mcp_infra.testing.fixtures: MCP compositor fixtures (compositor, compositor_client, etc.)
 from agent_core.testing.fixtures import *  # noqa: F403
 from agent_core.testing.mcp.fixtures import *  # noqa: F403
-from agent_core.testing.mcp.responses import *  # noqa: F403
 from agent_core.testing.responses import *  # noqa: F403
+from agent_core.testing.mcp.responses import *  # noqa: F403  # must be after base responses to shadow with MCP variants
 from mcp_infra.testing.fixtures import *  # noqa: F403
 from openai_utils.testing.fixtures import *  # noqa: F403
 

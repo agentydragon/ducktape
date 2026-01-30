@@ -19,6 +19,7 @@ from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
 from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
+from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
@@ -520,8 +521,8 @@ async def test_agent_compositor_flat_tools_request_schema(compositor, mcp_tool_p
     # Mount only mcp_a for phase 1 and capture Mounted object
     mounted_a = await compositor.mount_inproc(MCPMountPrefix("mcp_a"), mcp_a)
 
-    @DecoratorMock.mock()
-    def mock(m: DecoratorMock):
+    @MCPDecoratorMock.mock()
+    def mock(m: MCPDecoratorMock):
         # Phase 1: only mcp_a mounted
         req = yield
         assert req.tools is not None

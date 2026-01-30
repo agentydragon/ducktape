@@ -9,8 +9,7 @@ from pydantic import BaseModel
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing.matchers import assert_function_call_output_structured, has_json_arguments
-from agent_core.testing.mcp.responses import EchoMock
-from agent_core.testing.responses import ResponsesFactory
+from agent_core.testing.mcp.responses import EchoMock, MCPResponsesFactory
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
@@ -72,7 +71,7 @@ class SampleOutput(BaseModel):
     result: str
 
 
-def test_responses_factory_mcp_tool_call_explicit_id(responses_factory: ResponsesFactory):
+def test_responses_factory_mcp_tool_call_explicit_id(responses_factory: MCPResponsesFactory):
     """Test ResponsesFactory.mcp_tool_call with explicit call_id."""
     call = responses_factory.mcp_tool_call(
         ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, SampleInput(text="hello", count=2), call_id="call_1"
@@ -88,7 +87,7 @@ def test_responses_factory_mcp_tool_call_explicit_id(responses_factory: Response
     )
 
 
-def test_responses_factory_mcp_tool_call_auto_id(responses_factory: ResponsesFactory):
+def test_responses_factory_mcp_tool_call_auto_id(responses_factory: MCPResponsesFactory):
     """Test ResponsesFactory.mcp_tool_call with auto-generated call_id."""
     call = responses_factory.mcp_tool_call(MCPMountPrefix("server"), "tool", SampleInput(text="test"))
 
@@ -96,7 +95,7 @@ def test_responses_factory_mcp_tool_call_auto_id(responses_factory: ResponsesFac
     assert call.call_id.startswith("test:")  # Uses factory's call_id_prefix
 
 
-def test_responses_factory_make_mcp_tool_call(responses_factory: ResponsesFactory):
+def test_responses_factory_make_mcp_tool_call(responses_factory: MCPResponsesFactory):
     result = responses_factory.make_mcp_tool_call(
         ContainerExecServer.DOCKER_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME, SampleInput(text="ls")
     )
@@ -115,7 +114,7 @@ def test_responses_factory_make_mcp_tool_call(responses_factory: ResponsesFactor
     )
 
 
-def test_responses_factory_mcp_tool_call_item(responses_factory: ResponsesFactory):
+def test_responses_factory_mcp_tool_call_item(responses_factory: MCPResponsesFactory):
     call = responses_factory.mcp_tool_call(
         ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME, SampleInput(text="echo")
     )
@@ -130,7 +129,7 @@ def test_responses_factory_mcp_tool_call_item(responses_factory: ResponsesFactor
     )
 
 
-def test_mcp_tool_call_composes_with_make(responses_factory: ResponsesFactory):
+def test_mcp_tool_call_composes_with_make(responses_factory: MCPResponsesFactory):
     result = responses_factory.make(
         responses_factory.make_item_reasoning(),
         responses_factory.mcp_tool_call(MCPMountPrefix("server"), "tool", SampleInput(text="test")),

@@ -197,6 +197,7 @@ py_test(
         ":tool_provider",
         "//agent_core/testing:matchers",
         "//agent_core/testing:responses",
+        "//agent_core/testing/mcp:responses",
         "//mcp_infra:flat_tool",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
