@@ -25,7 +25,7 @@ from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.mcp_types import McpServerSpecs
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from test_util.docker import load_bazel_image, pytest_runtest_setup, python_slim_image  # noqa: F401
+from test_util.docker import load_bazel_image, pytest_runtest_setup, python_slim_image
 
 # Image tags and load scripts for Bazel-loaded images
 RUNTIME_IMAGE_TAG = "adgn-runtime:latest"
@@ -37,9 +37,8 @@ TEST_BACKEND_SERVER_NAME = "backend"
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core.testing.fixtures import *  # noqa: E402, F403
 from agent_core.testing.mcp.fixtures import *  # noqa: E402, F403
+from agent_core.testing.mcp.responses import *  # noqa: E402, F403
 from agent_core.testing.responses import *  # noqa: E402, F403
-
-from agent_core.testing.mcp.responses import *  # noqa: E402, F403  # isort:skip  # must shadow base responses_factory
 from mcp_infra.testing.fixtures import *  # noqa: E402, F403
 from openai_utils.testing.fixtures import *  # noqa: E402, F403
 

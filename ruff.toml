@@ -171,3 +171,5 @@ split-on-trailing-comma = false
 "props/core/db/sync/sync.py" = ["PLC0415"]
 # sys.path manipulation must happen before pytest import
 "agent_server/tests/pytest_runner.py" = ["E402"]
+# conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
+"**/conftest.py" = ["F401"]

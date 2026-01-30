@@ -311,3 +311,6 @@ def reasoning_model() -> str:
     Tests may override via RESPONSES_TEST_MODEL env.
     """
     return os.environ.get("RESPONSES_TEST_MODEL", "gpt-5-nano")
+
+
+# responses_factory fixture lives in agent_core.testing.mcp.responses (returns MCPResponsesFactory)
