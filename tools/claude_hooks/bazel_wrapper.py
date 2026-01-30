@@ -52,22 +52,26 @@ def _setup_logging(settings: HookSettings) -> None:
     """
     formatter = logging.Formatter("[bazel-wrapper] %(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
 
-    # Always log to stderr
+    # Stderr: only warnings and errors (keep output quiet on happy path)
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(formatter)
+    stderr_handler.setLevel(logging.WARNING)
 
-    # Also log to file in supervisor directory (persists on timeout)
+    # File: verbose (DEBUG+) for post-mortem debugging
     log_file = settings.get_supervisor_dir() / "bazel-wrapper.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(stderr_handler)
     root_logger.addHandler(file_handler)
 
-    logger.info("bazel_wrapper started, log file: %s", log_file)
+    # Show log file path on stderr so users know where to look
+    print(f"[bazel-wrapper] log: {log_file}", file=sys.stderr)
+    logger.info("bazel_wrapper started")
 
 
 def main() -> None:

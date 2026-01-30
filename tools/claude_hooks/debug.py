@@ -16,8 +16,8 @@ def log_entrypoint_debug(name: str) -> None:
     Logs sys.executable, sys.path, and full environment as JSON.
     Call early in each entrypoint (session_start, bazel_wrapper, auth_proxy).
     """
-    logger.info("=== %s debug info ===", name)
-    logger.info("sys.executable: %s", sys.executable)
-    logger.info("sys.path: %s", sys.path)
-    logger.info("Full environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
-    logger.info("=== end %s debug info ===", name)
+    logger.debug("=== %s debug info ===", name)
+    logger.debug("sys.executable: %s", sys.executable)
+    logger.debug("sys.path: %s", sys.path)
+    logger.debug("Full environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
+    logger.debug("=== end %s debug info ===", name)

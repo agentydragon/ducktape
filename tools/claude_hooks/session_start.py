@@ -348,9 +348,10 @@ def setup_logging(settings: HookSettings) -> LogCollector:
     # Configure root logger so all child loggers (proxy_setup, bazelisk_setup, etc.) inherit.
     # Logs go to file only — stdout is reserved for structured agent context.
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.DEBUG)
 
     file_handler = logging.FileHandler(log_file, mode="a")
+    file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
