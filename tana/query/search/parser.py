@@ -18,7 +18,7 @@ from tana.domain.search import (
     TypeSearch,
 )
 from tana.domain.types import NodeId
-from tana.graph.workspace import TanaGraph
+from tana.graph.graph import TanaGraph
 
 
 class SearchParseError(Exception):

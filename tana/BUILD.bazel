@@ -10,8 +10,8 @@ py_library(
     deps = [
         "//tana/domain:nodes",
         "//tana/domain:types",
-        "//tana/graph:workspace",
-        "//tana/io:json",
+        "//tana/graph",
+        "//tana/graph:loader",
         "//tana/query/search:materializer",
     ],
 )
@@ -22,7 +22,7 @@ py_test(
     data = glob(["testdata/**/*"]),
     deps = [
         "//tana/export:convert",
-        "//tana/io:json",
+        "//tana/graph:loader",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

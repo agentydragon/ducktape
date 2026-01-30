@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from tana.export.convert import export_node_as_tanapaste
-from tana.io.json import load_workspace
+from tana.graph.loader import load_workspace
 
 # Testdata lives alongside this test under tana/testdata
 TESTDATA_PATH = Path(__file__).parent / "testdata"

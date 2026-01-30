@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from tana.domain.nodes import BaseNode
 from tana.domain.types import NodeId
-from tana.graph.workspace import TanaGraph
+from tana.graph.graph import TanaGraph
 from tana.query.search.evaluator import SearchEvaluator
 from tana.query.search.parser import parse_search_expression
 

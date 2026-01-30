@@ -1,16 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 # Gazelle-managed per-file py_library targets
-
-py_library(
-    name = "core",
-    srcs = ["core.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//tana/domain:nodes",
-        "//tana/domain:types",
-    ],
-)
+# NOTE: No core target - get_tuple_value merged into :nodes
 
 py_library(
     name = "filters",
@@ -20,7 +11,7 @@ py_library(
         ":nodes",
         "//tana/domain:nodes",
         "//tana/domain:types",
-        "//tana/graph:workspace",
+        "//tana/graph",
     ],
 )
 
@@ -29,9 +20,8 @@ py_library(
     srcs = ["nodes.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":core",
         "//tana/domain:constants",
         "//tana/domain:nodes",
-        "//tana/graph:workspace",
+        "//tana/domain:types",
     ],
 )

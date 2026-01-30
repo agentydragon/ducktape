@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from tana.graph.workspace import TanaGraph
+from tana.graph.graph import TanaGraph
 
 
 class WorkspaceDoc(BaseModel):

@@ -15,7 +15,7 @@ from tana.domain.search import (
     TypeSearch,
 )
 from tana.domain.types import NodeId
-from tana.graph.workspace import TanaGraph
+from tana.graph.graph import TanaGraph
 from tana.query.filters import filter_by_field_value, filter_by_tag, filter_nodes
 
 

@@ -10,7 +10,7 @@ from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
 from tana.domain.nodes import DOC_CLASS, BaseNode, TupleNode, UnknownNode
 from tana.domain.types import NodeId
 from tana.export.convert import RenderContext
-from tana.graph.workspace import TanaGraph
+from tana.graph.graph import TanaGraph
 from tana.graph.wrappers import is_wrapper
 
 PRETTY_PRINT_LIMIT = 10

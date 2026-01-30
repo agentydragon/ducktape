@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from tana.domain.types import NodeId
-from tana.graph.workspace import TanaGraph
+from tana.graph.graph import TanaGraph
 from tana.query.search.materializer import compare_search_results
 from tana.query.search.parser import parse_search_expression
 from tana.workspace import Workspace

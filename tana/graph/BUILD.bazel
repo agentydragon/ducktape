@@ -3,14 +3,24 @@ load("@rules_python//python:defs.bzl", "py_library")
 # Gazelle-managed per-file py_library targets
 
 py_library(
-    name = "workspace",
-    srcs = ["workspace.py"],
+    name = "graph",
+    srcs = ["graph.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":wrappers",
         "//tana/domain:constants",
         "//tana/domain:nodes",
         "//tana/domain:types",
+    ],
+)
+
+py_library(
+    name = "loader",
+    srcs = ["loader.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":graph",
+        "@pypi//pydantic",
     ],
 )
 

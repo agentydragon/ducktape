@@ -4,8 +4,8 @@ from pathlib import Path
 
 from tana.domain.nodes import BaseNode
 from tana.domain.types import NodeId
-from tana.graph.workspace import TanaGraph
-from tana.io.json import load_workspace
+from tana.graph.graph import TanaGraph
+from tana.graph.loader import load_workspace
 from tana.query.search.materializer import compare_search_results, materialize_search
 
 

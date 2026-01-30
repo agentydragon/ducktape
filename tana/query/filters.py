@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterator
 
 from tana.domain.nodes import BaseNode
 from tana.domain.types import NodeId
-from tana.graph.workspace import TanaGraph
+from tana.graph.graph import TanaGraph
 from tana.query.nodes import get_field_values, is_in_deleted_nodes
 
 
