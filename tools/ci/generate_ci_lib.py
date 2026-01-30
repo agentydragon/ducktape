@@ -76,8 +76,13 @@ COMPUTE_TARGETS_JOB = Job(
             run='echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV\n'
             'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV\n'
             'echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV\n'
-            'echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV\n'
-            'echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV',
+            'echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV\n'
+            "# Full build on main/devel pushes; incremental on PRs and feature branches\n"
+            'if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master|devel)$ ]]; then\n'
+            '  echo "CI_PUSH_STRATEGY=full" >> $GITHUB_ENV\n'
+            "else\n"
+            '  echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV\n'
+            "fi",
         ),
         Step(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
         Step(

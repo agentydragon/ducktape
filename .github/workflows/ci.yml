@@ -61,8 +61,13 @@ jobs:
           echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
           echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
           echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV
-          echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV
           echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV
+          # Full build on main/devel pushes; incremental on PRs and feature branches
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master|devel)$ ]]; then
+            echo "CI_PUSH_STRATEGY=full" >> $GITHUB_ENV
+          else
+            echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV
+          fi
       - name: Compute CI decision
         id: decide
         run: uv run tools/ci/ci_decide.py
