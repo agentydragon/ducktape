@@ -244,8 +244,12 @@ def emit_session_context(
             ' -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/...'
         )
         lines.append(
-            "  Works: runs, jobs, run logs (zip), artifacts, PRs, issues."
-            " Does NOT work: /actions/jobs/{id}/logs (empty); use run-level zip."
+            "  Works: runs, jobs, artifacts, PRs, issues."
+            " Job logs: /actions/jobs/{id}/logs (works for completed jobs)."
+            " Run logs zip: /actions/runs/{id}/logs (only available after run completes)."
+        )
+        lines.append(
+            "  Note: GitHub API requests may get transient 401s from the TLS-inspecting egress proxy; retry on 401."
         )
 
     lines.append(f"Setup log: {log_file}")
