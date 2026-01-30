@@ -19,7 +19,7 @@ Your proposed strategy makes perfect sense! Here's the refined plan:
 
 #### What We Had to Skip/Disable
 
-- ❌ **XDG MIME associations** (mimeapps.list): Home-manager would replace all 105 associations with just 2. Kept in Ansible to preserve existing associations.
+- ✅ **XDG MIME associations** (mimeapps.list): 2 critical associations enforced by Nix activation script (home.activation.fixMimeApps). Dotfile removed; desktop environment manages the rest.
 - ❌ **Claude MCP configuration** (.claude.json): File contains many other Claude settings beyond MCP servers. Need in-place editing solution, not file replacement.
 - ❌ **NPM global packages** (jscpd, madge, @openai/codex@0.53.0): Not available in nixpkgs. Users must install manually with: `pnpm add -g jscpd madge @openai/codex@0.53.0`
 

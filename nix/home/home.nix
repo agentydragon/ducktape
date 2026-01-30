@@ -538,8 +538,8 @@ in
     PNPM_HOME = "$HOME/.local/share/pnpm";
   };
 
-  # Patch 2 critical MIME associations in-place (without replacing the full
-  # mimeapps.list, which has 100+ entries managed via rcm dotfiles).
+  # Patch 2 critical MIME associations in-place without replacing the full
+  # mimeapps.list (desktop environment manages the rest).
   home.activation.fixMimeApps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     run ${pkgs.xdg-utils}/bin/xdg-mime default google-chrome.desktop text/html
     run ${pkgs.xdg-utils}/bin/xdg-mime default remote-viewer.desktop application/x-virt-viewer
