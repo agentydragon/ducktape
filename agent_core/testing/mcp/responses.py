@@ -142,5 +142,5 @@ class EchoMock(MCPDecoratorMock):
 
 @pytest.fixture(scope="session")
 def responses_factory(reasoning_model: str) -> MCPResponsesFactory:
-    """MCP-aware responses factory (shadows non-MCP version)."""
+    """MCP-aware responses factory — the only responses_factory definition."""
     return MCPResponsesFactory(reasoning_model)

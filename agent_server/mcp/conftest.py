@@ -3,7 +3,7 @@
 import pytest
 
 # Import fixtures
-from mcp_infra.testing.fixtures import compositor, make_typed_mcp  # noqa: F401
+from mcp_infra.testing.fixtures import compositor, make_typed_mcp
 
 
 def pytest_configure(config: pytest.Config) -> None:

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import pytest_bazel
-from hamcrest import has_entries
+from hamcrest import all_of, assert_that, has_entries, has_length, has_properties, has_property, instance_of
+from pydantic import BaseModel
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
@@ -58,8 +59,6 @@ async def test_agent_mcp_echo_with_response(mcp_tool_provider_echo, test_handler
     assert res.text.strip() == "done"
 
 
-<<<<<<< HEAD
-=======
 # --- ResponsesFactory MCP tool call tests ---
 
 
@@ -142,6 +141,5 @@ def test_mcp_tool_call_composes_with_make(responses_factory: MCPResponsesFactory
     assert_that(call, has_properties(name="server_tool"))
 
 
->>>>>>> e202632 (Fix mypy errors: use MCP-aware test types instead of base classes)
 if __name__ == "__main__":
     pytest_bazel.main()

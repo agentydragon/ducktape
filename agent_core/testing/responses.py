@@ -313,6 +313,4 @@ def reasoning_model() -> str:
     return os.environ.get("RESPONSES_TEST_MODEL", "gpt-5-nano")
 
 
-@pytest.fixture(scope="session")
-def responses_factory(reasoning_model: str) -> ResponsesFactory:
-    return ResponsesFactory(reasoning_model)
+# responses_factory fixture lives in agent_core.testing.mcp.responses (returns MCPResponsesFactory)
