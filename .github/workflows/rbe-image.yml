@@ -8,7 +8,8 @@ on:
   push:
     branches: [main, devel]
     paths:
-      - "tools/rbe-image/**"
+      - "tools/rbe_image/**"
+      - "tools/claude_hooks/config/podman/**"
       - ".github/workflows/rbe-image.yml"
   workflow_dispatch:
 
@@ -41,7 +42,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: tools/rbe-image
+          context: .
+          file: tools/rbe_image/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE }}:latest

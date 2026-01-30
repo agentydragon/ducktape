@@ -71,28 +71,6 @@ py_test(
     deps = ["//:bazel_util"],
 )
 
-py_test(
-    name = "test_rbe_probe",
-    srcs = ["test_rbe_probe.py"],
-    args = ["-s"],
-    imports = [".."],
-    tags = ["manual"],
-    deps = ["@pypi//pytest_bazel"],
-)
-
-py_test(
-    name = "test_rbe_podman",
-    size = "large",
-    srcs = ["test_rbe_podman.py"],
-    args = ["-s"],
-    imports = [".."],
-    tags = ["manual"],
-    deps = [
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 # === Gazelle (Python BUILD file generator) ===
 
 # Extract import metadata from wheels for Gazelle's Python import resolution

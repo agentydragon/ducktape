@@ -247,6 +247,14 @@ common --remote_header=x-buildbuddy-api-key=YOUR_API_KEY_HERE
 
 This file is loaded via `try-import` in `~/.bazelrc` and is silently ignored if missing.
 
+Alternatively, run `tools/setup-buildbuddy.sh` to generate the file interactively.
+
+### Remote Execution (RBE)
+
+When BuildBuddy is configured via `setup-buildbuddy.sh`, remote execution is enabled automatically. Build and test actions run on BuildBuddy workers (falling back to local), using the `//:rbe_linux_x64` platform.
+
+The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <tools/rbe_image/Dockerfile> and includes git, ca-certificates, and podman. It shares podman config files with `tools/claude_hooks/config/podman/` (VFS storage driver, host user namespace). The image is built and pushed by the `rbe-image.yml` CI workflow.
+
 ## Development Practices
 
 ### Testing

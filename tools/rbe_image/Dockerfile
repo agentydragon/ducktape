@@ -18,7 +18,7 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 
 # Pre-configure Podman for rootful VFS operation (no overlay/fuse needed).
 # BuildBuddy workers run as root but may lack /dev/fuse or overlay support.
-RUN mkdir -p /etc/containers \
-    && printf '[storage]\ndriver = "vfs"\n' > /etc/containers/storage.conf \
-    && printf '[containers]\nuserns = "host"\nannotations = ["run.oci.keep_original_groups=1"]\n\n[engine]\nnetwork_backend = "cni"\n' > /etc/containers/containers.conf \
-    && printf '{"default":[{"type":"insecureAcceptAnything"}]}\n' > /etc/containers/policy.json
+# Config files are shared with tools/claude_hooks (gVisor podman setup).
+COPY tools/claude_hooks/config/podman/storage.conf /etc/containers/storage.conf
+COPY tools/claude_hooks/config/podman/containers.conf /etc/containers/containers.conf
+COPY tools/claude_hooks/config/podman/policy.json /etc/containers/policy.json
