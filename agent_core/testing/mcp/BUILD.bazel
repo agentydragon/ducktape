@@ -74,8 +74,6 @@ py_test(
         "//agent_core/testing:matchers",
         "//agent_core/testing:responses",
         "//mcp_infra:prefix",
-        "//mcp_infra/exec:docker",
-        "//mcp_infra/testing:simple_servers",
         "//openai_utils:model",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
