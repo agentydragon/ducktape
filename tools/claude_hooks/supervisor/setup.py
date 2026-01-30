@@ -13,7 +13,6 @@ import configparser
 import logging
 import os
 import sys
-import textwrap
 from dataclasses import dataclass
 
 from net_util.net import is_port_in_use
@@ -33,20 +32,9 @@ class SupervisorSetup:
 
     @property
     def guidance(self) -> str:
-        """Get supervisor usage guidance."""
+        """Get supervisor usage guidance (one-liner for agent context)."""
         supervisor_dir = self.settings.get_supervisor_dir()
-        supervisor_conf = supervisor_dir / "supervisord.conf"
-        python_exe = sys.executable
-        return textwrap.dedent(
-            f"""\
-            Supervisor
-            ==========
-            Supervisor manages background processes (auth proxy, etc.).
-            See: {python_exe} -m supervisor.supervisorctl -c {supervisor_conf} status
-            Service configs: {supervisor_dir}/conf.d/
-            Logs: {supervisor_dir}/
-            """
-        )
+        return f"Supervisor: manages background processes. Logs: {supervisor_dir}/"
 
 
 def _write_config(settings: HookSettings) -> None:

@@ -199,56 +199,44 @@ def format_environment_summary() -> str:
     return "\n".join(lines)
 
 
-def emit_session_context(collector: LogCollector, log_file: Path) -> None:
+def emit_session_context(collector: LogCollector, log_file: Path, service_lines: list[str]) -> None:
     """Emit compact context summary for Claude Code transcript.
 
     This goes to stdout and gets injected as context for the agent.
-    Includes any warnings/errors that occurred during setup.
+    Keep this tight — every line costs agent context window.
     """
     has_errors = len(collector.errors) > 0
     has_warnings = len(collector.warnings) > 0
 
+    status = "ERRORS" if has_errors else "OK with warnings" if has_warnings else "OK"
     lines = [
-        f"Claude Code on the web (gVisor sandbox) [build: {BUILD_COMMIT}]",
-        "Status: " + ("ERRORS" if has_errors else "OK with warnings" if has_warnings else "OK"),
-        "Constraints:",
-        "  - TLS-inspecting proxy (custom CA configured)",
-        "  - No overlay filesystem (use vfs for containers)",
-        "  - Network via proxy only (no direct DNS)",
-        "  - 9p filesystem (no hard links on Unix sockets)",
+        f"gVisor sandbox [build: {BUILD_COMMIT}] — {status}",
+        "Constraints: TLS-inspecting proxy, no overlay fs (vfs only), network via proxy, 9p fs (no hard links on sockets)",
     ]
 
+    # Service status (one line each from supervisor/proxy/podman)
+    lines.extend(service_lines)
+
     if collector.errors:
-        lines.append("Errors:")
-        lines.extend(f"  - {msg}" for msg in collector.errors)
+        lines.append("ERRORS:")
+        lines.extend(f"  {msg}" for msg in collector.errors)
 
     if collector.warnings:
         lines.append("Warnings:")
-        lines.extend(f"  - {msg}" for msg in collector.warnings)
+        lines.extend(f"  {msg}" for msg in collector.warnings)
 
-    # Check for GitHub CI token
     if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
-        lines.append("GitHub CI Access:")
-        lines.append("  DUCKTAPE_CI_READ_GITHUB_TOKEN is set - GitHub PAT for agentydragon/ducktape.")
-        lines.append("  gh CLI is NOT installed. Use curl with both headers:")
+        lines.append("GitHub CI: DUCKTAPE_CI_READ_GITHUB_TOKEN is set (PAT for agentydragon/ducktape).")
         lines.append(
-            '    curl -s -H "Authorization: Bearer $DUCKTAPE_CI_READ_GITHUB_TOKEN"'
-            ' -H "X-GitHub-Api-Version: 2022-11-28" <URL>'
+            '  curl -s -H "Authorization: Bearer $DUCKTAPE_CI_READ_GITHUB_TOKEN"'
+            ' -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/...'
         )
-        lines.append("  What works:")
-        lines.append("    - Repo info: /repos/agentydragon/ducktape")
-        lines.append("    - List workflow runs: /repos/agentydragon/ducktape/actions/runs?per_page=N")
-        lines.append("    - List jobs for a run: /repos/agentydragon/ducktape/actions/runs/{run_id}/jobs")
-        lines.append("    - Download run logs (zip): curl -L .../actions/runs/{run_id}/logs -o logs.zip")
-        lines.append("      (Returns a zip archive; unzip to get per-job/per-step .txt files)")
-        lines.append("    - List artifacts: /repos/agentydragon/ducktape/actions/artifacts?per_page=N")
-        lines.append("    - Download artifact (zip): curl -L .../actions/artifacts/{artifact_id}/zip -o a.zip")
-        lines.append("    - PRs, issues, branches, commits, etc.")
-        lines.append("  What does NOT work:")
-        lines.append("    - Individual job logs endpoint (/actions/jobs/{job_id}/logs) returns empty body")
-        lines.append("      Use the run-level logs zip instead.")
+        lines.append(
+            "  Works: runs, jobs, run logs (zip), artifacts, PRs, issues."
+            " Does NOT work: /actions/jobs/{id}/logs (empty); use run-level zip."
+        )
 
-    lines.append(f"Full log: {log_file}")
+    lines.append(f"Setup log: {log_file}")
 
     print("\n".join(lines))
     sys.stdout.flush()
@@ -345,13 +333,10 @@ def setup_logging(settings: HookSettings) -> LogCollector:
     collector = LogCollector()
     collector.setFormatter(formatter)
 
-    # Configure root logger so all child loggers (proxy_setup, bazelisk_setup, etc.) inherit
+    # Configure root logger so all child loggers (proxy_setup, bazelisk_setup, etc.) inherit.
+    # Logs go to file only — stdout is reserved for structured agent context.
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(formatter)
-    root_logger.addHandler(stdout_handler)
 
     file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
@@ -586,20 +571,16 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     if not isinstance(podman_result, BaseException):
         logger.info("Podman: %s", podman_result.status)
 
-    # Emit all collected guidance
+    # Collect one-liner service guidance for agent context
+    service_lines: list[str] = []
     if not isinstance(supervisor_task.result(), BaseException):
-        print(supervisor_task.result().guidance)
-        sys.stdout.flush()
-    # proxy_result is already narrowed to ProxySetup
-    proxy_guidance = proxy_result.guidance
-    if proxy_guidance:
-        print(proxy_guidance)
-        sys.stdout.flush()
+        service_lines.append(supervisor_task.result().guidance)
+    if proxy_result.guidance:
+        service_lines.append(proxy_result.guidance)
     if not isinstance(podman_result, BaseException):
-        print(podman_result.guidance)
-        sys.stdout.flush()
+        service_lines.append(podman_result.guidance)
 
-    emit_session_context(collector, log_file)
+    emit_session_context(collector, log_file, service_lines)
 
 
 async def async_main() -> None:

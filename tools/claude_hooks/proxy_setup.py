@@ -14,7 +14,6 @@ import logging
 import os
 import shutil
 import sys
-import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -389,7 +388,7 @@ async def _snapshot_proxy_status(settings: HookSettings, supervisor: SupervisorC
 
 
 async def _snapshot_proxy_guidance(supervisor: SupervisorClient, port: int, combined_ca: Path) -> str:
-    """Snapshot the proxy configuration guidance."""
+    """Snapshot the proxy configuration guidance (one-liner for agent context)."""
     if not get_upstream_proxy_url():
         return ""
 
@@ -398,24 +397,9 @@ async def _snapshot_proxy_guidance(supervisor: SupervisorClient, port: int, comb
         service_status = info.statename
     except Exception:
         service_status = ProcessState.UNKNOWN
-    ca_info = f"Custom CA bundle: {combined_ca}" if combined_ca.exists() else "Using system CA bundle"
+    ca_kind = "custom CA" if combined_ca.exists() else "system CA"
 
-    return textwrap.dedent(
-        f"""\
-        Auth Proxy Configuration
-        ========================
-        Auth proxy port: {port}
-        Service status: {service_status}
-        {ca_info}
-
-        The proxy handles:
-        - Authentication forwarding to upstream proxy
-        - TLS inspection CA certificate management
-        - Java truststore configuration for Bazel
-
-        Environment variables are automatically configured in CLAUDE_ENV_FILE.
-        """
-    )
+    return f"Auth proxy: port {port}, status {service_status}, {ca_kind}. Env vars auto-configured."
 
 
 async def setup_auth_proxy(settings: HookSettings, supervisor: SupervisorClient) -> ProxySetup:

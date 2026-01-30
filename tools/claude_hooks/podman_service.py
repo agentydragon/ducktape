@@ -207,24 +207,7 @@ async def _snapshot_podman_guidance(
     except Exception:
         status = ProcessState.UNKNOWN
 
-    podman_dir = settings.get_podman_dir()
-    guidance = textwrap.dedent(
-        f"""\
-        Podman in gVisor Sandbox
-        ========================
-        Podman is configured with gVisor-specific workarounds.
-        Running under supervisor (state: {status}). DOCKER_HOST={socket_url}
-
-        Use fully qualified image names (docker.io/library/...)
-
-        Configuration Applied:
-        ----------------------
-        - VFS storage driver (gVisor has no overlay fs)
-        - Isolated config: {podman_dir}
-        - userns = "host"
-        - run.oci.keep_original_groups=1 annotation (auto-applied)
-        """
-    )
+    guidance = f"Podman: {status}, DOCKER_HOST={socket_url}. Use fully qualified image names (docker.io/library/...)."
     return status, guidance
 
 
