@@ -73,7 +73,7 @@ class RenderContext:
             return self._inline_to_text(node.name)
 
         # special case: a checkbox tuple
-        if val := get_tuple_value(node, CHECKBOX_KEY_ID):
+        if val := get_tuple_value(node, CHECKBOX_KEY_ID, self.store):
             return self._scalar_text(val)
 
         return None  # container, not a scalar
@@ -163,7 +163,7 @@ class RenderContext:
         if len(t.children) > MIN_TUPLE_CHILDREN:
             # All children after the first are values
             yield prefix
-            for val_node in t.child_nodes[1:]:
+            for val_node in self.store.child_nodes(t)[1:]:
                 # For tana style, render as reference if the value is not owned by this tuple
                 # (i.e., it's a reference to an existing node)
                 with self.add_indent():
@@ -175,10 +175,10 @@ class RenderContext:
                         yield from self.render_node(val_node)
             return
 
-        if len(t.child_nodes) < MIN_TUPLE_CHILDREN:
+        if len(self.store.child_nodes(t)) < MIN_TUPLE_CHILDREN:
             return
         # Binary tuple (key + single value)
-        val_node = t.child_nodes[1]
+        val_node = self.store.child_nodes(t)[1]
 
         # try to render value inline
         if (val_txt := self._scalar_text(val_node)) is not None:
@@ -186,7 +186,7 @@ class RenderContext:
             yield f"{prefix} {val_txt}"
             # still render value-node children (e.g., URL, tags) one level deeper
             with self.add_indent():
-                for child in val_node.child_nodes:
+                for child in self.store.child_nodes(val_node):
                     yield from self.render_node(child)
             return
 
@@ -200,12 +200,12 @@ class RenderContext:
 
     def render_node(self, n: BaseNode):
         if is_wrapper(n):
-            for child in n.child_nodes:
+            for child in self.store.child_nodes(n):
                 yield from self.render_node(child)
             return
 
         # Special handling for visual (image) nodes
-        if isinstance(n, VisualNode) and (url := get_image_url(n)):
+        if isinstance(n, VisualNode) and (url := get_image_url(n, self.store)):
             # Use the visual node's name as caption if it has one
             caption = self._inline_to_text(n.name) if n.name else ""
             yield f"{self.indent}-  ![{caption}]({url})"
@@ -213,7 +213,7 @@ class RenderContext:
 
         # Special handling for code blocks
         if isinstance(n, CodeBlockNode) and self.style == "tana":
-            language = n.get_language()
+            language = self.store.get_language(n)
             # Write code block with triple backticks
             yield f"```{language}"
             if n.name:
@@ -235,11 +235,11 @@ class RenderContext:
             if n.props.done is not None:
                 marker = "[X] " if bool(n.props.done) else "[ ] "
             # If node (or its meta) carries a checkbox tuple, default to unchecked marker
-            elif get_tuple_value(n, CHECKBOX_KEY_ID) is not None:
+            elif get_tuple_value(n, CHECKBOX_KEY_ID, self.store) is not None:
                 marker = "[ ] "
             elif n.props.meta_node_id:
                 meta = self.store.get(n.props.meta_node_id)
-                if meta and get_tuple_value(meta, CHECKBOX_KEY_ID) is not None:
+                if meta and get_tuple_value(meta, CHECKBOX_KEY_ID, self.store) is not None:
                     marker = "[ ] "
         head = self._headline(n)
         if head:
@@ -249,7 +249,7 @@ class RenderContext:
             yield f"{self.indent}-"
 
         # URL tuples first (for link nodes)
-        for c in n.child_nodes:
+        for c in self.store.child_nodes(n):
             if isinstance(c, TupleNode) and _is_url_tuple(c):
                 with self.add_indent():
                     yield from self.render_tuple(c)
@@ -257,7 +257,7 @@ class RenderContext:
         # Check if this node has an associationMap - if so, render children as references with associated data
         with self.add_indent():
             emitted: set[NodeId] = set()
-            for c in n.child_nodes:
+            for c in self.store.child_nodes(n):
                 if (self.style == "tana") and (n.props.doc_type == "search" or (n.association_map is not None)):
                     # Render children as plain references; if association_map is provided,
                     # include associated data tuples for that child.
@@ -271,7 +271,7 @@ class RenderContext:
                             with self.add_indent():
                                 yield f"{self.indent}- **Associated data**"
                                 with self.add_indent():
-                                    for assoc_child in assoc_node.child_nodes:
+                                    for assoc_child in self.store.child_nodes(assoc_node):
                                         if isinstance(assoc_child, TupleNode):
                                             yield from self.render_tuple(assoc_child)
                     continue
@@ -296,11 +296,11 @@ class RenderContext:
                     yield from self.render_tuple(c)
             # Under a search node, also surface wrapper grandchildren (non-tuple) as plain references (no recursion)
             if n.props.doc_type == "search" and self.style == "tana":
-                for c in n.child_nodes:
+                for c in self.store.child_nodes(n):
                     if isinstance(c, TupleNode):
                         continue
                     if c.props.doc_type in {"viewDef", "layout", "workspace"}:
-                        for gc in c.child_nodes:
+                        for gc in self.store.child_nodes(c):
                             if isinstance(gc, TupleNode):
                                 continue
                             if gc.id not in emitted:
@@ -369,7 +369,7 @@ def _export(store: TanaGraph, style: str) -> str:
             lines.append(ttl)
             lines.append("=" * len(ttl))
             ctx.visited.remove(r.id)  # show owned children again
-            for c in r.child_nodes:
+            for c in store.child_nodes(r):
                 if not isinstance(c, TupleNode) and c.props.owner_id == r.id:
                     lines.extend(ctx.render_node(c))
         else:

@@ -2,15 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field
 
-from tana.domain.constants import LANGUAGE_KEY_ID
 from tana.domain.types import NodeId
-
-if TYPE_CHECKING:
-    from tana.graph.workspace import TanaGraph  # gazelle:ignore tana.graph.workspace
 
 
 class Props(BaseModel):
@@ -54,9 +49,8 @@ class BaseNode(BaseModel):
     modified_ts: list[int] | None = Field(alias="modifiedTs", default=None)
     touch_counts: list[int] | None = Field(alias="touchCounts", default=None)
     association_map: Mapping[NodeId, NodeId] | None = Field(alias="associationMap", default=None)
-    _graph: TanaGraph | None = PrivateAttr(default=None)
 
-    model_config = ConfigDict(extra="allow", frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="allow", frozen=True)
 
     @property
     def name(self) -> str | None:
@@ -65,20 +59,6 @@ class BaseNode(BaseModel):
     @property
     def is_trash(self) -> bool:
         return self.props.is_trash
-
-    @property
-    def child_nodes(self) -> list[BaseNode]:
-        """Return children as node instances."""
-        if not self._graph:
-            raise RuntimeError("Node not attached to a graph")
-        return [self._graph[cid] for cid in self.children if cid in self._graph]
-
-    @property
-    def supertags(self) -> list[str]:
-        """Return all supertag names associated with this node."""
-        if not self._graph:
-            return []
-        return self._graph.get_supertags(self.id)
 
 
 class TupleNode(BaseNode):
@@ -98,20 +78,6 @@ class VisualNode(BaseNode):
 
 class CodeBlockNode(BaseNode):
     """Node representing a code block."""
-
-    def get_language(self) -> str:
-        if not self._graph:
-            raise RuntimeError("Node not attached to a graph")
-
-        for child in self.child_nodes:
-            if isinstance(child, TupleNode) and len(child.children) >= 2:
-                key_id = child.children[0]
-                if key_id == LANGUAGE_KEY_ID:
-                    val = child.child_nodes[1]
-                    if isinstance(val, BaseNode) and val.name:
-                        return val.name
-                    return ""
-        return ""
 
 
 class UnknownNode(BaseNode):

@@ -51,7 +51,7 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
         raise SearchParseError(f"Metadata node {search_node.props.meta_node_id} not found")
 
     # Find search expression tuple in metadata children
-    for child in metadata.child_nodes:
+    for child in store.child_nodes(metadata):
         if (
             isinstance(child, TupleNode)
             and len(child.children) >= MIN_TUPLE_CHILDREN
@@ -60,7 +60,7 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
             return _parse_expression_components(store, child.children[1:])
 
     # Check if search expression is in view definition
-    for child in metadata.child_nodes:
+    for child in store.child_nodes(metadata):
         if not isinstance(child, TupleNode):
             continue
         # Look for view definition tuples
@@ -68,7 +68,7 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
             grandchild = store.get(grandchild_id)
             if grandchild and grandchild.props.doc_type == "viewDef":
                 # Check view definition's children for search expression
-                for ggchild in grandchild.child_nodes:
+                for ggchild in store.child_nodes(grandchild):
                     if (
                         isinstance(ggchild, TupleNode)
                         and len(ggchild.children) >= MIN_TUPLE_CHILDREN

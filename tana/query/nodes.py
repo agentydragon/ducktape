@@ -10,14 +10,13 @@ from tana.query.core import get_tuple_value
 
 def get_field_values(node: BaseNode, field_name: str, store: TanaGraph) -> Iterator[str]:
     """Get all values for a field as a list of strings."""
-    for child in node.child_nodes:
+    for child in store.child_nodes(node):
         if (
             isinstance(child, TupleNode)
             and len(child.children) >= MIN_TUPLE_CHILDREN
             and (key_node := store.get(child.children[0]))
             and key_node.name == field_name
         ):
-            # Get all value names
             for value_id in child.children[1:]:
                 if (value_node := store.get(value_id)) and value_node.name:
                     yield value_node.name
@@ -36,7 +35,6 @@ def is_in_deleted_nodes(node: BaseNode, store: TanaGraph) -> bool:
         if current.name and current.name == "Deleted Nodes":
             return True
 
-        # Check parent
         if current.props.owner_id:
             current = store.get(current.props.owner_id)
         else:
@@ -69,26 +67,16 @@ def find_nodes_by_tag(store: TanaGraph, tag_name: str) -> Iterator[BaseNode]:
             yield node
 
 
-def get_image_url(node: BaseNode) -> str | None:
-    """Extract image URL from a visual node's metadata.
-
-    Args:
-        node: A VisualNode instance attached to a graph
-
-    Returns:
-        The image URL if found, None otherwise
-    """
-    if not node._graph:
-        raise RuntimeError("Node not attached to a graph")
-
+def get_image_url(node: BaseNode, store: TanaGraph) -> str | None:
+    """Extract image URL from a visual node's metadata."""
     if not node.props.meta_node_id:
         return None
 
-    metanode = node._graph.get(node.props.meta_node_id)
+    metanode = store.get(node.props.meta_node_id)
     if not metanode:
         return None
 
-    val_node = get_tuple_value(metanode, MEDIA_KEY_ID)
+    val_node = get_tuple_value(metanode, MEDIA_KEY_ID, store)
     if isinstance(val_node, BaseNode):
         return val_node.name
     return None

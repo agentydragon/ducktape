@@ -16,7 +16,6 @@ py_library(
     deps = [
         ":constants",
         ":types",
-        "//tana/graph:workspace",
         "@pypi//pydantic",
     ],
 )

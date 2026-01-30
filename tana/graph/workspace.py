@@ -4,8 +4,8 @@ from collections import defaultdict
 from collections.abc import ItemsView, Iterable, Iterator, Mapping, ValuesView
 from typing import Any, cast, overload
 
-from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
-from tana.domain.nodes import DOC_CLASS, BaseNode, TupleNode, UnknownNode
+from tana.domain.constants import LANGUAGE_KEY_ID, MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
+from tana.domain.nodes import DOC_CLASS, BaseNode, CodeBlockNode, TupleNode, UnknownNode
 from tana.domain.types import NodeId
 from tana.graph.wrappers import is_wrapper
 
@@ -16,8 +16,6 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
     def __init__(self, nodes: Mapping[NodeId, BaseNode]):
         self._nodes: dict[NodeId, BaseNode] = dict(nodes)
         self._supertag_index: dict[NodeId, list[str]] = {}
-        for node in self._nodes.values():
-            node._graph = self
         self._build_supertag_index()
 
     # Mapping interface -----------------------------------------------------
@@ -49,11 +47,27 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
     def items(self) -> ItemsView[NodeId, BaseNode]:
         return self._nodes.items()
 
+    def child_nodes(self, node: BaseNode) -> list[BaseNode]:
+        """Return child nodes for a given node."""
+        return [self._nodes[cid] for cid in node.children if cid in self._nodes]
+
     def get_supertags(self, node_id: NodeId) -> list[str]:
         return self._supertag_index.get(node_id, [])
 
     def has_supertag(self, node_id: NodeId, tag: str) -> bool:
         return tag in self._supertag_index.get(node_id, [])
+
+    def get_language(self, node: CodeBlockNode) -> str:
+        """Extract programming language from a code block node."""
+        for child in self.child_nodes(node):
+            if isinstance(child, TupleNode) and len(child.children) >= 2:
+                key_id = child.children[0]
+                if key_id == LANGUAGE_KEY_ID:
+                    val_nodes = self.child_nodes(child)
+                    if len(val_nodes) >= 2 and isinstance(val_nodes[1], BaseNode) and val_nodes[1].name:
+                        return val_nodes[1].name
+                    return ""
+        return ""
 
     # Construction ----------------------------------------------------------
     @classmethod
@@ -87,7 +101,7 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
                 and key_node.id == SUPERTAG_KEY_ID
             ):
                 continue
-            for value_node in node.child_nodes[1:]:
+            for value_node in self.child_nodes(node)[1:]:
                 if value_node.name:
                     idx[node.props.owner_id].append(value_node.name)
 

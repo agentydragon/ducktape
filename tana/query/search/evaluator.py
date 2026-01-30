@@ -216,7 +216,7 @@ class SearchEvaluator:
 
         while to_process:
             current = to_process.pop()
-            for child in current.child_nodes:
+            for child in self.store.child_nodes(current):
                 if child.id not in descendants:
                     descendants.add(child.id)
                     to_process.append(child)
