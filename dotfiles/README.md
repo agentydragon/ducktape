@@ -22,9 +22,10 @@ See `docs/shell-configuration.md` for migration status and loading order.
 
 Utility scripts symlinked to `~/.local/bin/`:
 
-- Theme switchers (`set_dark_theme`, `set_light_theme`)
 - Backup utilities (`duplicity`)
 
+
+Theme switchers (`set_dark_theme`, `set_light_theme`) migrated to Nix (`nix/home/modules/solarized.nix`).
 
 ## Commands
 

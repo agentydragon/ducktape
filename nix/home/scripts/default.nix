@@ -42,19 +42,10 @@ let
     echo
   '';
 
-  # Theme switchers (depend on switch_gnome_terminal_profile - may be obsolete)
-  set_dark_theme = pkgs.writeShellScriptBin "set_dark_theme" ''
-    switch_gnome_terminal_profile --profile='Solarized Dark'
-  '';
-
-  set_light_theme = pkgs.writeShellScriptBin "set_light_theme" ''
-    switch_gnome_terminal_profile --profile='Solarized Light'
-  '';
+  # Theme switchers (set_light_theme, set_dark_theme) are in modules/solarized.nix
 in
 {
   home.packages = [
     duplicity
-    set_dark_theme
-    set_light_theme
   ];
 }
