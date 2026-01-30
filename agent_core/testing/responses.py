@@ -311,8 +311,3 @@ def reasoning_model() -> str:
     Tests may override via RESPONSES_TEST_MODEL env.
     """
     return os.environ.get("RESPONSES_TEST_MODEL", "gpt-5-nano")
-
-
-@pytest.fixture(scope="session")
-def responses_factory(reasoning_model: str) -> ResponsesFactory:
-    return ResponsesFactory(reasoning_model)

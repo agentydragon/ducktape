@@ -7,6 +7,7 @@ package(default_testonly = True)
 py_library(
     name = "approval_policy_testdata",
     srcs = ["approval_policy_testdata.py"],
+    data = glob(["testdata/approval_policy/*.py"]),
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = ["//agent_server/policies:policy_types"],

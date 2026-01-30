@@ -98,6 +98,17 @@ py_binary(
     ],
 )
 
+py_library(
+    name = "stdio_notifier_lib",
+    srcs = ["stdio_notifier.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra/enhanced:server",
+        "@pypi//anyio",
+    ],
+)
+
 py_binary(
     name = "stdio_notifier",
     srcs = ["stdio_notifier.py"],

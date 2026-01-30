@@ -89,6 +89,7 @@ py_library(
         "//wt/shared:configuration",
         "//wt/shared:fixtures",
         "//wt/shared:protocol",
+        "//wt/shell:install",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pyyaml",

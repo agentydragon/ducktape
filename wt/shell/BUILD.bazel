@@ -1,8 +1,15 @@
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 filegroup(
     name = "shell_scripts",
     srcs = glob(["*.sh"]),
+    visibility = ["//wt:__subpackages__"],
+)
+
+py_library(
+    name = "install",
+    srcs = ["install.py"],
+    data = [":shell_scripts"],
     visibility = ["//wt:__subpackages__"],
 )
 

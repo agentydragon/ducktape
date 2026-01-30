@@ -28,7 +28,9 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
+        "//agent_server:conftest",
         "//agent_server:presets",
+        "//agent_server/mcp:conftest",
         "//agent_server/testing:approval_policy_testdata",
         "//mcp_utils",
         "@pypi//fastmcp",

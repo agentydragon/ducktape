@@ -306,11 +306,9 @@ py_test(
     srcs = ["test_agent_pkg.py"],
     imports = ["../.."],
     deps = [
-        ":cmd_agent_pkg",
         "//props/core:agent_pkg_utils",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//typer_slim",
     ],
 )
 
