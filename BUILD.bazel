@@ -148,6 +148,19 @@ platform(
     ],
 )
 
+platform(
+    name = "rbe_linux_x64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    exec_properties = {
+        "OSFamily": "linux",
+        # python:3.13 includes git, ca-certificates, and common build tools.
+        "container-image": "docker://docker.io/library/python:3.13",
+    },
+)
+
 # Ducktape wheel - bundles CLI tools for distribution
 py_package(
     name = "ducktape_pkg",

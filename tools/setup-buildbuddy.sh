@@ -20,7 +20,7 @@ BUILDBUDDY_BAZELRC="$HOME/.config/bazel/buildbuddy.bazelrc"
 mkdir -p "$(dirname "$BUILDBUDDY_BAZELRC")"
 
 cat >"$BUILDBUDDY_BAZELRC" <<EOF
-# BuildBuddy remote cache configuration (auto-generated)
+# BuildBuddy configuration (auto-generated)
 build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpcs://remote.buildbuddy.io
 common --remote_cache=grpcs://remote.buildbuddy.io
@@ -32,6 +32,13 @@ build --noslim_profile
 build --experimental_profile_include_target_label
 build --experimental_profile_include_primary_output
 build --nolegacy_important_outputs
+
+# Remote execution: actions run on BuildBuddy workers, falling back to local.
+# The //:rbe_linux_x64 platform tells BuildBuddy which container to use.
+build --remote_executor=grpcs://remote.buildbuddy.io
+build --extra_execution_platforms=//:rbe_linux_x64
+build --spawn_strategy=remote,local
+build --jobs=50
 EOF
 
 # Ensure ~/.bazelrc has the try-import (for CI environments without home-manager)

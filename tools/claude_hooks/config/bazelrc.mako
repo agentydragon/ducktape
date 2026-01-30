@@ -24,9 +24,11 @@ common --repo_env=GOSUMDB=sum.golang.org
 # Propagate Node.js CA bundle into sandbox (for npm, puppeteer, etc.)
 build --action_env=NODE_EXTRA_CA_CERTS=${combined_ca_path | sh}
 
-# Use local execution instead of sandbox (sandbox has /dev/null issues in CC web)
-build --spawn_strategy=local
-test --spawn_strategy=local
+# Avoid gVisor linux-sandbox (/dev/null issues in CC web).
+# remote,local: prefer remote execution (BuildBuddy RBE) when configured, fall
+# back to unsandboxed local execution.  Remote workers don't use gVisor.
+build --spawn_strategy=remote,local
+test --spawn_strategy=remote,local
 
 # Skip live OpenAI tests in wildcard expansion (no API key available)
 test --test_tag_filters=-live_openai_api
