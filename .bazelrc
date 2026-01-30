@@ -1,9 +1,5 @@
 common --enable_bzlmod
 
-# Hermetic Python: generate shell-script stubs instead of #!/usr/bin/env python3.
-# Required for remote execution (remote containers lack system Python).
-common --@rules_python//python/config_settings:bootstrap_impl=script
-
 # Disable MODULE.bazel.lock to avoid churn between environments.
 # The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
 # has platform-specific resolution that causes the lockfile to differ between local

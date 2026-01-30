@@ -1,7 +1,8 @@
-# BuildBuddy RBE worker image with Podman for container-based tests.
+# BuildBuddy RBE worker image with podman support.
 #
-# Python is provided by Bazel's hermetic toolchain (bootstrap_impl=script),
-# so this image only needs system tools: git, ca-certs, and podman.
+# Provides system tools needed by Bazel remote actions: python3 (for py_binary
+# shebang bootstrap), git, ca-certificates, file/zip (for Bazel test-setup.sh),
+# and podman for container-based e2e tests.
 FROM docker.io/library/ubuntu:24.04
 
 # Enable universe repo (podman lives there) and install dependencies.
@@ -10,10 +11,13 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        file \
+        fuse-overlayfs \
         git \
         podman \
-        fuse-overlayfs \
+        python3 \
         uidmap \
+        zip \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-configure Podman for rootful VFS operation (no overlay/fuse needed).
