@@ -538,22 +538,12 @@ in
     PNPM_HOME = "$HOME/.local/share/pnpm";
   };
 
-  # XDG MIME type associations - SKIPPED
-  # We need to ensure these 2 specific associations because they tend to get
-  # incorrectly assigned, BUT the existing mimeapps.list has 105 lines of
-  # associations we want to preserve. Home-manager can't merge, only replace.
-  # TODO: Either:
-  #   - Keep in Ansible (which can do in-place edits)
-  #   - Write activation script to patch these 2 entries
-  #   - Import all 105 associations into Nix (tedious but complete)
-  # For now, keeping in Ansible.
-  # xdg.mimeApps = {
-  #   enable = true;
-  #   defaultApplications = {
-  #     "text/html" = ["google-chrome.desktop"];  # Often gets set to wrong browser
-  #     "application/x-virt-viewer" = ["virt-viewer.desktop"];  # Gets set incorrectly
-  #   };
-  # };
+  # Patch 2 critical MIME associations in-place (without replacing the full
+  # mimeapps.list, which has 100+ entries managed via rcm dotfiles).
+  home.activation.fixMimeApps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run ${pkgs.xdg-utils}/bin/xdg-mime default google-chrome.desktop text/html
+    run ${pkgs.xdg-utils}/bin/xdg-mime default remote-viewer.desktop application/x-virt-viewer
+  '';
 
   # XDG autostart desktop entries (migrated from Ansible gui role)
   xdg.configFile."autostart/syncthing-gtk.desktop".text = ''
