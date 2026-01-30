@@ -229,11 +229,24 @@ def emit_session_context(collector: LogCollector, log_file: Path) -> None:
     # Check for GitHub CI token
     if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
         lines.append("GitHub CI Access:")
-        lines.append("  DUCKTAPE_CI_READ_GITHUB_TOKEN is set - GitHub PAT with read access to ducktape repo.")
+        lines.append("  DUCKTAPE_CI_READ_GITHUB_TOKEN is set - GitHub PAT for agentydragon/ducktape.")
+        lines.append("  gh CLI is NOT installed. Use curl with both headers:")
         lines.append(
-            "  Use via: curl -H 'Authorization: Bearer $DUCKTAPE_CI_READ_GITHUB_TOKEN' https://api.github.com/..."
+            '    curl -s -H "Authorization: Bearer $DUCKTAPE_CI_READ_GITHUB_TOKEN"'
+            ' -H "X-GitHub-Api-Version: 2022-11-28" <URL>'
         )
-        lines.append("  Capabilities: read repo, read CI logs, list workflow runs, view PR status.")
+        lines.append("  What works:")
+        lines.append("    - Repo info: /repos/agentydragon/ducktape")
+        lines.append("    - List workflow runs: /repos/agentydragon/ducktape/actions/runs?per_page=N")
+        lines.append("    - List jobs for a run: /repos/agentydragon/ducktape/actions/runs/{run_id}/jobs")
+        lines.append("    - Download run logs (zip): curl -L .../actions/runs/{run_id}/logs -o logs.zip")
+        lines.append("      (Returns a zip archive; unzip to get per-job/per-step .txt files)")
+        lines.append("    - List artifacts: /repos/agentydragon/ducktape/actions/artifacts?per_page=N")
+        lines.append("    - Download artifact (zip): curl -L .../actions/artifacts/{artifact_id}/zip -o a.zip")
+        lines.append("    - PRs, issues, branches, commits, etc.")
+        lines.append("  What does NOT work:")
+        lines.append("    - Individual job logs endpoint (/actions/jobs/{job_id}/logs) returns empty body")
+        lines.append("      Use the run-level logs zip instead.")
 
     lines.append(f"Full log: {log_file}")
 
