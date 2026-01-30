@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 # NOTE: No aggregator target - use specific per-file targets like :echo_server, :fixtures, :responses
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -50,5 +50,35 @@ py_library(
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    deps = [
+        ":responses",
+        "//agent_core/testing:responses",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_responses",
+    srcs = ["test_responses.py"],
+    imports = ["../../.."],
+    deps = [
+        ":conftest",
+        ":responses",
+        "//agent_core/testing:matchers",
+        "//agent_core/testing:responses",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/testing:simple_servers",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest_bazel",
     ],
 )
