@@ -24,7 +24,7 @@ from net_util.net import async_wait_for_port, is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from tools.claude_hooks.proxy_vars import get_upstream_proxy_url
 from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
-from tools.claude_hooks.supervisor.client import ProcessState, SupervisorClient
+from tools.claude_hooks.supervisor.client import SupervisorClient
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +62,14 @@ SSL_CA_ENV_VARS = ["SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "NOD
 class ProxySetup:
     """Result of auth proxy setup.
 
-    Status and guidance are snapshotted at setup time rather than
-    querying supervisor on each access.
+    Status is snapshotted at setup time rather than querying supervisor
+    on each access.
     """
 
     port: int
     combined_ca: Path
     status: str
     ca_status: str
-    guidance: str
 
 
 def _find_system_file(candidates: list[Path], description: str) -> Path:
@@ -387,21 +386,6 @@ async def _snapshot_proxy_status(settings: HookSettings, supervisor: SupervisorC
     return "configured (not running)"
 
 
-async def _snapshot_proxy_guidance(supervisor: SupervisorClient, port: int, combined_ca: Path) -> str:
-    """Snapshot the proxy configuration guidance (one-liner for agent context)."""
-    if not get_upstream_proxy_url():
-        return ""
-
-    try:
-        info = await supervisor.get_process_info(AUTH_PROXY_SERVICE)
-        service_status = info.statename
-    except Exception:
-        service_status = ProcessState.UNKNOWN
-    ca_kind = "custom CA" if combined_ca.exists() else "system CA"
-
-    return f"Auth proxy: port {port}, status {service_status}, {ca_kind}. Env vars auto-configured."
-
-
 async def setup_auth_proxy(settings: HookSettings, supervisor: SupervisorClient) -> ProxySetup:
     """Set up the complete auth proxy environment for TLS-inspecting proxies.
 
@@ -415,16 +399,13 @@ async def setup_auth_proxy(settings: HookSettings, supervisor: SupervisorClient)
 
     Note: Proxy env for Bazel rules is handled by the module extension in
     tools/claude_hooks/auth_proxy/proxy_config_defs.bzl which reads AUTH_PROXY_PORT env var.
-
-    Returns:
-        ProxySetup with port, CA path, and snapshotted status/guidance
     """
     port = settings.get_auth_proxy_port()
     combined_ca = settings.get_auth_proxy_combined_ca()
 
     if not get_upstream_proxy_url():
         logger.info("No https_proxy set, auth proxy setup not needed")
-        return ProxySetup(port=port, combined_ca=combined_ca, status="not configured", ca_status="system", guidance="")
+        return ProxySetup(port=port, combined_ca=combined_ca, status="not configured", ca_status="system")
 
     logger.info("Setting up auth proxy for TLS-inspecting proxy...")
 
@@ -446,13 +427,11 @@ async def setup_auth_proxy(settings: HookSettings, supervisor: SupervisorClient)
     # Step 5: Write bazelrc configuration
     _write_bazel_config(settings)
 
-    # Snapshot status and guidance at setup completion
     status = await _snapshot_proxy_status(settings, supervisor, port)
     ca_status = "custom CA" if combined_ca.exists() else "system"
-    guidance = await _snapshot_proxy_guidance(supervisor, port, combined_ca)
 
     logger.info("Auth proxy setup complete")
-    return ProxySetup(port=port, combined_ca=combined_ca, status=status, ca_status=ca_status, guidance=guidance)
+    return ProxySetup(port=port, combined_ca=combined_ca, status=status, ca_status=ca_status)
 
 
 def is_configured(settings: HookSettings) -> bool:

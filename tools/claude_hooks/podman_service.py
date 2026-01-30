@@ -62,14 +62,10 @@ def _write_config_conservative(path: Path, content: str, description: str) -> No
 
 @dataclass
 class PodmanSetup:
-    """Result of podman setup.
-
-    Status and guidance are snapshotted at setup time.
-    """
+    """Result of podman setup."""
 
     socket_url: str
     status: str
-    guidance: str
     env_vars: dict[str, str] = field(default_factory=dict)
 
 
@@ -197,18 +193,13 @@ def _get_socket_path(settings: HookSettings) -> Path:
     return Path(f"/tmp/claude-podman-{dir_hash}.sock")
 
 
-async def _snapshot_podman_guidance(
-    supervisor: SupervisorClient, settings: HookSettings, socket_url: str
-) -> tuple[str, str]:
-    """Snapshot podman status and guidance. Returns (status, guidance)."""
+async def _snapshot_podman_status(supervisor: SupervisorClient) -> str:
+    """Snapshot podman supervisor process status."""
     try:
         info = await supervisor.get_process_info(PODMAN_SERVICE)
-        status: str = info.statename
+        return info.statename
     except Exception:
-        status = ProcessState.UNKNOWN
-
-    guidance = f"Podman: {status}, DOCKER_HOST={socket_url}. Use fully qualified image names (docker.io/library/...)."
-    return status, guidance
+        return ProcessState.UNKNOWN
 
 
 async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> PodmanSetup:
@@ -216,9 +207,6 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
 
     If podman is not installed, attempts to install it via apt.
     Idempotent: if podman service is already running, returns immediately.
-
-    Returns:
-        PodmanSetup with socket URL, snapshotted status/guidance, and env vars
 
     Raises:
         SkipError: If skip_podman is True in settings.
@@ -235,8 +223,8 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
     if await _is_podman_service_healthy(supervisor, socket_path):
         logger.info("Podman service already running, skipping setup")
         env_vars = _get_podman_env_vars(settings)
-        status, guidance = await _snapshot_podman_guidance(supervisor, settings, socket_url)
-        return PodmanSetup(socket_url=socket_url, status=status, guidance=guidance, env_vars=env_vars)
+        status = await _snapshot_podman_status(supervisor)
+        return PodmanSetup(socket_url=socket_url, status=status, env_vars=env_vars)
 
     if not is_podman_available():
         logger.info("Podman not found, installing...")
@@ -247,8 +235,8 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
     socket_url, service_env = await start_podman_service(settings, supervisor, env_vars)
     env_vars.update(service_env)
     logger.info("Podman service started: DOCKER_HOST=%s", socket_url)
-    status, guidance = await _snapshot_podman_guidance(supervisor, settings, socket_url)
-    return PodmanSetup(socket_url=socket_url, status=status, guidance=guidance, env_vars=env_vars)
+    status = await _snapshot_podman_status(supervisor)
+    return PodmanSetup(socket_url=socket_url, status=status, env_vars=env_vars)
 
 
 def _get_podman_env_vars(settings: HookSettings) -> dict[str, str]:

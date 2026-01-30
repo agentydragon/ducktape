@@ -199,23 +199,35 @@ def format_environment_summary() -> str:
     return "\n".join(lines)
 
 
-def emit_session_context(collector: LogCollector, log_file: Path, service_lines: list[str]) -> None:
+def emit_session_context(
+    collector: LogCollector,
+    log_file: Path,
+    settings: HookSettings,
+    proxy: proxy_setup.ProxySetup,
+    podman: podman_service.PodmanSetup | None,
+) -> None:
     """Emit compact context summary for Claude Code transcript.
 
-    This goes to stdout and gets injected as context for the agent.
-    Keep this tight — every line costs agent context window.
+    This is the single place that renders agent-visible output from
+    structured setup results. Keep this tight — every line costs agent
+    context window.
     """
     has_errors = len(collector.errors) > 0
     has_warnings = len(collector.warnings) > 0
 
     status = "ERRORS" if has_errors else "OK with warnings" if has_warnings else "OK"
     lines = [
-        f"gVisor sandbox [build: {BUILD_COMMIT}] — {status}",
-        "Constraints: TLS-inspecting proxy, no overlay fs (vfs only), network via proxy, 9p fs (no hard links on sockets)",
+        f"Claude Code session start hook [build: {BUILD_COMMIT}] — {status}",
+        "Environment: gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs",
     ]
 
-    # Service status (one line each from supervisor/proxy/podman)
-    lines.extend(service_lines)
+    # Services — rendered here from structured data, not in each service module
+    lines.append(f"Bazel: wrapper adds auth proxy (port {proxy.port}, {proxy.ca_status})")
+    if podman:
+        lines.append(
+            f"Podman: {podman.status}, DOCKER_HOST={podman.socket_url}."
+            " Use fully qualified image names (docker.io/library/...)"
+        )
 
     if collector.errors:
         lines.append("ERRORS:")
@@ -556,31 +568,21 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     env_file.write_env_file(env_file_path, env_vars)
     logger.info("Wrote environment to %s", env_file_path)
 
-    # Emit status
+    # Emit status to log
     if isinstance(bazelisk_result, SkipError):
         bazel_status = "skipped"
     elif isinstance(bazelisk_result, BaseException):
         bazel_status = "not installed"
     else:
         bazel_status = bazelisk_result.status
-    # proxy_result is already narrowed to ProxySetup after the check above
-    proxy_status = proxy_result.status
-    ca_status = proxy_result.ca_status
-    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_status, ca_status)
+    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_result.status, proxy_result.ca_status)
     logger.info("Nix: %s", get_nix_status())
     if not isinstance(podman_result, BaseException):
         logger.info("Podman: %s", podman_result.status)
 
-    # Collect one-liner service guidance for agent context
-    service_lines: list[str] = []
-    if not isinstance(supervisor_task.result(), BaseException):
-        service_lines.append(supervisor_task.result().guidance)
-    if proxy_result.guidance:
-        service_lines.append(proxy_result.guidance)
-    if not isinstance(podman_result, BaseException):
-        service_lines.append(podman_result.guidance)
-
-    emit_session_context(collector, log_file, service_lines)
+    # Render agent context from structured results
+    podman = None if isinstance(podman_result, BaseException) else podman_result
+    emit_session_context(collector=collector, log_file=log_file, settings=settings, proxy=proxy_result, podman=podman)
 
 
 async def async_main() -> None:

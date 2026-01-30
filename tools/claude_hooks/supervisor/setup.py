@@ -30,12 +30,6 @@ class SupervisorSetup:
     client: SupervisorClient
     settings: HookSettings
 
-    @property
-    def guidance(self) -> str:
-        """Get supervisor usage guidance (one-liner for agent context)."""
-        supervisor_dir = self.settings.get_supervisor_dir()
-        return f"Supervisor: manages background processes. Logs: {supervisor_dir}/"
-
 
 def _write_config(settings: HookSettings) -> None:
     """Write supervisor configuration file."""
