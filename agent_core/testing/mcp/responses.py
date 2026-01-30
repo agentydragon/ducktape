@@ -20,15 +20,11 @@ from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, ExecInput, make_exec_input
 from mcp_infra.mounted import Mounted
 from mcp_infra.naming import MCPMountPrefix, build_mcp_function
-from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult
+from openai_utils.model import FunctionCallItem, ResponsesRequest
 
 
 class MCPResponsesFactory(ResponsesFactory):
     """ResponsesFactory with MCP-aware convenience methods."""
-
-    def make_mcp_tool_call(self, server: MCPMountPrefix, tool: str, arguments: BaseModel) -> ResponsesResult:
-        """Create tool call response for MCP server/tool with automatic naming."""
-        return self.make(self.mcp_tool_call(server, tool, arguments))
 
     def mcp_tool_call(
         self, server: MCPMountPrefix, tool: str, arguments: BaseModel, call_id: str | None = None

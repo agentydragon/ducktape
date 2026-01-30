@@ -134,10 +134,11 @@ async def test_notifications_within_turn_from_tool(
         stage["n"] += 1
         if stage["n"] == 1:
             # First model output: ask to call notifier.notify_policy
-            tool_call_result: ResponsesResult = responses_factory.make_mcp_tool_call(
-                NOTIFIER_MOUNT_PREFIX, NOTIFY_POLICY_TOOL_NAME, NotifyPolicyInput(uri="notifier://policy.py")
+            return responses_factory.make(
+                responses_factory.mcp_tool_call(
+                    NOTIFIER_MOUNT_PREFIX, NOTIFY_POLICY_TOOL_NAME, NotifyPolicyInput(uri="notifier://policy.py")
+                )
             )
-            return tool_call_result
         # Second (and later) model output: nothing else to do
         assistant_result: ResponsesResult = responses_factory.make_assistant_message("done")
         return assistant_result
