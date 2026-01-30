@@ -156,8 +156,9 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "linux",
-        # python:3.13 includes git, ca-certificates, and common build tools.
-        "container-image": "docker://docker.io/library/python:3.13",
+        # Custom image with git, ca-certificates, and podman for e2e tests.
+        # Built by .github/workflows/rbe-image.yml → ghcr.io/agentydragon/rbe-worker
+        "container-image": "docker://ghcr.io/agentydragon/rbe-worker:latest",
     },
 )
 
