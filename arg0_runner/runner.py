@@ -2,7 +2,7 @@
 Arg0 runner for exposing virtual CLIs via argv[0].
 
 Currently supports:
-- apply_patch / applypatch: Patch dispatcher (OpenAI envelope or unified diff, multi-file)
+- apply_patch / applypatch: Apply OpenAI patch envelopes (multi-file)
 
 This module is intended to be invoked via symlink or wrapper named after the
 desired command. It may also accept a fallback flag: --adgn-run-as <name>.
