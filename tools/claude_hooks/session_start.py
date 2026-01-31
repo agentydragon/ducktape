@@ -238,18 +238,29 @@ def emit_session_context(
         lines.extend(f"  {msg}" for msg in collector.warnings)
 
     if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
-        lines.append("GitHub CI: DUCKTAPE_CI_READ_GITHUB_TOKEN is set (PAT for agentydragon/ducktape).")
+        lines.append("GitHub CI: DUCKTAPE_CI_READ_GITHUB_TOKEN is set (fine-grained PAT for agentydragon/ducktape).")
         lines.append(
-            '  curl -s -H "Authorization: Bearer $DUCKTAPE_CI_READ_GITHUB_TOKEN"'
+            '  curl -s -H "Authorization: token $DUCKTAPE_CI_READ_GITHUB_TOKEN"'
             ' -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/...'
         )
         lines.append(
-            "  Works: runs, jobs, artifacts, PRs, issues."
-            " Job logs: /actions/jobs/{id}/logs (works for completed jobs)."
-            " Run logs zip: /actions/runs/{id}/logs (only available after run completes)."
+            "  Works: runs, jobs, artifacts, PRs, issues, commits,"
+            " check-runs, branches, workflows, releases, contents."
+            " Job logs: /actions/jobs/{id}/logs (returns 302 redirect — use curl -L)."
+            " Run logs zip: /actions/runs/{id}/logs (returns 404 while run is in_progress;"
+            " returns 302 redirect to zip after run completes — use curl -L)."
+            " Artifact download: /actions/artifacts/{id}/zip (returns 302 — use curl -L)."
         )
         lines.append(
-            "  Note: GitHub API requests may get transient 401s from the TLS-inspecting egress proxy; retry on 401."
+            "  Write access: POST create works (issues, comments),"
+            " but PATCH update returns 403."
+            " Writes cannot be reverted with this token."
+        )
+        lines.append(
+            "  Note: GitHub API requests frequently get transient 401s"
+            " from the TLS-inspecting egress proxy."
+            " Retry on 401 with backoff (sleep 2-5s between retries)."
+            " Parse JSON defensively — a 401 returns an empty body."
         )
 
     lines.append(f"Setup log: {log_file}")
