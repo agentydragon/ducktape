@@ -216,105 +216,15 @@ crate.from_cargo(
 # expose the generated repo (↑ name="crates")
 use_repo(crate, "crates")
 
-# ─ Haskell ───────────────────────────────────────────────────────────────────
-bazel_dep(name = "rules_haskell", version = "1.0")
-
-# rules_haskell BCR 1.0 imports get_cpu_value from
-# @bazel_tools//tools/cpp:lib_cc_configure.bzl (removed in Bazel 8).
-# Master (post-PR #2348) vendors get_cpu_value locally.
-git_override(
-    module_name = "rules_haskell",
-    commit = "e70f8bce1f8fbd715f30017b01fda3c29ec3f066",
-    remote = "https://github.com/tweag/rules_haskell.git",
-)
-
-# rules_haskell pins rules_sh 0.4.0 which also imports get_cpu_value from
-# the removed location. rules_sh 0.5.0 vendors it locally.
-single_version_override(
-    module_name = "rules_sh",
-    version = "0.5.0",
-)
-
-# ─ GHC toolchain (binary bindist) ───────────────────────────────────────────
-haskell_toolchains = use_extension(
-    "@rules_haskell//extensions:haskell_toolchains.bzl",
-    "haskell_toolchains",
-)
-haskell_toolchains.bindists(version = "9.0.2")
-
-# ─ third-party Hackage packages via Stackage snapshot ───────────────────────
-stack = use_extension(
-    "@rules_haskell//extensions:stack_snapshot.bzl",
-    "stack_snapshot",
-)
-
-# Define the Stackage snapshot
-stack.snapshot(
-    name = "lts-19.17",  # This is the snapshot name
-)
-
-# Declare the packages we need
-stack.package(
-    name = "base",
-)
-stack.package(
-    name = "hakyll",
-)
-
-# Add required dependency packages for xml-conduit
-# Configure attoparsec with its internal components
-stack.package(
-    name = "attoparsec",
-    components = [
-        "lib:attoparsec",
-        "lib:attoparsec-internal",
-    ],
-    components_dependencies = {"lib:attoparsec": ["lib:attoparsec-internal"]},
-)
-stack.package(
-    name = "blaze-html",
-)
-stack.package(
-    name = "blaze-markup",
-)
-stack.package(
-    name = "conduit",
-)
-stack.package(
-    name = "conduit-extra",
-)
-stack.package(
-    name = "data-default-class",
-)
-stack.package(
-    name = "resourcet",
-)
-stack.package(
-    name = "xml-types",
-)
-
-# Set up xml-conduit override
-stack.package(
-    name = "xml-conduit",
-    vendored = "@xml_conduit//:xml-conduit",
-)
-
-# expose the repos the two extensions create
-use_repo(
-    haskell_toolchains,
-    "all_bindist_toolchains",
-)
-
-register_toolchains("@all_bindist_toolchains//:all")  # makes the toolchain visible
-
-use_repo(
-    stack,
-    "stackage",  # The repository for the pinned snapshot
-)
-
-# ─ one-off override for xml-conduit ─────────────────────────────────────────
-extra_deps = use_extension("//:xml_conduit_deps.bzl", "xml_conduit_deps")
-use_repo(extra_deps, "xml_conduit")
+# ─ Haskell (DISABLED for Bazel 9 upgrade) ──────────────────────────────────
+# rules_haskell 1.0 (BCR) is incompatible with Bazel 9 due to:
+#   1. get_cpu_value imported from removed @bazel_tools//tools/cpp:lib_cc_configure.bzl
+#      (fixed on master via PR #2348, but not released to BCR)
+#   2. JavaInfo and ProtoInfo used as native globals (removed in Bazel 9, need explicit
+#      loads from @rules_java and @rules_proto — not fixed even on master)
+# TODO: Re-enable when rules_haskell releases a Bazel 9-compatible version.
+# bazel_dep(name = "rules_haskell", version = "1.0")
+# See git history for full Haskell config (GHC toolchain, Stackage packages, xml-conduit)
 
 # ─ External binaries via http_archive ────────────────────────────────────────
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")

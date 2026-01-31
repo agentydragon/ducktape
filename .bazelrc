@@ -1,5 +1,3 @@
-common --enable_bzlmod
-
 # Disable MODULE.bazel.lock to avoid churn between environments.
 # The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
 # has platform-specific resolution that causes the lockfile to differ between local
