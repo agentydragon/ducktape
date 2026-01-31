@@ -158,7 +158,7 @@
       become: true
       tags: [podman, gpu]
 
-    - name: Install podman from Kubic repo
+    - name: Install podman from Kubic repo # noqa: package-latest
       ansible.builtin.apt:
         name: podman
         state: latest
@@ -193,7 +193,7 @@
       become: true
       tags: [nvidia, podman, gpu]
 
-    - name: Upgrade nvidia-container-toolkit from NVIDIA repo
+    - name: Upgrade nvidia-container-toolkit from NVIDIA repo # noqa: package-latest
       ansible.builtin.apt:
         name: nvidia-container-toolkit
         state: latest
