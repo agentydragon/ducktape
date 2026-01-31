@@ -37,6 +37,7 @@ py_library(
     deps = [
         ":notifications",
         ":simple_servers",
+        "//:bazel_subprocess",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
         "//mcp_infra/compositor:notifications_buffer",

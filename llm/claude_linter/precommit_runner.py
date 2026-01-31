@@ -9,6 +9,8 @@ from typing import Any
 import platformdirs
 import yaml
 
+from bazel_subprocess import run_python_module
+
 
 class PreCommitRunner:
     """Runner for pre-commit hooks based on provided config.
@@ -114,23 +116,23 @@ class PreCommitRunner:
             # Stage files
             subprocess.run(["git", "add", *temp_paths], cwd=tmpdir, capture_output=True, check=False)
 
-            # Build command
-            cmd = [
-                "pre-commit",
+            # Run pre-commit via python -m for Bazel sandbox compatibility
+            result = run_python_module(
+                "pre_commit",
                 "run",
                 "--all-files",  # Safe since we're in a temp dir with only our files
                 "--verbose",
-                # Use default stage (pre-commit)
-            ]
-
-            # Run as subprocess
-            result = subprocess.run(cmd, cwd=tmpdir, capture_output=True, text=True, check=False)
+                cwd=tmpdir,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
 
             # Append results to log if enabled
             if log_file:
                 with log_file.open("a") as f:
                     f.write("\n--- Pre-commit command ---\n")
-                    f.write(f"Command: {' '.join(cmd)}\n")
+                    f.write(f"Command: {result.args}\n")
                     f.write(f"Return code: {result.returncode}\n")
                     f.write(f"\n--- Stdout ---\n{result.stdout}\n")
                     f.write(f"\n--- Stderr ---\n{result.stderr}\n")

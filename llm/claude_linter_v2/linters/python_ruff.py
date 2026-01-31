@@ -3,10 +3,10 @@
 import json
 import logging
 import subprocess
-import sys
 from pathlib import Path
 from typing import ClassVar
 
+from bazel_subprocess import run_python_module
 from llm.claude_linter_v2.config.models import Violation
 
 logger = logging.getLogger(__name__)
@@ -48,9 +48,7 @@ class PythonRuffLinter:
     def _check_ruff_available(self) -> bool:
         """Check if ruff is available."""
         try:
-            result = subprocess.run(
-                [sys.executable, "-m", "ruff", "--version"], capture_output=True, text=True, timeout=5, check=False
-            )
+            result = run_python_module("ruff", "--version", capture_output=True, text=True, timeout=5, check=False)
             if result.returncode == 0:
                 logger.debug(f"Found ruff: {result.stdout.strip()}")
                 return True
@@ -76,21 +74,23 @@ class PythonRuffLinter:
 
         violations = []
 
-        # Build ruff command (use python -m ruff to work in Bazel sandbox)
-        cmd = [sys.executable, "-m", "ruff", "check", "--output-format", "json", "--stdin-filename", str(file_path)]
+        # Build ruff args
+        args: list[str] = ["check", "--output-format", "json", "--stdin-filename", str(file_path)]
 
         # Add force-select rules if provided
         if self.force_select:
-            cmd.extend(["--select", ",".join(self.force_select)])
+            args.extend(["--select", ",".join(self.force_select)])
         elif critical_only:
             # Only check critical rules in pre-hook
-            cmd.extend(["--select", ",".join(self.CRITICAL_RULES)])
+            args.extend(["--select", ",".join(self.CRITICAL_RULES)])
 
         # Add stdin marker
-        cmd.append("-")
+        args.append("-")
 
         try:
-            result = subprocess.run(cmd, input=code, capture_output=True, text=True, timeout=30, check=False)
+            result = run_python_module(
+                "ruff", *args, input=code, capture_output=True, text=True, timeout=30, check=False
+            )
 
             # Ruff returns 1 if violations found, 0 if clean
             if result.returncode in (0, 1):

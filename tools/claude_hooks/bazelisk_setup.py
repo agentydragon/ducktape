@@ -10,16 +10,15 @@ TODO: Eventually unify tool installation via direnv/devenv instead of
 from __future__ import annotations
 
 import logging
-import os
 import platform
 import shutil
 import stat
 import subprocess
-import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from bazel_subprocess import write_shell_wrapper
 from tools.claude_hooks.settings import HookSettings
 
 logger = logging.getLogger(__name__)
@@ -136,21 +135,8 @@ def install_wrapper(settings: HookSettings) -> Path:
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use sys.executable -m for both Bazel and wheel mode.
-    # Bake PYTHONPATH into the script so the wrapper can find dependencies (e.g. PyJWT)
-    # without leaking it into every agent subprocess via the env file.
-    # In wheel mode PYTHONPATH is unset, so no export line is emitted.
-    # rules_python's venv-based bootstrap (1.8.3+) sets up sys.path via a virtual
-    # environment that doesn't set PYTHONPATH, so fall back to sys.path.
-    pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(sys.path)
-    pythonpath_line = f'\nexport PYTHONPATH="{pythonpath}"'
-    wrapper_script = f"""#!/bin/sh{pythonpath_line}
-exec "{sys.executable}" -m tools.claude_hooks.bazel_wrapper "$@"
-"""
-    logger.info("Installed bazel wrapper at %s (using %s)", wrapper_path, sys.executable)
-
-    wrapper_path.write_text(wrapper_script)
-    wrapper_path.chmod(0o755)
+    write_shell_wrapper(wrapper_path, "tools.claude_hooks.bazel_wrapper")
+    logger.info("Installed bazel wrapper at %s", wrapper_path)
 
     # Create bazelisk symlink for pre-commit hooks
     bazelisk_symlink = wrapper_dir / "bazelisk"

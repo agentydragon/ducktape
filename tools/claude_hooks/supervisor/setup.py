@@ -12,9 +12,9 @@ import asyncio
 import configparser
 import logging
 import os
-import sys
 from dataclasses import dataclass
 
+from bazel_subprocess import async_run_python_module
 from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import SupervisorError
 from tools.claude_hooks.settings import HookSettings
@@ -161,31 +161,24 @@ async def start(settings: HookSettings) -> SupervisorSetup:
     supervisor_port = settings.get_supervisor_port()
 
     # Log what we're about to execute
-    cmd = [sys.executable, "-m", "supervisor.supervisord", "-c", str(supervisor_conf)]
-    logger.info("Starting supervisor with command: %s", " ".join(cmd))
+    logger.info("Starting supervisor.supervisord -c %s", supervisor_conf)
     logger.info("  config: %s", supervisor_conf)
     logger.info("  log: %s", supervisor_log)
     logger.info("  port: %d", supervisor_port)
     logger.info("  dir: %s", supervisor_dir)
 
-    # Propagate sys.path as PYTHONPATH so the subprocess can find third-party
-    # packages (e.g. supervisor). rules_python's venv-based bootstrap sets up
-    # sys.path via a virtual environment, but that doesn't carry over to
-    # subprocesses spawned via sys.executable.
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(sys.path)
-
     try:
         stderr_path = supervisor_dir / "supervisord_stderr.log"
         stderr_file = stderr_path.open("w")
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
+        process = await async_run_python_module(
+            "supervisor.supervisord",
+            "-c",
+            str(supervisor_conf),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=stderr_file,
             stdin=asyncio.subprocess.DEVNULL,
             start_new_session=True,
             cwd=supervisor_dir,
-            env=env,
         )
         # Give it a tiny bit to check if it crashes immediately
         await asyncio.sleep(0.1)
@@ -197,7 +190,7 @@ async def start(settings: HookSettings) -> SupervisorSetup:
             stderr_content = stderr_path.read_text().strip() if stderr_path.exists() else ""
             error_parts = [
                 f"supervisord exited immediately with code {process.returncode}",
-                f"Command: {' '.join(cmd)}",
+                f"Module: supervisor.supervisord -c {supervisor_conf}",
                 f"Log: {log_content[-1000:]}",
             ]
             if stderr_content:

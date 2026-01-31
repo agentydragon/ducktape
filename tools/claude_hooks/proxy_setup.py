@@ -20,6 +20,7 @@ from pathlib import Path
 from cryptography import x509
 from mako.template import Template
 
+from bazel_subprocess import python_env
 from net_util.net import async_wait_for_port, is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from tools.claude_hooks.proxy_vars import get_upstream_proxy_url
@@ -202,24 +203,11 @@ async def _create_java_truststore(settings: HookSettings) -> None:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 
-def _get_proxy_service_env() -> dict[str, str]:
-    """Get environment variables to pass to the proxy service.
-
-    Propagates sys.path as PYTHONPATH so the supervisor-managed subprocess can
-    find third-party packages. rules_python's venv-based bootstrap sets up
-    sys.path via a virtual environment that doesn't carry over to subprocesses.
-    """
-    env: dict[str, str] = {}
-    pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(sys.path)
-    env["PYTHONPATH"] = pythonpath
-    return env
-
-
 def _build_auth_proxy_command(settings: HookSettings) -> str:
     """Build command to run auth proxy.
 
     Uses sys.executable -m to run the module. This works in both:
-    - Bazel mode: PYTHONPATH is set and forwarded via _get_proxy_service_env()
+    - Bazel mode: PYTHONPATH is set and forwarded via python_env()
     - Wheel mode: the package is installed, so the module is importable
     """
     proxy_port = settings.get_auth_proxy_port()
@@ -291,13 +279,13 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
     if await supervisor.service_exists(AUTH_PROXY_SERVICE):
         logger.info("Restarting proxy service on port %d", proxy_port)
         await supervisor.update_service(
-            name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+            name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=python_env(inherit=False)
         )
     else:
         # Start proxy service for the first time
         logger.info("Starting auth proxy on port %d via supervisor", proxy_port)
         await supervisor.add_service(
-            name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+            name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=python_env(inherit=False)
         )
 
     await _wait_for_proxy_running(settings, supervisor)

@@ -1,11 +1,11 @@
 """Integration tests for hooks in isolated Claude Code environments."""
 
 import json
-import subprocess
 
 import pytest
 import pytest_bazel
 
+from bazel_subprocess import run_python_module
 from claude_hooks.actions import PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
 
@@ -116,7 +116,7 @@ def test_precommit_actually_works(integration_env, monkeypatch):
     monkeypatch.chdir(integration_env.project_dir)
 
     # Run pre-commit directly on the file
-    subprocess.run(["pre-commit", "run", "--files", "test.py"], cwd=integration_env.project_dir, check=False)
+    run_python_module("pre_commit", "run", "--files", "test.py", cwd=integration_env.project_dir, check=False)
 
     final_content = integration_env.read_file("test.py")
     compile(final_content, "test.py", "exec")

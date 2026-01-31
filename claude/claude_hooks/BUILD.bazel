@@ -71,7 +71,9 @@ py_library(
         ":inputs",
         ":logging_context",
         ":tool_models",
+        "//:bazel_subprocess",
         "@pypi//platformdirs",
+        "@pypi//pre_commit",
         "@pypi//pygit2",
     ],
 )
@@ -176,6 +178,8 @@ py_test(
         ":actions",
         ":conftest",
         ":precommit_autofix",
+        "//:bazel_subprocess",
+        "@pypi//pre_commit",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

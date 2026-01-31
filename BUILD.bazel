@@ -19,6 +19,7 @@
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
 #
 # Root-level targets
+# gazelle:resolve py bazel_subprocess //:bazel_subprocess
 # gazelle:resolve py bazel_util //:bazel_util
 # gazelle:resolve py fmt_util.fmt_util //fmt_util:fmt_util
 
@@ -26,7 +27,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@proxy_config//:proxy_env.bzl", "PROXY_ENV")
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
 
@@ -62,6 +63,22 @@ py_library(
     name = "bazel_util",
     srcs = ["bazel_util.py"],
     visibility = ["//:__subpackages__"],
+)
+
+# Subprocess helpers for launching Python modules under rules_python
+py_library(
+    name = "bazel_subprocess",
+    srcs = ["bazel_subprocess.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_bazel_subprocess",
+    srcs = ["test_bazel_subprocess.py"],
+    deps = [
+        ":bazel_subprocess",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 # Runfiles utilities for locating binaries and data files

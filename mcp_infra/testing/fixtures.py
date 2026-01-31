@@ -6,7 +6,6 @@ Register in downstream packages via:
 
 from __future__ import annotations
 
-import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +16,7 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 
+from bazel_subprocess import python_env
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.resources_server import ResourcesServer
@@ -27,14 +27,6 @@ from mcp_infra.stubs.resources_stub import ResourcesServerStub
 from mcp_infra.stubs.typed_stubs import TypedClient
 from mcp_infra.testing.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
-
-
-def _stdio_env() -> dict[str, str]:
-    """Environment for stdio subprocess with Python path forwarded."""
-    env: dict[str, str] = {}
-    if "PYTHONPATH" in os.environ:
-        env["PYTHONPATH"] = os.environ["PYTHONPATH"]
-    return env
 
 
 def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerOptions:
@@ -116,13 +108,17 @@ async def typed_resources_client(resources_server, resources_client):
 @pytest.fixture
 def stdio_echo_spec() -> StdioMCPServer:
     """Launch packaged echo server module via -m as a stdio spec."""
-    return StdioMCPServer(command=sys.executable, args=["-m", "mcp_infra.testing.stdio_app"], env=_stdio_env())
+    return StdioMCPServer(
+        command=sys.executable, args=["-m", "mcp_infra.testing.stdio_app"], env=python_env(inherit=False)
+    )
 
 
 @pytest.fixture
 def stdio_notifier_spec() -> StdioMCPServer:
     """Launch notification-emitting server via -m as stdio spec."""
-    return StdioMCPServer(command=sys.executable, args=["-m", "mcp_infra.testing.stdio_notifier"], env=_stdio_env())
+    return StdioMCPServer(
+        command=sys.executable, args=["-m", "mcp_infra.testing.stdio_notifier"], env=python_env(inherit=False)
+    )
 
 
 @pytest.fixture

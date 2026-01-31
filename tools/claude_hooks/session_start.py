@@ -24,6 +24,7 @@ from typing import Literal
 from mako.template import Template
 from pydantic import BaseModel
 
+from bazel_subprocess import run_python_module
 from fmt_util.fmt_util import format_limited_list
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
@@ -252,7 +253,7 @@ def install_git_precommit_hook(project_dir: Path) -> None:
     # Ensure pre-commit is installed.
     # Ansible is installed by pre-commit itself (language: python + additional_dependencies).
     try:
-        subprocess.run(["pre-commit", "--version"], capture_output=True, check=True, timeout=5)
+        run_python_module("pre_commit", "--version", capture_output=True, check=True, timeout=5)
         logger.info("pre-commit already available")
     except (FileNotFoundError, subprocess.CalledProcessError):
         logger.info("Installing pre-commit==4.0.1 via pip")
@@ -274,8 +275,8 @@ def install_git_precommit_hook(project_dir: Path) -> None:
 
     # Install the git hook
     try:
-        result = subprocess.run(
-            ["pre-commit", "install"], check=False, cwd=project_dir, capture_output=True, text=True, timeout=30
+        result = run_python_module(
+            "pre_commit", "install", check=False, cwd=project_dir, capture_output=True, text=True, timeout=30
         )
         if result.returncode == 0:
             logger.info("Installed git pre-commit hook via pre-commit install")

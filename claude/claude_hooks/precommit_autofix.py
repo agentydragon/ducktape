@@ -1,7 +1,6 @@
 """Pre-commit autofix hook implementation."""
 
 import ast
-import subprocess
 import textwrap
 import traceback
 from dataclasses import dataclass
@@ -10,6 +9,7 @@ from pathlib import Path
 import pygit2
 from platformdirs import user_state_dir
 
+from bazel_subprocess import run_python_module
 from claude_hooks.actions import PostToolAction, PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.base import PostToolUseHook
 from claude_hooks.config import AutofixerConfig
@@ -218,16 +218,20 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             config_root = self._get_precommit_root(file_path)
 
             config_file = config_root / PRECOMMIT_CONFIG_FILE
-            cmd = ["pre-commit", "run", "--config", str(config_file), "--files", str(file_path)]
-            self.logger.info(f"Running command: {cmd}")
+            self.logger.info(f"Running pre-commit on {file_path} with config {config_file}")
 
-            result = subprocess.run(
-                cmd,
+            result = run_python_module(
+                "pre_commit",
+                "run",
+                "--config",
+                str(config_file),
+                "--files",
+                str(file_path),
                 cwd=config_root,
                 capture_output=True,
                 text=True,
                 timeout=self.autofixer_config.timeout_seconds,
-                check=False,  # Don't raise on non-zero exit
+                check=False,
             )
 
             # Log subprocess result for debugging
