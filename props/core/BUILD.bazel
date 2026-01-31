@@ -135,10 +135,7 @@ py_library(
 py_library(
     name = "agent_helpers",
     srcs = ["agent_helpers.py"],
-    data = glob([
-        "docs/**/*.md",
-        "docs/**/*.j2",
-    ]),
+    data = ["//props/docs"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [

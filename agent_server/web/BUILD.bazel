@@ -18,8 +18,6 @@ _SRCS = glob([
     "src/**/*.ts",
     "src/**/*.svelte",
     "src/**/*.css",
-    "src/**/*.html",
-    "static/**",
 ]) + [
     "svelte.config.js",
     "vite.config.ts",

@@ -1,0 +1,8 @@
+filegroup(
+    name = "docs",
+    srcs = glob([
+        "**/*.md",
+        "**/*.j2",
+    ]),
+    visibility = ["//props:__subpackages__"],
+)

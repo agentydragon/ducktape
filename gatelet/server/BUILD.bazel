@@ -31,7 +31,6 @@ py_library(
     data = glob([
         "**/*.css",
         "**/*.html",
-        "**/*.jinja2",
     ]),
     imports = ["../.."],
     visibility = ["//gatelet:__subpackages__"],
