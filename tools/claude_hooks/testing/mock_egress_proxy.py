@@ -14,7 +14,6 @@ import base64
 import contextlib
 import logging
 import os
-import select
 import socket
 import ssl
 import tempfile
@@ -597,52 +596,43 @@ class MockEgressProxy:
     def _forward_bidirectional(self, client_ssl: ssl.SSLSocket, server_ssl: ssl.SSLSocket, target_host: str) -> int:
         """Forward data bidirectionally between client and server.
 
+        Uses a thread per direction with blocking sockets. A previous
+        non-blocking select() implementation silently dropped data when
+        sendall() raised SSLWantWriteError, corrupting the TLS record
+        stream and causing BAD_LENGTH errors on large transfers.
+
         Returns total bytes forwarded.
         """
-        sockets = [client_ssl, server_ssl]
         bytes_forwarded = 0
+        lock = threading.Lock()
 
-        # Set non-blocking for select
-        client_ssl.setblocking(False)
-        server_ssl.setblocking(False)
-
-        try:
-            while True:
-                try:
-                    readable, _, errored = select.select(sockets, [], sockets, 30.0)
-                except (ValueError, OSError) as e:
-                    # Socket closed during select
-                    logger.warning("Select error for %s: %s", target_host, e)
-                    break
-
-                if errored:
-                    logger.warning("Socket error condition for %s", target_host)
-                    break
-
-                if not readable:
-                    # Timeout - check if connection is still alive
-                    continue
-
-                for sock in readable:
-                    try:
-                        data = sock.recv(65536)
-                        if not data:
-                            return bytes_forwarded  # Connection closed gracefully
-
-                        # Forward to the other socket
-                        other = server_ssl if sock is client_ssl else client_ssl
-                        other.sendall(data)
+        def forward(src: ssl.SSLSocket, dst: ssl.SSLSocket, direction: str) -> None:
+            nonlocal bytes_forwarded
+            try:
+                while True:
+                    data = src.recv(65536)
+                    if not data:
+                        break
+                    dst.sendall(data)
+                    with lock:
                         bytes_forwarded += len(data)
-                    except ssl.SSLWantReadError:
-                        continue
-                    except ssl.SSLWantWriteError:
-                        continue
-                    except (OSError, ssl.SSLError) as e:
-                        logger.warning("Forward error for %s: %s", target_host, e)
-                        return bytes_forwarded
+            except (OSError, ssl.SSLError) as e:
+                logger.debug("Forward %s finished for %s: %s", direction, target_host, e)
+            finally:
+                # Shut down write side so the other direction's recv() returns empty
+                with contextlib.suppress(OSError):
+                    dst.shutdown(socket.SHUT_WR)
 
-        except (OSError, ssl.SSLError) as e:
-            logger.warning("Bidirectional forward error for %s: %s", target_host, e)
+        # Both sockets stay in blocking mode (default)
+        client_ssl.settimeout(30.0)
+        server_ssl.settimeout(30.0)
+
+        t_c2s = threading.Thread(target=forward, args=(client_ssl, server_ssl, "c2s"), daemon=True)
+        t_s2c = threading.Thread(target=forward, args=(server_ssl, client_ssl, "s2c"), daemon=True)
+        t_c2s.start()
+        t_s2c.start()
+        t_c2s.join(timeout=120)
+        t_s2c.join(timeout=120)
 
         return bytes_forwarded
 
