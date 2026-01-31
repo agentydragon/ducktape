@@ -16,6 +16,8 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         file \
         fuse-overlayfs \
         git \
+        libssl-dev \
+        pkg-config \
         podman \
         python3 \
         uidmap \
