@@ -1,2 +1,98 @@
 # Bazel macros for testing infrastructure.
 # NOTE: No aggregator target - use specific .bzl files like :docker.bzl
+
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# === Docker-on-RBE probe tests ===
+# Minimal tests to determine which exec_properties combination gives us a
+# working Docker daemon on BuildBuddy RBE workers.
+#
+# Run all probes:  bazel test //tools/testing:docker_probe_*
+# Run one probe:   bazel test //tools/testing:docker_probe_firecracker
+
+# Variant 1: Firecracker + init-dockerd (current config that crashes)
+sh_test(
+    name = "docker_probe_firecracker",
+    srcs = ["docker_probe_test.sh"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "false",
+        "test.EstimatedComputeUnits": "3",
+    },
+    tags = ["requires_docker"],
+)
+
+# Variant 2: Firecracker + init-dockerd + recycle-runner + more resources
+sh_test(
+    name = "docker_probe_firecracker_warm",
+    srcs = ["docker_probe_test.sh"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        "test.EstimatedComputeUnits": "6",
+    },
+    tags = ["requires_docker"],
+)
+
+# Variant 3: No Firecracker, just init-dockerd (does BuildBuddy support this?)
+sh_test(
+    name = "docker_probe_no_firecracker",
+    srcs = ["docker_probe_test.sh"],
+    exec_properties = {
+        "test.init-dockerd": "true",
+        "test.EstimatedComputeUnits": "3",
+    },
+    tags = ["requires_docker"],
+)
+
+# Variant 4: Plain execution, no special properties (baseline - should fail)
+sh_test(
+    name = "docker_probe_plain",
+    srcs = ["docker_probe_test.sh"],
+    tags = ["requires_docker"],
+)
+
+# Variant 5: Firecracker + massive resources (10 compute units = 10 CPUs + 25GB RAM)
+sh_test(
+    name = "docker_probe_firecracker_large",
+    srcs = ["docker_probe_test.sh"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "false",
+        "test.EstimatedComputeUnits": "10",
+    },
+    tags = ["requires_docker"],
+)
+
+# Variant 6: Firecracker + dockerd on TCP (in case Unix socket is the problem)
+sh_test(
+    name = "docker_probe_firecracker_tcp",
+    srcs = ["docker_probe_test.sh"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.enable-dockerd-tcp": "true",
+        "test.recycle-runner": "false",
+        "test.EstimatedComputeUnits": "3",
+    },
+    tags = ["requires_docker"],
+)
+
+# Variant 7: Firecracker + init-dockerd using BuildBuddy's default image
+# (gcr.io/flame-public/executor-docker-default) instead of our custom image.
+# This bisects whether the crash is our custom image or Firecracker itself.
+sh_test(
+    name = "docker_probe_default_bb_image",
+    srcs = ["docker_probe_test.sh"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "false",
+        "test.EstimatedComputeUnits": "3",
+        "test.container-image": "docker://gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0",
+    },
+    tags = ["requires_docker"],
+)
