@@ -136,23 +136,41 @@ Many packages fail during install because their post-install scripts use
 Simple commands work if they avoid `/dev/null`, but real-world Dockerfile builds
 invariably need it.
 
-## Conclusion
+## Solution: chroot isolation + CAP_SYS_ADMIN
 
-Both `podman build` isolation modes have fundamental incompatibilities with
-gVisor that cannot be resolved through configuration alone:
+The chroot `/dev/null` issue is solvable. The host `/dev` IS a writable tmpfs —
+buildah just bind-mounts it read-only for security. Adding `CAP_SYS_ADMIN` lets
+the container `mount -o remount,rw /dev`.
 
-- **OCI isolation** would require fixing a race condition in buildah's stdio
-  relay (upstream issue), or gVisor implementing `/proc/self/setgroups` (with
-  old crun)
-- **Chroot isolation** would require gVisor allowing writable devtmpfs or
-  buildah creating /dev differently
+```bash
+podman build --network=host --isolation=chroot --cap-add=SYS_ADMIN \
+  -f Dockerfile .
+```
 
-The `podman run --network=host` + `podman commit` workaround bypasses both
-issues because:
+Each `RUN` step that touches `/dev/null` must prepend `mount -o remount,rw /dev &&`
+(mount state doesn't persist across steps):
 
-- `podman run` uses conmon (not buildah's poll loop) for stdio, avoiding the
+```dockerfile
+RUN mount -o remount,rw /dev \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends curl git \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+This was verified by building the full RBE worker image (832 MB, 30+ packages
+including build-essential, podman, Chromium shared libs) successfully.
+
+### Why OCI isolation remains broken
+
+- **OCI isolation** has a race condition in buildah's stdio relay that cannot
+  be fixed via configuration — it requires an upstream buildah fix or gVisor
+  scheduling changes
+- **Chroot isolation** works with the `CAP_SYS_ADMIN` + remount workaround
+
+### Why `podman run` works without workarounds
+
+- Uses conmon for stdio management (not buildah's poll loop), avoiding the
   SIGPIPE race
-- `podman run` with OCI isolation + `containers.conf` annotations works because
-  the `keep_original_groups` annotation is respected (unlike in build)
+- Respects `containers.conf` annotations for `keep_original_groups`
 - No /dev/null issues because the container gets a proper /dev from crun's OCI
   setup
