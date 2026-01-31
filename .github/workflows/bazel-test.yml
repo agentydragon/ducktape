@@ -79,7 +79,7 @@ jobs:
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
-      - name: Run tests with coverage
+      - name: Run tests
         id: tests
         env:
           # PostgreSQL environment for props and gatelet tests
@@ -115,9 +115,8 @@ jobs:
           if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
             PROFILE_FLAG="--config=ci-profile"
           fi
-          bazel coverage --keep_going \
+          bazel test --keep_going \
             --test_tag_filters=-visual,-e2e,-live_openai_api \
-            --combined_report=lcov \
             --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
             --test_env=PGHOST=localhost --test_env=PGPORT=5432 \
             --test_env=PGUSER=postgres --test_env=PGPASSWORD=postgres \
@@ -130,15 +129,6 @@ jobs:
         if: always()
         with:
           artifact-name: test-logs
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report-${{ github.run_id }}
-          path: bazel-out/_coverage/_coverage_report.dat
-          if-no-files-found: ignore
-          retention-days: 14
 
       - name: Upload Bazel profile
         if: inputs.enable_profiling && always()
