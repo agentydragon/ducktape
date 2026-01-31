@@ -8,6 +8,11 @@ import custom_components
 import pytest
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode."""
+    config.option.asyncio_mode = "auto"
+
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations, hass):
     """Ensure the custom component & config dir are available for every test.
