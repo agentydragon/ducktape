@@ -47,8 +47,9 @@ py_library(
 
 py_binary(
     name = "critic",
-    srcs = ["main.py"],
-    main = "main.py",
+    srcs = ["critic_main.py"],
+    imports = ["../.."],
+    main = "critic_main.py",
     visibility = ["//visibility:public"],
     deps = [
         ":main",

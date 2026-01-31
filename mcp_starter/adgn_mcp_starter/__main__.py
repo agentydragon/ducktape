@@ -4,7 +4,7 @@ import argparse
 import logging
 import sys
 
-from mcp_starter.adgn_mcp_starter.server import create_mcp_server
+from adgn_mcp_starter.server import create_mcp_server
 
 logger = logging.getLogger(__name__)
 

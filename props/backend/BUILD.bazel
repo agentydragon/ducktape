@@ -82,13 +82,12 @@ py_library(
 
 py_binary(
     name = "backend_cli",
-    srcs = ["cli.py"],
-    main = "cli.py",
+    srcs = ["backend_main.py"],
+    imports = ["../.."],
+    main = "backend_main.py",
     visibility = ["//props/frontend:__pkg__"],
     deps = [
-        ":app",
         ":cli",
-        "//cli_util:logging",
     ],
 )
 

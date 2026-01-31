@@ -86,8 +86,9 @@ py_library(
 
 py_binary(
     name = "grader",
-    srcs = ["main.py"],
-    main = "main.py",
+    srcs = ["grader_main.py"],
+    imports = ["../.."],
+    main = "grader_main.py",
     visibility = ["//visibility:public"],
     deps = [
         ":main",

@@ -7,12 +7,11 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_binary(
     name = "rspcache_cli",
-    srcs = ["cli.py"],
+    srcs = ["rspcache_main.py"],
     imports = [".."],
-    main = "cli.py",
+    main = "rspcache_main.py",
     visibility = ["//:__subpackages__"],
     deps = [
-        ":admin_app",
         ":cli",
     ],
 )
