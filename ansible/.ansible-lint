@@ -1,16 +1,12 @@
 ---
 # Ansible-lint configuration for ducktape infrastructure
 
+# TODO: Delete all legacy_* roles once all machines have switched to Nix home-manager.
 # Exclude legacy roles that are being phased out
 # Also exclude non-Ansible YAML files (Helm templates, k8s manifests)
 exclude_paths:
-  - roles/legacy_cli/**         # Legacy role, being migrated to Nix home-manager
-  - roles/legacy_claude_mcp/**  # Legacy role, being migrated to Nix home-manager
-  - roles/legacy_nerd_fonts/** # Legacy role, fonts now managed by Nix home-manager
+  - roles/legacy_cli/**
+  - roles/legacy_claude_mcp/**
+  - roles/legacy_gui/**
+  - roles/legacy_nerd_fonts/**
   - ../k8s/**                   # Kubernetes/Helm files with Go templating and custom YAML tags
-
-# These legacy roles contain:
-# - Variable naming violations (legacy_claude_mcp_* vars in legacy_cli)
-# - Command-instead-of-shell false positives (bash -lc usage)
-# - Package-latest and formatting issues
-# All will be resolved when roles are fully migrated to home.nix
