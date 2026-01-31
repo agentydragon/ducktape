@@ -45,7 +45,6 @@ py_library(
         "config/podman/policy.json",
         "config/podman/registries.conf",
         "config/podman/storage.conf",
-        "config/session_context.mako",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
@@ -155,6 +154,7 @@ py_library(
 py_library(
     name = "session_start_lib",
     srcs = ["session_start.py"],
+    data = ["templates/session_context.mako"],
     imports = ["../.."],
     deps = [
         ":bazelisk_setup",
