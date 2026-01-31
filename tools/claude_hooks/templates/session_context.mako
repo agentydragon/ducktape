@@ -3,10 +3,8 @@ Environment: gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
 Bazel: wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
 % if podman:
 Podman: ${podman.status}, DOCKER_HOST=${podman.socket_url}. Use fully qualified image names (docker.io/library/...)
-  `podman run` works (with --network=host). `podman build` does NOT work in gVisor:
-    OCI isolation fails (/proc/self/setgroups missing — crun's deny_setgroups), chroot isolation fails (/dev/null read-only).
-  Workaround: use `podman run --network=host <image> <cmd>` then `podman commit <container>` for each Dockerfile step.
-  For COPY: mount source with -v and cp inside the container, then commit.
+  `podman run` works (with --network=host). `podman build` does NOT work in gVisor.
+  See tools/claude_hooks/docs/gvisor-dockerfile-build.md for workaround (podman run+commit).
 % endif
 % for record in log_entries:
 % if record.levelno >= WARNING:

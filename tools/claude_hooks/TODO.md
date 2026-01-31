@@ -11,6 +11,10 @@
 - **Pre-built nix store tarball** (recommended) - CI builds closure, publishes tarball, session hook unpacks
 - **Pre-computed store paths** - CI records paths, session hook does `nix copy`
 
+## gVisor Dockerfile Build as Claude Code Skill
+
+Consider turning <docs/gvisor-dockerfile-build.md> into a Claude Code skill (`.claude/skills/`) so Claude can automatically apply the `podman run`+`podman commit` workaround when asked to build a Dockerfile, rather than requiring the agent to read the docs first.
+
 ## Supervisor Health Check Eventlistener
 
 **Problem**: No proactive health monitoring for auth proxy - if it crashes, supervisor restarts it but we only notice on next bazel invocation.
