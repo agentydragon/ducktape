@@ -2,9 +2,9 @@
 #
 # Provides system tools needed by Bazel remote actions: python3 (for py_binary
 # shebang bootstrap), build-essential (C linker for Rust toolchain bootstrap),
-# git, ca-certificates, file/zip (for Bazel test-setup.sh), podman for
-# container-based e2e tests, and Chromium shared libraries for visual
-# regression tests (headless_shell from rules_playwright).
+# git, ca-certificates, file/zip (for Bazel test-setup.sh), libtinfo5 (for
+# GHC toolchain), podman for container-based e2e tests, and Chromium shared
+# libraries for visual regression tests (headless_shell from rules_playwright).
 FROM docker.io/library/ubuntu:24.04
 
 # Enable universe repo (podman lives there) and install dependencies.
@@ -17,6 +17,8 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         file \
         fuse-overlayfs \
         git \
+        # GHC 9.0.2 bindist requires libtinfo5 for ghc-pkg during toolchain setup
+        libtinfo5 \
         libssl-dev \
         pkg-config \
         podman \
