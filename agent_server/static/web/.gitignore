@@ -1,4 +1,0 @@
-# Ignore all built UI artifacts; keep placeholder files
-*
-!.gitignore
-!.gitkeep
