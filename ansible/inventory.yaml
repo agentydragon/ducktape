@@ -8,7 +8,7 @@ all:
       ansible_connection: local_cached_sudo
     wyrm:
       # ansible_connection: local_cached_sudo
-      ansible_connection: local #_cached_sudo
+      ansible_connection: local # _cached_sudo
       ansible_become_pass_ask: true
       # ansible_host: 10.0.167.15
       # ansible_user: agentydragon
