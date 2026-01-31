@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pygit2
+import tenacity
 from checkov.runner_filter import RunnerFilter
 from checkov.terraform.runner import Runner as CheckovTerraformRunner
 from python.runfiles import runfiles
@@ -319,6 +320,22 @@ async def run_terraform_centralization_check(files: list[Path]) -> ValidationRes
     return ValidationResult(name, elapsed, not violations, output)
 
 
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(3),
+    wait=tenacity.wait_exponential(multiplier=1, min=1, max=4),
+    retry=tenacity.retry_if_result(lambda output: output != ""),
+)
+async def _tflint_init(tflint_bin: str, config_path: Path) -> str:
+    """Run tflint --init, returning empty string on success or error output on failure."""
+    proc = await asyncio.create_subprocess_exec(
+        tflint_bin, "--init", f"--config={config_path}", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        return (stdout + stderr).decode().strip()
+    return ""
+
+
 async def run_tflint(files: list[Path], repo_root: Path) -> ValidationResult:
     """Run tflint on terraform files."""
     name = "tflint"
@@ -331,11 +348,14 @@ async def run_tflint(files: list[Path], repo_root: Path) -> ValidationResult:
     tf_dirs = {f.parent for f in tf_files}
     config_path = repo_root / "cluster" / ".tflint.hcl"
 
-    # Initialize plugins (downloads terraform ruleset if not cached)
-    init_proc = await asyncio.create_subprocess_exec(
-        tflint_bin, "--init", f"--config={config_path}", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    await init_proc.communicate()
+    # Initialize plugins (downloads terraform ruleset if not cached).
+    # Retry on failure since this downloads from GitHub and can fail
+    # transiently (rate limiting, connectivity).
+    try:
+        await _tflint_init(tflint_bin, config_path)
+    except tenacity.RetryError as e:
+        elapsed = time.perf_counter() - start
+        return ValidationResult(name, elapsed, False, f"tflint --init failed after retries:\n{e.last_attempt.result()}")
 
     # Run tflint on each directory
     tasks = []

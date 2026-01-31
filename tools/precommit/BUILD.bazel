@@ -60,6 +60,7 @@ py_binary(
         "//tools:env_utils",
         "@pypi//checkov",
         "@pypi//pygit2",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -101,6 +102,7 @@ py_binary(
         "//tools:env_utils",
         "@pypi//checkov",
         "@pypi//pygit2",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
