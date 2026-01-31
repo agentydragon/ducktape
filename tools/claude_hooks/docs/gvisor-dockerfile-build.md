@@ -45,6 +45,13 @@ No output means all libraries resolve.
 
 ## Root cause details
 
-**OCI isolation path**: `podman run --network=host` works because `containers.conf` sets `userns=host`, which skips user namespace creation entirely. `podman build` creates intermediate containers for each `RUN` step that don't inherit this setting, so crun tries to set up a user namespace and fails when writing to `/proc/<pid>/setgroups`.
+See <podman-build-investigation.md> for detailed investigation notes.
 
-**Chroot isolation path**: buildah's chroot mode creates a minimal `/dev` on a devtmpfs that gVisor mounts read-only. Volume mounts (`--volume /dev/null:/dev/null:rw`) don't override this because the devtmpfs layer takes precedence.
+**OCI isolation path**: Two independent issues:
+
+1. crun 1.14.1 (system version): `can_setgroups()` opens `/proc/self/setgroups` which doesn't exist in gVisor. The `run.oci.keep_original_groups=1` annotation works for `podman run` but buildah doesn't propagate it to intermediate build containers.
+2. crun 1.25.1+ (fixes setgroups): Introduces a race condition in buildah's stdio relay — the pipe read-end is closed before forked child processes finish writing, causing SIGPIPE. This is a timing-dependent interaction between buildah's poll-based I/O relay and gVisor's scheduling. Shell builtins work but any fork+exec (external commands, subshells) fails.
+
+**Chroot isolation path**: gVisor mounts devtmpfs read-only. buildah's chroot mode inherits this, making `/dev/null` unwritable. Many packages (ca-certificates, python3, apt-key) need `/dev/null` in post-install scripts.
+
+**Why `podman run` works**: Uses conmon for stdio management (not buildah's poll loop), and respects `containers.conf` annotations for `keep_original_groups`.
