@@ -260,6 +260,7 @@ class MockEgressProxy:
         password: str = "testpass",
         temp_dir: Path | None = None,
         max_workers: int = 100,
+        verify_target_certs: bool = True,
     ):
         self.listen_port = listen_port
         self.require_auth = require_auth
@@ -268,6 +269,7 @@ class MockEgressProxy:
         self.temp_dir = temp_dir
         self.max_workers = max_workers
         self.upstream_proxy = upstream_proxy
+        self.verify_target_certs = verify_target_certs
 
         self.server_socket: socket.socket | None = None
         self.port: int = 0
@@ -396,6 +398,9 @@ class MockEgressProxy:
         server_sock = socket.create_connection((target_host, target_port), timeout=60)
         server_sock.settimeout(60)
         server_ctx = ssl.create_default_context()
+        if not self.verify_target_certs:
+            server_ctx.check_hostname = False
+            server_ctx.verify_mode = ssl.CERT_NONE
         return server_ctx.wrap_socket(server_sock, server_hostname=target_host)
 
     def _connect_via_upstream(self, target_host: str, target_port: int) -> ssl.SSLSocket:
