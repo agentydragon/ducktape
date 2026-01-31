@@ -1,7 +1,7 @@
 """Tests for MockEgressProxy test utility.
 
 Tests cover:
-- Auth behavior (require/reject credentials)
+- Auth enforcement (valid credentials accepted, missing/wrong rejected)
 - Bidirectional TLS forwarding through the proxy with a local echo server,
   verifying data integrity for small payloads, large transfers (~8MB),
   concurrent connections, and graceful server-initiated close.
@@ -207,17 +207,18 @@ def _recv_exact(sock: ssl.SSLSocket, length: int) -> bytes:
 def _connect_through_proxy(proxy: MockEgressProxy, target_host: str, target_port: int) -> ssl.SSLSocket:
     """Open a TLS connection to target_host:target_port through the proxy.
 
-    Sends CONNECT with auth if the proxy requires it, then wraps in TLS.
+    Performs CONNECT handshake with auth, then wraps in TLS.
     """
     sock = socket.create_connection(("127.0.0.1", proxy.port), timeout=10)
     sock.settimeout(10)
 
-    # CONNECT request, with auth if required
-    connect = f"CONNECT {target_host}:{target_port} HTTP/1.1\r\nHost: {target_host}:{target_port}\r\n"
-    if proxy.require_auth:
-        creds = base64.b64encode(f"{proxy.username}:{proxy.password}".encode()).decode()
-        connect += f"Proxy-Authorization: Basic {creds}\r\n"
-    connect += "\r\n"
+    creds = base64.b64encode(f"{proxy.username}:{proxy.password}".encode()).decode()
+    connect = (
+        f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
+        f"Host: {target_host}:{target_port}\r\n"
+        f"Proxy-Authorization: Basic {creds}\r\n"
+        f"\r\n"
+    )
     sock.sendall(connect.encode())
 
     # Read 200
@@ -254,12 +255,12 @@ def proxy_socket(mock_egress_proxy: MockEgressProxyFixture) -> Generator[socket.
 
 
 @pytest.fixture
-def no_auth_proxy() -> Generator[MockEgressProxy]:
-    """Standalone proxy without auth for forwarding tests (no upstream).
+def forwarding_proxy() -> Generator[MockEgressProxy]:
+    """Standalone proxy for forwarding tests (no upstream).
 
     Disables target cert verification since test TLS servers use self-signed certs.
     """
-    with MockEgressProxy(upstream_proxy=None, listen_port=0, require_auth=False, verify_target_certs=False) as proxy:
+    with MockEgressProxy(upstream_proxy=None, listen_port=0, verify_target_certs=False) as proxy:
         yield proxy
 
 
@@ -270,7 +271,7 @@ def no_auth_proxy() -> Generator[MockEgressProxy]:
 
 def test_proxy_starts_and_stops() -> None:
     """Test basic proxy lifecycle via context manager."""
-    with MockEgressProxy(upstream_proxy=None, listen_port=0, require_auth=False) as proxy:
+    with MockEgressProxy(upstream_proxy=None, listen_port=0) as proxy:
         assert proxy.port > 0
         assert proxy.ca_cert_pem
 
@@ -303,14 +304,14 @@ def test_proxy_accepts_auth(proxy_socket: socket.socket) -> None:
 class TestBidirectionalForwarding:
     """Test data forwarding through the TLS-intercepting proxy.
 
-    Each test starts a local TLS server, connects through a no-auth proxy,
-    and verifies data integrity on both sides.
+    Each test starts a local TLS server, connects through the proxy with
+    auth, and verifies data integrity on both sides.
     """
 
-    def test_small_echo(self, no_auth_proxy: MockEgressProxy) -> None:
+    def test_small_echo(self, forwarding_proxy: MockEgressProxy) -> None:
         """Small payload round-trips correctly."""
         with _TLSEchoServer() as echo:
-            conn = _connect_through_proxy(no_auth_proxy, echo.host, echo.port)
+            conn = _connect_through_proxy(forwarding_proxy, echo.host, echo.port)
             try:
                 msg = b"hello proxy world"
                 conn.sendall(msg)
@@ -321,13 +322,13 @@ class TestBidirectionalForwarding:
             finally:
                 conn.close()
 
-    def test_large_echo(self, no_auth_proxy: MockEgressProxy) -> None:
+    def test_large_echo(self, forwarding_proxy: MockEgressProxy) -> None:
         """1 MB payload round-trips without data loss or corruption."""
         payload = os.urandom(1024 * 1024)
         expected_hash = hashlib.sha256(payload).hexdigest()
 
         with _TLSEchoServer() as echo:
-            conn = _connect_through_proxy(no_auth_proxy, echo.host, echo.port)
+            conn = _connect_through_proxy(forwarding_proxy, echo.host, echo.port)
             try:
                 conn.sendall(payload)
                 received = _recv_exact(conn, len(payload))
@@ -336,7 +337,7 @@ class TestBidirectionalForwarding:
             finally:
                 conn.close()
 
-    def test_large_download(self, no_auth_proxy: MockEgressProxy) -> None:
+    def test_large_download(self, forwarding_proxy: MockEgressProxy) -> None:
         """~8 MB server-initiated send (simulates bazelisk download).
 
         The original bug dropped data during large one-directional TLS
@@ -347,7 +348,7 @@ class TestBidirectionalForwarding:
         expected_hash = hashlib.sha256(payload).hexdigest()
 
         with _TLSSendServer(payload) as server:
-            conn = _connect_through_proxy(no_auth_proxy, server.host, server.port)
+            conn = _connect_through_proxy(forwarding_proxy, server.host, server.port)
             try:
                 received = b""
                 while chunk := conn.recv(65536):
@@ -357,10 +358,10 @@ class TestBidirectionalForwarding:
             finally:
                 conn.close()
 
-    def test_multiple_messages(self, no_auth_proxy: MockEgressProxy) -> None:
+    def test_multiple_messages(self, forwarding_proxy: MockEgressProxy) -> None:
         """Multiple send/recv cycles on the same connection."""
         with _TLSEchoServer() as echo:
-            conn = _connect_through_proxy(no_auth_proxy, echo.host, echo.port)
+            conn = _connect_through_proxy(forwarding_proxy, echo.host, echo.port)
             try:
                 for i in range(10):
                     msg = f"message {i} ".encode() * 100
@@ -375,7 +376,7 @@ class TestBidirectionalForwarding:
             finally:
                 conn.close()
 
-    def test_concurrent_connections(self, no_auth_proxy: MockEgressProxy) -> None:
+    def test_concurrent_connections(self, forwarding_proxy: MockEgressProxy) -> None:
         """Multiple simultaneous connections each transfer data correctly."""
         results: dict[int, bool] = {}
         errors: list[str] = []
@@ -383,7 +384,7 @@ class TestBidirectionalForwarding:
         def worker(worker_id: int) -> None:
             try:
                 with _TLSEchoServer() as echo:
-                    conn = _connect_through_proxy(no_auth_proxy, echo.host, echo.port)
+                    conn = _connect_through_proxy(forwarding_proxy, echo.host, echo.port)
                     try:
                         payload = os.urandom(64 * 1024)
                         conn.sendall(payload)
@@ -404,10 +405,10 @@ class TestBidirectionalForwarding:
         assert not errors, f"Worker errors: {errors}"
         assert all(results.values()), f"Failed workers: {[k for k, v in results.items() if not v]}"
 
-    def test_server_closes_immediately(self, no_auth_proxy: MockEgressProxy) -> None:
+    def test_server_closes_immediately(self, forwarding_proxy: MockEgressProxy) -> None:
         """Proxy handles server closing right after TLS handshake."""
         with _TLSSendServer(b"") as server:
-            conn = _connect_through_proxy(no_auth_proxy, server.host, server.port)
+            conn = _connect_through_proxy(forwarding_proxy, server.host, server.port)
             try:
                 received = conn.recv(4096)
                 assert received == b""

@@ -255,7 +255,6 @@ class MockEgressProxy:
         *,
         upstream_proxy: EgressProxyConfig | None,
         listen_port: int = 0,
-        require_auth: bool = True,
         username: str = "testuser",
         password: str = "testpass",
         temp_dir: Path | None = None,
@@ -263,7 +262,6 @@ class MockEgressProxy:
         verify_target_certs: bool = True,
     ):
         self.listen_port = listen_port
-        self.require_auth = require_auth
         self.username = username
         self.password = password
         self.temp_dir = temp_dir
@@ -514,23 +512,22 @@ class MockEgressProxy:
             conn_id = self.stats.total_connections
             logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
 
-            # Check auth header
-            if self.require_auth:
-                auth_ok = False
-                for line in request.split(b"\r\n"):
-                    if line.lower().startswith(b"proxy-authorization: basic "):
-                        encoded = line.split(b" ", 2)[2]
-                        decoded = base64.b64decode(encoded).decode()
-                        if ":" in decoded:
-                            user, passwd = decoded.split(":", 1)
-                            if user == self.username and passwd == self.password:
-                                auth_ok = True
-                        break
+            # Check auth header (always required, matching real egress proxy)
+            auth_ok = False
+            for line in request.split(b"\r\n"):
+                if line.lower().startswith(b"proxy-authorization: basic "):
+                    encoded = line.split(b" ", 2)[2]
+                    decoded = base64.b64decode(encoded).decode()
+                    if ":" in decoded:
+                        user, passwd = decoded.split(":", 1)
+                        if user == self.username and passwd == self.password:
+                            auth_ok = True
+                    break
 
-                if not auth_ok:
-                    client_sock.sendall(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
-                    self.stats.record_failure(f"Auth failed for {target_host}:{target_port}")
-                    return
+            if not auth_ok:
+                client_sock.sendall(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
+                self.stats.record_failure(f"Auth failed for {target_host}:{target_port}")
+                return
 
             # Connect to real target BEFORE sending 200 (so we can return error if connection fails)
             # Use semaphore to limit concurrent outbound connections and prevent overwhelming targets

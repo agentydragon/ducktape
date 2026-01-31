@@ -95,11 +95,7 @@ def mock_egress_proxy() -> Generator[MockEgressProxyFixture]:
 
     try:
         with MockEgressProxy(
-            listen_port=0,
-            require_auth=True,
-            username="proxy_user",
-            password="test_jwt_token",
-            upstream_proxy=EgressProxyConfig.from_env(),
+            listen_port=0, username="proxy_user", password="test_jwt_token", upstream_proxy=EgressProxyConfig.from_env()
         ) as proxy:
             yield MockEgressProxyFixture(proxy=proxy, log_file=log_file)
     finally:
