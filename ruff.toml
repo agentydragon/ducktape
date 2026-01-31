@@ -96,7 +96,7 @@ known-third-party = ["ansible", "docker"]
 known-first-party = [
     "tools",
     "adgn",
-    "adgn_mcp_starter",
+    "mcp_starter",
     "agent_core",
     "agent_pkg",
     "agent_server",

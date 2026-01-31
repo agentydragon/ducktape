@@ -1,6 +1,28 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# Gazelle manages adgn_mcp_starter/ subpackage
+# NOTE: No aggregator target - use specific per-file targets like :server, :__main__
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "mcp_starter_bin",
+    srcs = ["__main__.py"],
+    imports = [".."],
+    main = "__main__.py",
+    visibility = ["//:__subpackages__"],
+    deps = [":server"],
+)
 
 py_library(
     name = "conftest",
@@ -18,7 +40,7 @@ py_test(
     srcs = ["test_server.py"],
     deps = [
         ":conftest",
-        "//mcp_starter/adgn_mcp_starter:server",
+        ":server",
         "@pypi//fastmcp",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

@@ -16,8 +16,6 @@
 # gazelle:resolve py python.runfiles @rules_python//python/runfiles
 #
 # Non-standard import paths (import name doesn't match directory structure)
-# gazelle:resolve py adgn_mcp_starter //mcp_starter/adgn_mcp_starter
-# gazelle:resolve py adgn_mcp_starter.server //mcp_starter/adgn_mcp_starter:server
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
 #
 # Root-level targets

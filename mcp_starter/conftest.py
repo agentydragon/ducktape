@@ -12,6 +12,6 @@ async def mcp_client() -> AsyncIterator[Client]:
     Yields a connected Client so tests can call methods without context managers.
     """
     async with Client(
-        MCPConfig(mcpServers={"starter": StdioMCPServer(command="python", args=["-m", "adgn_mcp_starter", "--debug"])})
+        MCPConfig(mcpServers={"starter": StdioMCPServer(command="python", args=["-m", "mcp_starter", "--debug"])})
     ) as client:
         yield client

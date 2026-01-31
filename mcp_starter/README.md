@@ -20,10 +20,10 @@ Install package in development mode.
 
 ```bash
 # STDIO mode (default); optionally add --debug
-python -m adgn_mcp_starter
+python -m mcp_starter
 
 # SSE Mode (HTTP)
-python -m adgn_mcp_starter --transport=sse --host=localhost --port=8000
+python -m mcp_starter --transport=sse --host=localhost --port=8000
 
 # Run acceptance test
 python claude_test.py
@@ -35,10 +35,10 @@ See `example_config.json` for example configuration file for MCP clients.
 
 ```bash
 # Basic debug logging
-python -m adgn_mcp_starter --debug
+python -m mcp_starter --debug
 
 # Full MCP request/response logging
-python -m adgn_mcp_starter --debug-mcp
+python -m mcp_starter --debug-mcp
 
 # Claude MCP debugging
 claude --debug --mcp-config example_config.json "test prompt"
@@ -62,7 +62,7 @@ claude --debug --mcp-config example_config.json "test prompt"
 
 ```bash
 # Run server with debug output
-python -m adgn_mcp_starter --debug 2> debug.log
+python -m mcp_starter --debug 2> debug.log
 
 # Copy interesting requests/responses from debug.log
 # Paste into issue reports or debugging sessions
@@ -94,7 +94,7 @@ npx @modelcontextprotocol/inspector
 
 # Point to your server:
 # - Transport: stdio
-# - Command: python -m adgn_mcp_starter --debug
+# - Command: python -m mcp_starter --debug
 # - Args: (leave empty)
 ```
 

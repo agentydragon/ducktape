@@ -3,7 +3,7 @@
 import pytest_bazel
 from fastmcp.client import Client as FastMCPClient
 
-from adgn_mcp_starter.server import create_mcp_server
+from mcp_starter.server import create_mcp_server
 
 
 def test_server_creation() -> None:
