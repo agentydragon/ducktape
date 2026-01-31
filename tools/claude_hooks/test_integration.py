@@ -29,7 +29,10 @@ def hook_settings(
     isolated_dirs, mock_egress_proxy: MockEgressProxyFixture, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> HookSettings:
     """Override shared hook_settings to also configure upstream proxy and CA path."""
-    monkeypatch.setenv("https_proxy", mock_egress_proxy.proxy.url)
+    # Set HTTPS_PROXY (uppercase) which get_upstream_proxy_url() checks first.
+    # Also clear lowercase to avoid ambiguity.
+    monkeypatch.setenv("HTTPS_PROXY", mock_egress_proxy.proxy.url)
+    monkeypatch.delenv("https_proxy", raising=False)
     # Write mock CA to a temp file so _extract_proxy_ca can load it from filesystem
     ca_file = tmp_path / "mock-ca.crt"
     ca_file.write_bytes(mock_egress_proxy.proxy.ca_cert_pem)
@@ -81,7 +84,7 @@ async def test_credential_rotation(
     assert "proxy_user" in creds_file.read_text(), "Initial creds should have original credentials"
 
     new_proxy_url = f"http://newuser:newpass@127.0.0.1:{mock_egress_proxy.proxy.port}"
-    monkeypatch.setenv("https_proxy", new_proxy_url)
+    monkeypatch.setenv("HTTPS_PROXY", new_proxy_url)
 
     await proxy_setup.ensure_proxy_running(hook_settings, client)
 
