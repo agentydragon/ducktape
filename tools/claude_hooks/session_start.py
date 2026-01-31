@@ -30,10 +30,12 @@ from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import bazelisk_setup, env_file, nix_setup, podman_service, proxy_setup
 from tools.claude_hooks.debug import log_entrypoint_debug
 from tools.claude_hooks.errors import DirenvError, SkipError
-from tools.claude_hooks.settings import TEMPLATES, HookSettings
+from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
 class HookSource(StrEnum):
@@ -210,7 +212,7 @@ def emit_session_context(
     """
     status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
 
-    template = Template(TEMPLATES.joinpath("session_context.mako").read_text())
+    template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
     result: str = template.render(
         WARNING=logging.WARNING,
         build_commit=BUILD_COMMIT,

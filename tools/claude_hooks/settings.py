@@ -21,8 +21,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Config files bundled with the package (infrastructure config: bazelrc, env, podman)
 CONFIG_FILES: Traversable = importlib.resources.files("tools.claude_hooks.config")
-# Output templates (Mako)
-TEMPLATES: Traversable = importlib.resources.files("tools.claude_hooks.templates")
 
 # Environment variable prefix (matches model_config.env_prefix)
 ENV_PREFIX = "DUCKTAPE_CLAUDE_HOOKS_"
