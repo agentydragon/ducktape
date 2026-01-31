@@ -1,8 +1,8 @@
 Claude Code session start hook [build: ${build_commit}] — ${status}
 Environment: gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-Bazel: wrapper adds auth proxy (port ${proxy_port}, ${proxy_ca_status})
+Bazel: wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
 % if podman:
-Podman: ${podman_status}, DOCKER_HOST=${podman_socket_url}. Use fully qualified image names (docker.io/library/...)
+Podman: ${podman.status}, DOCKER_HOST=${podman.socket_url}. Use fully qualified image names (docker.io/library/...)
 % endif
 % for record in log_entries:
 % if record.levelno >= WARNING:
