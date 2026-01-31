@@ -366,12 +366,7 @@ class TestBidirectionalForwarding:
                 for i in range(10):
                     msg = f"message {i} ".encode() * 100
                     conn.sendall(msg)
-                    received = b""
-                    while len(received) < len(msg):
-                        chunk = conn.recv(65536)
-                        if not chunk:
-                            break
-                        received += chunk
+                    received = _recv_exact(conn, len(msg))
                     assert received == msg, f"Mismatch on message {i}"
             finally:
                 conn.close()
