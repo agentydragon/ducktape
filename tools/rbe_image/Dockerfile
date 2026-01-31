@@ -2,8 +2,9 @@
 #
 # Provides system tools needed by Bazel remote actions: python3 (for py_binary
 # shebang bootstrap), build-essential (C linker for Rust toolchain bootstrap),
-# git, ca-certificates, file/zip (for Bazel test-setup.sh), and podman for
-# container-based e2e tests.
+# git, ca-certificates, file/zip (for Bazel test-setup.sh), podman for
+# container-based e2e tests, and Chromium shared libraries for visual
+# regression tests (headless_shell from rules_playwright).
 FROM docker.io/library/ubuntu:24.04
 
 # Enable universe repo (podman lives there) and install dependencies.
@@ -22,6 +23,21 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         python3 \
         uidmap \
         zip \
+        # Chromium headless shell shared library dependencies
+        libasound2t64 \
+        libatk-bridge2.0-0t64 \
+        libatk1.0-0t64 \
+        libcups2t64 \
+        libdrm2 \
+        libgbm1 \
+        libnspr4 \
+        libnss3 \
+        libpango-1.0-0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxkbcommon0 \
+        libxrandr2 \
+        libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-configure Podman for rootful VFS operation (no overlay/fuse needed).
