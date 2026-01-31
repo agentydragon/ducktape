@@ -286,6 +286,10 @@ def install_git_precommit_hook(project_dir: Path) -> None:
     except subprocess.TimeoutExpired:
         logger.warning("pre-commit install timed out")
 
+    # TODO: Run `pre-commit install-hooks` in the background to eagerly pre-install
+    # hook environments (especially the ansible language:python venv). Without this,
+    # the first commit pays the cost of creating the venv and downloading ansible.
+
 
 class LogCollector(logging.handlers.MemoryHandler):
     """Handler that collects log records for later inspection.
