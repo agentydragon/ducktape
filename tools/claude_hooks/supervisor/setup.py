@@ -168,14 +168,24 @@ async def start(settings: HookSettings) -> SupervisorSetup:
     logger.info("  port: %d", supervisor_port)
     logger.info("  dir: %s", supervisor_dir)
 
+    # Propagate sys.path as PYTHONPATH so the subprocess can find third-party
+    # packages (e.g. supervisor). rules_python's venv-based bootstrap sets up
+    # sys.path via a virtual environment, but that doesn't carry over to
+    # subprocesses spawned via sys.executable.
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(sys.path)
+
     try:
+        stderr_path = supervisor_dir / "supervisord_stderr.log"
+        stderr_file = stderr_path.open("w")
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=stderr_file,
             stdin=asyncio.subprocess.DEVNULL,
             start_new_session=True,
             cwd=supervisor_dir,
+            env=env,
         )
         # Give it a tiny bit to check if it crashes immediately
         await asyncio.sleep(0.1)
@@ -183,11 +193,16 @@ async def start(settings: HookSettings) -> SupervisorSetup:
             # Process exited with error - read log for details
             # Note: exit code 0 is SUCCESS (daemon forked and parent exited normally)
             log_content = supervisor_log.read_text() if supervisor_log.exists() else "(log not found)"
-            raise SupervisorError(
-                f"supervisord exited immediately with code {process.returncode}\n"
-                f"Command: {' '.join(cmd)}\n"
-                f"Log: {log_content[-1000:]}"
-            )
+            stderr_file.close()
+            stderr_content = stderr_path.read_text().strip() if stderr_path.exists() else ""
+            error_parts = [
+                f"supervisord exited immediately with code {process.returncode}",
+                f"Command: {' '.join(cmd)}",
+                f"Log: {log_content[-1000:]}",
+            ]
+            if stderr_content:
+                error_parts.append(f"Stderr: {stderr_content[-1000:]}")
+            raise SupervisorError("\n".join(error_parts))
         logger.info("supervisord process spawned (pid=%s)", process.pid)
     except OSError as e:
         raise SupervisorError(f"Failed to spawn supervisord: {e}") from e

@@ -203,10 +203,15 @@ async def _create_java_truststore(settings: HookSettings) -> None:
 
 
 def _get_proxy_service_env() -> dict[str, str]:
-    """Get environment variables to pass to the proxy service."""
+    """Get environment variables to pass to the proxy service.
+
+    Propagates sys.path as PYTHONPATH so the supervisor-managed subprocess can
+    find third-party packages. rules_python's venv-based bootstrap sets up
+    sys.path via a virtual environment that doesn't carry over to subprocesses.
+    """
     env: dict[str, str] = {}
-    if pythonpath := os.environ.get("PYTHONPATH"):
-        env["PYTHONPATH"] = pythonpath
+    pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(sys.path)
+    env["PYTHONPATH"] = pythonpath
     return env
 
 
