@@ -58,12 +58,16 @@ def run_query(query: str) -> list[str]:
     return _run_bazel_query_cmd(["bazelisk", "query"], query)
 
 
-def query_intersection(targets: list[str], pattern: str) -> list[str]:
-    """Query targets that intersect with a pattern. Returns matching targets."""
+def query_with_targets(query_template: str, targets: list[str]) -> list[str]:
+    """Run a Bazel query template with ``$targets`` replaced by the target set.
+
+    Returns matching targets, or an empty list if targets is empty.
+    """
     if not targets:
         return []
 
-    query = f"set({' '.join(targets)}) intersect {pattern}"
+    target_set = f"set({' '.join(targets)})"
+    query = query_template.replace("$targets", target_set)
     return run_query(query)
 
 

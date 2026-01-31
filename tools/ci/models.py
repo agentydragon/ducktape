@@ -21,11 +21,19 @@ class AlwaysTrigger(BaseModel):
     kind: Literal["always"] = "always"
 
 
-class BazelPatternTrigger(BaseModel):
-    """Workflow triggered by Bazel target pattern."""
+class BazelQueryTrigger(BaseModel):
+    """Workflow triggered by a Bazel query over affected targets.
 
-    kind: Literal["bazel"] = "bazel"
-    pattern: str
+    The query field is a Bazel query expression where ``$targets`` is replaced
+    with ``set(...)`` of the affected targets.  The workflow triggers when the
+    query returns at least one result.
+
+    Example: ``kind(".*_test rule", $targets)`` triggers only when the affected
+    set contains test targets.
+    """
+
+    kind: Literal["bazel_query"] = "bazel_query"
+    query: str
 
 
 class PathPatternTrigger(BaseModel):
@@ -37,7 +45,7 @@ class PathPatternTrigger(BaseModel):
 
 WorkflowTrigger = Annotated[
     Annotated[AlwaysTrigger, Tag("always")]
-    | Annotated[BazelPatternTrigger, Tag("bazel")]
+    | Annotated[BazelQueryTrigger, Tag("bazel_query")]
     | Annotated[PathPatternTrigger, Tag("path")],
     Discriminator("kind"),
 ]

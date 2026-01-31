@@ -5,7 +5,7 @@
 #
 # Trigger types (discriminated by trigger.kind):
 #   always: Always run this workflow
-#   bazel: Bazel target pattern (uses bazel query intersection)
+#   bazel_query: Bazel query expression over affected targets ($targets placeholder)
 #   path: Regex pattern for changed files
 #
 # Job options:
@@ -18,24 +18,24 @@
 workflows:
   # Core Bazel workflows
   bazel-build:
-    trigger: { kind: bazel, pattern: "//..." }
+    trigger: { kind: bazel_query, query: "$targets" }
     targets: true
     secrets: [BUILDBUDDY_API_KEY]
 
   bazel-test:
-    trigger: { kind: bazel, pattern: "//..." }
+    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets)' }
     targets: true
     secrets: [BUILDBUDDY_API_KEY]
 
   bazel-lint:
-    trigger: { kind: bazel, pattern: "//..." }
+    trigger: { kind: bazel_query, query: "$targets" }
     targets: true
     inputs:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: [BUILDBUDDY_API_KEY]
 
   bazel-typecheck:
-    trigger: { kind: bazel, pattern: "//..." }
+    trigger: { kind: bazel_query, query: "$targets" }
     targets: true
     inputs:
       enable_profiling: ${{ inputs.enable_profiling || false }}
@@ -43,14 +43,14 @@ workflows:
 
   # Rust-specific (only finance/ has Rust code)
   bazel-rust-lint:
-    trigger: { kind: bazel, pattern: "//finance/..." }
+    trigger: { kind: bazel_query, query: "$targets intersect //finance/..." }
     inputs:
       enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: [BUILDBUDDY_API_KEY]
 
   # Frontend visual regression
   visual-regression:
-    trigger: { kind: bazel, pattern: "//props/frontend/..." }
+    trigger: { kind: bazel_query, query: "$targets intersect //props/frontend/..." }
     secrets: [BUILDBUDDY_API_KEY]
 
   # Path-based workflows (non-Bazel)

@@ -18,10 +18,10 @@ import pygit2
 from pydantic import BaseModel, Field
 
 from fmt_util.fmt_util import format_limited_list
-from tools.ci.bazel_query import filter_for_ci, query_intersection
+from tools.ci.bazel_query import filter_for_ci, query_with_targets
 from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
 from tools.ci.github_actions import CIEnvironment, PushStrategy
-from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
+from tools.ci.models import AlwaysTrigger, BazelQueryTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from tools.env_utils import get_optional_env_path, get_required_existing_path
 
 logger = logging.getLogger(__name__)
@@ -65,8 +65,8 @@ def should_trigger(name: str, config: WorkflowConfig, targets: list[str], change
             if any(regex.match(f) for f in changed_files):
                 logger.info("Path pattern '%s' matched -> triggers %s", pattern, name)
                 return True
-        case BazelPatternTrigger(pattern=pattern):
-            if targets and query_intersection(targets, pattern):
+        case BazelQueryTrigger(query=query):
+            if targets and query_with_targets(query, targets):
                 return True
 
     return False
