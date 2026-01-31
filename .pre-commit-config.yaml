@@ -75,7 +75,8 @@ repos:
       - id: ansible-syntax-check
         name: ansible-playbook --syntax-check
         entry: ansible/scripts/run-syntax-check.sh
-        language: system
+        language: python
+        additional_dependencies: [ansible]
         files: "^ansible/.*\\.ya?ml$"
         exclude: "^ansible/k8s/.*" # Exclude k8s files
         pass_filenames: true
