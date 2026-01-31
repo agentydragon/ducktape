@@ -38,12 +38,9 @@ py_library(
 
 py_binary(
     name = "optimize",
-    srcs = ["main.py"],
-    main = "main.py",
+    main_module = "props.critic_dev.optimize.main",
     visibility = ["//visibility:public"],
-    deps = [
-        ":main",
-    ],
+    deps = [":main"],
 )
 
 pkg_tar(

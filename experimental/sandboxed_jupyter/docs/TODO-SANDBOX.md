@@ -5,7 +5,7 @@ This document tracks only the remaining open work. Completed items and historica
 - Network egress options:
   - Add a mode to allow only loopback + a local HTTP proxy, and restrict that proxy to a curated allowlist (e.g., openai.com) while denying general HTTP
 - Filesystem surface:
-  - Reduce file-read* to the minimum required (system libs, site-packages) and keep WORKSPACE read/write; make /tmp writes optional
+  - Reduce file-read\* to the minimum required (system libs, site-packages) and keep WORKSPACE read/write; make /tmp writes optional
 - Policy capabilities:
   - Support specifying policy sections/capabilities on argv (seatbelt substitutions), to toggle features without changing code
 - Environment hygiene:
@@ -31,7 +31,7 @@ Components and names
 Policy YAML (explicit-only, platform-selective)
 
 - env:
-  - set: { JUPYTER_* dirs, HOME, PYTHONPYCACHEPREFIX, MPLCONFIGDIR, PATH prepend for control venv }
+  - set: { JUPYTER\_\* dirs, HOME, PYTHONPYCACHEPREFIX, MPLCONFIGDIR, PATH prepend for control venv }
   - passthrough: [OPENAI_API_KEY, HTTP_PROXY, HTTPS_PROXY, ...]
 - fs:
   - allow_write_all: bool
@@ -58,7 +58,7 @@ Directory layout (example control bundle)
   - bin/ (control venv: jupyter, jupyter-mcp-server, sandboxer)
   - jupyter/config/jupyter_server_config.py
   - kernels/
-    - python3-low/kernel.json  # argv: sandboxer --policy policies/low/policy.yaml -- <kernel-python> -m ipykernel_launcher -f {connection_file}
+    - python3-low/kernel.json # argv: sandboxer --policy policies/low/policy.yaml -- <kernel-python> -m ipykernel_launcher -f {connection_file}
     - python3-high/kernel.json
   - policies/
     - low/policy.yaml

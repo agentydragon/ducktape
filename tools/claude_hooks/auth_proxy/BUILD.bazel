@@ -20,13 +20,8 @@ py_library(
 
 py_binary(
     name = "run",
-    srcs = ["main.py"],
     imports = ["../../.."],
-    main = "main.py",
+    main_module = "tools.claude_hooks.auth_proxy.main",
     visibility = ["//visibility:public"],
-    deps = [
-        ":main",
-        ":proxy",
-        "//tools/claude_hooks:debug",
-    ],
+    deps = [":main"],
 )

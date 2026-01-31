@@ -179,17 +179,17 @@ py_library(
 
 py_binary(
     name = "bazel_wrapper",
-    srcs = ["bazel_wrapper.py"],
     imports = ["../.."],
+    main_module = "tools.claude_hooks.bazel_wrapper",
     visibility = ["//visibility:public"],
     deps = [":bazel_wrapper_lib"],
 )
 
 py_binary(
     name = "session_start",
-    srcs = ["session_start.py"],
     data = [":bazel_wrapper"],
     imports = ["../.."],
+    main_module = "tools.claude_hooks.session_start",
     visibility = ["//visibility:public"],
     deps = [":session_start_lib"],
 )

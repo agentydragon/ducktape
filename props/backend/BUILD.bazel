@@ -93,13 +93,9 @@ py_binary(
 
 py_binary(
     name = "export_schema_bin",
-    srcs = ["export_schema.py"],
-    main = "export_schema.py",
+    main_module = "props.backend.export_schema",
     visibility = ["//:__subpackages__"],
-    deps = [
-        ":app",
-        ":export_schema",
-    ],
+    deps = [":export_schema"],
 )
 
 genrule(

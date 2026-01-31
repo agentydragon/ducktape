@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+from ember.integrations.gitea import GiteaRepository
 from experimental.ember_evals.common import CommandError, dump_yaml, merge_dict, run_command
+from experimental.ember_evals.definitions import ScenarioSuite
+from experimental.ember_evals.executor import ScenarioExecutor
 from experimental.ember_evals.kubernetes import KubernetesManager, LabelSelector
 from experimental.ember_evals.matrix import MatrixHarness, MatrixTranscript, render_matrix_transcript
 from experimental.ember_evals.models import (
@@ -24,12 +28,8 @@ from experimental.ember_evals.models import (
     RunLabels,
     RuntimeSecretNames,
 )
-from experimental.ember_evals.steps import ScenarioSuiteResult
-
-from ember.integrations.gitea import GiteaRepository
-from experimental.ember_evals.definitions import ScenarioSuite
-from experimental.ember_evals.executor import ScenarioExecutor
 from experimental.ember_evals.scenarios.regression import SCENARIO_SUITE as REGRESSION_SUITE
+from experimental.ember_evals.steps import ScenarioSuiteResult
 
 
 def _get_repo_root() -> Path:

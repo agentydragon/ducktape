@@ -33,21 +33,10 @@ py_library(
 
 py_binary(
     name = "adgn-editor-docker",
-    srcs = ["cli.py"],
     imports = ["../.."],
-    main = "cli.py",
+    main_module = "editor_agent.host.cli",
     visibility = ["//:__subpackages__"],
-    deps = [
-        ":agent_runner",
-        ":runner",
-        ":submit_server",
-        "//agent_pkg/host:builder",
-        "//cli_util:decorators",
-        "//cli_util:logging",
-        "//openai_utils:client_factory",
-        "@pypi//aiodocker",
-        "@pypi//typer_slim",
-    ],
+    deps = [":cli"],
 )
 
 py_test(

@@ -205,6 +205,7 @@ py_library(
 2. **Reference specific targets** - Use `//pkg:module` not `//pkg` (e.g., `//openai_utils:model` not `//openai_utils`)
 3. **Use `imports = [".."]`** - Bazel auto-generates `__init__.py` stubs; don't create real `__init__.py` files
 4. **Add NOTE comment** when removing aggregators:
+
    ```python
    # NOTE: No aggregator target - use specific per-file targets like :client, :server
    # This is the Gazelle-compatible pattern (python_generation_mode = file)

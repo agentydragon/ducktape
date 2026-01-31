@@ -245,23 +245,17 @@ py_library(
 
 py_binary(
     name = "py_detectors_cli",
-    srcs = ["__main__.py"],
-    main = "__main__.py",
+    imports = [".."],
+    main_module = "py_detectors",
     visibility = ["//:__subpackages__"],
-    deps = [
-        ":__main__",
-        ":registry",
-    ],
+    deps = [":__main__"],
 )
 
 py_binary(
     name = "py_detectors_custom",
-    srcs = ["cli_custom.py"],
-    main = "cli_custom.py",
-    deps = [
-        ":cli_custom",
-        ":registry",
-    ],
+    imports = [".."],
+    main_module = "py_detectors.cli_custom",
+    deps = [":cli_custom"],
 )
 
 py_test(

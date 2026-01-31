@@ -98,6 +98,34 @@ Style and convention rules for this repository. Package-specific elaborations be
 - **No unnecessary `__init__.py`**: Do not create `__init__.py` files for packages that only contain Bazel targets. Bazel auto-generates stub `__init__.py` files via `imports = [...]` in `py_library`/`py_test` rules. Only create `__init__.py` when you need to expose a public API or configure the package namespace.
 - **Prefer sets for unordered collections**: When a collection's order is semantically irrelevant (changed files, unique IDs, tags), use `set[T]` instead of `list[T]`. Sets make the "no duplicates, order doesn't matter" intent explicit and provide O(1) membership testing. Use lists only when order matters or duplicates are valid.
 
+## Build System (Bazel)
+
+- **Use `main_module` for `py_binary` targets**: When a `py_binary` needs the same source file as a `py_library`, use `main_module` instead of duplicating `srcs`. The `py_library` declares all deps; the `py_binary` just references the library. This avoids dep duplication and ensures the mypy lint aspect checks deps in one place.
+
+  ```python
+  py_library(
+      name = "session_start_lib",
+      srcs = ["session_start.py"],
+      imports = ["../.."],
+      deps = [":settings", "@pypi//mako"],
+  )
+
+  # CORRECT - main_module, no srcs
+  py_binary(
+      name = "session_start",
+      main_module = "tools.claude_hooks.session_start",
+      imports = ["../.."],
+      deps = [":session_start_lib"],
+  )
+
+  # WRONG - duplicates srcs and requires duplicating deps for mypy
+  py_binary(
+      name = "session_start",
+      srcs = ["session_start.py"],
+      deps = [":session_start_lib", "@pypi//mako"],
+  )
+  ```
+
 ## Testing
 
 - **DRY test fixtures**: Extract shared setup logic into pytest fixtures. Avoid duplicating fixture definitions across test files. Prefer conftest.py for fixtures used by multiple test modules.

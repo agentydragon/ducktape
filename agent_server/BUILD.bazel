@@ -75,34 +75,8 @@ py_binary(
 
 py_binary(
     name = "agent-server-matrix-bot",
-    srcs = ["matrix_bot.py"],
-    main = "matrix_bot.py",
-    deps = [
-        ":logging_config",
-        "//agent_core:agent",
-        "//agent_core:loop_control",
-        "//agent_core:mcp_provider",
-        "//agent_server/server:bus",
-        "//agent_server/server:mode_handler",
-        "//mcp_infra:config_loader",
-        "//mcp_infra:mcp_types",
-        "//mcp_infra:mounted",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
-        "//mcp_infra/compositor:notifications_buffer",
-        "//mcp_infra/compositor:server",
-        "//mcp_infra/display:event_renderer",
-        "//mcp_infra/enhanced:server",
-        "//mcp_infra/enhanced:simple",
-        "//mcp_infra/exec:docker",
-        "//mcp_infra/exec:models",
-        "//openai_utils:client_factory",
-        "//openai_utils:model",
-        "@pypi//aiodocker",
-        "@pypi//fastmcp",
-        "@pypi//mautrix",
-        "@pypi//typer",
-    ],
+    main_module = "agent_server.matrix_bot",
+    deps = [":matrix_bot"],
 )
 
 py_binary(

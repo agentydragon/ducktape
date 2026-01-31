@@ -128,9 +128,8 @@ def install_wrapper(settings: HookSettings) -> Path:
 
     The wrapper reads configuration from environment variables (set via get_env_script).
 
-    Uses sys.executable -m to invoke the bazel_wrapper module. This works in both:
-    - Bazel mode: PYTHONPATH is baked into the wrapper script at install time
-    - Wheel mode: The package is installed in the Python environment
+    Uses sys.executable -m to invoke the bazel_wrapper module. PYTHONPATH is baked
+    into the wrapper script from sys.path so the subprocess can find packages.
     """
     wrapper_dir = settings.get_wrapper_dir()
     wrapper_path = settings.get_wrapper_path()
@@ -141,8 +140,10 @@ def install_wrapper(settings: HookSettings) -> Path:
     # Bake PYTHONPATH into the script so the wrapper can find dependencies (e.g. PyJWT)
     # without leaking it into every agent subprocess via the env file.
     # In wheel mode PYTHONPATH is unset, so no export line is emitted.
-    pythonpath = os.environ.get("PYTHONPATH")
-    pythonpath_line = f'\nexport PYTHONPATH="{pythonpath}"' if pythonpath else ""
+    # rules_python's venv-based bootstrap (1.8.3+) sets up sys.path via a virtual
+    # environment that doesn't set PYTHONPATH, so fall back to sys.path.
+    pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(sys.path)
+    pythonpath_line = f'\nexport PYTHONPATH="{pythonpath}"'
     wrapper_script = f"""#!/bin/sh{pythonpath_line}
 exec "{sys.executable}" -m tools.claude_hooks.bazel_wrapper "$@"
 """

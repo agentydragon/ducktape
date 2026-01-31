@@ -7,14 +7,10 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_binary(
     name = "server",
-    srcs = ["__main__.py"],
     imports = ["../../.."],
-    main = "__main__.py",
+    main_module = "experimental.gatelet.server",
     visibility = ["//experimental/gatelet:__pkg__"],
-    deps = [
-        ":app",
-        "@pypi//uvicorn",
-    ],
+    deps = [":__main__"],
 )
 
 py_library(
@@ -22,7 +18,10 @@ py_library(
     srcs = ["__main__.py"],
     imports = ["../../.."],
     visibility = ["//experimental/gatelet:__subpackages__"],
-    deps = [":app"],
+    deps = [
+        ":app",
+        "@pypi//uvicorn",
+    ],
 )
 
 py_library(

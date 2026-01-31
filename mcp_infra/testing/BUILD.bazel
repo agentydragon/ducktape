@@ -101,11 +101,8 @@ py_library(
 
 py_binary(
     name = "stdio_notifier",
-    srcs = ["stdio_notifier.py"],
     imports = ["../.."],
+    main_module = "mcp_infra.testing.stdio_notifier",
     visibility = ["//:__subpackages__"],
-    deps = [
-        "//mcp_infra/enhanced:server",
-        "@pypi//anyio",
-    ],
+    deps = [":stdio_notifier_lib"],
 )

@@ -76,11 +76,7 @@ def make_fake_critic_run(
     type_config = CriticTypeConfig(example=example_spec)
 
     return AgentRun(
-        agent_run_id=agent_run_id,
-        image_digest=FAKE_CRITIC_DIGEST,
-        model=model,
-        status=status,
-        type_config=type_config,
+        agent_run_id=agent_run_id, image_digest=FAKE_CRITIC_DIGEST, model=model, status=status, type_config=type_config
     )
 
 
@@ -104,11 +100,7 @@ def make_fake_grader_run(
     type_config = GraderTypeConfig(snapshot_slug=snapshot_slug)
 
     return AgentRun(
-        agent_run_id=agent_run_id,
-        image_digest=FAKE_GRADER_DIGEST,
-        model=model,
-        status=status,
-        type_config=type_config,
+        agent_run_id=agent_run_id, image_digest=FAKE_GRADER_DIGEST, model=model, status=status, type_config=type_config
     )
 
 
