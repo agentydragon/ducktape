@@ -203,6 +203,7 @@ py_binary(
 py_package(
     name = "claude_hooks_pkg",
     packages = [
+        "bazel_subprocess",
         "fmt_util",
         "net_util",
         "tools",
@@ -223,6 +224,7 @@ py_package(
         ":session_start_lib",
         ":settings",
         ":streaming",
+        "//:bazel_subprocess",
         "//net_util:net",
         "//tools/claude_hooks/auth_proxy:main",
         "//tools/claude_hooks/auth_proxy:proxy",
