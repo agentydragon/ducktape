@@ -37,6 +37,7 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         libxdamage1 \
         libxkbcommon0 \
         libxrandr2 \
+        libxfixes3 \
         libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
