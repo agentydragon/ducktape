@@ -21,6 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
+from mako.template import Template
 from pydantic import BaseModel
 
 from fmt_util.fmt_util import format_limited_list
@@ -29,7 +30,7 @@ from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import bazelisk_setup, env_file, nix_setup, podman_service, proxy_setup
 from tools.claude_hooks.debug import log_entrypoint_debug
 from tools.claude_hooks.errors import DirenvError, SkipError
-from tools.claude_hooks.settings import HookSettings
+from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
 from tools.claude_hooks.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
@@ -200,72 +201,30 @@ def format_environment_summary() -> str:
 
 
 def emit_session_context(
-    collector: LogCollector,
-    log_file: Path,
-    settings: HookSettings,
-    proxy: proxy_setup.ProxySetup,
-    podman: podman_service.PodmanSetup | None,
+    collector: LogCollector, log_file: Path, proxy: proxy_setup.ProxySetup, podman: podman_service.PodmanSetup | None
 ) -> None:
     """Emit compact context summary for Claude Code transcript.
 
-    This is the single place that renders agent-visible output from
-    structured setup results. Keep this tight — every line costs agent
-    context window.
+    Renders config/session_context.mako with structured setup results.
+    Keep the template tight — every line costs agent context window.
     """
-    has_errors = len(collector.errors) > 0
-    has_warnings = len(collector.warnings) > 0
+    status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
 
-    status = "ERRORS" if has_errors else "OK with warnings" if has_warnings else "OK"
-    lines = [
-        f"Claude Code session start hook [build: {BUILD_COMMIT}] — {status}",
-        "Environment: gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs",
-    ]
-
-    # Services — rendered here from structured data, not in each service module
-    lines.append(f"Bazel: wrapper adds auth proxy (port {proxy.port}, {proxy.ca_status})")
-    if podman:
-        lines.append(
-            f"Podman: {podman.status}, DOCKER_HOST={podman.socket_url}."
-            " Use fully qualified image names (docker.io/library/...)"
-        )
-
-    if collector.errors:
-        lines.append("ERRORS:")
-        lines.extend(f"  {msg}" for msg in collector.errors)
-
-    if collector.warnings:
-        lines.append("Warnings:")
-        lines.extend(f"  {msg}" for msg in collector.warnings)
-
-    if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
-        lines.append("GitHub CI: DUCKTAPE_CI_READ_GITHUB_TOKEN is set (fine-grained PAT for agentydragon/ducktape).")
-        lines.append(
-            '  curl -s -H "Authorization: token $DUCKTAPE_CI_READ_GITHUB_TOKEN"'
-            ' -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/...'
-        )
-        lines.append(
-            "  Works: runs, jobs, artifacts, PRs, issues, commits,"
-            " check-runs, branches, workflows, releases, contents."
-            " Job logs: /actions/jobs/{id}/logs (returns 302 redirect — use curl -L)."
-            " Run logs zip: /actions/runs/{id}/logs (returns 404 while run is in_progress;"
-            " returns 302 redirect to zip after run completes — use curl -L)."
-            " Artifact download: /actions/artifacts/{id}/zip (returns 302 — use curl -L)."
-        )
-        lines.append(
-            "  Write access: POST create works (issues, comments),"
-            " but PATCH update returns 403."
-            " Writes cannot be reverted with this token."
-        )
-        lines.append(
-            "  Note: GitHub API requests frequently get transient 401s"
-            " from the TLS-inspecting egress proxy."
-            " Retry on 401 with backoff (sleep 2-5s between retries)."
-            " Parse JSON defensively — a 401 returns an empty body."
-        )
-
-    lines.append(f"Setup log: {log_file}")
-
-    print("\n".join(lines))
+    template = Template(CONFIG_FILES.joinpath("session_context.mako").read_text())
+    result: str = template.render(
+        WARNING=logging.WARNING,
+        build_commit=BUILD_COMMIT,
+        status=status,
+        proxy_port=proxy.port,
+        proxy_ca_status=proxy.ca_status,
+        podman=podman is not None,
+        podman_status=podman.status if podman else None,
+        podman_socket_url=podman.socket_url if podman else None,
+        log_entries=collector.buffer,
+        has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN")),
+        log_file=log_file,
+    )
+    print(result.rstrip("\n"))
     sys.stdout.flush()
 
 
@@ -341,12 +300,12 @@ class LogCollector(logging.handlers.MemoryHandler):
         super().__init__(capacity=1000, flushLevel=logging.CRITICAL + 1)
 
     @property
-    def warnings(self) -> list[str]:
-        return [self.format(r) for r in self.buffer if r.levelno == logging.WARNING]
+    def has_errors(self) -> bool:
+        return any(r.levelno >= logging.ERROR for r in self.buffer)
 
     @property
-    def errors(self) -> list[str]:
-        return [self.format(r) for r in self.buffer if r.levelno >= logging.ERROR]
+    def has_warnings(self) -> bool:
+        return any(r.levelno == logging.WARNING for r in self.buffer)
 
 
 def setup_logging(settings: HookSettings) -> LogCollector:
@@ -598,7 +557,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     # Render agent context from structured results
     podman = None if isinstance(podman_result, BaseException) else podman_result
-    emit_session_context(collector=collector, log_file=log_file, settings=settings, proxy=proxy_result, podman=podman)
+    emit_session_context(collector=collector, log_file=log_file, proxy=proxy_result, podman=podman)
 
 
 async def async_main() -> None:

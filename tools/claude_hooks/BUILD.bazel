@@ -45,6 +45,7 @@ py_library(
         "config/podman/policy.json",
         "config/podman/registries.conf",
         "config/podman/storage.conf",
+        "config/session_context.mako",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
@@ -169,6 +170,7 @@ py_library(
         "//tools:build_info",
         "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",
+        "@pypi//mako",
         "@pypi//pydantic",
     ],
 )
