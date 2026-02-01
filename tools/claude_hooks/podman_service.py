@@ -118,11 +118,6 @@ def _install_crun_wrapper(podman_dir: Path, podman_config: Traversable) -> Path:
     """
     wrapper_path = podman_dir / "crun-gvisor-wrapper"
     wrapper_source = podman_config.joinpath("crun_gvisor_wrapper.py").read_text()
-
-    # Prefix with the python3 shebang from the source file
-    if not wrapper_source.startswith("#!"):
-        wrapper_source = "#!/usr/bin/env python3\n" + wrapper_source
-
     _write_config_conservative(wrapper_path, wrapper_source, "crun-gvisor-wrapper")
     wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return wrapper_path
