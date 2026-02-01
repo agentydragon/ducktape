@@ -32,7 +32,7 @@ repos:
         language_version: python3.13
       - id: check-yaml
         args: ["--allow-multiple-documents"]
-        # Skip Helm templates (Go templating, not valid YAML), ansible vault files, cluster charts, Flux-generated manifests
+        # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
         exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/"
       - id: check-toml
 
@@ -64,7 +64,7 @@ repos:
         # TODO: Re-enable gpd.yaml once all machines use Nix home-manager
         # and legacy_* roles are deleted. Currently gpd.yaml → legacy_gui →
         # petermosmans.customize-gnome (missing galaxy role) breaks syntax-check.
-        exclude: "^ansible/(gpd|(galaxy|requirements|inventory))\\.yaml$"
+        exclude: "^ansible/(gpd|requirements|inventory)\\.yaml$"
         pass_filenames: true
 
   # Ruff linter (formatting handled by bazel-format below)
@@ -98,7 +98,6 @@ repos:
         pass_filenames: true
         # Triggers on: formattable files, Bazel files, test files, cluster files
         files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html|py|sh|bash|tf)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$|MODULE\\.bazel$|^cluster/"
-        exclude: "\\.pnpm/"
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
   - repo: https://github.com/DavidAnson/markdownlint-cli2
@@ -125,7 +124,7 @@ repos:
         name: kubeconform (cluster)
         args: [-p, cluster/k8s/]
         files: ^cluster/k8s/.*\.yaml$
-        exclude: (cluster/k8s/.*-chart/|cluster/charts/)
+        exclude: cluster/charts/
 
   # Checkov security scanner for Terraform (standalone, avoids 10s import in bazel-precommit)
   - repo: https://github.com/bridgecrewio/checkov
