@@ -33,7 +33,7 @@ repos:
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip Helm templates (Go templating, not valid YAML), ansible vault files, cluster charts, Flux-generated manifests
-        exclude: "ansible/host_vars/.*\\.yml$|claude/claude_optimizer/config\\.example\\.yaml$|cluster/k8s/|cluster/charts/"
+        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/"
       - id: check-toml
 
       # TODO: disabled - should NOT fix within dotfiles e.g. OrcaSlicer
