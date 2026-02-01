@@ -90,4 +90,7 @@ test --test_env=PROPS_REGISTRY_PROXY_HOST
 test --test_env=PROPS_REGISTRY_PROXY_PORT
 test --test_env=PROPS_DOCKER_NETWORK
 test --test_env=PROPS_E2E_HOST_HOSTNAME
-test --test_env=DOCKER_HOST
+# Note: DOCKER_HOST is intentionally NOT passed through. RBE Firecracker
+# workers always use the default Docker socket (unix:///var/run/docker.sock).
+# Passing through DOCKER_HOST from the host causes failures in Claude Code
+# (where it's a podman socket) and other environments with non-standard Docker.

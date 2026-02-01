@@ -5,12 +5,6 @@ startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
 
-# Propagate proxy env vars into sandbox actions (for pip, uv, etc.)
-build --action_env=HTTPS_PROXY=${local_proxy | sh}
-build --action_env=HTTP_PROXY=${local_proxy | sh}
-build --action_env=https_proxy=${local_proxy | sh}
-build --action_env=http_proxy=${local_proxy | sh}
-
 # Pass proxy to repository rules (for Go modules in gazelle, etc.)
 # GONOPROXY=* forces all Go module downloads through HTTP proxy
 # Explicitly NOT passing NO_PROXY since it excludes *.googleapis.com
@@ -21,9 +15,6 @@ common --repo_env=https_proxy
 common --repo_env=GONOPROXY=*
 common --repo_env=GOPRIVATE=
 common --repo_env=GOSUMDB=sum.golang.org
-# Propagate Node.js CA bundle into sandbox (for npm, puppeteer, etc.)
-build --action_env=NODE_EXTRA_CA_CERTS=${combined_ca_path | sh}
-
 # Avoid gVisor linux-sandbox (/dev/null issues in CC web).
 # remote,local: prefer remote execution (BuildBuddy RBE) when configured, fall
 # back to unsandboxed local execution.  Remote workers don't use gVisor.

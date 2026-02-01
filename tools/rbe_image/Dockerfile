@@ -49,6 +49,15 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 # Containers still get isolated bridge networking; the only difference is that
 # direct-IP access to container ports is not blocked (acceptable since
 # Firecracker VMs are single-tenant and ephemeral).
-# TODO: Ideally, build a custom Firecracker kernel with CONFIG_IP_NF_RAW=y
-# to get full Docker networking security. This is a workaround.
-COPY tools/rbe_image/daemon.json /etc/docker/daemon.json
+#
+# Problem: BuildBuddy's init-dockerd (goinit) unconditionally overwrites
+# /etc/docker/daemon.json via MMDS metadata before starting dockerd. There's
+# no exec property to pass custom flags or preserve image settings.
+#
+# Workaround: Rename the real dockerd and install a wrapper script that merges
+# allow-direct-routing into daemon.json before exec'ing the real binary.
+# goinit calls `dockerd` by name via exec.LookPath, so the wrapper intercepts.
+COPY tools/rbe_image/dockerd-wrapper.py /usr/bin/dockerd-wrapper.py
+RUN mv /usr/bin/dockerd /usr/bin/dockerd.real \
+    && mv /usr/bin/dockerd-wrapper.py /usr/bin/dockerd \
+    && chmod +x /usr/bin/dockerd
