@@ -22,7 +22,7 @@ def ruff_formatter() -> PythonFormatter:
 
 def test_ruff_available():
     formatter = PythonFormatter(["ruff"])
-    assert formatter._available_tools == ["ruff"]
+    assert formatter._use_ruff is True
     assert formatter._ruff_bin is not None
 
 
@@ -38,7 +38,7 @@ def test_unknown_tool_raises():
 
 def test_non_formatting_tool_skipped():
     formatter = PythonFormatter(["mypy"])
-    assert formatter._available_tools == []
+    assert formatter._use_ruff is False
 
 
 def test_format_with_ruff_success(ruff_formatter):
@@ -48,24 +48,6 @@ def test_format_with_ruff_success(ruff_formatter):
 
     assert result == "x = 1 + 2\n"
     assert changes == ["Applied ruff formatting"]
-
-
-@patch("subprocess.run")
-def test_format_with_black_success(mock_run):
-    input_code = "x=1+2"
-    formatted_code = "x = 1 + 2\n"
-
-    # black --version succeeds, then black format succeeds
-    mock_run.side_effect = [
-        MagicMock(returncode=0, stdout="black 24.0\n"),  # --version check
-        MagicMock(returncode=0, stdout=formatted_code, stderr=""),  # format
-    ]
-
-    formatter = PythonFormatter(["black"])
-    result, changes = formatter.format_code(input_code, file_path=TEST_FILE)
-
-    assert result == formatted_code
-    assert changes == ["Applied black formatting"]
 
 
 def test_no_changes_needed(ruff_formatter):
@@ -145,7 +127,6 @@ def test_file_path_passed_to_tools(ruff_formatter):
     code = "x = 1\n"
     file_path = Path("/path/to/file.py")
 
-    # Just verify it runs without error — real ruff receives the filename
     result, changes = ruff_formatter.format_code(code, file_path=file_path)
 
     assert result == code
