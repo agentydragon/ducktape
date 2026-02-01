@@ -2,6 +2,11 @@
 #
 # Based on BuildBuddy's rbe-ubuntu24-04 image, with extra deps for Rust, GHC,
 # and Chromium headless shell. See tools/rbe_image/Dockerfile.
+#
+# Triggers:
+#   - push to main/devel (when tools/rbe_image/** changes): tags :latest + :sha
+#   - workflow_dispatch: tags :latest + :sha
+#   - workflow_call (from ci.yml): tags :ci-sha, outputs image ref
 name: RBE Worker Image
 
 on:
@@ -11,6 +16,11 @@ on:
       - "tools/rbe_image/**"
       - ".github/workflows/rbe-image.yml"
   workflow_dispatch:
+  workflow_call:
+    outputs:
+      rbe_image:
+        description: "Full image reference (e.g. ghcr.io/.../rbe-worker:ci-<sha>), empty if skipped"
+        value: ${{ jobs.build-and-push.outputs.rbe_image }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,8 +38,23 @@ jobs:
     name: Build and Push
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      rbe_image: ${{ steps.meta.outputs.rbe_image }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_call" ]]; then
+            TAG="ci-${{ github.sha }}"
+            echo "tags=${{ env.IMAGE }}:$TAG" >> $GITHUB_OUTPUT
+          else
+            TAG="${{ github.sha }}"
+            TAGS="${{ env.IMAGE }}:latest,${{ env.IMAGE }}:$TAG"
+            echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          fi
+          echo "rbe_image=${{ env.IMAGE }}:$TAG" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -44,6 +69,4 @@ jobs:
           context: .
           file: tools/rbe_image/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}

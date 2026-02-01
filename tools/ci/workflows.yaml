@@ -48,7 +48,7 @@ workflows:
     secrets: [BUILDBUDDY_API_KEY]
 
   # RBE image build (tested on PRs, output consumed by Bazel workflows)
-  rbe-image-ci:
+  rbe-image:
     trigger: { kind: path, pattern: "^tools/rbe_image/" }
 
   # Path-based workflows (non-Bazel)
