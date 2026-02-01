@@ -14,18 +14,18 @@ TEST_FILE = Path("/tmp/test.py")
 class TestPythonRuffLinter:
     """Test Python ruff linter functionality."""
 
-    @patch("subprocess.run")
-    def test_check_ruff_available(self, mock_run):
+    @patch("llm.claude_linter_v2.linters.python_ruff.find_ruff_binary")
+    def test_check_ruff_available(self, mock_find):
         """Test detection of ruff availability."""
         # Test ruff available
-        mock_run.return_value = MagicMock(returncode=0, stdout="ruff 0.1.0\n")
+        mock_find.return_value = "/usr/bin/ruff"
         linter = PythonRuffLinter()
-        assert linter._ruff_available is True
+        assert linter._ruff_bin == "/usr/bin/ruff"
 
         # Test ruff not available
-        mock_run.side_effect = FileNotFoundError()
+        mock_find.return_value = None
         linter = PythonRuffLinter()
-        assert linter._ruff_available is False
+        assert linter._ruff_bin is None
 
     @patch("subprocess.run")
     def test_check_code_with_violations(self, mock_run):
@@ -49,7 +49,7 @@ except:
         )
 
         linter = PythonRuffLinter()
-        linter._ruff_available = True
+        linter._ruff_bin = "/usr/bin/ruff"
 
         violations = linter.check_code(code, TEST_FILE)
 
@@ -71,7 +71,7 @@ def hello():
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         linter = PythonRuffLinter()
-        linter._ruff_available = True
+        linter._ruff_bin = "/usr/bin/ruff"
 
         violations = linter.check_code(code, TEST_FILE)
 
@@ -101,7 +101,7 @@ def hello():
         mock_run.return_value = MagicMock(returncode=1, stdout=ruff_output, stderr="")
 
         linter = PythonRuffLinter()
-        linter._ruff_available = True
+        linter._ruff_bin = "/usr/bin/ruff"
 
         violations = linter.check_code("code", TEST_FILE, critical_only=True)
 
@@ -118,7 +118,7 @@ def hello():
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         linter = PythonRuffLinter(force_select=force_rules)
-        linter._ruff_available = True
+        linter._ruff_bin = "/usr/bin/ruff"
 
         linter.check_code(code, TEST_FILE, critical_only=False)
 
@@ -145,7 +145,7 @@ def hello():
         mock_run.return_value = MagicMock(returncode=1, stdout=ruff_output, stderr="")
 
         linter = PythonRuffLinter()
-        linter._ruff_available = True
+        linter._ruff_bin = "/usr/bin/ruff"
 
         violations = linter.check_code("import unused", TEST_FILE, critical_only=False)
 
@@ -162,7 +162,7 @@ def hello():
         )
 
         linter = PythonRuffLinter()
-        linter._ruff_available = True
+        linter._ruff_bin = "/usr/bin/ruff"
 
         violations = linter.check_code("code", TEST_FILE)
 
@@ -175,7 +175,7 @@ def hello():
         mock_run.return_value = MagicMock(returncode=1, stdout="Invalid JSON", stderr="")
 
         linter = PythonRuffLinter()
-        linter._ruff_available = True
+        linter._ruff_bin = "/usr/bin/ruff"
 
         violations = linter.check_code("code", TEST_FILE)
 
@@ -198,7 +198,7 @@ def hello():
     def test_no_ruff_available(self):
         """Test behavior when ruff is not available."""
         linter = PythonRuffLinter()
-        linter._ruff_available = False
+        linter._ruff_bin = None
 
         violations = linter.check_code("code", TEST_FILE)
 
@@ -210,7 +210,7 @@ def hello():
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         linter = PythonRuffLinter()
-        linter._ruff_available = True
+        linter._ruff_bin = "/usr/bin/ruff"
 
         linter.check_code("code", Path("/path/to/file.py"))
 

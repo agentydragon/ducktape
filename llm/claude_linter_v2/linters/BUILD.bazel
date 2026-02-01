@@ -11,7 +11,10 @@ py_library(
     name = "python_formatter",
     srcs = ["python_formatter.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["//llm/claude_linter_v2/config:models"],
+    deps = [
+        ":ruff_binary",
+        "//llm/claude_linter_v2/config:models",
+    ],
 )
 
 py_library(
@@ -19,8 +22,13 @@ py_library(
     srcs = ["python_ruff.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//:bazel_subprocess",
+        ":ruff_binary",
         "//llm/claude_linter_v2/config:models",
-        "@pypi//ruff",
     ],
+)
+
+py_library(
+    name = "ruff_binary",
+    srcs = ["ruff_binary.py"],
+    visibility = ["//:__subpackages__"],
 )

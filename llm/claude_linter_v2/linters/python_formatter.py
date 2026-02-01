@@ -2,10 +2,10 @@
 
 import logging
 import subprocess
-import sys
 from pathlib import Path
 
 from llm.claude_linter_v2.config.models import AutofixCategory
+from llm.claude_linter_v2.linters.ruff_binary import find_ruff_binary
 
 logger = logging.getLogger(__name__)
 
@@ -14,28 +14,35 @@ class PythonFormatter:
     """Handles Python code formatting and autofixing."""
 
     def __init__(self, tools: list[str]) -> None:
-        """
-        Initialize formatter with specified tools.
-
-        Args:
-            tools: List of tools to use (e.g., ["ruff", "black"])
-        """
         self.tools = tools
+        self._ruff_bin = find_ruff_binary() if "ruff" in tools else None
         self._available_tools = self._check_available_tools()
 
     def _check_available_tools(self) -> list[str]:
         """Check which formatting tools are available."""
         available = []
         for tool in self.tools:
-            try:
-                # Use python -m for ruff to work in Bazel sandbox
-                cmd = [sys.executable, "-m", tool, "--version"] if tool == "ruff" else [tool, "--version"]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
-                if result.returncode == 0:
+            if tool == "ruff":
+                if self._ruff_bin:
                     available.append(tool)
-                    logger.debug(f"Found {tool}: {result.stdout.strip()}")
-            except (subprocess.SubprocessError, FileNotFoundError):
-                logger.warning(f"Tool {tool} not available")
+                    logger.debug(f"Found ruff: {self._ruff_bin}")
+                else:
+                    logger.warning("ruff configured but binary not found (set RUFF_BIN or add ruff to PATH)")
+            elif tool == "black":
+                try:
+                    result = subprocess.run(
+                        ["black", "--version"], capture_output=True, text=True, timeout=5, check=False
+                    )
+                    if result.returncode == 0:
+                        available.append(tool)
+                        logger.debug(f"Found {tool}: {result.stdout.strip()}")
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    logger.warning(f"Tool {tool} not available")
+            else:
+                logger.warning(f"Unknown formatting tool: {tool}")
+
+        if not available:
+            logger.warning("No formatting tools available")
 
         return available
 
@@ -44,7 +51,6 @@ class PythonFormatter:
     ) -> tuple[str, list[str]]:
         """Format Python code with specified autofix categories."""
         if not self._available_tools:
-            logger.warning("No formatting tools available")
             return code, []
 
         # Default to formatting only if no categories specified
@@ -67,14 +73,6 @@ class PythonFormatter:
             formatted_code, import_changes = self._fix_imports(formatted_code, file_path)
             changes.extend(import_changes)
 
-        if AutofixCategory.TYPE_HINTS in categories:
-            # TODO: Implement type hint fixes (e.g., with pyupgrade)
-            pass
-
-        if AutofixCategory.SECURITY in categories:
-            # TODO: Implement security fixes (e.g., bandit autofixes)
-            pass
-
         return formatted_code, changes
 
     def _apply_formatting(self, code: str, file_path: Path) -> tuple[str, list[str]]:
@@ -82,7 +80,6 @@ class PythonFormatter:
         changes = []
         formatted = code
 
-        # Try each available tool
         for tool in self._available_tools:
             if tool == "ruff":
                 formatted, tool_changes = self._format_with_ruff(formatted, file_path)
@@ -95,11 +92,11 @@ class PythonFormatter:
 
     def _format_with_ruff(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Format code with ruff."""
+        if not self._ruff_bin:
+            return code, []
         try:
-            # Use stdin/stdout to avoid file operations
-            # Use python -m ruff to work in Bazel sandbox
             result = subprocess.run(
-                [sys.executable, "-m", "ruff", "format", "--stdin-filename", file_path, "-"],
+                [self._ruff_bin, "format", "--stdin-filename", str(file_path), "-"],
                 input=code,
                 capture_output=True,
                 text=True,
@@ -121,7 +118,6 @@ class PythonFormatter:
     def _format_with_black(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Format code with black."""
         try:
-            # Use stdin/stdout to avoid file operations
             result = subprocess.run(
                 ["black", "-", "--quiet"], input=code, capture_output=True, text=True, timeout=30, check=False
             )
@@ -139,41 +135,37 @@ class PythonFormatter:
 
     def _fix_imports(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Fix import ordering and remove unused imports."""
+        if not self._ruff_bin or "ruff" not in self._available_tools:
+            return code, []
+
         changes = []
         formatted = code
 
-        if "ruff" in self._available_tools:
-            # Ruff can fix imports with --fix
-            # Use python -m ruff to work in Bazel sandbox
-            try:
-                result = subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "ruff",
-                        "check",
-                        "--fix",
-                        "--select",
-                        "I,F401",  # I=isort, F401=unused imports
-                        "--stdin-filename",
-                        file_path,
-                        "-",
-                    ],
-                    input=formatted,
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    check=False,
-                )
+        try:
+            result = subprocess.run(
+                [
+                    self._ruff_bin,
+                    "check",
+                    "--fix",
+                    "--select",
+                    "I,F401",  # I=isort, F401=unused imports
+                    "--stdin-filename",
+                    str(file_path),
+                    "-",
+                ],
+                input=formatted,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
 
-                # Ruff outputs the fixed code to stdout when using stdin
-                if (
-                    result.returncode in (0, 1) and result.stdout and result.stdout != formatted
-                ):  # 1 = had issues but fixed them
-                    formatted = result.stdout
-                    changes.append("Fixed import ordering and removed unused imports")
+            # Ruff outputs the fixed code to stdout when using stdin
+            if result.returncode in (0, 1) and result.stdout and result.stdout != formatted:
+                formatted = result.stdout
+                changes.append("Fixed import ordering and removed unused imports")
 
-            except subprocess.SubprocessError as e:
-                logger.error(f"Ruff import fix error: {e}")
+        except subprocess.SubprocessError as e:
+            logger.error(f"Ruff import fix error: {e}")
 
         return formatted, changes

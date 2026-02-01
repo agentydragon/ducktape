@@ -1,6 +1,7 @@
 """Shared test fixtures for claude_hooks tests."""
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -64,7 +65,7 @@ sys.exit(1 if changed else 0)
                     {
                         "id": "test-fixer",
                         "name": "Test Fixer (foo->bar)",
-                        "entry": f"python3 {fixer_script}",
+                        "entry": f"{sys.executable} {fixer_script}",
                         "language": "system",
                         "pass_filenames": True,
                     }

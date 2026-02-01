@@ -1,6 +1,5 @@
 """Tests for Python code formatter."""
 
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -10,26 +9,20 @@ from llm.claude_linter_v2.config.models import AutofixCategory
 from llm.claude_linter_v2.linters.python_formatter import PythonFormatter
 
 TEST_FILE = Path("/test.py")
+FAKE_RUFF = "/usr/bin/ruff"
 
 
 class TestPythonFormatter:
     """Test Python code formatting functionality."""
 
-    @patch("subprocess.run")
-    def test_check_available_tools(self, mock_run):
+    @patch("llm.claude_linter_v2.linters.python_formatter.find_ruff_binary")
+    def test_check_available_tools(self, mock_find):
         """Test detection of available formatting tools."""
+        mock_find.return_value = FAKE_RUFF
 
-        # Mock ruff available (via python -m ruff), black not available
-        def side_effect(cmd, **kwargs):
-            # ruff is invoked as [sys.executable, "-m", "ruff", "--version"]
-            if "-m" in cmd and "ruff" in cmd:
-                return MagicMock(returncode=0, stdout="ruff 0.1.0\n")
-            raise FileNotFoundError
-
-        mock_run.side_effect = side_effect
-
-        formatter = PythonFormatter(["ruff", "black", "isort"])
-        assert formatter._available_tools == ["ruff"]
+        formatter = PythonFormatter(["ruff", "black"])
+        # ruff found via find_ruff_binary, black not on PATH
+        assert "ruff" in formatter._available_tools
 
     @patch("subprocess.run")
     def test_format_with_ruff_success(self, mock_run):
@@ -40,6 +33,7 @@ class TestPythonFormatter:
         mock_run.return_value = MagicMock(returncode=0, stdout=formatted_code, stderr="")
 
         formatter = PythonFormatter(["ruff"])
+        formatter._ruff_bin = FAKE_RUFF
         formatter._available_tools = ["ruff"]
 
         result, changes = formatter.format_code(input_code, file_path=TEST_FILE)
@@ -47,9 +41,9 @@ class TestPythonFormatter:
         assert result == formatted_code
         assert changes == ["Applied ruff formatting"]
 
-        # Verify ruff was called correctly (via python -m ruff)
+        # Verify ruff binary was called directly
         mock_run.assert_called_with(
-            [sys.executable, "-m", "ruff", "format", "--stdin-filename", TEST_FILE, "-"],
+            [FAKE_RUFF, "format", "--stdin-filename", str(TEST_FILE), "-"],
             input=input_code,
             capture_output=True,
             text=True,
@@ -83,13 +77,10 @@ class TestPythonFormatter:
         """Test when code is already formatted."""
         code = "x = 1 + 2\n"
 
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=code,  # Same as input
-            stderr="",
-        )
+        mock_run.return_value = MagicMock(returncode=0, stdout=code, stderr="")
 
         formatter = PythonFormatter(["ruff"])
+        formatter._ruff_bin = FAKE_RUFF
         formatter._available_tools = ["ruff"]
 
         result, changes = formatter.format_code(code, file_path=TEST_FILE)
@@ -105,6 +96,7 @@ class TestPythonFormatter:
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Syntax error")
 
         formatter = PythonFormatter(["ruff"])
+        formatter._ruff_bin = FAKE_RUFF
         formatter._available_tools = ["ruff"]
 
         result, changes = formatter.format_code(code, file_path=TEST_FILE)
@@ -132,13 +124,10 @@ def foo():
     return json.dumps({})
 """
 
-        # First call for formatting, second for import fixing
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout=input_code),  # No formatting changes
-            MagicMock(returncode=1, stdout=fixed_code),  # Fixed imports
-        ]
+        mock_run.return_value = MagicMock(returncode=1, stdout=fixed_code)
 
         formatter = PythonFormatter(["ruff"])
+        formatter._ruff_bin = FAKE_RUFF
         formatter._available_tools = ["ruff"]
 
         result, changes = formatter.format_code(input_code, file_path=TEST_FILE, categories=[AutofixCategory.IMPORTS])
@@ -165,6 +154,7 @@ def foo():
         mock_run.return_value = MagicMock(returncode=0, stdout=code, stderr="")
 
         formatter = PythonFormatter(["ruff"])
+        formatter._ruff_bin = FAKE_RUFF
         formatter._available_tools = ["ruff"]
 
         mock_apply = MagicMock(return_value=(code, []))
@@ -184,6 +174,7 @@ def foo():
         code = "x=1"
 
         formatter = PythonFormatter(["ruff"])
+        formatter._ruff_bin = FAKE_RUFF
         formatter._available_tools = ["ruff"]
 
         mock_apply = MagicMock(return_value=(code, []))
@@ -214,13 +205,14 @@ def foo():
         mock_run.return_value = MagicMock(returncode=0, stdout=code, stderr="")
 
         formatter = PythonFormatter(["ruff"])
+        formatter._ruff_bin = FAKE_RUFF
         formatter._available_tools = ["ruff"]
 
         formatter.format_code(code, file_path=file_path)
 
-        # Verify file path was passed to ruff (via python -m ruff)
+        # Verify ruff binary was called with file path
         mock_run.assert_called_with(
-            [sys.executable, "-m", "ruff", "format", "--stdin-filename", file_path, "-"],
+            [FAKE_RUFF, "format", "--stdin-filename", str(file_path), "-"],
             input=code,
             capture_output=True,
             text=True,

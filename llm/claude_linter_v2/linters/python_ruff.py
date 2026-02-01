@@ -6,8 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import ClassVar
 
-from bazel_subprocess import run_python_module
 from llm.claude_linter_v2.config.models import Violation
+from llm.claude_linter_v2.linters.ruff_binary import find_ruff_binary
 
 logger = logging.getLogger(__name__)
 
@@ -36,25 +36,8 @@ class PythonRuffLinter:
     )
 
     def __init__(self, force_select: list[str] | None = None) -> None:
-        """
-        Initialize ruff linter.
-
-        Args:
-            force_select: List of ruff rules to force enable
-        """
         self.force_select = force_select or []
-        self._ruff_available = self._check_ruff_available()
-
-    def _check_ruff_available(self) -> bool:
-        """Check if ruff is available."""
-        try:
-            result = run_python_module("ruff", "--version", capture_output=True, text=True, timeout=5, check=False)
-            if result.returncode == 0:
-                logger.debug(f"Found ruff: {result.stdout.strip()}")
-                return True
-        except (subprocess.SubprocessError, FileNotFoundError):
-            logger.warning("ruff not available")
-        return False
+        self._ruff_bin = find_ruff_binary()
 
     def check_code(self, code: str, file_path: Path, critical_only: bool = True) -> list[Violation]:
         """
@@ -68,14 +51,14 @@ class PythonRuffLinter:
         Returns:
             List of violations found
         """
-        if not self._ruff_available:
+        if not self._ruff_bin:
             logger.warning("ruff not available, skipping checks")
             return []
 
         violations = []
 
         # Build ruff args
-        args: list[str] = ["check", "--output-format", "json", "--stdin-filename", str(file_path)]
+        args: list[str] = [self._ruff_bin, "check", "--output-format", "json", "--stdin-filename", str(file_path)]
 
         # Add force-select rules if provided
         if self.force_select:
@@ -88,9 +71,7 @@ class PythonRuffLinter:
         args.append("-")
 
         try:
-            result = run_python_module(
-                "ruff", *args, input=code, capture_output=True, text=True, timeout=30, check=False
-            )
+            result = subprocess.run(args, input=code, capture_output=True, text=True, timeout=30, check=False)
 
             # Ruff returns 1 if violations found, 0 if clean
             if result.returncode in (0, 1):
