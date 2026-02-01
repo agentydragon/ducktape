@@ -178,8 +178,5 @@ js_test(
         # Point Puppeteer to the Bazel-managed Chromium
         "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
-    tags = [
-        "no-sandbox",
-        "visual",
-    ],
+    tags = ["no-sandbox"],
 )

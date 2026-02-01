@@ -1,19 +1,21 @@
 # Build and push props-cli OCI image to GHCR
 #
-# Used by specimens repo for validation (pre-commit + CI)
+# Used by specimens repo for validation (pre-commit + CI).
+# Triggered from ci.yml via workflow_call when //props/cli/... targets change.
 name: props-cli Image
 
 on:
-  push:
-    branches: [main, devel]
-    paths:
-      - "props/**"
-      - "agent_core/**"
-      - "agent_pkg/**"
-      - "cli_util/**"
-      - "mcp_infra/**"
-      - "openai_utils/**"
-      - ".github/workflows/props-cli-image.yml"
+  workflow_call:
+    inputs:
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache (optional)"
+        required: false
   workflow_dispatch:
 
 # Cancel outdated workflow runs when new commits are pushed
@@ -34,13 +36,17 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - uses: ./.github/actions/bazel-repo-cache
-        id: bazel-cache
+      - uses: ./.github/actions/setup-bazel
+        id: bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          rbe_image: ${{ inputs.rbe_image }}
 
       - name: Build OCI image
         run: bazelisk build //props/cli:image
 
       - name: Login to GHCR
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/devel'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -48,10 +54,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push to GHCR
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/devel'
         run: bazelisk run //props/cli:push_ghcr
 
       - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel.outputs.cache-key }}

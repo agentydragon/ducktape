@@ -87,7 +87,7 @@ Aspect definitions in `tools/lint/linters.bzl`:
 | `pre-commit.yml`        | `pre-commit run --all-files`                           |
 | `bazel-build.yml`       | `bazel build --config=check //...`, `bazel test //...` |
 | `ansible-lint.yml`      | Full ansible-lint (thorough mode)                      |
-| `visual-regression.yml` | `bazel test //props/frontend:visual_test`              |
+| `bazel-test.yml`        | `bazel test //...` (includes visual regression)        |
 
 ## Formatting
 
