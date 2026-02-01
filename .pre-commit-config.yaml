@@ -3,33 +3,15 @@
 # Uses (?x) verbose regex mode for readable multi-line patterns
 exclude: |
   (?x)^(
-    # Vendored/third-party code
-    .*/fixtures/.*|
-
     # Legacy/archived directories
     k8s-old/.*|
-    claude-commands-old/.*\.md|
 
-    # Test data and examples
-    .*/examples/.*\.py|
+    # Test data
     claude/claude_hooks/testdata/.*\.md|
     tana/testdata/.*|
 
-    # LLM prompts/instructions (manually curated, not linted)
-    llm/instruct-logseq/.*|
-    llm/claude-instructions/.*\.md|
-    prompts/scans/useless-comments-and-docs\.md|
-
-    # Documentation (manually curated or has special formatting)
-    agent_server/docs/scaffold_reflection\.md|
-    claude-commands/TODO\.md|
-    claude/claude_optimizer/README\.md|
-    cluster/docs/(agents|operations|plan|secrets|troubleshooting)\.md|
-    finance/reconcile/README\.md|
-    mcp_infra/docs/eliminating-class-constants-analysis\.md|
-    nix/home/(README\.md|claude-code/commands/.*\.md)|
-    experimental/sandboxed_jupyter/docs/TODO.*\.md|
-    website/posts/.*\.markdown
+    # Generated content
+    llm/instruct-logseq/.*
   )$
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

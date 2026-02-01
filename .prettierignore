@@ -25,11 +25,11 @@ tana/testdata/**/*.txt
 # Logseq export - generated content
 llm/instruct-logseq/**
 
-# Old k8s configs - archived, contains Helm templates that aren't valid YAML
+# Archived directories - complex formatting that doesn't survive prettier
+claude-commands-old/**
 k8s-old/**
 
 # Flux-generated GitOps manifests
-cluster/flux-system/**
 cluster/k8s/flux-system/**
 
 # Helm chart templates - Go templating, not valid YAML
@@ -40,20 +40,3 @@ cluster/k8s/*-chart/templates/**
 **/pnpm-lock.yaml
 **/package-lock.json
 **/uv.lock
-
-# TODO: Fix formatting and remove exclusions below
-claude-commands-old/ccr-code-work.md
-claude-commands-old/commit.md
-claude-commands-old/rulelint.md
-claude-commands/TODO.md
-finance/reconcile/README.md
-llm/claude-instructions/CLAUDE-2025-07-12.md
-llm/claude-instructions/history.md
-mcp_infra/docs/eliminating-class-constants-analysis.md
-nix/home/claude-code/commands/dump.md
-prompts/scans/useless-comments-and-docs.md
-props/standards/self-describing-names.md
-sandboxed_jupyter/docs/TODO-SANDBOX.md
-sandboxed_jupyter/docs/TODO.md
-tana/export/headless_autoexport/README
-website/posts/2015-08-23-static-typing-in-python.markdown

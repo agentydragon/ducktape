@@ -19,7 +19,7 @@ exclude = [
     "tana/export/references",
     "props/testing/fixtures/testdata",
     "claude/claude_hooks/testdata",
-    "sandboxed_jupyter/testdata",
+    "experimental/sandboxed_jupyter/testdata",
     "sysrw/testdata",
     "tana/testdata",
 ]

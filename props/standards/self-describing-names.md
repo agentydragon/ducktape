@@ -7,12 +7,12 @@ Primitive‑typed identifiers (int/float/str/bool/bytes/number) are named so the
 
 ## Acceptance criteria (checklist)
 
-- Durations: use a duration type (e.g., Python datetime.timedelta, Go time.Duration, Java java.time.Duration) OR suffix the unit on primitives (e.g., timeout_ms, poll_interval_secs)
-- Timestamps: use time types (datetime/Instant) instead of numeric epochs; if a primitive is required, suffix unit explicitly (created_at_epoch_ms or created_at_epoch_s)
-- Sizes: suffix byte‑based units on primitives (payload_bytes, chunk_size_kb) rather than ambiguous names (chunk_size)
-- Ratios/percentages: name includes the scale (progress_percent, error_ratio)
-- Booleans: clear state/predicate names. Past-participle adjectives are fine (enabled, accepted, archived, verified) and read as state; use is_/has_ when a bare noun would be ambiguous (is_admin, has_license). Avoid bare nouns like license/admin/feature.
-- IDs: include entity in name when type is a generic string/number (user_id, order_id) rather than id in ambiguous scopes
+- Durations: use a duration type (e.g., Python `datetime.timedelta`, Go `time.Duration`, Java `java.time.Duration`) OR suffix the unit on primitives (e.g., `timeout_ms`, `poll_interval_secs`)
+- Timestamps: use time types (`datetime`/`Instant`) instead of numeric epochs; if a primitive is required, suffix unit explicitly (`created_at_epoch_ms` or `created_at_epoch_s`)
+- Sizes: suffix byte‑based units on primitives (`payload_bytes`, `chunk_size_kb`) rather than ambiguous names (`chunk_size`)
+- Ratios/percentages: name includes the scale (`progress_percent`, `error_ratio`)
+- Booleans: clear state/predicate names. Past-participle adjectives are fine (`enabled`, `accepted`, `archived`, `verified`) and read as state; use `is_`/`has_` when a bare noun would be ambiguous (`is_admin`, `has_license`). Avoid bare nouns like `license`/`admin`/`feature`.
+- IDs: include entity in name when type is a generic string/number (`user_id`, `order_id`) rather than `id` in ambiguous scopes
 - Do not introduce bare primitives whose meaning/units are unclear from name; rename to make meaning obvious or use a richer type
 
 ## Positive examples
@@ -71,16 +71,16 @@ id: str = "123"                        # bad: which entity?
 
 ```ts
 // TypeScript
-let timeout: number = 250;             // bad
-let size: number = 1024;               // bad
-let license: boolean = true;           // bad (bare noun)
-let admin: boolean = true;             // bad (bare noun)
-let feature: boolean = true;           // bad (bare noun)
+let timeout: number = 250; // bad
+let size: number = 1024; // bad
+let license: boolean = true; // bad (bare noun)
+let admin: boolean = true; // bad (bare noun)
+let feature: boolean = true; // bad (bare noun)
 ```
 
 ## Notes
 
-- Prefer domain types where available (timedelta/Duration/Instant/etc.). When primitives are unavoidable, encode units in the name.
-- Booleans: past-participle adjectives are often fine because they read as a state (enabled, accepted, archived, verified). Use is_/has_ when a noun would otherwise be ambiguous (is_admin, has_license).
+- Prefer domain types where available (`timedelta`/`Duration`/`Instant`/etc.). When primitives are unavoidable, encode units in the name.
+- Booleans: past-participle adjectives are often fine because they read as a state (`enabled`, `accepted`, `archived`, `verified`). Use `is_`/`has_` when a noun would otherwise be ambiguous (`is_admin`, `has_license`).
 - Pragmatic exception in legacy codebases: if a code path is uniformly using weak types (e.g., string paths or epoch integers) and your small change would only introduce noise by converting in/out without internal benefit, it’s acceptable to stick to the prevailing type for that narrow change. Favor module/function boundaries that convert once at input and once at output when you can extract real benefits internally.
 - This property focuses on unambiguous naming for primitives. Additional properties may separately enforce: use of time/money types; currency units; angle units (deg/rad); and rate units (per_second, per_minute).

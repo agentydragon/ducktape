@@ -28,7 +28,6 @@ from props.db.models import (
 )
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
-
 from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
 
 # Synthetic digests for DB-level tests (not real OCI images)

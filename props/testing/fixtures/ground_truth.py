@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from more_itertools import first
 import pytest
+from more_itertools import first
 from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug

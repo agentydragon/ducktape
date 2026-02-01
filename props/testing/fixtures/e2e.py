@@ -10,8 +10,8 @@ from collections.abc import Callable
 
 import pytest
 
-from openai_utils.testing.openai_mock import FakeOpenAIModel
 from openai_utils.model import ResponsesResult
+from openai_utils.testing.openai_mock import FakeOpenAIModel
 from props.core.ids import SnapshotSlug
 from props.critic_dev.improve.main import TerminationSuccess
 

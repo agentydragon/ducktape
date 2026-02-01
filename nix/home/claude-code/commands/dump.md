@@ -7,6 +7,7 @@ Capture the current session state as a persistent markdown tombstone document.
 ## Purpose
 
 Session continuity beyond Claude Code's built-in session restoration:
+
 - Resuming work after restart/closure
 - Handoff to future agents
 - Historical record of incomplete work
@@ -15,10 +16,10 @@ Session continuity beyond Claude Code's built-in session restoration:
 
 ## Scope
 
-| Mode | Invocation | Use Case |
-|------|------------|----------|
-| Full session | `dump` | Save everything before closing |
-| Scoped | `dump <topic>` | Extract specific discussion thread |
+| Mode         | Invocation     | Use Case                           |
+| ------------ | -------------- | ---------------------------------- |
+| Full session | `dump`         | Save everything before closing     |
+| Scoped       | `dump <topic>` | Extract specific discussion thread |
 
 ## Required Elements
 
@@ -40,11 +41,11 @@ Session continuity beyond Claude Code's built-in session restoration:
 
 This is the highest priority section. Scan conversation for:
 
-| Source | Examples |
-|--------|----------|
-| Explicit statements | "we should...", "let's do X next", "TODO" |
-| Unresolved issues | Bugs discovered but not fixed, failing tests |
-| Partial work | WIP states, uncommitted changes, partial implementations |
+| Source              | Examples                                                 |
+| ------------------- | -------------------------------------------------------- |
+| Explicit statements | "we should...", "let's do X next", "TODO"                |
+| Unresolved issues   | Bugs discovered but not fixed, failing tests             |
+| Partial work        | WIP states, uncommitted changes, partial implementations |
 
 **Distinguish:** Actual discussed items (high priority) vs. potential next actions (lower priority).
 
@@ -68,15 +69,18 @@ Keep concise — point to existing docs rather than repeating.
 ## Implementation Notes
 
 **Session analysis via session-logs skill:**
+
 - Tool calls (Edit, Write, Bash) for modified files
 - User messages for "should", "TODO", "next" patterns
 - Timestamps for session duration
 
 **Update vs. new file criteria:**
+
 - Same general topic, recent (~1 week), not too large (<1000 lines) → update
 - Otherwise → create new
 
 **Verification:**
+
 - Session ID must be verified via skill
 - File paths must exist
 - Line numbers current (best effort)

@@ -47,7 +47,7 @@ Example Ansible task structure:
 **Shared ZFS dataset across multiple machines**: The ZFS dataset `tank/code` is accessed from multiple machines with different mount points:
 
 - **atlas** (Proxmox host): `/tank/code` (native ZFS mount)
-- **wyrm** (Pop!_OS VM): `/code` (virtiofs mount of atlas's `/tank/code`)
+- **wyrm** (Pop!\_OS VM): `/code` (virtiofs mount of atlas's `/tank/code`)
 
 **Current issue**: The existing symlink at `/code/.claude/commands/organize-code.md` incorrectly points to `/home/agentydragon/code/ducktape/claude-commands/organize-code.md`, which is machine-specific.
 

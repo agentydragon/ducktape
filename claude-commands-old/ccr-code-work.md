@@ -114,7 +114,7 @@ Example payload (adjust paths if your home differs):
   - file_path: /Users/mpokorny/code/claude-code-router/src/utils/log.ts
   - file_path: /Users/mpokorny/code/claude-code-router/src/utils/tracer.ts
 
-- functions.mcp__github__get_file_contents (musistudio/llms)
+- `functions.mcp__github__get_file_contents` (musistudio/llms)
   - { owner: musistudio, repo: llms, path: "package.json" }
   - { owner: musistudio, repo: llms, path: "/" }
   - { owner: musistudio, repo: llms, path: "/src/" }
@@ -124,16 +124,16 @@ Example payload (adjust paths if your home differs):
   - { owner: musistudio, repo: llms, path: "src/transformer" }
   - { owner: musistudio, repo: llms, path: "src/utils" }
 
-- functions.mcp__github__search_code (OpenAI Cookbook: reasoning model docs)
+- `functions.mcp__github__search_code` (OpenAI Cookbook: reasoning model docs)
   - { query: "repo:openai/openai-cookbook (o3 OR reasoning OR \"max_completion_tokens\" OR \"reasoning models\")", perPage: 50 }
 
-- functions.mcp__github__get_file_contents (OpenAI Cookbook repo top-level directories for quick skimming)
+- `functions.mcp__github__get_file_contents` (OpenAI Cookbook repo top-level directories for quick skimming)
   - { owner: openai, repo: openai-cookbook, path: "/" }
   - { owner: openai, repo: openai-cookbook, path: "guides" }
   - { owner: openai, repo: openai-cookbook, path: "examples" }
   - { owner: openai, repo: openai-cookbook, path: "apps" }
 
-- functions.mcp__github__get_file_contents (specific cookbook examples)
+- `functions.mcp__github__get_file_contents` (specific cookbook examples)
   - { owner: openai, repo: openai-cookbook, path: "examples/responses_api/reasoning_items.ipynb" }
   - { owner: openai, repo: openai-cookbook, path: "examples/responses_api/responses_example.ipynb" }
   - { owner: openai, repo: openai-cookbook, path: "examples/responses_api/responses_api_tool_orchestration.ipynb" }
@@ -143,7 +143,7 @@ Example payload (adjust paths if your home differs):
   - { owner: openai, repo: openai-cookbook, path: "examples/Prompt_migration_guide.ipynb" }
   - { owner: openai, repo: openai-cookbook, path: "examples/File_Search_Responses.ipynb" }
 
-- functions.mcp__github__get_file_contents (OpenAI Python SDK type definitions)
+- `functions.mcp__github__get_file_contents` (OpenAI Python SDK type definitions)
   - { owner: openai, repo: openai-python, path: "src/openai/types/responses/response_create_params.py" }
   - { owner: openai, repo: openai-python, path: "src/openai/types/shared_params/reasoning.py" }
   - { owner: openai, repo: openai-python, path: "src/openai/types/chat/completion_create_params.py" }
