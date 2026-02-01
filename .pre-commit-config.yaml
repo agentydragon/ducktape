@@ -137,6 +137,8 @@ repos:
 
   # TFLint - Terraform linter (uses antonbabenko wrapper which handles tflint --init)
   # Config: cluster/.tflint.hcl; plugins cached in ~/.tflint.d/plugins
+  # Wrapper groups changed files by directory and runs tflint --chdir=<dir> per directory
+  # (tflint always lints the whole module, not individual files)
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.105.0
     hooks:
