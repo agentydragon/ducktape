@@ -162,16 +162,7 @@ def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
         on={
             "push": {"branches": ["main", "master", "devel"]},
             "pull_request": None,
-            "workflow_dispatch": {
-                "inputs": {
-                    "enable_profiling": {
-                        "description": "Enable Bazel profiling (generates downloadable artifacts)",
-                        "required": False,
-                        "type": "boolean",
-                        "default": False,
-                    }
-                }
-            },
+            "workflow_dispatch": None,
         },
         concurrency={"group": "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": True},
         permissions=permissions,

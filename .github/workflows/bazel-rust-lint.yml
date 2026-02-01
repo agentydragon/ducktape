@@ -12,11 +12,6 @@ on:
         required: false
         type: string
         default: "//finance/..."
-      enable_profiling:
-        description: "Enable Bazel profiling (generates downloadable artifacts)"
-        required: false
-        type: boolean
-        default: false
       rbe_image:
         description: "Override RBE container image (optional)"
         required: false
@@ -33,11 +28,6 @@ on:
         required: false
         type: string
         default: "//finance/..."
-      enable_profiling:
-        description: "Enable Bazel profiling (generates downloadable artifacts)"
-        required: false
-        type: boolean
-        default: false
 
 jobs:
   rust-lint:
@@ -68,24 +58,9 @@ jobs:
 
       - name: Rust lint
         run: |
-          PROFILE_FLAG=""
-          if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
-            PROFILE_FLAG="--config=ci-profile"
-          fi
           bazel build --keep_going --config=rust-check \
             --build_metadata=ROLE=ci --build_metadata=TAGS=rust-lint \
-            $PROFILE_FLAG ${{ inputs.targets }}
-
-      - name: Upload Bazel profile
-        if: inputs.enable_profiling && always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bazel-profile-rust-lint-${{ github.run_id }}
-          path: |
-            bazel-profile.gz
-            execution-log.json
-          retention-days: 14
-          if-no-files-found: warn
+            ${{ inputs.targets }}
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

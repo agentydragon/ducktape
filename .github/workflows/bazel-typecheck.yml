@@ -12,11 +12,6 @@ on:
         required: false
         type: string
         default: "//..."
-      enable_profiling:
-        description: "Enable Bazel profiling (generates downloadable artifacts)"
-        required: false
-        type: boolean
-        default: false
       rbe_image:
         description: "Override RBE container image (optional)"
         required: false
@@ -33,11 +28,6 @@ on:
         required: false
         type: string
         default: "//..."
-      enable_profiling:
-        description: "Enable Bazel profiling (generates downloadable artifacts)"
-        required: false
-        type: boolean
-        default: false
 
 jobs:
   typecheck:
@@ -87,27 +77,12 @@ jobs:
             TARGET_ARG="${{ inputs.targets }}"
             echo "Using targets from input: $TARGET_ARG"
           fi
-          PROFILE_FLAG=""
-          if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
-            PROFILE_FLAG="--config=ci-profile"
-          fi
           # Use local strategy for mypy to avoid sandbox copying (saves ~50% disk)
           # mypy_runner.py copies upstream caches via shutil.copy(), not symlinks
           # With sandbox, this happens twice: once by Bazel, once by mypy_runner
           bazel build --keep_going --config=typecheck --strategy=mypy=local \
             --build_metadata=ROLE=ci --build_metadata=TAGS=typecheck \
-            $PROFILE_FLAG $TARGET_ARG
-
-      - name: Upload Bazel profile
-        if: inputs.enable_profiling && always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bazel-profile-typecheck-${{ github.run_id }}
-          path: |
-            bazel-profile.gz
-            execution-log.json
-          retention-days: 14
-          if-no-files-found: warn
+            $TARGET_ARG
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

@@ -53,12 +53,6 @@ build:eslint --output_groups=+rules_lint_report
 # Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)
 
-# CI profiling - captures performance data for every build
-# Run with: bazel build --config=ci-profile //...
-# Produces: bazel-profile.gz (Chrome tracing format), execution-log.json (action-level timing)
-build:ci-profile --profile=bazel-profile.gz
-build:ci-profile --execution_log_json_file=execution-log.json
-
 # Stamping - embeds build metadata (commit hash, etc.) into build artifacts
 # Only targets that depend on ctx.info_file (like build_info_gen) are invalidated on commit change
 build --stamp --workspace_status_command=tools/stamp.sh

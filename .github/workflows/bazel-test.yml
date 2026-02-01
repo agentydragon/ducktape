@@ -12,11 +12,6 @@ on:
         required: false
         type: string
         default: "//... - //tools/claude_hooks/..."
-      enable_profiling:
-        description: "Enable Bazel profiling (generates downloadable artifacts)"
-        required: false
-        type: boolean
-        default: false
       rbe_image:
         description: "Override RBE container image (optional)"
         required: false
@@ -33,12 +28,6 @@ on:
         required: false
         type: string
         default: "//... - //tools/claude_hooks/..."
-      enable_profiling:
-        description: "Enable Bazel profiling (generates downloadable artifacts)"
-        required: false
-        type: boolean
-        default: false
-
 jobs:
   test:
     name: Test
@@ -117,10 +106,6 @@ jobs:
             echo "Using targets from input: $TARGET_ARG"
           fi
 
-          PROFILE_FLAG=""
-          if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
-            PROFILE_FLAG="--config=ci-profile"
-          fi
           bazel test --keep_going \
             --build_metadata=ROLE=ci --build_metadata=TAGS=test \
             --test_tag_filters=-visual,-e2e,-live_openai_api \
@@ -129,24 +114,12 @@ jobs:
             --test_env=PGUSER=postgres --test_env=PGPASSWORD=postgres \
             --test_env=PGDATABASE=postgres \
             --test_env=PROPS_E2E_HOST_HOSTNAME=host.docker.internal \
-            $PROFILE_FLAG \
             $TARGET_ARG
 
       - uses: ./.github/actions/collect-test-logs
         if: always()
         with:
           artifact-name: test-logs
-
-      - name: Upload Bazel profile
-        if: inputs.enable_profiling && always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bazel-profile-test-${{ github.run_id }}
-          path: |
-            bazel-profile.gz
-            execution-log.json
-          retention-days: 14
-          if-no-files-found: warn
 
       # Skip when all tests were remote-cached (no local XML outputs).
       - name: Test Report

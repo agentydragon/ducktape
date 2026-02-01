@@ -30,22 +30,16 @@ workflows:
   bazel-lint:
     trigger: { kind: bazel_query, query: "$targets" }
     targets: true
-    inputs:
-      enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: [BUILDBUDDY_API_KEY]
 
   bazel-typecheck:
     trigger: { kind: bazel_query, query: "$targets" }
     targets: true
-    inputs:
-      enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: [BUILDBUDDY_API_KEY]
 
   # Rust-specific (only finance/ has Rust code)
   bazel-rust-lint:
     trigger: { kind: bazel_query, query: "$targets intersect //finance/..." }
-    inputs:
-      enable_profiling: ${{ inputs.enable_profiling || false }}
     secrets: [BUILDBUDDY_API_KEY]
 
   # Frontend visual regression
