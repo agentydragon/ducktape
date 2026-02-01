@@ -86,6 +86,22 @@ repos:
     hooks:
       - id: nixfmt-nix
 
+  # Prettier formatter - uses .prettierrc.cjs config and .prettierignore
+  # The .prettierrc.cjs uses require() for the svelte plugin, which resolves via
+  # NODE_PATH set by pre-commit's language:node environment
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        entry: prettier --write --ignore-unknown
+        language: node
+        additional_dependencies:
+          - prettier@3.7.4
+          - prettier-plugin-svelte@3.4.1
+          - svelte@5.38.1
+        files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
+        exclude: "\\.pnpm/"
+
   - repo: local
     hooks:
       # Unified pre-commit: format + validate
@@ -147,8 +163,13 @@ repos:
           - --args=--config=__GIT_ROOT__/cluster/.tflint.hcl
         files: "^cluster/terraform/.*\\.tf$"
 
+      # tofu validate - runs tofu init -backend=false + tofu validate per directory
+      # Wrapper handles init with retry logic; discovers tofu via PCT_TFPATH or PATH
+      - id: terraform_validate
+        files: "^cluster/terraform/.*\\.tf$"
+
   # NOTE: The following hooks are combined into bazel-precommit:
-  # - bazel-format (prettier, ruff, shfmt, buildifier)
+  # - bazel-format (ruff, shfmt, buildifier)
   # - bazel-validate (buildifier-lint, pytest-main check, cluster validations)
-  # - terraform checks (tofu validate, terraform-version-centralization)
-  # This avoids Bazel client lock contention and runs terraform checks in parallel.
+  # - terraform checks (terraform-version-centralization)
+  # This avoids Bazel client lock contention and runs validations in parallel.

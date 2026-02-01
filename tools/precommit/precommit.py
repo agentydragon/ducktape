@@ -47,17 +47,6 @@ def resolve_bin(rlocation: str) -> str:
 
 
 EXTENSION_MAP: dict[str, str] = {
-    ".js": "prettier",
-    ".jsx": "prettier",
-    ".ts": "prettier",
-    ".tsx": "prettier",
-    ".css": "prettier",
-    ".html": "prettier",
-    ".md": "prettier",
-    ".json": "prettier",
-    ".yaml": "prettier",
-    ".yml": "prettier",
-    ".svelte": "prettier",
     ".py": "ruff",
     ".sh": "shfmt",
     ".bash": "shfmt",
@@ -149,7 +138,6 @@ def resolve_formatter_bin(formatter: str) -> str:
 
 
 FORMATTER_COMMANDS: dict[str, Callable[[str, bool], list[str]]] = {
-    "prettier": lambda bin_path, check: [bin_path, "--check" if check else "--write"],
     "ruff": lambda bin_path, check: [bin_path, "format", *(["--check"] if check else [])],
     "shfmt": lambda bin_path, check: [bin_path, "-d" if check else "-w"],
     "buildifier": lambda bin_path, _: [bin_path],
@@ -240,10 +228,6 @@ def is_terraform_module(p: Path) -> bool:
     return p.suffix == ".tf" and p.is_relative_to("cluster/terraform/modules")
 
 
-def is_terraform_file(p: Path) -> bool:
-    return p.suffix == ".tf" and p.is_relative_to("cluster/terraform")
-
-
 async def run_buildifier_lint(files: list[Path]) -> ValidationResult:
     """Run buildifier lint on Bazel files."""
     name = "buildifier-lint"
@@ -317,55 +301,13 @@ async def run_terraform_centralization_check(files: list[Path]) -> ValidationRes
     return ValidationResult(name, elapsed, not violations, output)
 
 
-async def run_tofu_validate(files: list[Path]) -> list[ValidationResult]:
-    """Run tofu validate on terraform directories."""
-    tf_files = [f for f in files if is_terraform_file(f)]
-    if not tf_files:
-        return []
-
-    tofu_bin = resolve_formatter_bin("tofu")
-    tf_dirs = {f.parent for f in tf_files}
-    results = []
-
-    for tf_dir in tf_dirs:
-        name = f"tofu-validate:{tf_dir.name}"
-        start = time.perf_counter()
-
-        # Init first (required for validate)
-        init_proc = await asyncio.create_subprocess_exec(
-            tofu_bin,
-            f"-chdir={tf_dir}",
-            "init",
-            "-backend=false",
-            "-input=false",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await init_proc.communicate()
-
-        # Validate
-        proc = await asyncio.create_subprocess_exec(
-            tofu_bin, f"-chdir={tf_dir}", "validate", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        elapsed = time.perf_counter() - start
-
-        output = (stdout + stderr).decode().strip()
-        results.append(ValidationResult(name, elapsed, proc.returncode == 0, output if proc.returncode != 0 else ""))
-
-    return results
-
-
-# NOTE: checkov was moved to a standalone pre-commit hook (bridgecrewio/checkov)
-# to avoid its 10s top-level import overhead on every precommit invocation.
+# NOTE: checkov and tofu validate were moved to standalone pre-commit hooks
+# (bridgecrewio/checkov, antonbabenko/pre-commit-terraform terraform_validate)
 
 
 async def run_validate(files: list[Path], repo_root: Path) -> list[ValidationResult]:
     """Run all validations on files."""
-    # Run tofu validate separately since it returns multiple results
-    tofu_results = await run_tofu_validate(files)
-
-    other_results = list(
+    return list(
         await asyncio.gather(
             run_buildifier_lint(files),
             run_pytest_main_check(files, repo_root),
@@ -387,8 +329,6 @@ async def run_validate(files: list[Path], repo_root: Path) -> list[ValidationRes
             ),
         )
     )
-
-    return other_results + tofu_results
 
 
 def get_all_files(repo: pygit2.Repository) -> list[Path]:

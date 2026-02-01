@@ -26,13 +26,13 @@ jobs:
       - uses: ./.github/actions/bazel-repo-cache
         id: bazel-cache
 
-      # Cluster validation tools - use official actions where available
+      # Terraform tools for antonbabenko/pre-commit-terraform hooks
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: 1.9.0
 
-      # TFLint for antonbabenko/pre-commit-terraform hook
+      # TFLint for terraform_tflint hook
       - name: Install TFLint
         uses: terraform-linters/setup-tflint@v4
         with:
@@ -80,7 +80,7 @@ jobs:
 
       - name: Configure OpenTofu for pre-commit
         run: |
-          # Set PCT_TFPATH so terraform hooks find opentofu
+          # Set PCT_TFPATH so antonbabenko/pre-commit-terraform hooks use tofu
           echo "PCT_TFPATH=$(which tofu)" >> $GITHUB_ENV
 
       # Use full 'ansible' package instead of 'ansible-core' to get bundled collections.

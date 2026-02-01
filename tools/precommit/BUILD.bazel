@@ -30,7 +30,6 @@ py_binary(
     srcs = ["precommit.py"],
     data = [
         # Formatters
-        "//tools/lint:prettier",
         "@aspect_rules_lint//format:ruff",
         "@aspect_rules_lint//format:shfmt",
         "@buildifier_prebuilt//buildifier",
@@ -40,15 +39,11 @@ py_binary(
         "//cluster/scripts:validate_helm_templates",
         "//cluster/scripts:validate_kustomizations",
         "//cluster/scripts:validate_sealed_secrets",
-        # Terraform tools
-        "@multitool//tools/tofu",
     ],
     env = {
         "BUILDIFIER_BIN": "$(rlocationpath @buildifier_prebuilt//buildifier:buildifier)",
-        "PRETTIER_BIN": "$(rlocationpath //tools/lint:prettier)",
         "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
-        "TOFU_BIN": "$(rlocationpath @multitool//tools/tofu)",
     },
     visibility = ["//visibility:public"],
     deps = [
@@ -66,7 +61,6 @@ py_binary(
     srcs = ["precommit.py"],
     data = [
         # Formatters
-        "//tools/lint:prettier",
         "@aspect_rules_lint//format:ruff",
         "@aspect_rules_lint//format:shfmt",
         "@buildifier_prebuilt//buildifier",
@@ -76,16 +70,12 @@ py_binary(
         "//cluster/scripts:validate_helm_templates",
         "//cluster/scripts:validate_kustomizations",
         "//cluster/scripts:validate_sealed_secrets",
-        # Terraform tools
-        "@multitool//tools/tofu",
     ],
     env = {
         "BUILDIFIER_BIN": "$(rlocationpath @buildifier_prebuilt//buildifier:buildifier)",
         "FMT_CHECK": "1",
-        "PRETTIER_BIN": "$(rlocationpath //tools/lint:prettier)",
         "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
-        "TOFU_BIN": "$(rlocationpath @multitool//tools/tofu)",
     },
     main = "precommit.py",
     visibility = ["//visibility:public"],

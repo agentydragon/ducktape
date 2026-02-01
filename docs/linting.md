@@ -82,12 +82,12 @@ Aspect definitions in `tools/lint/linters.bzl`:
 
 ## GitHub CI Workflows
 
-| Workflow                | What Runs                                              |
-| ----------------------- | ------------------------------------------------------ |
-| `pre-commit.yml`        | `pre-commit run --all-files`                           |
-| `bazel-build.yml`       | `bazel build --config=check //...`, `bazel test //...` |
-| `ansible-lint.yml`      | Full ansible-lint (thorough mode)                      |
-| `bazel-test.yml`        | `bazel test //...` (includes visual regression)        |
+| Workflow           | What Runs                                              |
+| ------------------ | ------------------------------------------------------ |
+| `pre-commit.yml`   | `pre-commit run --all-files`                           |
+| `bazel-build.yml`  | `bazel build --config=check //...`, `bazel test //...` |
+| `ansible-lint.yml` | Full ansible-lint (thorough mode)                      |
+| `bazel-test.yml`   | `bazel test //...` (includes visual regression)        |
 
 ## Formatting
 
