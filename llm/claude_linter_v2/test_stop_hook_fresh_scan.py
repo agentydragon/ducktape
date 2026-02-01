@@ -24,6 +24,10 @@ def handler(tmp_path, monkeypatch):
     stop_config = handler.config_loader.config.hooks["stop"]
     assert isinstance(stop_config, StopHookConfig)
     stop_config.quality_gate = True
+    # Clear pattern rules so pytest's tmp_path directory names (which contain
+    # "test_") don't trigger the default **/test_*.py relaxation for bare_except.
+    # fnmatch matches * across directory separators.
+    handler.config_loader.config.pattern_rules = []
     return handler
 
 
@@ -55,9 +59,7 @@ def check_attr(obj):
     # Check response keys and snippets using PyHamcrest (avoid exact long-line match)
     assert_that(
         response_dict,
-        has_entries(
-            decision="block", reason=all_of(contains_string("Do not use bare `except`"), contains_string(str(bad_file)))
-        ),
+        has_entries(decision="block", reason=all_of(contains_string("Bare except"), contains_string(str(bad_file)))),
     )
     assert response_dict["continue"] is True
 

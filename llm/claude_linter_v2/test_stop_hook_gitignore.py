@@ -14,6 +14,10 @@ def _enable_quality_gate(handler: HookHandler) -> None:
     stop_config = handler.config_loader.config.hooks["stop"]
     assert isinstance(stop_config, StopHookConfig)
     stop_config.quality_gate = True
+    # Clear pattern rules so pytest's tmp_path directory names (which contain
+    # "test_") don't trigger the default **/test_*.py relaxation for bare_except.
+    # fnmatch matches * across directory separators.
+    handler.config_loader.config.pattern_rules = []
 
 
 def test_stop_hook_respects_gitignore(session_id, tmp_path, monkeypatch):
@@ -92,7 +96,7 @@ def bad():
     assert response_dict["continue"] is True
     assert response_dict["decision"] == "block"
     assert str(tracked_file) in response_dict["reason"]
-    assert "Do not use bare `except`" in response_dict["reason"]
+    assert "bare except" in response_dict["reason"].lower()
 
 
 def test_stop_hook_fallback_when_not_git_repo(session_id, tmp_path, monkeypatch):
@@ -142,7 +146,7 @@ except:
     assert response_dict["decision"] == "block"
     assert str(bad_file) in response_dict["reason"]
     assert str(node_file) in response_dict["reason"]
-    assert "Do not use bare `except`" in response_dict["reason"]
+    assert "bare except" in response_dict["reason"].lower()
 
 
 if __name__ == "__main__":
