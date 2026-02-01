@@ -42,37 +42,11 @@
         ></button>
       </div>
       <div class="offcanvas-body menu">
-        <a href="/" {% if active_page="" ="index" %} class="active" {% endif %}
-          >Home</a
-        >
+        <a href="/" {% if active_page == "index" %}class="active"{% endif %}>Home</a>
         {% for page in markdown_pages %}
-        <a
-          href="/{{ page }}"
-          {%
-          if
-          active_page=""
-          ="page"
-          %}
-          class="active"
-          {%
-          endif
-          %}
-          >{{ page_titles.get(page, page|capitalize) }}</a
-        >
+        <a href="/{{ page }}" {% if active_page == page %}class="active"{% endif %}>{{ page_titles.get(page, page|capitalize) }}</a>
         {% endfor %}
-        <a
-          href="/stats"
-          {%
-          if
-          active_page=""
-          ="stats"
-          %}
-          class="active"
-          {%
-          endif
-          %}
-          >Stats</a
-        >
+        <a href="/stats" {% if active_page == "stats" %}class="active"{% endif %}>Stats</a>
       </div>
     </nav>
 
