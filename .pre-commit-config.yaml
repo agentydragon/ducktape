@@ -145,8 +145,16 @@ repos:
         files: ^cluster/k8s/.*\.yaml$
         exclude: (cluster/k8s/.*-chart/|cluster/charts/)
 
+  # Checkov security scanner for Terraform (standalone, avoids 10s import in bazel-precommit)
+  - repo: https://github.com/bridgecrewio/checkov
+    rev: 3.2.497
+    hooks:
+      - id: checkov_diff
+        args: ["--framework", "terraform", "--skip-check", "CKV_TF_1", "-f"]
+        files: "^cluster/terraform/.*\\.tf$"
+
   # NOTE: The following hooks are now combined into bazel-precommit:
   # - bazel-format (prettier, ruff, shfmt, buildifier)
   # - bazel-validate (buildifier-lint, pytest-main check, cluster validations)
-  # - terraform checks (tflint, tofu validate, checkov, terraform-version-centralization)
+  # - terraform checks (tflint, tofu validate, terraform-version-centralization)
   # This avoids Bazel client lock contention and runs terraform checks in parallel.

@@ -27,8 +27,6 @@ from pathlib import Path
 
 import pygit2
 import tenacity
-from checkov.runner_filter import RunnerFilter
-from checkov.terraform.runner import Runner as CheckovTerraformRunner
 from python.runfiles import runfiles
 
 from tools.check_pytest_main import check_files_async
@@ -423,37 +421,8 @@ async def run_tofu_validate(files: list[Path]) -> list[ValidationResult]:
     return results
 
 
-async def run_checkov(files: list[Path]) -> ValidationResult:
-    """Run checkov security scanner on terraform files."""
-    name = "checkov"
-    tf_files = [f for f in files if is_terraform_file(f)]
-    if not tf_files:
-        return ValidationResult(name, 0.0, True, skipped=True)
-
-    start = time.perf_counter()
-
-    runner = CheckovTerraformRunner()
-    runner_filter = RunnerFilter(skip_checks=["CKV_TF_1"])
-
-    # Run in executor to not block the event loop
-    loop = asyncio.get_event_loop()
-    report = await loop.run_in_executor(
-        None, lambda: runner.run(root_folder="cluster/terraform", runner_filter=runner_filter)
-    )
-    elapsed = time.perf_counter() - start
-
-    # Check for failures — checkov runner.run() can return Report or list[Report]
-    if isinstance(report, list):
-        failed_checks = [c for r in report for c in r.failed_checks]
-    elif report:
-        failed_checks = report.failed_checks
-    else:
-        failed_checks = []
-    if failed_checks:
-        output_lines = [f"{c.resource}: {c.check_id}" for c in failed_checks]
-        return ValidationResult(name, elapsed, False, "\n".join(output_lines))
-
-    return ValidationResult(name, elapsed, True, "")
+# NOTE: checkov was moved to a standalone pre-commit hook (bridgecrewio/checkov)
+# to avoid its 10s top-level import overhead on every precommit invocation.
 
 
 async def run_validate(files: list[Path], repo_root: Path) -> list[ValidationResult]:
@@ -467,7 +436,6 @@ async def run_validate(files: list[Path], repo_root: Path) -> list[ValidationRes
             run_pytest_main_check(files, repo_root),
             run_terraform_centralization_check(files),
             run_tflint(files, repo_root),
-            run_checkov(files),
             run_subprocess_validation(
                 "kustomize-validate", "_main/cluster/scripts/validate_kustomizations", files, is_cluster_k8s
             ),
