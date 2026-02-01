@@ -1,16 +1,20 @@
-# Composite action for Bazel cache setup and save
+# Composite action for Bazel local cache setup
 #
 # Handles:
 # - Setting up Bazelisk
 # - Deriving cache key from workflow/job name + file hashes
-# - Restoring and saving Bazel cache (skipped if using BuildBuddy remote cache)
+# - Restoring Bazel local cache (output_base/external/, repository_cache, etc.)
+#
+# This cache is complementary to BuildBuddy remote cache: BuildBuddy caches
+# remote action results, while this caches client-side state — particularly
+# extracted external repositories (e.g., LLVM toolchain) that are fetched
+# during analysis and never handled by remote execution.
 #
 # Usage:
 #   - uses: ./.github/actions/bazel-cache
 #     id: bazel-cache
 #     with:
 #       extra_hash: ${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
-#       skip_cache: ${{ steps.buildbuddy.outputs.enabled }}
 #
 #   # ... your build steps ...
 #
@@ -19,17 +23,13 @@
 #       cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
 #       cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 name: Bazel Cache Setup
-description: Setup Bazelisk and restore Bazel cache with auto-derived keys
+description: Setup Bazelisk and restore Bazel local cache with auto-derived keys
 
 inputs:
   extra_hash:
     description: "Additional hash to append to cache key (use hashFiles() at call site)"
     required: false
     default: ""
-  skip_cache:
-    description: "Skip GitHub Actions cache (e.g., when using BuildBuddy remote cache)"
-    required: false
-    default: "false"
 
 outputs:
   cache-hit:
@@ -70,7 +70,6 @@ runs:
 
     - name: Restore Bazel cache
       id: cache-restore
-      if: inputs.skip_cache != 'true'
       uses: actions/cache/restore@v4
       with:
         path: |

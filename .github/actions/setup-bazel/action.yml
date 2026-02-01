@@ -1,7 +1,9 @@
 # Composite action for Bazel environment setup
 #
-# Combines BuildBuddy remote cache setup and GitHub Actions cache fallback.
-# Use this as the single entry point for Bazel caching in workflows.
+# Combines BuildBuddy remote cache/execution with GitHub Actions local cache.
+# These are complementary: BuildBuddy handles remote action cache and execution,
+# while GHA cache persists output_base/external/ (extracted repos like the LLVM
+# toolchain) to avoid costly re-fetches during analysis on the GHA runner.
 #
 # Usage:
 #   - uses: ./.github/actions/setup-bazel
@@ -16,9 +18,8 @@
 #     with:
 #       cache-hit: ${{ steps.bazel.outputs.cache-hit }}
 #       cache-key: ${{ steps.bazel.outputs.cache-key }}
-#       skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
 name: Setup Bazel
-description: Setup Bazel with BuildBuddy remote cache or GitHub Actions cache fallback
+description: Setup Bazel with BuildBuddy remote cache and GitHub Actions local cache
 
 inputs:
   buildbuddy_api_key:
@@ -35,9 +36,6 @@ inputs:
     default: ""
 
 outputs:
-  buildbuddy-enabled:
-    description: "Whether BuildBuddy remote cache is configured ('true' or 'false')"
-    value: ${{ steps.buildbuddy.outputs.enabled }}
   cache-hit:
     description: "Whether GitHub Actions cache was restored"
     value: ${{ steps.cache.outputs.cache-hit }}
@@ -60,4 +58,3 @@ runs:
       uses: ./.github/actions/bazel-cache
       with:
         extra_hash: ${{ inputs.extra_hash }}
-        skip_cache: ${{ steps.buildbuddy.outputs.enabled }}

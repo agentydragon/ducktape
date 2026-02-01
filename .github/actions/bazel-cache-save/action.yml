@@ -1,7 +1,10 @@
-# Composite action for saving Bazel cache
+# Composite action for saving Bazel local cache
 #
 # Use after bazel-cache action to save the cache on completion.
-# Only saves if the cache wasn't restored (cache miss) and skip_cache is false.
+# Only saves if the cache wasn't restored (cache miss).
+#
+# This runs regardless of whether BuildBuddy is enabled — the GHA local cache
+# and BuildBuddy remote cache are complementary (see bazel-cache/action.yml).
 #
 # Usage:
 #   - uses: ./.github/actions/bazel-cache-save
@@ -9,9 +12,8 @@
 #     with:
 #       cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
 #       cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
-#       skip_cache: ${{ steps.buildbuddy.outputs.enabled }}
 name: Bazel Cache Save
-description: Save Bazel cache (use after bazel-cache action)
+description: Save Bazel local cache (use after bazel-cache action)
 
 inputs:
   cache-hit:
@@ -20,16 +22,12 @@ inputs:
   cache-key:
     description: "Cache key to save under (from bazel-cache output)"
     required: true
-  skip_cache:
-    description: "Skip saving cache (e.g., when using BuildBuddy remote cache)"
-    required: false
-    default: "false"
 
 runs:
   using: composite
   steps:
     - name: Save Bazel cache
-      if: inputs.cache-hit != 'true' && inputs.skip_cache != 'true'
+      if: inputs.cache-hit != 'true'
       uses: actions/cache/save@v4
       with:
         path: |

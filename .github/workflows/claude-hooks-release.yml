@@ -64,7 +64,6 @@ jobs:
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}
           cache-key: ${{ steps.bazel.outputs.cache-key }}
-          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
 
   # Unit and E2E tests run on all pushes and PRs
   test:
@@ -134,7 +133,6 @@ jobs:
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}
           cache-key: ${{ steps.bazel.outputs.cache-key }}
-          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
 
   # Wheel mode tests - build wheel, install it, and run tests against installed package
   # Runs on all triggers (PRs and pushes) to catch wheel packaging issues early
@@ -190,7 +188,6 @@ jobs:
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}
           cache-key: ${{ steps.bazel.outputs.cache-key }}
-          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
 
   # Release job - only runs on push to devel/main when release is needed
   release:
@@ -292,4 +289,3 @@ jobs:
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}
           cache-key: ${{ steps.bazel.outputs.cache-key }}
-          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
