@@ -179,7 +179,7 @@ async def list_all_payloads(
 
     # Add request-specific context
     return request.app.state.templates.TemplateResponse(
-        "webhook_payloads.html",
+        "webhook_payloads.html.j2",
         context
         | {
             "request": request,
@@ -209,7 +209,7 @@ async def list_integration_payloads(
 
     # Add request-specific context
     return request.app.state.templates.TemplateResponse(
-        "webhook_payloads.html",
+        "webhook_payloads.html.j2",
         context
         | {
             "request": request,

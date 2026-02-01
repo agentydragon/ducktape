@@ -6,13 +6,13 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 filegroup(
     name = "content_files",
     srcs = [
-        "base.html",
+        "base.html.j2",
         "coding.md",
         "index.md",
-        "stats.html",
+        "stats.html.j2",
         "style.css",
         "tana.md",
-        "verify.html",
+        "verify.html.j2",
     ],
     visibility = ["//llm/html:__subpackages__"],
 )

@@ -444,7 +444,7 @@ def _render_events_page(
     else:
         ctx["interval_str"] = f"(-∞, {fmt_ts(before_ts)})"
 
-    return templates.TemplateResponse("events.html", ctx)
+    return templates.TemplateResponse("events.html.j2", ctx)
 
 
 # ── GET /  → paged listing (no key in path) ───────────────────────────────

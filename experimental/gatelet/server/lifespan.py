@@ -102,7 +102,7 @@ def _register_auth_routes(app: FastAPI, settings: Settings) -> None:
         ha_states = await fetch_states(settings)
         aw_summary = await activitywatch.fetch_recent_activity(settings.activitywatch)
         return request.app.state.templates.TemplateResponse(
-            "index.html",
+            "index.html.j2",
             {
                 "request": request,
                 "header": "Gatelet",

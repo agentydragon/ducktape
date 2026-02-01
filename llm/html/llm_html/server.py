@@ -124,7 +124,7 @@ def handle_page_rendering_error(error: Exception, page_name: str = "page") -> No
 
 def render_html_page(title: str, content: str, active_page: str = "index") -> str:
     """Render HTML page with common structure and navigation menu."""
-    template = env.get_template("base.html")
+    template = env.get_template("base.html.j2")
     rendered: str = template.render(
         title=title, content=content, active_page=active_page, markdown_pages=MARKDOWN_PAGES, page_titles=PAGE_TITLES
     )
@@ -266,7 +266,7 @@ async def stats_api():
 async def stats_page():
     """Show statistics page (loads data via API)."""
     # Render the stats template
-    template = env.get_template("stats.html")
+    template = env.get_template("stats.html.j2")
     html = template.render(
         title="Server Statistics", active_page="stats", markdown_pages=MARKDOWN_PAGES, page_titles=PAGE_TITLES
     )
@@ -313,7 +313,7 @@ async def verify_token(request: Request, token: str = ""):
             result = {"status": "failed", "errors": ["Internal error during verification"]}
 
     # Render the verification page
-    template = env.get_template("verify.html")
+    template = env.get_template("verify.html.j2")
     html = template.render(token=token, result=result, markdown_pages=MARKDOWN_PAGES, site_url=SITE_URL)
     return HTMLResponse(content=html, headers=HEADERS)
 

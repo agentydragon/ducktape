@@ -1,4 +1,4 @@
-{# Audience: authenticated human admin or LLM (via key or session) #} {% extends "base.html" %} {% block title %}Home
+{# Audience: authenticated human admin or LLM (via key or session) #} {% extends "base.html.j2" %} {% block title %}Home
 Assistant Entities{% endblock %} {% block nav %}
 <nav>
   <a href="{{ auth.create_url('') }}">Home</a>

@@ -30,7 +30,7 @@ py_library(
     srcs = ["app.py"],
     data = glob([
         "**/*.css",
-        "**/*.html",
+        "**/*.html.j2",
     ]),
     imports = ["../../.."],
     visibility = ["//experimental/gatelet:__subpackages__"],

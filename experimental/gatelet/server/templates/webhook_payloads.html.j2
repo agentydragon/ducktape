@@ -1,4 +1,4 @@
-{# Audience: authenticated human admin or LLM (via key or session) #} {% extends "base.html" %} {# Simple pagination
+{# Audience: authenticated human admin or LLM (via key or session) #} {% extends "base.html.j2" %} {# Simple pagination
 link macro #} {% macro page_link(page_num) %} {% set extra = "" %} {% if page_num == 1 and page != 1 %} {% set extra = "
 - Latest" %} {% elif page_num == total_pages and page != total_pages %} {% set extra = " - Earliest" %} {% endif %}
 

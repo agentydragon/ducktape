@@ -1,4 +1,4 @@
-{# Audience: authenticated human admin or LLM (via key or session) #} {% extends "base.html" %} {% block title %}{{
+{# Audience: authenticated human admin or LLM (via key or session) #} {% extends "base.html.j2" %} {% block title %}{{
 header }}{% endblock %} {% block nav %}
 <nav>
   <a href="{{ auth.create_url('') }}">Home</a>
@@ -12,6 +12,6 @@ header }}{% endblock %} {% block nav %}
 <p>Last changed: {{ state.last_changed.strftime('%Y-%m-%d %H:%M:%S') }}</p>
 {% if is_human %}
 <p><a href="{{ ha_history_url(state.entity_id) }}" target="_blank">Open in Home Assistant</a></p>
-{% endif %} {% include "ha_history_table.html" %} {% else %}
+{% endif %} {% include "ha_history_table.html.j2" %} {% else %}
 <p>No data found.</p>
 {% endif %} {% endblock %}
