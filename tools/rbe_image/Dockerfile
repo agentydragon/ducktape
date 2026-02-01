@@ -42,3 +42,13 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb \
     && dpkg -i /tmp/libtinfo5.deb \
     && rm /tmp/libtinfo5.deb
+
+# Docker 28+ adds "direct access filtering" DROP rules to the iptables raw
+# table, but Firecracker's guest kernel lacks CONFIG_IP_NF_RAW. Setting
+# allow-direct-routing tells dockerd to skip these raw table rules entirely.
+# Containers still get isolated bridge networking; the only difference is that
+# direct-IP access to container ports is not blocked (acceptable since
+# Firecracker VMs are single-tenant and ephemeral).
+# TODO: Ideally, build a custom Firecracker kernel with CONFIG_IP_NF_RAW=y
+# to get full Docker networking security. This is a workaround.
+COPY daemon.json /etc/docker/daemon.json
