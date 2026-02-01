@@ -63,7 +63,9 @@ jobs:
             TARGET_ARG="${{ inputs.targets }}"
             echo "Using targets from input: $TARGET_ARG"
           fi
-          bazel build --keep_going $TARGET_ARG
+          bazel build --keep_going \
+            --build_metadata=ROLE=ci --build_metadata=TAGS=build \
+            $TARGET_ARG
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

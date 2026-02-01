@@ -30,6 +30,9 @@ build --action_env=NODE_EXTRA_CA_CERTS=${combined_ca_path | sh}
 build --spawn_strategy=remote,local
 test --spawn_strategy=remote,local
 
+# Tag invocations for BuildBuddy filtering
+build --build_metadata=ROLE=claude-code
+
 # Skip live OpenAI tests in wildcard expansion (no API key available)
 test --test_tag_filters=-live_openai_api
 % if local_registry_path:

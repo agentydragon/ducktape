@@ -21,7 +21,9 @@ mkdir -p "$CACHE_DIR"
 (
   flock -x 200
   if [[ ! -x "$RUNNER_SCRIPT" ]]; then
-    bazelisk run --script_path="$RUNNER_SCRIPT" //tools/precommit >/dev/null 200>&-
+    bazelisk run --script_path="$RUNNER_SCRIPT" \
+      --build_metadata=ROLE=precommit --build_metadata=TAGS=precommit \
+      //tools/precommit >/dev/null 200>&-
   fi
 ) 200>"$LOCK_FILE"
 

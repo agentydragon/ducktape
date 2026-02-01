@@ -86,7 +86,9 @@ jobs:
           if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
             PROFILE_FLAG="--config=ci-profile"
           fi
-          bazel build --keep_going --config=lint $PROFILE_FLAG $TARGET_ARG
+          bazel build --keep_going --config=lint \
+            --build_metadata=ROLE=ci --build_metadata=TAGS=lint \
+            $PROFILE_FLAG $TARGET_ARG
 
       - name: Upload Bazel profile
         if: inputs.enable_profiling && always()
