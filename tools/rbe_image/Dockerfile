@@ -16,6 +16,9 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
     && apt-get install -y --no-install-recommends \
         libssl-dev \
         pkg-config \
+        # dbus-daemon: needed by tests that spawn a private D-Bus session
+        # (e.g. experimental/dbus_fast_example)
+        dbus-daemon \
         # Chromium headless shell shared library dependencies
         libasound2t64 \
         libatk-bridge2.0-0t64 \
