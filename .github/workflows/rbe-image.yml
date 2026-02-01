@@ -4,9 +4,9 @@
 # and Chromium headless shell. See tools/rbe_image/Dockerfile.
 #
 # Triggers:
-#   - push to main/devel (when tools/rbe_image/** changes): tags :latest + :sha
-#   - workflow_dispatch: tags :latest + :sha
-#   - workflow_call (from ci.yml): tags :ci-sha, outputs image ref
+#   - push to main/devel (when tools/rbe_image/** changes): tags :latest + :<sha>
+#   - workflow_dispatch: tags :latest + :<sha>
+#   - workflow_call (from ci.yml): tags :<sha>, outputs image ref
 name: RBE Worker Image
 
 on:
@@ -19,7 +19,7 @@ on:
   workflow_call:
     outputs:
       rbe_image:
-        description: "Full image reference (e.g. ghcr.io/.../rbe-worker:ci-<sha>), empty if skipped"
+        description: "Full image reference (e.g. ghcr.io/.../rbe-worker:<sha>), empty if skipped"
         value: ${{ jobs.build-and-push.outputs.rbe_image }}
 
 concurrency:
@@ -46,14 +46,12 @@ jobs:
       - name: Compute image tags
         id: meta
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_call" ]]; then
-            TAG="ci-${{ github.sha }}"
-            echo "tags=${{ env.IMAGE }}:$TAG" >> $GITHUB_OUTPUT
-          else
-            TAG="${{ github.sha }}"
-            TAGS="${{ env.IMAGE }}:latest,${{ env.IMAGE }}:$TAG"
-            echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          TAG="${{ github.sha }}"
+          TAGS="${{ env.IMAGE }}:$TAG"
+          if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
+            TAGS="$TAGS,${{ env.IMAGE }}:latest"
           fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
           echo "rbe_image=${{ env.IMAGE }}:$TAG" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
