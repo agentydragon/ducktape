@@ -10,12 +10,12 @@ Research the following files and directories and get familiar with the wiring:
 @~/code/claude-code-router
 @~/code/claude-code-router/src/server.ts
 
-Use github MCP server when it's useful to reach into the underlying server the claude-code-router is implemented on.
+Use GitHub MCP server when it's useful to reach into the underlying server the `claude-code-router` is implemented on.
 
 Particularly, make sure you understand:
 
-- How system-rewriter works
-- How logging from claude-code-router works, particularly wire logging
+- How `system-rewriter` works
+- How logging from `claude-code-router` works, particularly wire logging
 - Make sure you understand the proxy flow and how we capture flows in logs
 
 Make sure you thoroughly understand how this works to proxy Claude Code calls with system message rewriting.
@@ -25,7 +25,7 @@ Once you are very confident you thoroughly understand all implemented functions,
 
 ---
 
-## Dependency: @musistudio/llms (GitHub MCP quick fetches)
+## Dependency: `@musistudio/llms` (GitHub MCP quick fetches)
 
 Use the GitHub MCP tools to inspect the underlying server implementation used by the router.
 
@@ -48,7 +48,7 @@ mcp__github__get_file_contents
   path: package.json
 ```
 
-3. List repository root (see src/, scripts/)
+3. List repository root (see `src/`, `scripts/`)
 
 ```
 mcp__github__get_file_contents
@@ -84,35 +84,35 @@ mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/trans
 mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/utils" }
 ```
 
-Main paths to review in @musistudio/llms:
+Main paths to review in `@musistudio/llms`:
 
-- src/server.ts
-- src/api/
-- src/services/
-- src/transformer/
-- src/types/
-- src/utils/
+- `src/server.ts`
+- `src/api/`
+- `src/services/`
+- `src/transformer/`
+- `src/types/`
+- `src/utils/`
 
 ---
 
 ## One-shot parallel batch (local + MCP reads in a single message)
 
-Run all reads in parallel using the multi-tool parallel wrapper. Issue ONE message containing a single multi_tool_use.parallel call with a tool_uses array covering every local file read and GitHub fetch.
+Run all reads in parallel using the multi-tool parallel wrapper. Issue ONE message containing a single `multi_tool_use.parallel` call with a `tool_uses` array covering every local file read and GitHub fetch.
 
 Example payload (adjust paths if your home differs):
 
-- functions.Read (local files)
-  - file_path: /Users/mpokorny/.claude-code-router/transformers/edit-error-annotator.js
-  - file_path: /Users/mpokorny/.claude-code-router/transformers/lib/system-utils.js
-  - file_path: /Users/mpokorny/.claude-code-router/transformers/openai-image-fix.js
-  - file_path: /Users/mpokorny/.claude-code-router/transformers/openai-reasoning.js
-  - file_path: /Users/mpokorny/.claude-code-router/transformers/system-replace.js
-  - file_path: /Users/mpokorny/code/claude-code-router/src/middleware/tracing.ts
-  - file_path: /Users/mpokorny/code/claude-code-router/src/tracing/context.ts
-  - file_path: /Users/mpokorny/code/claude-code-router/src/tracing/interceptor.ts
-  - file_path: /Users/mpokorny/code/claude-code-router/src/tracing/sanitize.ts
-  - file_path: /Users/mpokorny/code/claude-code-router/src/utils/log.ts
-  - file_path: /Users/mpokorny/code/claude-code-router/src/utils/tracer.ts
+- `functions.Read` (local files)
+  - `file_path`: `/Users/mpokorny/.claude-code-router/transformers/edit-error-annotator.js`
+  - `file_path`: `/Users/mpokorny/.claude-code-router/transformers/lib/system-utils.js`
+  - `file_path`: `/Users/mpokorny/.claude-code-router/transformers/openai-image-fix.js`
+  - `file_path`: `/Users/mpokorny/.claude-code-router/transformers/openai-reasoning.js`
+  - `file_path`: `/Users/mpokorny/.claude-code-router/transformers/system-replace.js`
+  - `file_path`: `/Users/mpokorny/code/claude-code-router/src/middleware/tracing.ts`
+  - `file_path`: `/Users/mpokorny/code/claude-code-router/src/tracing/context.ts`
+  - `file_path`: `/Users/mpokorny/code/claude-code-router/src/tracing/interceptor.ts`
+  - `file_path`: `/Users/mpokorny/code/claude-code-router/src/tracing/sanitize.ts`
+  - `file_path`: `/Users/mpokorny/code/claude-code-router/src/utils/log.ts`
+  - `file_path`: `/Users/mpokorny/code/claude-code-router/src/utils/tracer.ts`
 
 - `functions.mcp__github__get_file_contents` (musistudio/llms)
   - { owner: musistudio, repo: llms, path: "package.json" }
@@ -151,8 +151,8 @@ Example payload (adjust paths if your home differs):
 
 Notes:
 
-- Prefer a single multi_tool_use.parallel call with all of the above entries in tool_uses so they execute concurrently.
-- After search_code returns, optionally issue a second parallel batch to fetch additional cookbook/example files surfaced by the search.
+- Prefer a single `multi_tool_use.parallel` call with all of the above entries in `tool_uses` so they execute concurrently.
+- After `search_code` returns, optionally issue a second parallel batch to fetch additional cookbook/example files surfaced by the search.
 - Keep outputs concise. Sensitive headers are redacted by the tracer when applicable; no secrets should appear in fetched sources.
 
 ---
@@ -175,53 +175,53 @@ Docs (canonical):
 
 API parameter summary (reasoning models):
 
-- Responses API (/v1/responses)
-  - Tokens: max_output_tokens (bounds include reasoning + visible output tokens)
-  - Reasoning: reasoning { effort: minimal|low|medium|high; summary: auto|concise|detailed } (generate_summary deprecated)
-  - Sampling: temperature, top_p, top_logprobs
-  - Streaming: stream: true; stream_options.include_obfuscation (SSE)
-  - Tools: tools, tool_choice, parallel_tool_calls, max_tool_calls
-  - Conversation/state: conversation | previous_response_id; include, truncation, store
-  - Routing & safety: service_tier, prompt_cache_key, safety_identifier
-- Chat Completions API (/v1/chat/completions)
-  - Tokens: max_completion_tokens (preferred); max_tokens is deprecated and not compatible with o-series
-  - Reasoning: reasoning_effort (minimal|low|medium|high)
-  - Sampling: temperature, top_p
-  - Streaming: stream: true; stream_options.include_obfuscation, stream_options.include_usage
-  - Tools: tools, tool_choice, parallel_tool_calls
-  - Caveat: stop not supported with latest reasoning models (o3, o4-mini)
+- Responses API (`/v1/responses`)
+  - Tokens: `max_output_tokens` (bounds include reasoning + visible output tokens)
+  - Reasoning: `reasoning { effort: minimal|low|medium|high; summary: auto|concise|detailed }` (`generate_summary` deprecated)
+  - Sampling: `temperature`, `top_p`, `top_logprobs`
+  - Streaming: `stream: true`; `stream_options.include_obfuscation` (SSE)
+  - Tools: `tools`, `tool_choice`, `parallel_tool_calls`, `max_tool_calls`
+  - Conversation/state: `conversation` | `previous_response_id`; `include`, `truncation`, `store`
+  - Routing & safety: `service_tier`, `prompt_cache_key`, `safety_identifier`
+- Chat Completions API (`/v1/chat/completions`)
+  - Tokens: `max_completion_tokens` (preferred); `max_tokens` is deprecated and not compatible with o-series
+  - Reasoning: `reasoning_effort` (`minimal|low|medium|high`)
+  - Sampling: `temperature`, `top_p`
+  - Streaming: `stream: true`; `stream_options.include_obfuscation`, `stream_options.include_usage`
+  - Tools: `tools`, `tool_choice`, `parallel_tool_calls`
+  - Caveat: `stop` not supported with latest reasoning models (o3, o4-mini)
 
 Cookbook (retrieve via MCP; repo paths):
 
-- examples/responses_api/reasoning_items.ipynb
-- examples/responses_api/responses_example.ipynb
-- examples/responses_api/responses_api_tool_orchestration.ipynb
-- examples/reasoning_function_calls.ipynb
-- examples/o-series/o3o4-mini_prompting_guide.ipynb
-- examples/gpt-5/gpt-5_new_params_and_tools.ipynb
-- examples/Prompt_migration_guide.ipynb
-- examples/File_Search_Responses.ipynb
+- `examples/responses_api/reasoning_items.ipynb`
+- `examples/responses_api/responses_example.ipynb`
+- `examples/responses_api/responses_api_tool_orchestration.ipynb`
+- `examples/reasoning_function_calls.ipynb`
+- `examples/o-series/o3o4-mini_prompting_guide.ipynb`
+- `examples/gpt-5/gpt-5_new_params_and_tools.ipynb`
+- `examples/Prompt_migration_guide.ipynb`
+- `examples/File_Search_Responses.ipynb`
 
 SDK Types (retrieve via MCP; repo paths):
 
-- openai/openai-python — src/openai/types/responses/response_create_params.py
-- openai/openai-python — src/openai/types/shared_params/reasoning.py
-- openai/openai-python — src/openai/types/chat/completion_create_params.py
-- openai/openai-python — src/openai/types/chat/chat_completion_stream_options_param.py
+- `openai/openai-python` — `src/openai/types/responses/response_create_params.py`
+- `openai/openai-python` — `src/openai/types/shared_params/reasoning.py`
+- `openai/openai-python` — `src/openai/types/chat/completion_create_params.py`
+- `openai/openai-python` — `src/openai/types/chat/chat_completion_stream_options_param.py`
 
 Mapping guidance (field translations):
 
 - Tokens
-  - Responses: max_output_tokens (correct). Remove max_tokens / max_completion_tokens.
-  - Chat Completions: max_completion_tokens (correct). Remove max_tokens (deprecated; incompatible with o-series).
+  - Responses: `max_output_tokens` (correct). Remove `max_tokens` / `max_completion_tokens`.
+  - Chat Completions: `max_completion_tokens` (correct). Remove `max_tokens` (deprecated; incompatible with o-series).
 - Reasoning controls
-  - Responses: reasoning { effort: minimal|low|medium|high; summary: auto|concise|detailed }.
-  - Chat Completions: reasoning_effort (minimal|low|medium|high). No summary field.
+  - Responses: `reasoning { effort: minimal|low|medium|high; summary: auto|concise|detailed }`.
+  - Chat Completions: `reasoning_effort` (`minimal|low|medium|high`). No `summary` field.
 - Streaming
-  - Responses: stream: true; stream_options.include_obfuscation.
-  - Chat Completions: stream: true; stream_options.include_obfuscation, stream_options.include_usage.
+  - Responses: `stream: true`; `stream_options.include_obfuscation`.
+  - Chat Completions: `stream: true`; `stream_options.include_obfuscation`, `stream_options.include_usage`.
 - Stop sequences
-  - Chat Completions: stop not supported for o3/o4-mini → omit.
-  - Responses: no "stop"; use token bounds/truncation.
+  - Chat Completions: `stop` not supported for o3/o4-mini → omit.
+  - Responses: no `stop`; use token bounds/truncation.
 - Temperature/sampling
-  - Both APIs: temperature/top_p supported (model behavior may differ).
+  - Both APIs: `temperature`/`top_p` supported (model behavior may differ).
