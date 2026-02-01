@@ -12,6 +12,7 @@ import importlib.resources
 import logging
 import os
 import shutil
+import stat
 import textwrap
 from dataclasses import dataclass, field
 from importlib.resources.abc import Traversable
@@ -110,6 +111,33 @@ async def install_podman() -> None:
         raise PodmanInstallError("podman not found after installation")
 
 
+def _install_crun_wrapper(podman_dir: Path, podman_config: Traversable) -> Path:
+    """Install crun-gvisor-wrapper script to podman directory.
+
+    Returns the installed wrapper path for use in containers.conf.
+    """
+    wrapper_path = podman_dir / "crun-gvisor-wrapper"
+    wrapper_source = podman_config.joinpath("crun_gvisor_wrapper.py").read_text()
+
+    # Prefix with the python3 shebang from the source file
+    if not wrapper_source.startswith("#!"):
+        wrapper_source = "#!/usr/bin/env python3\n" + wrapper_source
+
+    _write_config_conservative(wrapper_path, wrapper_source, "crun-gvisor-wrapper")
+    wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    return wrapper_path
+
+
+def _render_containers_conf(podman_config: Traversable, wrapper_path: Path) -> str:
+    """Render containers.conf with the crun-gvisor-wrapper as the default runtime.
+
+    The template uses {crun_gvisor_wrapper_path} as a placeholder for the
+    installed wrapper path.
+    """
+    template = podman_config.joinpath("containers.conf").read_text()
+    return template.format(crun_gvisor_wrapper_path=wrapper_path)
+
+
 def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
     """Configure podman for gVisor compatibility with isolated paths.
 
@@ -153,9 +181,12 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
     """)
     _write_config_conservative(storage_conf_path, storage_conf_content, "storage.conf")
 
-    # Container runtime configuration
+    # Install crun-gvisor-wrapper (injects keep_original_groups annotation for buildah)
+    wrapper_path = _install_crun_wrapper(podman_dir, podman_config)
+
+    # Container runtime configuration (uses wrapper as default runtime)
     containers_conf_path = podman_dir / "containers.conf"
-    containers_conf_content = podman_config.joinpath("containers.conf").read_text()
+    containers_conf_content = _render_containers_conf(podman_config, wrapper_path)
     _write_config_conservative(containers_conf_path, containers_conf_content, "containers.conf")
 
     # Registry configuration (allows short image names like "alpine")

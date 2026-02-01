@@ -42,6 +42,7 @@ py_library(
         "config/env.mako",
         "config/nix.conf",
         "config/podman/containers.conf",
+        "config/podman/crun_gvisor_wrapper.py",
         "config/podman/policy.json",
         "config/podman/registries.conf",
         "config/podman/storage.conf",

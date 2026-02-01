@@ -1,16 +1,55 @@
 # Building Dockerfiles in gVisor
 
-`podman build` does not work in gVisor due to two independent issues:
-
-- **OCI isolation**: crun calls `deny_setgroups()` which opens `/proc/<pid>/setgroups` — this file doesn't exist in gVisor.
-- **Chroot isolation**: `/dev/null` is read-only, breaking apt-get/gpg.
-
-## Workaround: podman run + commit
-
-Simulate Dockerfile steps using `podman run` + `podman commit`:
+Standard `podman build` needs these flags to work under gVisor:
 
 ```bash
-# FROM
+podman build \
+  --network=host \
+  --isolation=oci \
+  --format=docker \
+  --layers=false \
+  -t my-image .
+```
+
+The Dockerfile must also redirect RUN output to avoid SIGPIPE:
+
+```dockerfile
+SHELL ["/bin/bash", "-c", "set -euo pipefail; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
+```
+
+## Why each flag is needed
+
+| Flag | Fixes | Root cause |
+|------|-------|------------|
+| `--isolation=oci` | Read-only `/dev/null` | Chroot mode creates a devtmpfs that gVisor mounts read-only. OCI mode uses the normal device setup. |
+| `--network=host` | Container networking | Required by `containers.conf` (`userns=host`). |
+| `--format=docker` | `SHELL` directive ignored | Podman defaults to OCI image format which doesn't support `SHELL`. Docker format is needed for the output redirect. |
+| `--layers=false` | Disk space exhaustion | VFS driver copies the full filesystem per layer. Disabling layer caching keeps only one working copy instead of N. |
+| `SHELL` redirect | Broken pipe (SIGPIPE) | Buildah's pipe handling for RUN step output causes SIGPIPE when commands produce large output. Redirecting to a file inside the container avoids the pipe entirely. |
+
+## crun-gvisor-wrapper (automatic)
+
+gVisor doesn't provide `/proc/self/setgroups`, which crun's `deny_setgroups()` tries to open. The `run.oci.keep_original_groups=1` OCI annotation tells crun to skip this call.
+
+For `podman run`, the annotation is set in `containers.conf` and works automatically. For `podman build`, buildah doesn't propagate `containers.conf` annotations to intermediate build containers, so a wrapper is needed.
+
+The `crun-gvisor-wrapper` script is installed by `podman_service.py` and registered as the default runtime in `containers.conf` via `[engine.runtimes]`. It intercepts crun invocations, injects `run.oci.keep_original_groups=1` into the OCI `config.json`, then exec's the real crun. No `--runtime` flag is needed on `podman build` — the wrapper is used automatically.
+
+## Verifying shared library completeness
+
+```bash
+podman run --rm --network=host \
+  -v /path/to/binary:/tmp/binary:ro \
+  my-image:latest ldd /tmp/binary | grep "not found"
+```
+
+No output means all libraries resolve.
+
+## Fallback: podman run + commit
+
+If `podman build` still fails for a specific case, individual steps can be executed manually:
+
+```bash
 podman pull docker.io/library/ubuntu:24.04
 IMAGE=docker.io/library/ubuntu:24.04
 
@@ -27,24 +66,5 @@ podman run --rm=false --name build-step --network=host \
 IMAGE=$(podman commit build-step | tail -1)
 podman rm -f build-step
 
-# Tag final image
 podman tag "$IMAGE" my-image:latest
 ```
-
-## Verifying shared library completeness
-
-To check that an image has all shared libraries needed by a binary (e.g., Chromium headless shell):
-
-```bash
-podman run --rm --network=host \
-  -v /path/to/binary:/tmp/binary:ro \
-  my-image:latest ldd /tmp/binary | grep "not found"
-```
-
-No output means all libraries resolve.
-
-## Root cause details
-
-**OCI isolation path**: `podman run --network=host` works because `containers.conf` sets `userns=host`, which skips user namespace creation entirely. `podman build` creates intermediate containers for each `RUN` step that don't inherit this setting, so crun tries to set up a user namespace and fails when writing to `/proc/<pid>/setgroups`.
-
-**Chroot isolation path**: buildah's chroot mode creates a minimal `/dev` on a devtmpfs that gVisor mounts read-only. Volume mounts (`--volume /dev/null:/dev/null:rw`) don't override this because the devtmpfs layer takes precedence.
