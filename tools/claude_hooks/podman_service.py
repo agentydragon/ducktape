@@ -278,6 +278,8 @@ def _get_podman_env_vars(settings: HookSettings) -> dict[str, str]:
         "CONTAINERS_STORAGE_CONF": str(podman_dir / "storage.conf"),
         "CONTAINERS_CONF": str(podman_dir / "containers.conf"),
         "CONTAINERS_REGISTRIES_CONF": str(podman_dir / "registries.conf"),
+        # OCI isolation avoids read-only /dev/null from chroot mode's devtmpfs
+        "BUILDAH_ISOLATION": "oci",
     }
     # Pass proxy and SSL CA env vars so the daemon can pull images through
     # the TLS-inspecting proxy (e.g., Anthropic's egress proxy)
