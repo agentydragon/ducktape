@@ -159,11 +159,7 @@ def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
 
     return Workflow(
         name="CI",
-        on={
-            "push": {"branches": ["main", "master", "devel"]},
-            "pull_request": None,
-            "workflow_dispatch": None,
-        },
+        on={"push": {"branches": ["main", "master", "devel"]}, "pull_request": None, "workflow_dispatch": None},
         concurrency={"group": "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": True},
         permissions=permissions,
         jobs=jobs,
