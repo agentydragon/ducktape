@@ -51,4 +51,4 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 # Firecracker VMs are single-tenant and ephemeral).
 # TODO: Ideally, build a custom Firecracker kernel with CONFIG_IP_NF_RAW=y
 # to get full Docker networking security. This is a workaround.
-COPY daemon.json /etc/docker/daemon.json
+COPY tools/rbe_image/daemon.json /etc/docker/daemon.json
