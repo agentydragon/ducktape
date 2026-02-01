@@ -39,6 +39,14 @@ build --spawn_strategy=remote,local
 build --jobs=50
 EOF
 
+# Override the RBE container image if RBE_IMAGE is set (used by CI when
+# testing an updated RBE image before it becomes :latest).
+# remote_header platform overrides take precedence over platform exec_properties.
+if [[ -n "${RBE_IMAGE:-}" ]]; then
+  echo "build --remote_header=x-buildbuddy-platform.container-image=docker://${RBE_IMAGE}" >>"$BUILDBUDDY_BAZELRC"
+  echo "RBE image override: $RBE_IMAGE"
+fi
+
 # Ensure ~/.bazelrc has the try-import (for CI environments without home-manager)
 USER_BAZELRC="$HOME/.bazelrc"
 if [[ ! -f "$USER_BAZELRC" ]] || ! grep -q "try-import.*buildbuddy.bazelrc" "$USER_BAZELRC" 2>/dev/null; then

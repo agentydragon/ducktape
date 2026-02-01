@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
     secrets:
       BUILDBUDDY_API_KEY:
         description: "BuildBuddy API key for remote cache (optional)"
@@ -65,6 +70,7 @@ jobs:
         id: bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          rbe_image: ${{ inputs.rbe_image }}
 
       - name: Lint
         run: |

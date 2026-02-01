@@ -29,6 +29,10 @@ inputs:
     description: "Additional hash to append to cache key (use hashFiles() at call site)"
     required: false
     default: ""
+  rbe_image:
+    description: "Override RBE container image (optional - uses platform default if empty)"
+    required: false
+    default: ""
 
 outputs:
   buildbuddy-enabled:
@@ -49,6 +53,7 @@ runs:
       uses: ./.github/actions/setup-buildbuddy
       with:
         api_key: ${{ inputs.buildbuddy_api_key }}
+        rbe_image: ${{ inputs.rbe_image }}
 
     - name: Setup Bazel cache
       id: cache

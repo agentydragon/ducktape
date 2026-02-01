@@ -105,7 +105,15 @@ COMPUTE_TARGETS_JOB = Job(
 )
 
 
-def build_workflow_job(name: str, config: WorkflowConfig) -> Job:
+RBE_IMAGE_CI_JOB = "rbe-image-ci"
+
+
+def _uses_rbe(name: str, config: WorkflowConfig) -> bool:
+    """Whether this workflow uses BuildBuddy RBE and should receive rbe_image."""
+    return name != RBE_IMAGE_CI_JOB and "BUILDBUDDY_API_KEY" in config.secrets
+
+
+def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: bool) -> Job:
     """Build a job definition from workflow config."""
     with_args: dict[str, str] = {}
     if config.targets:
@@ -113,9 +121,23 @@ def build_workflow_job(name: str, config: WorkflowConfig) -> Job:
     if config.inputs:
         with_args.update(config.inputs)
 
+    needs: str | list[str] = "compute-targets"
+    if_cond = f"contains(fromJson(needs.compute-targets.outputs.workflows), '{name}')"
+
+    # Bazel workflows that use RBE should wait for the rbe-image-ci job (when
+    # it exists) and forward the built image reference. The job may be skipped
+    # when no RBE image files changed, so we allow skipped results.
+    if has_rbe_image_job and _uses_rbe(name, config):
+        needs = ["compute-targets", RBE_IMAGE_CI_JOB]
+        if_cond = (
+            f"always() && !cancelled() && !failure() "
+            f"&& contains(fromJson(needs.compute-targets.outputs.workflows), '{name}')"
+        )
+        with_args["rbe_image"] = f"${{{{ needs.{RBE_IMAGE_CI_JOB}.outputs.rbe_image }}}}"
+
     return Job(
-        needs="compute-targets",
-        if_cond=f"contains(fromJson(needs.compute-targets.outputs.workflows), '{name}')",
+        needs=needs,
+        if_cond=if_cond,
         uses=f"./.github/workflows/{name}.yml",
         with_args=with_args if with_args else None,
         secrets="inherit" if config.secrets else None,
@@ -124,9 +146,16 @@ def build_workflow_job(name: str, config: WorkflowConfig) -> Job:
 
 def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
     """Generate the complete ci.yml config."""
+    has_rbe_image_job = RBE_IMAGE_CI_JOB in manifest.workflows
+
     jobs: dict[str, Job] = {"compute-targets": COMPUTE_TARGETS_JOB}
     for name, config in manifest.workflows.items():
-        jobs[name] = build_workflow_job(name, config)
+        jobs[name] = build_workflow_job(name, config, has_rbe_image_job=has_rbe_image_job)
+
+    # The rbe-image-ci job pushes container images, so we need packages:write.
+    permissions: dict[str, str] = {"contents": "read"}
+    if has_rbe_image_job:
+        permissions["packages"] = "write"
 
     return Workflow(
         name="CI",
@@ -145,7 +174,7 @@ def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
             },
         },
         concurrency={"group": "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": True},
-        permissions={"contents": "read"},
+        permissions=permissions,
         jobs=jobs,
     )
 

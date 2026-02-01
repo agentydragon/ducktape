@@ -20,6 +20,10 @@ inputs:
     description: "BuildBuddy API key (optional - no-op if not provided)"
     required: false
     default: ""
+  rbe_image:
+    description: "Override RBE container image (optional - uses platform default if empty)"
+    required: false
+    default: ""
 
 outputs:
   enabled:
@@ -34,6 +38,7 @@ runs:
       shell: bash
       env:
         BUILDBUDDY_API_KEY: ${{ inputs.api_key }}
+        RBE_IMAGE: ${{ inputs.rbe_image }}
       run: |
         if [[ -z "$BUILDBUDDY_API_KEY" ]]; then
           echo "enabled=false" >> $GITHUB_OUTPUT

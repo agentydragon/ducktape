@@ -90,7 +90,7 @@ class Job(BaseModel):
     name: str | None = None
     runs_on: str | None = Field(None, alias="runs-on", serialization_alias="runs-on")
     timeout_minutes: int | None = Field(None, alias="timeout-minutes", serialization_alias="timeout-minutes")
-    needs: str | None = None
+    needs: str | list[str] | None = None
     if_cond: str | None = Field(None, alias="if", serialization_alias="if")
     uses: str | None = None
     with_args: dict[str, str] | None = Field(None, alias="with", serialization_alias="with")

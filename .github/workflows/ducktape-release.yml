@@ -1,11 +1,11 @@
 # AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
 # Regenerate with: uv run tools/ci/generate_ci.py
 name: ducktape Release
-"on":
+'on':
   push:
     branches:
-      - devel
-      - main
+    - devel
+    - main
   workflow_dispatch:
     inputs:
       force_release:
@@ -25,27 +25,27 @@ jobs:
     outputs:
       release_needed: ${{ steps.check.outputs.release_needed }}
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-      - name: Check if release needed
-        id: check
-        uses: ./.github/actions/check-release-needed
-        with:
-          package_prefix: ducktape
-          bazel_target: //:wheel
-          latest_release_tag: ducktape-latest
-      - uses: ./.github/actions/bazel-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}
-          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
+    - name: Check out code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - id: bazel
+      uses: ./.github/actions/setup-bazel
+      with:
+        buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+    - name: Check if release needed
+      id: check
+      uses: ./.github/actions/check-release-needed
+      with:
+        package_prefix: ducktape
+        bazel_target: //:wheel
+        latest_release_tag: ducktape-latest
+    - uses: ./.github/actions/bazel-cache-save
+      if: always()
+      with:
+        cache-hit: ${{ steps.bazel.outputs.cache-hit }}
+        cache-key: ${{ steps.bazel.outputs.cache-key }}
+        skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
   release:
     needs: check
     if: needs.check.outputs.release_needed == 'true' || inputs.force_release == true

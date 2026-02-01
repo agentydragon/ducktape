@@ -1,0 +1,52 @@
+# Build the RBE worker image for CI validation.
+#
+# Called from ci.yml when tools/rbe_image/** changes on a PR. Pushes a
+# commit-tagged image so downstream Bazel jobs can test with the updated image
+# before it becomes :latest on merge.
+name: RBE Image CI Build
+
+on:
+  workflow_call:
+    outputs:
+      rbe_image:
+        description: "Full image reference (e.g. ghcr.io/.../rbe-worker:ci-<sha>), empty if skipped"
+        value: ${{ jobs.build.outputs.rbe_image }}
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/rbe-worker
+
+jobs:
+  build:
+    name: Build RBE Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      rbe_image: ${{ steps.meta.outputs.rbe_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          TAG="ci-${{ github.sha }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "rbe_image=${{ env.IMAGE }}:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: tools/rbe_image/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
