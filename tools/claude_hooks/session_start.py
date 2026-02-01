@@ -24,7 +24,6 @@ from typing import Literal
 from mako.template import Template
 from pydantic import BaseModel
 
-from bazel_subprocess import run_python_module
 from fmt_util.fmt_util import format_limited_list
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
@@ -229,61 +228,30 @@ def emit_session_context(
 
 
 def install_git_precommit_hook(project_dir: Path) -> None:
-    """Install git pre-commit hook using pre-commit framework.
+    """Install git pre-commit hook using the pre-commit CLI.
 
-    First ensures pre-commit is installed via pip, then runs `pre-commit install`
-    which installs the hook defined in .pre-commit-config.yaml.
-    This includes conflict marker detection, syntax checks, and bazel lint.
+    Expects `pre-commit` to be pre-installed on PATH (it is in Claude Code web).
+    pre-commit itself handles missing .git, missing config, and idempotent installs.
     """
-    git_dir = project_dir / ".git"
-    if not git_dir.exists():
-        logger.info("Not a git repository (no .git), skipping git hook install")
+    precommit = shutil.which("pre-commit")
+    if not precommit:
+        logger.warning("pre-commit not found on PATH, skipping git hook install")
         return
 
-    precommit_config = project_dir / ".pre-commit-config.yaml"
-    if not precommit_config.exists():
-        logger.warning("No .pre-commit-config.yaml found, skipping git hook install")
-        return
-
-    hook_target = git_dir / "hooks" / "pre-commit"
-    if hook_target.exists():
-        logger.info("Git pre-commit hook already installed")
-        return
-
-    # Ensure pre-commit is installed.
-    # Ansible is installed by pre-commit itself (language: python + additional_dependencies).
     try:
-        run_python_module("pre_commit", "--version", capture_output=True, check=True, timeout=5)
-        logger.info("pre-commit already available")
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        logger.info("Installing pre-commit==4.0.1 via pip")
-        try:
-            result = subprocess.run(
-                ["pip", "install", "--user", "pre-commit==4.0.1"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if result.returncode != 0:
-                logger.warning("Failed to install pre-commit: %s", result.stderr)
-                return
-            logger.info("pre-commit installed successfully")
-        except subprocess.TimeoutExpired:
-            logger.warning("pre-commit installation timed out")
-            return
+        version = subprocess.run([precommit, "--version"], capture_output=True, text=True, check=True, timeout=5)
+        logger.info("pre-commit %s", version.stdout.strip())
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        pass
 
-    # Install the git hook
     try:
-        result = run_python_module(
-            "pre_commit", "install", check=False, cwd=project_dir, capture_output=True, text=True, timeout=30
+        result = subprocess.run(
+            [precommit, "install"], check=False, cwd=project_dir, capture_output=True, text=True, timeout=30
         )
         if result.returncode == 0:
-            logger.info("Installed git pre-commit hook via pre-commit install")
+            logger.info("Installed git pre-commit hook")
         else:
             logger.warning("pre-commit install failed: %s", result.stderr)
-    except FileNotFoundError:
-        logger.warning("pre-commit not found after installation attempt")
     except subprocess.TimeoutExpired:
         logger.warning("pre-commit install timed out")
 

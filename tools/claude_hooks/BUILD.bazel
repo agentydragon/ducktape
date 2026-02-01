@@ -168,13 +168,11 @@ py_library(
         ":proxy_credentials",
         ":proxy_setup",
         ":settings",
-        "//:bazel_subprocess",
         "//fmt_util",
         "//tools:build_info",
         "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",
         "@pypi//mako",
-        "@pypi//pre_commit",
         "@pypi//pydantic",
     ],
 )
