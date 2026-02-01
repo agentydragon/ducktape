@@ -2,34 +2,43 @@
 
 import json
 import subprocess
-import sys
 
 import pytest
 import pytest_bazel
+
+from bazel_subprocess import run_python_module
 
 
 def _has_ruff() -> bool:
     """Check if ruff CLI is available."""
     try:
-        # Use python -m ruff to work in Bazel sandbox
-        result = subprocess.run(
-            [sys.executable, "-m", "ruff", "--version"], capture_output=True, check=False, timeout=5
-        )
+        result = run_python_module("ruff", "--version", capture_output=True, check=False, timeout=5)
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 
+def _run_cli(*args: str, **kwargs) -> subprocess.CompletedProcess:
+    """Run the claude-linter-v2 CLI via run_python_module."""
+    return run_python_module("llm.claude_linter_v2.cli", *args, capture_output=True, text=True, check=False, **kwargs)
+
+
 class TestCLIIntegration:
     """Test the full CLI integration."""
 
-    def test_pre_hook_bare_except(self, tmp_path):
-        """Test that pre-hook blocks bare except."""
+    def test_pre_hook_bare_except(self):
+        """Test that pre-hook blocks bare except.
+
+        Uses a path without "test_" anywhere to avoid triggering the default
+        pattern rule that relaxes python.bare_except for test files. pytest's
+        tmp_path includes the test function name (which starts with test_) in
+        the directory, and fnmatch matches * across directory separators.
+        """
         request_data = {
             "hook_event_name": "PreToolUse",
             "tool_name": "Write",
             "tool_input": {
-                "file_path": str(tmp_path / "test_bare_except.py"),
+                "file_path": "/tmp/cl2_check/bare_except_example.py",
                 "content": """
 try:
     x = 1/0
@@ -40,13 +49,7 @@ except:
             "session_id": "12345678-1234-5678-1234-567812345678",
         }
 
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "hook"],
-            input=json.dumps(request_data),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _run_cli("hook", input=json.dumps(request_data))
 
         assert result.returncode == 0  # CLI always exits 0, check JSON response
         response = json.loads(result.stdout)
@@ -70,13 +73,7 @@ if hasattr(obj, 'foo'):
             "session_id": "12345678-1234-5678-1234-567812345679",
         }
 
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "hook"],
-            input=json.dumps(request_data),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _run_cli("hook", input=json.dumps(request_data))
 
         assert result.returncode == 0
         response = json.loads(result.stdout)
@@ -102,13 +99,7 @@ def hello():
             "session_id": "12345678-1234-5678-1234-567812345680",
         }
 
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "hook"],
-            input=json.dumps(request_data),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _run_cli("hook", input=json.dumps(request_data))
 
         assert result.returncode == 0
         response = json.loads(result.stdout)
@@ -137,13 +128,7 @@ def get_data():
             "session_id": "12345678-1234-5678-1234-567812345681",
         }
 
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "hook"],
-            input=json.dumps(request_data),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _run_cli("hook", input=json.dumps(request_data))
 
         assert result.returncode == 0
         response = json.loads(result.stdout)
@@ -169,13 +154,7 @@ __all__ = ['Class1', 'Class2']
             "session_id": "12345678-1234-5678-1234-567812345682",
         }
 
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "hook"],
-            input=json.dumps(request_data),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _run_cli("hook", input=json.dumps(request_data))
 
         assert result.returncode == 0
         response = json.loads(result.stdout)
@@ -184,13 +163,7 @@ __all__ = ['Class1', 'Class2']
 
     def test_pre_hook_invalid_json(self):
         """Test that pre-hook handles invalid JSON gracefully."""
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "hook"],
-            input="not valid json",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _run_cli("hook", input="not valid json")
 
         # Invalid JSON should crash the CLI
         assert result.returncode != 0
@@ -208,13 +181,7 @@ __all__ = ['Class1', 'Class2']
             "session_id": "12345678-1234-5678-1234-567812345683",
         }
 
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "hook"],
-            input=json.dumps(request_data),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _run_cli("hook", input=json.dumps(request_data))
 
         assert result.returncode == 0
         response = json.loads(result.stdout)
@@ -230,13 +197,7 @@ __all__ = ['Class1', 'Class2']
             "session_id": "12345678-1234-5678-1234-567812345684",
         }
 
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "hook"],
-            input=json.dumps(request_data),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _run_cli("hook", input=json.dumps(request_data))
 
         # CLI always exits 0
         assert result.returncode == 0
@@ -252,12 +213,8 @@ class TestSessionCommands:
 
     def test_session_list(self, tmp_path):
         """Test listing sessions."""
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "session", "list"],
-            capture_output=True,
-            text=True,
-            cwd=tmp_path,
-            check=False,
+        result = run_python_module(
+            "llm.claude_linter_v2.cli", "session", "list", capture_output=True, text=True, cwd=tmp_path, check=False
         )
 
         assert result.returncode == 0
@@ -266,8 +223,11 @@ class TestSessionCommands:
 
     def test_session_allow(self, tmp_path):
         """Test adding an allow rule."""
-        result = subprocess.run(
-            [sys.executable, "-m", "llm.claude_linter_v2.cli", "session", "allow", "Edit('**/*.py')"],
+        result = run_python_module(
+            "llm.claude_linter_v2.cli",
+            "session",
+            "allow",
+            "Edit('**/*.py')",
             capture_output=True,
             text=True,
             cwd=tmp_path,

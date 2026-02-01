@@ -35,8 +35,8 @@ def test_python_syntax_error_skips_precommit(tmp_path):
         cwd=tmp_path,
     )
 
-    # Mock subprocess.run to ensure pre-commit is never called
-    with patch("claude_hooks.precommit_autofix.subprocess.run") as mock_run:
+    # Mock run_python_module to ensure pre-commit is never called
+    with patch("claude_hooks.precommit_autofix.run_python_module") as mock_run:
         # Mock config to enable the hook
         hook = PreCommitAutoFixerHook()
         hook.autofixer_config.enabled = True

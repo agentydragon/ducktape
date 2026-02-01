@@ -166,7 +166,9 @@ py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
     deps = [
+        ":cli",
         ":conftest",
+        "//:bazel_subprocess",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
