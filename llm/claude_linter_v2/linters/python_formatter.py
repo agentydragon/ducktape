@@ -13,36 +13,42 @@ logger = logging.getLogger(__name__)
 class PythonFormatter:
     """Handles Python code formatting and autofixing."""
 
+    # Tools that are valid python_tools but not formatters (skip silently)
+    _NON_FORMATTING_TOOLS: frozenset[str] = frozenset({"mypy"})
+
     def __init__(self, tools: list[str]) -> None:
-        self.tools = tools
-        self._ruff_bin = find_ruff_binary() if "ruff" in tools else None
+        self._formatting_tools = [t for t in tools if t not in self._NON_FORMATTING_TOOLS]
+        self._ruff_bin = find_ruff_binary() if "ruff" in self._formatting_tools else None
         self._available_tools = self._check_available_tools()
 
     def _check_available_tools(self) -> list[str]:
-        """Check which formatting tools are available."""
+        """Check which formatting tools are available. Raises if a configured tool is missing."""
         available = []
-        for tool in self.tools:
+        for tool in self._formatting_tools:
             if tool == "ruff":
-                if self._ruff_bin:
-                    available.append(tool)
-                    logger.debug(f"Found ruff: {self._ruff_bin}")
-                else:
-                    logger.warning("ruff configured but binary not found (set RUFF_BIN or add ruff to PATH)")
+                if not self._ruff_bin:
+                    raise RuntimeError(
+                        "ruff is configured as a formatting tool but the binary was not found. "
+                        "Set RUFF_BIN env var or add ruff to PATH, or remove 'ruff' from python_tools config."
+                    )
+                available.append(tool)
+                logger.debug(f"Found ruff: {self._ruff_bin}")
             elif tool == "black":
                 try:
                     result = subprocess.run(
                         ["black", "--version"], capture_output=True, text=True, timeout=5, check=False
                     )
-                    if result.returncode == 0:
-                        available.append(tool)
-                        logger.debug(f"Found {tool}: {result.stdout.strip()}")
-                except (subprocess.SubprocessError, FileNotFoundError):
-                    logger.warning(f"Tool {tool} not available")
+                    if result.returncode != 0:
+                        raise RuntimeError(f"black --version returned exit code {result.returncode}")
+                    available.append(tool)
+                    logger.debug(f"Found black: {result.stdout.strip()}")
+                except (subprocess.SubprocessError, FileNotFoundError) as e:
+                    raise RuntimeError(
+                        "black is configured as a formatting tool but is not available. "
+                        "Install black or remove it from python_tools config."
+                    ) from e
             else:
-                logger.warning(f"Unknown formatting tool: {tool}")
-
-        if not available:
-            logger.warning("No formatting tools available")
+                raise RuntimeError(f"Unknown formatting tool: {tool!r}")
 
         return available
 
@@ -92,8 +98,7 @@ class PythonFormatter:
 
     def _format_with_ruff(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Format code with ruff."""
-        if not self._ruff_bin:
-            return code, []
+        assert self._ruff_bin
         try:
             result = subprocess.run(
                 [self._ruff_bin, "format", "--stdin-filename", str(file_path), "-"],
@@ -135,9 +140,10 @@ class PythonFormatter:
 
     def _fix_imports(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Fix import ordering and remove unused imports."""
-        if not self._ruff_bin or "ruff" not in self._available_tools:
+        if "ruff" not in self._available_tools:
             return code, []
 
+        assert self._ruff_bin
         changes = []
         formatted = code
 

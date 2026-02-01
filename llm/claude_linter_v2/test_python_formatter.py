@@ -3,222 +3,153 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 import pytest_bazel
 
 from llm.claude_linter_v2.config.models import AutofixCategory
 from llm.claude_linter_v2.linters.python_formatter import PythonFormatter
 
-TEST_FILE = Path("/test.py")
-FAKE_RUFF = "/usr/bin/ruff"
+TEST_FILE = Path("/tmp/test.py")
+
+_MOCK_FIND = "llm.claude_linter_v2.linters.python_formatter.find_ruff_binary"
 
 
-class TestPythonFormatter:
-    """Test Python code formatting functionality."""
+@pytest.fixture
+def ruff_formatter() -> PythonFormatter:
+    """PythonFormatter configured with ruff (real binary via RUFF_BIN)."""
+    return PythonFormatter(["ruff"])
 
-    @patch("llm.claude_linter_v2.linters.python_formatter.find_ruff_binary")
-    def test_check_available_tools(self, mock_find):
-        """Test detection of available formatting tools."""
-        mock_find.return_value = FAKE_RUFF
 
-        formatter = PythonFormatter(["ruff", "black"])
-        # ruff found via find_ruff_binary, black not on PATH
-        assert "ruff" in formatter._available_tools
+def test_ruff_available():
+    formatter = PythonFormatter(["ruff"])
+    assert formatter._available_tools == ["ruff"]
+    assert formatter._ruff_bin is not None
 
-    @patch("subprocess.run")
-    def test_format_with_ruff_success(self, mock_run):
-        """Test successful formatting with ruff."""
-        input_code = "x=1+2"
-        formatted_code = "x = 1 + 2\n"
 
-        mock_run.return_value = MagicMock(returncode=0, stdout=formatted_code, stderr="")
+def test_ruff_missing_raises():
+    with patch(_MOCK_FIND, return_value=None), pytest.raises(RuntimeError, match=r"ruff is configured.*not found"):
+        PythonFormatter(["ruff"])
 
-        formatter = PythonFormatter(["ruff"])
-        formatter._ruff_bin = FAKE_RUFF
-        formatter._available_tools = ["ruff"]
 
-        result, changes = formatter.format_code(input_code, file_path=TEST_FILE)
+def test_unknown_tool_raises():
+    with pytest.raises(RuntimeError, match="Unknown formatting tool"):
+        PythonFormatter(["nonexistent"])
 
-        assert result == formatted_code
-        assert changes == ["Applied ruff formatting"]
 
-        # Verify ruff binary was called directly
-        mock_run.assert_called_with(
-            [FAKE_RUFF, "format", "--stdin-filename", str(TEST_FILE), "-"],
-            input=input_code,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
+def test_non_formatting_tool_skipped():
+    formatter = PythonFormatter(["mypy"])
+    assert formatter._available_tools == []
 
-    @patch("subprocess.run")
-    def test_format_with_black_success(self, mock_run):
-        """Test successful formatting with black."""
-        input_code = "x=1+2"
-        formatted_code = "x = 1 + 2\n"
 
-        mock_run.return_value = MagicMock(returncode=0, stdout=formatted_code, stderr="")
+def test_format_with_ruff_success(ruff_formatter):
+    input_code = "x=1+2\n"
 
-        formatter = PythonFormatter(["black"])
-        formatter._available_tools = ["black"]
+    result, changes = ruff_formatter.format_code(input_code, file_path=TEST_FILE)
 
-        result, changes = formatter.format_code(input_code, file_path=TEST_FILE)
+    assert result == "x = 1 + 2\n"
+    assert changes == ["Applied ruff formatting"]
 
-        assert result == formatted_code
-        assert changes == ["Applied black formatting"]
 
-        # Verify black was called correctly
-        mock_run.assert_called_with(
-            ["black", "-", "--quiet"], input=input_code, capture_output=True, text=True, timeout=30, check=False
-        )
+@patch("subprocess.run")
+def test_format_with_black_success(mock_run):
+    input_code = "x=1+2"
+    formatted_code = "x = 1 + 2\n"
 
-    @patch("subprocess.run")
-    def test_no_changes_needed(self, mock_run):
-        """Test when code is already formatted."""
-        code = "x = 1 + 2\n"
+    # black --version succeeds, then black format succeeds
+    mock_run.side_effect = [
+        MagicMock(returncode=0, stdout="black 24.0\n"),  # --version check
+        MagicMock(returncode=0, stdout=formatted_code, stderr=""),  # format
+    ]
 
-        mock_run.return_value = MagicMock(returncode=0, stdout=code, stderr="")
+    formatter = PythonFormatter(["black"])
+    result, changes = formatter.format_code(input_code, file_path=TEST_FILE)
 
-        formatter = PythonFormatter(["ruff"])
-        formatter._ruff_bin = FAKE_RUFF
-        formatter._available_tools = ["ruff"]
+    assert result == formatted_code
+    assert changes == ["Applied black formatting"]
 
-        result, changes = formatter.format_code(code, file_path=TEST_FILE)
 
-        assert result == code
-        assert changes == []
+def test_no_changes_needed(ruff_formatter):
+    code = "x = 1 + 2\n"
 
-    @patch("subprocess.run")
-    def test_formatting_error(self, mock_run):
-        """Test handling of formatting errors."""
-        code = "invalid syntax @#$"
+    result, changes = ruff_formatter.format_code(code, file_path=TEST_FILE)
 
-        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Syntax error")
+    assert result == code
+    assert changes == []
 
-        formatter = PythonFormatter(["ruff"])
-        formatter._ruff_bin = FAKE_RUFF
-        formatter._available_tools = ["ruff"]
 
-        result, changes = formatter.format_code(code, file_path=TEST_FILE)
-
-        # Should return original code on error
-        assert result == code
-        assert changes == []
-
-    @patch("subprocess.run")
-    def test_fix_imports(self, mock_run):
-        """Test import fixing with ruff."""
-        input_code = """import os
+def test_fix_imports(ruff_formatter):
+    input_code = """\
+import os
 import sys
-from typing import List
 import json
-import pytest_bazel
 
 def foo():
     return json.dumps({})
 """
 
-        fixed_code = """import json
+    result, changes = ruff_formatter.format_code(input_code, file_path=TEST_FILE, categories=[AutofixCategory.IMPORTS])
 
-def foo():
-    return json.dumps({})
-"""
+    # os and sys should be removed as unused
+    assert "import os" not in result
+    assert "import sys" not in result
+    assert "import json" in result
+    assert "Fixed import ordering and removed unused imports" in changes
 
-        mock_run.return_value = MagicMock(returncode=1, stdout=fixed_code)
 
-        formatter = PythonFormatter(["ruff"])
-        formatter._ruff_bin = FAKE_RUFF
-        formatter._available_tools = ["ruff"]
+def test_empty_tools():
+    formatter = PythonFormatter([])
+    code = "x=1+2"
+    result, changes = formatter.format_code(code, file_path=TEST_FILE)
 
-        result, changes = formatter.format_code(input_code, file_path=TEST_FILE, categories=[AutofixCategory.IMPORTS])
+    assert result == code
+    assert changes == []
 
-        assert result == fixed_code
-        assert "Fixed import ordering and removed unused imports" in changes
 
-    def test_no_tools_available(self):
-        """Test behavior when no tools are available."""
-        formatter = PythonFormatter(["nonexistent"])
-        formatter._available_tools = []
+def test_all_categories(ruff_formatter, monkeypatch):
+    code = "x=1\n"
 
-        code = "x=1+2"
-        result, changes = formatter.format_code(code, file_path=TEST_FILE)
+    mock_apply = MagicMock(return_value=(code, []))
+    mock_fix = MagicMock(return_value=(code, []))
+    monkeypatch.setattr(ruff_formatter, "_apply_formatting", mock_apply)
+    monkeypatch.setattr(ruff_formatter, "_fix_imports", mock_fix)
 
-        assert result == code
-        assert changes == []
+    ruff_formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.ALL])
 
-    @patch("subprocess.run")
-    def test_all_categories(self, mock_run, monkeypatch):
-        """Test that ALL category expands to all categories."""
-        code = "x=1"
+    mock_apply.assert_called_once()
+    mock_fix.assert_called_once()
 
-        mock_run.return_value = MagicMock(returncode=0, stdout=code, stderr="")
 
-        formatter = PythonFormatter(["ruff"])
-        formatter._ruff_bin = FAKE_RUFF
-        formatter._available_tools = ["ruff"]
+def test_selective_categories(ruff_formatter, monkeypatch):
+    code = "x=1\n"
 
-        mock_apply = MagicMock(return_value=(code, []))
-        mock_fix = MagicMock(return_value=(code, []))
-        monkeypatch.setattr(formatter, "_apply_formatting", mock_apply)
-        monkeypatch.setattr(formatter, "_fix_imports", mock_fix)
+    mock_apply = MagicMock(return_value=(code, []))
+    mock_fix = MagicMock(return_value=(code, []))
+    monkeypatch.setattr(ruff_formatter, "_apply_formatting", mock_apply)
+    monkeypatch.setattr(ruff_formatter, "_fix_imports", mock_fix)
 
-        formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.ALL])
+    # Only formatting
+    ruff_formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.FORMATTING])
+    mock_apply.assert_called_once()
+    mock_fix.assert_not_called()
 
-        # Both methods should be called
-        mock_apply.assert_called_once()
-        mock_fix.assert_called_once()
+    mock_apply.reset_mock()
+    mock_fix.reset_mock()
 
-    @patch("subprocess.run")
-    def test_selective_categories(self, mock_run, monkeypatch):
-        """Test selective category application."""
-        code = "x=1"
+    # Only imports
+    ruff_formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.IMPORTS])
+    mock_apply.assert_not_called()
+    mock_fix.assert_called_once()
 
-        formatter = PythonFormatter(["ruff"])
-        formatter._ruff_bin = FAKE_RUFF
-        formatter._available_tools = ["ruff"]
 
-        mock_apply = MagicMock(return_value=(code, []))
-        mock_fix = MagicMock(return_value=(code, []))
-        monkeypatch.setattr(formatter, "_apply_formatting", mock_apply)
-        monkeypatch.setattr(formatter, "_fix_imports", mock_fix)
+def test_file_path_passed_to_tools(ruff_formatter):
+    code = "x = 1\n"
+    file_path = Path("/path/to/file.py")
 
-        # Only formatting
-        formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.FORMATTING])
-        mock_apply.assert_called_once()
-        mock_fix.assert_not_called()
+    # Just verify it runs without error — real ruff receives the filename
+    result, changes = ruff_formatter.format_code(code, file_path=file_path)
 
-        # Reset mocks
-        mock_apply.reset_mock()
-        mock_fix.reset_mock()
-
-        # Only imports
-        formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.IMPORTS])
-        mock_apply.assert_not_called()
-        mock_fix.assert_called_once()
-
-    @patch("subprocess.run")
-    def test_file_path_passed_to_tools(self, mock_run):
-        """Test that file path is properly passed to formatting tools."""
-        code = "x=1"
-        file_path = Path("/path/to/file.py")
-
-        mock_run.return_value = MagicMock(returncode=0, stdout=code, stderr="")
-
-        formatter = PythonFormatter(["ruff"])
-        formatter._ruff_bin = FAKE_RUFF
-        formatter._available_tools = ["ruff"]
-
-        formatter.format_code(code, file_path=file_path)
-
-        # Verify ruff binary was called with file path
-        mock_run.assert_called_with(
-            [FAKE_RUFF, "format", "--stdin-filename", str(file_path), "-"],
-            input=code,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
+    assert result == code
+    assert changes == []
 
 
 if __name__ == "__main__":

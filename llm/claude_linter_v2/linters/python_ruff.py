@@ -37,24 +37,13 @@ class PythonRuffLinter:
 
     def __init__(self, force_select: list[str] | None = None) -> None:
         self.force_select = force_select or []
-        self._ruff_bin = find_ruff_binary()
+        ruff_bin = find_ruff_binary()
+        if not ruff_bin:
+            raise RuntimeError("ruff binary not found. Set RUFF_BIN env var or add ruff to PATH.")
+        self._ruff_bin: str = ruff_bin
 
     def check_code(self, code: str, file_path: Path, critical_only: bool = True) -> list[Violation]:
-        """
-        Check Python code with ruff.
-
-        Args:
-            code: Python code to check
-            file_path: File path for context
-            critical_only: If True, only return critical violations
-
-        Returns:
-            List of violations found
-        """
-        if not self._ruff_bin:
-            logger.warning("ruff not available, skipping checks")
-            return []
-
+        """Check Python code with ruff."""
         violations = []
 
         # Build ruff args

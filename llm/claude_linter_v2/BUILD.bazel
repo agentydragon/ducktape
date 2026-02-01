@@ -293,6 +293,8 @@ py_test(
 py_test(
     name = "test_stop_hook_quality_gate",
     srcs = ["test_stop_hook_quality_gate.py"],
+    data = ["@multitool//tools/ruff"],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
     deps = [
         ":conftest",
         "//llm:claude_code_api",
@@ -300,5 +302,6 @@ py_test(
         "//llm/claude_linter_v2/hooks:handler",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
