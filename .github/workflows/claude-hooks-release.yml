@@ -59,7 +59,7 @@ jobs:
           bazel_target: //tools/claude_hooks:wheel
           latest_release_tag: claude-hooks-latest
 
-      - uses: ./.github/actions/bazel-cache-save
+      - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}
@@ -128,7 +128,7 @@ jobs:
           reporter: java-junit
           fail-on-error: false
 
-      - uses: ./.github/actions/bazel-cache-save
+      - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}
@@ -183,7 +183,7 @@ jobs:
         with:
           artifact-name: wheel-test-logs
 
-      - uses: ./.github/actions/bazel-cache-save
+      - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}
@@ -284,7 +284,7 @@ jobs:
           )" \
             dist/*.whl
 
-      - uses: ./.github/actions/bazel-cache-save
+      - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}

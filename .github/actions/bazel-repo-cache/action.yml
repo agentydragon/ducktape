@@ -1,0 +1,50 @@
+# Restore Bazel repository cache (compressed downloads + Bazelisk binary).
+# See .github/docs/bazel-caching.md for design rationale.
+name: Bazel Repo Cache
+description: Setup Bazelisk and restore Bazel repository cache
+
+inputs:
+  extra_hash:
+    description: "Additional hash to append to cache key (use hashFiles() at call site)"
+    required: false
+    default: ""
+
+outputs:
+  cache-hit:
+    description: "Whether the cache was restored"
+    value: ${{ steps.cache-restore.outputs.cache-hit }}
+  cache-key:
+    description: "The cache key (use this for bazel-repo-cache-save)"
+    value: ${{ steps.cache-key.outputs.key }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bazelisk
+      uses: bazelbuild/setup-bazelisk@v3
+
+    - name: Derive cache key
+      id: cache-key
+      shell: bash
+      env:
+        BASE_HASH: ${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+        EXTRA_HASH: ${{ inputs.extra_hash }}
+      run: |
+        if [[ -n "$EXTRA_HASH" ]]; then
+          HASH="${BASE_HASH:0:8}-${EXTRA_HASH:0:8}"
+        else
+          HASH="${BASE_HASH:0:16}"
+        fi
+
+        KEY="bazel-repo-cache-${HASH}"
+        echo "key=$KEY" >> $GITHUB_OUTPUT
+
+    - name: Restore Bazel repository cache
+      id: cache-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.cache/bazelisk
+          ~/.cache/bazel/_bazel_runner/cache/repos/v1
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: bazel-repo-cache-

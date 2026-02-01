@@ -23,7 +23,7 @@ jobs:
       - uses: ./.github/actions/setup-python-env
 
       # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
-      - uses: ./.github/actions/bazel-cache
+      - uses: ./.github/actions/bazel-repo-cache
         id: bazel-cache
 
       # Cluster validation tools - use official actions where available
@@ -130,12 +130,6 @@ jobs:
       # ============================================================================
       # CACHE SAVES
       # ============================================================================
-
-      - uses: ./.github/actions/bazel-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
       - name: Save pre-commit cache
         if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'

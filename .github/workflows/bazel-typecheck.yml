@@ -83,9 +83,3 @@ jobs:
           bazel build --keep_going --config=typecheck --strategy=mypy=local \
             --build_metadata=ROLE=ci --build_metadata=TAGS=typecheck \
             $TARGET_ARG
-
-      - uses: ./.github/actions/bazel-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}

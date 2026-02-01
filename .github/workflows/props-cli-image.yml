@@ -34,7 +34,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - uses: ./.github/actions/bazel-cache
+      - uses: ./.github/actions/bazel-repo-cache
         id: bazel-cache
 
       - name: Build OCI image
@@ -50,7 +50,7 @@ jobs:
       - name: Push to GHCR
         run: bazelisk run //props/cli:push_ghcr
 
-      - uses: ./.github/actions/bazel-cache-save
+      - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}

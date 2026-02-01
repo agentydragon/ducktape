@@ -46,7 +46,8 @@ COMPUTE_TARGETS_JOB = Job(
     steps=[
         Step(uses="actions/checkout@v4", with_args={"fetch-depth": 0}),
         Step(uses="astral-sh/setup-uv@v4"),
-        Step(uses="bazelbuild/setup-bazelisk@v3"),
+        # Restore repository cache (also sets up Bazelisk)
+        Step(uses="./.github/actions/bazel-repo-cache", id="bazel-cache"),
         Step(uses="actions/setup-java@v4", with_args={"distribution": "temurin", "java-version": "21"}),
         Step(
             name="Cache bazel-diff JAR",
@@ -85,6 +86,10 @@ COMPUTE_TARGETS_JOB = Job(
             "fi",
         ),
         Step(name="Compute CI decision", id="decide", run="uv run tools/ci/ci_decide.py"),
+        # Prewarm repository cache: bazel-diff already ran queries which
+        # fetched some repos; `bazel fetch` downloads the rest so the cache
+        # save seeds downstream jobs.
+        Step(name="Prewarm repository cache", if_cond="always()", run="bazelisk fetch //..."),
         Step(
             name="Upload targets file",
             if_cond="always()",
@@ -99,6 +104,15 @@ COMPUTE_TARGETS_JOB = Job(
                 "name": "bazel-query-logs-${{ github.run_id }}",
                 "path": "bazel-query-logs",
                 "if-no-files-found": "ignore",
+            },
+        ),
+        # Save repository cache for downstream jobs
+        Step(
+            uses="./.github/actions/bazel-repo-cache-save",
+            if_cond="always()",
+            with_args={
+                "cache-hit": "${{ steps.bazel-cache.outputs.cache-hit }}",
+                "cache-key": "${{ steps.bazel-cache.outputs.cache-key }}",
             },
         ),
     ],
@@ -208,12 +222,11 @@ def generate_release_config(name: str, config: ReleaseConfig) -> Workflow:
                 },
             ),
             Step(
-                uses="./.github/actions/bazel-cache-save",
+                uses="./.github/actions/bazel-repo-cache-save",
                 if_cond="always()",
                 with_args={
                     "cache-hit": "${{ steps.bazel.outputs.cache-hit }}",
                     "cache-key": "${{ steps.bazel.outputs.cache-key }}",
-                    "skip_cache": "${{ steps.bazel.outputs.buildbuddy-enabled }}",
                 },
             ),
         ],

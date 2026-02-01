@@ -40,12 +40,11 @@ jobs:
           package_prefix: ducktape
           bazel_target: //:wheel
           latest_release_tag: ducktape-latest
-      - uses: ./.github/actions/bazel-cache-save
+      - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}
           cache-key: ${{ steps.bazel.outputs.cache-key }}
-          skip_cache: ${{ steps.bazel.outputs.buildbuddy-enabled }}
   release:
     needs: check
     if: needs.check.outputs.release_needed == 'true' || inputs.force_release == true

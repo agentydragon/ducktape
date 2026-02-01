@@ -81,9 +81,3 @@ jobs:
           bazel build --keep_going --config=lint \
             --build_metadata=ROLE=ci --build_metadata=TAGS=lint \
             $TARGET_ARG
-
-      - uses: ./.github/actions/bazel-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}

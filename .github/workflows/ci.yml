@@ -29,7 +29,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v4
-      - uses: bazelbuild/setup-bazelisk@v3
+      - id: bazel-cache
+        uses: ./.github/actions/bazel-repo-cache
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -66,6 +67,9 @@ jobs:
       - name: Compute CI decision
         id: decide
         run: uv run tools/ci/ci_decide.py
+      - name: Prewarm repository cache
+        run: bazelisk fetch //...
+        if: always()
       - name: Upload targets file
         uses: actions/upload-artifact@v4
         if: always()
@@ -80,6 +84,11 @@ jobs:
           name: bazel-query-logs-${{ github.run_id }}
           path: bazel-query-logs
           if-no-files-found: ignore
+      - uses: ./.github/actions/bazel-repo-cache-save
+        if: always()
+        with:
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
   bazel-build:
     needs:
       - compute-targets

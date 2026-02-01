@@ -136,7 +136,7 @@ jobs:
           )" \
             dist/*.whl
 
-      - uses: ./.github/actions/bazel-cache-save
+      - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
           cache-hit: ${{ steps.bazel.outputs.cache-hit }}

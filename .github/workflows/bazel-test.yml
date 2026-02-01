@@ -130,9 +130,3 @@ jobs:
           path: "bazel-testlogs/**/test.xml"
           reporter: java-junit
           fail-on-error: false
-
-      - uses: ./.github/actions/bazel-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}

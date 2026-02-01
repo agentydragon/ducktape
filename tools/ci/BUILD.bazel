@@ -1,7 +1,21 @@
 # NOTE: No aggregator target - use specific per-file targets like :models, :bazel_query
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# Source of truth for CI workflow definitions
+exports_files(["workflows.yaml"])
+
+# Generated workflow files consumed by test_generate_ci_check
+filegroup(
+    name = "generated_workflows",
+    srcs = [
+        "//.github/workflows:ci.yml",
+        "//.github/workflows:ducktape-release.yml",
+        "//.github/workflows:gnome-terminal-profile-switcher-release.yml",
+        "//.github/workflows:headscale-cleanup-release.yml",
+    ],
+)
 
 # === Base modules (no internal deps) ===
 
@@ -64,7 +78,7 @@ py_library(
 py_library(
     name = "ci_decide_lib",
     srcs = ["ci_decide_lib.py"],
-    data = ["workflows.yaml"],
+    data = [":workflows.yaml"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -82,7 +96,7 @@ py_library(
 py_library(
     name = "generate_ci_lib",
     srcs = ["generate_ci_lib.py"],
-    data = ["workflows.yaml"],
+    data = [":workflows.yaml"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -116,4 +130,20 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [":generate_ci_lib"],
+)
+
+# === Tests ===
+
+py_test(
+    name = "test_generate_ci_check",
+    srcs = ["test_generate_ci_check.py"],
+    data = [
+        ":generated_workflows",
+        ":workflows.yaml",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":generate_ci_lib",
+        "@pypi//pytest_bazel",
+    ],
 )

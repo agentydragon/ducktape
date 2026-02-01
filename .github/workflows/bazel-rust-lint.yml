@@ -61,9 +61,3 @@ jobs:
           bazel build --keep_going --config=rust-check \
             --build_metadata=ROLE=ci --build_metadata=TAGS=rust-lint \
             ${{ inputs.targets }}
-
-      - uses: ./.github/actions/bazel-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}

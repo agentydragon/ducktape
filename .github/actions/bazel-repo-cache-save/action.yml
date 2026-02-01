@@ -1,0 +1,24 @@
+# Save Bazel repository cache (only on cache miss).
+# See .github/docs/bazel-caching.md for design rationale.
+name: Bazel Repo Cache Save
+description: Save Bazel repository cache (use after bazel-repo-cache action)
+
+inputs:
+  cache-hit:
+    description: "Whether cache was restored (from bazel-repo-cache output)"
+    required: true
+  cache-key:
+    description: "Cache key to save under (from bazel-repo-cache output)"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Save Bazel repository cache
+      if: inputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.cache/bazelisk
+          ~/.cache/bazel/_bazel_runner/cache/repos/v1
+        key: ${{ inputs.cache-key }}
