@@ -5,9 +5,9 @@ startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
 
-# Pass proxy to repository rules (for Go modules in gazelle, etc.)
-# GONOPROXY=* forces all Go module downloads through HTTP proxy
-# Explicitly NOT passing NO_PROXY since it excludes *.googleapis.com
+# Pass proxy + TLS CA to repository rules (for Go modules in gazelle, etc.)
+# GONOPROXY=* forces all Go module downloads through HTTP proxy.
+# Explicitly NOT passing NO_PROXY since it excludes *.googleapis.com.
 common --repo_env=HTTP_PROXY
 common --repo_env=HTTPS_PROXY
 common --repo_env=http_proxy
@@ -15,6 +15,13 @@ common --repo_env=https_proxy
 common --repo_env=GONOPROXY=*
 common --repo_env=GOPRIVATE=
 common --repo_env=GOSUMDB=sum.golang.org
+# TLS inspection CA: the egress proxy MITMs HTTPS, so git and Go need the
+# proxy CA in their trust stores.  GIT_SSL_CAINFO covers git-ls-remote
+# (used by Gazelle fetch_repo), SSL_CERT_FILE covers Go's net/http and most
+# other tools that repo rules shell out to.  These are --repo_env so they
+# only affect the Bazel host (repo rules); RBE workers are unaffected.
+common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
+common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
 # Avoid gVisor linux-sandbox (/dev/null issues in CC web).
 # remote,local: prefer remote execution (BuildBuddy RBE) when configured, fall
 # back to unsandboxed local execution.  Remote workers don't use gVisor.
