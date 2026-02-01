@@ -32,8 +32,20 @@ jobs:
         with:
           tofu_version: 1.9.0
 
-      # NOTE: tflint is hermetic via @multitool//tools/tflint in bazel precommit
-      # Plugin init is handled by precommit.py (run_tflint runs --init)
+      # TFLint for antonbabenko/pre-commit-terraform hook
+      - name: Install TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.60.0
+
+      # Cache tflint plugins (~/.tflint.d/plugins) to avoid re-downloading from GitHub
+      - name: Restore TFLint plugin cache
+        id: cache-tflint-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.tflint.d
+          key: tflint-plugins-${{ runner.os }}-${{ hashFiles('cluster/.tflint.hcl') }}
+          restore-keys: tflint-plugins-${{ runner.os }}-
 
       # kubeconform for kubeconform-precommit-hook (not hermetic via Bazel)
       # Other tools (kustomize, flux, helm, kubeseal) are hermetic via @multitool
@@ -144,3 +156,10 @@ jobs:
         with:
           path: ~/.ansible/roles
           key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}
+
+      - name: Save TFLint plugin cache
+        if: always() && steps.cache-tflint-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.tflint.d
+          key: ${{ steps.cache-tflint-restore.outputs.cache-primary-key }}

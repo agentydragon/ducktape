@@ -41,7 +41,6 @@ py_binary(
         "//cluster/scripts:validate_kustomizations",
         "//cluster/scripts:validate_sealed_secrets",
         # Terraform tools
-        "@multitool//tools/tflint",
         "@multitool//tools/tofu",
     ],
     env = {
@@ -49,7 +48,6 @@ py_binary(
         "PRETTIER_BIN": "$(rlocationpath //tools/lint:prettier)",
         "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
-        "TFLINT_BIN": "$(rlocationpath @multitool//tools/tflint)",
         "TOFU_BIN": "$(rlocationpath @multitool//tools/tofu)",
     },
     visibility = ["//visibility:public"],
@@ -58,7 +56,6 @@ py_binary(
         "//tools:check_pytest_main",
         "//tools:env_utils",
         "@pypi//pygit2",
-        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
@@ -80,7 +77,6 @@ py_binary(
         "//cluster/scripts:validate_kustomizations",
         "//cluster/scripts:validate_sealed_secrets",
         # Terraform tools
-        "@multitool//tools/tflint",
         "@multitool//tools/tofu",
     ],
     env = {
@@ -89,7 +85,6 @@ py_binary(
         "PRETTIER_BIN": "$(rlocationpath //tools/lint:prettier)",
         "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
-        "TFLINT_BIN": "$(rlocationpath @multitool//tools/tflint)",
         "TOFU_BIN": "$(rlocationpath @multitool//tools/tofu)",
     },
     main = "precommit.py",
@@ -99,7 +94,6 @@ py_binary(
         "//tools:check_pytest_main",
         "//tools:env_utils",
         "@pypi//pygit2",
-        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )

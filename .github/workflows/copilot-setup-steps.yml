@@ -46,21 +46,16 @@ jobs:
           pre-commit install
           pre-commit install --hook-type commit-msg
 
-      - name: Install cluster tools (optional)
-        run: |
-          # Install opentofu
-          TOFU_VERSION="1.9.0"
-          curl -fsSL "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_amd64.zip" -o /tmp/tofu.zip
-          unzip -q /tmp/tofu.zip -d /tmp
-          sudo mv /tmp/tofu /usr/local/bin/tofu
-          sudo chmod +x /usr/local/bin/tofu
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+        continue-on-error: true
 
-          # Install tflint
-          TFLINT_VERSION="0.53.0"
-          curl -fsSL "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/tflint_linux_amd64.zip" -o /tmp/tflint.zip
-          unzip -q /tmp/tflint.zip -d /tmp
-          sudo mv /tmp/tflint /usr/local/bin/tflint
-          sudo chmod +x /usr/local/bin/tflint
+      - name: Install TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.60.0
         continue-on-error: true
 
       - name: Verify environment

@@ -135,8 +135,18 @@ repos:
         args: ["--framework", "terraform", "--skip-check", "CKV_TF_1", "-f"]
         files: "^cluster/terraform/.*\\.tf$"
 
-  # NOTE: The following hooks are now combined into bazel-precommit:
+  # TFLint - Terraform linter (uses antonbabenko wrapper which handles tflint --init)
+  # Config: cluster/.tflint.hcl; plugins cached in ~/.tflint.d/plugins
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.105.0
+    hooks:
+      - id: terraform_tflint
+        args:
+          - --args=--config=__GIT_ROOT__/cluster/.tflint.hcl
+        files: "^cluster/terraform/.*\\.tf$"
+
+  # NOTE: The following hooks are combined into bazel-precommit:
   # - bazel-format (prettier, ruff, shfmt, buildifier)
   # - bazel-validate (buildifier-lint, pytest-main check, cluster validations)
-  # - terraform checks (tflint, tofu validate, terraform-version-centralization)
+  # - terraform checks (tofu validate, terraform-version-centralization)
   # This avoids Bazel client lock contention and runs terraform checks in parallel.
