@@ -120,13 +120,11 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
     3. run.oci.keep_original_groups=1 annotation
 
     Uses conservative file writing - only writes if file doesn't exist or
-    already has the exact content we want to write.
+    already has the exact content we want to write. Files with the canary
+    marker are preserved; files without are overwritten.
 
     Returns:
         Dict of environment variables to export (CONTAINERS_CONF, etc.)
-
-    Raises:
-        managed_files.ConfigConflictError: If existing config file has conflicting content.
     """
     podman_dir = settings.get_podman_dir()
     podman_dir.mkdir(parents=True, exist_ok=True)
