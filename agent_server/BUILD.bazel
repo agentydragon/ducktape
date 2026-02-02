@@ -97,16 +97,9 @@ py_binary(
 
 # --- OCI Runtime Image ---
 
-py_binary(
-    name = "runtime_image",
-    srcs = ["runtime_image.py"],
-    visibility = ["//:__subpackages__"],
-)
-
 pkg_tar(
     name = "runtime_image_tar",
     srcs = [
-        ":runtime_image",
         "//agent_server/policy_eval:shim",
     ],
     include_runfiles = True,
@@ -117,7 +110,7 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    entrypoint = ["/opt/adgn/runtime_image"],
+    entrypoint = ["/opt/adgn/policy_eval/shim"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
