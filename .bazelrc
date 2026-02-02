@@ -57,25 +57,15 @@ build:eslint --output_groups=+rules_lint_report
 # Only targets that depend on ctx.info_file (like build_info_gen) are invalidated on commit change
 build --stamp --workspace_status_command=tools/stamp.sh
 
-# Prevent stdlib shadowing on RBE workers.
+# Use shell-based bootstrap instead of system_python.  The default
+# (system_python) starts with `#!/usr/bin/env python3` which picks up whatever
+# system Python is on PATH.  This causes _sre.MAGIC mismatches when system
+# Python differs from the hermetic 3.13 toolchain, and stdlib shadowing when
+# files like `types.py` exist in the package directory.  The script bootstrap
+# invokes the hermetic interpreter directly, avoiding both issues.
 #
-# The rules_python stage1 bootstrap (bootstrap_impl=system_python, the default)
-# starts as `#!/usr/bin/env python3`, which on RBE workers is system Python 3.12.
-# Without PYTHONSAFEPATH, Python prepends the script's directory to sys.path.
-# Since the bootstrap lives inside the package dir (e.g., .../openai_utils/test_errors),
-# files like `types.py` in that package shadow stdlib `types`, causing circular imports
-# (enum.py -> types -> enum -> crash). Setting PYTHONSAFEPATH=1 tells Python not to
-# prepend the script directory, matching the behavior of the hermetic Python 3.13
-# interpreter that the bootstrap re-execs into.
-#
-# The alternative `--bootstrap_impl=script` (shell-based stage1) avoids system Python
-# entirely but breaks tests that spawn subprocesses via `sys.executable -m` because
-# the child process doesn't inherit the venv sys.path.
-#
-# TODO: Migrate to `bootstrap_impl=script` and remove this workaround. Requires
-# fixing tests that spawn Python subprocesses to either use py_binary entrypoints
-# or a central subprocess helper that propagates PYTHONPATH to child processes.
-test --test_env=PYTHONSAFEPATH=1
+# Subprocess-spawning code uses bazel_subprocess.py to propagate PYTHONPATH.
+common --@rules_python//python/config_settings:bootstrap_impl=script
 
 # Props e2e test environment passthrough
 # These only pass through when the vars are set in the environment

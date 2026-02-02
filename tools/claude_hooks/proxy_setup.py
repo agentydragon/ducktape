@@ -389,9 +389,6 @@ async def setup_auth_proxy(settings: HookSettings, supervisor: SupervisorClient)
     3. Create Java truststore with the CA
     4. Create combined CA bundle for SSL tools
     5. Write bazelrc configuration to use the proxy
-
-    Note: Proxy env for Bazel rules is handled by the module extension in
-    tools/claude_hooks/auth_proxy/proxy_config_defs.bzl which reads AUTH_PROXY_PORT env var.
     """
     port = settings.get_auth_proxy_port()
     combined_ca = settings.get_auth_proxy_combined_ca()

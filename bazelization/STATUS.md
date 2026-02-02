@@ -87,9 +87,6 @@ Ruff uses a custom `rules_multitool` lockfile (`tools/multitool/lockfile.json`) 
 
 **Claude Code session start** (via `.claude/settings.json`): installs Bazelisk, starts local auth proxy for Claude Code web's egress proxy, creates CA bundles + Java truststore, writes `~/.cache/bazel-proxy/bazelrc`, installs bazel wrapper, runs `pre-commit install`. Package is `tools/claude_hooks/`, entry point is `session_start.py`.
 
-The `tools/claude_hooks/auth_proxy/proxy_config_defs.bzl` module extension generates `@proxy_config//:proxy_env.bzl` — detects proxy by checking if `~/.cache/bazel-proxy/combined_ca.pem` exists, otherwise empty `PROXY_ENV = {}`.
-
 ### Known Issues
 
-- `rules_python` `lock()` doesn't inherit `--action_env` — pass proxy env vars directly to `lock()` rule's `env` attribute.
 - Python 3.13: watch for `datetime.datetime.utcnow()` deprecation warnings.
