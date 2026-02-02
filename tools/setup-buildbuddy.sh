@@ -37,6 +37,7 @@ build --remote_executor=grpcs://remote.buildbuddy.io
 build --extra_execution_platforms=//:rbe_linux_x64
 build --spawn_strategy=remote,local
 build --jobs=50
+build --remote_download_minimal
 EOF
 
 # Override the RBE container image if RBE_IMAGE is set (used by CI when

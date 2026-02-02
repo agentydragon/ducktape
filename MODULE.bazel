@@ -199,7 +199,12 @@ use_repo(types, "pip_types")
 uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
 uv.configure(version = "0.6.2")
 
-# Hermetic CC toolchain (LLVM/Clang) — prevents Nix store paths from leaking into RBE actions
+# Hermetic CC toolchain (LLVM/Clang) — prevents Nix store paths from leaking into RBE actions.
+# toolchains_buildbuddy was evaluated but doesn't work here for two reasons:
+# 1. Its CC toolchain requires @bazel_tools//tools/cpp:gcc in exec_compatible_with,
+#    which neither the host platform nor //:rbe_linux_x64 declares.
+# 2. Even if the RBE platform added that constraint, Cargo build scripts and other
+#    exec-config tools resolve CC against the host platform, which still wouldn't match.
 bazel_dep(name = "toolchains_llvm", version = "1.6.0")
 
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
