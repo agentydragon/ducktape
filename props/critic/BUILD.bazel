@@ -159,7 +159,7 @@ docker_py_test(
 
 oci_image(
     name = "image",
-    base = "@python_slim_linux_amd64",
+    base = "@distroless_cc_linux_amd64",
     cmd = ["/app/critic"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",

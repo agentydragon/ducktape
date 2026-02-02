@@ -54,7 +54,7 @@ def critic_variant(name, prompt_md):
     # Build OCI image: shared main_tar + variant prompt
     oci_image(
         name = name,
-        base = "@python_slim_linux_amd64",
+        base = "@distroless_cc_linux_amd64",
         cmd = ["/app/main"],
         env = {
             "PYTHONDONTWRITEBYTECODE": "1",

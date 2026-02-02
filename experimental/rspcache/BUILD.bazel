@@ -27,7 +27,7 @@ pkg_tar(
 
 oci_image(
     name = "image",
-    base = "@python_slim_linux_amd64",
+    base = "@distroless_cc_linux_amd64",
     cmd = [
         "run",
         "--app",

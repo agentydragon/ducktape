@@ -49,6 +49,20 @@ bazel_dep(name = "rules_oci", version = "2.2.7")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+# Production base image: minimal (glibc + libstdc++ + libgcc_s + CA certs, ~25 MB)
+# Bazel's hermetic Python toolchain provides the full runtime, so we don't need
+# a Python base image. All our pip packages' native deps (grpcio, tokenizers,
+# pydantic_core) only need glibc + libstdc++.
+oci.pull(
+    name = "distroless_cc",
+    digest = "sha256:72344f7f909a8bf003c67f55687e6d51a441b49661af8f660aa7b285f00e57df",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+
+# Test-only: Python image for container exec tests (needs shell + Python)
 oci.pull(
     name = "python_slim",
     digest = "sha256:1f3781f578e17958f55ada96c0a827bf279a11e10d6a458ecb8bde667afbb669",
@@ -56,7 +70,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
 )
-use_repo(oci, "python_slim", "python_slim_linux_amd64")
+use_repo(oci, "distroless_cc", "distroless_cc_linux_amd64", "python_slim", "python_slim_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
