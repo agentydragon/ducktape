@@ -103,7 +103,7 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
 
 
 @pytest.fixture
-async def approval_policy_server(sqlite_persistence, async_docker_client) -> PolicyEngine:
+async def approval_policy_server(sqlite_persistence, async_docker_client, runtime_image) -> PolicyEngine:
     """PolicyEngine fixture that owns .reader, .proposer and .approver sub-servers."""
     return PolicyEngine(
         agent_id="tests",
@@ -115,7 +115,7 @@ async def approval_policy_server(sqlite_persistence, async_docker_client) -> Pol
 
 @pytest.fixture
 async def make_approval_policy_server(
-    sqlite_persistence, test_agent_id, async_docker_client
+    sqlite_persistence, test_agent_id, async_docker_client, runtime_image
 ) -> Callable[[str], Awaitable[PolicyEngine]]:
     """Factory producing PolicyEngine instances with per-test defaults."""
 
@@ -189,7 +189,7 @@ async def _create_test_policy_engine(sqlite_persistence, async_docker_client) ->
 
 
 @pytest.fixture
-async def _setup_policy_gateway_compositor(sqlite_persistence, async_docker_client, test_agent_id):
+async def _setup_policy_gateway_compositor(sqlite_persistence, async_docker_client, test_agent_id, runtime_image):
     """Fixture factory for AgentContainerCompositor with policy gateway middleware."""
 
     @asynccontextmanager

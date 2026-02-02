@@ -65,6 +65,8 @@ docker_py_test(
     imports = ["../../.."],
     deps = [
         ":engine",
+        "//agent_server:conftest",
+        "//agent_server/mcp:conftest",
         "//agent_server/policies:policy_types",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",

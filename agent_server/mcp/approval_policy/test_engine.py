@@ -16,7 +16,7 @@ from mcp_utils.resources import extract_single_text_content
 
 
 @pytest.fixture
-async def policy_engine(sqlite_persistence, async_docker_client) -> PolicyEngine:
+async def policy_engine(sqlite_persistence, async_docker_client, runtime_image) -> PolicyEngine:
     """PolicyEngine instance for validation tests."""
     return PolicyEngine(
         agent_id="testagent",

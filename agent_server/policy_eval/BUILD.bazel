@@ -7,7 +7,14 @@ py_binary(
     srcs = ["shim.py"],
     main = "shim.py",
     visibility = ["//visibility:public"],
-    deps = [":constants"],
+    deps = [
+        ":constants",
+        "//agent_server/policies:default_policy",
+        "//agent_server/policies:policy_types",
+        "//agent_server/policies:scaffold",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
+    ],
 )
 
 py_library(

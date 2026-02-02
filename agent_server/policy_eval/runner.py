@@ -57,7 +57,7 @@ async def run_policy_source(
     # Use dedicated policy_shim binary which has proper PYTHONPATH setup
     config: JSONObject = {
         "Image": img,
-        "Entrypoint": ["/opt/adgn/policy_shim"],
+        "Entrypoint": ["/opt/adgn/policy_eval/shim"],
         "Cmd": [],
         "AttachStdout": True,
         "AttachStderr": True,
