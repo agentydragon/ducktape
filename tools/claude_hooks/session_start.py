@@ -230,13 +230,29 @@ def emit_session_context(
 def install_git_precommit_hook(project_dir: Path) -> None:
     """Install git pre-commit hook using the pre-commit CLI.
 
-    Expects `pre-commit` to be pre-installed on PATH (it is in Claude Code web).
+    If `pre-commit` is not on PATH, installs it via pip first.
+    pre-commit is not pre-installed in Claude Code on the web's container.
     pre-commit itself handles missing .git, missing config, and idempotent installs.
     """
     precommit = shutil.which("pre-commit")
     if not precommit:
-        logger.warning("pre-commit not found on PATH, skipping git hook install")
-        return
+        logger.info("pre-commit not found on PATH, installing via pip...")
+        try:
+            subprocess.run(
+                ["pip", "install", "pre-commit"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            logger.info("Installed pre-commit via pip")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.warning("Failed to install pre-commit via pip: %s", e)
+            return
+        precommit = shutil.which("pre-commit")
+        if not precommit:
+            logger.warning("pre-commit still not found on PATH after pip install")
+            return
 
     try:
         version = subprocess.run([precommit, "--version"], capture_output=True, text=True, check=True, timeout=5)
