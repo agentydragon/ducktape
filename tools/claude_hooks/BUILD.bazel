@@ -28,6 +28,13 @@ py_library(
 )
 
 py_library(
+    name = "managed_files",
+    srcs = ["managed_files.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "proxy_vars",
     srcs = ["proxy_vars.py"],
     imports = ["../.."],
@@ -71,6 +78,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":managed_files",
         ":proxy_setup",
         ":proxy_vars",
         ":settings",
@@ -95,6 +103,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":errors",
+        ":managed_files",
         ":settings",
         ":streaming",
     ],
@@ -107,6 +116,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":errors",
+        ":managed_files",
         ":proxy_vars",
         ":settings",
         "//:bazel_subprocess",
@@ -124,6 +134,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":errors",
+        ":managed_files",
         ":proxy_setup",
         ":proxy_vars",
         ":settings",
@@ -214,6 +225,7 @@ py_package(
         ":bazelisk_setup",
         ":env_file",
         ":errors",
+        ":managed_files",
         ":nix_setup",
         ":podman_service",
         ":proxy_credentials",

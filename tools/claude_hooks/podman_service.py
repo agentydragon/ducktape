@@ -19,6 +19,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from tools.claude_hooks.errors import SkipError
+from tools.claude_hooks.managed_files import ConfigConflictError, write_config
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.settings import HookSettings
@@ -31,34 +32,6 @@ PODMAN_SERVICE = "podman"
 
 class PodmanInstallError(Exception):
     """Raised when podman installation fails."""
-
-
-class PodmanConfigConflictError(Exception):
-    """Raised when existing config file conflicts with what we want to write."""
-
-
-def _write_config_conservative(path: Path, content: str, description: str) -> None:
-    """Write config file conservatively - only if no conflict.
-
-    Accepts:
-    - File doesn't exist: create it
-    - File exists with exact same content: no-op (idempotent)
-
-    Rejects:
-    - File exists with different content: raises PodmanConfigConflictError
-    """
-    if path.exists():
-        existing = path.read_text()
-        if existing == content:
-            logger.debug("Config %s already has expected content", path)
-            return
-        raise PodmanConfigConflictError(
-            f"Existing {description} at {path} has unexpected content. "
-            f"Expected our gVisor-compatible config but found different content. "
-            f"Delete the file to allow reconfiguration: rm {path}"
-        )
-    path.write_text(content)
-    logger.debug("Wrote %s to %s", description, path)
 
 
 @dataclass
@@ -118,7 +91,7 @@ def _install_crun_wrapper(podman_dir: Path, podman_config: Traversable) -> Path:
     """
     wrapper_path = podman_dir / "crun-gvisor-wrapper"
     wrapper_source = podman_config.joinpath("crun_gvisor_wrapper.py").read_text()
-    _write_config_conservative(wrapper_path, wrapper_source, "crun-gvisor-wrapper")
+    write_config(wrapper_path, wrapper_source, "crun-gvisor-wrapper")
     wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return wrapper_path
 
@@ -153,7 +126,7 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
         Dict of environment variables to export (CONTAINERS_CONF, etc.)
 
     Raises:
-        PodmanConfigConflictError: If existing config file has conflicting content.
+        ConfigConflictError: If existing config file has conflicting content.
     """
     podman_dir = settings.get_podman_dir()
     podman_dir.mkdir(parents=True, exist_ok=True)
@@ -174,7 +147,7 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
         runroot = "{runroot_dir}"
         graphroot = "{storage_dir}"
     """)
-    _write_config_conservative(storage_conf_path, storage_conf_content, "storage.conf")
+    write_config(storage_conf_path, storage_conf_content, "storage.conf")
 
     # Install crun-gvisor-wrapper (injects keep_original_groups annotation for buildah)
     wrapper_path = _install_crun_wrapper(podman_dir, podman_config)
@@ -182,12 +155,12 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
     # Container runtime configuration (uses wrapper as default runtime)
     containers_conf_path = podman_dir / "containers.conf"
     containers_conf_content = _render_containers_conf(podman_config, wrapper_path)
-    _write_config_conservative(containers_conf_path, containers_conf_content, "containers.conf")
+    write_config(containers_conf_path, containers_conf_content, "containers.conf")
 
     # Registry configuration (allows short image names like "alpine")
     registries_conf_path = podman_dir / "registries.conf"
     registries_conf_content = podman_config.joinpath("registries.conf").read_text()
-    _write_config_conservative(registries_conf_path, registries_conf_content, "registries.conf")
+    write_config(registries_conf_path, registries_conf_content, "registries.conf")
 
     # Policy.json goes to user-level config dir (hardcoded lookup path in podman)
     # ~/.config/containers/policy.json is checked before /etc/containers/policy.json
@@ -195,7 +168,7 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
     containers_config_dir.mkdir(parents=True, exist_ok=True)
     policy_json_path = containers_config_dir / "policy.json"
     policy_json_content = podman_config.joinpath("policy.json").read_text()
-    _write_config_conservative(policy_json_path, policy_json_content, "policy.json")
+    write_config(policy_json_path, policy_json_content, "policy.json", canary=False)
 
     logger.info("Configured podman for gVisor: VFS storage at %s", storage_dir)
 

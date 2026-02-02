@@ -11,7 +11,6 @@ import json
 import logging
 import logging.handlers
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -118,9 +117,7 @@ async def run_cli_mode(hook_input: HookInput) -> None:
 
     if stdout_str.strip():
         env_vars: dict[str, str] = json.loads(stdout_str)
-        # Write as shell export statements for CLAUDE_ENV_FILE
-        lines = [f"export {key}={shlex.quote(value)}" for key, value in sorted(env_vars.items())]
-        Path(env_file_path).write_text("\n".join(lines) + "\n")
+        env_file.write_direnv_env_file(Path(env_file_path), env_vars)
         # Print direnv-style export banner (summarize changes)
         exports = [f"+{key}" for key in sorted(env_vars)]
         if exports:

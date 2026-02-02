@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//net_util:net",
         "//tools/claude_hooks:errors",
+        "//tools/claude_hooks:managed_files",
         "//tools/claude_hooks:settings",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -25,6 +26,7 @@ py_library(
         "//:bazel_subprocess",
         "//net_util:net",
         "//tools/claude_hooks:errors",
+        "//tools/claude_hooks:managed_files",
         "//tools/claude_hooks:settings",
     ],
 )

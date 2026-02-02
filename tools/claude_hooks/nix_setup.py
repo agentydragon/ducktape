@@ -9,6 +9,7 @@ import urllib.request
 from pathlib import Path
 
 from tools.claude_hooks.errors import SkipError
+from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
 from tools.claude_hooks.streaming import run_streaming
 
@@ -49,7 +50,7 @@ def _write_nix_conf(settings: HookSettings) -> Path:
     nix_conf_path = cache_dir / "nix.conf"
 
     nix_conf_content = CONFIG_FILES.joinpath("nix.conf").read_text()
-    nix_conf_path.write_text(nix_conf_content)
+    write_config(nix_conf_path, nix_conf_content, "nix.conf")
 
     return nix_conf_path
 

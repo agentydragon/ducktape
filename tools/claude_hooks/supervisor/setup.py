@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from bazel_subprocess import async_run_python_module
 from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import SupervisorError
+from tools.claude_hooks.managed_files import write_ini_config
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import SupervisorClient, try_connect
 
@@ -59,8 +60,7 @@ def _write_config(settings: HookSettings) -> None:
     config["supervisorctl"] = {"serverurl": supervisor_url}
     config["include"] = {"files": f"{supervisor_dir}/conf.d/*.conf"}
 
-    with supervisor_conf.open("w") as f:
-        config.write(f)
+    write_ini_config(supervisor_conf, config, "supervisord.conf")
     logger.info("Wrote supervisor config to %s", supervisor_conf)
 
     # Create conf.d directory for service configs

@@ -23,6 +23,7 @@ from mako.template import Template
 from bazel_subprocess import python_env
 from net_util.net import async_wait_for_port, is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
+from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.proxy_vars import get_upstream_proxy_url
 from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
 from tools.claude_hooks.supervisor.client import SupervisorClient
@@ -335,8 +336,7 @@ def _write_bazel_config(settings: HookSettings) -> None:
         combined_ca_path=combined_ca,
         local_registry_path=local_registry,
     )
-    proxy_rc.write_text(result)
-    logger.info("Wrote proxy config to %s", proxy_rc)
+    write_config(proxy_rc, result, "proxy bazelrc")
 
 
 def _create_combined_ca_bundle(settings: HookSettings) -> None:

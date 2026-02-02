@@ -22,6 +22,7 @@ from supervisor.xmlrpc import Faults
 
 from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import ProxyServiceError
+from tools.claude_hooks.managed_files import write_ini_config
 
 if TYPE_CHECKING:
     from tools.claude_hooks.settings import HookSettings
@@ -163,8 +164,7 @@ def write_service_config(
     config = configparser.ConfigParser()
     config[f"program:{name}"] = section_content
 
-    with service_conf.open("w") as f:
-        config.write(f)
+    write_ini_config(service_conf, config, f"supervisor service {name}")
     logger.info("Wrote service config: %s", service_conf)
     return service_conf
 

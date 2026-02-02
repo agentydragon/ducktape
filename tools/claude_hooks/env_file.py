@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from tools.claude_hooks.settings import ENV_SUPERVISOR_PORT
 
@@ -116,4 +117,15 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     exports.extend(_exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
 
     content = "\n".join(exports) + "\n"
-    env_file.write_text(content)
+    write_config(env_file, content, "session environment")
+
+
+def write_direnv_env_file(env_file_path: Path, env_vars: dict[str, str]) -> None:
+    """Write direnv-exported environment variables to CLAUDE_ENV_FILE.
+
+    This is the CLI-mode counterpart to write_env_file. Both routes go
+    through write_config so the env file is always canary-protected.
+    """
+    lines = [f"export {key}={shlex.quote(value)}" for key, value in sorted(env_vars.items())]
+    content = "\n".join(lines) + "\n"
+    write_config(env_file_path, content, "direnv environment")
