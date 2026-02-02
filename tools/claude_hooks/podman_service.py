@@ -19,7 +19,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from tools.claude_hooks.errors import SkipError
-from tools.claude_hooks.managed_files import ConfigConflictError, write_config
+from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.settings import HookSettings
@@ -126,7 +126,7 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
         Dict of environment variables to export (CONTAINERS_CONF, etc.)
 
     Raises:
-        ConfigConflictError: If existing config file has conflicting content.
+        managed_files.ConfigConflictError: If existing config file has conflicting content.
     """
     podman_dir = settings.get_podman_dir()
     podman_dir.mkdir(parents=True, exist_ok=True)
