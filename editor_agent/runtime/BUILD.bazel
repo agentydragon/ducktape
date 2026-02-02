@@ -45,14 +45,6 @@ pkg_tar(
     strip_prefix = ".",
 )
 
-# Wrapper script to put editor-submit on PATH
-pkg_tar(
-    name = "editor_submit_wrapper_tar",
-    srcs = ["editor-submit"],
-    mode = "0755",
-    package_dir = "/usr/local/bin",
-)
-
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
@@ -62,13 +54,11 @@ oci_image(
         "-c",
     ],
     env = {
+        "PATH": "/app:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
-    tars = [
-        ":editor_submit_tar",
-        ":editor_submit_wrapper_tar",
-    ],
+    tars = [":editor_submit_tar"],
     workdir = "/workspace",
 )
 

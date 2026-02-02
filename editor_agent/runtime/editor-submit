@@ -1,3 +1,0 @@
-#!/bin/sh
-# Wrapper to invoke the Bazel-built py_binary
-exec /app/editor_submit "$@"

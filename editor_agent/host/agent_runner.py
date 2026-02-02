@@ -36,11 +36,11 @@ async def _run_agent_in_session(
 
 To complete your task, you must submit your edits using the CLI tool:
 
-    editor-submit submit-success -m "Description of changes" -f /path/to/edited/file
+    editor_submit submit-success -m "Description of changes" -f /path/to/edited/file
 
 If you cannot complete the edit, declare failure:
 
-    editor-submit submit-failure -m "Reason for failure"
+    editor_submit submit-failure -m "Reason for failure"
 
 Do NOT send text messages - execute your plan with docker_exec."""
 

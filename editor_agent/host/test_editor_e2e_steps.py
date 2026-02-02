@@ -26,7 +26,7 @@ async def test_editor_step_sequence(tmp_path, async_docker_client, editor_image_
         assert_that(result, exited_successfully())
         # Submit success
         yield from m.docker_exec_roundtrip(
-            ["editor-submit", "submit-success", "--message", "done", "--file", f"/workspace/{fname}"]
+            ["editor_submit", "submit-success", "--message", "done", "--file", f"/workspace/{fname}"]
         )
 
     result = await run_editor_docker_agent(
