@@ -132,15 +132,17 @@ repos:
   # CLUSTER-SPECIFIC HOOKS (scoped to cluster/ directory)
   # ============================================================================
 
-  # Kubernetes manifest validation
-  - repo: https://github.com/zrootorg/kubeconform-precommit-hook
-    rev: 7f0288e2809173c0c9eeff05c5ff7bcceabb90d4 # 2023-07-11 latest
+  # Kubernetes manifest validation (auto-installed via go install)
+  - repo: local
     hooks:
       - id: kubeconform
         name: kubeconform (cluster)
-        args: [-p, cluster/k8s/]
-        files: ^cluster/k8s/.*\.yaml$
-        exclude: cluster/charts/
+        language: golang
+        additional_dependencies:
+          - github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0
+        entry: kubeconform
+        files: ^cluster/k8s/.*\.(yaml|yml)$
+        types: [yaml]
 
   # Checkov security scanner for Terraform (standalone, avoids 10s import in bazel-precommit)
   - repo: https://github.com/bridgecrewio/checkov
