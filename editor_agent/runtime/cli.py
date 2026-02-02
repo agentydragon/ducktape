@@ -90,7 +90,14 @@ def init_cmd() -> None:
 
 
 def main() -> None:
-    """Entry point for the editor-submit CLI."""
+    """Entry point for the editor-submit CLI.
+
+    When invoked as /init (symlink to this binary), automatically runs the init
+    subcommand. This supports distroless containers where shell wrapper scripts
+    aren't available.
+    """
+    if Path(sys.argv[0]).name == "init" and len(sys.argv) == 1:
+        sys.argv.append("init")
     submit_app()
 
 

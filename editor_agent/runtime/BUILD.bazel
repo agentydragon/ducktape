@@ -1,6 +1,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/oci:defs.bzl", "dedup_python_tar")
 
 # NOTE: No aggregator target - use specific per-file targets like :cli, :constants
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -41,46 +42,38 @@ py_binary(
 
 # Package the py_binary and its runfiles into /app
 pkg_tar(
-    name = "editor_submit_tar",
+    name = "editor_submit_tar_raw",
     srcs = [":editor_submit"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
 )
 
-# Wrapper script to put editor-submit on PATH
-pkg_tar(
-    name = "editor_submit_wrapper_tar",
-    srcs = ["editor-submit"],
-    mode = "0755",
-    package_dir = "/usr/local/bin",
+dedup_python_tar(
+    name = "editor_submit_tar",
+    src = ":editor_submit_tar_raw",
 )
 
-# Package the /init script
+# Tar with /init symlink pointing to the py_binary.
+# The host framework calls `/init` via docker exec (see agent_pkg.host.builder).
 pkg_tar(
-    name = "init_tar",
-    srcs = ["//editor_agent/host:init_script"],
-    mode = "0755",
-    package_dir = "/",
+    name = "init_symlink_tar",
+    symlinks = {"/init": "/app/editor_submit"},
 )
 
-# OCI image combining base + Python app + init script
+# OCI image: distroless base + Python app + /init symlink
 oci_image(
     name = "image",
-    base = "@python_slim_linux_amd64",
-    cmd = ["sleep infinity"],
-    entrypoint = [
-        "/bin/sh",
-        "-c",
-    ],
+    base = "@distroless_cc_linux_amd64",
+    cmd = ["init"],
+    entrypoint = ["/app/editor_submit"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
     tars = [
         ":editor_submit_tar",
-        ":editor_submit_wrapper_tar",
-        ":init_tar",
+        ":init_symlink_tar",
     ],
     workdir = "/workspace",
 )
