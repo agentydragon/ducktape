@@ -51,13 +51,15 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 # Firecracker VMs are single-tenant and ephemeral).
 #
 # Problem: BuildBuddy's init-dockerd (goinit) unconditionally overwrites
-# /etc/docker/daemon.json via MMDS metadata before starting dockerd. There's
-# no exec property to pass custom flags or preserve image settings.
+# /etc/docker/daemon.json via MMDS metadata before starting dockerd, and
+# there's no exec property to pass custom dockerd flags.
 #
-# Workaround: Rename the real dockerd and install a wrapper script that merges
-# allow-direct-routing into daemon.json before exec'ing the real binary.
+# Workaround: Rename the real dockerd and install a shell wrapper that passes
+# --allow-direct-routing as a CLI flag before exec'ing the real binary.
 # goinit calls `dockerd` by name via exec.LookPath, so the wrapper intercepts.
-COPY tools/rbe_image/dockerd-wrapper.py /usr/bin/dockerd-wrapper.py
+# Shell (not Python) because goinit's 30s Docker init timeout is too tight
+# for Python interpreter startup inside Firecracker VMs.
+COPY tools/rbe_image/dockerd-wrapper.sh /usr/bin/dockerd-wrapper.sh
 RUN mv /usr/bin/dockerd /usr/bin/dockerd.real \
-    && mv /usr/bin/dockerd-wrapper.py /usr/bin/dockerd \
+    && mv /usr/bin/dockerd-wrapper.sh /usr/bin/dockerd \
     && chmod +x /usr/bin/dockerd
