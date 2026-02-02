@@ -117,7 +117,6 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
     dirs.config.mkdir()
     dirs.runtime.mkdir()
     (dirs.project / ".git").mkdir()
-    dirs.env_file.touch()
     return dirs
 
 
