@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import importlib.resources
 from pathlib import Path
 
 import aiodocker
 from fastmcp.client import Client
+from jinja2 import Environment
 
 from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
@@ -15,42 +17,9 @@ from editor_agent.host.submit_server import SubmitState, SubmitStatePending, Sub
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.model import OpenAIModelProto, SystemMessage
 
-_SYSTEM_PROMPT_TEMPLATE = """\
-# Editor Agent
-
-You are a file editor agent. Your task is to edit a single file according to user instructions.
-
-## Task
-
-{prompt}
-
-## Target File: {filename}
-
-<file path="/workspace/{filename}">
-{file_content}
-</file>
-
-## Workflow
-
-1. Read and understand the task above
-2. Make the requested edits
-3. Save your edited content to a file (e.g., `/tmp/edited.py`)
-4. Submit using: `editor-submit submit-success -m "Description of changes" -f /tmp/edited.py`
-
-If you cannot complete the edit, declare failure with:
-`editor-submit submit-failure -m "Reason for failure"`
-
-## Commands
-
-- `editor-submit read-input` - Read the original file content
-- `editor-submit read-prompt` - Read the edit instructions
-- `editor-submit submit-success -m MESSAGE -f FILE` - Submit successful edit
-- `editor-submit submit-failure -m MESSAGE` - Declare failure
-
-## Important
-
-- Make only the requested edits, no additional changes
-- Preserve formatting, indentation, and style"""
+_SYSTEM_PROMPT_TEMPLATE = Environment().from_string(
+    importlib.resources.files("editor_agent").joinpath("host/system_prompt.md.j2").read_text()
+)
 
 
 async def _run_agent_in_session(
@@ -59,7 +28,7 @@ async def _run_agent_in_session(
     """Run the agent loop within an established editor session."""
     async with Client(sess.compositor) as mcp_client:
         # Build system prompt on the host side (file content included inline)
-        system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
+        system_prompt = _SYSTEM_PROMPT_TEMPLATE.render(
             prompt=sess.submit_server.prompt, filename=sess.filename, file_content=sess.original_content or ""
         )
 

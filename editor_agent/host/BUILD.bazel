@@ -83,6 +83,7 @@ py_test(
 py_library(
     name = "agent_runner",
     srcs = ["agent_runner.py"],
+    data = ["system_prompt.md.j2"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":runner",
@@ -96,6 +97,7 @@ py_library(
         "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
+        "@pypi//jinja2",
     ],
 )
 
