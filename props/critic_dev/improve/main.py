@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sys
 from typing import Annotated, Literal
 from uuid import UUID
@@ -452,7 +451,7 @@ async def main() -> int:
 
     db_config = get_database_config()
 
-    critic_model = os.environ.get("PROPS_CRITIC_MODEL", "gpt-5.1-codex-mini")
+    critic_model = type_config.critic_model
 
     logger.info("Connecting to backend REST API")
     async with EvalClient.from_env() as eval_client:

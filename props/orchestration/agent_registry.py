@@ -227,10 +227,6 @@ class AgentRegistry:
             logger.info(f"Created critic run: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
 
         # Phase 2: Run container with in-container agent loop
-        extra_env = {"MODEL": model}
-        if budget_usd is not None:
-            extra_env["BUDGET_USD"] = str(budget_usd)
-
         result = await run_loop_agent(
             docker_client=self._docker_client,
             agent_run_id=agent_run_id,
@@ -239,7 +235,6 @@ class AgentRegistry:
             llm_proxy_url=self._llm_proxy_url,
             registry_config=self._registry_config,
             timeout_seconds=timeout_seconds,
-            extra_env=extra_env,
             container_name=f"critic-{short_uuid(agent_run_id)}",
             extra_hosts=self._extra_hosts,
         )
@@ -317,12 +312,6 @@ class AgentRegistry:
                 image=image,
                 llm_proxy_url=self._llm_proxy_url,
                 registry_config=self._registry_config,
-                extra_env={
-                    # Backend URL for eval API (run_critic, wait_until_graded)
-                    "PROPS_BACKEND_URL": self._llm_proxy_url,
-                    # Critic model for eval tools
-                    "PROPS_CRITIC_MODEL": critic_model,
-                },
                 container_name=f"promptopt-{short_uuid(agent_run_id)}",
                 timeout_seconds=timeout_seconds,
                 extra_hosts=self._extra_hosts,
@@ -420,12 +409,6 @@ class AgentRegistry:
                 image=image,
                 llm_proxy_url=self._llm_proxy_url,
                 registry_config=self._registry_config,
-                extra_env={
-                    # Backend URL for eval API (run_critic, wait_until_graded)
-                    "PROPS_BACKEND_URL": self._llm_proxy_url,
-                    # Critic model for eval tools
-                    "PROPS_CRITIC_MODEL": critic_model,
-                },
                 container_name=f"improve-{short_uuid(run_id)}",
                 timeout_seconds=timeout_seconds,
                 extra_hosts=self._extra_hosts,
@@ -555,8 +538,6 @@ class AgentRegistry:
             logger.info(f"Created snapshot_grader run: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
 
         # Phase 2: Run container with in-container agent loop
-        extra_env = {"MODEL": model}
-
         result = await run_loop_agent(
             docker_client=self._docker_client,
             agent_run_id=agent_run_id,
@@ -564,7 +545,6 @@ class AgentRegistry:
             image=image,
             llm_proxy_url=self._llm_proxy_url,
             registry_config=self._registry_config,
-            extra_env=extra_env,
             container_name=f"grader-{short_uuid(agent_run_id)}",
             extra_hosts=self._extra_hosts,
         )

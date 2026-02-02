@@ -25,9 +25,11 @@ py_library(
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//openai_utils:model",
+        "//props/core:agent_helpers",
         "//props/core:eval_client",
         "//props/core:loop_utils",
         "//props/critic_dev:loop",
+        "//props/db:session",
     ],
 )
 

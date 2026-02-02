@@ -12,16 +12,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sys
 
 from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from openai_utils.model import SystemMessage
+from props.core.agent_helpers import get_current_agent_run
 from props.core.eval_client import EvalClient
 from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_logging
 from props.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoggingHandler, LoopState, LoopStatus, create_tool_provider
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,11 @@ async def main() -> int:
 
     logger.info("Prompt optimizer agent starting")
 
-    critic_model = os.environ.get("PROPS_CRITIC_MODEL", "gpt-5.1-codex-mini")
+    with get_session() as session:
+        agent_run = get_current_agent_run(session)
+        type_config = agent_run.prompt_optimizer_config()
+
+    critic_model = type_config.critic_model
 
     logger.info("Connecting to backend REST API")
     async with EvalClient.from_env() as eval_client:
