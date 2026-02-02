@@ -10,11 +10,47 @@ from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandle
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.turn_limit import MaxTurnsHandler
-from agent_pkg.host.init_runner import run_init_script
 from editor_agent.host.runner import EditorDockerSession, editor_docker_session, writeback_success
 from editor_agent.host.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.model import OpenAIModelProto, SystemMessage
+
+_SYSTEM_PROMPT_TEMPLATE = """\
+# Editor Agent
+
+You are a file editor agent. Your task is to edit a single file according to user instructions.
+
+## Task
+
+{prompt}
+
+## Target File: {filename}
+
+<file path="/workspace/{filename}">
+{file_content}
+</file>
+
+## Workflow
+
+1. Read and understand the task above
+2. Make the requested edits
+3. Save your edited content to a file (e.g., `/tmp/edited.py`)
+4. Submit using: `editor-submit submit-success -m "Description of changes" -f /tmp/edited.py`
+
+If you cannot complete the edit, declare failure with:
+`editor-submit submit-failure -m "Reason for failure"`
+
+## Commands
+
+- `editor-submit read-input` - Read the original file content
+- `editor-submit read-prompt` - Read the edit instructions
+- `editor-submit submit-success -m MESSAGE -f FILE` - Submit successful edit
+- `editor-submit submit-failure -m MESSAGE` - Declare failure
+
+## Important
+
+- Make only the requested edits, no additional changes
+- Preserve formatting, indentation, and style"""
 
 
 async def _run_agent_in_session(
@@ -22,8 +58,10 @@ async def _run_agent_in_session(
 ) -> None:
     """Run the agent loop within an established editor session."""
     async with Client(sess.compositor) as mcp_client:
-        # Run init script and use output as system prompt
-        system_prompt = await run_init_script(mcp_client, sess.runtime)
+        # Build system prompt on the host side (file content included inline)
+        system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
+            prompt=sess.submit_server.prompt, filename=sess.filename, file_content=sess.original_content or ""
+        )
 
         reminder = """You sent a text message instead of taking action.
 
@@ -79,7 +117,7 @@ async def run_editor_docker_agent(
     """Run the docker-editor agent with step-runner or real model.
 
     - Starts a docker exec runtime + submit server via editor_docker_session
-    - Runs /init to get system prompt (includes file content and prompt from MCP resource)
+    - Materializes the file into the container and builds the system prompt on the host
     - Runs Agent with AllowAnyToolOrTextMessage and termination on submit-success/failure
     - Writes submitted content back to host file on success
 

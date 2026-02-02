@@ -1,4 +1,4 @@
-"""Editor CLI tools - init bootstrap and submit commands via MCP."""
+"""Editor CLI tools - submit commands via MCP."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import Annotated
 import typer
 
 from agent_pkg.runtime.mcp import mcp_client_from_env, read_text_resource
-from agent_pkg.runtime.output import render_agent_prompt
 from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
 from editor_agent.runtime.constants import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
@@ -83,21 +82,8 @@ async def submit_failure(message: Annotated[str, typer.Option("--message", "-m",
         await client.call_tool("submit_failure", {"message": message})
 
 
-@submit_app.command("init")
-def init_cmd() -> None:
-    """Bootstrap the editor agent environment."""
-    render_agent_prompt("editor_agent/runtime/docs/agent.md")
-
-
 def main() -> None:
-    """Entry point for the editor-submit CLI.
-
-    When invoked as /init (symlink to this binary), automatically runs the init
-    subcommand. This supports distroless containers where shell wrapper scripts
-    aren't available.
-    """
-    if Path(sys.argv[0]).name == "init" and len(sys.argv) == 1:
-        sys.argv.append("init")
+    """Entry point for the editor-submit CLI."""
     submit_app()
 
 
