@@ -130,8 +130,8 @@ def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
     async def _override() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
-    monkeypatch.setattr("gatelet.server.database.get_db_session", _override)
-    monkeypatch.setattr("gatelet.server.app.get_db_session", _override)
+    monkeypatch.setattr("experimental.gatelet.server.database.get_db_session", _override)
+    monkeypatch.setattr("experimental.gatelet.server.app.get_db_session", _override)
 
 
 @pytest.fixture
@@ -164,8 +164,8 @@ def _patch_get_settings(monkeypatch, test_settings: Settings) -> None:
     This patches both the original location and where it's imported,
     ensuring lifespan and route handlers both use test settings.
     """
-    monkeypatch.setattr("gatelet.server.config.get_settings", lambda: test_settings)
-    monkeypatch.setattr("gatelet.server.lifespan.get_settings", lambda: test_settings)
+    monkeypatch.setattr("experimental.gatelet.server.config.get_settings", lambda: test_settings)
+    monkeypatch.setattr("experimental.gatelet.server.lifespan.get_settings", lambda: test_settings)
 
 
 @pytest_asyncio.fixture
@@ -223,8 +223,8 @@ async def _stub_data(monkeypatch):
     async def _payloads(*_args, **_kwargs):
         return [PayloadSummary(id=1, integration_name="test", received_at=datetime(2020, 1, 1))]
 
-    monkeypatch.setattr("gatelet.server.endpoints.homeassistant.fetch_states", _states)
-    monkeypatch.setattr("gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads)
+    monkeypatch.setattr("experimental.gatelet.server.endpoints.homeassistant.fetch_states", _states)
+    monkeypatch.setattr("experimental.gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads)
     # Also patch in lifespan where these are imported for the authenticated_root_handler
-    monkeypatch.setattr("gatelet.server.lifespan.fetch_states", _states)
-    monkeypatch.setattr("gatelet.server.lifespan.get_latest_payloads", _payloads)
+    monkeypatch.setattr("experimental.gatelet.server.lifespan.fetch_states", _states)
+    monkeypatch.setattr("experimental.gatelet.server.lifespan.get_latest_payloads", _payloads)

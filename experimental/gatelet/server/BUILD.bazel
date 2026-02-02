@@ -84,6 +84,7 @@ py_library(
         "//experimental/gatelet/server/endpoints:webhook_view",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
+        "@pypi//jinja2",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
