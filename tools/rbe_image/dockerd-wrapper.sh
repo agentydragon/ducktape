@@ -5,20 +5,19 @@
 # when publishing ports. Firecracker's guest kernel lacks CONFIG_IP_NF_RAW,
 # so any container with published ports (-p) fails.
 #
-# Two complementary workarounds:
-#   DOCKER_INSECURE_NO_IPTABLES_RAW=1  (env var, Docker 28.0.2+)
-#     Skips ALL raw table operations (create and delete). This is the more
-#     complete fix — --allow-direct-routing alone doesn't prevent raw table
-#     deletion attempts which also fail without the kernel module.
-#   --allow-direct-routing  (CLI flag)
-#     Tells dockerd to skip direct access filtering DROP rules. Belt and
-#     suspenders with the env var.
+# Fix: DOCKER_INSECURE_NO_IPTABLES_RAW=1 (env var, Docker 28.0.2+, moby #49621)
+# Skips ALL raw table operations (create and delete).
 #
-# BuildBuddy's goinit has no exec property to pass custom dockerd flags or
-# env vars. This wrapper intercepts the dockerd call to add them.
+# Note: --allow-direct-routing is a Docker 28.2.0+ feature (moby #49832).
+# The base image has Docker 28.1.0, so that flag is NOT available — passing
+# it causes "unknown flag" and immediate exit (invisible because goinit
+# swallows stderr).
+#
+# BuildBuddy's goinit has no exec property to pass custom dockerd env vars.
+# This wrapper intercepts the dockerd call to set the env var.
 #
 # Shell (not Python) because goinit's 30s Docker init timeout is too tight
 # for Python interpreter startup inside Firecracker VMs.
 
 export DOCKER_INSECURE_NO_IPTABLES_RAW=1
-exec /usr/bin/dockerd.real --allow-direct-routing "$@"
+exec /usr/bin/dockerd.real "$@"

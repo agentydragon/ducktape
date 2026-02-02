@@ -43,20 +43,19 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
     && dpkg -i /tmp/libtinfo5.deb \
     && rm /tmp/libtinfo5.deb
 
-# Docker 28+ adds "direct access filtering" DROP rules to the iptables raw
-# table, but Firecracker's guest kernel lacks CONFIG_IP_NF_RAW. Setting
-# allow-direct-routing tells dockerd to skip these raw table rules entirely.
-# Containers still get isolated bridge networking; the only difference is that
-# direct-IP access to container ports is not blocked (acceptable since
-# Firecracker VMs are single-tenant and ephemeral).
+# Docker 28+ adds "direct access filtering" iptables raw table rules when
+# publishing ports (-p). Firecracker's guest kernel lacks CONFIG_IP_NF_RAW,
+# so `docker run -p` fails. The env var DOCKER_INSECURE_NO_IPTABLES_RAW=1
+# (added in Docker 28.0.2, moby PR #49621) skips all raw table operations.
 #
-# Problem: BuildBuddy's init-dockerd (goinit) unconditionally overwrites
-# /etc/docker/daemon.json via MMDS metadata before starting dockerd, and
-# there's no exec property to pass custom dockerd flags.
+# Note: --allow-direct-routing is a daemon.json/CLI flag added in Docker
+# 28.2.0 (moby PR #49832). The base image has Docker 28.1.0, so that flag
+# is NOT available — passing it causes "unknown flag" and instant exit.
 #
-# Workaround: Rename the real dockerd and install a shell wrapper that passes
-# --allow-direct-routing as a CLI flag before exec'ing the real binary.
-# goinit calls `dockerd` by name via exec.LookPath, so the wrapper intercepts.
+# BuildBuddy's goinit overwrites daemon.json from MMDS metadata and has no
+# exec property for custom env vars. This shell wrapper sets the env var
+# before exec'ing the real dockerd binary.
+#
 # Shell (not Python) because goinit's 30s Docker init timeout is too tight
 # for Python interpreter startup inside Firecracker VMs.
 COPY tools/rbe_image/dockerd-wrapper.sh /usr/bin/dockerd-wrapper.sh
