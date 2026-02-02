@@ -266,7 +266,6 @@ class AgentRegistry:
         critic_model: str,
         target_metric: TargetMetric,
         timeout_seconds: int,
-        image_ref: str = BUILTIN_TAG,
     ) -> UUID:
         """Run a prompt optimizer agent. Returns agent run ID (query DB for status)."""
         # Get train snapshots from database
@@ -280,10 +279,10 @@ class AgentRegistry:
         agent_run_id = uuid4()
         logger.info(f"Prompt optimizer agent_run_id: {agent_run_id}")
 
-        # Resolve image reference to digest and construct full OCI reference
-        image_digest = self._resolve_image_ref(AgentType.PROMPT_OPTIMIZER, image_ref)
+        # Resolve builtin prompt-optimizer image to digest
+        image_digest = self._resolve_image_ref(AgentType.PROMPT_OPTIMIZER, BUILTIN_TAG)
         image = self._registry_config.build_oci_reference(AgentType.PROMPT_OPTIMIZER, image_digest)
-        logger.info(f"Resolved prompt-optimizer image {image_ref} → {image}")
+        logger.info(f"Resolved prompt-optimizer image {BUILTIN_TAG} → {image}")
 
         # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
         with get_session() as session:
