@@ -136,7 +136,7 @@ def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: 
         with_args.update(config.inputs)
 
     needs: str | list[str] = "compute-targets"
-    if_cond = f"contains(fromJson(needs.compute-targets.outputs.workflows), '{name}')"
+    if_cond = f"contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), '{name}')"
 
     # Bazel workflows that use RBE should wait for the rbe-image job (when
     # it exists) and forward the built image reference. The job may be skipped
@@ -145,7 +145,7 @@ def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: 
         needs = ["compute-targets", RBE_IMAGE_JOB]
         if_cond = (
             f"always() && !cancelled() && !failure() "
-            f"&& contains(fromJson(needs.compute-targets.outputs.workflows), '{name}')"
+            f"&& contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), '{name}')"
         )
         with_args["rbe_image"] = f"${{{{ needs.{RBE_IMAGE_JOB}.outputs.rbe_image }}}}"
 

@@ -93,7 +93,7 @@ jobs:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-build')
     uses: ./.github/workflows/bazel-build.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
@@ -103,7 +103,7 @@ jobs:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-test')
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-test')
     uses: ./.github/workflows/bazel-test.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
@@ -113,7 +113,7 @@ jobs:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-lint')
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-lint')
     uses: ./.github/workflows/bazel-lint.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
@@ -123,7 +123,7 @@ jobs:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-typecheck')
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-typecheck')
     uses: ./.github/workflows/bazel-typecheck.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
@@ -133,33 +133,33 @@ jobs:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-rust-lint')
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-rust-lint')
     uses: ./.github/workflows/bazel-rust-lint.yml
     with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   rbe-image:
     needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'rbe-image')
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')
     uses: ./.github/workflows/rbe-image.yml
   props-cli-image:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'props-cli-image')
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-cli-image')
     uses: ./.github/workflows/props-cli-image.yml
     with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   nix-flake-check:
     needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'nix-flake-check')
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')
     uses: ./.github/workflows/nix-flake-check.yml
   ansible-lint:
     needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'ansible-lint')
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'ansible-lint')
     uses: ./.github/workflows/ansible-lint.yml
   pre-commit:
     needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'pre-commit')
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'pre-commit')
     uses: ./.github/workflows/pre-commit.yml
