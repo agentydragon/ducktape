@@ -135,7 +135,7 @@ def _setup_hook_env(
     mock_proxy: MockEgressProxy,
     system_bazel: str,
     *,
-    skip_podman: bool = True,
+    install_podman: bool = False,
 ) -> None:
     """Set up environment variables for running session start hook via monkeypatch.
 
@@ -144,7 +144,7 @@ def _setup_hook_env(
         isolated_dirs: Test isolation directories
         mock_proxy: TLS proxy simulating Anthropic's proxy
         system_bazel: Path to system bazel/bazelisk
-        skip_podman: Whether to skip podman setup (default True)
+        install_podman: Whether to install podman (default False)
     """
     # Create combined CA bundle with system CAs + mock proxy CA
     # This allows bazelisk and other TLS clients to trust the mock proxy
@@ -173,10 +173,10 @@ def _setup_hook_env(
     monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(auth_proxy_port))
 
     # Disable nix and bazelisk (speeds up tests)
-    monkeypatch.setenv(settings.ENV_SKIP_NIX, "1")
-    monkeypatch.setenv(settings.ENV_SKIP_BAZELISK, "1")
+    monkeypatch.setenv(settings.ENV_INSTALL_NIX, "0")
+    monkeypatch.setenv(settings.ENV_INSTALL_BAZELISK, "0")
 
-    # Provide system bazel path (required when skip_bazelisk=True)
+    # Provide system bazel path (required when install_bazelisk=False)
     monkeypatch.setenv(settings.ENV_SYSTEM_BAZEL, system_bazel)
 
     # Proxy configuration (simulating Claude Code web)
@@ -193,8 +193,8 @@ def _setup_hook_env(
     mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
     monkeypatch.setenv("ANTHROPIC_CA_PATH", str(mock_ca_path))
 
-    if skip_podman:
-        monkeypatch.setenv(settings.ENV_SKIP_PODMAN, "1")
+    if not install_podman:
+        monkeypatch.setenv(settings.ENV_INSTALL_PODMAN, "0")
 
 
 @pytest.fixture
@@ -205,7 +205,7 @@ def hook_env(
     system_bazel: str,
 ) -> None:
     """Set up environment for running the session start hook (podman disabled)."""
-    _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, skip_podman=True)
+    _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, install_podman=False)
 
 
 def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:
@@ -427,7 +427,7 @@ class TestPodmanIntegration:
         system_bazel: str,
     ) -> None:
         """Set up environment for running session start hook WITH podman enabled."""
-        _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, skip_podman=False)
+        _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, install_podman=True)
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")

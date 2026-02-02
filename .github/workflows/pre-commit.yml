@@ -57,27 +57,6 @@ jobs:
           tar xz -C /tmp -f /tmp/kubeconform.tar.gz
           sudo install -m755 /tmp/kubeconform /usr/local/bin/
 
-      # Nix for nixfmt-nix pre-commit hook (runs: nix run nixpkgs#nixfmt)
-      - name: Install Nix
-        uses: cachix/install-nix-action@v30
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      # Cache Nix store to speed up nixfmt and avoid tarball-cache race conditions
-      - name: Restore Nix cache
-        uses: nix-community/cache-nix-action@v6
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-
-      # Pre-warm Nix cache to avoid race conditions in pre-commit
-      # The nixfmt-nix hook runs `nix run nixpkgs#nixfmt` which can fail if
-      # Nix's tarball-cache isn't properly initialized (GitHub Actions issue)
-      - name: Pre-warm Nix for nixfmt
-        run: nix run nixpkgs#nixfmt -- --version
-
       - name: Configure OpenTofu for pre-commit
         run: |
           # Set PCT_TFPATH so antonbabenko/pre-commit-terraform hooks use tofu

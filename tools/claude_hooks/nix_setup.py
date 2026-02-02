@@ -62,10 +62,10 @@ def install_nix(settings: HookSettings) -> Path:
     """Install nix if not present. Returns the nix store bin path.
 
     Raises:
-        SkipError: If skip_nix is True in settings.
+        SkipError: If install_nix is False in settings.
     """
-    if settings.skip_nix:
-        logger.info("Skipping nix installation (skip_nix=True)")
+    if not settings.install_nix:
+        logger.info("Skipping nix installation (install_nix=False)")
         raise SkipError("Nix")
 
     # Write nix.conf to shared cache directory

@@ -235,13 +235,7 @@ def install_git_precommit_hook(project_dir: Path) -> None:
     if not precommit:
         logger.info("pre-commit not found on PATH, installing via pip...")
         try:
-            subprocess.run(
-                ["pip", "install", "pre-commit"],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
+            subprocess.run(["pip", "install", "pre-commit"], check=True, capture_output=True, text=True, timeout=120)
             logger.info("Installed pre-commit via pip")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
             logger.warning("Failed to install pre-commit via pip: %s", e)
@@ -387,14 +381,14 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         """Install bazelisk and wrapper as separate tasks.
 
         Always installs the wrapper. Optionally downloads bazelisk unless
-        DUCKTAPE_CLAUDE_HOOKS_SKIP_BAZELISK is set.
+        DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK is False.
         """
         wrapper_path = bazelisk_setup.install_wrapper(settings)
-        skipped = settings.skip_bazelisk
+        skipped = not settings.install_bazelisk
         if not skipped:
             bazelisk_setup.install_bazelisk(settings)
         else:
-            logger.info("Skipping bazelisk download (skip_bazelisk=True)")
+            logger.info("Skipping bazelisk download (install_bazelisk=False)")
         return bazelisk_setup.BazeliskSetup(
             bazelisk_path=settings.get_bazelisk_path(),
             wrapper_path=wrapper_path,
@@ -496,7 +490,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     nix_paths = nix_setup.get_nix_paths(nix_store_bin) if nix_store_bin else []
 
-    # Determine bazelisk_path: use system_bazel if skip_bazelisk, otherwise downloaded bazelisk
+    # Determine bazelisk_path: use system_bazel if install_bazelisk=False, otherwise downloaded bazelisk
     if isinstance(bazelisk_result, bazelisk_setup.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
         if settings.system_bazel is not None:
             bazelisk_path = settings.system_bazel
@@ -504,7 +498,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             # Auto-detect system bazelisk/bazel
             auto_bazel = shutil.which("bazelisk") or shutil.which("bazel")
             if not auto_bazel:
-                raise RuntimeError("skip_bazelisk=True but no bazelisk/bazel found on PATH")
+                raise RuntimeError("install_bazelisk=False but no bazelisk/bazel found on PATH")
             bazelisk_path = Path(auto_bazel)
     else:
         bazelisk_path = settings.get_bazelisk_path()

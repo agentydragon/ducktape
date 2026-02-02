@@ -15,7 +15,7 @@ This document describes the linting and formatting setup across pre-commit, Baze
 | **Starlark (buildifier format)** | `bazel-format` hook    | N/A                   | Pre-commit          |
 | **Rust (clippy)**                | -                      | `--config=rust-check` | bazel-build         |
 | **Shell (shfmt)**                | `bazel-format` hook    | N/A                   | Pre-commit          |
-| **Nix (nixfmt)**                 | `nixfmt-nix` hook      | N/A                   | Pre-commit          |
+| **Nix (nixfmt)**                 | `nixfmt` hook          | N/A                   | Pre-commit          |
 | **Ansible**                      | syntax-check (fast)    | -                     | ansible-lint (full) |
 | **Terraform**                    | fmt/validate/tflint    | -                     | Pre-commit          |
 
@@ -119,7 +119,7 @@ Key hooks in `.pre-commit-config.yaml`:
 | `ruff-check`        | astral-sh/ruff-pre-commit    | Python linting     |
 | `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting   |
 | `bazel-format`      | local (Bazel)                | Unified formatting |
-| `nixfmt-nix`        | NixOS/nixfmt                 | Nix formatting     |
+| `nixfmt`            | local (static binary)        | Nix formatting     |
 | `markdownlint-cli2` | DavidAnson/markdownlint-cli2 | Markdown linting   |
 
 Cluster-specific hooks run only on `cluster/` files:

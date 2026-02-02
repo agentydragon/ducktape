@@ -69,10 +69,10 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Development Tools
 
-10. Installs nix via `nix_setup.py` (for nix eval, flake operations, nixfmt)
+10. Installs nix via `nix_setup.py` (for nix eval, flake operations)
 
 Note: flux, kustomize, kubeseal, helm are now Bazel-managed via `@multitool//tools/*`.
-Nix formatting uses `nix run nixpkgs#nixfmt` via the NixOS/nixfmt pre-commit hook.
+Nix formatting uses a static nixfmt binary downloaded by `tools/precommit/run-nixfmt.sh`.
 
 ### Environment Configuration
 
@@ -119,15 +119,15 @@ See <proxy-alternatives.md> for analysis of why alternatives don't work.
 
 All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with the `DUCKTAPE_CLAUDE_HOOKS_` prefix:
 
-| Environment Variable                    | Default                             | Description                 |
-| --------------------------------------- | ----------------------------------- | --------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`  | `~/.config/claude-hooks/supervisor` | Supervisor config directory |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001`                             | Supervisor TCP port         |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`  | `~/.cache/claude-hooks/auth-proxy`  | Proxy cache directory       |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT` | `18081`                             | Auth proxy port             |
-| `DUCKTAPE_CLAUDE_HOOKS_SKIP_BAZELISK`   | `false`                             | Skip bazelisk download      |
-| `DUCKTAPE_CLAUDE_HOOKS_SKIP_NIX`        | `false`                             | Skip nix installation       |
-| `DUCKTAPE_CLAUDE_HOOKS_SKIP_PODMAN`     | `false`                             | Skip podman setup           |
+| Environment Variable                     | Default                             | Description                 |
+| ---------------------------------------- | ----------------------------------- | --------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`   | `~/.config/claude-hooks/supervisor` | Supervisor config directory |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`  | `19001`                             | Supervisor TCP port         |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`   | `~/.cache/claude-hooks/auth-proxy`  | Proxy cache directory       |
+| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT`  | `18081`                             | Auth proxy port             |
+| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK` | `true`                              | Install bazelisk            |
+| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_NIX`      | `false`                             | Install nix package manager |
+| `DUCKTAPE_CLAUDE_HOOKS_INSTALL_PODMAN`   | `true`                              | Install podman runtime      |
 
 See `settings.py` for the full configuration schema.
 

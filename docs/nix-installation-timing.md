@@ -55,17 +55,17 @@ After the first two installs, nixpkgs is fully cached and installs are fast.
 
 The session hook uses direct binary downloads for some tools. Here's a comparison:
 
-| Tool      | Binary Download | Nix (steady state) | Winner     |
-| --------- | --------------- | ------------------ | ---------- |
-| opentofu  | ~2s, 28 MB      | ~6s, 108 MB        | Binary     |
-| tflint    | ~2s, 24 MB      | ~3s, 50 MB         | Binary     |
-| flux      | ~2s, 21 MB      | ~6s, 110 MB        | Binary     |
-| kubeseal  | ~1s, 48 MB      | N/A                | Binary     |
-| kustomize | ~1s, 14 MB      | N/A                | Binary     |
-| helm      | ~2s, 55 MB      | N/A                | Binary     |
-| nixfmt    | N/A             | ~3s, 150 MB        | Nix (only) |
+| Tool      | Binary Download | Nix (steady state) | Winner |
+| --------- | --------------- | ------------------ | ------ |
+| opentofu  | ~2s, 28 MB      | ~6s, 108 MB        | Binary |
+| tflint    | ~2s, 24 MB      | ~3s, 50 MB         | Binary |
+| flux      | ~2s, 21 MB      | ~6s, 110 MB        | Binary |
+| kubeseal  | ~1s, 48 MB      | N/A                | Binary |
+| kustomize | ~1s, 14 MB      | N/A                | Binary |
+| helm      | ~2s, 55 MB      | N/A                | Binary |
+| nixfmt    | ~1s, 6.3 MB     | ~3s, 150 MB        | Binary |
 
-**Note**: Nix formatter (nixfmt) runs via `nix run nixpkgs#nixfmt` in pre-commit hook.
+**Note**: Nix formatter (nixfmt) now uses a static binary from GitHub releases (no Nix dependency).
 
 **Tradeoffs**:
 
@@ -105,11 +105,11 @@ For subsequent tools after cold start: **3-6s each**
 
 ### Recommended Strategy for Claude Code Web
 
-| Tool Type     | Strategy                     | Time  |
-| ------------- | ---------------------------- | ----- |
-| Go/Rust CLIs  | Direct binary download       | 1-2s  |
-| Node tools    | npm/npx                      | 2-5s  |
-| Python tools  | pip/pipx                     | 2-5s  |
-| Nix formatter | `nix run` (no timeout limit) | ~120s |
+| Tool Type     | Strategy               | Time |
+| ------------- | ---------------------- | ---- |
+| Go/Rust CLIs  | Direct binary download | 1-2s |
+| Node tools    | npm/npx                | 2-5s |
+| Python tools  | pip/pipx               | 2-5s |
+| Nix formatter | Static binary download | ~1s  |
 
-For nixfmt: the pre-commit hook runs `nix run nixpkgs#nixfmt` which downloads nixpkgs on first run. This happens during pre-commit execution (no session hook timeout), so the cold start delay is acceptable.
+For nixfmt: the pre-commit hook now downloads a static binary from GitHub releases (~6.3 MB), eliminating the Nix dependency entirely.

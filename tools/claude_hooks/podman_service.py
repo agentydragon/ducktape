@@ -206,11 +206,11 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
     Idempotent: if podman service is already running, returns immediately.
 
     Raises:
-        SkipError: If skip_podman is True in settings.
+        SkipError: If install_podman is False in settings.
         PodmanInstallError: If podman installation fails.
     """
-    if settings.skip_podman:
-        logger.info("Skipping podman setup (skip_podman=True)")
+    if not settings.install_podman:
+        logger.info("Skipping podman setup (install_podman=False)")
         raise SkipError("Podman")
 
     socket_path = _get_socket_path(settings)

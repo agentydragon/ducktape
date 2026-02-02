@@ -30,7 +30,7 @@
             packages = [
               # Use pre-commit from nixpkgs (version may differ slightly from CI's 4.0.1)
               pkgs.pre-commit
-              # Nix formatting uses nixfmt via pre-commit hook (nix run nixpkgs#nixfmt)
+              # Nix formatting uses nixfmt via pre-commit hook (static binary from GitHub releases)
             ];
           };
         }

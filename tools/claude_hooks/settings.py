@@ -39,9 +39,9 @@ ENV_AUTH_PROXY_DIR = _env_name("auth_proxy_dir")
 ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
 ENV_PODMAN_DIR = _env_name("podman_dir")
 ENV_PODMAN_SOCKET = _env_name("podman_socket")
-ENV_SKIP_BAZELISK = _env_name("skip_bazelisk")
-ENV_SKIP_NIX = _env_name("skip_nix")
-ENV_SKIP_PODMAN = _env_name("skip_podman")
+ENV_INSTALL_BAZELISK = _env_name("install_bazelisk")
+ENV_INSTALL_NIX = _env_name("install_nix")
+ENV_INSTALL_PODMAN = _env_name("install_podman")
 ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_USE_WHEEL = _env_name("use_wheel")
 
@@ -69,11 +69,13 @@ class HookSettings(BaseSettings):
     supervisor_port: int | None = Field(default=None, description="Override supervisor TCP port")
     auth_proxy_port: int | None = Field(default=None, description="Override auth proxy port")
 
-    # Feature flags (skip installations for testing)
-    skip_bazelisk: bool = Field(default=False, description="Skip bazelisk download (use system bazel)")
-    skip_nix: bool = Field(default=False, description="Skip nix installation")
-    skip_podman: bool = Field(default=False, description="Skip podman setup")
-    system_bazel: Path | None = Field(default=None, description="Path to system bazel (used when skip_bazelisk=True)")
+    # Feature flags (enable/disable installations)
+    install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
+    install_nix: bool = Field(default=False, description="Install nix package manager")
+    install_podman: bool = Field(default=True, description="Set up podman container runtime")
+    system_bazel: Path | None = Field(
+        default=None, description="Path to system bazel (used when install_bazelisk=False)"
+    )
 
     # Test configuration
     use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
