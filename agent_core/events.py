@@ -103,9 +103,6 @@ EventType = Annotated[
     Field(discriminator="type"),
 ]
 
-# Alias for cleaner imports
-AgentEvent = EventType
-
 # Event that ScriptHandler generators receive after yielding tool calls.
 # Currently only ToolCallOutput; extend if scripts need to react to other event types.
 ScriptEvent = ToolCallOutput
@@ -114,6 +111,3 @@ ScriptEvent = ToolCallOutput
 TranscriptEvent = (
     SystemText | UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem | Response | ApiRequest
 )
-
-# Event types relevant for GEPA reflection - excludes ApiRequest/Response to prevent O(n²) context blowup
-REFLECTION_EVENT_TYPES = (ToolCall, ToolCallOutput, AssistantText, ReasoningItem)

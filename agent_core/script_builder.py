@@ -1,22 +1,13 @@
-"""Item factory and roundtrip helpers for ScriptHandler generators.
-
-ScriptBuilder provides:
-
-- Call builders: call(), docker_exec(), read_resource()
-- Roundtrip sub-generators (for yield from): exec_roundtrip(), exec_ok(), call_roundtrip()
-"""
+"""Item factory and roundtrip helpers for ScriptHandler generators."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pydantic_core
 from pydantic import BaseModel
-from pydantic.networks import AnyUrl
 
 from agent_core.events import ScriptEvent
 from agent_core.script_handler import ScriptError, ScriptGen, find_tool_result_typed
-from mcp_infra.compositor.resources_server import ResourcesReadArgs, ResourcesServer
 from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
@@ -26,8 +17,6 @@ from openai_utils.model import FunctionCallItem
 if TYPE_CHECKING:
     from mcp_infra.exec.docker.server import ContainerExecServer
     from mcp_infra.mounted import Mounted
-
-DEFAULT_BOOTSTRAP_EXEC_TIMEOUT_MS = 1000
 
 
 class ScriptBuilder(ItemFactory):
@@ -45,66 +34,22 @@ class ScriptBuilder(ItemFactory):
             print(result.stdout)
     """
 
-    def __init__(self) -> None:
-        super().__init__()
-
-    def call(
-        self, server: MCPMountPrefix, tool: str, payload: BaseModel, *, call_id: str | None = None
-    ) -> FunctionCallItem:
+    def call(self, server: MCPMountPrefix, tool: str, payload: BaseModel) -> FunctionCallItem:
         """Create a namespaced MCP tool call item."""
-        return FunctionCallItem(
-            call_id=call_id or self.next_call_id(),
-            name=build_mcp_function(server, tool),
-            arguments=pydantic_core.to_json(payload.model_dump(mode="json"), fallback=str).decode("utf-8"),
-        )
-
-    def docker_exec(
-        self, runtime: Mounted[ContainerExecServer], cmd: list[str], *, timeout_ms: int | None = None
-    ) -> FunctionCallItem:
-        """Create a docker exec tool call item.
-
-        Uses DEFAULT_BOOTSTRAP_EXEC_TIMEOUT_MS (1 second) by default.
-        """
-        return self.call(
-            runtime.prefix,
-            runtime.server.exec_tool.name,
-            ExecInput(
-                cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms or DEFAULT_BOOTSTRAP_EXEC_TIMEOUT_MS
-            ),
-        )
-
-    def read_resource(
-        self, resources: Mounted[ResourcesServer], server: MCPMountPrefix, uri: str | AnyUrl, *, max_bytes: int = 65536
-    ) -> FunctionCallItem:
-        """Create a resource read tool call item."""
-        return self.call(
-            resources.prefix,
-            resources.server.read_tool.name,
-            ResourcesReadArgs(server=server, uri=str(uri), start_offset=0, max_bytes=max_bytes),
-        )
-
-    def exec_roundtrip(
-        self, runtime: Mounted[ContainerExecServer], cmd: list[str], *, timeout_ms: int | None = None
-    ) -> ScriptGen[BaseExecResult]:
-        """Yield docker exec call, return BaseExecResult."""
-        call = self.docker_exec(runtime, cmd, timeout_ms=timeout_ms)
-        events: list[ScriptEvent] = yield [call]
-        return find_tool_result_typed(events, call.call_id, BaseExecResult)
+        return self.tool_call(build_mcp_function(server, tool), payload)
 
     def exec_ok(
         self, runtime: Mounted[ContainerExecServer], cmd: list[str], *, timeout_ms: int | None = None
     ) -> ScriptGen[BaseExecResult]:
-        """Yield docker exec call, validate exit 0, return result."""
-        result: BaseExecResult = yield from self.exec_roundtrip(runtime, cmd, timeout_ms=timeout_ms)
+        """Yield docker exec call, validate exit 0, return result. Defaults to 1000ms timeout."""
+        call = self.call(
+            runtime.prefix,
+            runtime.server.exec_tool.name,
+            ExecInput(cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms or 1000),
+        )
+        events: list[ScriptEvent] = yield [call]
+        result = find_tool_result_typed(events, call.call_id, BaseExecResult)
         if not (isinstance(result.exit, Exited) and result.exit.exit_code == 0):
             cmd_preview = " ".join(cmd[:4])
             raise ScriptError(f"Command failed ({cmd_preview}): {result.exit.model_dump()}")
         return result
-
-    def call_roundtrip[T: BaseModel](
-        self, server: MCPMountPrefix, tool: str, payload: BaseModel, output_type: type[T]
-    ) -> ScriptGen[T]:
-        """Yield MCP tool call, return parsed typed output."""
-        call = self.call(server, tool, payload)
-        events: list[ScriptEvent] = yield [call]
-        return find_tool_result_typed(events, call.call_id, output_type)

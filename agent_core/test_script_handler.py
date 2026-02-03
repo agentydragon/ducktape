@@ -40,19 +40,21 @@ def _tool_result_event(call_id: str, *, structured: dict | None = None, is_error
 
 
 def test_prime_yield_must_be_none():
+    @script_handler
     def bad_script() -> ScriptGen:
         yield [UserMessage.text("oops")]
 
     with pytest.raises(RuntimeError, match="first yield must be None"):
-        ScriptHandler(bad_script())
+        bad_script()
 
 
 def test_single_call_injection():
+    @script_handler
     def script() -> ScriptGen:
         yield None
         yield [FunctionCallItem(call_id="c1", name="test_tool", arguments="{}")]
 
-    handler = ScriptHandler(script())
+    handler = script()
     decision = handler.on_before_sample()
     assert isinstance(decision, InjectItems)
     assert len(decision.items) == 1
@@ -61,25 +63,28 @@ def test_single_call_injection():
 
 
 def test_generator_return_becomes_no_action():
+    @script_handler
     def script() -> ScriptGen:
         yield None
 
-    handler = ScriptHandler(script())
+    handler = script()
     assert isinstance(handler.on_before_sample(), NoAction)
     assert isinstance(handler.on_before_sample(), NoAction)
 
 
 def test_generator_exception_propagates():
+    @script_handler
     def script() -> ScriptGen:
         yield None
         raise ValueError("script failed")
 
-    handler = ScriptHandler(script())
+    handler = script()
     with pytest.raises(ValueError, match="script failed"):
         handler.on_before_sample()
 
 
 def test_multiple_serial_yields():
+    @script_handler
     def script() -> ScriptGen:
         yield None
         events = yield [FunctionCallItem(call_id="c1", name="step1", arguments="{}")]
@@ -90,7 +95,7 @@ def test_multiple_serial_yields():
         assert len(events) == 1
         assert events[0].call_id == "c2"
 
-    handler = ScriptHandler(script())
+    handler = script()
 
     decision = handler.on_before_sample()
     assert isinstance(decision, InjectItems)
@@ -104,6 +109,7 @@ def test_multiple_serial_yields():
 
 
 def test_parallel_calls():
+    @script_handler
     def script() -> ScriptGen:
         yield None
         events = yield [
@@ -112,7 +118,7 @@ def test_parallel_calls():
         ]
         assert len(events) == 2
 
-    handler = ScriptHandler(script())
+    handler = script()
 
     decision = handler.on_before_sample()
     assert isinstance(decision, InjectItems)
@@ -125,32 +131,35 @@ def test_parallel_calls():
 
 
 def test_yield_none_is_no_action():
+    @script_handler
     def script() -> ScriptGen:
         yield None
         yield None  # no action
         yield [FunctionCallItem(call_id="c1", name="tool", arguments="{}")]
 
-    handler = ScriptHandler(script())
+    handler = script()
     assert isinstance(handler.on_before_sample(), NoAction)
     assert isinstance(handler.on_before_sample(), InjectItems)
 
 
 def test_events_not_buffered_after_exhaustion():
+    @script_handler
     def script() -> ScriptGen:
         yield None
 
-    handler = ScriptHandler(script())
+    handler = script()
     handler.on_before_sample()  # exhaust
     handler.on_tool_result_event(_tool_result_event("late", structured=EXEC_OK.model_dump()))
     assert isinstance(handler.on_before_sample(), NoAction)
 
 
 def test_message_injection():
+    @script_handler
     def script() -> ScriptGen:
         yield None
         yield [SystemMessage.text("system msg"), UserMessage.text("user msg")]
 
-    handler = ScriptHandler(script())
+    handler = script()
     decision = handler.on_before_sample()
     assert isinstance(decision, InjectItems)
     assert len(decision.items) == 2
@@ -163,12 +172,13 @@ def test_yield_from_sub_generator():
         assert result.structured_content is not None
         return "sub_result"
 
+    @script_handler
     def script() -> ScriptGen:
         yield None
         result = yield from sub_step()
         assert result == "sub_result"
 
-    handler = ScriptHandler(script())
+    handler = script()
 
     decision = handler.on_before_sample()
     assert isinstance(decision, InjectItems)
@@ -178,7 +188,7 @@ def test_yield_from_sub_generator():
     assert isinstance(handler.on_before_sample(), NoAction)
 
 
-def test_script_handler_decorator():
+def test_script_handler_decorator_with_args():
     """The @script_handler decorator wraps a generator function into a handler factory."""
 
     @script_handler
@@ -253,12 +263,6 @@ def test_script_builder_auto_increment_ids():
     assert c1.call_id == "bootstrap:1"
     assert c2.call_id == "bootstrap:2"
     assert c3.call_id == "bootstrap:3"
-
-
-def test_script_builder_explicit_call_id():
-    b = ScriptBuilder()
-    c = b.call(TEST_PREFIX, "t", Payload(v="x"), call_id="custom-99")
-    assert c.call_id == "custom-99"
 
 
 if __name__ == "__main__":

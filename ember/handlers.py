@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-from agent_core.events import AgentEvent, AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from agent_core.events import AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, LoopDecision, NoAction
 from openai_utils.model import ReasoningItem
@@ -22,7 +22,7 @@ class EmberHistoryRecord(BaseModel):
     """Record for persisting agent events to JSONL."""
 
     timestamp: datetime
-    event: AgentEvent
+    event: EventType
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -77,7 +77,7 @@ class EmberPersistenceHandler(BaseHandler):
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._records: list[EmberHistoryRecord] = []
 
-    def _append_event(self, event: AgentEvent) -> None:
+    def _append_event(self, event: EventType) -> None:
         """Append event and persist to disk."""
         record = EmberHistoryRecord(timestamp=datetime.now(UTC), event=event)
         self._records.append(record)
