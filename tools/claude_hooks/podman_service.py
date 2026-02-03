@@ -115,7 +115,11 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
     - policy.json: ~/.config/containers/policy.json (user-level, hardcoded lookup path)
 
     gVisor sandbox restrictions require:
-    1. VFS storage driver (no overlay filesystem support)
+    1. VFS storage driver on 9p root (overlay fails: 9p lacks xattr).
+       However, native overlay DOES work on tmpfs (/dev/shm is 315 GB).
+       To use overlay with layer caching, mount a new exec-enabled tmpfs
+       and set CONTAINERS_STORAGE_CONF to a config with driver = "overlay"
+       and graphroot on that tmpfs. See claude_web_env/docs/sandbox-investigation.md.
     2. Host user namespace (userns = "host")
     3. run.oci.keep_original_groups=1 annotation
 

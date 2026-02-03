@@ -1,0 +1,5 @@
+#!/bin/bash
+export PATH="/opt/node22/bin:$(echo $PATH | sed 's|/opt/node[0-9]*/bin:||g')"
+echo "Switched to Node.js 22"
+node --version
+npm --version

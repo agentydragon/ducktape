@@ -1,0 +1,279 @@
+# Exclusion rules for manifest diff. Applied only at diff time — manifests
+# always capture everything. See README.md for category descriptions.
+
+# ─── Completely ignored paths ─────────────────────────────────────────────
+# These prefixes are skipped entirely in the diff. Both sides are ignored.
+skip_paths:
+  # Kernel virtual filesystems (not real files)
+  - /proc
+  - /sys
+  - /dev
+
+  # Ephemeral runtime state (empty at image build time, populated at runtime)
+  - /tmp
+  - /run
+  - /var/log
+
+  # APT caches (cleared by `rm -rf /var/lib/apt/lists/*` in Dockerfile)
+  - /var/cache/apt
+  - /var/lib/apt/lists
+
+  # dpkg info dir has per-file metadata for every installed package — the set
+  # of files is a consequence of package selection, not an independent signal
+  - /var/lib/dpkg/info
+
+  # Podman/buildah container storage (artifacts from building inside container)
+  - /var/lib/containers
+  - /var/tmp
+
+  # Our own repo checkout (present in live, not in image)
+  - /home/user/ducktape
+
+  # Caches populated at runtime
+  - /root/.cache
+  - /root/.npm
+
+  # Claude session state directories (populated at runtime by Claude Code)
+  - /root/.claude/telemetry
+  - /root/.claude/plans
+  - /root/.claude/todos
+  - /root/.claude/shell-snapshots
+  - /root/.claude/session-env
+  - /root/.claude/statsig
+
+  # Nix store (installed at runtime by session start hook, not part of base image)
+  - /nix
+
+  # Work directory (runtime workspace)
+  - /work
+
+# ─── Volatile paths ──────────────────────────────────────────────────────
+# Non-deterministic tool installations where ANY difference is expected:
+# different file sets, different hashes, different permissions. These tools
+# are installed from HEAD/latest and their exact contents vary between builds.
+volatile_paths:
+  # Ruby: rbenv, ruby-build, and pre-built Ruby binaries
+  - "/opt/rbenv/**"
+  - "/opt/ruby-*"
+  - "/opt/ruby-*/**"
+
+  # Node.js: nvm and node version directories
+  - "/opt/nvm/**"
+  - "/opt/node*/**"
+
+  # Rust: cargo registry and rustup toolchains
+  - "/root/.cargo/**"
+  - "/root/.rustup/**"
+
+  # Bun runtime
+  - "/root/.bun/**"
+
+  # uv: tool installations and Python environments
+  - "/root/.local/share/uv/**"
+
+  # Ruby gem specs (populated by gem operations)
+  - "/root/.local/share/gem/**"
+  - "/root/.local/lib"
+
+  # uv/pip installed Python packages under ~/.local
+  - "/root/.local/lib/python*/**"
+  - "/root/.local/bin/*"
+
+  # Go versioned directories
+  - "/usr/local/go*/**"
+
+  # System Python packages installed by pip
+  - "/usr/local/lib/python*/**"
+
+  # Python bytecode caches (.pyc): generated at import time, embed
+  # compilation timestamps / magic numbers that differ between builds.
+  # fnmatch ** between slashes can't match empty, so we need both
+  # direct and nested patterns for each tree. Also match the bare
+  # __pycache__ directory entries themselves.
+  - "/usr/lib/python3/dist-packages/__pycache__"
+  - "/usr/lib/python3/dist-packages/__pycache__/**"
+  - "/usr/lib/python3/dist-packages/**/__pycache__"
+  - "/usr/lib/python3/dist-packages/**/__pycache__/**"
+  - "/usr/lib/python3.1[02]/__pycache__"
+  - "/usr/lib/python3.1[02]/__pycache__/**"
+  - "/usr/lib/python3.1[02]/**/__pycache__"
+  - "/usr/lib/python3.1[02]/**/__pycache__/**"
+  - "/usr/share/gcc/python/**/__pycache__"
+  - "/usr/share/gcc/python/**/__pycache__/**"
+  - "/usr/share/gdb/python/**/__pycache__"
+  - "/usr/share/gdb/python/**/__pycache__/**"
+  - "/usr/share/glib-2.0/**/__pycache__"
+  - "/usr/share/glib-2.0/**/__pycache__/**"
+
+  # /etc config files that differ between builds (user database, hostname,
+  # SSL certs, ld cache, machine-id, etc.)
+  - "/etc/group"
+  - "/etc/group-"
+  - "/etc/gshadow"
+  - "/etc/gshadow-"
+  - "/etc/hostname"
+  - "/etc/hosts"
+  - "/etc/ld.so.cache"
+  - "/etc/machine-id"
+  - "/etc/passwd"
+  - "/etc/passwd-"
+  - "/etc/shadow"
+  - "/etc/shadow-"
+  - "/etc/resolv.conf"
+  - "/etc/ssl/certs/ca-certificates.crt"
+  - "/etc/ssl/certs/java/cacerts"
+  - "/etc/ssl/certs/ssl-cert-snakeoil.pem"
+  - "/etc/ssl/private/ssl-cert-snakeoil.key"
+  - "/etc/sudoers"
+  - "/etc/cloud/build.info"
+  - "/etc/postgresql/**"
+
+  # /var build caches and state files (debconf, fontconfig, dpkg, postgresql)
+  - "/var/cache/debconf/**"
+  - "/var/cache/fontconfig/**"
+  - "/var/cache/ldconfig/**"
+  - "/var/lib/apt/extended_states"
+  - "/var/lib/dbus/machine-id"
+  - "/var/lib/dpkg/alternatives/**"
+  - "/var/lib/dpkg/status"
+  - "/var/lib/dpkg/status-old"
+  - "/var/lib/dpkg/triggers/**"
+  - "/var/lib/postgresql/**"
+  - "/var/lib/sgml-base/**"
+  - "/var/lib/systemd/**"
+
+  # Root dotfiles (content differs between builds)
+  - "/root/.bashrc"
+  - "/root/.profile"
+
+  # Tools installed to /usr/local from HEAD (version drift expected)
+  - "/usr/local/bin/composer"
+  - "/usr/local/bin/golangci-lint"
+  - "/usr/local/use-go-*.sh"
+
+  # Python3 symlink (live: /etc/alternatives/python3, built: python3.12)
+  - "/usr/bin/python3"
+
+  # DRI drivers (mesa version drift adds/removes driver .so files)
+  - "/usr/lib/x86_64-linux-gnu/dri/*"
+
+  # libdrm/mesa versioned .so files and symlinks (version drift between apt updates)
+  - "/usr/lib/x86_64-linux-gnu/libdrm.so*"
+  - "/usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so*"
+  - "/usr/lib/x86_64-linux-gnu/libdrm_intel.so*"
+  - "/usr/lib/x86_64-linux-gnu/libgallium-*.so"
+
+# ─── Hash may differ ─────────────────────────────────────────────────────
+# Intentionally empty: we aim for exact binary matching via APT version
+# pinning rather than masking hash differences.
+hash_may_differ: []
+
+# ─── Only in live ────────────────────────────────────────────────────────
+# Paths expected only in the live container (proprietary runtime components,
+# session state). These CANNOT be reproduced from public sources.
+only_in_live:
+  # Proprietary process API server (not publicly available)
+  - /process_api
+  - "/process_api/**"
+
+  # Runtime-generated container metadata
+  - /container_info.json
+  - /.dockerenv
+
+  # Claude Code session state and config (written at runtime)
+  - /root/.claude
+  - "/root/.claude/**"
+  - /root/.claude.json
+  - /root/.claude.json.backup
+
+  # Gradle and launchpadlib caches (created by runtime tool usage)
+  - /root/.gradle
+  - "/root/.gradle/**"
+  - /root/.launchpadlib
+  - "/root/.launchpadlib/**"
+
+  # User configs written at runtime
+  - "/root/.config/**"
+
+  # Nix profile symlinks (created by nix installation at runtime)
+  - /root/.nix-defexpr
+  - "/root/.nix-defexpr/**"
+  - /root/.nix-profile
+  - /root/.wget-hsts
+
+  # Claude user home (created at runtime, populated with session data)
+  - /home/claude
+  - "/home/claude/**"
+
+  # Python alternatives (live has /usr/bin/python via update-alternatives, not in built)
+  - /usr/bin/python
+  - /usr/bin/python3-config
+  - /var/lib/dpkg/alternatives/python
+  - /var/lib/dpkg/alternatives/python3
+  - /etc/alternatives/python
+  - /etc/alternatives/python3
+
+  # Python3 docs (installed via python3-doc in live, not in built)
+  - /usr/share/doc/python3/_static
+  - "/usr/share/doc/python3/_static/**"
+  - /usr/share/doc/python3/index.html
+
+  # APT source files: live has legacy sources.list, built uses deb822 .sources
+  - /etc/apt/sources.list
+  - /etc/apt/sources.list.d/ubuntu.sources
+  - /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa-noble.sources
+  - /etc/apt/sources.list.d/ondrej-ubuntu-php-noble.sources
+
+  # Container runtime config (created by podman at runtime)
+  - /etc/containers/containers.conf
+  - /etc/containers/networks
+  - /etc/containers/storage.conf
+  - /var/cache/containers
+  - "/var/cache/containers/**"
+
+  # SSL cert hash symlinks (generated by update-ca-certificates, differ by cert set)
+  - "/etc/ssl/certs/*.0"
+
+  # Clang lib directories (layout differs between apt versions)
+  - /usr/lib/clang/18.1.3/lib
+  - /usr/lib/clang/18/lib
+
+# ─── Only in built ───────────────────────────────────────────────────────
+# Paths expected only in the built image (build artifacts not present at runtime).
+only_in_built:
+  # APT pinning files (build-time artifact to lock package versions)
+  - "/etc/apt/preferences.d/*"
+  - /etc/apt/sources.list.d/live-archive.sources
+  - /etc/apt/sources.list.d/snapshot.sources
+
+  # npm cache from global installs (cleaned in live, present in built)
+  - /root/.npm
+  - "/root/.npm/**"
+
+  # APT source files: built uses .list (one-line), live uses .sources (deb822)
+  - /etc/apt/sources.list.d/deadsnakes-ppa.list
+  - /etc/apt/sources.list.d/ondrej-php.list
+
+  # SSL cert hash symlink (generated by update-ca-certificates, differs by cert set)
+  - "/etc/ssl/certs/*.0"
+
+  # pip-installed console_scripts (live installs these at runtime, not at image build)
+  - /usr/local/bin/conan
+  - /usr/local/bin/identify-cli
+  - /usr/local/bin/nodeenv
+  - /usr/local/bin/normalizer
+  - /usr/local/bin/pre-commit
+  - /usr/local/bin/virtualenv
+
+  # Proxy CA cert directory and contents (build artifact from TLS-inspecting proxy)
+  - /usr/local/share/ca-certificates/proxy
+  - "/usr/local/share/ca-certificates/proxy/**"
+
+# ─── Comparison overrides ─────────────────────────────────────────────────
+# gVisor user namespaces map all UIDs to a single user, making ownership
+# data in the live manifest meaningless. Skip these comparisons.
+ignore_owner: true
+ignore_group: true
+# gVisor also strips SUID/SGID/sticky bits in user namespace captures,
+# so permission comparison is unreliable for the live manifest.
+ignore_perms: true

@@ -1,0 +1,118 @@
+=== task-run help ===
+Connects directly to the API to execute an existing session id.
+
+Provide a JSON object via stdin with the following structure:
+{
+  "startup_context": {
+    "sources": [...],
+    "cwd": "..."
+  },
+  "environment": {
+    "environment_type": "...",
+    "version": "...",
+    ...
+  },
+  "auth": [
+    {
+      "type": "github_app",
+      "url": "github.com",  
+      "token": "ghs_..."
+    }
+  ]
+}
+
+Usage:
+  environment-runner task-run [flags]
+
+Flags:
+      --allowed-tools string                    Comma-separated list of allowed tools for Claude (e.g., 'Bash,Edit,Write,MultiEdit,Agent,Glob,Grep,LS,View,Search,NotebookEdit,NotebookRead,TodoRead,TodoWrite')
+      --claude-agent-version claude --version   Target Claude Agent version (latest, current, stable, or specific version like 2.0.20), located at claude --version. Use 'current' to skip installation and updates. Defaults to 'latest' if not specified.
+      --debug                                   Enable debug mode when executing the Claude Agent.
+      --environment-id string                   Environment ID for API calls (required for self-hosted)
+  -h, --help                                    help for task-run
+      --input-format string                     Input format for stdin data: 'v0' (startup_context/environment/auth) or 'v1' (work response with packed secret) (default "v0")
+      --local-append-system-prompt string       Additional system prompt content to append locally (useful for self-hosted environments to inject custom instructions)
+      --local-testing                           Disable Claude WebSocket connections and git configuration (run in standalone mode for local testing)
+      --log-level string                        Log level (debug, info, warn, error) (default "info")
+      --organization-id string                  Organization ID for API calls (required for self-hosted)
+      --session string                          ID of the session to manage (required)
+      --session-mode string                     Session mode: 'new' (default for Cloud), 'resume' (skip git clone and setup scripts), 'resume-cached' (default for self-hosted), 'setup-only' (exit after setup) (default "new")
+      --stdin                                   Deprecated: stdin is now always used. This flag is ignored.
+      --upgrade-claude-code                     Deprecated: use --claude-agent-version instead. When true (default), upgrades Claude Agent to latest version. (default true)
+      --verbose-claude-logs                     Enable verbose logging of Claude Agent output to console (automatically enabled with --local-testing)
+      --working-directory string                Default working directory for the session (used when session context doesn't specify cwd) (default "/root")
+
+=== orchestrator help ===
+The orchestrator command polls the API for session tasks and handing off work to be executed.
+
+It handles:
+- Discovering environment identity via the /v1/environments/whoami endpoint
+- Polling the environments API work/poll endpoint
+- Executing work:
+  - With --execute-hook: pipes JSON to hook via stdin and exits with hook's exit code
+  - With --sandbox-backend=sandbox-runtime (default): auto-invokes 'task-run --input-format=v1' in sandbox
+  - Without --execute-hook and without sandbox: outputs JSON to stdout and exits (caller handles execution)
+- Running timeout hooks for periodic maintenance (e.g., monorepo updates)
+- Sleeping with jitter when queue is empty
+- Graceful shutdown on SIGTERM/SIGINT
+
+Required environment variable:
+  ENVIRONMENT_SERVICE_KEY: Service key for the environment
+
+The environment ID and organization ID are discovered automatically via the whoami
+endpoint. You can optionally provide --environment-id and --organization-id flags
+to validate them against the token's identity.
+
+Usage:
+  environment-runner orchestrator [flags]
+
+Examples:
+  # Basic usage with sandbox (recommended - identity discovered via whoami)
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-manager orchestrator
+
+  # With explicit IDs for validation
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator \
+    --environment-id "env_01ABC123" \
+    --organization-id "org_01XYZ789"
+
+  # With custom execute hook to handle sessions
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-runner orchestrator \
+    --environment-id "env_01ABC123" \
+    --organization-id "org_01XYZ789" \
+    --execute-hook "./handle-session.sh"
+
+  # Without sandbox (outputs JSON to stdout)
+  export ENVIRONMENT_SERVICE_KEY="your-environment-service-key"
+  environment-manager orchestrator \
+    --sandbox-backend none
+
+Flags:
+      --api-url string                  API base URL (default "https://api.anthropic.com")
+      --client-id string                Client ID (worker identifier, default: hostname)
+      --environment-id string           Environment ID (find at claude.ai/settings, e.g., env_01ABC123)
+      --execute-hook string             Command to run with session JSON via stdin when task received. Optional when --sandbox-backend=sandbox-runtime: defaults to self-invoking 'task-run --stdin --input-format=v1'
+      --execute-hook-timeout duration   Timeout for execute hook (0 = no timeout, session lifetime controlled by API)
+  -h, --help                            help for orchestrator
+      --log-level string                Log level (debug, info, warn, error) (default "info")
+      --loop-timeout duration           Loop timeout before triggering timeout hook (default 5m0s)
+      --max-poll-failures int           Maximum consecutive poll failures before exiting (0 = infinite)
+      --organization-id string          Organization ID (find at claude.ai/settings > Account)
+      --poll-timeout duration           Poll request timeout duration (default 5m0s)
+      --sandbox-backend string          Sandbox backend for execute hook: none, sandbox-runtime (default "sandbox-runtime")
+      --sandbox-settings string         Path to custom sandbox-runtime settings JSON file (must include Anthropic domains)
+      --service-key-file string         Path to file containing the environment service key. If not set, falls back to ENVIRONMENT_SERVICE_KEY environment variable
+      --timeout-hook string             Command to run on loop timeout (e.g., monorepo updates)
+      --timeout-hook-timeout duration   Timeout for timeout hook execution (e.g., monorepo updates) (default 5m0s)
+
+=== code-sign (with -Y sign) ===
+Error: no file specified to sign
+Usage:
+  environment-runner code-sign [flags]
+
+Flags:
+  -h, --help   help for code-sign
+
+Error: no file specified to sign

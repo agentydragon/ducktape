@@ -1,5 +1,6 @@
 Claude Code session start hook [build: ${build_commit}] — ${status}
 Environment: gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
+  Storage note: native overlay works on tmpfs (not 9p). `/dev/shm` is 315GB tmpfs. Mount a new exec tmpfs and use `CONTAINERS_STORAGE_CONF` with `driver = "overlay"` for layer caching. See <claude_web_env/docs/sandbox-investigation.md>.
 Bazel: wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
 % if podman:
 Podman: ${podman.status}, DOCKER_HOST=${podman.socket_url}. Use fully qualified image names (docker.io/library/...)

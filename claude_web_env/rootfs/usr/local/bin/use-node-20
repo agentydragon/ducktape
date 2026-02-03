@@ -1,0 +1,5 @@
+#!/bin/bash
+export PATH="/opt/node20/bin:$(echo $PATH | sed 's|/opt/node[0-9]*/bin:||g')"
+echo "Switched to Node.js 20"
+node --version
+npm --version

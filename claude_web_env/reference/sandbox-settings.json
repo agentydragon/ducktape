@@ -1,0 +1,29 @@
+{
+  "network": {
+    "allowedDomains": [
+      "api.anthropic.com",
+      "api-staging.anthropic.com",
+      "*.anthropic.com"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "denyRead": [
+      "~/.ssh",
+      "~/.aws",
+      "~/.config/gcloud",
+      "/etc/shadow",
+      "/etc/passwd-",
+      "/secrets"
+    ],
+    "allowWrite": [
+      "/tmp",
+      "/tmp/claude",
+      "~",
+      "/workspace"
+    ],
+    "denyWrite": [],
+    "allowGitConfig": true
+  },
+  "enableWeakerNestedSandbox": true
+}

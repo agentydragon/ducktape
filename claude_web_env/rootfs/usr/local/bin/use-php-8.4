@@ -1,0 +1,4 @@
+#!/bin/bash
+update-alternatives --set php /usr/bin/php8.4 > /dev/null 2>&1
+echo "Switched to PHP 8.4"
+php --version | head -n 1

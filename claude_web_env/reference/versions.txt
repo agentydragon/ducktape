@@ -1,0 +1,54 @@
+=== environment-manager ===
+environment-runner version staging-29c451bde
+
+=== environment-manager help ===
+Environment Runner handles the lifecycle of agentic sessions.
+
+Usage:
+  environment-runner [command]
+
+Available Commands:
+  completion             Generate the autocompletion script for the specified shell
+  help                   Help about any command
+  orchestrator           Poll for session tasks and hand off for execution
+  print-sandbox-settings Print the default sandbox runtime settings
+  task-run               Handles execution of a provided session
+
+Flags:
+  -h, --help      help for environment-runner
+  -v, --version   version for environment-runner
+
+Use "environment-runner [command] --help" for more information about a command.
+
+=== process_api help ===
+Usage: process_api [OPTIONS] --addr <ADDR>
+
+Options:
+      --addr <ADDR>
+          
+      --max-ws-buffer-size <MAX_WS_BUFFER_SIZE>
+          [default: 32768]
+      --memory-limit-bytes <MEMORY_LIMIT_BYTES>
+          
+      --cpu-shares <CPU_SHARES>
+          
+      --oom-polling-period-ms <OOM_POLLING_PERIOD_MS>
+          [default: 100]
+      --cgroupv2
+          
+      --control-server-addr <CONTROL_SERVER_ADDR>
+          Control server address for graceful shutdown and container name updates
+      --block-local-connections
+          Block connections from localhost and own interface IPs
+  -h, --help
+          Print help
+
+=== code-sign help ===
+Error: unsupported code-sign operation: currently only SSH-style signing (-Y sign) is supported
+Usage:
+  environment-runner code-sign [flags]
+
+Flags:
+  -h, --help   help for code-sign
+
+Error: unsupported code-sign operation: currently only SSH-style signing (-Y sign) is supported

@@ -1,0 +1,13 @@
+live-manifest.ndjson
+built-manifest.ndjson
+diff-report.md
+diff-report.json
+capture-live.log
+capture-built.log
+proxy-ca/
+
+# Build outputs (regenerated each run)
+*.ndjson
+!live-manifest.ndjson.gz
+*.log
+__pycache__/
