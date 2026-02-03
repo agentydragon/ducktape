@@ -117,6 +117,13 @@ py_library(
 )
 
 py_library(
+    name = "tmpfs_setup",
+    srcs = ["tmpfs_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "proxy_setup",
     srcs = ["proxy_setup.py"],
     imports = ["../.."],
@@ -196,6 +203,7 @@ py_library(
         ":proxy_credentials",
         ":proxy_setup",
         ":settings",
+        ":tmpfs_setup",
         "//fmt_util",
         "//tools:build_info",
         "//tools:env_utils",
@@ -253,6 +261,7 @@ py_package(
         ":session_start_lib",
         ":settings",
         ":streaming",
+        ":tmpfs_setup",
         "//:bazel_subprocess",
         "//net_util:net",
         "//tools/claude_hooks/auth_proxy:main",

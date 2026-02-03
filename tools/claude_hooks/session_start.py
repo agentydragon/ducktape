@@ -33,6 +33,7 @@ from tools.claude_hooks import (
     podman_service,
     precommit_setup,
     proxy_setup,
+    tmpfs_setup,
 )
 from tools.claude_hooks.debug import log_entrypoint_debug
 from tools.claude_hooks.errors import DirenvError, SkipError
@@ -375,6 +376,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
         run_in_thread(buildbuddy_setup.setup_buildbuddy, project_dir),
+        run_in_thread(tmpfs_setup.setup_tmpfs),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
@@ -384,6 +386,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     nix: nix_setup.NixSetup | BaseException = results[3]
     bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
     buildbuddy: buildbuddy_setup.BuildbuddySetup | BaseException = results[5]
+    tmpfs: tmpfs_setup.TmpfsSetup | BaseException = results[6]
 
     # Log non-critical failures
     if isinstance(precommit, BaseException):
@@ -392,6 +395,8 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         logger.warning("Failed to install bazelisk: %s", bazelisk)
     if isinstance(buildbuddy, BaseException):
         logger.warning("Failed to configure BuildBuddy: %s", buildbuddy)
+    if isinstance(tmpfs, BaseException):
+        logger.warning("Failed to set up tmpfs caches: %s", tmpfs)
 
     # Handle nix result
     if isinstance(nix, SkipError):
