@@ -269,9 +269,19 @@ Resume PR3 subagent: "Would merging this add unsubstantiated claims?"
 
 Things to watch out for that are **not automatically checked** by the validation script:
 
+### Verify Branch Diffs After Extraction
+
+After applying changes to a branch — whether by bulk `git checkout`, cherry-pick, or hunk extraction — **review the actual diff of the branch before committing**. Do not trust that the extraction was correct just because the right files were targeted.
+
+Specifically: run `git diff origin/devel...HEAD` on each branch and read every hunk. Verify each hunk belongs to this branch's stated scope. A bulk `git checkout <commit> -- <file>` grabs the entire file, which silently includes changes from other logical groups when a file is shared across PRs. This is the most common source of leaked changes.
+
+Common failure mode: file `client.ts` has both an enum value change (group A) and an API endpoint change (group B). Checking out the whole file from the main branch puts both changes into whichever branch runs first. The API endpoint change then silently disappears from group B's branch during rebase because it already exists in the base. **Result: one branch has a change it shouldn't, and another branch is missing a change it needs.**
+
 ### No Catchall "Misc" Branches
 
 Every branch must have a precisely described, narrow scope. A split that produces "PR1: style fixes, PR2: refactor auth, PR3: everything else" is a failed split — "everything else" means you stopped analyzing. If a branch's description is vague ("remaining changes", "misc updates", "other fixes"), break it down further. The whole point of splitting is that each piece is independently reviewable; a grab-bag branch defeats this entirely. When two changes seem inseparable, explain the specific coupling (e.g., "migration adds column that this query requires") rather than lumping them into a catch-all.
+
+**Recursive decomposition**: After extracting the obvious independent atoms (style fixes, docs, single-concern refactors), don't treat the remainder as one branch. Apply the same splitting analysis to the remaining cluster: what distinct logical changes does it contain? A 90-file "DB refactoring" branch that also adds new API routes, restructures dependency injection, changes test fixtures, and introduces a new config system is really 3–4 branches wearing a trench coat. Each sub-concern should be nameable in one sentence; if you need "and" to describe a branch, it's probably two branches.
 
 ### Dead Code and Orphaned Deletions
 
