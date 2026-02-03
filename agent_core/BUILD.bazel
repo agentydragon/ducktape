@@ -251,7 +251,6 @@ py_test(
     srcs = ["test_message_processing.py"],
     deps = [
         ":agent",
-        ":compaction",
         ":conftest",
         ":events",
         ":handler",
@@ -262,6 +261,7 @@ py_test(
         "//agent_core/testing/mcp:responses",
         "//mcp_infra:naming",
         "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -286,16 +286,47 @@ py_test(
 )
 
 py_test(
-    name = "test_handlers",
-    srcs = ["test_handlers.py"],
+    name = "test_handler",
+    srcs = ["test_handler.py"],
     deps = [
         ":agent",
         ":conftest",
         ":events",
         ":handler",
         ":loop_control",
+        "//agent_core/testing/mcp:responses",
+        "//openai_utils:model",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_turn_limit",
+    srcs = ["test_turn_limit.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":handler",
+        ":loop_control",
         ":turn_limit",
         "//agent_core/testing/mcp:responses",
+        "//openai_utils:model",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_compaction",
+    srcs = ["test_compaction.py"],
+    deps = [
+        ":agent",
+        ":compaction",
+        ":conftest",
+        ":events",
+        ":handler",
+        ":loop_control",
         "//openai_utils:model",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -319,25 +350,6 @@ live_openai_py_test(
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
         "//openai_utils/testing:fixtures",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-live_openai_py_test(
-    name = "test_testing_infrastructure",
-    srcs = ["test_testing_infrastructure.py"],
-    deps = [
-        ":agent",
-        ":conftest",
-        ":events",
-        ":loop_control",
-        "//agent_core/testing:matchers",
-        "//agent_core/testing/mcp:responses",
-        "//openai_utils:model",
-        "//openai_utils/testing:fixtures",
-        "@pypi//mcp",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
