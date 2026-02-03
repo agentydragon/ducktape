@@ -167,30 +167,15 @@ py_library(
         ":handler",
         ":loop_control",
         ":tool_provider",
-        "//openai_utils:model",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "script_builder",
-    srcs = ["script_builder.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":events",
-        ":script_handler",
         "//mcp_infra:mounted",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
-        "//mcp_infra/compositor:resources_server",
         "//mcp_infra/exec:docker",
         "//mcp_infra/exec:models",
         "//openai_utils:builders",
         "//openai_utils:model",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
-        "@pypi//pydantic_core",
     ],
 )
 
@@ -289,7 +274,6 @@ py_test(
     deps = [
         ":events",
         ":loop_control",
-        ":script_builder",
         ":script_handler",
         ":tool_provider",
         "//mcp_infra:prefix",
