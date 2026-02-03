@@ -24,7 +24,7 @@ def extract_error_detail_from_fastmcp(res: FastMCPCallToolResult) -> str | None:
     TODO: This pattern is bad - it guesses at error structure by probing for common field
     names. Replace with either: (a) typed error models that tools actually return, validated
     at the boundary, or (b) just use the raw structured_content/content without speculation.
-    See also: handler.py BootstrapHandler, reducer.py, rich_display.py.
+    See also: reducer.py, rich_display.py.
     """
     detail: str | None = None
     try:

@@ -1,7 +1,6 @@
 """Item factory and roundtrip helpers for ScriptHandler generators.
 
-ScriptBuilder inherits from ItemFactory and absorbs the functionality of
-TypedBootstrapBuilder and docker_exec_call(). It provides:
+ScriptBuilder provides:
 
 - Call builders: call(), docker_exec(), read_resource()
 - Roundtrip sub-generators (for yield from): exec_roundtrip(), exec_ok(), call_roundtrip()
