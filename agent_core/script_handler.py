@@ -5,18 +5,42 @@ GeneratorRunner wraps a PlayGen generator into an OpenAIModelProto. The generato
 yields agent actions (tool calls, messages) and receives transcript events
 (tool results) in batches.
 
-Generator protocol (batch semantics):
-- yield: Sequence[ScriptItem] | None  →  items to inject (None = no action)
-- send:  list[TranscriptEvent]        →  events since last yield
+Generator protocol (batch semantics)::
+
+    yield: Sequence[ScriptItem] | None  →  items to inject (None = no action)
+    send:  list[TranscriptEvent]        →  events since last yield
+
 - First yield must be None (prime yield — receive pre-existing events)
 - StopIteration (generator returns) → handler becomes passive (NoAction forever)
 - yield from composes sub-generators for reusable patterns
+
+Usage::
+
+    from agent_core.script_builder import ScriptBuilder
+    from agent_core.script_handler import ScriptGen, ScriptHandler
+
+    def my_bootstrap(b: ScriptBuilder, runtime: Mounted[ContainerExecServer]) -> ScriptGen:
+        yield None  # prime
+        result = yield from b.exec_ok(runtime, ["echo", "hello"])
+        print(result.stdout)
+
+    handlers = [ScriptHandler(my_bootstrap(b, runtime)), ...]
+
+Or with the decorator::
+
+    @script_handler
+    def my_bootstrap(runtime: Mounted[ContainerExecServer]) -> ScriptGen:
+        yield None
+        ...
+
+    handlers = [my_bootstrap(runtime), ...]
 """
 
 from __future__ import annotations
 
+import functools
 import logging
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 
 from more_itertools import one
 from pydantic import BaseModel, TypeAdapter
@@ -28,8 +52,6 @@ from agent_core.tool_provider import ToolResult
 from openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
 
 logger = logging.getLogger(__name__)
-
-__all__ = ["ScriptError", "ScriptGen", "ScriptHandler", "ScriptItem", "find_tool_result", "find_tool_result_typed"]
 
 ScriptItem = SystemMessage | UserMessage | FunctionCallItem
 
@@ -61,6 +83,26 @@ def find_tool_result_typed[T: BaseModel](events: list[TranscriptEvent], call_id:
     if not result.structured_content:
         raise ScriptError(f"Tool returned no structured content: {call_id=}")
     return TypeAdapter(output_type).validate_python(result.structured_content)
+
+
+def script_handler[**P](fn: Callable[P, ScriptGen]) -> Callable[P, ScriptHandler]:
+    """Decorator to wrap a generator function into a ScriptHandler factory.
+
+    Usage::
+
+        @script_handler
+        def my_bootstrap(runtime: Mounted[ContainerExecServer]) -> ScriptGen:
+            yield None  # prime
+            result = yield from b.exec_ok(runtime, ["echo", "hello"])
+
+        handlers = [my_bootstrap(runtime), ...]
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> ScriptHandler:
+        return ScriptHandler(fn(*args, **kwargs))
+
+    return wrapper
 
 
 class ScriptHandler(BaseHandler):

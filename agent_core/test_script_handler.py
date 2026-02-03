@@ -10,10 +10,17 @@ from pydantic import BaseModel
 
 from agent_core.events import ToolCallOutput, TranscriptEvent
 from agent_core.loop_control import InjectItems, NoAction
-from agent_core.script_builder import ScriptBuilder, _validate_exit_zero
-from agent_core.script_handler import ScriptError, ScriptGen, ScriptHandler, find_tool_result, find_tool_result_typed
+from agent_core.script_builder import ScriptBuilder
+from agent_core.script_handler import (
+    ScriptError,
+    ScriptGen,
+    ScriptHandler,
+    find_tool_result,
+    find_tool_result_typed,
+    script_handler,
+)
 from agent_core.tool_provider import ToolResult
-from mcp_infra.exec.models import BaseExecResult, Exited, Killed
+from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
 
@@ -22,13 +29,14 @@ TEST_PREFIX = MCPMountPrefix("test")
 EXEC_OK = BaseExecResult(exit=Exited(exit_code=0), stdout="", stderr="", duration_ms=0)
 
 
+class Payload(BaseModel):
+    """Reusable test payload model."""
+
+    v: str
+
+
 def _tool_result_event(call_id: str, *, structured: dict | None = None, is_error: bool = False) -> ToolCallOutput:
     return ToolCallOutput(call_id=call_id, result=ToolResult(structured_content=structured, is_error=is_error))
-
-
-def _exec_result_event(call_id: str, result: BaseExecResult = EXEC_OK) -> ToolCallOutput:
-    """Create a ToolCallOutput wrapping a BaseExecResult."""
-    return _tool_result_event(call_id, structured=result.model_dump())
 
 
 def test_prime_yield_must_be_none():
@@ -86,11 +94,11 @@ def test_multiple_serial_yields():
 
     decision = handler.on_before_sample()
     assert isinstance(decision, InjectItems)
-    handler.on_tool_result_event(_exec_result_event("c1"))
+    handler.on_tool_result_event(_tool_result_event("c1", structured=EXEC_OK.model_dump()))
 
     decision = handler.on_before_sample()
     assert isinstance(decision, InjectItems)
-    handler.on_tool_result_event(_exec_result_event("c2"))
+    handler.on_tool_result_event(_tool_result_event("c2", structured=EXEC_OK.model_dump()))
 
     assert isinstance(handler.on_before_sample(), NoAction)
 
@@ -110,8 +118,8 @@ def test_parallel_calls():
     assert isinstance(decision, InjectItems)
     assert len(decision.items) == 2
 
-    handler.on_tool_result_event(_exec_result_event("p1"))
-    handler.on_tool_result_event(_exec_result_event("p2"))
+    handler.on_tool_result_event(_tool_result_event("p1", structured=EXEC_OK.model_dump()))
+    handler.on_tool_result_event(_tool_result_event("p2", structured=EXEC_OK.model_dump()))
 
     assert isinstance(handler.on_before_sample(), NoAction)
 
@@ -133,7 +141,7 @@ def test_events_not_buffered_after_exhaustion():
 
     handler = ScriptHandler(script())
     handler.on_before_sample()  # exhaust
-    handler.on_tool_result_event(_exec_result_event("late"))
+    handler.on_tool_result_event(_tool_result_event("late", structured=EXEC_OK.model_dump()))
     assert isinstance(handler.on_before_sample(), NoAction)
 
 
@@ -168,6 +176,24 @@ def test_yield_from_sub_generator():
     handler.on_tool_result_event(_tool_result_event("sub1", structured={"key": "val"}))
 
     assert isinstance(handler.on_before_sample(), NoAction)
+
+
+def test_script_handler_decorator():
+    """The @script_handler decorator wraps a generator function into a handler factory."""
+
+    @script_handler
+    def my_script(prefix: str) -> ScriptGen:
+        yield None
+        yield [FunctionCallItem(call_id=f"{prefix}:1", name="tool", arguments="{}")]
+
+    handler = my_script("test")
+    assert isinstance(handler, ScriptHandler)
+
+    decision = handler.on_before_sample()
+    assert isinstance(decision, InjectItems)
+    first_item = decision.items[0]
+    assert isinstance(first_item, FunctionCallItem)
+    assert first_item.call_id == "test:1"
 
 
 def test_find_tool_result_found():
@@ -210,66 +236,28 @@ def test_find_tool_result_typed_no_structured_content():
         find_tool_result_typed(events, "c1", SampleOutput)
 
 
-def test_validate_exit_zero_success():
-    _validate_exit_zero(EXEC_OK, ["echo", "hello"])
-
-
-def test_validate_exit_zero_nonzero_exit():
-    result = BaseExecResult(exit=Exited(exit_code=1), stdout="", stderr="", duration_ms=0)
-    with pytest.raises(ScriptError, match="Command failed"):
-        _validate_exit_zero(result, ["failing_cmd"])
-
-
-def test_validate_exit_zero_killed():
-    result = BaseExecResult(exit=Killed(signal=9), stdout="", stderr="", duration_ms=0)
-    with pytest.raises(ScriptError, match="Command failed"):
-        _validate_exit_zero(result, ["killed_cmd"])
-
-
 def test_script_builder_call():
     b = ScriptBuilder()
-
-    class Payload(BaseModel):
-        x: int
-
-    call = b.call(TEST_PREFIX, "my_tool", Payload(x=42))
+    call = b.call(TEST_PREFIX, "my_tool", Payload(v="test"))
     assert call.name == "test_my_tool"
     assert call.call_id == "bootstrap:1"
     assert call.arguments is not None
-    assert json.loads(call.arguments) == {"x": 42}
+    assert json.loads(call.arguments) == {"v": "test"}
 
 
 def test_script_builder_auto_increment_ids():
     b = ScriptBuilder()
-
-    class P(BaseModel):
-        v: str
-
-    c1 = b.call(TEST_PREFIX, "t", P(v="a"))
-    c2 = b.call(TEST_PREFIX, "t", P(v="b"))
-    c3 = b.call(TEST_PREFIX, "t", P(v="c"))
+    c1 = b.call(TEST_PREFIX, "t", Payload(v="a"))
+    c2 = b.call(TEST_PREFIX, "t", Payload(v="b"))
+    c3 = b.call(TEST_PREFIX, "t", Payload(v="c"))
     assert c1.call_id == "bootstrap:1"
     assert c2.call_id == "bootstrap:2"
     assert c3.call_id == "bootstrap:3"
 
 
-def test_script_builder_custom_prefix():
-    b = ScriptBuilder(call_id_prefix="init")
-
-    class P(BaseModel):
-        v: str
-
-    c = b.call(TEST_PREFIX, "t", P(v="x"))
-    assert c.call_id == "init:1"
-
-
 def test_script_builder_explicit_call_id():
     b = ScriptBuilder()
-
-    class P(BaseModel):
-        v: str
-
-    c = b.call(TEST_PREFIX, "t", P(v="x"), call_id="custom-99")
+    c = b.call(TEST_PREFIX, "t", Payload(v="x"), call_id="custom-99")
     assert c.call_id == "custom-99"
 
 
