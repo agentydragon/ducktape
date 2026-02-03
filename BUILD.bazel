@@ -158,16 +158,13 @@ platform(
 
 platform(
     name = "rbe_linux_x64",
-    constraint_values = [
-        "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
-    ],
     exec_properties = {
-        "OSFamily": "linux",
-        # Custom image with git, ca-certificates, and podman for e2e tests.
-        # Built by .github/workflows/rbe-image.yml → ghcr.io/agentydragon/rbe-worker
+        # Custom image layered on BuildBuddy's rbe-ubuntu24-04 with git,
+        # ca-certificates, and podman for e2e tests.
+        # Built by .github/workflows/rbe-image.yml
         "container-image": "docker://ghcr.io/agentydragon/rbe-worker:latest",
     },
+    parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
 
 # Ducktape wheel - bundles CLI tools for distribution
