@@ -64,11 +64,7 @@ The skill produces:
 4. **PR descriptions** — Draft text for each PR
 5. **Merge guide** — Recommended merge order and notes
 
-### Acceptable Outcomes
-
-**A: Clean DAG of PRs** — Each PR has clear scope, merges cleanly in any valid order.
-
-**B: Partial split with documented tangles** — Most changes separated, with some kept together and an explanation of why they can't be further split (e.g., migration + code using new schema).
+Every branch must have a clear, specific scope describable in one sentence. If you can't precisely describe what a branch does, you haven't finished analyzing it.
 
 ## 4. Order of Operations
 
@@ -251,6 +247,10 @@ Resume PR3 subagent: "Would merging this add unsubstantiated claims?"
 
 Things to watch out for that are **not automatically checked** by the validation script:
 
+### No Catchall "Misc" Branches
+
+Every branch must have a precisely described, narrow scope. A split that produces "PR1: style fixes, PR2: refactor auth, PR3: everything else" is a failed split — "everything else" means you stopped analyzing. If a branch's description is vague ("remaining changes", "misc updates", "other fixes"), break it down further. The whole point of splitting is that each piece is independently reviewable; a grab-bag branch defeats this entirely. When two changes seem inseparable, explain the specific coupling (e.g., "migration adds column that this query requires") rather than lumping them into a catch-all.
+
 ### Dead Code and Orphaned Deletions
 
 The validation script checks merge cleanliness and content invariants, but not symbol usage. Manually verify:
@@ -317,13 +317,15 @@ Documentation that claims something is done must not be mergeable before the imp
 
 **Detection**: Subagent 7 scans for progress markers (✅, "done", "complete", "implemented"), claims about specific code ("renamed X to Y", "added function Z"), and status tables. For each claim, it reports what code changes are required and whether they exist in the branch.
 
-### Tangled Changes
+### Tightly Coupled Changes
 
-When changes can't be separated:
+When two changes seem inseparable, identify the specific coupling. Common cases:
 
-1. Document why they're tangled
-2. Keep them in the same PR with explanation
-3. Consider if a transitional state would help
+- **Schema + code**: Migration adds a column that new code queries — keep in one PR, or split as migration PR → code PR chain
+- **Rename + callers**: A function rename and all its call site updates must be in one PR (splitting as "rename" then "use new name" is artificial)
+- **Interface + implementation**: A new interface/protocol and its first implementation often belong together
+
+The key distinction: "these are coupled because X depends on Y at the type/schema level" is a valid reason to keep changes together. "I couldn't figure out how to separate these" is not — analyze harder or ask a branch subagent for splittability analysis.
 
 ### Schema Migrations
 
@@ -371,7 +373,7 @@ while validation fails:
     4. Update branches, re-run validation
 ```
 
-When iteration reveals fundamental issues (too many edges needed, circular dependencies, test coverage gaps), reconsider the split: merge some PRs together, try different boundaries, or accept a larger tangled PR with documentation.
+When iteration reveals fundamental issues (too many edges needed, circular dependencies, test coverage gaps), reconsider the split boundaries. Try different cut points, merge specific PRs that have proven coupling, or ask branch subagents for splittability analysis. Do not fall back to a vague catchall branch — if two things must be together, name the specific coupling.
 
 ### Ongoing Maintenance
 
