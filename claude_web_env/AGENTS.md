@@ -3,9 +3,19 @@
 ## Agent Instructions
 
 - **Container content goes in `rootfs/`** — organized to mirror live filesystem paths.
-- **Reference snapshots go in `reference/`** — documentation, not build inputs.
+- **Reference snapshots go in `reference/`** — proprietary binaries (environment-manager, process_api) are stored here as gzipped files and baked into the Dockerfile.
 - **Exclusions** in `exclusions.yaml` have inline comments. Use `volatile_paths` for non-deterministic tool installations. Use `only_in_live` only for things that truly cannot be reproduced.
 - **Prefer baking files in** over excluding them. Snapshot and COPY into `rootfs/` rather than adding to `only_in_live`.
+
+### Exclusion Minimization Goal
+
+The goal is **zero exclusions** that aren't:
+
+1. **Session start hook artifacts** — files created by `tools/claude_hooks` at runtime
+2. **Unavoidable runtime differences** — `/proc`, `/sys`, `/dev`, caches, runtime state
+
+If a difference can be fixed by updating the Dockerfile (pinning a version, adding a file), **fix it in the Dockerfile** rather than adding an exclusion. Exclusions should be a last resort for truly unavoidable runtime differences.
+
 - **Do not commit secrets or tokens**. Reference files have tokens redacted.
 - **Pydantic models** in `tools/manifest.py` are shared between capture and diff tools.
 

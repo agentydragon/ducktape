@@ -2,28 +2,6 @@
 
 **live** vs **built**
 
-Generated: 2026-02-03
-
-## Status
-
-**Build v11**: Added stripping, PHP 8.4 version pin, and python3-apt version pin.
-
-Previous run (v10) showed 241 real differences. The changes in this version:
-
-1. **Stripping added**: `rm -rf` for `/usr/share/doc`, `/usr/share/man`, `/usr/include`,
-   `/usr/sbin`, `/usr/share/X11`, etc. to match live container's size optimization.
-
-2. **PHP 8.4 pinned**: Version `8.4.15-1+ubuntu24.04.1+deb.sury.org+1` via APT preferences.
-
-3. **python3-apt pinned**: Version `2.7.7ubuntu5.1` to match live.
-
-## Remaining Work
-
-For exact binary matching, still need to pin:
-
-- util-linux, binutils, gdb to specific versions
-- Use snapshot.ubuntu.com for remaining packages
-
 ## Summary
 
 |                      | Count   | %        |
@@ -35,175 +13,1057 @@ For exact binary matching, still need to pin:
 
 ## Real Differences
 
-### Only in live (4)
+### Only in live (9,780)
 
-**python-libs** (4)
+**claude-config** (19)
 
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.1.egg-info`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.1.egg-info/PKG-INFO`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.1.egg-info/dependency_links.txt`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.1.egg-info/top_level.txt`
+- `/root/.claude/projects`
+- `/root/.claude/projects/-home-user-ducktape`
+- `/root/.claude/projects/-home-user-ducktape/0775ce23-04d5-4751-b6f1-cdbec04ac683.jsonl`
+- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7`
+- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7.jsonl`
+- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/subagents`
+- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/subagents/agent-acaacba.jsonl`
+- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/tool-results`
+- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/tool-results/toolu_01LMQEQ1TWubyFwvTpbBWNky.txt`
+- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/tool-results/toolu_01VCDzsPmsaBatFLMdT2jTUh.txt`
+- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/tool-results/toolu_01XdUkURbb7BW4uxonGYVj1Z.txt`
+- `/root/.claude/projects/-home-user-ducktape/31b379ae-b7b0-4577-a6f4-1e0ba0ab5a59.jsonl`
+- `/root/.claude/projects/-home-user-ducktape/50406050-908c-4557-b23f-d6d1b317af05`
+- `/root/.claude/projects/-home-user-ducktape/50406050-908c-4557-b23f-d6d1b317af05.jsonl`
+- `/root/.claude/projects/-home-user-ducktape/50406050-908c-4557-b23f-d6d1b317af05/tool-results`
+- `/root/.claude/projects/-home-user-ducktape/50406050-908c-4557-b23f-d6d1b317af05/tool-results/toolu_01HBJupEZkDhyp1WYkMXygJS.txt`
+- `/root/.claude/projects/-home-user-ducktape/afb10456-1b8a-4aab-bfbc-509654cb3fe0.jsonl`
+- `/root/.claude/projects/-home-user-ducktape/sessions-index.json`
+- `/root/.claude/stop-hook-git-check.sh`
 
-### Only in built (4)
+**docs** (2145)
 
-**python-libs** (4)
+- `/usr/share/doc`
+- `/usr/share/doc-base`
+- `/usr/share/doc-base/automake.automake-1.16`
+- `/usr/share/doc-base/base-passwd.users-and-groups`
+- `/usr/share/doc-base/bc.bc`
+- `/usr/share/doc-base/findutils.findutils`
+- `/usr/share/doc-base/fontconfig.fontconfig-user`
+- `/usr/share/doc-base/libexpat1-dev.expat`
+- `/usr/share/doc-base/libffi-dev.libffi`
+- `/usr/share/doc-base/libpng16-16t64.libpng16`
+- `/usr/share/doc-base/nano.nano`
+- `/usr/share/doc-base/nano.nano-faq`
+- `/usr/share/doc-base/ninja-build.ninja-build-manual`
+- `/usr/share/doc-base/python3.python-policy`
+- `/usr/share/doc-base/shared-mime-info.shared-mime-info`
+- `/usr/share/doc-base/valgrind.valgrind`
+- `/usr/share/doc/aardvark-dns`
+- `/usr/share/doc/aardvark-dns/changelog.Debian.gz`
+- `/usr/share/doc/aardvark-dns/copyright`
+- `/usr/share/doc/adduser`
+- `/usr/share/doc/adduser/changelog.gz`
+- `/usr/share/doc/adduser/copyright`
+- `/usr/share/doc/adduser/examples`
+- `/usr/share/doc/adduser/examples/adduser.local.conf.examples`
+- `/usr/share/doc/adduser/examples/adduser.local.conf.examples/skel`
+- `/usr/share/doc/adduser/examples/adduser.local.conf.examples/skel.other`
+- `/usr/share/doc/adwaita-icon-theme`
+- `/usr/share/doc/adwaita-icon-theme/changelog.Debian.gz`
+- `/usr/share/doc/adwaita-icon-theme/copyright`
+- `/usr/share/doc/age`
+- `/usr/share/doc/age/changelog.Debian.gz`
+- `/usr/share/doc/age/copyright`
+- `/usr/share/doc/apt`
+- `/usr/share/doc/apt-transport-https`
+- `/usr/share/doc/apt-transport-https/NEWS.Debian.gz`
+- `/usr/share/doc/apt-transport-https/changelog.gz`
+- `/usr/share/doc/apt-transport-https/copyright`
+- `/usr/share/doc/apt/NEWS.Debian.gz`
+- `/usr/share/doc/apt/changelog.gz`
+- `/usr/share/doc/apt/copyright`
+- `/usr/share/doc/apt/examples`
+- `/usr/share/doc/at-spi2-common`
+- `/usr/share/doc/at-spi2-common/changelog.Debian.gz`
+- `/usr/share/doc/at-spi2-common/copyright`
+- `/usr/share/doc/autoconf`
+- `/usr/share/doc/autoconf/changelog.Debian.gz`
+- `/usr/share/doc/autoconf/copyright`
+- `/usr/share/doc/automake`
+- `/usr/share/doc/automake/changelog.Debian.gz`
+- `/usr/share/doc/automake/copyright`
+- `/usr/share/doc/autotools-dev`
+- `/usr/share/doc/autotools-dev/changelog.gz`
+- `/usr/share/doc/autotools-dev/copyright`
+- `/usr/share/doc/base-files`
+- `/usr/share/doc/base-files/FAQ`
+- `/usr/share/doc/base-files/changelog.gz`
+- `/usr/share/doc/base-files/copyright`
+- `/usr/share/doc/base-passwd`
+- `/usr/share/doc/base-passwd/changelog.gz`
+- `/usr/share/doc/base-passwd/copyright`
+- `/usr/share/doc/bash`
+- `/usr/share/doc/bash/changelog.Debian.gz`
+- `/usr/share/doc/bash/copyright`
+- `/usr/share/doc/bc`
+- `/usr/share/doc/bc/changelog.Debian.gz`
+- `/usr/share/doc/bc/copyright`
+- `/usr/share/doc/bc/examples`
+- `/usr/share/doc/bigreqsproto`
+- `/usr/share/doc/binutils`
+- `/usr/share/doc/binutils-common`
+- `/usr/share/doc/binutils-common/changelog.Debian.gz`
+- `/usr/share/doc/binutils-common/copyright`
+- `/usr/share/doc/binutils/bfd`
+- `/usr/share/doc/binutils/changelog.Debian.gz`
+- `/usr/share/doc/binutils/copyright`
+- `/usr/share/doc/binutils/gas`
+- `/usr/share/doc/binutils/gprof`
+- `/usr/share/doc/binutils/ld`
+- `/usr/share/doc/bison`
+- `/usr/share/doc/bison/changelog.Debian.gz`
+- `/usr/share/doc/bison/copyright`
+- `/usr/share/doc/bison/examples`
+- `/usr/share/doc/bison/examples/c`
+- `/usr/share/doc/bison/examples/c++`
+- `/usr/share/doc/bison/examples/c++/calc++`
+- `/usr/share/doc/bison/examples/c/bistromathic`
+- `/usr/share/doc/bison/examples/c/calc`
+- `/usr/share/doc/bison/examples/c/glr`
+- `/usr/share/doc/bison/examples/c/lexcalc`
+- `/usr/share/doc/bison/examples/c/mfcalc`
+- `/usr/share/doc/bison/examples/c/pushcalc`
+- `/usr/share/doc/bison/examples/c/reccalc`
+- `/usr/share/doc/bison/examples/c/rpcalc`
+- `/usr/share/doc/bison/examples/d`
+- `/usr/share/doc/bison/examples/d/calc`
+- `/usr/share/doc/bison/examples/d/simple`
+- `/usr/share/doc/bison/examples/java`
+- `/usr/share/doc/bison/examples/java/calc`
+- `/usr/share/doc/bison/examples/java/simple`
+- `/usr/share/doc/bsdutils`
+- _...and 2045 more_
 
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.egg-info`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.egg-info/PKG-INFO`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.egg-info/dependency_links.txt`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.egg-info/top_level.txt`
+**etc** (5)
 
-### Content changed (hash differs) (233)
+- `/etc/apt/preferences.d`
+- `/etc/php/8.4/cli/conf.d/20-pdo_sqlite.ini`
+- `/etc/php/8.4/cli/conf.d/20-sqlite3.ini`
+- `/etc/php/8.4/mods-available/pdo_sqlite.ini`
+- `/etc/php/8.4/mods-available/sqlite3.ini`
 
-**docs** (19)
+**headers** (4631)
 
-- `/usr/share/doc/binutils-common/changelog.Debian.gz` — size 1928->1963
-- `/usr/share/doc/bsdutils/changelog.Debian.gz` — size 13927->14002
-- `/usr/share/doc/fonts-opensymbol/changelog.Debian.gz` — size 36166->42367
-- `/usr/share/doc/fonts-opensymbol/copyright` — size 21830->20199
-- `/usr/share/doc/gdb/changelog.Debian.gz` — size 4004->4529
-- `/usr/share/doc/libblkid1/changelog.Debian.gz` — size 13925->14001
-- `/usr/share/doc/libctf-nobfd0/changelog.Debian.gz` — size 1931->1965
-- `/usr/share/doc/libcups2t64/changelog.Debian.gz` — size 10464->10249
-- `/usr/share/doc/libsframe1/changelog.Debian.gz` — size 1928->1962
-- `/usr/share/doc/libsmartcols1/changelog.Debian.gz` — size 13926->14001
-- `/usr/share/doc/libsubid4/changelog.Debian.gz` — size 6467->6641
-- `/usr/share/doc/libuuid1/changelog.Debian.gz` — size 13929->14004
-- `/usr/share/doc/login/changelog.Debian.gz` — size 6466->6641
-- `/usr/share/doc/passwd/changelog.Debian.gz` — size 6467->6641
-- `/usr/share/doc/php-common/changelog.gz` — size 2107->2169
-- `/usr/share/doc/php8.4-common/changelog.Debian.gz` — size 7882->8090
-- `/usr/share/doc/php8.4-common/changelog.gz` — size 24220->26057
-- `/usr/share/doc/python-apt-common/changelog.gz` — size 6832->6737
-- `/usr/share/doc/python3-apt/changelog.gz` — size 6831->6736
+- `/usr/include`
+- `/usr/include/GL`
+- `/usr/include/GL/glxint.h`
+- `/usr/include/GL/glxmd.h`
+- `/usr/include/GL/glxproto.h`
+- `/usr/include/GL/glxtokens.h`
+- `/usr/include/GL/internal`
+- `/usr/include/GL/internal/glcore.h`
+- `/usr/include/X11`
+- `/usr/include/X11/DECkeysym.h`
+- `/usr/include/X11/HPkeysym.h`
+- `/usr/include/X11/ICE`
+- `/usr/include/X11/ICE/ICE.h`
+- `/usr/include/X11/ICE/ICEconn.h`
+- `/usr/include/X11/ICE/ICElib.h`
+- `/usr/include/X11/ICE/ICEmsg.h`
+- `/usr/include/X11/ICE/ICEproto.h`
+- `/usr/include/X11/ICE/ICEutil.h`
+- `/usr/include/X11/ImUtil.h`
+- `/usr/include/X11/SM`
+- `/usr/include/X11/SM/SM.h`
+- `/usr/include/X11/SM/SMlib.h`
+- `/usr/include/X11/SM/SMproto.h`
+- `/usr/include/X11/Sunkeysym.h`
+- `/usr/include/X11/X.h`
+- `/usr/include/X11/XF86keysym.h`
+- `/usr/include/X11/XKBlib.h`
+- `/usr/include/X11/XWDFile.h`
+- `/usr/include/X11/Xalloca.h`
+- `/usr/include/X11/Xarch.h`
+- `/usr/include/X11/Xatom.h`
+- `/usr/include/X11/Xauth.h`
+- `/usr/include/X11/Xcms.h`
+- `/usr/include/X11/Xdefs.h`
+- `/usr/include/X11/Xdmcp.h`
+- `/usr/include/X11/Xfuncproto.h`
+- `/usr/include/X11/Xfuncs.h`
+- `/usr/include/X11/Xlib.h`
+- `/usr/include/X11/XlibConf.h`
+- `/usr/include/X11/Xlibint.h`
+- `/usr/include/X11/Xlocale.h`
+- `/usr/include/X11/Xmd.h`
+- `/usr/include/X11/Xos.h`
+- `/usr/include/X11/Xos_r.h`
+- `/usr/include/X11/Xosdefs.h`
+- `/usr/include/X11/Xpoll.h`
+- `/usr/include/X11/Xproto.h`
+- `/usr/include/X11/Xprotostr.h`
+- `/usr/include/X11/Xregion.h`
+- `/usr/include/X11/Xresource.h`
+- `/usr/include/X11/Xthreads.h`
+- `/usr/include/X11/Xtrans`
+- `/usr/include/X11/Xtrans/Xtrans.c`
+- `/usr/include/X11/Xtrans/Xtrans.h`
+- `/usr/include/X11/Xtrans/Xtransint.h`
+- `/usr/include/X11/Xtrans/Xtranslcl.c`
+- `/usr/include/X11/Xtrans/Xtranssock.c`
+- `/usr/include/X11/Xtrans/Xtransutil.c`
+- `/usr/include/X11/Xtrans/transport.c`
+- `/usr/include/X11/Xutil.h`
+- `/usr/include/X11/Xw32defs.h`
+- `/usr/include/X11/Xwindows.h`
+- `/usr/include/X11/Xwinsock.h`
+- `/usr/include/X11/ap_keysym.h`
+- `/usr/include/X11/cursorfont.h`
+- `/usr/include/X11/dri`
+- `/usr/include/X11/dri/xf86dri.h`
+- `/usr/include/X11/dri/xf86driproto.h`
+- `/usr/include/X11/dri/xf86dristr.h`
+- `/usr/include/X11/extensions`
+- `/usr/include/X11/extensions/EVI.h`
+- `/usr/include/X11/extensions/EVIproto.h`
+- `/usr/include/X11/extensions/MITMisc.h`
+- `/usr/include/X11/extensions/XEVI.h`
+- `/usr/include/X11/extensions/XI.h`
+- `/usr/include/X11/extensions/XI2.h`
+- `/usr/include/X11/extensions/XI2proto.h`
+- `/usr/include/X11/extensions/XIproto.h`
+- `/usr/include/X11/extensions/XKB.h`
+- `/usr/include/X11/extensions/XKBgeom.h`
+- `/usr/include/X11/extensions/XKBproto.h`
+- `/usr/include/X11/extensions/XKBsrv.h`
+- `/usr/include/X11/extensions/XKBstr.h`
+- `/usr/include/X11/extensions/XLbx.h`
+- `/usr/include/X11/extensions/XResproto.h`
+- `/usr/include/X11/extensions/XShm.h`
+- `/usr/include/X11/extensions/Xag.h`
+- `/usr/include/X11/extensions/Xcup.h`
+- `/usr/include/X11/extensions/Xdbe.h`
+- `/usr/include/X11/extensions/Xext.h`
+- `/usr/include/X11/extensions/Xge.h`
+- `/usr/include/X11/extensions/Xrender.h`
+- `/usr/include/X11/extensions/Xv.h`
+- `/usr/include/X11/extensions/XvMC.h`
+- `/usr/include/X11/extensions/XvMCproto.h`
+- `/usr/include/X11/extensions/Xvproto.h`
+- `/usr/include/X11/extensions/ag.h`
+- `/usr/include/X11/extensions/agproto.h`
+- `/usr/include/X11/extensions/applewmconst.h`
+- `/usr/include/X11/extensions/applewmproto.h`
+- _...and 4531 more_
 
-**etc** (1)
+**home** (128)
 
+- `/home/claude/.cache`
+- `/home/claude/.claude/remote`
+- `/home/claude/.claude/remote/.session_ingress_token`
+- `/home/claude/.npm`
+- `/home/claude/.npm/_cacache`
+- `/home/claude/.npm/_cacache/content-v2`
+- `/home/claude/.npm/_cacache/content-v2/sha512`
+- `/home/claude/.npm/_cacache/content-v2/sha512/0d`
+- `/home/claude/.npm/_cacache/content-v2/sha512/0d/7e`
+- `/home/claude/.npm/_cacache/content-v2/sha512/0d/7e/846dbbf4d16c88fdca02b327844fe2ba315592ca9e66998748e50944a19dee45a12685264c7bc5c79bce275bc5551e39de8f15aa8362320e787b7f32a48e`
+- `/home/claude/.npm/_cacache/content-v2/sha512/1e`
+- `/home/claude/.npm/_cacache/content-v2/sha512/1e/cf`
+- `/home/claude/.npm/_cacache/content-v2/sha512/1e/cf/6651a595aebf6d168d06ecc404199dfaa0c58d0caa928dbf9cd1e029dc8cbcf6c59d1c298e98befe0124a06597fa5f231786626eb135023a2ab143959f9d`
+- `/home/claude/.npm/_cacache/content-v2/sha512/32`
+- `/home/claude/.npm/_cacache/content-v2/sha512/32/65`
+- `/home/claude/.npm/_cacache/content-v2/sha512/32/65/a643788f159af421ebfe04081531bdd9c82e0a7857378c5c6735b10f6aceb47b57087debdbb6ec9ff670c623339a5bd3dd9c3722266fb0145693963e7163`
+- `/home/claude/.npm/_cacache/content-v2/sha512/3b`
+- `/home/claude/.npm/_cacache/content-v2/sha512/3b/4e`
+- `/home/claude/.npm/_cacache/content-v2/sha512/3b/4e/1c70c2f46802b7c3a55d50cc3b50148155d3950909d4948946dd53ae9061d29ec8163fc1b73e8cd04978c8d1dbf5833bfc48b8ba7fb365c2115e4333b61f`
+- `/home/claude/.npm/_cacache/content-v2/sha512/46`
+- `/home/claude/.npm/_cacache/content-v2/sha512/46/2d`
+- `/home/claude/.npm/_cacache/content-v2/sha512/46/2d/7f0ac60b84d6d74c01c140def327ea54e16d629deb9de1bccef9a1871dd77ff03eece9ecfec46b5dcb0b46c177bf9f7cc1613175e7708e8fdb18848b4491`
+- `/home/claude/.npm/_cacache/content-v2/sha512/4b`
+- `/home/claude/.npm/_cacache/content-v2/sha512/4b/91`
+- `/home/claude/.npm/_cacache/content-v2/sha512/4b/91/b0a2b2ddcfaaf622dcd4d208265d05219dbe4b2762f79fa89b35e44acdd5ac63b5269d2e5f35afe25765a0dce983dfc8abd596cf286c2c16eb8f41902b3e`
+- `/home/claude/.npm/_cacache/content-v2/sha512/5b`
+- `/home/claude/.npm/_cacache/content-v2/sha512/5b/70`
+- `/home/claude/.npm/_cacache/content-v2/sha512/5b/70/e5c3afa3be294d9ce0ffbe320b9dc702414b0ff974d7a3bc38f64d9efbbb3361ce194a9773e3385a655dabc0ff17a6af4c04b3704d3ae6682daa643477ec`
+- `/home/claude/.npm/_cacache/content-v2/sha512/73`
+- `/home/claude/.npm/_cacache/content-v2/sha512/73/15`
+- `/home/claude/.npm/_cacache/content-v2/sha512/73/15/4038c8d1ece43ba1c96889b4119f6190b63d8e98e26d71e5962b504b62c9cc42696532fcced4213df977ec14d0de93c5e7f57f850d3666d88c6aaeb9d4e1`
+- `/home/claude/.npm/_cacache/content-v2/sha512/7a`
+- `/home/claude/.npm/_cacache/content-v2/sha512/7a/7e`
+- `/home/claude/.npm/_cacache/content-v2/sha512/7a/7e/fa28b14637a0afe9dfcf0103094fcbcb6923c1df2befa24f9d29ae267594044915638d17710cb65406fbce61c1f785d106844d38bd7b7dafc7e7b8a850b8`
+- `/home/claude/.npm/_cacache/content-v2/sha512/7f`
+- `/home/claude/.npm/_cacache/content-v2/sha512/7f/63`
+- `/home/claude/.npm/_cacache/content-v2/sha512/7f/63/135df3d726e7ab2f0bc878ef753b56c088b3589e245e7a37e2050a196a87d851aa09eb8ee355cb814616431cbf7b4ada0aad64fa4adec43743ef91aab607`
+- `/home/claude/.npm/_cacache/content-v2/sha512/86`
+- `/home/claude/.npm/_cacache/content-v2/sha512/86/1f`
+- `/home/claude/.npm/_cacache/content-v2/sha512/86/1f/e037582a911c0149d9a43a9d2b365a53d8ba57b706ffb18b1addb07c9a2a177296416c0791fae7f56138025953a0ccdaf4cd0929b2b8ca32d114d7990e8a`
+- `/home/claude/.npm/_cacache/content-v2/sha512/8f`
+- `/home/claude/.npm/_cacache/content-v2/sha512/8f/f3`
+- `/home/claude/.npm/_cacache/content-v2/sha512/8f/f3/2f336697d2c7d207824dd19945d56c89376670d17870d23df231c7562aceab4a712019c57f6211867d357a44fe6d4a2601d8a52c9388616ed8749022bae6`
+- `/home/claude/.npm/_cacache/content-v2/sha512/9c`
+- `/home/claude/.npm/_cacache/content-v2/sha512/9c/e5`
+- `/home/claude/.npm/_cacache/content-v2/sha512/9c/e5/d71bbae9b87e6be902a29b5309f16980e98ed4c4238656ff85916cedea0dafc963e60cc55d29064037e717ae130ec48765939a3e3d541d8d6c2134ac0b33`
+- `/home/claude/.npm/_cacache/content-v2/sha512/a2`
+- `/home/claude/.npm/_cacache/content-v2/sha512/a2/90`
+- `/home/claude/.npm/_cacache/content-v2/sha512/a2/90/be3a4e6944d033bafab5006d1aafed68c2cbbce36fc06fee2abd4f3bf62a692411efc98e67da6c45d62cd7aa43d8946b8ffcce79eae879de344b266cd358`
+- `/home/claude/.npm/_cacache/content-v2/sha512/c7`
+- `/home/claude/.npm/_cacache/content-v2/sha512/c7/65`
+- `/home/claude/.npm/_cacache/content-v2/sha512/c7/65/5c69ec767ec60aace17bb1e7433df946a85595a9a86cc4a60ca30a05cbe39cecbb7e4dde1ebfdd060e29b84194a16a8d85a2dbe0fa7bc375c3f63f503f2e`
+- `/home/claude/.npm/_cacache/content-v2/sha512/de`
+- `/home/claude/.npm/_cacache/content-v2/sha512/de/56`
+- `/home/claude/.npm/_cacache/content-v2/sha512/de/56/621f5def4f31fe511a3ba1af19c976bcd109e8b1a61b7d12a497c246d31296543cde1aa8a150630b260d8a9f501a17ba4455a38576f6484785b2f7b4ae2c`
+- `/home/claude/.npm/_cacache/content-v2/sha512/e0`
+- `/home/claude/.npm/_cacache/content-v2/sha512/e0/f3`
+- `/home/claude/.npm/_cacache/content-v2/sha512/e0/f3/92ebc0b8cd7606e43f107a3918d313873ceb94dfb0383f8d9c64a64db74ed3cac00362775eaf5ee568e1a8e66a938442fb09b0cf49e119546f27cfb88f41`
+- `/home/claude/.npm/_cacache/content-v2/sha512/f2`
+- `/home/claude/.npm/_cacache/content-v2/sha512/f2/3f`
+- `/home/claude/.npm/_cacache/content-v2/sha512/f2/3f/8378e67d9e4a10b4069c605147af107da43544985aedadd22d8730260c20606151b50dbd6556bf6ce0aa1c1f2c49159ba00bc2e37989f333a49ed9907923`
+- `/home/claude/.npm/_cacache/content-v2/sha512/fd`
+- `/home/claude/.npm/_cacache/content-v2/sha512/fd/b5`
+- `/home/claude/.npm/_cacache/content-v2/sha512/fd/b5/2542e5ffea72abd59a9f8bff50eb17fb5a89d4064ef665f28a10d538595ac8156a93bffd0926ca16fdd1e897d401347bf27ca21e05b62ee1abc7351027b9`
+- `/home/claude/.npm/_cacache/index-v5`
+- `/home/claude/.npm/_cacache/index-v5/00`
+- `/home/claude/.npm/_cacache/index-v5/00/43`
+- `/home/claude/.npm/_cacache/index-v5/00/43/a0ead520e951af86b0b40b3df8be3134fff253466b80c30a550f951731d6`
+- `/home/claude/.npm/_cacache/index-v5/08`
+- `/home/claude/.npm/_cacache/index-v5/08/a6`
+- `/home/claude/.npm/_cacache/index-v5/08/a6/521cef516f9e0b5e4ce99282650a4fbca19fd04a8ec1ecb1e0b0ef39d6c5`
+- `/home/claude/.npm/_cacache/index-v5/14`
+- `/home/claude/.npm/_cacache/index-v5/14/a1`
+- `/home/claude/.npm/_cacache/index-v5/14/a1/a5a7642e43153dcca40946d6ed114d4d31e8bb77d300f1e1a4668becee8a`
+- `/home/claude/.npm/_cacache/index-v5/26`
+- `/home/claude/.npm/_cacache/index-v5/26/53`
+- `/home/claude/.npm/_cacache/index-v5/26/53/eb6f1082a41ac955362feab31a32f15571f5b09ce2082db5be486b750454`
+- `/home/claude/.npm/_cacache/index-v5/2a`
+- `/home/claude/.npm/_cacache/index-v5/2a/62`
+- `/home/claude/.npm/_cacache/index-v5/2a/62/d0d3541f4fc436104dd14b9f829fbc312a2e53a1c4f71791b0cf5c859f2c`
+- `/home/claude/.npm/_cacache/index-v5/37`
+- `/home/claude/.npm/_cacache/index-v5/37/fa`
+- `/home/claude/.npm/_cacache/index-v5/37/fa/2b5671ab311a0a6535b0d32c8404d9325fa5ce38827ac03e9e4680f1db01`
+- `/home/claude/.npm/_cacache/index-v5/41`
+- `/home/claude/.npm/_cacache/index-v5/41/c5`
+- `/home/claude/.npm/_cacache/index-v5/41/c5/4270bf1cd1aae004ed6fee83989ac428601f4c060987660e9a1aef9d53b6`
+- `/home/claude/.npm/_cacache/index-v5/44`
+- `/home/claude/.npm/_cacache/index-v5/44/b0`
+- `/home/claude/.npm/_cacache/index-v5/44/b0/79f421ad4e7e7b67c4b8bfb2d8f046a60ef531f26d64a980907323aa61f3`
+- `/home/claude/.npm/_cacache/index-v5/58`
+- `/home/claude/.npm/_cacache/index-v5/58/53`
+- `/home/claude/.npm/_cacache/index-v5/58/53/3547360701ba611d524ad8352e9692354308d04a95951b3d152c02e6ff16`
+- `/home/claude/.npm/_cacache/index-v5/66`
+- `/home/claude/.npm/_cacache/index-v5/66/61`
+- `/home/claude/.npm/_cacache/index-v5/66/61/0da7e0da899fb53831b2e9c4210493a56b6c00f8c5b822ef332b6480b041`
+- `/home/claude/.npm/_cacache/index-v5/80`
+- `/home/claude/.npm/_cacache/index-v5/80/b8`
+- `/home/claude/.npm/_cacache/index-v5/80/b8/d0499a46d0be0e0da3683c6801408a5a9943022610b91438a6289ae62534`
+- `/home/claude/.npm/_cacache/index-v5/81`
+- `/home/claude/.npm/_cacache/index-v5/81/5b`
+- _...and 28 more_
+
+**man-pages** (321)
+
+- `/usr/share/man`
+- `/usr/share/man/cs`
+- `/usr/share/man/cs/man5`
+- `/usr/share/man/cs/man8`
+- `/usr/share/man/da`
+- `/usr/share/man/da/man1`
+- `/usr/share/man/da/man8`
+- `/usr/share/man/de`
+- `/usr/share/man/de/man1`
+- `/usr/share/man/de/man5`
+- `/usr/share/man/de/man8`
+- `/usr/share/man/es`
+- `/usr/share/man/es/man1`
+- `/usr/share/man/es/man5`
+- `/usr/share/man/es/man8`
+- `/usr/share/man/fr`
+- `/usr/share/man/fr/man1`
+- `/usr/share/man/fr/man5`
+- `/usr/share/man/fr/man8`
+- `/usr/share/man/hu`
+- `/usr/share/man/hu/man1`
+- `/usr/share/man/id`
+- `/usr/share/man/id/man1`
+- `/usr/share/man/it`
+- `/usr/share/man/it/man1`
+- `/usr/share/man/it/man5`
+- `/usr/share/man/it/man8`
+- `/usr/share/man/ja`
+- `/usr/share/man/ja/man1`
+- `/usr/share/man/ja/man5`
+- `/usr/share/man/ja/man8`
+- `/usr/share/man/ko`
+- `/usr/share/man/ko/man1`
+- `/usr/share/man/man1`
+- `/usr/share/man/man1/clusterdb.1.gz`
+- `/usr/share/man/man1/createdb.1.gz`
+- `/usr/share/man/man1/createuser.1.gz`
+- `/usr/share/man/man1/dropdb.1.gz`
+- `/usr/share/man/man1/dropuser.1.gz`
+- `/usr/share/man/man1/initdb.1.gz`
+- `/usr/share/man/man1/jar.1.gz`
+- `/usr/share/man/man1/jarsigner.1.gz`
+- `/usr/share/man/man1/java.1.gz`
+- `/usr/share/man/man1/javac.1.gz`
+- `/usr/share/man/man1/javadoc.1.gz`
+- `/usr/share/man/man1/javap.1.gz`
+- `/usr/share/man/man1/jcmd.1.gz`
+- `/usr/share/man/man1/jconsole.1.gz`
+- `/usr/share/man/man1/jdb.1.gz`
+- `/usr/share/man/man1/jdeprscan.1.gz`
+- `/usr/share/man/man1/jdeps.1.gz`
+- `/usr/share/man/man1/jfr.1.gz`
+- `/usr/share/man/man1/jhsdb.1.gz`
+- `/usr/share/man/man1/jinfo.1.gz`
+- `/usr/share/man/man1/jlink.1.gz`
+- `/usr/share/man/man1/jmap.1.gz`
+- `/usr/share/man/man1/jmod.1.gz`
+- `/usr/share/man/man1/jpackage.1.gz`
+- `/usr/share/man/man1/jps.1.gz`
+- `/usr/share/man/man1/jrunscript.1.gz`
+- `/usr/share/man/man1/jshell.1.gz`
+- `/usr/share/man/man1/jstack.1.gz`
+- `/usr/share/man/man1/jstat.1.gz`
+- `/usr/share/man/man1/jstatd.1.gz`
+- `/usr/share/man/man1/jwebserver.1.gz`
+- `/usr/share/man/man1/keytool.1.gz`
+- `/usr/share/man/man1/oid2name.1.gz`
+- `/usr/share/man/man1/pg_amcheck.1.gz`
+- `/usr/share/man/man1/pg_archivecleanup.1.gz`
+- `/usr/share/man/man1/pg_basebackup.1.gz`
+- `/usr/share/man/man1/pg_checksums.1.gz`
+- `/usr/share/man/man1/pg_controldata.1.gz`
+- `/usr/share/man/man1/pg_ctl.1.gz`
+- `/usr/share/man/man1/pg_dump.1.gz`
+- `/usr/share/man/man1/pg_dumpall.1.gz`
+- `/usr/share/man/man1/pg_isready.1.gz`
+- `/usr/share/man/man1/pg_receivewal.1.gz`
+- `/usr/share/man/man1/pg_recvlogical.1.gz`
+- `/usr/share/man/man1/pg_resetwal.1.gz`
+- `/usr/share/man/man1/pg_restore.1.gz`
+- `/usr/share/man/man1/pg_rewind.1.gz`
+- `/usr/share/man/man1/pg_test_fsync.1.gz`
+- `/usr/share/man/man1/pg_test_timing.1.gz`
+- `/usr/share/man/man1/pg_upgrade.1.gz`
+- `/usr/share/man/man1/pg_verifybackup.1.gz`
+- `/usr/share/man/man1/pg_waldump.1.gz`
+- `/usr/share/man/man1/pgbench.1.gz`
+- `/usr/share/man/man1/postgres.1.gz`
+- `/usr/share/man/man1/psql.1.gz`
+- `/usr/share/man/man1/reindexdb.1.gz`
+- `/usr/share/man/man1/rmiregistry.1.gz`
+- `/usr/share/man/man1/serialver.1.gz`
+- `/usr/share/man/man1/vacuumdb.1.gz`
+- `/usr/share/man/man1/vacuumlo.1.gz`
+- `/usr/share/man/man3`
+- `/usr/share/man/man5`
+- `/usr/share/man/man7`
+- `/usr/share/man/man7/ABORT.7.gz`
+- `/usr/share/man/man7/ALTER_AGGREGATE.7.gz`
+- `/usr/share/man/man7/ALTER_COLLATION.7.gz`
+- _...and 221 more_
+
+**other** (8)
+
+- `/usr/lib/php/20240924/pdo_sqlite.so`
+- `/usr/lib/php/20240924/sqlite3.so`
+- `/usr/src`
+- `/usr/src/python3.12`
+- `/usr/src/python3.12/Grammar`
+- `/usr/src/python3.12/Grammar/python.gram`
+- `/usr/src/python3.12/Parser`
+- `/usr/src/python3.12/Parser/Python.asdl`
+
+**root-home** (1)
+
+- `/root/.bazelrc`
+
+**root-local** (1727)
+
+- `/root/.local/share/pnpm`
+- `/root/.local/share/pnpm/store`
+- `/root/.local/share/pnpm/store/v3`
+- `/root/.local/share/virtualenv`
+- `/root/.local/share/virtualenv/py_info`
+- `/root/.local/share/virtualenv/py_info/2`
+- `/root/.local/share/virtualenv/py_info/2/8544b3b66cebbf8d4bc96652e6245fc8bdfdf722f63bdaa4790110c167815f0e.json`
+- `/root/.local/share/virtualenv/py_info/2/8544b3b66cebbf8d4bc96652e6245fc8bdfdf722f63bdaa4790110c167815f0e.lock`
+- `/root/.local/share/virtualenv/py_info/2/9c258799489e4ad9c78adba3665f3739d83d708c1c6eccff6bcb9776521c4384.json`
+- `/root/.local/share/virtualenv/py_info/2/9c258799489e4ad9c78adba3665f3739d83d708c1c6eccff6bcb9776521c4384.lock`
+- `/root/.local/share/virtualenv/wheel`
+- `/root/.local/share/virtualenv/wheel/3.11`
+- `/root/.local/share/virtualenv/wheel/3.11/embed`
+- `/root/.local/share/virtualenv/wheel/3.11/embed/3`
+- `/root/.local/share/virtualenv/wheel/3.11/embed/3/pip.json`
+- `/root/.local/share/virtualenv/wheel/3.11/embed/3/setuptools.json`
+- `/root/.local/share/virtualenv/wheel/3.11/image`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any.lock`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/INSTALLER`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/METADATA`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/RECORD`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/WHEEL`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/entry_points.txt`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/AUTHORS.txt`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/LICENSE.txt`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/cachecontrol`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/cachecontrol/LICENSE.txt`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/certifi`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/certifi/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/dependency_groups`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/dependency_groups/LICENSE.txt`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/distlib`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/distlib/LICENSE.txt`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/distro`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/distro/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/idna`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/idna/LICENSE.md`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/msgpack`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/msgpack/COPYING`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/packaging`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/packaging/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/packaging/LICENSE.APACHE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/packaging/LICENSE.BSD`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/pkg_resources`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/pkg_resources/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/platformdirs`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/platformdirs/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/pygments`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/pygments/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/pyproject_hooks`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/pyproject_hooks/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/requests`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/requests/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/resolvelib`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/resolvelib/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/rich`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/rich/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/tomli`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/tomli/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/tomli_w`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/tomli_w/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/truststore`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/truststore/LICENSE`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/urllib3`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.dist-info/licenses/src/pip/_vendor/urllib3/LICENSE.txt`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip-25.3.virtualenv`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/__init__.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/__main__.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/__pip-runner__.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/__init__.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/build_env.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cache.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/__init__.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/autocompletion.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/base_command.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/cmdoptions.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/command_context.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/index_command.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/main.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/main_parser.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/parser.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/progress_bars.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/req_command.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/spinners.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/cli/status_codes.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/commands`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/commands/__init__.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/commands/cache.py`
+- `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/commands/check.py`
+- _...and 1627 more_
+
+**system-binaries** (200)
+
+- `/usr/bin/age`
+- `/usr/bin/age-keygen`
+- `/usr/sbin`
+- `/usr/sbin/add-shell`
+- `/usr/sbin/addgnupghome`
+- `/usr/sbin/addgroup`
+- `/usr/sbin/adduser`
+- `/usr/sbin/agetty`
+- `/usr/sbin/applygnupgdefaults`
+- `/usr/sbin/arptables`
+- `/usr/sbin/arptables-nft`
+- `/usr/sbin/arptables-nft-restore`
+- `/usr/sbin/arptables-nft-save`
+- `/usr/sbin/arptables-restore`
+- `/usr/sbin/arptables-save`
+- `/usr/sbin/badblocks`
+- `/usr/sbin/blkdiscard`
+- `/usr/sbin/blkid`
+- `/usr/sbin/blkzone`
+- `/usr/sbin/blockdev`
+- `/usr/sbin/capsh`
+- `/usr/sbin/chcpu`
+- `/usr/sbin/chgpasswd`
+- `/usr/sbin/chmem`
+- `/usr/sbin/chpasswd`
+- `/usr/sbin/chroot`
+- `/usr/sbin/cpgr`
+- `/usr/sbin/cppw`
+- `/usr/sbin/ctrlaltdel`
+- `/usr/sbin/debugfs`
+- `/usr/sbin/delgroup`
+- `/usr/sbin/deluser`
+- `/usr/sbin/dpkg-preconfigure`
+- `/usr/sbin/dpkg-reconfigure`
+- `/usr/sbin/dumpe2fs`
+- `/usr/sbin/e2freefrag`
+- `/usr/sbin/e2fsck`
+- `/usr/sbin/e2image`
+- `/usr/sbin/e2label`
+- `/usr/sbin/e2mmpstatus`
+- `/usr/sbin/e2scrub`
+- `/usr/sbin/e2scrub_all`
+- `/usr/sbin/e2undo`
+- `/usr/sbin/e4crypt`
+- `/usr/sbin/e4defrag`
+- `/usr/sbin/ebtables`
+- `/usr/sbin/ebtables-nft`
+- `/usr/sbin/ebtables-nft-restore`
+- `/usr/sbin/ebtables-nft-save`
+- `/usr/sbin/ebtables-restore`
+- `/usr/sbin/ebtables-save`
+- `/usr/sbin/ebtables-translate`
+- `/usr/sbin/faillock`
+- `/usr/sbin/filefrag`
+- `/usr/sbin/findfs`
+- `/usr/sbin/fsck`
+- `/usr/sbin/fsck.cramfs`
+- `/usr/sbin/fsck.ext2`
+- `/usr/sbin/fsck.ext3`
+- `/usr/sbin/fsck.ext4`
+- `/usr/sbin/fsck.minix`
+- `/usr/sbin/fsfreeze`
+- `/usr/sbin/fstab-decode`
+- `/usr/sbin/fstrim`
+- `/usr/sbin/getcap`
+- `/usr/sbin/getpcaps`
+- `/usr/sbin/getty`
+- `/usr/sbin/groupadd`
+- `/usr/sbin/groupdel`
+- `/usr/sbin/groupmems`
+- `/usr/sbin/groupmod`
+- `/usr/sbin/grpck`
+- `/usr/sbin/grpconv`
+- `/usr/sbin/grpunconv`
+- `/usr/sbin/halt`
+- `/usr/sbin/iconvconfig`
+- `/usr/sbin/init`
+- `/usr/sbin/initctl`
+- `/usr/sbin/install-sgmlcatalog`
+- `/usr/sbin/installkernel`
+- `/usr/sbin/invoke-rc.d`
+- `/usr/sbin/ip6tables`
+- `/usr/sbin/ip6tables-apply`
+- `/usr/sbin/ip6tables-legacy`
+- `/usr/sbin/ip6tables-legacy-restore`
+- `/usr/sbin/ip6tables-legacy-save`
+- `/usr/sbin/ip6tables-nft`
+- `/usr/sbin/ip6tables-nft-restore`
+- `/usr/sbin/ip6tables-nft-save`
+- `/usr/sbin/ip6tables-restore`
+- `/usr/sbin/ip6tables-restore-translate`
+- `/usr/sbin/ip6tables-save`
+- `/usr/sbin/ip6tables-translate`
+- `/usr/sbin/iptables`
+- `/usr/sbin/iptables-apply`
+- `/usr/sbin/iptables-legacy`
+- `/usr/sbin/iptables-legacy-restore`
+- `/usr/sbin/iptables-legacy-save`
+- `/usr/sbin/iptables-nft`
+- `/usr/sbin/iptables-nft-restore`
+- _...and 100 more_
+
+**usr-local** (3)
+
+- `/usr/local/include`
+- `/usr/local/sbin`
+- `/usr/local/src`
+
+**usr-share** (586)
+
+- `/usr/share/PackageKit`
+- `/usr/share/PackageKit/helpers`
+- `/usr/share/PackageKit/helpers/apt`
+- `/usr/share/PackageKit/helpers/apt/pkconffile.nodiff`
+- `/usr/share/PackageKit/helpers/test_spawn`
+- `/usr/share/PackageKit/helpers/test_spawn/search-name.sh`
+- `/usr/share/X11`
+- `/usr/share/X11/XErrorDB`
+- `/usr/share/X11/locale`
+- `/usr/share/X11/locale/C`
+- `/usr/share/X11/locale/C/Compose`
+- `/usr/share/X11/locale/C/XI18N_OBJS`
+- `/usr/share/X11/locale/C/XLC_LOCALE`
+- `/usr/share/X11/locale/am_ET.UTF-8`
+- `/usr/share/X11/locale/am_ET.UTF-8/Compose`
+- `/usr/share/X11/locale/am_ET.UTF-8/XI18N_OBJS`
+- `/usr/share/X11/locale/am_ET.UTF-8/XLC_LOCALE`
+- `/usr/share/X11/locale/armscii-8`
+- `/usr/share/X11/locale/armscii-8/Compose`
+- `/usr/share/X11/locale/armscii-8/XI18N_OBJS`
+- `/usr/share/X11/locale/armscii-8/XLC_LOCALE`
+- `/usr/share/X11/locale/compose.dir`
+- `/usr/share/X11/locale/cs_CZ.UTF-8`
+- `/usr/share/X11/locale/cs_CZ.UTF-8/Compose`
+- `/usr/share/X11/locale/cs_CZ.UTF-8/XI18N_OBJS`
+- `/usr/share/X11/locale/cs_CZ.UTF-8/XLC_LOCALE`
+- `/usr/share/X11/locale/el_GR.UTF-8`
+- `/usr/share/X11/locale/el_GR.UTF-8/Compose`
+- `/usr/share/X11/locale/el_GR.UTF-8/XI18N_OBJS`
+- `/usr/share/X11/locale/el_GR.UTF-8/XLC_LOCALE`
+- `/usr/share/X11/locale/en_US.UTF-8`
+- `/usr/share/X11/locale/en_US.UTF-8/Compose`
+- `/usr/share/X11/locale/en_US.UTF-8/XI18N_OBJS`
+- `/usr/share/X11/locale/en_US.UTF-8/XLC_LOCALE`
+- `/usr/share/X11/locale/fi_FI.UTF-8`
+- `/usr/share/X11/locale/fi_FI.UTF-8/Compose`
+- `/usr/share/X11/locale/fi_FI.UTF-8/XI18N_OBJS`
+- `/usr/share/X11/locale/fi_FI.UTF-8/XLC_LOCALE`
+- `/usr/share/X11/locale/georgian-academy`
+- `/usr/share/X11/locale/georgian-academy/Compose`
+- `/usr/share/X11/locale/georgian-academy/XI18N_OBJS`
+- `/usr/share/X11/locale/georgian-academy/XLC_LOCALE`
+- `/usr/share/X11/locale/georgian-ps`
+- `/usr/share/X11/locale/georgian-ps/Compose`
+- `/usr/share/X11/locale/georgian-ps/XI18N_OBJS`
+- `/usr/share/X11/locale/georgian-ps/XLC_LOCALE`
+- `/usr/share/X11/locale/ibm-cp1133`
+- `/usr/share/X11/locale/ibm-cp1133/Compose`
+- `/usr/share/X11/locale/ibm-cp1133/XI18N_OBJS`
+- `/usr/share/X11/locale/ibm-cp1133/XLC_LOCALE`
+- `/usr/share/X11/locale/iscii-dev`
+- `/usr/share/X11/locale/iscii-dev/Compose`
+- `/usr/share/X11/locale/iscii-dev/XI18N_OBJS`
+- `/usr/share/X11/locale/iscii-dev/XLC_LOCALE`
+- `/usr/share/X11/locale/isiri-3342`
+- `/usr/share/X11/locale/isiri-3342/Compose`
+- `/usr/share/X11/locale/isiri-3342/XI18N_OBJS`
+- `/usr/share/X11/locale/isiri-3342/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-1`
+- `/usr/share/X11/locale/iso8859-1/Compose`
+- `/usr/share/X11/locale/iso8859-1/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-1/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-10`
+- `/usr/share/X11/locale/iso8859-10/Compose`
+- `/usr/share/X11/locale/iso8859-10/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-10/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-11`
+- `/usr/share/X11/locale/iso8859-11/Compose`
+- `/usr/share/X11/locale/iso8859-11/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-11/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-13`
+- `/usr/share/X11/locale/iso8859-13/Compose`
+- `/usr/share/X11/locale/iso8859-13/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-13/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-14`
+- `/usr/share/X11/locale/iso8859-14/Compose`
+- `/usr/share/X11/locale/iso8859-14/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-14/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-15`
+- `/usr/share/X11/locale/iso8859-15/Compose`
+- `/usr/share/X11/locale/iso8859-15/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-15/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-2`
+- `/usr/share/X11/locale/iso8859-2/Compose`
+- `/usr/share/X11/locale/iso8859-2/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-2/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-3`
+- `/usr/share/X11/locale/iso8859-3/Compose`
+- `/usr/share/X11/locale/iso8859-3/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-3/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-4`
+- `/usr/share/X11/locale/iso8859-4/Compose`
+- `/usr/share/X11/locale/iso8859-4/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-4/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-5`
+- `/usr/share/X11/locale/iso8859-5/Compose`
+- `/usr/share/X11/locale/iso8859-5/XI18N_OBJS`
+- `/usr/share/X11/locale/iso8859-5/XLC_LOCALE`
+- `/usr/share/X11/locale/iso8859-6`
+- `/usr/share/X11/locale/iso8859-6/Compose`
+- _...and 486 more_
+
+**var** (6)
+
+- `/var/lib/php/modules/8.4/cli/enabled_by_maint/pdo_sqlite`
+- `/var/lib/php/modules/8.4/cli/enabled_by_maint/sqlite3`
+- `/var/lib/php/modules/8.4/registry/pdo_sqlite`
+- `/var/lib/php/modules/8.4/registry/sqlite3`
+- `/var/lib/ucf/cache/:etc:php:8.4:mods-available:pdo_sqlite.ini`
+- `/var/lib/ucf/cache/:etc:php:8.4:mods-available:sqlite3.ini`
+
+### Only in built (19)
+
+**home** (1)
+
+- `/home/claude/scripts/README`
+
+**java** (1)
+
+- `/usr/lib/jvm/java-21-openjdk-amd64/docs`
+
+**other** (2)
+
+- `/process_api/process_api`
+- `/sbin`
+
+**usr-local** (2)
+
+- `/usr/local/bin/httpx`
+- `/usr/local/bin/websockets`
+
+**usr-share** (13)
+
+- `/usr/share/devhelp`
+- `/usr/share/devhelp/books`
+- `/usr/share/devhelp/books/python3.12`
+- `/usr/share/info/python3.12`
+- `/usr/share/info/python3.12.info.gz`
+- `/usr/share/info/python3.12/hashlib-blake2-tree.png`
+- `/usr/share/info/python3.12/kde_example.png`
+- `/usr/share/info/python3.12/logging_flow.png`
+- `/usr/share/info/python3.12/pathlib-inheritance.png`
+- `/usr/share/info/python3.12/tk_msg.png`
+- `/usr/share/info/python3.12/turtle-star.png`
+- `/usr/share/info/python3.12/win_installer.png`
+- `/usr/share/lintian/overrides/python3.12-doc`
+
+### Type changed (1)
+
+**other** (1)
+
+- `/process_api` — f->d
+
+### Content changed (hash differs) (300)
+
+**etc** (2)
+
+- `/etc/apt/sources.list.d/deadsnakes-ubuntu-ppa-noble.sources` — size 1756->1755
 - `/etc/pam.d/login` — size 4118->3974
 
-**headers** (3)
+**home** (1)
 
-- `/usr/include/php/20240924/Zend/zend.h` — size 17662->17662
-- `/usr/include/php/20240924/ext/mbstring/php_onig_compat.h` — size 256->426
-- `/usr/include/php/20240924/main/php_version.h` — size 266->266
+- `/home/claude/.gitconfig` — size 251->226
 
-**other** (38)
+**other** (70)
 
-- `/usr/lib/php/20240924/build/gen_stub.php` — size 223580->223643
-- `/usr/lib/php/20240924/build/run-tests.php` — size 142534->142534
-- `/usr/lib/php/20240924/calendar.so` — size 39176->39176
-- `/usr/lib/php/20240924/ctype.so` — size 14600->14600
-- `/usr/lib/php/20240924/curl.so` — size 137480->137480
-- `/usr/lib/php/20240924/dom.so` — size 2099008->2099008
-- `/usr/lib/php/20240924/exif.so` — size 92424->92424
-- `/usr/lib/php/20240924/ffi.so` — size 186632->186632
-- `/usr/lib/php/20240924/fileinfo.so` — size 8653120->8653120
-- `/usr/lib/php/20240924/ftp.so` — size 67848->67848
-- `/usr/lib/php/20240924/gd.so` — size 149768->149768
-- `/usr/lib/php/20240924/gettext.so` — size 22792->22792
-- `/usr/lib/php/20240924/iconv.so` — size 55560->55560
-- `/usr/lib/php/20240924/intl.so` — size 653664->653664
-- `/usr/lib/php/20240924/mbstring.so` — size 1225600->1225600
-- `/usr/lib/php/20240924/mysqli.so` — size 166152->166152
-- `/usr/lib/php/20240924/mysqlnd.so` — size 223048->223048
-- `/usr/lib/php/20240924/opcache.so` — size 1204888->1209112
-- `/usr/lib/php/20240924/pdo.so` — size 137480->137480
-- `/usr/lib/php/20240924/pdo_mysql.so` — size 39176->39176
-- `/usr/lib/php/20240924/pdo_pgsql.so` — size 63752->63752
-- `/usr/lib/php/20240924/pgsql.so` — size 186632->186632
-- `/usr/lib/php/20240924/phar.so` — size 293128->297224
-- `/usr/lib/php/20240924/posix.so` — size 47368->47368
-- `/usr/lib/php/20240924/readline.so` — size 39176->39176
-- `/usr/lib/php/20240924/shmop.so` — size 18696->18696
-- `/usr/lib/php/20240924/simplexml.so` — size 63752->63752
-- `/usr/lib/php/20240924/sockets.so` — size 117000->117000
-- `/usr/lib/php/20240924/sysvmsg.so` — size 22792->22792
-- `/usr/lib/php/20240924/sysvsem.so` — size 14600->14600
-- `/usr/lib/php/20240924/sysvshm.so` — size 22792->22792
-- `/usr/lib/php/20240924/tokenizer.so` — size 35080->35080
-- `/usr/lib/php/20240924/xml.so` — size 76040->76040
-- `/usr/lib/php/20240924/xmlreader.so` — size 55560->55560
-- `/usr/lib/php/20240924/xmlwriter.so` — size 55560->55560
-- `/usr/lib/php/20240924/xsl.so` — size 39176->39176
-- `/usr/lib/php/20240924/zip.so` — size 108808->108808
-- `/usr/lib/php/php-maintscript-helper` — size 9234->9217
+- `/usr/lib/gnupg/dirmngr_ldap` — size 44016->44016
+- `/usr/lib/gnupg/gpg-check-pattern` — size 59984->59984
+- `/usr/lib/gnupg/gpg-pair-tool` — size 68528->68528
+- `/usr/lib/gnupg/gpg-preset-passphrase` — size 35472->35472
+- `/usr/lib/gnupg/gpg-protect-tool` — size 89168->89168
+- `/usr/lib/gnupg/keyboxd` — size 167288->167288
+- `/usr/lib/kernel/install.d/90-loaderentry.install` — size 7123->7123
+- `/usr/lib/systemd/system-generators/systemd-cryptsetup-generator` — size 35464->35464
+- `/usr/lib/systemd/system-generators/systemd-debug-generator` — size 19024->19024
+- `/usr/lib/systemd/system-generators/systemd-fstab-generator` — size 56072->56072
+- `/usr/lib/systemd/system-generators/systemd-getty-generator` — size 22984->22984
+- `/usr/lib/systemd/system-generators/systemd-gpt-auto-generator` — size 35400->35400
+- `/usr/lib/systemd/system-generators/systemd-hibernate-resume-generator` — size 27232->27232
+- `/usr/lib/systemd/system-generators/systemd-integritysetup-generator` — size 23024->23024
+- `/usr/lib/systemd/system-generators/systemd-rc-local-generator` — size 14712->14712
+- `/usr/lib/systemd/system-generators/systemd-run-generator` — size 18992->18992
+- `/usr/lib/systemd/system-generators/systemd-system-update-generator` — size 14712->14712
+- `/usr/lib/systemd/system-generators/systemd-sysv-generator` — size 35272->35272
+- `/usr/lib/systemd/system-generators/systemd-veritysetup-generator` — size 31448->31448
+- `/usr/lib/systemd/systemd` — size 100816->100816
+- `/usr/lib/systemd/systemd-backlight` — size 35272->35272
+- `/usr/lib/systemd/systemd-battery-check` — size 18888->18888
+- `/usr/lib/systemd/systemd-binfmt` — size 22984->22984
+- `/usr/lib/systemd/systemd-boot-check-no-failures` — size 14792->14792
+- `/usr/lib/systemd/systemd-bsod` — size 22984->22984
+- `/usr/lib/systemd/systemd-cgroups-agent` — size 14712->14712
+- `/usr/lib/systemd/systemd-executor` — size 137792->137792
+- `/usr/lib/systemd/systemd-fsck` — size 27008->27008
+- `/usr/lib/systemd/systemd-fsckd` — size 27080->27080
+- `/usr/lib/systemd/systemd-growfs` — size 22984->22984
+- `/usr/lib/systemd/systemd-hibernate-resume` — size 23104->23104
+- `/usr/lib/systemd/systemd-hostnamed` — size 47584->47584
+- `/usr/lib/systemd/systemd-initctl` — size 22984->22984
+- `/usr/lib/systemd/systemd-integritysetup` — size 23056->23056
+- `/usr/lib/systemd/systemd-journald` — size 193664->193664
+- `/usr/lib/systemd/systemd-localed` — size 55776->55776
+- `/usr/lib/systemd/systemd-logind` — size 285264->285264
+- `/usr/lib/systemd/systemd-makefs` — size 14712->14712
+- `/usr/lib/systemd/systemd-measure` — size 47880->47880
+- `/usr/lib/systemd/systemd-modules-load` — size 19008->19008
+- `/usr/lib/systemd/systemd-network-generator` — size 43464->43464
+- `/usr/lib/systemd/systemd-networkd` — size 1669864->1669864
+- `/usr/lib/systemd/systemd-networkd-wait-online` — size 39536->39536
+- `/usr/lib/systemd/systemd-pcrextend` — size 27272->27272
+- `/usr/lib/systemd/systemd-pcrlock` — size 137928->137928
+- `/usr/lib/systemd/systemd-pstore` — size 23008->23008
+- `/usr/lib/systemd/systemd-quotacheck` — size 14792->14792
+- `/usr/lib/systemd/systemd-random-seed` — size 27080->27080
+- `/usr/lib/systemd/systemd-remount-fs` — size 18888->18888
+- `/usr/lib/systemd/systemd-reply-password` — size 14712->14712
+- `/usr/lib/systemd/systemd-rfkill` — size 22984->22984
+- `/usr/lib/systemd/systemd-shutdown` — size 55760->55760
+- `/usr/lib/systemd/systemd-sleep` — size 47560->47560
+- `/usr/lib/systemd/systemd-socket-proxyd` — size 31184->31184
+- `/usr/lib/systemd/systemd-storagetm` — size 51808->51808
+- `/usr/lib/systemd/systemd-sulogin-shell` — size 18808->18808
+- `/usr/lib/systemd/systemd-sysctl` — size 23104->23104
+- `/usr/lib/systemd/systemd-sysupdate` — size 117592->117592
+- `/usr/lib/systemd/systemd-time-wait-sync` — size 18808->18808
+- `/usr/lib/systemd/systemd-timedated` — size 43488->43488
+- `/usr/lib/systemd/systemd-tpm2-setup` — size 27200->27200
+- `/usr/lib/systemd/systemd-update-done` — size 14712->14712
+- `/usr/lib/systemd/systemd-update-utmp` — size 22984->22984
+- `/usr/lib/systemd/systemd-user-runtime-dir` — size 22904->22904
+- `/usr/lib/systemd/systemd-user-sessions` — size 14712->14712
+- `/usr/lib/systemd/systemd-veritysetup` — size 27304->27304
+- `/usr/lib/systemd/systemd-volatile-root` — size 22904->22904
+- `/usr/lib/systemd/systemd-xdg-autostart-condition` — size 14712->14712
+- `/usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator` — size 14712->14712
+- `/usr/lib/systemd/user-generators/systemd-xdg-autostart-generator` — size 35272->35272
 
-**python-libs** (2)
+**python-libs** (52)
 
-- `/usr/lib/python3/dist-packages/apt_inst.cpython-312-x86_64-linux-gnu.so` — size 60072->60072
-- `/usr/lib/python3/dist-packages/apt_pkg.cpython-312-x86_64-linux-gnu.so` — size 347328->347328
+- `/usr/lib/python3.12/_sysconfigdata__x86_64-linux-gnu.py` — size 49505->49505
+- `/usr/lib/python3.12/config-3.12-x86_64-linux-gnu/Makefile` — size 178567->178567
+- `/usr/lib/python3.12/config-3.12-x86_64-linux-gnu/libpython3.12-pic.a` — size 13332658->13332658
+- `/usr/lib/python3.12/config-3.12-x86_64-linux-gnu/libpython3.12.a` — size 14670634->14667786
+- `/usr/lib/python3.12/config-3.12-x86_64-linux-gnu/python.o` — size 4912->4912
+- `/usr/lib/python3.12/http/client.py` — size 57965->57228
+- `/usr/lib/python3.12/lib-dynload/_asyncio.cpython-312-x86_64-linux-gnu.so` — size 82184->82184
+- `/usr/lib/python3.12/lib-dynload/_bz2.cpython-312-x86_64-linux-gnu.so` — size 32112->32112
+- `/usr/lib/python3.12/lib-dynload/_codecs_cn.cpython-312-x86_64-linux-gnu.so` — size 154184->154184
+- `/usr/lib/python3.12/lib-dynload/_codecs_hk.cpython-312-x86_64-linux-gnu.so` — size 162408->162408
+- `/usr/lib/python3.12/lib-dynload/_codecs_iso2022.cpython-312-x86_64-linux-gnu.so` — size 39528->39528
+- `/usr/lib/python3.12/lib-dynload/_codecs_jp.cpython-312-x86_64-linux-gnu.so` — size 277064->277064
+- `/usr/lib/python3.12/lib-dynload/_codecs_kr.cpython-312-x86_64-linux-gnu.so` — size 141896->141896
+- `/usr/lib/python3.12/lib-dynload/_codecs_tw.cpython-312-x86_64-linux-gnu.so` — size 117320->117320
+- `/usr/lib/python3.12/lib-dynload/_contextvars.cpython-312-x86_64-linux-gnu.so` — size 14560->14560
+- `/usr/lib/python3.12/lib-dynload/_crypt.cpython-312-x86_64-linux-gnu.so` — size 14744->14744
+- `/usr/lib/python3.12/lib-dynload/_ctypes.cpython-312-x86_64-linux-gnu.so` — size 137968->137968
+- `/usr/lib/python3.12/lib-dynload/_ctypes_test.cpython-312-x86_64-linux-gnu.so` — size 31352->31352
+- `/usr/lib/python3.12/lib-dynload/_curses.cpython-312-x86_64-linux-gnu.so` — size 128584->128584
+- `/usr/lib/python3.12/lib-dynload/_curses_panel.cpython-312-x86_64-linux-gnu.so` — size 24168->24168
+- `/usr/lib/python3.12/lib-dynload/_dbm.cpython-312-x86_64-linux-gnu.so` — size 23880->23880
+- `/usr/lib/python3.12/lib-dynload/_decimal.cpython-312-x86_64-linux-gnu.so` — size 372904->372904
+- `/usr/lib/python3.12/lib-dynload/_hashlib.cpython-312-x86_64-linux-gnu.so` — size 64368->64368
+- `/usr/lib/python3.12/lib-dynload/_json.cpython-312-x86_64-linux-gnu.so` — size 48952->48952
+- `/usr/lib/python3.12/lib-dynload/_lsprof.cpython-312-x86_64-linux-gnu.so` — size 32032->32032
+- `/usr/lib/python3.12/lib-dynload/_lzma.cpython-312-x86_64-linux-gnu.so` — size 49256->49256
+- `/usr/lib/python3.12/lib-dynload/_multibytecodec.cpython-312-x86_64-linux-gnu.so` — size 54664->54664
+- `/usr/lib/python3.12/lib-dynload/_multiprocessing.cpython-312-x86_64-linux-gnu.so` — size 24280->24280
+- `/usr/lib/python3.12/lib-dynload/_posixshmem.cpython-312-x86_64-linux-gnu.so` — size 15080->15080
+- `/usr/lib/python3.12/lib-dynload/_queue.cpython-312-x86_64-linux-gnu.so` — size 23816->23816
+- `/usr/lib/python3.12/lib-dynload/_sqlite3.cpython-312-x86_64-linux-gnu.so` — size 144792->144792
+- `/usr/lib/python3.12/lib-dynload/_ssl.cpython-312-x86_64-linux-gnu.so` — size 225488->225488
+- `/usr/lib/python3.12/lib-dynload/_testbuffer.cpython-312-x86_64-linux-gnu.so` — size 54216->54216
+- `/usr/lib/python3.12/lib-dynload/_testcapi.cpython-312-x86_64-linux-gnu.so` — size 356136->356136
+- `/usr/lib/python3.12/lib-dynload/_testclinic.cpython-312-x86_64-linux-gnu.so` — size 68936->68936
+- `/usr/lib/python3.12/lib-dynload/_testimportmultiple.cpython-312-x86_64-linux-gnu.so` — size 14664->14664
+- `/usr/lib/python3.12/lib-dynload/_testinternalcapi.cpython-312-x86_64-linux-gnu.so` — size 37128->37128
+- `/usr/lib/python3.12/lib-dynload/_testmultiphase.cpython-312-x86_64-linux-gnu.so` — size 35752->35752
+- `/usr/lib/python3.12/lib-dynload/_testsinglephase.cpython-312-x86_64-linux-gnu.so` — size 15456->15456
+- `/usr/lib/python3.12/lib-dynload/_xxinterpchannels.cpython-312-x86_64-linux-gnu.so` — size 36360->36360
+- `/usr/lib/python3.12/lib-dynload/_xxsubinterpreters.cpython-312-x86_64-linux-gnu.so` — size 23672->23672
+- `/usr/lib/python3.12/lib-dynload/_xxtestfuzz.cpython-312-x86_64-linux-gnu.so` — size 23144->23144
+- `/usr/lib/python3.12/lib-dynload/_zoneinfo.cpython-312-x86_64-linux-gnu.so` — size 53352->53352
+- `/usr/lib/python3.12/lib-dynload/audioop.cpython-312-x86_64-linux-gnu.so` — size 64896->64896
+- `/usr/lib/python3.12/lib-dynload/mmap.cpython-312-x86_64-linux-gnu.so` — size 32600->32600
+- `/usr/lib/python3.12/lib-dynload/ossaudiodev.cpython-312-x86_64-linux-gnu.so` — size 33576->33576
+- `/usr/lib/python3.12/lib-dynload/readline.cpython-312-x86_64-linux-gnu.so` — size 40640->40640
+- `/usr/lib/python3.12/lib-dynload/resource.cpython-312-x86_64-linux-gnu.so` — size 19432->19432
+- `/usr/lib/python3.12/lib-dynload/termios.cpython-312-x86_64-linux-gnu.so` — size 35520->35520
+- `/usr/lib/python3.12/lib-dynload/xxlimited.cpython-312-x86_64-linux-gnu.so` — size 15200->15200
+- `/usr/lib/python3.12/lib-dynload/xxlimited_35.cpython-312-x86_64-linux-gnu.so` — size 15104->15104
+- `/usr/lib/python3.12/lib-dynload/xxsubtype.cpython-312-x86_64-linux-gnu.so` — size 16056->16056
 
-**system-binaries** (143)
+**root-home** (2)
 
-- `/usr/bin/addpart` — size 14720->14720
+- `/root/.gitconfig` — size 251->226
+- `/root/.wget-hsts` — size 209->209
+
+**system-binaries** (97)
+
+- `/usr/bin/busctl` — size 96864->96864
 - `/usr/bin/chage` — size 72184->72184
 - `/usr/bin/chfn` — size 72792->72792
-- `/usr/bin/choom` — size 22912->22912
-- `/usr/bin/chrt` — size 31104->31104
 - `/usr/bin/chsh` — size 44760->44760
-- `/usr/bin/delpart` — size 14720->14720
-- `/usr/bin/dmesg` — size 70288->70288
+- `/usr/bin/dirmngr` — size 485136->485136
+- `/usr/bin/dirmngr-client` — size 56240->56240
 - `/usr/bin/expiry` — size 27152->27152
 - `/usr/bin/faillog` — size 23168->23168
-- `/usr/bin/fallocate` — size 27008->27008
-- `/usr/bin/findmnt` — size 69280->69280
-- `/usr/bin/flock` — size 23024->23024
+- `/usr/bin/gapplication` — size 22920->22920
 - `/usr/bin/gdb` — size 11744504->8920528
-- `/usr/bin/getopt` — size 22912->22912
+- `/usr/bin/gdbus` — size 51592->51592
 - `/usr/bin/getsubids` — size 14640->14640
+- `/usr/bin/gio` — size 104856->104856
+- `/usr/bin/glib-compile-resources` — size 51520->51520
+- `/usr/bin/gobject-query` — size 14656->14656
 - `/usr/bin/gpasswd` — size 76248->76248
-- `/usr/bin/hardlink` — size 47600->47600
-- `/usr/bin/ionice` — size 18816->18816
-- `/usr/bin/ipcmk` — size 22984->22984
-- `/usr/bin/ipcrm` — size 18816->18816
-- `/usr/bin/ipcs` — size 39296->39296
-- `/usr/bin/last` — size 35200->35200
+- `/usr/bin/gpg` — size 1147800->1147800
+- `/usr/bin/gpg-agent` — size 366096->366096
+- `/usr/bin/gpg-connect-agent` — size 89400->89400
+- `/usr/bin/gpgconf` — size 118128->118128
+- `/usr/bin/gpgparsemail` — size 35200->35200
+- `/usr/bin/gpgsm` — size 513400->513400
+- `/usr/bin/gpgsplit` — size 27256->27256
+- `/usr/bin/gpgtar` — size 69456->69456
+- `/usr/bin/gpgv` — size 310416->310416
+- `/usr/bin/gresource` — size 22840->22840
+- `/usr/bin/gsettings` — size 31032->31032
+- `/usr/bin/gtester` — size 31056->31056
+- `/usr/bin/hostnamectl` — size 31184->31184
+- `/usr/bin/journalctl` — size 80800->80800
+- `/usr/bin/kbxutil` — size 64336->64336
+- `/usr/bin/kernel-install` — size 55984->55984
 - `/usr/bin/lastlog` — size 28456->28456
-- `/usr/bin/logger` — size 39904->39904
+- `/usr/bin/localectl` — size 27080->27080
 - `/usr/bin/login` — size 53056->53056
-- `/usr/bin/lsblk` — size 149896->149896
-- `/usr/bin/lscpu` — size 113032->113032
-- `/usr/bin/lsipc` — size 51584->51584
-- `/usr/bin/lslocks` — size 31504->31504
-- `/usr/bin/lslogins` — size 51584->51584
-- `/usr/bin/lsmem` — size 39296->39296
-- `/usr/bin/lsns` — size 43400->43400
-- `/usr/bin/mcookie` — size 27080->27080
-- `/usr/bin/mesg` — size 14720->14720
-- `/usr/bin/more` — size 47496->47496
-- `/usr/bin/mount` — size 51584->51584
-- `/usr/bin/mountpoint` — size 18816->18816
-- `/usr/bin/namei` — size 22912->22912
+- `/usr/bin/loginctl` — size 68176->68176
+- `/usr/bin/networkctl` — size 125520->125520
 - `/usr/bin/newgidmap` — size 41864->41864
 - `/usr/bin/newgrp` — size 40664->40664
 - `/usr/bin/newuidmap` — size 41864->41864
-- `/usr/bin/nsenter` — size 31336->31336
-- `/usr/bin/partx` — size 63880->63880
 - `/usr/bin/passwd` — size 64152->64152
-- `/usr/bin/phar8.4.phar` — size 15242->15242
-- `/usr/bin/php-config8.4` — size 4803->4803
-- `/usr/bin/php8.4` — size 6025808->6029904
-- `/usr/bin/prlimit` — size 27536->27536
-- `/usr/bin/rename.ul` — size 22912->22912
-- `/usr/bin/renice` — size 14720->14720
-- `/usr/bin/resizepart` — size 22912->22912
-- `/usr/bin/rev` — size 14720->14720
-- `/usr/bin/script` — size 55680->55680
-- `/usr/bin/scriptlive` — size 43392->43392
-- `/usr/bin/scriptreplay` — size 35200->35200
-- `/usr/bin/setarch` — size 27288->27288
-- `/usr/bin/setpriv` — size 39304->39304
-- `/usr/bin/setsid` — size 14720->14720
-- `/usr/bin/setterm` — size 35200->35200
-- `/usr/bin/su` — size 55680->55680
-- `/usr/bin/taskset` — size 31104->31104
-- `/usr/bin/uclampset` — size 31104->31104
-- `/usr/bin/umount` — size 39296->39296
-- `/usr/bin/unshare` — size 43624->43624
-- `/usr/bin/utmpdump` — size 22912->22912
-- `/usr/bin/wall` — size 22912->22912
-- `/usr/bin/wdctl` — size 35224->35224
-- `/usr/bin/whereis` — size 31576->31576
+- `/usr/bin/python3.12` — size 8020928->8016832
+- `/usr/bin/systemctl` — size 1501304->1501304
+- `/usr/bin/systemd-ac-power` — size 14792->14792
+- `/usr/bin/systemd-analyze` — size 203624->203624
+- `/usr/bin/systemd-ask-password` — size 19024->19024
+- `/usr/bin/systemd-cat` — size 18896->18896
+- `/usr/bin/systemd-cgls` — size 23112->23112
+- `/usr/bin/systemd-cgtop` — size 39392->39392
+- `/usr/bin/systemd-creds` — size 43744->43744
+- `/usr/bin/systemd-cryptenroll` — size 72624->72624
+- `/usr/bin/systemd-cryptsetup` — size 80840->80840
+- `/usr/bin/systemd-delta` — size 27080->27080
+- `/usr/bin/systemd-detect-virt` — size 18888->18888
+- `/usr/bin/systemd-escape` — size 22984->22984
+- `/usr/bin/systemd-firstboot` — size 60232->60232
+- `/usr/bin/systemd-id128` — size 22984->22984
+- `/usr/bin/systemd-inhibit` — size 23008->23008
+- `/usr/bin/systemd-machine-id-setup` — size 19072->19072
+- `/usr/bin/systemd-mount` — size 52000->52000
+- `/usr/bin/systemd-notify` — size 27304->27304
+- `/usr/bin/systemd-path` — size 18888->18888
+- `/usr/bin/systemd-repart` — size 199912->199912
+- `/usr/bin/systemd-run` — size 68392->68392
+- `/usr/bin/systemd-socket-activate` — size 31176->31176
+- `/usr/bin/systemd-stdio-bridge` — size 22992->22992
+- `/usr/bin/systemd-sysext` — size 55952->55952
+- `/usr/bin/systemd-sysusers` — size 68224->68224
+- `/usr/bin/systemd-tmpfiles` — size 117448->117448
+- `/usr/bin/systemd-tty-ask-password-agent` — size 35272->35272
+- `/usr/bin/timedatectl` — size 47560->47560
+- `/usr/bin/varlinkctl` — size 31176->31176
+- `/usr/bin/watchgnupg` — size 22840->22840
 - `/usr/bin/x86_64-linux-gnu-addr2line` — size 31440->31440
 - `/usr/bin/x86_64-linux-gnu-ar` — size 55792->55792
 - `/usr/bin/x86_64-linux-gnu-as` — size 745768->745768
@@ -237,42 +1097,94 @@ For exact binary matching, still need to pin:
 - `/usr/sbin/chpasswd` — size 55736->55736
 - _...and 43 more_
 
-**system-libs** (20)
+**system-libs** (52)
 
 - `/usr/lib/x86_64-linux-gnu/bfd-plugins/libdep.so` — size 14560->14560
+- `/usr/lib/x86_64-linux-gnu/cryptsetup/libcryptsetup-token-systemd-fido2.so` — size 18736->18736
+- `/usr/lib/x86_64-linux-gnu/cryptsetup/libcryptsetup-token-systemd-pkcs11.so` — size 18736->18736
+- `/usr/lib/x86_64-linux-gnu/cryptsetup/libcryptsetup-token-systemd-tpm2.so` — size 22832->22832
+- `/usr/lib/x86_64-linux-gnu/glib-2.0/deb-can-run` — size 14648->14648
+- `/usr/lib/x86_64-linux-gnu/glib-2.0/gi-compile-repository` — size 171008->171008
+- `/usr/lib/x86_64-linux-gnu/glib-2.0/gi-decompile-typelib` — size 47416->47416
+- `/usr/lib/x86_64-linux-gnu/glib-2.0/gi-inspect-typelib` — size 14648->14648
+- `/usr/lib/x86_64-linux-gnu/glib-2.0/gio-launch-desktop` — size 14648->14648
+- `/usr/lib/x86_64-linux-gnu/glib-2.0/gio-querymodules` — size 18744->18744
+- `/usr/lib/x86_64-linux-gnu/glib-2.0/glib-compile-schemas` — size 55608->55608
 - `/usr/lib/x86_64-linux-gnu/gprofng/libgp-collector.so` — size 1341720->1341720
 - `/usr/lib/x86_64-linux-gnu/gprofng/libgp-collectorAPI.a` — size 34346->34362
 - `/usr/lib/x86_64-linux-gnu/gprofng/libgp-collectorAPI.so` — size 14536->14536
 - `/usr/lib/x86_64-linux-gnu/gprofng/libgp-heap.so` — size 18744->18744
 - `/usr/lib/x86_64-linux-gnu/gprofng/libgp-iotrace.so` — size 63832->63832
 - `/usr/lib/x86_64-linux-gnu/gprofng/libgp-sync.so` — size 26904->26904
+- `/usr/lib/x86_64-linux-gnu/libavahi-client.so.3.2.9` — size 72016->72016
+- `/usr/lib/x86_64-linux-gnu/libavahi-common.so.3.5.4` — size 51648->51648
 - `/usr/lib/x86_64-linux-gnu/libbfd-2.42-system.so` — size 1479888->1479888
-- `/usr/lib/x86_64-linux-gnu/libblkid.so.1.1.0` — size 236592->236592
 - `/usr/lib/x86_64-linux-gnu/libctf-nobfd.so.0.0.0` — size 216096->216096
 - `/usr/lib/x86_64-linux-gnu/libctf.so.0.0.0` — size 220384->220384
 - `/usr/lib/x86_64-linux-gnu/libcups.so.2` — size 653416->653416
-- `/usr/lib/x86_64-linux-gnu/libfdisk.so.1.1.0` — size 350064->350064
+- `/usr/lib/x86_64-linux-gnu/libexslt.so.0.8.21` — size 96416->96416
+- `/usr/lib/x86_64-linux-gnu/libgio-2.0.a` — size 4792862->4792830
+- `/usr/lib/x86_64-linux-gnu/libgio-2.0.so.0.8000.0` — size 1887792->1887792
+- `/usr/lib/x86_64-linux-gnu/libgirepository-2.0.so.0.8000.0` — size 162648->162648
+- `/usr/lib/x86_64-linux-gnu/libglib-2.0.a` — size 2370422->2369830
+- `/usr/lib/x86_64-linux-gnu/libglib-2.0.so.0.8000.0` — size 1343056->1343056
+- `/usr/lib/x86_64-linux-gnu/libgmodule-2.0.so.0.8000.0` — size 22736->22736
+- `/usr/lib/x86_64-linux-gnu/libgobject-2.0.so.0.8000.0` — size 399752->399752
 - `/usr/lib/x86_64-linux-gnu/libgprofng.so.0.0.0` — size 2334672->2334672
-- `/usr/lib/x86_64-linux-gnu/libmount.so.1.1.0` — size 309960->309960
+- `/usr/lib/x86_64-linux-gnu/libgthread-2.0.so.0.8000.0` — size 14488->14488
+- `/usr/lib/x86_64-linux-gnu/libheif.so.1.17.6` — size 784960->784960
+- `/usr/lib/x86_64-linux-gnu/libheif/plugins/libheif-aomdec.so` — size 14440->14440
+- `/usr/lib/x86_64-linux-gnu/libheif/plugins/libheif-libde265.so` — size 18624->18624
 - `/usr/lib/x86_64-linux-gnu/libopcodes-2.42-system.so` — size 911656->911656
+- `/usr/lib/x86_64-linux-gnu/libpng16.a` — size 357020->355524
+- `/usr/lib/x86_64-linux-gnu/libpng16.so.16.43.0` — size 223304->223304
+- `/usr/lib/x86_64-linux-gnu/libpython3.12.so.1.0` — size 9056904->9056904
 - `/usr/lib/x86_64-linux-gnu/libsframe.so.1.0.0` — size 35168->35168
-- `/usr/lib/x86_64-linux-gnu/libsmartcols.so.1.1.0` — size 112792->112792
+- `/usr/lib/x86_64-linux-gnu/libsodium.so.23.3.0` — size 355040->355040
 - `/usr/lib/x86_64-linux-gnu/libsubid.so.4.0.0` — size 41248->41248
-- `/usr/lib/x86_64-linux-gnu/libuuid.so.1.3.0` — size 35032->35032
+- `/usr/lib/x86_64-linux-gnu/libsystemd.so.0.38.0` — size 910592->910592
+- `/usr/lib/x86_64-linux-gnu/libtasn1.so.6.6.3` — size 88216->88216
+- `/usr/lib/x86_64-linux-gnu/libudev.so.1.7.8` — size 207288->207288
+- `/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14` — size 1967424->1967424
+- `/usr/lib/x86_64-linux-gnu/libxslt.so.1.1.39` — size 260536->260536
+- `/usr/lib/x86_64-linux-gnu/security/pam_systemd.so` — size 537832->537832
+- `/usr/lib/x86_64-linux-gnu/security/pam_systemd_loadkey.so` — size 31752->31752
+- `/usr/lib/x86_64-linux-gnu/systemd/libsystemd-core-255.so` — size 2140744->2140744
+- `/usr/lib/x86_64-linux-gnu/systemd/libsystemd-shared-255.so` — size 3755032->3755032
 
-**usr-share** (7)
+**usr-share** (6)
 
 - `/usr/share/gdb/python/gdb/dap/breakpoint.py` — size 13936->13851
 - `/usr/share/gdb/python/gdb/dap/bt.py` — size 5671->5632
 - `/usr/share/gdb/python/gdb/dap/disassemble.py` — size 1634->3527
 - `/usr/share/gdb/python/gdb/dap/memory.py` — size 1386->1513
 - `/usr/share/gdb/python/gdb/dap/sources.py` — size 2990->3137
-- `/usr/share/lintian/overrides/php8.4-cli` — size 135->197
-- `/usr/share/lintian/overrides/php8.4-common` — size 302->367
+- `/usr/share/info/gnupg-module-overview.png` — size 122772->122772
+
+**var** (18)
+
+- `/var/lib/ucf/hashfile` — size 3300->3149
+- `/var/lib/ucf/hashfile.0` — size 3231->3080
+- `/var/lib/ucf/hashfile.1` — size 3172->3021
+- `/var/lib/ucf/hashfile.2` — size 3102->2951
+- `/var/lib/ucf/hashfile.3` — size 3026->2875
+- `/var/lib/ucf/hashfile.4` — size 2953->2802
+- `/var/lib/ucf/hashfile.5` — size 2879->2728
+- `/var/lib/ucf/hashfile.6` — size 2804->2653
+- `/var/lib/ucf/hashfile.7` — size 2729->2578
+- `/var/lib/ucf/registry` — size 2494->2377
+- `/var/lib/ucf/registry.0` — size 2447->2330
+- `/var/lib/ucf/registry.1` — size 2409->2292
+- `/var/lib/ucf/registry.2` — size 2360->2243
+- `/var/lib/ucf/registry.3` — size 2303->2186
+- `/var/lib/ucf/registry.4` — size 2249->2132
+- `/var/lib/ucf/registry.5` — size 2194->2077
+- `/var/lib/ucf/registry.6` — size 2135->2018
+- `/var/lib/ucf/registry.7` — size 2076->1959
 
 ## Excluded (expected differences)
 
-- excluded: 624,090
-- expected_only_left: 24,923
-- expected_only_right: 12,969
-- hash_excluded: 785
+- excluded: 861,439
+- expected_only_left: 24,564
+- expected_only_right: 12,906
+- hash_excluded: 1,338

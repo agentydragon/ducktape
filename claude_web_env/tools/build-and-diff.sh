@@ -8,8 +8,9 @@
 #   4. Generate diff-report.md
 #
 # Usage:
-#   ./tools/build-and-diff.sh           # Full build + diff
+#   ./tools/build-and-diff.sh              # Full build + diff
 #   ./tools/build-and-diff.sh --diff-only  # Skip build, just regenerate diff
+#   ./tools/build-and-diff.sh --capture-binaries  # Capture proprietary binaries only
 #
 # Requirements:
 #   - podman available
@@ -38,22 +39,51 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Parse arguments
 DIFF_ONLY=false
+CAPTURE_BINARIES=false
 for arg in "$@"; do
   case $arg in
     --diff-only)
       DIFF_ONLY=true
       shift
       ;;
+    --capture-binaries)
+      CAPTURE_BINARIES=true
+      shift
+      ;;
     -h | --help)
-      echo "Usage: $0 [--diff-only]"
+      echo "Usage: $0 [--diff-only] [--capture-binaries]"
       echo ""
       echo "Options:"
-      echo "  --diff-only   Skip build, just regenerate diff report"
-      echo "  -h, --help    Show this help"
+      echo "  --diff-only        Skip build, just regenerate diff report"
+      echo "  --capture-binaries Capture proprietary binaries from live container"
+      echo "  -h, --help         Show this help"
       exit 0
       ;;
   esac
 done
+
+# Capture proprietary binaries from live container
+capture_proprietary_binaries() {
+  log_info "Capturing proprietary binaries from live container..."
+
+  # environment-manager - Claude Code's environment manager
+  if [[ -f /usr/local/bin/environment-manager ]]; then
+    gzip -c /usr/local/bin/environment-manager >reference/environment-manager.gz
+    log_info "Captured environment-manager: $(sha256sum /usr/local/bin/environment-manager | cut -d' ' -f1)"
+  else
+    log_warn "environment-manager not found at /usr/local/bin/environment-manager"
+  fi
+
+  # process_api - Anthropic's process API server
+  if [[ -f /process_api ]]; then
+    gzip -c /process_api >reference/process_api.gz
+    log_info "Captured process_api: $(sha256sum /process_api | cut -d' ' -f1)"
+  else
+    log_warn "process_api not found at /process_api"
+  fi
+
+  log_info "Proprietary binaries captured to reference/"
+}
 
 # Setup tmpfs storage if needed
 setup_storage() {
@@ -131,9 +161,17 @@ generate_diff_report() {
 
 # Main
 main() {
+  # Handle --capture-binaries only mode
+  if [[ "$CAPTURE_BINARIES" == "true" ]]; then
+    capture_proprietary_binaries
+    exit 0
+  fi
+
   setup_storage
 
   if [[ "$DIFF_ONLY" == "false" ]]; then
+    # Capture proprietary binaries before build to ensure we have latest
+    capture_proprietary_binaries
     build_image
   else
     log_info "Skipping build (--diff-only)"

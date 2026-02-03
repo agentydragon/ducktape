@@ -3,6 +3,10 @@
 Reproducible reconstruction of the Claude Code web container, verified by
 full-filesystem manifest diffing.
 
+**Goal**: Zero diff exclusions that aren't session-start-hook artifacts or
+unavoidable runtime differences (`/proc`, `/sys`, caches). Any difference
+fixable by updating the Dockerfile should be fixed there, not excluded.
+
 ## Quick Start
 
 ```bash
@@ -110,12 +114,14 @@ rootfs/
 
 ### `reference/` Contents
 
-Reference snapshots captured from the live container for documentation purposes.
-**Not used during build** — these are for understanding the live environment:
+Snapshots captured from the live container:
 
-- `*-settings.json` — Claude Code settings
-- `*-env-vars.txt` — Environment variable snapshots
-- `*.gz` — Compressed binaries (process_api, code-sign)
+- `environment-manager.gz` — Claude Code's environment manager (baked into build)
+- `process_api.gz` — Anthropic's process API server (baked into build)
+- `*-settings.json` — Claude Code settings (documentation only)
+- `*-env-vars.txt` — Environment variable snapshots (documentation only)
+
+The proprietary binaries are compressed with gzip and COPYed/decompressed in the Dockerfile.
 
 ## Manifest Format
 

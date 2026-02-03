@@ -40,6 +40,8 @@ skip_paths:
   - /root/.claude/shell-snapshots
   - /root/.claude/session-env
   - /root/.claude/statsig
+  - /root/.claude/debug
+  - /root/.claude/plugins
 
   # Nix store (installed at runtime by session start hook, not part of base image)
   - /nix
