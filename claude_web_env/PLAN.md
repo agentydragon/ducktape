@@ -98,3 +98,12 @@ May require post-processing (strip, objcopy) to match exactly.
 - **Solution**: `--no-new-keyring` flag tells crun to skip keyring creation.
 - **Implementation**: `tools/claude_hooks/config/podman/crun_gvisor_wrapper.py`
   now injects this flag for all `crun create` and `crun run` commands.
+
+### Build Verification
+
+**Full 111-step Dockerfile build completed successfully** (2026-02-03):
+
+- Image: `localhost/claude-code-web-recreated:latest`
+- Size: 5.66 GB
+- All 111 steps completed without keyring quota errors
+- This confirms the `--no-new-keyring` fix works for production Dockerfile builds
