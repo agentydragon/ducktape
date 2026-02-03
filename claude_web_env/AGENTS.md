@@ -19,16 +19,32 @@
 
 ### Priority 1: Verify Build v11
 
-Run a full build with the stripping and version pins added in the previous session:
+Run a full build with the latest changes:
 
 ```bash
+# Set up tmpfs storage (required for reasonable build times)
+mount -t tmpfs -o size=200G,exec tmpfs /tmp/tmpfs-exec
+mkdir -p /tmp/tmpfs-exec/containers/{storage,run}
+cat > /tmp/storage-tmpfs-vfs.conf << 'EOF'
+[storage]
+driver = "vfs"
+runroot = "/tmp/tmpfs-exec/containers/run"
+graphroot = "/tmp/tmpfs-exec/containers/storage"
+EOF
+
+cd claude_web_env
 CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
   podman build --layers=false --network=host --isolation=oci \
   --format=docker -t claude-code-web-recreated .
 ```
 
-Expected: Stripping should remove ~27K files previously "only in built".
-The python3-apt and PHP 8.4 pins should eliminate version mismatches.
+Recent changes to verify:
+- **Stripping**: Removes `/usr/share/doc`, `/usr/share/man`, `/usr/include`, `/usr/sbin`
+- **APT sources**: Uses exact deb822 `.sources` files matching live container
+- **process_api**: Baked in from `reference/process_api.gz`
+- **Root dotfiles**: `.bashrc`, `.profile` baked in
+- **python3-doc**: Now installed in Dockerfile
+- **Session hook artifacts**: New exclusion category for files created by `tools/claude_hooks`
 
 ### Priority 2: Stricter Version Pinning
 
