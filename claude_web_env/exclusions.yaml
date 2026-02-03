@@ -248,10 +248,6 @@ only_in_built:
   - /usr/local/bin/pre-commit
   - /usr/local/bin/virtualenv
 
-  # Proxy CA cert directory and contents (build artifact from TLS-inspecting proxy)
-  - /usr/local/share/ca-certificates/proxy
-  - "/usr/local/share/ca-certificates/proxy/**"
-
 # ─── Comparison overrides ─────────────────────────────────────────────────
 # gVisor user namespaces map all UIDs to a single user, making ownership
 # data in the live manifest meaningless. Skip these comparisons.

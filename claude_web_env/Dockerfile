@@ -36,7 +36,6 @@ ENV TZ=UTC
 # SWP / proxy CA certs (needed for TLS-inspecting proxy)
 COPY rootfs/usr/local/share/ca-certificates/swp-ca-production.crt /usr/local/share/ca-certificates/swp-ca-production.crt
 COPY rootfs/usr/local/share/ca-certificates/swp-ca-staging.crt /usr/local/share/ca-certificates/swp-ca-staging.crt
-COPY proxy-ca/ /usr/local/share/ca-certificates/proxy/
 
 # Replace default sources with snapshot-only (Dec 1 2025)
 RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \

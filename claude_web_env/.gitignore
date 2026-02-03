@@ -2,8 +2,3 @@
 *.ndjson
 !live-manifest.ndjson.gz
 *.log
-__pycache__/
-
-# Build-time proxy CA certs (injected from environment, not committed)
-proxy-ca/*.crt
-proxy-ca/*.pem
