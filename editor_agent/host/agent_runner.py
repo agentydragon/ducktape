@@ -11,11 +11,11 @@ from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
+from agent_core.script_builder import ScriptBuilder
+from agent_core.script_handler import ScriptGen, ScriptHandler
 from agent_core.turn_limit import MaxTurnsHandler
-from agent_pkg.host.bootstrap_handler import BootstrapHandler
 from editor_agent.host.runner import EditorDockerSession, editor_docker_session, writeback_success
 from editor_agent.host.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
-from mcp_infra.bootstrap.bootstrap import TypedBootstrapBuilder, docker_exec_call
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.model import OpenAIModelProto, SystemMessage
 
@@ -46,14 +46,13 @@ If you cannot complete the edit, declare failure:
 
 Do NOT send text messages - execute your plan with docker_exec."""
 
-        # Bootstrap: materialize the target file into the container before agent starts
-        builder = TypedBootstrapBuilder()
-        materialize_call = docker_exec_call(
-            builder, sess.runtime, ["editor_submit", "materialize", "/workspace"], timeout_ms=5000
-        )
+        def editor_bootstrap(b: ScriptBuilder, sess: EditorDockerSession) -> ScriptGen:
+            yield None  # prime
+            yield from b.exec_ok(sess.runtime, ["editor_submit", "materialize", "/workspace"], timeout_ms=5000)
 
+        b = ScriptBuilder()
         handlers: list[BaseHandler] = [
-            BootstrapHandler(materialize_call),
+            ScriptHandler(editor_bootstrap(b, sess)),
             AbortIf(lambda: not isinstance(sess.submit_server.state, SubmitStatePending)),
             MaxTurnsHandler(max_turns=max_turns),
             RedirectOnTextMessageHandler(reminder),
