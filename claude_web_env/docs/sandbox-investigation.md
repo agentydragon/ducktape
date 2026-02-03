@@ -98,6 +98,43 @@ and `CLONE_NEWUSER`).
 | `sendfile`                | works   |                                                                                                                              |
 | `timerfd_create`          | works   |                                                                                                                              |
 | `signalfd`                | EINVAL  |                                                                                                                              |
+| `add_key` / `keyctl`      | limited | Kernel keyring quota exhausts after ~60-70 container invocations per session                                                 |
+
+## Kernel Keyring Quota Limit
+
+gVisor imposes a **per-session kernel keyring quota** that limits the total number
+of container builds that can run in a single Claude Code session.
+
+**Symptoms**:
+
+- `create keyring 'buildah-buildah...': Disk quota exceeded`
+- Builds fail at early RUN steps after previous builds consumed the quota
+- Cleaning up containers/storage does NOT restore quota (keyrings are session-scoped)
+
+**Root cause**: Each buildah RUN step creates a kernel keyring for credential
+isolation. gVisor's keyring implementation has a fixed quota (exact limit unknown,
+but ~60-70 keyring creations observed before exhaustion). Unlike native Linux
+where `/proc/sys/kernel/keys/*` sysctls can tune limits, gVisor doesn't expose
+these controls.
+
+**Practical impact**:
+
+- VFS storage with `--layers=false`: Each RUN step creates a keyring. A 111-step
+  Dockerfile consumes ~111 keyring slots. After one build attempt that completes
+  ~62 steps, only ~9 slots remain. A retry fails at step 9.
+- Overlay storage with `--layers=true`: Same keyring creation per step, but
+  cached steps don't create new keyrings on rebuild. More efficient for iterative
+  development.
+
+**Workarounds**:
+
+1. Use overlay storage for iterative builds (cached steps don't consume keyrings)
+2. Consolidate RUN instructions to minimize keyring usage per build
+3. For VFS builds, ensure the Dockerfile fits within a single session's quota
+4. Session refresh: Start a new Claude Code session to reset keyring quota
+
+**Diagnostics**: gVisor doesn't expose `/proc/key-users` or keyring sysctls.
+The only indication is the "Disk quota exceeded" error on keyring creation.
 
 ## Supported Filesystem Types
 

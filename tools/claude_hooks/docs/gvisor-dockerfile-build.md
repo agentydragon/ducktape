@@ -80,6 +80,28 @@ RUN seq 1 1000000 > /dev/null 2>&1
 RUN some-verbose-command > /tmp/build.log 2>&1
 ```
 
+## Kernel keyring quota limit
+
+gVisor imposes a **per-session kernel keyring quota** (~60-70 keyrings) that limits
+the total number of RUN steps that can execute across all builds in a Claude Code session.
+
+**Error**: `create keyring 'buildah-buildah...': Disk quota exceeded`
+
+Each buildah RUN step creates a kernel keyring for credential isolation. Once exhausted:
+
+- Builds fail at early RUN steps
+- Cleaning up containers/storage does NOT restore quota
+- Only a new Claude Code session resets the quota
+
+**Workarounds**:
+
+1. **Use overlay storage** for iterative builds — cached steps don't create keyrings
+2. **Consolidate RUN instructions** to reduce total keyring usage
+3. **Start fresh session** if quota exhausted
+
+For large Dockerfiles (>50 RUN steps), plan builds to complete within a single session.
+See `claude_web_env/docs/sandbox-investigation.md` for detailed analysis.
+
 ## Verifying shared library completeness
 
 ```bash
