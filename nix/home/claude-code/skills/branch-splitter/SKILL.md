@@ -14,8 +14,9 @@ Transform a large, messy branch with many changes into a DAG of independent, rev
 3. **No orphaned deletions** - If a PR removes the last user of code, delete that code too
 4. **Don't make things worse** - Each PR must not break what wasn't already broken (see Imperfect Baselines)
 5. **Truthful documentation** - If behavior changes, docs must change in same PR
-6. **Tests with implementation** - If tests exist in the source branch, they accompany their implementation
-7. **Complete coverage** - The union of all split PRs MUST equal the original branch diff (validated programmatically)
+6. **Documentation claims must be true** - If docs claim something is done, the implementation must exist (see Documentation Consistency below)
+7. **Tests with implementation** - If tests exist in the source branch, they accompany their implementation
+8. **Complete coverage** - The union of all split PRs MUST equal the original branch diff (validated programmatically)
 
 ## Splitting is De Novo, Not Commit-Following
 
@@ -103,6 +104,109 @@ The base branch has these known failures that are not addressed by this PR:
 
 This PR does not make these worse.
 ```
+
+## Documentation Consistency
+
+**Critical**: Documentation that claims something is done must not be mergeable before the actual implementation. This is a DAG constraint.
+
+### The Problem
+
+Consider a plan document that tracks progress:
+
+```markdown
+# Credential Passthrough Plan
+
+## Phase 1: Rename Database Getter ✅
+
+- Renamed `get_db` to `get_admin_db` for explicit admin access
+- Updated all call sites in backend routes
+
+## Phase 2: Add Agent Credentials (planned)
+
+...
+```
+
+If this documentation is in branch `pr-cred-plan` and the actual rename is in branch `pr-db-refactor`, there's a dangerous state: merging `pr-cred-plan` first would commit documentation claiming the rename is done before it actually exists.
+
+### Solutions
+
+**Option A: DAG Constraint** (Preferred)
+
+Add a dependency edge so the documentation branch depends on the implementation branch:
+
+```json
+{
+  "branches": {
+    "pr-db-refactor": [],
+    "pr-cred-plan": ["pr-db-refactor"]
+  }
+}
+```
+
+This ensures the rename is always merged before the docs claiming it's complete.
+
+**Option B: Intermediate Documentation States**
+
+Split documentation into stages that match progress:
+
+```
+pr-cred-plan-v1:  "Phase 1: Rename Database Getter (planned)"
+pr-db-refactor:   [actual rename implementation]
+pr-cred-plan-v2:  "Phase 1: Rename Database Getter ✅"
+```
+
+With DAG: `pr-cred-plan-v1` → `pr-db-refactor` → `pr-cred-plan-v2`
+
+**Option C: Combined PR**
+
+If documentation and implementation are tightly coupled, keep them in the same PR:
+
+```
+pr-db-refactor-with-docs: [rename code + updated plan document]
+```
+
+### What to Check
+
+When splitting, examine documentation files for:
+
+- Progress markers (✅, "done", "complete", "implemented")
+- Claims about what code does ("the getter is now named X")
+- References to specific functions/files that must exist
+- Status updates in plan documents
+
+If documentation claims X is done, ensure either:
+
+1. X is in the same PR as the docs, OR
+2. The docs PR depends on the PR that implements X
+
+### Example: Credential Passthrough Split
+
+Original branch has:
+
+- `agent-credential-passthrough.md` with "Phase 1 complete: renamed get_db"
+- `deps.py` with actual `get_admin_db` function
+
+**Wrong split**:
+
+```json
+{
+  "pr-cred-plan": [],
+  "pr-db-refactor": []
+}
+```
+
+Both independent = can merge docs before code = broken claim
+
+**Correct split**:
+
+```json
+{
+  "pr-db-refactor": [],
+  "pr-cred-plan": ["pr-db-refactor"]
+}
+```
+
+Plan depends on refactor = docs never claim completion before code exists
 
 ## Acceptable Outcomes
 
@@ -648,6 +752,139 @@ In these cases, reconsider the split strategy:
 - Merge some PRs back together
 - Try a different split boundary
 - Accept a larger, tangled PR with documentation
+
+## Ongoing Maintenance
+
+Splits are not one-time operations. As the user merges PRs or requests changes, the split may need updates.
+
+### When Maintenance is Needed
+
+1. **User merges a split branch** → Remaining branches may need rebasing
+2. **User requests edits to the original branch** → Changes propagate to affected split branches
+3. **Base branch (devel) moves forward** → All split branches need rebasing
+4. **User wants to add more changes** → May need new split branches or updates to existing ones
+5. **Review feedback** → Edits to split branches require re-validation
+
+### Maintenance Operations
+
+**After a split branch is merged:**
+
+```bash
+# Fetch latest base
+git fetch origin devel
+
+# Rebase remaining split branches on new base
+for branch in pr2-refactor pr3-feature pr4-integration; do
+  git checkout $branch
+  git rebase origin/devel
+  git push --force-with-lease
+done
+
+# Re-run validation (DAG may have fewer nodes now)
+./validate-dag-split.py dag.json
+```
+
+**After user requests edits to original branch:**
+
+1. Apply edits to the original branch
+2. Identify which split branches are affected by the edits
+3. Cherry-pick or reapply changes to affected split branches
+4. Re-run validation to ensure content invariant still holds
+
+**After adding new changes:**
+
+1. Decide if changes fit in existing split branches or need new ones
+2. If new branch needed:
+   - Create branch from appropriate base (devel or a split branch it depends on)
+   - Add to DAG config with correct dependencies
+   - Update original branch to include the new changes
+3. Re-run validation
+
+### Updating the DAG Config
+
+As branches are merged, update `dag.json`:
+
+```json
+// Before: 5 branches
+{
+  "branches": {
+    "pr1-style": [],
+    "pr2-refactor": [],
+    "pr3-feature": ["pr1-style", "pr2-refactor"],
+    "pr4-tests": ["pr2-refactor"],
+    "pr5-integration": ["pr3-feature", "pr4-tests"]
+  }
+}
+
+// After pr1-style and pr2-refactor merged:
+// Remove merged branches, update deps to reference base
+{
+  "branches": {
+    "pr3-feature": [],
+    "pr4-tests": [],
+    "pr5-integration": ["pr3-feature", "pr4-tests"]
+  }
+}
+```
+
+### Handling Obsolete Branches
+
+Sometimes changes to the original branch make split branches obsolete:
+
+- **Migration squashing**: If incremental migrations are squashed into base, branches containing the old migrations become invalid
+- **Feature removal**: If a feature is removed from original, the split branch for it should be deleted
+- **Restructuring**: If the split strategy changes, old branches may need deletion and recreation
+
+When branches become obsolete:
+
+```bash
+# Delete local branch
+git branch -D pr-obsolete-feature
+
+# Delete remote branch (if pushed)
+git push origin --delete pr-obsolete-feature
+
+# Update DAG config to remove the branch
+# Re-run validation
+```
+
+### Communication Pattern
+
+When maintaining splits:
+
+```
+User: "I merged pr1-style, please update the other branches"
+Agent:
+  1. Fetch latest devel (now includes pr1-style)
+  2. Rebase pr2, pr3, pr4, pr5 on new devel
+  3. Update dag.json to remove pr1-style
+  4. Re-run validation
+  5. Push updated branches
+
+User: "I need to add a bugfix to the original branch"
+Agent:
+  1. Add bugfix to original branch
+  2. Determine which split branch should contain the fix
+  3. Cherry-pick or apply fix to that branch
+  4. Re-run validation (content invariant must still hold)
+  5. Push updated branches
+```
+
+### Validation After Maintenance
+
+Always re-run validation after maintenance:
+
+```bash
+# After any maintenance operation
+./validate-dag-split.py dag.json
+
+# Check for:
+# - Merge conflicts (may need new DAG edges)
+# - Content invariant (original branch changes must be in split union)
+# - Test failures (rebasing may reveal issues)
+```
+
+If validation fails after maintenance, apply the same iteration loop as during initial splitting.
 
 ## Output Artifacts
 
