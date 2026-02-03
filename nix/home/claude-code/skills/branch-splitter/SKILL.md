@@ -21,13 +21,17 @@ Split a branch so that:
 These properties must hold for every split PR:
 
 1. **Atomic changes** — Each PR does one logical thing
-2. **No dead code** — If a PR adds code, it must be used in that same PR
+2. **No dead code** — If a PR adds code, it must be used in that same PR (or already used in base + earlier PRs in the DAG)
 3. **No orphaned deletions** — If a PR removes the last user of code, delete that code too
-4. **Don't make things worse** — Each PR must not break what wasn't already broken (see Imperfect Baselines in the Cookbook)
+4. **Sound intermediate states** — After merging any valid prefix of the DAG, the codebase must build/pass tests. The final state is identical to the original branch (content invariant), but every intermediate state along the way must also be healthy
 5. **Truthful documentation** — If behavior changes, docs must change in the same PR
 6. **Documentation claims must be true** — If docs claim something is done (✅, "complete", "implemented"), the implementation must exist in or before that PR in the DAG. See Documentation Consistency in the Cookbook
 7. **Tests with implementation** — If tests exist in the source branch, they accompany their implementation
 8. **Complete coverage** — The union of all split PRs MUST equal the original branch diff (validated programmatically)
+
+### Faithful Decomposition
+
+The split is a **decomposition**, not an improvement pass. The content invariant requires the union of all PRs to exactly equal the original branch diff — nothing added, nothing removed. If the original branch adds dead code, has style issues, or lacks tests, the split will faithfully reproduce those properties. Constraints 2–3 above apply relative to what the original branch does: if the original adds function `foo()` in file A and calls it in file B, then the PR containing file A must also contain file B (or depend on a PR that does). But if the original adds `foo()` and never calls it, the split PR that adds `foo()` will also add dead code — that's faithful reproduction, not a defect of the split.
 
 ### De Novo Splitting
 
@@ -53,6 +57,12 @@ PR1: STYLE.md changes only (2 lines from commit 1)
 PR2: auth.py refactor (200 lines from commit 1 + 10 lines from commit 3)
 PR3: feature.py + test_feature.py (from commit 2)
 ```
+
+### Splitting a File Across PRs
+
+When the original branch makes logically independent changes to the same file, those changes may belong in different PRs. For example, `models.py` might have both a new enum value (for feature A) and a renamed field (for refactor B).
+
+To split: include the file in both PRs, but apply only the relevant hunks in each. The planning phase must identify which hunks of each file belong to which PR and provide them to the extraction subagent. When two PRs both edit the same file, add a DAG edge between them so one always merges first — otherwise the second PR's diff will conflict.
 
 ## 3. Output Artifacts
 
@@ -94,6 +104,10 @@ Synthesize subagent reports into a split plan:
 4. **Build the DAG**: independent atoms become leaves, dependent clusters form chains, documentation claims add edges
 5. **Check for transitional needs**: does splitting require intermediate states not in the original? Document any added transitional commits
 
+### User Review Checkpoint
+
+Present the proposed DAG to the user before starting extraction. Include: branch names with one-sentence scope descriptions, dependency edges with rationale, and any known tight couplings. Extraction is expensive (worktrees, subagents, cherry-picks) — get agreement on the split boundaries first.
+
 ### Phase 3: Extraction (Parallel Subagents in Worktrees)
 
 Use separate git worktrees for each PR branch to avoid conflicts:
@@ -106,7 +120,15 @@ git worktree add ../split-pr3 -b pr3-feature-a pr1-style-fixes  # depends on PR1
 
 After creating each worktree, install commit hooks (`pre-commit install` or equivalent).
 
-Assign each worktree to a subagent. Subagents must:
+Assign each worktree to a subagent. Each extraction subagent's prompt must include:
+
+- **Branch scope**: one-sentence description of what this PR does
+- **File list with hunks**: the specific changes from the original diff that belong in this PR (file paths + relevant diff hunks, not just file names — a file may be split across PRs)
+- **Base state**: what branch/commit the worktree is based on (base branch for leaves, dependency branch for non-leaves)
+- **Dependencies**: which other PR branches this one builds on, so the subagent understands what already exists
+- **Baseline failures**: known pre-existing test/lint failures to ignore
+
+Subagents must:
 
 - Only modify files in their assigned worktree
 - Commit with clear messages referencing original commits
@@ -183,8 +205,8 @@ Use subagents liberally — they enable parallelism and preserve context.
 
 ### Coordination Rules
 
-1. **File ownership** — Each subagent owns specific files, no overlap
-2. **Worktree isolation** — Each subagent works in a separate git worktree
+1. **Worktree isolation** — Each subagent works in a separate git worktree
+2. **Shared files require DAG edges** — Multiple PRs can edit the same file, but they must be ordered in the DAG to avoid merge conflicts. When two PRs both modify `auth.py`, one must depend on the other
 3. **No shared state** — Subagents communicate via reports, not shared files
 4. **Sequential git ops** — Only one agent commits to a branch at a time
 
