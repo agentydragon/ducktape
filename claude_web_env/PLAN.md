@@ -35,7 +35,7 @@ Recent changes to verify:
 ### Current Dockerfile Stats
 
 - **84 layer-creating instructions**: 1 FROM + 43 RUN + 40 COPY
-- **Overlay limit**: 55 total layers (54 RUN/COPY/ADD + 1 FROM)
+- **Overlay limit**: ~47-50 layers (kernel page size limit on mount options)
 
 ### Consolidation Opportunities
 
@@ -51,10 +51,10 @@ Recent changes to verify:
 | chmod RUNs           | 10      | 2     | 8       |
 | **Total**            | 41      | 10    | **31**  |
 
-**Result**: 84 - 31 = **53 layers** (under 55 limit!)
+**Result**: 84 - 31 = **53 layers** (may still exceed ~47-50 overlay limit)
 
-With consolidation, **single-stage build with overlay caching becomes possible**.
-No multi-stage split needed.
+With consolidation + potential 2-stage split, **overlay caching becomes possible**.
+Note: containers/storage layer deduplication may allow more layers in practice.
 
 ### Implementation
 
@@ -87,8 +87,12 @@ May require post-processing (strip, objcopy) to match exactly.
 
 1. **Kernel keyring quota**: ✅ **FIXED** — `crun-gvisor-wrapper` now injects
    `--no-new-keyring` to prevent keyring creation. Tested with 70+ RUN steps.
-2. **Overlay layer limit**: 55 total layers due to mount option string page size limit.
-3. **Overlay works on tmpfs**: Tested with 55-layer build - cache reuse confirmed.
+2. **Overlay layer limit**: ~47-50 layers per overlay stack.
+   - Kernel limit: 4096 bytes (1 page) for mount options string
+   - Per-layer: ~80 bytes (graphroot path + 26-char symlink + separator)
+   - Empirically verified: 90 layers at 4066 bytes succeeded, 91 at 4110 bytes failed
+   - containers/storage deduplicates layers across images, so effective limit varies
+3. **Overlay works on tmpfs**: Tested with 90-layer build - cache reuse confirmed.
 
 ### Keyring Fix Details
 
