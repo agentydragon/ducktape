@@ -459,7 +459,7 @@ If analysis reveals circular deps:
 
 ## Validation Script
 
-The split must be validated by a reproducible script that tests all valid DAG orderings. The script is provided at `validate-dag-split.sh` in this skill directory.
+The split must be validated by a reproducible script that tests all valid DAG orderings. A skeleton Python script is provided at `validate-dag-split.py` in this skill directory. Copy it to your repo and customize as needed.
 
 ### What the Script Validates
 
@@ -504,10 +504,10 @@ Provide the DAG as a JSON file:
 
 ```bash
 # Full validation with tests
-./validate-dag-split.sh dag.json
+./validate-dag-split.py dag.json
 
 # Skip tests (just check merges and content invariant)
-./validate-dag-split.sh dag.json --skip-tests
+./validate-dag-split.py dag.json --skip-tests
 
 # Example output:
 # === Configuration ===
@@ -653,14 +653,14 @@ until: all orderings pass AND content invariant holds
 #### Example Iteration Session
 
 ```
-$ ./validate-dag-split.sh dag.json
+$ ./validate-dag-split.py dag.json
 FAIL: Conflict merging pr3-feature in ordering 3
 
 # Analyze: pr3 edits auth.py, pr2 also edits auth.py
 # Fix: pr3 must come after pr2
 
 $ vim dag.json  # add "pr2-refactor" to pr3's deps
-$ ./validate-dag-split.sh dag.json
+$ ./validate-dag-split.py dag.json
 FAIL: Test failure //auth:test_login in ordering 1
 
 # Analyze: test_login tests code added in pr2, but test is in pr3
@@ -670,7 +670,7 @@ $ git -C ../split-pr2 cherry-pick <test-commit>
 $ git -C ../split-pr3 rebase -i  # remove test commit
 $ git push --force  # update both branches
 
-$ ./validate-dag-split.sh dag.json
+$ ./validate-dag-split.py dag.json
 === All 6 orderings passed ===
 ```
 
