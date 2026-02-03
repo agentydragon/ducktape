@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["pydantic>=2"]
 # ///
 """Validate branch split against all DAG orderings.
 
@@ -32,18 +32,17 @@ The 'branches' field maps branch names to their dependencies (empty = no deps).
 from __future__ import annotations
 
 import argparse
-import json
 import random
 import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import BaseModel
 
-@dataclass
-class DagConfig:
+
+class DagConfig(BaseModel):
     """Configuration for DAG validation."""
 
     base: str
@@ -55,16 +54,7 @@ class DagConfig:
 
 def parse_dag_config(path: Path) -> DagConfig:
     """Parse DAG configuration from JSON file."""
-    with path.open() as f:
-        data = json.load(f)
-
-    return DagConfig(
-        base=data["base"],
-        original_branch=data["original_branch"],
-        branches=data["branches"],
-        test_command=data.get("test_command", "true"),
-        build_command=data.get("build_command", "true"),
-    )
+    return DagConfig.model_validate_json(path.read_text())
 
 
 def all_topological_sorts(dag: dict[str, list[str]]) -> Iterator[list[str]]:
