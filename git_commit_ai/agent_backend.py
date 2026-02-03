@@ -15,7 +15,7 @@ from agent_core.agent import Agent
 from agent_core.handler import BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, NoAction
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core.script_handler import ScriptBuilder, ScriptGen, ScriptHandler
+from agent_core.script_handler import ScriptBuilder, ScriptGen, script_handler
 from git_commit_ai.git_ro.server import DiffFormat, DiffInput, GitRoServer, ListSlice, ShowInput, StatusInput, TextSlice
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
@@ -33,90 +33,95 @@ COMMIT_MESSAGE_BODY_WIDTH = 80
 _COMMIT_PROMPT_TEMPLATE = Template(filename=str(Path(__file__).parent / "commit_prompt.mako"))
 
 
-def commit_bootstrap(
-    b: ScriptBuilder, mount_prefix: MCPMountPrefix, git_server: GitRoServer, *, amend: bool
-) -> ScriptGen:
+class GitScriptBuilder(ScriptBuilder):
+    """ScriptBuilder with convenience methods for git_ro tool calls."""
+
+    def __init__(self, git_ro: Mounted[GitRoServer]):
+        super().__init__()
+        self._git_ro = git_ro
+
+    def status(self, *, limit: int = 1000) -> list:
+        """Create a git status call."""
+        return [
+            self.call(
+                self._git_ro.prefix,
+                self._git_ro.server.status_tool.name,
+                StatusInput(list_slice=ListSlice(offset=0, limit=limit)),
+            )
+        ]
+
+    def diff(
+        self,
+        fmt: DiffFormat,
+        *,
+        staged: bool = True,
+        unified: int = 3,
+        rev_a: str | None = None,
+        rev_b: str | None = None,
+        max_chars: int = 0,
+        list_limit: int = 2000,
+    ) -> list:
+        """Create a git diff call."""
+        return [
+            self.call(
+                self._git_ro.prefix,
+                self._git_ro.server.diff_tool.name,
+                DiffInput(
+                    format=fmt,
+                    staged=staged,
+                    unified=unified,
+                    rev_a=rev_a,
+                    rev_b=rev_b,
+                    paths=None,
+                    find_renames=True,
+                    slice=TextSlice(offset_chars=0, max_chars=max_chars),
+                    list_slice=ListSlice(offset=0, limit=list_limit),
+                ),
+            )
+        ]
+
+    def show(
+        self, obj: str, *, fmt: DiffFormat = DiffFormat.PATCH, max_chars: int = 50_000, list_limit: int = 100
+    ) -> list:
+        """Create a git show call."""
+        return [
+            self.call(
+                self._git_ro.prefix,
+                self._git_ro.server.show_tool.name,
+                ShowInput(
+                    object=obj,
+                    format=fmt,
+                    slice=TextSlice(offset_chars=0, max_chars=max_chars),
+                    list_slice=ListSlice(offset=0, limit=list_limit),
+                ),
+            )
+        ]
+
+
+@script_handler
+def commit_bootstrap(b: GitScriptBuilder, *, amend: bool) -> ScriptGen:
     """Bootstrap generator: inject git_ro calls for commit context."""
     yield None  # prime
 
-    no_text_slice = TextSlice(offset_chars=0, max_chars=0)
-    patch_text_slice = TextSlice(offset_chars=0, max_chars=50_000)
-    staged_list_slice = ListSlice(offset=0, limit=2000)
-    patch_list_slice = ListSlice(offset=0, limit=100)
-
     calls = [
-        b.call(mount_prefix, git_server.status_tool.name, StatusInput(list_slice=ListSlice(offset=0, limit=1000))),
-        b.call(
-            mount_prefix,
-            git_server.diff_tool.name,
-            DiffInput(
-                format=DiffFormat.NAME_STATUS,
-                staged=True,
-                unified=3,
-                rev_a=None,
-                rev_b=None,
-                paths=None,
-                find_renames=True,
-                slice=no_text_slice,
-                list_slice=staged_list_slice,
-            ),
-        ),
-        b.call(
-            mount_prefix,
-            git_server.diff_tool.name,
-            DiffInput(
-                format=DiffFormat.STAT,
-                staged=True,
-                unified=3,
-                rev_a=None,
-                rev_b=None,
-                paths=None,
-                find_renames=True,
-                slice=no_text_slice,
-                list_slice=staged_list_slice,
-            ),
-        ),
-        b.call(
-            mount_prefix,
-            git_server.diff_tool.name,
-            DiffInput(
-                format=DiffFormat.PATCH,
-                staged=True,
-                unified=0,
-                rev_a=None,
-                rev_b=None,
-                paths=None,
-                find_renames=True,
-                slice=patch_text_slice,
-                list_slice=patch_list_slice,
-            ),
-        ),
+        *b.status(),
+        *b.diff(DiffFormat.NAME_STATUS, staged=True),
+        *b.diff(DiffFormat.STAT, staged=True),
+        *b.diff(DiffFormat.PATCH, staged=True, unified=0, max_chars=50_000, list_limit=100),
     ]
 
     if amend:
         calls.extend(
             [
-                b.call(
-                    mount_prefix,
-                    git_server.show_tool.name,
-                    ShowInput(
-                        object="HEAD", format=DiffFormat.PATCH, slice=patch_text_slice, list_slice=patch_list_slice
-                    ),
-                ),
-                b.call(
-                    mount_prefix,
-                    git_server.diff_tool.name,
-                    DiffInput(
-                        format=DiffFormat.PATCH,
-                        staged=False,
-                        unified=0,
-                        rev_a="HEAD^",
-                        rev_b="HEAD",
-                        paths=None,
-                        find_renames=True,
-                        slice=patch_text_slice,
-                        list_slice=patch_list_slice,
-                    ),
+                *b.show("HEAD", max_chars=50_000, list_limit=100),
+                *b.diff(
+                    DiffFormat.PATCH,
+                    staged=False,
+                    unified=0,
+                    rev_a="HEAD^",
+                    rev_b="HEAD",
+                    max_chars=50_000,
+                    list_limit=100,
                 ),
             ]
         )
@@ -210,8 +215,8 @@ async def generate_commit_message_agent(
     )
 
     async with CommitCompositor(repo, submit_state) as comp:
-        b = ScriptBuilder()
-        bootstrap_handler = ScriptHandler(commit_bootstrap(b, comp.git_ro.prefix, comp.git_ro.server, amend=amend))
+        b = GitScriptBuilder(comp.git_ro)
+        bootstrap_handler = commit_bootstrap(b, amend=amend)
 
         reminder = (
             "You sent a text message instead of taking action. "
