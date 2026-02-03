@@ -93,6 +93,8 @@ py_library(
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
         "//agent_core:turn_limit",
+        "//agent_pkg/host:bootstrap_handler",
+        "//mcp_infra/bootstrap",
         "//mcp_infra/display:rich_display",
         "//openai_utils:model",
         "@pypi//aiodocker",

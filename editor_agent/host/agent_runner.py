@@ -12,8 +12,10 @@ from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandle
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.turn_limit import MaxTurnsHandler
+from agent_pkg.host.bootstrap_handler import BootstrapHandler
 from editor_agent.host.runner import EditorDockerSession, editor_docker_session, writeback_success
 from editor_agent.host.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
+from mcp_infra.bootstrap.bootstrap import TypedBootstrapBuilder, docker_exec_call
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.model import OpenAIModelProto, SystemMessage
 
@@ -29,7 +31,7 @@ async def _run_agent_in_session(
     async with Client(sess.compositor) as mcp_client:
         # Build system prompt on the host side (file content included inline)
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.render(
-            prompt=sess.submit_server.prompt, filename=sess.filename, file_content=sess.original_content or ""
+            prompt=sess.submit_server.edit_prompt, filename=sess.filename, file_content=sess.original_content or ""
         )
 
         reminder = """You sent a text message instead of taking action.
@@ -44,7 +46,14 @@ If you cannot complete the edit, declare failure:
 
 Do NOT send text messages - execute your plan with docker_exec."""
 
+        # Bootstrap: materialize the target file into the container before agent starts
+        builder = TypedBootstrapBuilder()
+        materialize_call = docker_exec_call(
+            builder, sess.runtime, ["editor_submit", "materialize", "/workspace"], timeout_ms=5000
+        )
+
         handlers: list[BaseHandler] = [
+            BootstrapHandler(materialize_call),
             AbortIf(lambda: not isinstance(sess.submit_server.state, SubmitStatePending)),
             MaxTurnsHandler(max_turns=max_turns),
             RedirectOnTextMessageHandler(reminder),
