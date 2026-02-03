@@ -564,7 +564,43 @@ Track agent IDs in a simple map:
   "pr1-style-fixes": { "extractor": "abc123", "validator": "def456" },
   "pr2-refactor": { "extractor": "ghi789", "validator": "jkl012" }
 }
-````
+```
+
+### Querying Branch Subagents
+
+Beyond extraction and validation, **resume branch subagents to ask analytical questions**. The subagent has full context of its branch and can answer cheaply:
+
+**Splittability checks** (ask during or after extraction):
+
+- "Does this branch have any pieces that would make sense to extract separately?"
+- "Are there independent sub-changes in this PR that don't depend on each other?"
+
+**Claim verification** (ask before finalizing):
+
+- "If this branch were merged directly onto devel, would it add any documentation claims that aren't substantiated by code in this branch?"
+- "Does this branch reference functions/files that only exist in other split branches?"
+
+**Style and quality** (ask during validation):
+
+- "Does this branch introduce any new style violations?"
+- "Are there any dead code additions or orphaned deletions?"
+- "Does this branch follow the conventions in STYLE.md?"
+
+**Dependency analysis** (ask when debugging merge conflicts):
+
+- "What files does this branch touch that other branches might also touch?"
+- "Could this branch's changes conflict with PR2?"
+
+These queries are cheap to run in parallel across all branch subagents and surface issues early — before running the full validation script.
+
+```
+# Example: parallel claim verification across all branches
+Resume PR1 subagent: "Would merging this add unsubstantiated claims?"
+Resume PR2 subagent: "Would merging this add unsubstantiated claims?"
+Resume PR3 subagent: "Would merging this add unsubstantiated claims?"
+# → PR3 reports: "Yes - docs claim get_db was renamed, but rename is in PR2"
+# → Fix: add PR2 as dependency of PR3 in DAG
+```
 
 ## Handling Edge Cases
 
@@ -1024,3 +1060,4 @@ Here's the split:
 ```
 
 ```
+````
