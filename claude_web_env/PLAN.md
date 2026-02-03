@@ -1,79 +1,85 @@
 # Current Plan
 
-## Latest Build Results (2026-02-03)
+## Latest Build Results (2026-02-03, build v2)
 
-**Diff Summary**: 10,100 real differences
+**Diff Summary**: 2,132 real differences (down from 10,100)
 
-| Category        | Count |
-| --------------- | ----- |
-| Identical       | 112k  |
-| Excluded        | 900k  |
-| **Real diffs**  | 10.1k |
-| Only in live    | 9,780 |
-| Only in built   | 19    |
-| Content changed | 300   |
-| Type changed    | 1     |
+| Category        | Count  |
+| --------------- | ------ |
+| Identical       | 120.4k |
+| Excluded        | 906.6k |
+| **Real diffs**  | 2,132  |
+| Only in live    | 1,742  |
+| Only in built   | 61     |
+| Content changed | 329    |
 
-**Root cause of most differences**: Dockerfile strips `/usr/share/doc`, `/usr/share/man`, `/usr/include` — but the live container has these files.
+### Remaining Diff Breakdown
 
-## Priority 1: Remove Stripping Step
+**Only in live (1,742):**
 
-Per the exclusion minimization goal, we should match the live container, not add exclusions for stripped files.
+| Category   | Count | Main items                                            | Action                 |
+| ---------- | ----- | ----------------------------------------------------- | ---------------------- |
+| root-local | 1,727 | virtualenv/pnpm caches                                | ✅ Added to exclusions |
+| docs       | 9     | age docs, python3 `_static`                           | ✅ Added age package   |
+| others     | 6     | stop-hook, .ssh, .bazelrc, .gitconfig, commit signing | ✅ Added to exclusions |
 
-**Files currently stripped (Dockerfile line ~333)**:
+**Only in built (61):**
 
-- `/usr/share/doc` (2145 files missing)
-- `/usr/share/doc-base`
-- `/usr/share/man`
-- `/usr/share/info`
-- `/usr/include` (4631 files missing)
-- `/usr/sbin`
+| Category  | Count | Main items            | Action                                |
+| --------- | ----- | --------------------- | ------------------------------------- |
+| docs      | 42    | python3.12-doc extras | Minor — live doesn't install this doc |
+| etc       | 7     | APT preference files  | ✅ Cleaned up in Dockerfile           |
+| usr-share | 12    | python devhelp/info   | Minor — from python3-doc package      |
 
-**Action**: Remove the stripping step from Dockerfile.
+**Content changed (329):**
 
-## Priority 2: Add Runtime-Only Exclusions
+| Category        | Count | Cause                                  |
+| --------------- | ----- | -------------------------------------- |
+| docs            | 28    | Changelog.gz diffs (version mismatch)  |
+| other           | 70    | systemd/gnupg binaries (version drift) |
+| python-libs     | 52    | Python 3.12 .so files (version drift)  |
+| system-binaries | 97    | systemd/gnupg/gdb/login/glib (version) |
+| etc             | 2     | deadsnakes sources, pam.d/login        |
+| home/root-home  | 3     | .gitconfig, .wget-hsts                 |
 
-These are legitimate runtime artifacts, not reproducibility failures:
+## Next Priority: Version Drift (329 files)
 
-| Path                        | Reason               |
-| --------------------------- | -------------------- |
-| `/home/claude/.npm`         | npm cache at runtime |
-| `/home/claude/.cache`       | runtime cache        |
-| `/root/.claude/projects`    | session files        |
-| `/root/.claude/stop-hook-*` | stop hook scripts    |
+The 329 content-changed files are all version drift — the snapshot.ubuntu.com archive (2025-12-01) provides slightly different package versions than what the live container has.
 
-## Priority 3: Fix Structure Mismatches
+### Live container package versions
 
-| Issue                          | Live    | Built     | Fix                       |
-| ------------------------------ | ------- | --------- | ------------------------- |
-| `/process_api`                 | file    | directory | Restructure in Dockerfile |
-| `/usr/local/bin/httpx`         | absent  | present   | Remove from Dockerfile    |
-| `/usr/local/bin/websockets`    | absent  | present   | Remove from Dockerfile    |
-| `/home/claude/scripts/README`  | absent  | present   | Remove from Dockerfile    |
-| `/usr/lib/jvm/.../docs`        | absent  | present   | Don't install java docs   |
-| `/etc/php/8.4/.../sqlite3.ini` | present | absent    | Install php-sqlite3       |
+```
+systemd=255.4-1ubuntu8.12
+gnupg=2.4.4-2ubuntu17.4
+python3.12=3.12.3-1ubuntu0.10
+gdb=15.0.50.20240403-0ubuntu1
+login/passwd=1:4.13+dfsg1-4ubuntu3.2
+libpam=1.5.3-5ubuntu5.5
+util-linux=2.39.3-9ubuntu6.4
+binutils=2.42-4ubuntu2.8
+```
 
-## Priority 4: Version Drift (300 files)
+### Approach
 
-Same-size binaries with different hashes. Mostly systemd and gnupg components.
+The snapshot archive from 2025-12-01 likely has earlier point releases. Options:
 
-Packages needing pinning:
+1. **Update snapshot date** to one that has the exact versions
+2. **Pin specific versions** with `apt-get install pkg=VERSION`
+3. **Use archive.ubuntu.com** with higher priority for these packages
 
-- `systemd` and related (`systemd-sysv`, `libsystemd0`, etc.)
-- `gnupg` and related
-- Anything else showing hash-only drift
-
-Method:
-
-1. Get exact versions from live: `dpkg-query -W -f='${Package}=${Version}\n' | grep systemd`
-2. Pin in Dockerfile: `apt-get install systemd=VERSION`
+Option 2 is the most reliable. Add version pins to the apt-get install line for drifting packages.
 
 ## Completed
 
 - ✅ Build script captures proprietary binaries
-- ✅ Documented exclusion minimization goal in AGENTS.md and README.md
-- ✅ Full build completed (60 steps, image size 5.66GB)
-- ✅ Diff report generated (10,100 real differences)
+- ✅ Documented exclusion minimization goal
+- ✅ Removed stripping step (was stripping `/usr/share/doc`, `/usr/include`, etc.)
+- ✅ Fixed `/process_api` structure (file, not directory)
+- ✅ Renamed `scripts/README` → `README.md`
+- ✅ Added `php8.4-sqlite3`, `age` packages
+- ✅ Added runtime exclusions (virtualenv, pnpm, .ssh, .bazelrc, projects)
+- ✅ Cleaned up APT preference files from built image
+- ✅ Diff reduced from 10,100 → 2,132 real differences
 
 ## Session Notes
 
