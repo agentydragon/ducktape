@@ -255,9 +255,42 @@ Subagent 3: Find documentation-only changes
 Subagent 4: Find test-only changes (new tests for existing code)
 Subagent 5: Identify schema/migration changes and their dependents
 Subagent 6: Map import/dependency relationships between changes
+Subagent 7: Scan for documentation claims (see below)
 ```
 
 Each subagent produces a report without making file edits.
+
+**Subagent 7: Documentation Claims Scanner**
+
+Scan all documentation files (plans, READMEs, CHANGELOG) for claims about implementation status:
+
+- Progress markers: ✅, "done", "complete", "implemented", "merged"
+- Phase/milestone completion claims: "Phase 1 complete", "Step 2 done"
+- References to specific code: "renamed X to Y", "added function Z", "updated all call sites"
+- Status tables with checkmarks or "Complete" entries
+
+For each claim found, report:
+
+1. File and line containing the claim
+2. What the claim asserts (e.g., "get_db renamed to get_admin_db")
+3. What code changes would make this claim true
+4. Whether those code changes exist in the branch
+
+Output format:
+
+```
+CLAIM: props/docs/plans/cred-passthrough.md:45
+  Text: "Phase 1: Renamed get_db to get_admin_db ✅"
+  Requires: Function rename in deps.py, call site updates in routes/*.py
+  Found in branch: YES (commit abc123)
+
+CLAIM: props/docs/plans/cred-passthrough.md:52
+  Text: "Phase 2: Agent credentials in requests (planned)"
+  Requires: N/A (marked as planned, not complete)
+  Found in branch: N/A
+```
+
+This report feeds into Phase 2 to ensure DAG edges enforce documentation consistency.
 
 ### Phase 2: Planning
 
@@ -275,12 +308,18 @@ Synthesize subagent reports into a split plan:
    - Schema change + code using it
    - API change + callers
 
-3. **Build the DAG**:
+3. **Process documentation claims** (from Subagent 7):
+   - For each claim marked "complete/done", identify the implementing code
+   - Add DAG edge: docs-with-claim → implementation-PR
+   - If claim and implementation would be in same PR, no edge needed
+
+4. **Build the DAG**:
    - Independent atoms become leaf PRs (no dependencies)
    - Dependent clusters form chains
+   - Documentation claims add edges to their implementations
    - Cross-cutting changes may need transitional states
 
-4. **Check for transitional needs**:
+5. **Check for transitional needs**:
    - Does splitting require intermediate states not in original?
    - Example: deprecate field → migrate readers → remove field
    - Document any added transitional commits
@@ -336,19 +375,25 @@ bazel build --config=check //... 2>&1 | grep -E "(error|warning)" >> baseline.tx
 
 This baseline defines "don't make things worse" - PRs must not introduce failures beyond this.
 
-#### 4.1: Individual PR Validation
+#### 4.1: Individual PR Validation (Parallelize with Subagents)
 
-Each PR branch must not introduce new failures:
+Each PR branch must not introduce new failures. **Launch validation subagents in parallel** — one per PR branch:
 
-```bash
-# Run on PR branch
-bazel build --config=check //...  # or project-specific build
-bazel test //...                   # or project-specific tests
-
-# Compare against baseline - new failures are blockers, pre-existing are allowed
+```
+Subagent for PR1: cd ../split-pr1 && bazel build --config=check //... && bazel test //...
+Subagent for PR2: cd ../split-pr2 && bazel build --config=check //... && bazel test //...
+Subagent for PR3: cd ../split-pr3 && bazel build --config=check //... && bazel test //...
+...
 ```
 
-For documentation-only PRs (plans, READMEs), build/test validation may be skipped if no code is touched.
+Each subagent:
+
+1. Checks out its assigned worktree
+2. Runs build and test commands
+3. Compares results against baseline
+4. Reports: PASS (no new failures) or FAIL (lists new failures)
+
+For documentation-only PRs (plans, READMEs), build/test validation may be skipped if no code is touched — subagent can simply report PASS.
 
 #### 4.2: DAG Order Validation
 
@@ -477,15 +522,48 @@ Main Agent
 ├── Synthesize Plan (main agent)
 │
 ├── Spawn Extraction Subagents (parallel, separate worktrees)
-│ ├── Extractor 1 (worktree A) → Branch 1
-│ ├── Extractor 2 (worktree B) → Branch 2
-│ └── Extractor N (worktree N) → Branch N
+│ ├── Extractor 1 (worktree A) → Branch 1 [save agent ID]
+│ ├── Extractor 2 (worktree B) → Branch 2 [save agent ID]
+│ └── Extractor N (worktree N) → Branch N [save agent ID]
 │
-├── Spawn Validation Subagent (sequential per ordering)
-│ └── Validator → Pass/Fail Report
+├── Spawn Validation Subagents (parallel per PR, sequential per ordering)
+│ ├── Validator PR1 → Pass/Fail [save agent ID]
+│ ├── Validator PR2 → Pass/Fail [save agent ID]
+│ └── Validator PRN → Pass/Fail [save agent ID]
 │
 └── Generate Documentation (main agent)
 
+```
+
+### Subagent Resumption for Maintenance
+
+**Save agent IDs** when spawning extraction and validation subagents. When maintenance is needed on a specific branch later:
+
+```
+
+# Initial extraction
+
+Extractor for PR1: agent_id = "abc123"
+
+# Later, user requests edit to PR1
+
+Resume agent "abc123" → has full context of PR1 work
+
+- Knows what commits were cherry-picked
+- Knows what conflicts were resolved
+- Can efficiently apply incremental changes
+
+````
+
+This saves significant context compared to spawning a fresh agent that must re-learn the branch's history.
+
+Track agent IDs in a simple map:
+
+```json
+{
+  "pr1-style-fixes": { "extractor": "abc123", "validator": "def456" },
+  "pr2-refactor": { "extractor": "ghi789", "validator": "jkl012" }
+}
 ````
 
 ## Handling Edge Cases
@@ -767,38 +845,36 @@ Splits are not one-time operations. As the user merges PRs or requests changes, 
 
 ### Maintenance Operations
 
+**Use subagent resumption** for maintenance — resume the original extractor/validator subagents rather than spawning fresh ones. They retain context about the branch's history, conflicts resolved, and design decisions.
+
 **After a split branch is merged:**
 
-```bash
-# Fetch latest base
-git fetch origin devel
+Resume remaining branch subagents in parallel for rebasing:
 
-# Rebase remaining split branches on new base
-for branch in pr2-refactor pr3-feature pr4-integration; do
-  git checkout $branch
-  git rebase origin/devel
-  git push --force-with-lease
-done
-
-# Re-run validation (DAG may have fewer nodes now)
-./validate-dag-split.py dag.json
 ```
+Resume extractor for PR2: rebase on origin/devel, push --force-with-lease
+Resume extractor for PR3: rebase on origin/devel, push --force-with-lease
+Resume extractor for PR4: rebase on origin/devel, push --force-with-lease
+```
+
+Then update DAG config (remove merged branch) and re-run validation.
 
 **After user requests edits to original branch:**
 
 1. Apply edits to the original branch
 2. Identify which split branches are affected by the edits
-3. Cherry-pick or reapply changes to affected split branches
+3. **Resume the affected branch's subagent** to apply changes (it knows the branch context)
 4. Re-run validation to ensure content invariant still holds
 
 **After adding new changes:**
 
 1. Decide if changes fit in existing split branches or need new ones
-2. If new branch needed:
-   - Create branch from appropriate base (devel or a split branch it depends on)
+2. If changes fit existing branch: **resume that branch's subagent**
+3. If new branch needed:
+   - Spawn new extraction subagent (save its ID for future maintenance)
    - Add to DAG config with correct dependencies
    - Update original branch to include the new changes
-3. Re-run validation
+4. Re-run validation
 
 ### Updating the DAG Config
 
@@ -944,4 +1020,7 @@ Here's the split:
 ```
 
 ```
-````
+
+```
+
+```
