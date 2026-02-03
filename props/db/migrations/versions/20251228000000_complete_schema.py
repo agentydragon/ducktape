@@ -2814,9 +2814,12 @@ The proxy intercepts manifest pushes and creates agent_definitions rows automati
     op.execute(
         "CREATE POLICY agent_runs_select_own ON agent_runs FOR SELECT USING (agent_run_id = current_agent_run_id())"
     )
-    op.execute(
-        "CREATE POLICY agent_runs_select_children ON agent_runs FOR SELECT USING (parent_agent_run_id = current_agent_run_id())"
-    )
+    # Recursive descendant visibility using is_agent_ancestor function
+    op.execute("""
+        CREATE POLICY agent_runs_select_descendants ON agent_runs FOR SELECT USING (
+            is_agent_ancestor(current_agent_run_id(), agent_run_id)
+        )
+    """)
 
     # file_sets policies (clustering branch removed)
     op.execute("""
