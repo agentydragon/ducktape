@@ -8,11 +8,12 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agent_core.events import ScriptEvent, ToolCallOutput
+from agent_core.events import ToolCallOutput
 from agent_core.loop_control import InjectItems, NoAction
 from agent_core.script_handler import (
     ScriptBuilder,
     ScriptError,
+    ScriptEvent,
     ScriptGen,
     ScriptHandler,
     find_tool_result,

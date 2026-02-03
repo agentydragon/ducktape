@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING
 from more_itertools import one
 from pydantic import BaseModel, TypeAdapter
 
-from agent_core.events import ScriptEvent, ToolCallOutput
+from agent_core.events import ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
 from agent_core.tool_provider import ToolResult
@@ -60,6 +60,10 @@ if TYPE_CHECKING:
     from mcp_infra.mounted import Mounted
 
 logger = logging.getLogger(__name__)
+
+# Event that script generators receive after yielding tool calls.
+# Currently only ToolCallOutput; extend if scripts need to react to other event types.
+ScriptEvent = ToolCallOutput
 
 ScriptItem = SystemMessage | UserMessage | FunctionCallItem
 

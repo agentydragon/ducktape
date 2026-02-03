@@ -103,10 +103,6 @@ EventType = Annotated[
     Field(discriminator="type"),
 ]
 
-# Event that ScriptHandler generators receive after yielding tool calls.
-# Currently only ToolCallOutput; extend if scripts need to react to other event types.
-ScriptEvent = ToolCallOutput
-
 # All event types that can appear in an agent transcript or be logged.
 TranscriptEvent = (
     SystemText | UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem | Response | ApiRequest
