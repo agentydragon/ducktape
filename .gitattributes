@@ -23,6 +23,8 @@ Cargo.Bazel.lock linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 claude_web_env/rootfs/** rules-lint-ignored=true
+claude_web_env/reference/** rules-lint-ignored=true
+claude_web_env/live-dpkg-versions.txt rules-lint-ignored=true
 
 # Archived/legacy code
 k8s-old/** rules-lint-ignored=true
