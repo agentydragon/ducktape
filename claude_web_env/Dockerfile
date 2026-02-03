@@ -446,8 +446,10 @@ RUN chmod +x /usr/local/bin/create-venv-py3.10 /usr/local/bin/create-venv-py3.11
 # LIVE CONTAINER BINARIES AND SCRIPTS
 # ============================================================================
 # Snapshotted from live container — these are part of the Claude Code runtime
-COPY rootfs/usr/local/bin/environment-manager /usr/local/bin/environment-manager
-RUN chmod +x /usr/local/bin/environment-manager
+# Large binaries stored compressed in reference/*.gz to reduce git repo size
+COPY reference/environment-manager.gz /tmp/environment-manager.gz
+RUN gunzip -c /tmp/environment-manager.gz > /usr/local/bin/environment-manager && \
+    chmod +x /usr/local/bin/environment-manager && rm /tmp/environment-manager.gz
 COPY rootfs/usr/local/bin/check-tools /usr/local/bin/check-tools
 RUN chmod +x /usr/local/bin/check-tools
 COPY rootfs/usr/local/bin/use-php-8.4 /usr/local/bin/use-php-8.4
@@ -456,9 +458,11 @@ RUN chmod +x /usr/local/bin/use-php-8.4
 # ============================================================================
 # PROCESS API SERVER
 # ============================================================================
-# Proprietary server from live container (captured as reference/process_api.gz)
-COPY rootfs/process_api/process_api /process_api/process_api
-RUN chmod +x /process_api/process_api
+# Proprietary server from live container (stored compressed as reference/process_api.gz)
+COPY reference/process_api.gz /tmp/process_api.gz
+RUN mkdir -p /process_api && \
+    gunzip -c /tmp/process_api.gz > /process_api/process_api && \
+    chmod +x /process_api/process_api && rm /tmp/process_api.gz
 
 # ============================================================================
 # USER SETUP
