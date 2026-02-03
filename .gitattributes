@@ -21,6 +21,9 @@ tana/testdata/** rules-lint-ignored=true
 # Generated lockfiles - large, not useful to diff
 Cargo.Bazel.lock linguist-generated=true
 
+# Artifacts captured from live Claude Code containers — not our source code
+claude_web_env/rootfs/** rules-lint-ignored=true
+
 # Archived/legacy code
 k8s-old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager

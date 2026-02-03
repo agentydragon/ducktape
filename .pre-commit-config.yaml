@@ -6,6 +6,9 @@ exclude: |
     # Legacy/archived directories
     k8s-old/.*|
 
+    # Artifacts captured from live Claude Code containers — not our source code
+    claude_web_env/rootfs/.*|
+
     # Test data
     claude/claude_hooks/testdata/.*\.md|
     tana/testdata/.*|

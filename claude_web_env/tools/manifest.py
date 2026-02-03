@@ -9,6 +9,7 @@ import fnmatch
 import sys
 from pathlib import Path
 
+import yaml
 from pydantic import BaseModel
 
 
@@ -72,8 +73,6 @@ def load_exclusions(path: str | None) -> Exclusions:
         return Exclusions()
     text = Path(path).read_text()
     if path.endswith((".yaml", ".yml")):
-        import yaml  # noqa: PLC0415  # deferred: pyyaml is optional (only diff-manifests declares it)
-
         data = yaml.safe_load(text)
         return Exclusions.model_validate(data)
     return Exclusions.model_validate_json(text)

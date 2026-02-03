@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["pydantic"]
+# dependencies = ["pydantic", "pyyaml"]
 # ///
 """Capture a full filesystem manifest as NDJSON.
 
