@@ -28,7 +28,7 @@ Move budget tracking from `PromptOptimizerTypeConfig.budget_limit` to a proper c
 **`agent_runs` table** (column already exists, just needs population):
 
 ```sql
-budget_usd: FLOAT NULL  -- Max USD cost for this agent tree. NULL only for graders (high limit like $10000)
+budget_usd: FLOAT NOT NULL  -- Max USD cost for this agent tree. All agents have explicit budget.
 ```
 
 **Add FK constraint** to ensure model is known:
@@ -93,10 +93,10 @@ LEFT JOIN costs c ON c.agent_run_id = ar.agent_run_id;
 Columns:
 
 - `agent_run_id` - The agent run
-- `budget_usd` - Budget limit (NULL = unlimited)
+- `budget_usd` - Budget limit (all agents have explicit budget)
 - `own_consumed_usd` - Cost of this agent's own LLM requests
 - `tree_consumed_usd` - Total cost of this agent + all descendants
-- `remaining_usd` - Budget remaining (NULL if unlimited)
+- `remaining_usd` - Budget remaining
 
 ### ORM Model for View
 
@@ -108,10 +108,10 @@ class AgentBudgetStatus(Base):
     __table_args__ = {"info": {"is_view": True}}
 
     agent_run_id: Mapped[UUID] = mapped_column(primary_key=True)
-    budget_usd: Mapped[float | None]
+    budget_usd: Mapped[float]
     own_consumed_usd: Mapped[float]
     tree_consumed_usd: Mapped[float]
-    remaining_usd: Mapped[float | None]
+    remaining_usd: Mapped[float]
 ```
 
 ### Proxy Enforcement
@@ -127,7 +127,7 @@ async def check_budget(agent_run_id: UUID, db: Database) -> None:
         if status is None:
             raise HTTPException(404, "Agent run not found")
 
-        if status.budget_usd is not None and status.tree_consumed_usd >= status.budget_usd:
+        if status.tree_consumed_usd >= status.budget_usd:
             raise HTTPException(
                 402,
                 f"Budget exhausted: {status.tree_consumed_usd:.4f} USD consumed "
@@ -181,13 +181,13 @@ class AgentConfig(BaseModel):
     model: str
     parent_agent_run_id: UUID | None
     type_config: TypeConfig
-    budget_usd: float | None  # NEW: Required parameter, None only for graders
+    budget_usd: float  # NEW: Required parameter, all agents have explicit budget
 ```
 
 **HTTP endpoints that launch agents**:
 
 - `POST /api/eval/run-critic` - Add required `budget_usd` parameter
-- `POST /api/eval/run-grader` - Budget is None (graders are unlimited)
+- `POST /api/eval/run-grader` - High budget (e.g., $10000) for long-running daemon
 - Any critic-dev spawn endpoints - Add required `budget_usd` parameter
 
 ### No Default Budget
