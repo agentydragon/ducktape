@@ -9,6 +9,32 @@
 - **Do not commit secrets or tokens**. Reference files have tokens redacted.
 - **Pydantic models** in `tools/manifest.py` are shared between capture and diff tools.
 
+### Build Workflow
+
+After making changes to the Dockerfile or `rootfs/` content, **always run a build and update the diff report**:
+
+```bash
+cd claude_web_env
+./tools/build-and-diff.sh
+```
+
+This script:
+
+1. Sets up tmpfs storage (if needed)
+2. Builds the Dockerfile with VFS storage (~20 min)
+3. Captures manifests from live and built images
+4. Generates `diff-report.md`
+
+If you only need to regenerate the diff (image already built):
+
+```bash
+./tools/build-and-diff.sh --diff-only
+```
+
+**Commit `diff-report.md`** along with your Dockerfile/rootfs changes. The diff report documents the current delta between built and live containers.
+
+> **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build-and-diff.sh`.
+
 ### Tool Availability
 
 - **podman 4.9.3 + buildah 1.33.7**: Available and working
