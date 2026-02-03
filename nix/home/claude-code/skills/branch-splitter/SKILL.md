@@ -12,9 +12,65 @@ Transform a large, messy branch with many changes into a DAG of independent, rev
 1. **Atomic changes** - Each PR does one logical thing
 2. **No dead code** - If a PR adds code, it must be used in that same PR
 3. **No orphaned deletions** - If a PR removes the last user of code, delete that code too
-4. **Consistent state** - Repo must build and pass tests at every PR boundary
+4. **Don't make things worse** - Each PR must not break what wasn't already broken (see Imperfect Baselines)
 5. **Truthful documentation** - If behavior changes, docs must change in same PR
 6. **Tests with implementation** - If tests exist in the source branch, they accompany their implementation
+
+## Imperfect Baselines
+
+Real codebases often have pre-existing issues: flaky tests, lint warnings, incomplete migrations. The goal is **not to require perfection**, but to **not make things worse**.
+
+### Establishing Baseline
+
+Before splitting, record the base branch's health:
+
+```bash
+# Record what already fails on base branch
+git checkout origin/devel
+bazel test //... 2>&1 | tee baseline-test-results.txt
+bazel build --config=check //... 2>&1 | tee baseline-lint-results.txt
+
+# Extract failing targets
+grep "FAILED" baseline-test-results.txt > known-failures.txt
+```
+
+### Validation Principle
+
+For each split PR, the rule becomes:
+
+- **Must pass**: Everything that passed on the base branch
+- **Allowed to fail**: Tests/lint that already failed on base branch
+- **Must not introduce**: New failures not in the baseline
+
+```python
+def validate_pr_against_baseline(pr_branch, baseline_failures):
+    """PR is valid if it doesn't introduce new failures."""
+    pr_failures = run_tests_and_collect_failures(pr_branch)
+    new_failures = pr_failures - baseline_failures
+
+    if new_failures:
+        raise ValidationError(f"PR introduces new failures: {new_failures}")
+
+    # Bonus: check if PR fixes any baseline failures
+    fixed = baseline_failures - pr_failures
+    if fixed:
+        log(f"PR fixes {len(fixed)} pre-existing failures: {fixed}")
+```
+
+### Documentation
+
+When baseline has issues, document them:
+
+```markdown
+## Known Issues (Pre-existing)
+
+The base branch has these known failures that are not addressed by this PR:
+
+- `//foo:test_bar` - Flaky, fails ~10% of runs
+- `//baz:lint` - Has 3 pre-existing lint warnings
+
+This PR does not make these worse.
+```
 
 ## Acceptable Outcomes
 
@@ -32,7 +88,7 @@ PR3 (dep update) ───┘                      │
 Each PR:
 
 - Has clear description of what it does
-- Builds and passes tests independently
+- Does not introduce new build/test failures (may inherit pre-existing ones)
 - Can be reviewed in isolation
 - Merges cleanly in any valid DAG order
 
@@ -116,26 +172,44 @@ Subagents must:
 
 - Only modify files in their assigned worktree
 - Commit with clear messages referencing original commits
-- Run build/tests before declaring success
+- Verify no new failures introduced (compare against baseline)
 - Report any conflicts or issues
+- For doc-only PRs, build validation may be skipped
 
 ### Phase 4: Validation
 
-#### 4.1: Individual PR Validation
+#### 4.0: Establish Baseline (First!)
 
-Each PR branch must pass:
+Before validating any PRs, record what already fails on the base branch:
 
 ```bash
+git checkout origin/devel  # or whatever base branch
+bazel test //... 2>&1 | grep -E "(PASSED|FAILED|ERROR)" > baseline.txt
+bazel build --config=check //... 2>&1 | grep -E "(error|warning)" >> baseline.txt
+```
+
+This baseline defines "don't make things worse" - PRs must not introduce failures beyond this.
+
+#### 4.1: Individual PR Validation
+
+Each PR branch must not introduce new failures:
+
+```bash
+# Run on PR branch
 bazel build --config=check //...  # or project-specific build
 bazel test //...                   # or project-specific tests
+
+# Compare against baseline - new failures are blockers, pre-existing are allowed
 ```
+
+For documentation-only PRs (plans, READMEs), build/test validation may be skipped if no code is touched.
 
 #### 4.2: DAG Order Validation
 
 **Enumerate all valid orderings** of the DAG and verify each:
 
 ```python
-def validate_dag_orderings(dag: dict[str, list[str]], branches: list[str]):
+def validate_dag_orderings(dag: dict[str, list[str]], branches: list[str], baseline_failures: set[str]):
     """Validate patches apply cleanly in all valid DAG orderings."""
     valid_orderings = list(all_topological_sorts(dag))
 
@@ -146,9 +220,10 @@ def validate_dag_orderings(dag: dict[str, list[str]], branches: list[str]):
                 result = apply_branch_as_patch(ws, branch)
                 assert result.success, f"Failed at {branch} in ordering {ordering}"
 
-                # Build and test
-                assert run_build(ws).success
-                assert run_tests(ws).success
+                # Build and test - check for NEW failures only
+                current_failures = run_tests_collect_failures(ws)
+                new_failures = current_failures - baseline_failures
+                assert not new_failures, f"New failures at {branch}: {new_failures}"
 
     # Verify final state matches original
     assert diff_trees(result_tree, original_branch_tree) == empty
@@ -245,11 +320,17 @@ graph TD
 
 ## Validation Results
 
-- All 24 valid DAG orderings tested: PASS
+- Baseline established: 2 pre-existing test failures, 0 lint errors
+- All 24 valid DAG orderings tested: PASS (no new failures)
 - Content invariant (union = original): PASS
 - No dead code: PASS
 - No orphaned code: PASS
 - Docs consistency: PASS
+
+## Pre-existing Issues (not addressed)
+
+- `//legacy:test_deprecated` - Known flaky test
+- `//old_module:integration_test` - Requires external service
 
 ## Transitional States Added
 
