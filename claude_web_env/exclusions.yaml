@@ -42,6 +42,17 @@ skip_paths:
   - /root/.claude/statsig
   - /root/.claude/debug
   - /root/.claude/plugins
+  - /root/.claude/projects
+  - "/root/.claude/projects/**"
+  - "/root/.claude/stop-hook-*"
+
+  # Home directory caches for claude user (runtime state)
+  - /home/claude/.cache
+  - "/home/claude/.cache/**"
+  - /home/claude/.npm
+  - "/home/claude/.npm/**"
+  - /home/claude/.claude/remote
+  - "/home/claude/.claude/remote/**"
 
   # Nix store (installed at runtime by session start hook, not part of base image)
   - /nix
@@ -221,11 +232,13 @@ only_in_built:
 
   # pip-installed console_scripts (live installs these at runtime, not at image build)
   - /usr/local/bin/conan
+  - /usr/local/bin/httpx
   - /usr/local/bin/identify-cli
   - /usr/local/bin/nodeenv
   - /usr/local/bin/normalizer
   - /usr/local/bin/pre-commit
   - /usr/local/bin/virtualenv
+  - /usr/local/bin/websockets
 
 # ─── Comparison overrides ─────────────────────────────────────────────────
 # gVisor user namespaces map all UIDs to a single user, making ownership

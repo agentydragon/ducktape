@@ -138,7 +138,7 @@ RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recomme
 RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recommends \
     php-common php8.4-cli php8.4-common php8.4-curl php8.4-dev php8.4-gd \
     php8.4-intl php8.4-mbstring php8.4-mysql php8.4-opcache \
-    php8.4-pgsql php8.4-readline php8.4-xml php8.4-zip \
+    php8.4-pgsql php8.4-readline php8.4-sqlite3 php8.4-xml php8.4-zip \
     php8.4-igbinary php8.4-redis \
     && rm -rf /var/lib/apt/lists/*
 
@@ -276,9 +276,8 @@ RUN chmod +x /usr/local/bin/use-python /usr/local/bin/use-node-* /usr/local/bin/
         /usr/local/bin/create-venv-* /usr/local/bin/check-tools /usr/local/bin/use-php-8.4 && \
     gunzip -c /tmp/environment-manager.gz > /usr/local/bin/environment-manager && \
     chmod +x /usr/local/bin/environment-manager && \
-    mkdir -p /process_api && \
-    gunzip -c /tmp/process_api.gz > /process_api/process_api && \
-    chmod +x /process_api/process_api && \
+    gunzip -c /tmp/process_api.gz > /process_api && \
+    chmod +x /process_api && \
     rm /tmp/*.gz
 
 # Layer 24: Root dotfiles and env script
@@ -297,7 +296,7 @@ RUN useradd -m -s /bin/bash -u 999 claude && \
 
 # Layer 27: Claude user home files
 COPY rootfs/home/claude/README.md /home/claude/README.md
-COPY rootfs/home/claude/scripts/README /home/claude/scripts/README
+COPY rootfs/home/claude/scripts/README.md /home/claude/scripts/README.md
 COPY rootfs/home/claude/.claude/ /home/claude/.claude/
 
 # Layer 28: Claude user permissions
@@ -329,12 +328,11 @@ RUN ln -sf /proc/mounts /etc/mtab && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
     mkdir -p /root/.local/share/gem /root/.local/lib/python3.11
 
-# Layer 31: Strip unused files (must be last to not affect other layers)
-RUN rm -rf \
-    /usr/share/doc /usr/share/doc-base /usr/share/man /usr/share/X11 \
-    /usr/include /usr/src /usr/sbin /usr/share/PackageKit \
-    /usr/local/include /usr/local/sbin /usr/local/src \
-    /etc/apt/preferences.d /etc/apt/sources.list.d/snapshot.sources \
+# Layer 31: Remove build-time APT sources (not present in live container)
+# NOTE: Do NOT strip /usr/share/doc, /usr/share/man, /usr/include, etc.
+# These exist in the live container and should remain for reproducibility.
+RUN rm -f \
+    /etc/apt/sources.list.d/snapshot.sources \
     /etc/apt/sources.list.d/live-archive.sources
 
 # =============================================================================

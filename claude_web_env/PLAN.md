@@ -1,85 +1,79 @@
 # Current Plan
 
-## Priority 1: Verify Build v11
+## Latest Build Results (2026-02-03)
 
-Run a full build with the latest changes:
+**Diff Summary**: 10,100 real differences
 
-```bash
-# Set up tmpfs storage (required for reasonable build times)
-mount -t tmpfs -o size=200G,exec tmpfs /tmp/tmpfs-exec
-mkdir -p /tmp/tmpfs-exec/containers/{storage,run}
-cat > /tmp/storage-tmpfs-vfs.conf << 'EOF'
-[storage]
-driver = "vfs"
-runroot = "/tmp/tmpfs-exec/containers/run"
-graphroot = "/tmp/tmpfs-exec/containers/storage"
-EOF
+| Category        | Count |
+| --------------- | ----- |
+| Identical       | 112k  |
+| Excluded        | 900k  |
+| **Real diffs**  | 10.1k |
+| Only in live    | 9,780 |
+| Only in built   | 19    |
+| Content changed | 300   |
+| Type changed    | 1     |
 
-cd claude_web_env
-CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
-  podman build --layers=false --network=host --isolation=oci \
-  --format=docker -t claude-code-web-recreated .
-```
+**Root cause of most differences**: Dockerfile strips `/usr/share/doc`, `/usr/share/man`, `/usr/include` — but the live container has these files.
 
-Recent changes to verify:
+## Priority 1: Remove Stripping Step
 
-- **Stripping**: Removes `/usr/share/doc`, `/usr/share/man`, `/usr/include`, `/usr/sbin`
-- **APT sources**: Uses exact deb822 `.sources` files matching live container
-- **process_api**: Baked in from `reference/process_api.gz`
-- **Root dotfiles**: `.bashrc`, `.profile`, `.wget-hsts` baked in
-- **python3-doc**: Now installed in Dockerfile
-- **Session hook artifacts**: New exclusion category for files created by `tools/claude_hooks`
+Per the exclusion minimization goal, we should match the live container, not add exclusions for stripped files.
 
-## Priority 2: Layer Consolidation for Caching
+**Files currently stripped (Dockerfile line ~333)**:
 
-### Current Dockerfile Stats
+- `/usr/share/doc` (2145 files missing)
+- `/usr/share/doc-base`
+- `/usr/share/man`
+- `/usr/share/info`
+- `/usr/include` (4631 files missing)
+- `/usr/sbin`
 
-- **84 layer-creating instructions**: 1 FROM + 43 RUN + 40 COPY
-- **Overlay limit**: ~47-50 layers (kernel page size limit on mount options)
+**Action**: Remove the stripping step from Dockerfile.
 
-### Consolidation Opportunities
+## Priority 2: Add Runtime-Only Exclusions
 
-| Category             | Current | After | Savings |
-| -------------------- | ------- | ----- | ------- |
-| profile.d COPY       | 8       | 1     | 7       |
-| use-node COPY        | 3       | 1     | 2       |
-| use-ruby COPY        | 3       | 1     | 2       |
-| create-venv COPY     | 4       | 1     | 3       |
-| CA certs COPY        | 2       | 1     | 1       |
-| Root dotfiles COPY   | 5       | 1     | 4       |
-| Claude settings COPY | 6       | 2     | 4       |
-| chmod RUNs           | 10      | 2     | 8       |
-| **Total**            | 41      | 10    | **31**  |
+These are legitimate runtime artifacts, not reproducibility failures:
 
-**Result**: 84 - 31 = **53 layers** (may still exceed ~47-50 overlay limit)
+| Path                        | Reason               |
+| --------------------------- | -------------------- |
+| `/home/claude/.npm`         | npm cache at runtime |
+| `/home/claude/.cache`       | runtime cache        |
+| `/root/.claude/projects`    | session files        |
+| `/root/.claude/stop-hook-*` | stop hook scripts    |
 
-With consolidation + potential 2-stage split, **overlay caching becomes possible**.
-Note: containers/storage layer deduplication may allow more layers in practice.
+## Priority 3: Fix Structure Mismatches
 
-### Implementation
+| Issue                          | Live    | Built     | Fix                       |
+| ------------------------------ | ------- | --------- | ------------------------- |
+| `/process_api`                 | file    | directory | Restructure in Dockerfile |
+| `/usr/local/bin/httpx`         | absent  | present   | Remove from Dockerfile    |
+| `/usr/local/bin/websockets`    | absent  | present   | Remove from Dockerfile    |
+| `/home/claude/scripts/README`  | absent  | present   | Remove from Dockerfile    |
+| `/usr/lib/jvm/.../docs`        | absent  | present   | Don't install java docs   |
+| `/etc/php/8.4/.../sqlite3.ini` | present | absent    | Install php-sqlite3       |
 
-1. Group related COPY instructions using wildcards or directories
-2. Consolidate all chmod operations into 1-2 RUN instructions
-3. Add layer number comments for maintainability (per user request)
+## Priority 4: Version Drift (300 files)
 
-## Priority 3: Stricter Version Pinning
+Same-size binaries with different hashes. Mostly systemd and gnupg components.
 
-Remaining ~200 hash differences are package version drift (util-linux, binutils, gdb).
-To achieve exact binary matching:
+Packages needing pinning:
 
-1. Identify exact versions in live: `dpkg -l | grep -E 'util-linux|binutils|gdb'`
-2. Create APT preference files to pin these versions
-3. If versions unavailable in main repos, use snapshot.ubuntu.com with a specific date
+- `systemd` and related (`systemd-sysv`, `libsystemd0`, etc.)
+- `gnupg` and related
+- Anything else showing hash-only drift
 
-## Low Priority: Investigate Remaining Diffs
+Method:
 
-After achieving <50 differences, investigate individual content changes:
+1. Get exact versions from live: `dpkg-query -W -f='${Package}=${Version}\n' | grep systemd`
+2. Pin in Dockerfile: `apt-get install systemd=VERSION`
 
-- Timestamps embedded in binaries
-- Build IDs in ELF headers
-- Compilation-time constants
+## Completed
 
-May require post-processing (strip, objcopy) to match exactly.
+- ✅ Build script captures proprietary binaries
+- ✅ Documented exclusion minimization goal in AGENTS.md and README.md
+- ✅ Full build completed (60 steps, image size 5.66GB)
+- ✅ Diff report generated (10,100 real differences)
 
 ## Session Notes
 
@@ -92,7 +86,7 @@ May require post-processing (strip, objcopy) to match exactly.
    - Per-layer: ~80 bytes (graphroot path + 26-char symlink + separator)
    - Empirically verified: 90 layers at 4066 bytes succeeded, 91 at 4110 bytes failed
    - containers/storage deduplicates layers across images, so effective limit varies
-3. **Overlay works on tmpfs**: Tested with 90-layer build - cache reuse confirmed.
+3. **Overlay works on tmpfs**: Tested with 90-layer build — cache reuse confirmed.
 
 ### Keyring Fix Details
 
@@ -102,12 +96,3 @@ May require post-processing (strip, objcopy) to match exactly.
 - **Solution**: `--no-new-keyring` flag tells crun to skip keyring creation.
 - **Implementation**: `tools/claude_hooks/config/podman/crun_gvisor_wrapper.py`
   now injects this flag for all `crun create` and `crun run` commands.
-
-### Build Verification
-
-**Full 111-step Dockerfile build completed successfully** (2026-02-03):
-
-- Image: `localhost/claude-code-web-recreated:latest`
-- Size: 5.66 GB
-- All 111 steps completed without keyring quota errors
-- This confirms the `--no-new-keyring` fix works for production Dockerfile builds
