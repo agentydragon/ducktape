@@ -15,6 +15,51 @@ Transform a large, messy branch with many changes into a DAG of independent, rev
 4. **Don't make things worse** - Each PR must not break what wasn't already broken (see Imperfect Baselines)
 5. **Truthful documentation** - If behavior changes, docs must change in same PR
 6. **Tests with implementation** - If tests exist in the source branch, they accompany their implementation
+7. **Complete coverage** - The union of all split PRs MUST equal the original branch diff (validated programmatically)
+
+## Splitting is De Novo, Not Commit-Following
+
+**Critical**: Treat the original branch as a single monolithic diff to split de novo. Do NOT slavishly follow the original commit structure.
+
+### What This Means
+
+- **Ignore original commits**: The commit history is irrelevant. Only the final diff matters.
+- **Split within commits**: A single original commit may become parts of multiple PRs.
+- **Combine across commits**: Changes from multiple original commits may combine into one PR.
+- **Extract sub-patches**: If commit X changes files A, B, C but only A is independent, extract just the A changes.
+
+### Example
+
+Original branch has 3 commits:
+
+```
+commit 1: "Refactor auth + update STYLE.md"
+  - auth.py (200 lines changed)
+  - STYLE.md (2 lines changed)
+
+commit 2: "Add feature + tests"
+  - feature.py (100 lines)
+  - test_feature.py (50 lines)
+
+commit 3: "Fix bug in auth"
+  - auth.py (10 lines changed)
+```
+
+**Wrong approach**: "I can't split STYLE.md because it's in the same commit as auth.py"
+
+**Correct approach**: Extract sub-patches:
+
+```
+PR1: STYLE.md changes only (2 lines from commit 1)
+PR2: auth.py refactor (200 lines from commit 1 + 10 lines from commit 3)
+PR3: feature.py + test_feature.py (from commit 2)
+```
+
+The original commits are just how work happened chronologically. The split is how work should be reviewed logically.
+
+### Completeness Requirement
+
+After splitting, the union of all PR diffs MUST exactly equal the original branch diff. This is validated programmatically by the validation script. If any change from the original branch is missing from the split PRs, validation fails.
 
 ## Imperfect Baselines
 
@@ -414,15 +459,24 @@ If analysis reveals circular deps:
 
 ## Validation Script
 
-The split must be validated by a reproducible script that tests all valid DAG orderings.
+The split must be validated by a reproducible script that tests all valid DAG orderings. The script is provided at `validate-dag-split.sh` in this skill directory.
+
+### What the Script Validates
+
+1. **Merge cleanliness**: All branches merge without conflicts in every valid DAG ordering
+2. **No regressions**: No new test failures compared to baseline (optional, can skip with `--skip-tests`)
+3. **Content invariant**: The union of all PR diffs exactly equals the original branch diff
+
+The content invariant check is **critical** — it ensures the split is complete and nothing was lost or added.
 
 ### DAG Input Format
 
-Provide the DAG as a JSON file mapping each branch to its dependencies:
+Provide the DAG as a JSON file:
 
 ```json
 {
   "base": "origin/devel",
+  "original_branch": "origin/claude/my-feature-branch",
   "test_command": "bazel test //...",
   "build_command": "bazel build --config=check //...",
   "branches": {
@@ -433,122 +487,66 @@ Provide the DAG as a JSON file mapping each branch to its dependencies:
     "pr5-integration": ["pr3-feature-a", "pr4-feature-b"]
   }
 }
-````
-
-### Validation Script
-
-```bash
-#!/bin/bash
-# validate-dag-split.sh - Validate branch split against all DAG orderings
-#
-# Usage: ./validate-dag-split.sh dag.json
-#
-# Requires: jq, git, python3 (for topological sort enumeration)
-
-set -euo pipefail
-
-DAG_FILE="${1:?Usage: $0 dag.json}"
-WORK_DIR=$(mktemp -d)
-trap "rm -rf $WORK_DIR" EXIT
-
-# Parse DAG
-BASE=$(jq -r '.base' "$DAG_FILE")
-TEST_CMD=$(jq -r '.test_command // "true"' "$DAG_FILE")
-BUILD_CMD=$(jq -r '.build_command // "true"' "$DAG_FILE")
-
-echo "=== Establishing baseline on $BASE ==="
-git worktree add "$WORK_DIR/baseline" "$BASE" --detach
-pushd "$WORK_DIR/baseline" > /dev/null
-BASELINE_FAILURES=$($TEST_CMD 2>&1 | grep -E "FAILED|ERROR" || true)
-popd > /dev/null
-echo "Baseline failures: $(echo "$BASELINE_FAILURES" | wc -l) targets"
-
-# Generate all topological orderings
-python3 << 'PYTHON' > "$WORK_DIR/orderings.txt"
-import json, sys
-from itertools import permutations
-
-dag = json.load(open(sys.argv[1]))["branches"]
-
-def is_valid_ordering(order, dag):
-    seen = set()
-    for node in order:
-        for dep in dag[node]:
-            if dep not in seen:
-                return False
-        seen.add(node)
-    return True
-
-nodes = list(dag.keys())
-valid = [o for o in permutations(nodes) if is_valid_ordering(o, dag)]
-for o in valid:
-    print(" ".join(o))
-PYTHON "$DAG_FILE"
-
-TOTAL=$(wc -l < "$WORK_DIR/orderings.txt")
-echo "=== Testing $TOTAL valid DAG orderings ==="
-
-ORDERING_NUM=0
-while read -r ORDERING; do
-    ORDERING_NUM=$((ORDERING_NUM + 1))
-    echo "--- Ordering $ORDERING_NUM/$TOTAL: $ORDERING ---"
-
-    # Create fresh worktree from base
-    WORKTREE="$WORK_DIR/test-$ORDERING_NUM"
-    git worktree add "$WORKTREE" "$BASE" --detach 2>/dev/null
-
-    pushd "$WORKTREE" > /dev/null
-
-    for BRANCH in $ORDERING; do
-        echo "  Merging $BRANCH..."
-        if ! git merge --no-edit "origin/$BRANCH" 2>/dev/null; then
-            echo "FAIL: Conflict merging $BRANCH in ordering $ORDERING_NUM"
-            exit 1
-        fi
-    done
-
-    # Run tests, check for NEW failures
-    echo "  Running tests..."
-    CURRENT_FAILURES=$($TEST_CMD 2>&1 | grep -E "FAILED|ERROR" || true)
-    NEW_FAILURES=$(comm -23 <(echo "$CURRENT_FAILURES" | sort) <(echo "$BASELINE_FAILURES" | sort))
-
-    if [ -n "$NEW_FAILURES" ]; then
-        echo "FAIL: New test failures in ordering $ORDERING_NUM:"
-        echo "$NEW_FAILURES"
-        exit 1
-    fi
-
-    popd > /dev/null
-    git worktree remove "$WORKTREE" --force 2>/dev/null
-done < "$WORK_DIR/orderings.txt"
-
-echo "=== All $TOTAL orderings passed ==="
-
-# Verify final diff matches original branch
-echo "=== Verifying content invariant ==="
-# (Implementation: compare final state against original feature branch)
 ```
+
+**Required fields**:
+
+- `base`: The base branch all PRs target (e.g., `origin/devel`)
+- `original_branch`: The original feature branch being split (for content invariant check)
+- `branches`: Map of branch names to their dependencies (empty array = no dependencies)
+
+**Optional fields**:
+
+- `test_command`: Command to run tests (default: `true` = skip)
+- `build_command`: Command to run build (default: `true` = skip)
 
 ### Running Validation
 
 ```bash
-# Create dag.json with your split structure
-# Run validation
+# Full validation with tests
 ./validate-dag-split.sh dag.json
 
-# Output:
+# Skip tests (just check merges and content invariant)
+./validate-dag-split.sh dag.json --skip-tests
+
+# Example output:
+# === Configuration ===
+# Base branch: origin/devel
+# Original branch: origin/claude/my-feature-branch
+# === Capturing original branch diff ===
+# Original diff: 2847 lines
 # === Establishing baseline on origin/devel ===
 # Baseline failures: 2 targets
+# === Generating valid DAG orderings ===
+# Valid orderings: 12
 # === Testing 12 valid DAG orderings ===
-# --- Ordering 1/12: pr1-style-fixes pr2-refactor-auth pr3-feature-a pr4-feature-b pr5-integration ---
-#   Merging pr1-style-fixes...
-#   Merging pr2-refactor-auth...
+# --- Ordering 1/12: pr1-style pr2-refactor pr3-feature pr4-tests pr5-integration ---
+#   Merging pr1-style...
+#   Merging pr2-refactor...
 #   ...
-#   Running tests...
-# --- Ordering 2/12: pr2-refactor-auth pr1-style-fixes pr3-feature-a pr4-feature-b pr5-integration ---
-# ...
-# === All 12 orderings passed ===
+# === All 12 orderings merge cleanly ===
+# === Verifying content invariant (split union = original diff) ===
+# ✓ Content invariant PASSED: split union equals original diff
+# === VALIDATION PASSED ===
 ```
+
+### Content Invariant Failures
+
+If the content invariant fails, the script reports what's missing:
+
+```
+FAIL: Content invariant violated!
+
+Files in original: 15
+Files in split union: 12
+
+Files in original but MISSING from split:
+diff --git a/src/utils.py b/src/utils.py
+diff --git a/tests/test_utils.py b/tests/test_utils.py
+diff --git a/STYLE.md b/STYLE.md
+```
+
+This means you need to add the missing file changes to one of your PR branches.
 
 ### Large DAGs
 
@@ -748,3 +746,4 @@ Here's the split:
 ```
 
 ```
+````
