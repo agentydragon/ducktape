@@ -15,8 +15,8 @@ from sqlalchemy import func, text
 from props.core.agent_types import AgentType, CriticTypeConfig
 from props.core.display import ColumnDef, build_table_from_schema, short_sha
 from props.core.ids import SnapshotSlug
+from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, LLMRequest
-from props.db.session import get_session
 
 
 @dataclass
@@ -46,10 +46,10 @@ def _get_descendant_run_ids(session, root_agent_run_id: UUID) -> list[UUID]:
     return [row[0] for row in result]
 
 
-def show_run_status(parent_agent_run_id: UUID | None = None) -> None:
+def show_run_status(db: Database, parent_agent_run_id: UUID | None = None) -> None:
     """Query run status statistics."""
     console = Console()
-    with get_session() as session:
+    with db.session() as session:
         descendant_ids: list[UUID] | None = None
         if parent_agent_run_id is not None:
             descendant_ids = _get_descendant_run_ids(session, parent_agent_run_id)
@@ -100,10 +100,10 @@ def show_run_status(parent_agent_run_id: UUID | None = None) -> None:
         console.print(build_table_from_schema(pq.all(), pcols))
 
 
-def show_execution_traces(limit: int = 5, parent_agent_run_id: UUID | None = None) -> None:
+def show_execution_traces(db: Database, limit: int = 5, parent_agent_run_id: UUID | None = None) -> None:
     """Show execution traces for recent critic runs."""
     console = Console()
-    with get_session() as session:
+    with db.session() as session:
         descendant_ids: list[UUID] | None = None
         if parent_agent_run_id is not None:
             descendant_ids = _get_descendant_run_ids(session, parent_agent_run_id)
@@ -141,9 +141,9 @@ def show_execution_traces(limit: int = 5, parent_agent_run_id: UUID | None = Non
         console.print(build_table_from_schema(summaries, cols))
 
 
-def show_grading_summary(agent_run_id: UUID) -> None:
+def show_grading_summary(db: Database, agent_run_id: UUID) -> None:
     """Show grading decision summary for a critic or grader run."""
-    with get_session() as session:
+    with db.session() as session:
         run = session.get(AgentRun, agent_run_id)
         if not run:
             print(f"Run not found: {agent_run_id}")

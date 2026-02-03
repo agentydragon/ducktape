@@ -30,7 +30,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from props.db.config import DbConnectionConfig
+from props.db.config import DatabaseConfig
 
 # Salt for deriving deterministic agent passwords.
 # Set PROPS_AGENT_PASSWORD_SALT in production; uses default for development.
@@ -75,14 +75,14 @@ def derive_agent_password(agent_run_id: UUID, salt: str = AGENT_PASSWORD_SALT) -
     return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-async def ensure_agent_role(admin_config: DbConnectionConfig, agent_run_id: UUID) -> AgentCredentials:
+async def ensure_agent_role(db_config: DatabaseConfig, agent_run_id: UUID) -> AgentCredentials:
     """Ensure PostgreSQL role exists for agent, return credentials.
 
     Creates the role idempotently with deterministic password derived from
     salt + agent_run_id. Grants agent_base role for RLS-scoped access.
 
     Args:
-        admin_config: Admin database connection (must have CREATE ROLE permission)
+        db_config: Database connection config (must have CREATE ROLE permission)
         agent_run_id: Agent run ID (encoded in username, used for password derivation)
 
     Returns:
@@ -93,7 +93,7 @@ async def ensure_agent_role(admin_config: DbConnectionConfig, agent_run_id: UUID
 
     logger.info("Ensuring agent role exists: %s", username)
 
-    admin_url = admin_config.url().replace("postgresql://", "postgresql+asyncpg://")
+    admin_url = db_config.url.replace("postgresql://", "postgresql+asyncpg://")
     engine = create_async_engine(admin_url, echo=False)
 
     try:

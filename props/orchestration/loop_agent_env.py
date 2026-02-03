@@ -49,10 +49,9 @@ async def run_loop_agent(
     db_config: DatabaseConfig,
     *,
     image: str,
-    llm_proxy_url: str,
+    agent_base_env: dict[str, str],
     registry_config: RegistryProxyConfig,
     timeout_seconds: int | None = None,
-    extra_env: dict[str, str] | None = None,
     container_name: str | None = None,
     extra_hosts: dict[str, str] | None = None,
 ) -> ContainerResult:
@@ -61,34 +60,31 @@ async def run_loop_agent(
     Ensures agent role exists, starts container, waits for exit, captures logs, cleans up.
     Container should run its agent loop via CMD and exit 0 on success.
     timeout_seconds=None means no timeout (for daemons). Returns exit_code=-1 on timeout.
+
+    agent_base_env: Static env vars from PropsConfig.agent_env (PGHOST, PGPORT, etc.).
+        Per-run PGUSER/PGPASSWORD/OPENAI_API_KEY are appended automatically.
     """
     # Resolve image from OCI reference
     image_id = await resolve_image_ref_async(docker_client, image, registry_config)
     logger.info("Using image %s from %s", image_id[:19], image)
 
     # Ensure agent database role exists
-    creds = await ensure_agent_role(db_config.admin, agent_run_id)
+    creds = await ensure_agent_role(db_config, agent_run_id)
     logger.info("Agent role ready: %s", creds.username)
 
     container = None
     try:
         # Build container config
         name = container_name or f"agent-{short_uuid(agent_run_id)}"
-        container_db = db_config.for_container_user(creds.username, creds.password)
 
+        backend_url = agent_base_env.get("PROPS_BACKEND_URL", "")
         env = {
-            # Database credentials (agent derives run ID from PGUSER via current_agent_run_id())
-            "PGHOST": container_db.host,
-            "PGPORT": str(container_db.port),
-            "PGUSER": container_db.user,
-            "PGPASSWORD": container_db.password,
-            "PGDATABASE": container_db.database,
-            # LLM proxy credentials (same password as database)
-            "OPENAI_BASE_URL": f"{llm_proxy_url}/v1",
+            **agent_base_env,
+            "PGUSER": creds.username,
+            "PGPASSWORD": creds.password,
+            "OPENAI_BASE_URL": f"{backend_url}/v1",
             "OPENAI_API_KEY": creds.password,
         }
-        if extra_env:
-            env.update(extra_env)
 
         # Create and start container
         host_config: dict[str, object] = {

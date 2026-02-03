@@ -25,6 +25,7 @@ from props.cli.cmd_gt import gt_app
 from props.cli.cmd_snapshot import snapshot_app
 from props.cli.cmd_stats import stats_app
 from props.cli.shared import make_example_from_files
+from props.config import load_config_from_env
 from props.core.agent_helpers import get_current_agent_run
 from props.core.agent_types import AgentType
 from props.core.display import fmt_pct, short_sha
@@ -34,10 +35,9 @@ from props.core.oci_utils import get_registry_proxy_config
 from props.core.splits import Split
 from props.critic_dev.improve.main import TerminationSuccess
 from props.critic_dev.shared import TargetMetric
-from props.db.config import get_database_config
+from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, ReportedIssue, Snapshot
 from props.db.query_builders import query_recall_by_example
-from props.db.session import get_session, init_db
 
 # cmd_gepa imported lazily below (gepa is optional)
 from props.orchestration.agent_registry import (
@@ -48,7 +48,6 @@ from props.orchestration.agent_registry import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 app = TyperDI(help="props — properties tooling", add_completion=False)
 
@@ -64,6 +63,7 @@ _logging_callback = make_logging_callback(default_level=LogLevel.WARNING)
 
 @app.callback()
 def _init_logging_and_db(
+    ctx: typer.Context,
     log_output: Annotated[
         str,
         typer.Option(
@@ -85,12 +85,13 @@ def _init_logging_and_db(
     # Configure Rich traceback for CLI errors (increased detail for debugging)
     rich_traceback_install(show_locals=True, max_frames=50, extra_lines=2, width=120)
 
-    # Initialize database once at CLI entry (uses production config from env vars)
-    init_db()
+    # Create Database once at CLI entry. Stored on typer context for explicit DI.
+    db = Database.from_env()
+    ctx.obj = db
 
 
 @app.command("run-info")
-def run_info_cmd() -> None:
+def run_info_cmd(ctx: typer.Context) -> None:
     """Show current agent run information (works for any agent type).
 
     Displays:
@@ -99,7 +100,8 @@ def run_info_cmd() -> None:
     - type_config: The full configuration for this agent run
     """
 
-    with get_session() as session:
+    db: Database = ctx.obj
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         typer.echo("Agent Run Info:")
         typer.echo(f"  agent_run_id: {agent_run.agent_run_id}")
@@ -116,6 +118,7 @@ def run_info_cmd() -> None:
 @app.command("prompt-optimize")
 @async_run
 async def prompt_optimize(
+    ctx: typer.Context,
     target_metric: Annotated[
         TargetMetric,
         typer.Option(
@@ -125,13 +128,19 @@ async def prompt_optimize(
     budget: float = typer.Option(50.0, "--budget", help="$ budget for optimization"),
     optimizer_model: str = opt.OPT_OPTIMIZER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
-    llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
     timeout_seconds: int = opt.OPT_TIMEOUT_SECONDS,
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
+    db: Database = ctx.obj
+    config = load_config_from_env()
     docker_client = aiodocker.Docker()
-    db_config = get_database_config()
-    registry = AgentRegistry(docker_client, db_config, llm_proxy_url, registry_config=get_registry_proxy_config())
+    registry = AgentRegistry(
+        docker_client,
+        db=db,
+        db_config=db.config,
+        agent_base_env=config.agent_env,
+        registry_config=get_registry_proxy_config(),
+    )
     try:
         run_id = await registry.run_prompt_optimizer(
             budget=budget,
@@ -148,13 +157,13 @@ async def prompt_optimize(
 @app.command("prompt-improve")
 @async_run
 async def prompt_improve_cmd(
+    ctx: typer.Context,
     n_examples: int = typer.Option(10, "--n-examples", "-n", help="Number of training examples to analyze"),
     token_budget: int = typer.Option(200_000, "--token-budget", help="Maximum token budget"),
     improvement_model: str = opt.OPT_OPTIMIZER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
     prompt_sha256: str | None = opt.OPT_PROMPT_SHA256,
     out_dir: Path | None = opt.OPT_OUT_DIR,
-    llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
     timeout_seconds: int = opt.OPT_TIMEOUT_SECONDS,
 ) -> None:
     """Run prompt improvement agent on training examples.
@@ -190,10 +199,12 @@ async def prompt_improve_cmd(
         )
         return [ex for ex, _score in top_n]
 
+    db: Database = ctx.obj
+
     # 1. Select agent definition to improve
     # NOTE: The --prompt-sha256 option is deprecated. This command now works on agent definitions.
     console.print("[dim]Loading agent definition from database...[/dim]")
-    with get_session() as session:
+    with db.session() as session:
         if prompt_sha256:
             # Legacy option - no longer supported
             console.print(
@@ -305,7 +316,7 @@ async def prompt_improve_cmd(
 
     # 2. Select training examples
     console.print(f"\n[dim]Selecting {n_examples} training examples...[/dim]")
-    with get_session() as session:
+    with db.session() as session:
         allowed_examples = select_pareto_examples(session, definition_id, n_examples)
         if not allowed_examples:
             console.print("[red]Error:[/red] No training examples found")
@@ -342,9 +353,15 @@ async def prompt_improve_cmd(
     console.print(f"  Examples: {len(allowed_examples)}")
     console.print()
 
+    config = load_config_from_env()
     docker_client = aiodocker.Docker()
-    db_config = get_database_config()
-    registry = AgentRegistry(docker_client, db_config, llm_proxy_url, registry_config=get_registry_proxy_config())
+    registry = AgentRegistry(
+        docker_client,
+        db=db,
+        db_config=db.config,
+        agent_base_env=config.agent_env,
+        registry_config=get_registry_proxy_config(),
+    )
     try:
         result: ImprovementResult = await registry.run_improvement_agent(
             examples=allowed_examples,
@@ -419,6 +436,7 @@ app.add_typer(stats_app, name="stats")
 @app.command("run")
 @async_run
 async def cmd_run(
+    ctx: typer.Context,
     # Scope (required)
     snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     # Definition ID (required)
@@ -427,7 +445,6 @@ async def cmd_run(
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
     model: str = opt.OPT_MODEL,
-    llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
     timeout_seconds: int = opt.OPT_TIMEOUT_SECONDS,
 ) -> None:
     """Run critic agent on a snapshot with DB persistence.
@@ -436,15 +453,22 @@ async def cmd_run(
     outputs the system prompt.
 
     Example:
-        props run ducktape/2025-11-26-00 --definition-id critic --llm-proxy-url http://localhost:5052
+        props run ducktape/2025-11-26-00 --definition-id critic
     """
+    db: Database = ctx.obj
+    config = load_config_from_env()
     docker_client = aiodocker.Docker()
-    db_config = get_database_config()
 
-    registry = AgentRegistry(docker_client, db_config, llm_proxy_url, registry_config=get_registry_proxy_config())
+    registry = AgentRegistry(
+        docker_client,
+        db=db,
+        db_config=db.config,
+        agent_base_env=config.agent_env,
+        registry_config=get_registry_proxy_config(),
+    )
     try:
         # Get available files from database (no hydration)
-        with get_session() as session:
+        with db.session() as session:
             snapshot_obj = session.query(Snapshot).filter_by(slug=snapshot).one()
             available_files = snapshot_obj.files_with_issues()
 
@@ -466,7 +490,7 @@ async def cmd_run(
         typer.echo("\n=== Critique Complete ===")
         typer.echo(f"Critic Run ID: {critic_run_id}")
 
-        with get_session() as session:
+        with db.session() as session:
             critic_run = session.get(AgentRun, critic_run_id)
             if critic_run is None:
                 raise RuntimeError(f"Critic run {critic_run_id} not found in database")

@@ -27,10 +27,10 @@ from hamcrest import assert_that, greater_than_or_equal_to
 from sqlalchemy import create_engine, text
 
 from props.core.splits import Split
-from props.db.config import DatabaseConfig, get_database_config
+from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.models import Snapshot
-from props.db.session import dispose_db, get_session, init_db, recreate_database
-from props.db.setup import ensure_database_exists
+from props.db.setup import ensure_database_exists, recreate_database
 from props.db.sync.sync import sync_all
 
 pytestmark = [pytest.mark.requires_production_specimens, pytest.mark.integration]
@@ -50,33 +50,38 @@ def module_monkeypatch() -> Generator[pytest.MonkeyPatch]:
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def synced_production_db(module_monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[DatabaseConfig]:
+async def synced_production_db(
+    module_monkeypatch: pytest.MonkeyPatch,
+) -> AsyncGenerator[tuple[DatabaseConfig, Database]]:
     """Module-scoped synced production database.
 
     Creates a single database for all production specimen tests in this module.
     Syncs ONCE at module start - tests share the same synced data.
+
+    Returns:
+        Tuple of (DatabaseConfig, Database) - config and Database instance
     """
     db_name = "props_test_production_specimens"
-    base_config = get_database_config()
+    base_config = DatabaseConfig()
     ensure_database_exists(base_config, db_name, drop_existing=True)
     test_config = base_config.with_database(db_name)
 
     # Keep postgres engine for teardown
     postgres_config = base_config.with_database("postgres")
-    postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
+    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
-    dispose_db()
-    init_db(test_config)
-    recreate_database()
+    # Create Database instance and recreate schema
+    db = Database(test_config)
+    recreate_database(db.engine)
 
     # Sync PRODUCTION specimens (uses ADGN_PROPS_SPECIMENS_ROOT from env)
-    with get_session() as session:
+    with db.session() as session:
         sync_all(session, use_staged=True)
 
-    yield test_config
+    yield test_config, db
 
     # Cleanup at end of module
-    dispose_db()
+    db.dispose()
     with postgres_engine.connect() as conn:
         conn.execute(
             text(
@@ -97,7 +102,7 @@ async def synced_production_db(module_monkeypatch: pytest.MonkeyPatch) -> AsyncG
 # =============================================================================
 
 
-def test_split_distribution_and_issue_counts(synced_production_db: DatabaseConfig) -> None:
+def test_split_distribution_and_issue_counts(synced_production_db: tuple[DatabaseConfig, Database]) -> None:
     """Verify train/valid/test split distribution meets minimum requirements.
 
     Checks:
@@ -108,7 +113,8 @@ def test_split_distribution_and_issue_counts(synced_production_db: DatabaseConfi
 
     TODO: Move to `props specimens check` CLI command.
     """
-    with get_session() as session:
+    _, db = synced_production_db
+    with db.session() as session:
         snapshots = session.query(Snapshot).all()
 
         # Count specimens per split

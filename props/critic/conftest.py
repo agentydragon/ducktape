@@ -10,8 +10,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from props.core.models.examples import WholeSnapshotExample
+from props.db.database import Database
 from props.db.models import AgentRunStatus
-from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
 from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
 from props.testing.fixtures.runs import make_fake_critic_run
@@ -23,13 +23,13 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest.fixture
-def test_critic_run(synced_test_db, test_snapshot):
+def test_critic_run(synced_db: Database, test_snapshot):
     """Create test critic run.
 
     Returns:
         UUID of the created critic run
     """
-    with get_session() as session:
+    with synced_db.session() as session:
         critic_run = make_fake_critic_run(
             session=session,
             example=WholeSnapshotExample(snapshot_slug=test_snapshot),
@@ -42,24 +42,24 @@ def test_critic_run(synced_test_db, test_snapshot):
 
 
 @pytest.fixture
-async def temp_creds(test_db, test_critic_run) -> AgentCredentials:
+async def temp_creds(synced_db: Database, test_critic_run) -> AgentCredentials:
     """Ensure agent role exists with RLS scoping.
 
     Returns:
         AgentCredentials for the critic agent
     """
-    return await ensure_agent_role(test_db.admin, test_critic_run)
+    return await ensure_agent_role(synced_db.config, test_critic_run)
 
 
 @pytest.fixture
-def temp_engine(test_db, temp_creds) -> Engine:
+def temp_engine(synced_db: Database, temp_creds) -> Engine:
     """Create SQLAlchemy engine using temporary user credentials.
 
     Returns:
         SQLAlchemy Engine connected as the temporary user
     """
-    user_config = test_db.admin.with_user(temp_creds.username, temp_creds.password)
-    return create_engine(user_config.url())
+    user_config = synced_db.config.with_user(temp_creds.username, temp_creds.password)
+    return create_engine(user_config.url)
 
 
 def insert_issue(conn: Connection, issue_id: str, rationale: str) -> None:

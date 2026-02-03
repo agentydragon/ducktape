@@ -12,8 +12,8 @@ from typer_di import TyperDI
 from cli_util.decorators import async_run
 from props.cli import common_options as opt
 from props.core.ids import SnapshotSlug
+from props.db.database import Database
 from props.db.models import Snapshot
-from props.db.session import get_session
 from props.db.snapshot_io import fetch_snapshot_to_path
 from props.db.sync.export import _format_files
 
@@ -22,8 +22,9 @@ snapshot_app = TyperDI(help="Snapshot commands")
 
 
 @async_run
-async def cmd_snapshot_list() -> None:
-    with get_session() as session:
+async def cmd_snapshot_list(ctx: typer.Context) -> None:
+    db: Database = ctx.obj
+    with db.session() as session:
         snapshots = session.query(Snapshot).all()
         slugs = sorted([s.slug for s in snapshots])
 
@@ -33,13 +34,15 @@ async def cmd_snapshot_list() -> None:
 
 @async_run
 async def snapshot_dump(
+    ctx: typer.Context,
     snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     pretty: bool = typer.Option(True, help="Pretty-print JSON with indentation"),
 ) -> None:
     """Dump a snapshot's full structure as JSON."""
+    db: Database = ctx.obj
     try:
         # Load snapshot and issues from database (no source hydration needed for dump)
-        with get_session() as session:
+        with db.session() as session:
             db_snapshot = session.query(Snapshot).filter_by(slug=snapshot).one()
 
             # Build output structure directly from ORM
@@ -89,12 +92,14 @@ async def snapshot_dump(
 
 
 def snapshot_fetch(
+    ctx: typer.Context,
     slug: Annotated[str, typer.Argument(help="Snapshot slug (e.g., 'ducktape/2025-11-26-00')")],
     output: Annotated[Path, typer.Argument(help="Output directory to extract snapshot into")],
 ) -> None:
     """Fetch snapshot from database and extract to filesystem."""
+    db: Database = ctx.obj
     try:
-        fetch_snapshot_to_path(slug, output)
+        fetch_snapshot_to_path(slug, output, db)
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)

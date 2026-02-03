@@ -16,9 +16,9 @@ These tests use per-test isolated databases and require:
 - postgres container running (managed by devenv)
 - Database environment variables set (PG* vars for admin access)
 
-Each test gets its own database (created and destroyed by test_db fixture).
+Each test gets its own database (created and destroyed by db fixture).
 For RLS testing, tests use:
-- admin_user (via get_session()) to write test data
+- admin_user (via db.session()) to write test data
 - prompt_optimizer temporary user to verify split-based RLS policies
 
 Note: These tests share a module-scoped fixture and work correctly with pytest-xdist
@@ -39,10 +39,9 @@ from sqlalchemy.orm import Session
 
 from props.core.agent_types import PromptOptimizerTypeConfig
 from props.critic_dev.shared import TargetMetric
-from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
-from props.db.session import get_session
 from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
 from props.testing.fixtures.runs import (
     FAKE_PROMPT_OPTIMIZER_DIGEST,
@@ -54,7 +53,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest_asyncio.fixture
-async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerator[AgentCredentials]:
+async def prompt_optimizer_creds(synced_db: Database) -> AsyncGenerator[AgentCredentials]:
     """Create prompt optimizer agent credentials.
 
     Creates an AgentRun record with agent_type='prompt_optimizer' so that
@@ -68,7 +67,7 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
     # Create AgentRun record with prompt_optimizer type_config (as admin)
     # This must happen BEFORE the agent role is created, so RLS policies can
     # identify this user as a prompt_optimizer via current_agent_type()
-    with get_session() as session:
+    with synced_db.session() as session:
         ensure_fake_agent_definitions(session)
 
         type_config = PromptOptimizerTypeConfig(
@@ -88,19 +87,19 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
         session.add(agent_run)
         session.commit()
 
-    yield await ensure_agent_role(synced_test_db.admin, run_id)
+    yield await ensure_agent_role(synced_db.config, run_id)
 
 
 @pytest_asyncio.fixture
 async def prompt_optimizer_session(
-    prompt_optimizer_creds: AgentCredentials, synced_test_db: DatabaseConfig
+    prompt_optimizer_creds: AgentCredentials, synced_db: Database
 ) -> AsyncGenerator[Session]:
     """Create database session as prompt optimizer temp user.
 
     Yields session with RLS policies active for prompt optimizer role.
     """
-    user_config = synced_test_db.admin.with_user(prompt_optimizer_creds.username, prompt_optimizer_creds.password)
-    engine = create_engine(user_config.url())
+    user_config = synced_db.config.with_user(prompt_optimizer_creds.username, prompt_optimizer_creds.password)
+    engine = create_engine(user_config.url)
 
     try:
         with Session(engine) as session:
@@ -109,9 +108,7 @@ async def prompt_optimizer_session(
         engine.dispose()
 
 
-async def test_prompt_optimizer_can_see_all_snapshots_metadata(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
-):
+async def test_prompt_optimizer_can_see_all_snapshots_metadata(synced_db: Database, prompt_optimizer_session: Session):
     """Prompt optimizer users CAN see all snapshots including TEST split.
 
     The snapshots table contains only metadata (slug, split, source info) which
@@ -133,9 +130,7 @@ async def test_prompt_optimizer_can_see_all_snapshots_metadata(
     assert "test" in splits
 
 
-async def test_prompt_optimizer_can_see_train_split_snapshots(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
-):
+async def test_prompt_optimizer_can_see_train_split_snapshots(synced_db: Database, prompt_optimizer_session: Session):
     """Prompt optimizer users can see TRAIN split snapshots (RLS policy allows).
 
     Uses test-fixtures/train1 (TRAIN split) from git fixtures.
@@ -153,7 +148,7 @@ async def test_prompt_optimizer_can_see_train_split_snapshots(
 
 
 async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
+    synced_db: Database, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users CANNOT see valid split true positives (RLS policy blocks).
 
@@ -173,7 +168,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
 
 
 async def test_prompt_optimizer_can_see_train_split_false_positives(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
+    synced_db: Database, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users can see TRAIN split false positives (RLS policy allows).
 
@@ -197,7 +192,7 @@ async def test_prompt_optimizer_can_see_train_split_false_positives(
 
 
 async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
+    synced_db: Database, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users cannot see TEST split critic runs (RLS policy blocks).
 
@@ -211,7 +206,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
     - Cannot query critic_runs for test split specimens
     """
     # Setup: Use admin_user to write test data
-    with get_session() as session:
+    with synced_db.session() as session:
         # Query git fixture example (TEST split)
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test1").first()
         assert example, "test-split-test fixture not found"
@@ -233,9 +228,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
     assert len(test_runs) == 0, "prompt optimizer user should not see test split critic_runs via RLS"
 
 
-async def test_prompt_optimizer_can_see_train_split_critic_runs(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
-):
+async def test_prompt_optimizer_can_see_train_split_critic_runs(synced_db: Database, prompt_optimizer_session: Session):
     """Prompt optimizer users can see TRAIN split critic runs (RLS policy allows).
 
     Uses test-fixtures/train1 (TRAIN split) from git fixtures.
@@ -250,7 +243,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(
     # Setup: Use admin_user to write test data
     train_agent_run_id = uuid4()
 
-    with get_session() as session:
+    with synced_db.session() as session:
         # Query git fixture example (TRAIN split)
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
         assert example, "test-trivial fixture not found"
@@ -273,7 +266,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(
 
 
 async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
+    synced_db: Database, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users CANNOT see VALID split critic runs (RLS policy blocks).
 
@@ -285,7 +278,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
     valid_agent_run_id = uuid4()
 
     # Setup: Use admin_user to write test data
-    with get_session() as session:
+    with synced_db.session() as session:
         # Query git fixture example (VALID split)
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
         assert example, "test-validation fixture not found"
@@ -311,7 +304,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
 
 
 async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
+    synced_db: Database, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users CANNOT see VALID split LLM requests (RLS policy blocks).
 
@@ -323,7 +316,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
     valid_agent_run_id = uuid4()
 
     # Setup: Use admin_user to write test data
-    with get_session() as session:
+    with synced_db.session() as session:
         # Query git fixture example (VALID split)
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
         assert example, "test-validation fixture not found"
@@ -356,7 +349,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
 
 
 async def test_prompt_optimizer_can_see_train_split_llm_requests(
-    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
+    synced_db: Database, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users CAN see TRAIN split LLM requests (RLS policy allows).
 
@@ -367,7 +360,7 @@ async def test_prompt_optimizer_can_see_train_split_llm_requests(
     train_agent_run_id = uuid4()
 
     # Setup: Use admin_user to write test data
-    with get_session() as session:
+    with synced_db.session() as session:
         # Query git fixture example (TRAIN split)
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
         assert example, "test-trivial fixture not found"

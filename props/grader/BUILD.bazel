@@ -47,8 +47,8 @@ py_library(
         "//openai_utils:model",
         "//props/core:agent_helpers",
         "//props/core:ids",
+        "//props/db:database",
         "//props/db:models",
-        "//props/db:session",
         "@pypi//openai",
         "@pypi//sqlalchemy",
     ],
@@ -71,7 +71,7 @@ py_library(
         "//props/core:ids",
         "//props/core:loop_utils",
         "//props/db:config",
-        "//props/db:session",
+        "//props/db:database",
         "@pypi//asyncpg",
         "@pypi//asyncpg_stubs",
         "@pypi//jinja2",
@@ -111,7 +111,7 @@ py_library(
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//openai_utils:model",
-        "//props/db:session",
+        "//props/db:database",
         "@pypi//sqlalchemy",
     ],
 )
@@ -138,8 +138,8 @@ docker_py_test(
     deps = [
         ":conftest",
         "//props:conftest",
+        "//props/db:database",
         "//props/db:models",
-        "//props/db:session",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -155,7 +155,7 @@ docker_py_test(
     deps = [
         ":conftest",
         "//props:conftest",
-        "//props/db:session",
+        "//props/db:database",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -181,8 +181,8 @@ docker_py_test(
         ":conftest",
         "//agent_core/testing:responses",
         "//props:conftest",
+        "//props/db:database",
         "//props/db:models",
-        "//props/db:session",
         "//props/db:snapshots",
         "//props/testing",
         "//props/testing/fixtures:runs",
@@ -229,9 +229,9 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core/models:examples",
+        "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
-        "//props/db:session",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
     ],

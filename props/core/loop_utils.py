@@ -12,7 +12,7 @@ from openai import AsyncOpenAI
 
 from openai_utils.model import BoundOpenAIModel
 from props.core.agent_helpers import get_current_agent_run
-from props.db.session import get_session
+from props.db.database import Database
 
 WORKSPACE = Path("/workspace")
 
@@ -72,12 +72,12 @@ def render_system_prompt(template_path: str, helpers: dict | None = None) -> str
     return template.render()
 
 
-def create_bound_model_from_env() -> BoundOpenAIModel:
+def create_bound_model_from_env(db: Database) -> BoundOpenAIModel:
     """Create a BoundOpenAIModel using environment variables.
 
     Gets model from current agent run. Uses OPENAI_BASE_URL and OPENAI_API_KEY.
     """
-    with get_session() as session:
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         model = agent_run.model
 

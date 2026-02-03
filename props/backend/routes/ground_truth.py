@@ -9,16 +9,19 @@ import io
 import tarfile
 from collections import Counter, defaultdict
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from props.backend.auth import require_admin_access
+from props.backend.deps import get_admin_db
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import LineRange
 from props.core.splits import Split
+from props.db.database import Database
 from props.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
@@ -30,7 +33,6 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.db.session import get_session
 
 router = APIRouter(dependencies=[Depends(require_admin_access)])
 
@@ -148,10 +150,18 @@ def _get_matchable_files(session, snapshot_slug: SnapshotSlug, files_hash: str |
 # --- Endpoints ---
 
 
+def _get_snapshot_or_404(session: Session, snapshot_slug: SnapshotSlug) -> Snapshot:
+    """Get snapshot or raise 404."""
+    snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
+    if not snapshot:
+        raise HTTPException(status_code=404, detail=f"Snapshot not found: {snapshot_slug}")
+    return snapshot
+
+
 @router.get("/snapshots")
-def list_snapshots() -> SnapshotsListResponse:
+def list_snapshots(db: Annotated[Database, Depends(get_admin_db)]) -> SnapshotsListResponse:
     """List all snapshots with issue counts."""
-    with get_session() as session:
+    with db.session() as session:
         # Get snapshots with TP/FP counts
         snapshots = session.query(Snapshot).order_by(Snapshot.created_at.desc()).all()
 
@@ -184,19 +194,17 @@ def list_snapshots() -> SnapshotsListResponse:
 
 
 @router.get("/snapshots/{snapshot_slug:path}")
-def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
+def get_snapshot_detail(
+    snapshot_slug: SnapshotSlug, db: Annotated[Database, Depends(get_admin_db)]
+) -> SnapshotDetailResponse:
     """Get detailed snapshot info with all TPs and FPs."""
-    slug = snapshot_slug
-
-    with get_session() as session:
-        snapshot = session.query(Snapshot).filter_by(slug=slug).first()
-        if not snapshot:
-            raise HTTPException(status_code=404, detail=f"Snapshot not found: {slug}")
+    with db.session() as session:
+        snapshot = _get_snapshot_or_404(session, snapshot_slug)
 
         # Get TPs with eager loading
         tps = (
             session.query(TruePositive)
-            .filter_by(snapshot_slug=slug)
+            .filter_by(snapshot_slug=snapshot_slug)
             .options(
                 selectinload(TruePositive.occurrences)
                 .selectinload(TruePositiveOccurrenceORM.critic_scopes_expected_to_recall)
@@ -210,7 +218,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         # Get FPs with eager loading
         fps = (
             session.query(FalsePositive)
-            .filter_by(snapshot_slug=slug)
+            .filter_by(snapshot_slug=snapshot_slug)
             .options(selectinload(FalsePositive.occurrences))
             .order_by(FalsePositive.fp_id)
             .all()
@@ -232,7 +240,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         if file_set_hashes:
             members = (
                 session.query(FileSetMember.files_hash, FileSetMember.file_path)
-                .filter(FileSetMember.snapshot_slug == slug, FileSetMember.files_hash.in_(file_set_hashes))
+                .filter(FileSetMember.snapshot_slug == snapshot_slug, FileSetMember.files_hash.in_(file_set_hashes))
                 .order_by(FileSetMember.files_hash, FileSetMember.file_path)
                 .all()
             )
@@ -315,25 +323,24 @@ class FileTreeResponse(BaseModel):
 
 
 @router.get("/snapshots/{snapshot_slug:path}/tree")
-def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
+def get_snapshot_tree(snapshot_slug: SnapshotSlug, db: Annotated[Database, Depends(get_admin_db)]) -> FileTreeResponse:
     """Get directory tree with issue occurrence counts."""
-    slug = snapshot_slug
-
-    with get_session() as session:
-        snapshot = session.query(Snapshot).filter_by(slug=slug).first()
-        if not snapshot:
-            raise HTTPException(status_code=404, detail=f"Snapshot not found: {slug}")
+    with db.session() as session:
+        _get_snapshot_or_404(session, snapshot_slug)
 
         # Get all snapshot files
         snapshot_files_rows = (
-            session.query(SnapshotFile.file_path).filter_by(snapshot_slug=slug).order_by(SnapshotFile.file_path).all()
+            session.query(SnapshotFile.file_path)
+            .filter_by(snapshot_slug=snapshot_slug)
+            .order_by(SnapshotFile.file_path)
+            .all()
         )
         snapshot_files = {row.file_path for row in snapshot_files_rows}
 
         # Get TP occurrences with file locations
         tps = (
             session.query(TruePositive)
-            .filter_by(snapshot_slug=slug)
+            .filter_by(snapshot_slug=snapshot_slug)
             .options(selectinload(TruePositive.occurrences))
             .all()
         )
@@ -341,7 +348,7 @@ def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
         # Get FP occurrences with file locations
         fps = (
             session.query(FalsePositive)
-            .filter_by(snapshot_slug=slug)
+            .filter_by(snapshot_slug=snapshot_slug)
             .options(selectinload(FalsePositive.occurrences))
             .all()
         )
@@ -429,20 +436,18 @@ class FileContentResponse(BaseModel):
 
 
 @router.get("/snapshots/{snapshot_slug:path}/files/{file_path:path}")
-def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str) -> FileContentResponse:
+def get_snapshot_file(
+    snapshot_slug: SnapshotSlug, file_path: str, db: Annotated[Database, Depends(get_admin_db)]
+) -> FileContentResponse:
     """Get file content from snapshot tar archive."""
-    slug = snapshot_slug
-
-    with get_session() as session:
-        snapshot = session.query(Snapshot).filter_by(slug=slug).first()
-        if not snapshot:
-            raise HTTPException(status_code=404, detail=f"Snapshot not found: {slug}")
+    with db.session() as session:
+        snapshot = _get_snapshot_or_404(session, snapshot_slug)
 
         if not snapshot.content:
-            raise HTTPException(status_code=404, detail=f"Snapshot has no content: {slug}")
+            raise HTTPException(status_code=404, detail=f"Snapshot has no content: {snapshot_slug}")
 
         # Check if file exists in snapshot
-        snapshot_file = session.query(SnapshotFile).filter_by(snapshot_slug=slug, file_path=file_path).first()
+        snapshot_file = session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, file_path=file_path).first()
         if not snapshot_file:
             raise HTTPException(status_code=404, detail=f"File not found in snapshot: {file_path}")
 

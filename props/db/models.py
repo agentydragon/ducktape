@@ -1327,9 +1327,7 @@ class AgentRun(Base):
     model: Mapped[str] = mapped_column(String, nullable=False)
     type_config: Mapped[TypeConfig] = mapped_column(PydanticColumn(TypeConfig), nullable=False)
     status: Mapped[AgentRunStatus] = mapped_column(
-        nullable=False,
-        server_default="in_progress",
-        comment="Run status: in_progress, completed, timed_out, or reported_failure",
+        nullable=False, server_default="in_progress", comment="Terminal status of the agent run"
     )
 
     # Resource limits (set at launch time)
@@ -1341,6 +1339,8 @@ class AgentRun(Base):
     )
 
     # Container lifecycle timestamps
+    # TODO: Populate started_at when container actually starts executing (currently not set).
+    # Could compute deadline as started_at + timeout_seconds for display/monitoring.
     started_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP, nullable=True, comment="When container started executing"
     )

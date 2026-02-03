@@ -11,8 +11,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from props.db.config import DatabaseConfig, get_database_config
-from props.db.session import get_session, recreate_database
+from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import FullSyncResult, sync_all
 
@@ -22,16 +22,16 @@ db_app = typer.Typer(help="Database management commands")
 
 def ensure_databases_exist(config: DatabaseConfig) -> None:
     """Ensure eval_results database exists."""
-    ensure_database_exists(config, config.admin.database, drop_existing=False)
+    ensure_database_exists(config, config.database, drop_existing=False)
 
 
-def recreate_database_and_sync(*, use_staged: bool = False) -> FullSyncResult:
+def recreate_database_and_sync(db: Database, *, use_staged: bool = False) -> FullSyncResult:
     """Recreate database from scratch (destructive). Drops all, creates fresh schema, syncs all data."""
     # Recreate schema (tables, RLS, roles)
-    recreate_database()
+    db.recreate()
 
     # Sync all data sources into fresh database
-    with get_session() as session:
+    with db.session() as session:
         return sync_all(session, use_staged=use_staged)
 
 
@@ -48,14 +48,16 @@ def print_sync_result(console: Console, result: FullSyncResult) -> None:
 
 
 def cmd_sync(
+    ctx: typer.Context,
     use_staged: bool = typer.Option(
         False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without committing (rollback after sync)"),
 ) -> None:
     """Sync snapshots, issues, files, file sets, model metadata, and agent definitions from source to DB."""
+    db: Database = ctx.obj
     console = Console()
-    with get_session() as session:
+    with db.session() as session:
         result = sync_all(session, use_staged=use_staged, dry_run=dry_run)
     if dry_run:
         console.print("[yellow]DRY-RUN:[/yellow] Validation passed, no changes committed")
@@ -63,6 +65,7 @@ def cmd_sync(
 
 
 def cmd_db_recreate(
+    ctx: typer.Context,
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
     use_staged: bool = typer.Option(
         False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
@@ -90,13 +93,13 @@ def cmd_db_recreate(
 
     # Ensure databases exist before trying to connect
     typer.echo("Ensuring databases exist...")
-    db_config = get_database_config()
-    ensure_databases_exist(db_config)
+    db: Database = ctx.obj
+    ensure_databases_exist(db.config)
 
     # Connect and recreate (includes full sync)
     console = Console()
     console.print("Recreating database schema...")
-    result = recreate_database_and_sync(use_staged=use_staged)
+    result = recreate_database_and_sync(db, use_staged=use_staged)
     console.print("✓ Database recreated:")
 
     print_sync_result(console, result)

@@ -34,8 +34,7 @@ from props.core.ids import DefinitionId
 from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_logging
 from props.core.models.examples import SingleFileSetExample
 from props.critic_dev.loop import LoggingHandler, LoopState, LoopStatus, create_tool_provider
-from props.db.config import DatabaseConfig, get_database_config
-from props.db.session import get_session
+from props.db.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +296,7 @@ def check_termination_condition(
 
 
 class ImprovementReminderHandler(BaseHandler):
-    def __init__(self, improvement_run_id: UUID, type_config: ImprovementTypeConfig, db_config: DatabaseConfig):
+    def __init__(self, improvement_run_id: UUID, type_config: ImprovementTypeConfig, db: Database):
         if not type_config.baseline_image_refs:
             raise ValueError("baseline_image_refs must not be empty")
         if not type_config.allowed_examples:
@@ -305,7 +304,7 @@ class ImprovementReminderHandler(BaseHandler):
 
         self._improvement_run_id = improvement_run_id
         self._type_config = type_config
-        self._db_config = db_config
+        self._db = db
         self._text_detected = False
         self._last_result: TerminationResult | None = None
 
@@ -313,7 +312,7 @@ class ImprovementReminderHandler(BaseHandler):
         self._text_detected = True
 
     def on_before_sample(self) -> LoopDecision:
-        with get_session() as session:
+        with self._db.session() as session:
             result = check_termination_condition(
                 session=session, improvement_run_id=self._improvement_run_id, type_config=self._type_config
             )
@@ -377,7 +376,7 @@ async def run_improvement_loop(
     critic_model: str,
     agent_run_id: UUID,
     type_config: ImprovementTypeConfig,
-    db_config: DatabaseConfig,
+    db: Database,
 ) -> int:
     """Run the improvement agent loop.
 
@@ -385,13 +384,11 @@ async def run_improvement_loop(
         Exit code (0 for success, 1 for failure)
     """
     state = LoopState()
-    tool_provider = create_tool_provider(state, eval_client, critic_model)
+    tool_provider = create_tool_provider(state, eval_client, critic_model, db)
 
-    bound_model = create_bound_model_from_env()
+    bound_model = create_bound_model_from_env(db)
 
-    reminder_handler = ImprovementReminderHandler(
-        improvement_run_id=agent_run_id, type_config=type_config, db_config=db_config
-    )
+    reminder_handler = ImprovementReminderHandler(improvement_run_id=agent_run_id, type_config=type_config, db=db)
 
     handlers: list[BaseHandler] = [
         LoggingHandler(),
@@ -442,14 +439,14 @@ async def main() -> int:
 
     logger.info("Improvement agent starting")
 
+    db = Database.from_env()
+
     # Get config from agent run
-    with get_session() as session:
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         agent_run_id = agent_run.agent_run_id
         type_config = agent_run.improvement_config()
         logger.info("Agent run: %s, model: %s", agent_run_id, agent_run.model)
-
-    db_config = get_database_config()
 
     critic_model = type_config.critic_model
 
@@ -467,7 +464,7 @@ async def main() -> int:
             critic_model=critic_model,
             agent_run_id=agent_run_id,
             type_config=type_config,
-            db_config=db_config,
+            db=db,
         )
 
     logger.info("Agent loop finished with exit code %d", exit_code)

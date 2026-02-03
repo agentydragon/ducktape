@@ -5,33 +5,6 @@ Provides:
 - fetch_snapshot(): Fetch snapshot to local filesystem and return path
 
 For eval API client, use props.core.eval_client.EvalClient.
-
-Database access: Just use get_session() directly - it auto-initializes from PG* env vars.
-
-Usage:
-
-    # Get agent run ID (from database - extracts from username pattern)
-    from props.db.session import get_session
-    from props.core.agent_helpers import get_current_agent_run_id
-
-    with get_session() as session:
-        agent_run_id = get_current_agent_run_id(session)
-
-    # Database access (auto-initializes on first use)
-    from props.db.session import get_session
-    from props.db.models import Snapshot
-
-    with get_session() as session:
-        snapshots = session.query(Snapshot).filter_by(split='train').all()
-
-    # Eval API client for running critics (REST-based)
-    from props.core.eval_client import EvalClient, wait_until_graded
-
-    async with EvalClient.from_env() as client:
-        result = await client.run_critic(definition_id="critic", example=example)
-
-    # Wait for grading by polling database directly (not via API)
-    status = await wait_until_graded(result.critic_run_id)
 """
 
 from __future__ import annotations
@@ -43,8 +16,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from props.db.database import Database
 from props.db.models import AgentRun
-from props.db.session import get_session
 from props.db.snapshot_io import fetch_snapshot_to_path
 
 logger = logging.getLogger(__name__)
@@ -81,23 +54,19 @@ def get_current_agent_run(session: Session) -> AgentRun:
     return get_agent_run(session, agent_run_id)
 
 
-def fetch_snapshot(dest_dir: Path) -> Path:
+def fetch_snapshot(dest_dir: Path, db: Database) -> Path:
     """Fetch snapshot for current critic agent to specified directory.
 
     Retrieves the tar archive from the snapshots table and extracts it
     to the specified directory.
-    Used as Jinja2 helper in critic.md.j2 template.
-
-    Args:
-        dest_dir: Destination directory for the snapshot
 
     Returns:
         The dest_dir path (for template convenience)
     """
-    with get_session() as session:
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         critic_config = agent_run.critic_config()
         snapshot_slug = critic_config.example.snapshot_slug
 
-    fetch_snapshot_to_path(snapshot_slug, dest_dir)
+    fetch_snapshot_to_path(snapshot_slug, dest_dir, db)
     return dest_dir

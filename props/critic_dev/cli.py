@@ -24,7 +24,7 @@ from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 from props.critic_dev.cli_helpers import show_execution_traces, show_grading_summary, show_run_status
-from props.db.session import get_session
+from props.db.database import Database
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
 
@@ -46,6 +46,13 @@ Common workflows:
 """
 
 app = typer.Typer(name="critic-dev", help=HELP_TEXT, add_completion=False)
+
+
+@app.callback()
+def _critic_dev_callback(ctx: typer.Context) -> None:
+    """Initialize Database for critic-dev commands."""
+    if ctx.obj is None:
+        ctx.obj = Database.from_env()
 
 
 @app.command("run-critic")
@@ -92,72 +99,61 @@ async def run_critic_cmd(
 
 
 @app.command("run-status")
-def run_status_cmd() -> None:
-    """Show run status statistics for critic and grader runs spawned by this agent.
-
-    Displays counts of runs by status (completed, max_turns_exceeded, etc.)
-    and identifies definitions with high failure rates.
-    """
-    with get_session() as session:
+def run_status_cmd(ctx: typer.Context) -> None:
+    """Show run status statistics for critic and grader runs spawned by this agent."""
+    db: Database = ctx.obj
+    with db.session() as session:
         parent_id = get_current_agent_run_id(session)
-    show_run_status(parent_agent_run_id=parent_id)
+    show_run_status(db, parent_agent_run_id=parent_id)
 
 
 @app.command("traces")
-def traces_cmd(limit: Annotated[int, typer.Option("--limit", "-n", help="Number of recent runs to show")] = 5) -> None:
-    """Show execution traces for recent critic runs spawned by this agent.
-
-    Lists recent critic runs with tool counts and shows the full trace
-    for the most recent run. Useful for understanding agent behavior patterns.
-    """
-    with get_session() as session:
+def traces_cmd(
+    ctx: typer.Context, limit: Annotated[int, typer.Option("--limit", "-n", help="Number of recent runs to show")] = 5
+) -> None:
+    """Show execution traces for recent critic runs spawned by this agent."""
+    db: Database = ctx.obj
+    with db.session() as session:
         parent_id = get_current_agent_run_id(session)
-    show_execution_traces(limit=limit, parent_agent_run_id=parent_id)
+    show_execution_traces(db, limit=limit, parent_agent_run_id=parent_id)
 
 
 @app.command("grading-summary")
-def grading_summary_cmd(run_id: Annotated[str, typer.Argument(help="UUID of a critic or grader run")]) -> None:
-    """Show grading decision summary for a critic or grader run.
-
-    Accepts either a critic run ID (finds associated grader) or grader run ID directly.
-    Displays credit breakdown, TP/occurrence counts, and missed issues.
-    """
-    show_grading_summary(agent_run_id=UUID(run_id))
+def grading_summary_cmd(
+    ctx: typer.Context, run_id: Annotated[str, typer.Argument(help="UUID of a critic or grader run")]
+) -> None:
+    """Show grading decision summary for a critic or grader run."""
+    db: Database = ctx.obj
+    show_grading_summary(db, agent_run_id=UUID(run_id))
 
 
 @app.command("leaderboard")
 def leaderboard_cmd(
-    limit: Annotated[int, typer.Option("--limit", "-n", help="Number of definitions to show")] = 20,
+    ctx: typer.Context, limit: Annotated[int, typer.Option("--limit", "-n", help="Number of definitions to show")] = 20
 ) -> None:
-    """Show top definitions by recall on accessible data.
-
-    For prompt_optimizer: Shows TRAIN split metrics (VALID requires SECURITY DEFINER function).
-    For improvement: Shows metrics for allowed_examples (any split).
-    """
-    with get_session() as session:
+    """Show top definitions by recall on accessible data."""
+    db: Database = ctx.obj
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         split_filter = Split.TRAIN if agent_run.type_config.agent_type == AgentType.PROMPT_OPTIMIZER else None
-    cmd_stats_critic_leaderboard(split=split_filter, example_kind=None, top=limit, bottom=None)
+    cmd_stats_critic_leaderboard(ctx, split=split_filter, example_kind=None, top=limit, bottom=None)
 
 
 @app.command("hard-examples")
 def hard_examples_cmd(
-    limit: Annotated[int, typer.Option("--limit", "-n", help="Number of examples to show")] = 20,
+    ctx: typer.Context, limit: Annotated[int, typer.Option("--limit", "-n", help="Number of examples to show")] = 20
 ) -> None:
-    """Show examples with lowest recall (hardest to solve) on accessible data.
-
-    For prompt_optimizer: Shows TRAIN split examples.
-    For improvement: Shows allowed_examples (any split).
-    """
-    with get_session() as session:
+    """Show examples with lowest recall (hardest to solve) on accessible data."""
+    db: Database = ctx.obj
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         split_filter = Split.TRAIN if agent_run.type_config.agent_type == AgentType.PROMPT_OPTIMIZER else None
-    cmd_stats_example(split=split_filter, top=None, bottom=limit)
+    cmd_stats_example(ctx, split=split_filter, top=None, bottom=limit)
 
 
 @app.command("valid-leaderboard")
 def valid_leaderboard_cmd(
-    limit: Annotated[int, typer.Option("--limit", "-n", help="Number of definitions to show")] = 20,
+    ctx: typer.Context, limit: Annotated[int, typer.Option("--limit", "-n", help="Number of definitions to show")] = 20
 ) -> None:
     """Show top definitions by recall on validation split (whole-snapshot only).
 
@@ -178,7 +174,8 @@ def valid_leaderboard_cmd(
         mean_recall: float | None
         stddev_recall: float | None
 
-    with get_session() as session:
+    db: Database = ctx.obj
+    with db.session() as session:
         raw_results = session.execute(
             text("""
                 SELECT

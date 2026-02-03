@@ -21,6 +21,7 @@ from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from props.core.eval_client import EvalClient, wait_until_graded
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
+from props.db.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,9 @@ class LoggingHandler(BaseHandler):
 # =============================================================================
 
 
-def create_tool_provider(state: LoopState, eval_client: EvalClient, critic_model: str) -> DirectToolProvider:
+def create_tool_provider(
+    state: LoopState, eval_client: EvalClient, critic_model: str, db: Database
+) -> DirectToolProvider:
     """Create tool provider with shared tools (no submit)."""
     provider = DirectToolProvider()
 
@@ -151,7 +154,7 @@ def create_tool_provider(state: LoopState, eval_client: EvalClient, critic_model
         critic_run_id = UUID(args.critic_run_id)
         logger.info(f"Waiting for grading: {critic_run_id}")
         response = await wait_until_graded(
-            critic_run_id, timeout_seconds=args.timeout_seconds, poll_interval_seconds=args.poll_interval_seconds
+            critic_run_id, db, timeout_seconds=args.timeout_seconds, poll_interval_seconds=args.poll_interval_seconds
         )
         logger.info(f"Grading complete: total_credit={response.total_credit}, max_credit={response.max_credit}")
         return (

@@ -4,9 +4,8 @@ import pytest
 
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import SingleFileSetExample, WholeSnapshotExample
-from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.models import FileSet, FileSetMember
-from props.db.session import get_session
 
 
 @pytest.fixture
@@ -16,10 +15,10 @@ def all_files_scope(test_snapshot: SnapshotSlug) -> WholeSnapshotExample:
 
 
 @pytest.fixture
-def subtract_file_example(synced_test_db: DatabaseConfig) -> SingleFileSetExample:
+def subtract_file_example(synced_db: Database) -> SingleFileSetExample:
     """SingleFileSetExample for subtract.py in train1."""
     slug = SnapshotSlug("test-fixtures/train1")
-    with get_session() as session:
+    with synced_db.session() as session:
         fs = (
             session.query(FileSet)
             .join(FileSetMember)

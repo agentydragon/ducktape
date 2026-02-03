@@ -27,9 +27,9 @@ from hamcrest import all_of, assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
-from props.db.session import get_session
 from props.testing.mocks import PropsMock
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
@@ -51,14 +51,12 @@ Be thorough and systematic in your analysis."""
 # Define the init script content
 INIT_SCRIPT = """#!/usr/bin/env python3
 import sys
-from props.db.session import get_session
-from sqlalchemy import text
+from props.db.database import Database
+from props.core.agent_helpers import get_current_agent_run_id
 
-with get_session() as session:
-    agent_run_id = session.execute(text("SELECT current_agent_run_id()")).scalar()
-    if not agent_run_id:
-        print("ERROR: current_agent_run_id() is NULL", file=sys.stderr)
-        sys.exit(1)
+db = Database.from_env()
+with db.session() as session:
+    agent_run_id = get_current_agent_run_id(session)
     print(f"Agent run ID: {agent_run_id}")
 print("Ready to begin.")
 """
@@ -95,7 +93,7 @@ chmod +x /workspace/improved/init""",
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_example, improvement_image):
+async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_example, improvement_image, db: Database):
     """Test improvement agent can create package directory in container."""
     mock = make_improvement_mock()
 
@@ -113,7 +111,7 @@ async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_examp
     # Agent terminated via report-failure, so run_id should be valid
     assert result.run_id is not None
 
-    with get_session() as session:
+    with db.session() as session:
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result.run_id).one()
         improvement_config = agent_run.improvement_config()
         assert improvement_config.agent_type == "improvement"
@@ -122,9 +120,9 @@ async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_examp
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot, improvement_image):
+async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot, improvement_image, db: Database):
     """Test improvement agent with multiple training examples."""
-    with get_session() as session:
+    with db.session() as session:
         examples = session.query(Example).filter_by(snapshot_slug=test_snapshot).limit(2).all()
         assert len(examples) >= 2, "Need at least 2 examples for this test"
         allowed_examples = [e.to_example_spec() for e in examples]
@@ -144,7 +142,7 @@ async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot, im
 
     assert result.run_id is not None
 
-    with get_session() as session:
+    with db.session() as session:
         session.query(AgentRun).filter_by(agent_run_id=result.run_id).one()
 
 

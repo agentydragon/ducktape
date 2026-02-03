@@ -22,21 +22,23 @@ from props.core.agent_helpers import get_current_agent_run
 from props.core.eval_client import EvalClient
 from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_logging
 from props.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoggingHandler, LoopState, LoopStatus, create_tool_provider
-from props.db.session import get_session
+from props.db.database import Database
 
 logger = logging.getLogger(__name__)
 
 
-async def run_prompt_optimizer_loop(system_prompt: str, eval_client: EvalClient, critic_model: str) -> int:
+async def run_prompt_optimizer_loop(
+    system_prompt: str, eval_client: EvalClient, critic_model: str, db: Database
+) -> int:
     """Run the prompt optimizer agent loop.
 
     Returns:
         Exit code (0 for success, non-zero for failure)
     """
     state = LoopState()
-    tool_provider = create_tool_provider(state, eval_client, critic_model)
+    tool_provider = create_tool_provider(state, eval_client, critic_model, db)
 
-    bound_model = create_bound_model_from_env()
+    bound_model = create_bound_model_from_env(db)
 
     handlers: list[BaseHandler] = [
         LoggingHandler(),
@@ -70,8 +72,9 @@ async def main() -> int:
     setup_logging()
 
     logger.info("Prompt optimizer agent starting")
+    db = Database.from_env()
 
-    with get_session() as session:
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         type_config = agent_run.prompt_optimizer_config()
 
@@ -85,7 +88,7 @@ async def main() -> int:
         system_prompt = render_system_prompt("props/docs/agents/prompt_optimizer.md.j2")
 
         logger.info("Starting agent loop")
-        exit_code = await run_prompt_optimizer_loop(system_prompt, eval_client, critic_model)
+        exit_code = await run_prompt_optimizer_loop(system_prompt, eval_client, critic_model, db)
 
     logger.info("Agent loop finished with exit code %d", exit_code)
     return exit_code

@@ -1,5 +1,7 @@
 """LLM Proxy routes - OpenAI API proxy with auth, logging, and cost tracking.
 
+TODO: Rename this file to openai_responses_api.py since that's what we're emulating.
+
 Endpoints:
 - POST /v1/responses - OpenAI Responses API proxy (non-streaming only)
 
@@ -15,17 +17,18 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from props.backend.auth import AuthContext, get_auth_context
+from props.backend.deps import get_admin_db
+from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
-from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +42,13 @@ OPENAI_BASE_URL = os.environ.get("OPENAI_UPSTREAM_URL", "https://api.openai.com"
 UPSTREAM_TIMEOUT_SECONDS = 300  # 5 minutes
 
 
-def _get_llm_auth_context(request: Request) -> tuple[UUID, str]:
-    """Get and validate auth context for LLM requests.
+def require_llm_access(request: Request) -> tuple[UUID, str]:
+    """FastAPI dependency requiring LLM API access (agent credentials only).
 
     Returns (agent_run_id, allowed_model) or raises HTTPException.
     """
     auth: AuthContext = get_auth_context(request)
+    db: Database = request.app.state.db
 
     # Check for auth errors
     if auth.error:
@@ -59,7 +63,7 @@ def _get_llm_auth_context(request: Request) -> tuple[UUID, str]:
         raise HTTPException(status_code=401, detail="Invalid agent token format")
 
     # Look up agent run to get allowed model and verify status
-    with get_session() as session:
+    with db.session() as session:
         agent_run = session.get(AgentRun, auth.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Agent run not found")
@@ -93,14 +97,17 @@ def _log_request(
 
 
 @router.post("/v1/responses")
-async def responses(request: Request) -> JSONResponse:
+async def responses(
+    request: Request,
+    db: Annotated[Database, Depends(get_admin_db)],
+    auth: Annotated[tuple[UUID, str], Depends(require_llm_access)],
+) -> JSONResponse:
     """Proxy OpenAI Responses API requests.
 
     Validates model against agent's allowed model, forwards to OpenAI,
     logs request/response, and returns the response.
     """
-    # Get auth context and validate
-    agent_run_id, allowed_model = _get_llm_auth_context(request)
+    agent_run_id, allowed_model = auth
 
     # Parse request body
     try:
@@ -142,7 +149,7 @@ async def responses(request: Request) -> JSONResponse:
             )
         except httpx.TimeoutException:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            with get_session() as session:
+            with db.session() as session:
                 _log_request(
                     session=session,
                     agent_run_id=agent_run_id,
@@ -155,7 +162,7 @@ async def responses(request: Request) -> JSONResponse:
             raise HTTPException(status_code=504, detail="Upstream timeout")
         except httpx.RequestError as e:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            with get_session() as session:
+            with db.session() as session:
                 _log_request(
                     session=session,
                     agent_run_id=agent_run_id,
@@ -180,7 +187,7 @@ async def responses(request: Request) -> JSONResponse:
     if upstream_response.status_code >= 400:
         error = f"HTTP {upstream_response.status_code}"
 
-    with get_session() as session:
+    with db.session() as session:
         _log_request(
             session=session,
             agent_run_id=agent_run_id,

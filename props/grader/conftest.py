@@ -2,24 +2,32 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from uuid import UUID
 
 import pytest
+from sqlalchemy.orm import Session
 
 from props.core.models.examples import ExampleSpec, WholeSnapshotExample
+from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, ReportedIssue
-from props.db.session import get_session
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
 
 
-def make_test_critic_run(example: ExampleSpec, num_issues: int = 1) -> UUID:
+@pytest.fixture
+def session(synced_db: Database) -> Generator[Session]:
+    """Alias for synced_test_session - provides a database session over synced test DB."""
+    with synced_db.session() as sess:
+        yield sess
+
+
+def make_test_critic_run(db: Database, example: ExampleSpec, num_issues: int = 1) -> UUID:
     """Create a test critic run with specified number of input issues.
 
     Returns:
         critic_run_id (UUID)
     """
-
-    with get_session() as session:
+    with db.session() as session:
         critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.COMPLETED)
         session.add(critic_run)
         session.flush()
@@ -39,17 +47,18 @@ def make_test_critic_run(example: ExampleSpec, num_issues: int = 1) -> UUID:
         return critic_run_id
 
 
-def make_test_grader_run(critic_run_id: UUID, status: AgentRunStatus = AgentRunStatus.COMPLETED) -> UUID:
+def make_test_grader_run(db: Database, critic_run_id: UUID, status: AgentRunStatus = AgentRunStatus.COMPLETED) -> UUID:
     """Create a test grader run.
 
     Args:
+        db: Database instance
         critic_run_id: Critic run ID
         status: Run status (default: COMPLETED)
 
     Returns:
         grader_run_id (UUID)
     """
-    with get_session() as session:
+    with db.session() as session:
         # Fetch the critic_run to get its snapshot_slug
         critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()
         snapshot_slug = critic_run.critic_config().example.snapshot_slug
@@ -66,20 +75,20 @@ def make_test_grader_run(critic_run_id: UUID, status: AgentRunStatus = AgentRunS
 
 
 @pytest.fixture
-def test_grader_critic_run(test_db, test_snapshot):
+def test_grader_critic_run(synced_db: Database, test_snapshot):
     """Create test critic run with 3 input issues.
 
     Returns:
         critic_run_id (UUID)
     """
-    return make_test_critic_run(WholeSnapshotExample(snapshot_slug=test_snapshot), num_issues=3)
+    return make_test_critic_run(synced_db, WholeSnapshotExample(snapshot_slug=test_snapshot), num_issues=3)
 
 
 @pytest.fixture
-def test_grader_run(test_db, test_snapshot, test_grader_critic_run):
+def test_grader_run(synced_db: Database, test_snapshot, test_grader_critic_run):
     """Create test grader run in IN_PROGRESS status.
 
     Returns:
         grader_run_id (UUID)
     """
-    return make_test_grader_run(test_grader_critic_run, status=AgentRunStatus.IN_PROGRESS)
+    return make_test_grader_run(synced_db, test_grader_critic_run, status=AgentRunStatus.IN_PROGRESS)

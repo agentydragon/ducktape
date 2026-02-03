@@ -1,0 +1,11 @@
+# Props configuration.
+# Pointed to by PROPS_CONFIG_FILE env var.
+
+# Environment variables injected into every agent container.
+# Backend copies these verbatim, then appends per-run PGUSER/PGPASSWORD/OPENAI_API_KEY.
+# OPENAI_BASE_URL is derived from PROPS_BACKEND_URL (+ "/v1").
+[agent_env]
+PGHOST = "props-postgres"
+PGPORT = "5432"
+PGDATABASE = "eval_results"
+PROPS_BACKEND_URL = "http://props-backend:8000"

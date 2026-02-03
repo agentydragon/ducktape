@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 
 from props.core.ids import SnapshotSlug
-from props.db.session import get_session
+from props.db.database import Database
 from props.db.sync.export import export_snapshot_issues
 
 # Ground truth subcommand group
@@ -31,8 +31,11 @@ EXPORT_OUTPUT_OPT = typer.Option(
 )
 
 
-def cmd_gt_export(snapshot_slug: str = EXPORT_SNAPSHOT_ARG, output: Path | None = EXPORT_OUTPUT_OPT) -> None:
+def cmd_gt_export(
+    ctx: typer.Context, snapshot_slug: str = EXPORT_SNAPSHOT_ARG, output: Path | None = EXPORT_OUTPUT_OPT
+) -> None:
     """Export ground truth (TPs/FPs) for a snapshot to YAML files."""
+    db: Database = ctx.obj
     console = Console()
     slug = SnapshotSlug(snapshot_slug)
 
@@ -43,7 +46,7 @@ def cmd_gt_export(snapshot_slug: str = EXPORT_SNAPSHOT_ARG, output: Path | None 
 
     console.print(f"Exporting ground truth for [cyan]{slug}[/cyan] to [cyan]{output}[/cyan]")
 
-    with get_session() as session:
+    with db.session() as session:
         result = export_snapshot_issues(session, slug, output)
 
     console.print(

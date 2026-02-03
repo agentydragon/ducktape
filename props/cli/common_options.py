@@ -28,13 +28,6 @@ OPT_FILES_FILTER = typer.Option(None, "--files", help="Limit review to specific 
 # Options - Parallelism
 OPT_MAX_PARALLEL = typer.Option(4, "--max-parallel", help="Maximum number of parallel operations")
 
-# Options - LLM Proxy (part of unified backend)
-DEFAULT_LLM_PROXY_URL = "http://props-backend:8000"
-LLM_PROXY_URL_ENVVAR = "PROPS_LLM_PROXY_URL"
-OPT_LLM_PROXY_URL = typer.Option(
-    DEFAULT_LLM_PROXY_URL, "--llm-proxy-url", envvar=LLM_PROXY_URL_ENVVAR, help="URL of the LLM proxy"
-)
-
 # Options - Timeout
 DEFAULT_TIMEOUT_SECONDS = 3600
 OPT_TIMEOUT_SECONDS = typer.Option(DEFAULT_TIMEOUT_SECONDS, "--timeout", help="Max seconds before container timeout")

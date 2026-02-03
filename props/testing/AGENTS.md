@@ -5,7 +5,7 @@
 **Git fixtures are the single source of truth for ALL test data.**
 
 Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in
-tests. Use the git-tracked test fixtures in `testing/fixtures/testdata/specimens/` and the `synced_test_db`
+tests. Use the git-tracked test fixtures in `testing/fixtures/testdata/specimens/` and the `synced_db`
 pytest fixture.
 
 ## Available Git Fixtures
@@ -34,7 +34,7 @@ Located in `testing/fixtures/testdata/specimens/`:
 
 ## Using Git Fixtures in Tests (short form)
 
-- Always depend on `synced_test_db` to seed the DB from git fixtures.
+- Always depend on `synced_db` to seed the DB from git fixtures.
 - Query examples/TPs/FPs from the DB, never fabricate IDs.
 - Use shared factories from `props.core.testing.fixtures` (`make_critic_run`, `make_grader_run`, etc.).
 - Scope fixtures: `add_py_scope`, `subtract_file_scope`, `multiply_py_scope`, `divide_py_scope`, `all_files_scope`.
@@ -46,7 +46,7 @@ Located in `testing/fixtures/testdata/specimens/`:
 - **Ground truth** (ground_truth.py): `example_subtract_orm` (1 TP occurrence), `example_multi_tp_orm` (multi-TP), `test_snapshot`, `test_validation_snapshot`, `tp_occurrence_single`, `fp_id`, `fp_occurrence_id`.
 - **Runs** (runs.py): `make_critic_run`, `make_grader_run`, `make_grader_run_with_credit`.
 - **E2E** (e2e_container.py): `e2e_stack` for Docker-based integration tests with full stack.
-- **Database** (db.py): `synced_test_db`, `synced_test_session` for DB fixtures.
+- **Database** (db.py): `synced_db`, `synced_test_session` for DB fixtures.
 
 ## Anti-patterns (do not)
 

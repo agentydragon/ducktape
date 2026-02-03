@@ -3,7 +3,7 @@ from logging.config import fileConfig
 from alembic import context
 
 # Import models for autogenerate support
-from props.db.config import get_database_config
+from props.db.config import DatabaseConfig
 from props.db.models import Base
 
 # this is the Alembic Config object, which provides
@@ -40,8 +40,8 @@ def run_migrations_offline() -> None:
     # Get URL from config if provided, otherwise get from environment
     url = config.get_main_option("sqlalchemy.url")
     if url is None:
-        db_config = get_database_config()
-        url = db_config.admin_url()
+        db_config = DatabaseConfig()
+        url = db_config.url
 
     context.configure(
         url=url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"}
@@ -68,8 +68,8 @@ def run_migrations_online() -> None:
     if connection is None:
         raise RuntimeError(
             "No connection provided to env.py. "
-            "Alembic migrations must be run programmatically via session.py, not via CLI. "
-            "Use: from props.db.session import init_db, recreate_database; init_db(); recreate_database()"
+            "Alembic migrations must be run programmatically, not via CLI. "
+            "Use: db = Database(config); db.recreate()"
         )
 
     # Configure context with the provided connection

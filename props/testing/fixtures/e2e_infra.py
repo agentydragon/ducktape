@@ -126,6 +126,6 @@ def _make_image_fixture(load_script: str, repo_name: str, local_tag: str):
 critic_image = _make_image_fixture("props/critic/load.sh", "critic", "critic-agent:latest")
 grader_image = _make_image_fixture("props/grader/load.sh", "grader", "grader-agent:latest")
 prompt_optimizer_image = _make_image_fixture(
-    "props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer:latest"
+    "props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer-agent:latest"
 )
 improvement_image = _make_image_fixture("props/critic_dev/improve/load.sh", "improvement", "improvement-agent:latest")

@@ -11,14 +11,14 @@ import pytest_bazel
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import Snapshot
-from props.db.session import get_session
 
 
-def test_generate_examples_train_split(synced_test_db):
+def test_generate_examples_train_split(synced_db: Database):
     """Test example VIEW for TRAIN split creates per-file-set examples + whole-snapshot."""
-    with get_session() as session:
+    with synced_db.session() as session:
         # Use test-trivial fixture (train split)
         slug = SnapshotSlug("test-fixtures/train1")
         snapshot = session.query(Snapshot).filter_by(slug=slug).one()
@@ -58,9 +58,9 @@ def test_generate_examples_train_split(synced_test_db):
         assert full_specimen_found, "Whole-snapshot example not found in generated examples"
 
 
-def test_generate_examples_valid_test_split(synced_test_db):
+def test_generate_examples_valid_test_split(synced_db: Database):
     """Test example VIEW for VALID split (per-file + whole-snapshot) and TEST split (whole-snapshot only)."""
-    with get_session() as session:
+    with synced_db.session() as session:
         # Test VALID split using test-validation fixture
         slug = SnapshotSlug("test-fixtures/valid1")
         valid_snapshot = session.query(Snapshot).filter_by(slug=slug).one()
@@ -80,9 +80,9 @@ def test_generate_examples_valid_test_split(synced_test_db):
         # TEST split behavior is well-defined: only generate full-specimen example
 
 
-def test_generate_examples_unique_file_sets(synced_test_db):
+def test_generate_examples_unique_file_sets(synced_db: Database):
     """Test that duplicate file sets are deduplicated by the VIEW using git fixtures."""
-    with get_session() as session:
+    with synced_db.session() as session:
         slug = SnapshotSlug("test-fixtures/train1")
 
         # test-trivial fixture already has multiple file sets; the view should deduplicate them

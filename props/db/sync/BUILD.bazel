@@ -104,9 +104,9 @@ docker_py_test(
         "//props/core:splits",
         "//props/core/models:examples",
         "//props/db:conftest",
+        "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
-        "//props/db:session",
         "@pypi//pytest_bazel",
     ],
 )

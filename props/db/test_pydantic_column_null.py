@@ -13,8 +13,8 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from props.db.database import Database
 from props.db.models import PydanticColumn
-from props.db.session import get_session
 
 
 class Base(DeclarativeBase):
@@ -38,17 +38,16 @@ class TestTable(Base):
 
 
 @pytest.fixture
-def test_pydantic_column_db(test_db):
+def test_pydantic_column_db(db: Database):
     """Create test table for PydanticColumn testing.
 
-    Note: test_db fixture already calls init_db(), so we don't call it again.
-    We only need to create our specific test table.
+    Note: db fixture already creates the database, so we just need to add our test table.
     """
     # Create just our test table (don't use recreate_database - that's for props schema)
-    with get_session() as session:
+    with db.session() as session:
         Base.metadata.create_all(bind=session.connection().engine)
 
-    return test_db
+    return db
 
 
 def test_sql_null_vs_json_null(test_pydantic_column_db):
@@ -58,7 +57,8 @@ def test_sql_null_vs_json_null(test_pydantic_column_db):
     The filter .isnot(None) only excludes SQL NULL, so JSON null rows pass through.
     When PydanticColumn deserializes them, you get Python None → AttributeError.
     """
-    with get_session() as session:
+    db = test_pydantic_column_db
+    with db.session() as session:
         # Insert row with SQL NULL (skip the column entirely)
         session.execute(text("INSERT INTO test_pydantic_null (id) VALUES (1)"))
 
@@ -74,7 +74,7 @@ def test_sql_null_vs_json_null(test_pydantic_column_db):
         session.commit()
 
     # Check raw database state
-    with get_session() as session:
+    with db.session() as session:
         result = session.execute(
             text("SELECT id, data IS NULL as is_sql_null, data::text as data_text FROM test_pydantic_null ORDER BY id")
         )
@@ -96,7 +96,7 @@ def test_sql_null_vs_json_null(test_pydantic_column_db):
         assert "42" in rows[2].data_text
 
     # THE FOOTGUN: .isnot(None) doesn't filter out JSON null
-    with get_session() as session:
+    with db.session() as session:
         # Query with .isnot(None) - should exclude NULL values, right?
         stmt = select(TestTable).where(TestTable.data.isnot(None))
         results = session.execute(stmt).scalars().all()
@@ -111,7 +111,7 @@ def test_sql_null_vs_json_null(test_pydantic_column_db):
         assert results[1].data.value == 42
 
     # FIX: Add explicit JSON null filter
-    with get_session() as session:
+    with db.session() as session:
         stmt = (
             select(TestTable)
             .where(TestTable.data.isnot(None))  # Excludes SQL NULL
@@ -132,13 +132,14 @@ def test_defensive_none_check(test_pydantic_column_db):
     Even with .isnot(None) filter, you can get None values from JSON null.
     Always check result is not None before accessing attributes.
     """
-    with get_session() as session:
+    db = test_pydantic_column_db
+    with db.session() as session:
         # Insert JSON null row
         test_obj = TestTable(id=1, data=None)
         session.add(test_obj)
         session.commit()
 
-    with get_session() as session:
+    with db.session() as session:
         # Query with .isnot(None) - but JSON null still passes!
         stmt = select(TestTable).where(TestTable.data.isnot(None))
         result = session.execute(stmt).scalar_one()
@@ -161,14 +162,15 @@ def test_what_does_setting_none_create(test_pydantic_column_db):
 
     You might expect SQL NULL, but PydanticColumn serializes None → 'null'::jsonb.
     """
-    with get_session() as session:
+    db = test_pydantic_column_db
+    with db.session() as session:
         # Set field to None - what gets stored?
         obj = TestTable(id=1, data=None)
         session.add(obj)
         session.commit()
 
     # Check what's actually in the database
-    with get_session() as session:
+    with db.session() as session:
         result = session.execute(
             text("SELECT id, data IS NULL as is_sql_null, data::text as data_text FROM test_pydantic_null WHERE id = 1")
         ).fetchone()
@@ -184,7 +186,7 @@ def test_what_does_setting_none_create(test_pydantic_column_db):
         assert result.data_text == "null"  # JSON null string
 
     # When you query it back, you get Python None
-    with get_session() as session:
+    with db.session() as session:
         loaded_obj = session.get(TestTable, 1)
         assert loaded_obj is not None
         assert loaded_obj.data is None  # PydanticColumn deserializes JSON null → Python None
@@ -196,12 +198,13 @@ def test_what_does_setting_none_create(test_pydantic_column_db):
 
 def test_how_to_create_sql_null(test_pydantic_column_db):
     """Show how to actually create SQL NULL (skip the column entirely)."""
-    with get_session() as session:
+    db = test_pydantic_column_db
+    with db.session() as session:
         # To create SQL NULL, you must use raw SQL and skip the column
         session.execute(text("INSERT INTO test_pydantic_null (id) VALUES (1)"))
         session.commit()
 
-    with get_session() as session:
+    with db.session() as session:
         result = session.execute(
             text("SELECT id, data IS NULL as is_sql_null, data::text as data_text FROM test_pydantic_null WHERE id = 1")
         ).fetchone()
@@ -216,7 +219,7 @@ def test_how_to_create_sql_null(test_pydantic_column_db):
         assert result.data_text is None  # No JSON representation
 
     # ORM also sees it as None
-    with get_session() as session:
+    with db.session() as session:
         obj = session.get(TestTable, 1)
         assert obj is not None
         assert obj.data is None
@@ -226,14 +229,15 @@ def test_how_to_create_sql_null(test_pydantic_column_db):
 
 def test_proper_fix_with_json_filter(test_pydantic_column_db):
     """Show the proper fix: filter out JSON null at query time."""
-    with get_session() as session:
+    db = test_pydantic_column_db
+    with db.session() as session:
         # Insert various states
         session.execute(text("INSERT INTO test_pydantic_null (id) VALUES (1)"))  # SQL NULL
         session.add(TestTable(id=2, data=None))  # JSON null
         session.add(TestTable(id=3, data=SimpleData(value=42)))  # Real data
         session.commit()
 
-    with get_session() as session:
+    with db.session() as session:
         # Proper query: exclude both SQL NULL and JSON null
         stmt = (
             select(TestTable)

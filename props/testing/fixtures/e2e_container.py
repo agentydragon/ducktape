@@ -50,9 +50,11 @@ import uvicorn
 
 from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto
-from props.backend.app import create_app
+from props.backend.app import BackendDeps, create_app
+from props.config import PropsConfig
 from props.core.oci_utils import RegistryProxyConfig
 from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
 from props.testing.fake_openai_server import FakeOpenAIServer, MultiModelFakeOpenAI
 from props.testing.fixtures.e2e_infra import LoadedImage, push_image_to_proxy
@@ -85,19 +87,25 @@ class E2EStack:
         return push_image_to_proxy(self._docker_client, image, f"localhost:{self._proxy_port}")
 
 
-@asynccontextmanager
-async def run_backend(
-    upstream_url: str, registry_proxy_config: RegistryProxyConfig, host: str = "0.0.0.0"
-) -> AsyncIterator[int]:
-    """Start the real backend app with uvicorn, yield the port.
+def _build_agent_base_env(db_config: DatabaseConfig, backend_port: int) -> dict[str, str]:
+    """Build agent_base_env for e2e tests.
 
-    Sets app.state.llm_proxy_url and app.state.registry_proxy_config before lifespan.
+    Agents reach postgres and backend through E2E_HOST_HOSTNAME at the mapped ports.
     """
-    app = create_app()
-    app.state.llm_proxy_url = upstream_url
-    app.state.registry_proxy_config = registry_proxy_config
+    return {
+        "PGHOST": E2E_HOST_HOSTNAME,
+        "PGPORT": str(db_config.port),
+        "PGDATABASE": db_config.database,
+        "PROPS_BACKEND_URL": f"http://{E2E_HOST_HOSTNAME}:{backend_port}",
+    }
 
-    config = uvicorn.Config(app, host=host, port=registry_proxy_config.port, log_level="warning")
+
+@asynccontextmanager
+async def run_backend(deps: BackendDeps, port: int, host: str = "0.0.0.0") -> AsyncIterator[int]:
+    """Start the real backend app with uvicorn, yield the port."""
+    app = create_app(deps=deps)
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())
 
@@ -107,10 +115,10 @@ async def run_backend(
             exc = task.exception()
             raise RuntimeError(f"Backend server failed to start: {exc}")
 
-    logger.info("Backend started on port %d, upstream=%s", registry_proxy_config.port, upstream_url)
+    logger.info("Backend started on port %d", port)
 
     try:
-        yield registry_proxy_config.port
+        yield port
     finally:
         server.should_exit = True
         try:
@@ -122,13 +130,21 @@ async def run_backend(
         logger.info("Backend stopped")
 
 
+def _set_backend_env(monkeypatch: pytest.MonkeyPatch, db_config: DatabaseConfig, e2e_registry_url: str) -> None:
+    """Set env vars needed by the backend's lifespan."""
+    monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    for key, value in db_config.to_env_dict().items():
+        monkeypatch.setenv(key, value)
+
+
 # Type alias for the fixture factory
 E2EStackFactory = Callable[[OpenAIModelProto], AbstractAsyncContextManager[E2EStack]]
 
 
 @pytest_asyncio.fixture
 async def e2e_stack(
-    synced_test_db: DatabaseConfig,
+    synced_db: Database,
     async_docker_client: aiodocker.Docker,
     docker_client: docker.DockerClient,
     e2e_registry_url: str,
@@ -146,9 +162,7 @@ async def e2e_stack(
                 stack.push_image(grader_image)
                 run_id = await stack.registry.run_critic(...)
     """
-    # Configure upstream registry for the backend's registry proxy
-    monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _set_backend_env(monkeypatch, synced_db.config, e2e_registry_url)
 
     @asynccontextmanager
     async def _factory(mock: OpenAIModelProto, model: str = TEST_MODEL) -> AsyncIterator[E2EStack]:
@@ -160,13 +174,18 @@ async def e2e_stack(
 
             backend_port = pick_free_port()
             registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)
-            proxy_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
+            agent_base_env = _build_agent_base_env(synced_db.config, backend_port)
 
-            async with run_backend(fake_openai.url, registry_proxy_config) as _port:
+            deps = BackendDeps(
+                config=PropsConfig(agent_env=agent_base_env), registry_proxy_config=registry_proxy_config
+            )
+
+            async with run_backend(deps, port=backend_port) as _port:
                 registry = AgentRegistry(
                     docker_client=async_docker_client,
-                    db_config=synced_test_db,
-                    llm_proxy_url=proxy_url,
+                    db=synced_db,
+                    db_config=synced_db.config,
+                    agent_base_env=agent_base_env,
                     registry_config=registry_proxy_config,
                     extra_hosts=HOST_GATEWAY,
                 )
@@ -187,7 +206,7 @@ async def e2e_stack(
 @asynccontextmanager
 async def multi_model_e2e_stack(
     mocks: Mapping[str, OpenAIModelProto],
-    db_config: DatabaseConfig,
+    db: Database,
     async_docker_client: aiodocker.Docker,
     sync_docker_client: docker.DockerClient,
     e2e_registry_url: str,
@@ -201,19 +220,21 @@ async def multi_model_e2e_stack(
     await fake_openai.start()
 
     try:
-        monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        _set_backend_env(monkeypatch, db.config, e2e_registry_url)
         monkeypatch.setenv("OPENAI_UPSTREAM_URL", fake_openai.url)
 
         backend_port = pick_free_port()
         registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)
-        proxy_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
+        agent_base_env = _build_agent_base_env(db.config, backend_port)
 
-        async with run_backend(fake_openai.url, registry_proxy_config) as _port:
+        deps = BackendDeps(config=PropsConfig(agent_env=agent_base_env), registry_proxy_config=registry_proxy_config)
+
+        async with run_backend(deps, port=backend_port) as _port:
             registry = AgentRegistry(
                 docker_client=async_docker_client,
-                db_config=db_config,
-                llm_proxy_url=proxy_url,
+                db=db,
+                db_config=db.config,
+                agent_base_env=agent_base_env,
                 registry_config=registry_proxy_config,
                 extra_hosts=HOST_GATEWAY,
             )

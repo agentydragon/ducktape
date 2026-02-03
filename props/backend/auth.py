@@ -27,9 +27,10 @@ from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
-from props.db.config import get_database_config
+from props.backend.deps import AdminDb
+from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.models import AgentRun, AgentType
-from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -110,17 +111,12 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
         return None
 
 
-def validate_postgres_credentials(username: str, password: str) -> CredentialValidationResult:
+def validate_postgres_credentials(
+    username: str, password: str, db_config: DatabaseConfig
+) -> CredentialValidationResult:
     """Validate credentials by attempting Postgres connection."""
     # First, try to extract agent run ID from username pattern
     agent_run_id = extract_agent_run_id_from_username(username)
-
-    # Get database config (uses PGHOST, PGPORT, PGDATABASE from env)
-    try:
-        db_config = get_database_config()
-    except ValueError as e:
-        logger.error(f"Database config not available: {e}")
-        return CredentialValidationResult.invalid("Server configuration error")
 
     # Validate credentials against Postgres
     try:
@@ -227,7 +223,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 username, password = parsed
 
                 # Validate credentials and determine access level
-                result = validate_postgres_credentials(username, password)
+                db: Database = request.app.state.db
+                result = validate_postgres_credentials(username, password, db.config)
                 if not result.is_valid:
                     logger.warning(f"Invalid postgres credentials for user: {username}")
                     request.state.auth = AuthContext.failed(result.error or "Invalid credentials")
@@ -241,10 +238,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 
 def get_auth_context(request: Request) -> AuthContext:
-    return getattr(request.state, "auth", AuthContext.anonymous())
+    """Get auth context from request state. Middleware always sets this."""
+    auth: AuthContext | None = request.state.auth
+    return auth if auth is not None else AuthContext.anonymous()
 
 
-def get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
+def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID | None]:
     """Determine caller type from auth context. Does DB lookup for agent users."""
     if auth.error:
         raise HTTPException(status_code=401, detail=auth.error)
@@ -256,8 +255,9 @@ def get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
         return CallerType.ADMIN, None
 
     # For agents, look up run in database to determine type
-    assert auth.agent_run_id is not None
-    with get_session() as session:
+    if auth.agent_run_id is None:
+        raise HTTPException(status_code=500, detail="Agent auth missing run ID")
+    with db.session() as session:
         agent_run = session.get(AgentRun, auth.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
@@ -277,36 +277,36 @@ def get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
 # =============================================================================
 
 
-def require_registry_read(request: Request) -> tuple[CallerType, UUID | None]:
+def require_registry_read(request: Request, db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring registry read permission. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
-    caller_type, agent_run_id = get_caller_type(auth)
+    caller_type, agent_run_id = get_caller_type(auth, db)
     if caller_type not in ACL_CAN_READ_REGISTRY:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read from registry")
     return caller_type, agent_run_id
 
 
-def require_registry_push(request: Request) -> tuple[CallerType, UUID | None]:
+def require_registry_push(request: Request, db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring registry push permission. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
-    caller_type, agent_run_id = get_caller_type(auth)
+    caller_type, agent_run_id = get_caller_type(auth, db)
     if caller_type not in ACL_CAN_PUSH_REGISTRY:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
     return caller_type, agent_run_id
 
 
-def require_eval_api_access(request: Request) -> tuple[CallerType, UUID | None]:
+def require_eval_api_access(request: Request, db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring eval API access. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
-    caller_type, agent_run_id = get_caller_type(auth)
+    caller_type, agent_run_id = get_caller_type(auth, db)
     if caller_type not in ACL_CAN_USE_EVAL_API:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to access eval endpoints")
     return caller_type, agent_run_id
 
 
-def require_admin_access(request: Request) -> None:
+def require_admin_access(request: Request, db: AdminDb) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
     auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth)
+    caller_type, _ = get_caller_type(auth, db)
     if caller_type != CallerType.ADMIN:
         raise HTTPException(status_code=403, detail="Admin access required")

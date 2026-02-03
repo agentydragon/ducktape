@@ -60,7 +60,7 @@ This is a legitimate slow test that should have a higher timeout or be marked as
 
 ## Test Fixture Types: Fast vs Slow
 
-### `synced_test_db` (FAST - test fixtures)
+### `synced_db` (FAST - test fixtures)
 
 Uses local git-tracked fixtures at `tests/props/fixtures/specimens/`:
 
@@ -171,7 +171,7 @@ Tests that spin up Docker containers for agent execution:
 - `test_specimen_issues_and_false_positives_load` (17s)
 - `test_all_specimens_in_splits_can_load` (16s)
 
-**These tests use `synced_production_db`** (not `synced_test_db`), so they sync real specimens:
+**These tests use `synced_production_db`** (not `synced_db`), so they sync real specimens:
 
 **Root cause**: The `synced_production_db` fixture runs `sync_all()` which for GitHub/Git sources:
 
@@ -183,7 +183,7 @@ Tests that spin up Docker containers for agent execution:
 6. Syncs model metadata (fast)
 7. Syncs agent definitions (fast)
 
-**Note**: For test fixtures (`synced_test_db`), snapshots use `vcs: local` so hydration is a no-op
+**Note**: For test fixtures (`synced_db`), snapshots use `vcs: local` so hydration is a no-op
 (returns original path with `needs_cleanup=False`). Only file line counting happens, which is fast
 for the ~8 small test files.
 

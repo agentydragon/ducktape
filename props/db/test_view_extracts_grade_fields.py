@@ -6,14 +6,13 @@ import pytest_bazel
 from sqlalchemy import text
 
 from props.core.ids import SnapshotSlug
-from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRunStatus, GradingEdge, TruePositive
-from props.db.session import get_session
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run, make_reported_issues
 
 
-def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
+def test_view_extracts_grade_fields_correctly(synced_db: Database):
     """Test that the view includes grader runs with occurrence-based results.
 
     Uses git-synced test fixtures (test-fixtures/train1) instead of synthetic data.
@@ -24,7 +23,7 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
     critic_agent_run_id = uuid4()
     grader_agent_run_id = uuid4()
 
-    with get_session() as session:
+    with synced_db.session() as session:
         # Get an existing example from git fixtures - use any single-file-set example
         example = (
             session.query(Example).filter_by(snapshot_slug=snapshot_slug).filter(Example.files_hash.isnot(None)).first()

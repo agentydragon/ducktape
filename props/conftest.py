@@ -19,15 +19,15 @@ from mcp_infra.testing.fixtures import *  # noqa: F403
 # Testcontainers fixtures - imported directly from defining module
 from props.testing.fixtures.db import (
     TEST_FIXTURES_PATH,
-    admin_engine,
+    db,
+    engine,
     postgres_base_config,
     postgres_container,
     pytest_addoption,
     session_monkeypatch,
+    synced_db,
     synced_readonly_session,
-    synced_test_db,
     synced_test_session,
-    test_db,
     test_specimens_base,
 )
 from props.testing.fixtures.e2e import make_openai_client, mock_snapshot_slug, noop_openai_client, success_termination

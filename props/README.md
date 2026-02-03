@@ -185,50 +185,9 @@ This:
 - Stores the critique in the database
 - Returns the agent_run_id for grading
 
-### 2. Grade a Critique
+### 2. Grading
 
-Grade stored critiques against canonical findings:
-
-```bash
-# Grade validation set
-props grade-validation
-
-# Use different model for grading
-props grade-validation --model gpt-4o
-```
-
-This:
-
-- Fetches critiques from the database
-- Loads the specimens' canonical issues
-- Runs the grader to compute metrics (TP/FP/FN/recall/precision)
-- Stores grader results in the database
-
-### 3. Query Results
-
-Query stored agent runs from the database:
-
-```python
-from props.db.session import get_session
-from props.db.models import AgentRun, ReportedIssue
-
-with get_session() as session:
-    # Get all agent runs for a snapshot
-    runs = session.query(AgentRun).filter(
-        AgentRun.type_config["snapshot_slug"].astext == "ducktape/2025-11-20-00"
-    ).all()
-
-    # Get reported issues for a run
-    for issue in session.query(ReportedIssue).filter_by(agent_run_id=run_id):
-        print(f"[{issue.issue_id}] {issue.rationale}")
-```
-
-All structured runs are persisted with:
-
-- Agent configuration (type_config JSONB column storing snapshot_slug, files, model, etc.)
-- Reported issues and occurrences in normalized tables (issue_id, rationale, locations)
-- Specimen splits for train/valid/test separation
-- Execution traces in LLM requests table (prompt, completion, tokens, cost)
+Grading is handled automatically by snapshot grader daemons. Use the frontend UI (`POST /api/runs/validation`) to trigger validation runs on specific definitions.
 
 ### Specimen Inspection (for assistants)
 

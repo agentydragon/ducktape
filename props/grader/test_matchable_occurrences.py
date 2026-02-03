@@ -12,16 +12,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import text
 
-from props.db.session import get_session
-
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
-
-
-@pytest.fixture
-def session(synced_test_db):
-    """Provide a database session for the test."""
-    with get_session() as sess:
-        yield sess
 
 
 class TestMatchableOccurrences:

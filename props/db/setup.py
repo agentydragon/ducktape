@@ -1,7 +1,7 @@
 """Database setup and initialization (RLS policies, views).
 
-Extracted from session.py to separate concerns:
-- session.py: Connection management (init_db, get_session)
+Extracted from database.py to separate concerns:
+- database.py: Database class (owns engine + session factory)
 - setup.py: Database schema and security setup (recreate_database, RLS, views)
 """
 
@@ -37,7 +37,7 @@ def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, d
           conflicts in setup. Connection termination remains in test teardown only.
     """
     postgres_config = base_config.with_database("postgres")
-    engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
+    engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
     with engine.connect() as conn:
         if drop_existing:

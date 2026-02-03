@@ -10,7 +10,7 @@ directly in tests, and the same query builders are compiled to SQL for j2 templa
 Does NOT test:
 - RLS policies (covered in test_db_integration.py)
 - Docker integration (covered in test_prompt_optimizer_integration.py)
-- Database setup/teardown (uses existing test_db fixture)
+- Database setup/teardown (uses existing db fixture)
 """
 
 from __future__ import annotations
@@ -20,16 +20,16 @@ import pytest_bazel
 
 from props.core.splits import Split
 from props.db import query_builders as qb
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
-from props.db.session import get_session
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest.fixture
-def query_test_data(synced_test_db):
+def query_test_data(synced_db: Database):
     """Populate database with critic/grader runs for query validation.
 
     Uses git fixtures for ground truth (Snapshots, TPs, FPs, Examples).
@@ -44,8 +44,8 @@ def query_test_data(synced_test_db):
     - test-validation (VALID) - has TPs and examples
     - test-validation-2 (VALID) - has TPs and examples
     """
-    with get_session() as session:
-        # Query git fixture examples (snapshots/TPs/FPs already loaded by synced_test_db)
+    with synced_db.session() as session:
+        # Query git fixture examples (snapshots/TPs/FPs already loaded by synced_db)
         # Use explicit join and select columns to avoid lazy loading issues
         train_examples = (
             session.query(Example)
@@ -94,9 +94,9 @@ def query_test_data(synced_test_db):
 class TestQueryBuilders:
     """Test query builders execute and return expected data."""
 
-    def test_list_train_snapshots(self, query_test_data):
+    def test_list_train_snapshots(self, query_test_data, db: Database):
         """list_train_snapshots() returns train snapshots in order."""
-        with get_session() as session:
+        with db.session() as session:
             result = session.execute(qb.list_train_snapshots()).fetchall()
 
             # Should have at least 1 train snapshot from git fixtures
@@ -110,9 +110,9 @@ class TestQueryBuilders:
             slugs = [row.slug for row in result]
             assert slugs == sorted(slugs)
 
-    def test_list_train_true_positives(self, query_test_data):
+    def test_list_train_true_positives(self, query_test_data, db: Database):
         """list_train_true_positives() returns all TPs for train split."""
-        with get_session() as session:
+        with db.session() as session:
             result = session.execute(qb.list_train_true_positives()).fetchall()
 
             # Should have at least 1 train true positive from git fixtures
@@ -123,9 +123,9 @@ class TestQueryBuilders:
             assert result[0].tp_id is not None
             assert result[0].rationale is not None
 
-    def test_list_train_false_positives(self, query_test_data):
+    def test_list_train_false_positives(self, query_test_data, db: Database):
         """list_train_false_positives() returns all FPs for train split."""
-        with get_session() as session:
+        with db.session() as session:
             result = session.execute(qb.list_train_false_positives()).fetchall()
 
             # Git fixtures may or may not have FPs - just check structure if any exist
@@ -135,9 +135,9 @@ class TestQueryBuilders:
                 assert result[0].fp_id is not None
                 assert result[0].rationale is not None
 
-    def test_count_issues_by_snapshot(self, query_test_data):
+    def test_count_issues_by_snapshot(self, query_test_data, db: Database):
         """count_issues_by_snapshot() returns TP/FP counts per snapshot."""
-        with get_session() as session:
+        with db.session() as session:
             result = session.execute(qb.count_issues_by_snapshot(split=Split.TRAIN)).fetchall()
 
             # Should have at least 1 train snapshot from git fixtures
@@ -152,9 +152,9 @@ class TestQueryBuilders:
                 assert isinstance(row.tp_count, int)
                 assert isinstance(row.fp_count, int)
 
-    def test_list_true_positives_for_snapshot(self, query_test_data):
+    def test_list_true_positives_for_snapshot(self, query_test_data, db: Database):
         """list_true_positives_for_snapshot() returns TPs for specific snapshot."""
-        with get_session() as session:
+        with db.session() as session:
             # Find a TRAIN snapshot with TPs
             train_snapshot = (
                 session.query(Snapshot)
@@ -172,9 +172,9 @@ class TestQueryBuilders:
             assert result[0].rationale is not None
             assert len(result[0].occurrences) >= 1
 
-    def test_list_false_positives_for_snapshot(self, query_test_data):
+    def test_list_false_positives_for_snapshot(self, query_test_data, db: Database):
         """list_false_positives_for_snapshot() returns FPs for specific snapshot."""
-        with get_session() as session:
+        with db.session() as session:
             # Find a TRAIN snapshot with FPs (if any exist)
             train_snapshot_with_fps = (
                 session.query(Snapshot)
@@ -199,10 +199,10 @@ class TestQueryBuilders:
                 result = session.execute(qb.list_false_positives_for_snapshot(train_snapshot.slug)).scalars().all()
                 assert len(result) == 0
 
-    def test_valid_aggregates_view(self, query_test_data):
+    def test_valid_aggregates_view(self, query_test_data, db: Database):
         """aggregated_recall_by_definition view computes statistics for valid split."""
 
-        with get_session() as session:
+        with db.session() as session:
             # Query the aggregated_recall_by_definition view for valid split
             result = (
                 session.query(RecallByDefinitionSplitKind)
@@ -223,9 +223,9 @@ class TestQueryBuilders:
             assert row.status_counts is not None
             assert all(count >= 0 for count in row.status_counts.values())
 
-    def test_critic_runs_for_snapshot(self, query_test_data):
+    def test_critic_runs_for_snapshot(self, query_test_data, db: Database):
         """critic_runs_for_snapshot() returns critic runs for a specific snapshot."""
-        with get_session() as session:
+        with db.session() as session:
             # Find a TRAIN file-set example (with files_hash) that has critic runs
             train_example = (
                 session.query(Example)

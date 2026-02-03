@@ -24,15 +24,17 @@ import hashlib
 import json
 import logging
 import os
+from typing import Annotated
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from props.backend.auth import ACL_CAN_PUSH_TAGS, CallerType, require_registry_push, require_registry_read
+from props.backend.deps import get_admin_db
 from props.core.oci_utils import is_digest
+from props.db.database import Database
 from props.db.models import AgentDefinition, AgentType
-from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +117,9 @@ async def _extract_base_digest(manifest_body: bytes, repository: str) -> str | N
         return None
 
 
-async def _record_manifest_push(repository: str, digest: str, manifest_body: bytes, agent_run_id: UUID | None) -> None:
+async def _record_manifest_push(
+    repository: str, digest: str, manifest_body: bytes, agent_run_id: UUID | None, db: Database
+) -> None:
     """Record a manifest push to agent_definitions table."""
     try:
         agent_type = AgentType(repository)
@@ -125,7 +129,7 @@ async def _record_manifest_push(repository: str, digest: str, manifest_body: byt
             detail=f"Unknown repository name: {repository}. Must be a valid agent type: {[t.value for t in AgentType]}",
         )
 
-    with get_session() as session:
+    with db.session() as session:
         existing = session.get(AgentDefinition, digest)
         if existing:
             logger.info(f"Agent definition {digest} already exists, skipping")
@@ -183,7 +187,11 @@ async def get_manifest(
 
 @router.put("/v2/{repo}/manifests/{ref}")
 async def put_manifest(
-    request: Request, repo: str, ref: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
+    request: Request,
+    repo: str,
+    ref: str,
+    db: Annotated[Database, Depends(get_admin_db)],
+    auth: Annotated[tuple[CallerType, UUID | None], Depends(require_registry_push)],
 ) -> Response:
     """Push a manifest."""
     caller_type, agent_run_id = auth
@@ -207,7 +215,7 @@ async def put_manifest(
 
         # Record manifest push if successful
         if upstream_response.status_code in (200, 201):
-            await _record_manifest_push(repo, manifest_digest, body, agent_run_id)
+            await _record_manifest_push(repo, manifest_digest, body, agent_run_id, db)
 
         return Response(
             content=upstream_response.content,

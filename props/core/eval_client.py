@@ -38,9 +38,9 @@ from props.core.agent_helpers import get_current_agent_run_id
 from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, GradingPending, Snapshot
-from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-def get_grading_status_from_db(critic_run_id: UUID) -> GradingStatusResponse:
+def get_grading_status_from_db(critic_run_id: UUID, db: Database) -> GradingStatusResponse:
     """Check grading status by querying the database directly.
 
     Uses the container's RLS-scoped database credentials to query
@@ -62,7 +62,7 @@ def get_grading_status_from_db(critic_run_id: UUID) -> GradingStatusResponse:
     Returns:
         GradingStatusResponse with completion status and metrics
     """
-    with get_session() as session:
+    with db.session() as session:
         # Check for remaining drift using grading_pending view
         pending_count = (
             session.query(func.count())
@@ -130,7 +130,7 @@ def get_grading_status_from_db(critic_run_id: UUID) -> GradingStatusResponse:
 
 
 async def wait_until_graded(
-    critic_run_id: UUID, *, timeout_seconds: int = 300, poll_interval_seconds: int = 5
+    critic_run_id: UUID, db: Database, *, timeout_seconds: int = 300, poll_interval_seconds: int = 5
 ) -> GradingStatusResponse:
     """Wait for a critic run to be fully graded by polling the database.
 
@@ -154,7 +154,7 @@ async def wait_until_graded(
         TimeoutError: If grading doesn't complete within timeout
     """
     # Validate the critic run before waiting
-    with get_session() as session:
+    with db.session() as session:
         critic_run = session.get(AgentRun, critic_run_id)
         if critic_run is None:
             raise ValueError(f"Critic run {critic_run_id} not found")
@@ -179,7 +179,7 @@ async def wait_until_graded(
     last_pending_count: int | None = None
 
     while time.monotonic() < deadline:
-        status = get_grading_status_from_db(critic_run_id)
+        status = get_grading_status_from_db(critic_run_id, db)
 
         if status.is_complete:
             return status

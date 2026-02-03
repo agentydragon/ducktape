@@ -38,8 +38,8 @@ from props.critic_dev.optimize.orchestration_fixtures import (
 )
 from props.critic_dev.shared import TargetMetric
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.db.session import get_session
 from props.testing.fixtures.e2e_container import multi_model_e2e_stack
 from props.testing.mocks import PropsMock, get_system_message_text
 
@@ -223,7 +223,8 @@ def make_critic_mock_with_token_check(expected_token: str) -> PropsMock:
 @pytest.mark.timeout(300)
 @pytest.mark.slow
 async def test_po_orchestrates_critic_with_system_prompt_check(
-    synced_test_db,
+    synced_db,
+    db: Database,
     async_docker_client,
     docker_client,
     e2e_registry_url,
@@ -257,7 +258,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
     async with multi_model_e2e_stack(
-        mocks, synced_test_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+        mocks, synced_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
     ) as stack:
         stack.push_image(prompt_optimizer_image)
         stack.push_image(critic_image)
@@ -279,7 +280,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
             )
 
             # Verify optimizer completed
-            with get_session() as session:
+            with synced_db.session() as session:
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
                 assert optimizer_run.status == AgentRunStatus.COMPLETED, (
@@ -296,7 +297,8 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
 @pytest.mark.slow
 @pytest.mark.skip(reason="Requires registry proxy: pass PROPS_REGISTRY_PROXY_* env vars to containers")
 async def test_po_creates_custom_critic_with_token(
-    synced_test_db,
+    synced_db,
+    db: Database,
     async_docker_client,
     docker_client,
     e2e_registry_url,
@@ -329,7 +331,7 @@ async def test_po_creates_custom_critic_with_token(
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
     async with multi_model_e2e_stack(
-        mocks, synced_test_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+        mocks, synced_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
     ) as stack:
         stack.push_image(prompt_optimizer_image)
         stack.push_image(critic_image)
@@ -348,7 +350,7 @@ async def test_po_creates_custom_critic_with_token(
                 timeout_seconds=180,
             )
 
-            with get_session() as session:
+            with synced_db.session() as session:
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
                 assert optimizer_run.status == AgentRunStatus.COMPLETED
@@ -384,7 +386,7 @@ def make_critic_push_attempt_mock() -> PropsMock:
 
 @pytest.mark.timeout(180)
 @pytest.mark.slow
-async def test_critic_cannot_push_images(e2e_stack, all_files_scope, critic_image):
+async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_files_scope, critic_image):
     """Test that critic agents cannot push images to registry.
 
     Critic agents should only be able to read from the registry, not write.
@@ -408,7 +410,7 @@ async def test_critic_cannot_push_images(e2e_stack, all_files_scope, critic_imag
         )
 
         # Verify critic completed (it should complete even though push failed)
-        with get_session() as session:
+        with synced_db.session() as session:
             critic_run = session.get(AgentRun, run_id)
             assert critic_run is not None
             # The critic should complete because it handled the push failure gracefully

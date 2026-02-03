@@ -23,6 +23,7 @@ from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import BoundOpenAIModel, SystemMessage
 from props.core.agent_helpers import get_current_agent_run_id
 from props.core.ids import SnapshotSlug
+from props.db.database import Database
 from props.db.models import (
     FalsePositive,
     FalsePositiveOccurrenceORM,
@@ -33,7 +34,6 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.db.session import get_session
 from props.grader.tools import (
     DeleteEdgesArgs,
     FillRemainingArgs,
@@ -78,7 +78,7 @@ def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
 
 
 def create_grader_tool_provider(
-    grader_run_id: UUID, snapshot_slug: SnapshotSlug, exit_state: ExitState
+    grader_run_id: UUID, snapshot_slug: SnapshotSlug, exit_state: ExitState, db: Database
 ) -> DirectToolProvider:
     """Create a tool provider with grader tools bound to the given run."""
     provider = DirectToolProvider()
@@ -94,7 +94,7 @@ def create_grader_tool_provider(
 
         Returns edges that still need grading decisions.
         """
-        with get_session() as session:
+        with db.session() as session:
             query = select(GradingPending).where(GradingPending.snapshot_slug == snapshot_slug)
 
             if args.run:
@@ -122,7 +122,7 @@ def create_grader_tool_provider(
     @provider.tool
     def show_issue(args: ShowIssueArgs) -> IssueDetails:
         """Show details of a critique issue including its locations."""
-        with get_session() as session:
+        with db.session() as session:
             issue = session.query(ReportedIssue).filter_by(agent_run_id=args.run, issue_id=args.issue_id).first()
             if not issue:
                 raise ValueError(f"Issue not found: {args.run}/{args.issue_id}")
@@ -149,7 +149,7 @@ def create_grader_tool_provider(
     @provider.tool
     def show_tp(args: ShowTPArgs) -> GTDetails:
         """Show details of a true positive occurrence."""
-        with get_session() as session:
+        with db.session() as session:
             tp = session.query(TruePositive).filter_by(snapshot_slug=snapshot_slug, tp_id=args.tp_id).first()
             if not tp:
                 raise ValueError(f"TP not found: {args.tp_id}")
@@ -169,7 +169,7 @@ def create_grader_tool_provider(
     @provider.tool
     def show_fp(args: ShowFPArgs) -> GTDetails:
         """Show details of a false positive occurrence."""
-        with get_session() as session:
+        with db.session() as session:
             fp = session.query(FalsePositive).filter_by(snapshot_slug=snapshot_slug, fp_id=args.fp_id).first()
             if not fp:
                 raise ValueError(f"FP not found: {args.fp_id}")
@@ -193,7 +193,7 @@ def create_grader_tool_provider(
         Each edge specifies a GT reference and credit (0.0-1.0).
         Use credit=0 for non-matches, >0 for matches based on quality.
         """
-        with get_session() as session:
+        with db.session() as session:
             for edge_spec in args.edges:
                 tp_id: str | None = None
                 tp_occ: str | None = None
@@ -228,7 +228,7 @@ def create_grader_tool_provider(
         Use when you've reviewed all GT occurrences and the remaining don't match.
         expected_count is a safety check - must match actual pending count.
         """
-        with get_session() as session:
+        with db.session() as session:
             query = select(GradingPending).where(
                 GradingPending.snapshot_slug == snapshot_slug,
                 GradingPending.critique_run_id == args.run,
@@ -260,7 +260,7 @@ def create_grader_tool_provider(
     @provider.tool
     def delete_edges(args: DeleteEdgesArgs) -> str:
         """Delete all grading edges for an issue. Use to redo grading."""
-        with get_session() as session:
+        with db.session() as session:
             count = (
                 session.query(GradingEdge)
                 .filter_by(critique_run_id=args.run, critique_issue_id=args.issue_id, grader_run_id=grader_run_id)
@@ -289,19 +289,19 @@ class LoggingHandler(BaseHandler):
         raise exc
 
 
-async def run_grader_loop(system_prompt: str, model: str, snapshot_slug: SnapshotSlug) -> int:
+async def run_grader_loop(system_prompt: str, model: str, snapshot_slug: SnapshotSlug, db: Database) -> int:
     """Run the grader agent loop.
 
     Returns:
         Exit code (0 for success, non-zero for failure)
     """
     # Get agent_run_id once at the start
-    with get_session() as session:
+    with db.session() as session:
         grader_run_id = get_current_agent_run_id(session)
 
     # Create tool provider with shared exit state
     exit_state = ExitState()
-    tool_provider = create_grader_tool_provider(grader_run_id, snapshot_slug, exit_state)
+    tool_provider = create_grader_tool_provider(grader_run_id, snapshot_slug, exit_state, db)
 
     # Create OpenAI client pointing to proxy
     client = AsyncOpenAI(

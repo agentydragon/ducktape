@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import create_engine, text
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
 from props.db.config import DatabaseConfig
-from props.db.session import dispose_db, get_session, init_db, recreate_database
+from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import sync_all
 
@@ -58,25 +58,12 @@ def postgres_base_config(postgres_container: PostgresContainer) -> DatabaseConfi
     """Session-scoped base database config from the testcontainer.
 
     Provides connection parameters for the containerized PostgreSQL instance.
-    Agent containers can reach postgres via host.docker.internal since
-    testcontainers maps the port to the host.
+    Agent containers reach postgres via host.docker.internal (same mapped port).
     """
     host = postgres_container.get_container_host_ip()
     port = int(postgres_container.get_exposed_port(5432))
 
-    # Container routing: agent containers reach postgres via host.docker.internal
-    # since testcontainers exposes the port on the host
-    container_host = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.internal")
-
-    return DatabaseConfig(
-        host=host,
-        port=port,
-        database="postgres",
-        container_name=container_host,
-        container_port=port,  # Same mapped port, accessible via host.docker.internal
-        user="postgres",
-        password="postgres",
-    )
+    return DatabaseConfig(host=host, port=port, database="postgres", user="postgres", password="postgres")
 
 
 def _terminate_and_drop_db(postgres_engine, db_name: str) -> None:
@@ -119,12 +106,11 @@ def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
 
 
 @pytest.fixture
-def test_db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> Generator[DatabaseConfig]:
-    """Create isolated database for each test.
+def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> Generator[Database]:
+    """Create isolated Database for each test.
 
     Creates a unique database per test, initializes schema, and drops it after.
     Safe for parallel pytest-xdist execution - each test gets its own database.
-    Uses the session-scoped postgres container via postgres_base_config.
     """
     test_node_id = request.node.nodeid
     sanitized_id = _sanitize_test_id(test_node_id)
@@ -134,39 +120,35 @@ def test_db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig
     test_config = postgres_base_config.with_database(db_name)
 
     postgres_config = postgres_base_config.with_database("postgres")
-    postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
+    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
-    dispose_db()
-    init_db(test_config)
-    recreate_database()
+    database = Database(test_config)
+    database.recreate()
 
     try:
-        yield test_config
+        yield database
     finally:
+        database.dispose()
         keep_db = request.config.getoption("--keep-db") or os.environ.get("KEEP_TEST_DB") == "1"
         if keep_db:
             print(f"\n\n=== KEEPING TEST DATABASE: {db_name} ===")
             print(f"Database config: {test_config}")
-            print(f"Connect with: psql {test_config.admin_url()}")
+            print(f"Connect with: psql {test_config.url}")
         else:
             _terminate_and_drop_db(postgres_engine, db_name)
         postgres_engine.dispose()
 
 
 @pytest.fixture
-def admin_engine(test_db: DatabaseConfig) -> Generator:
-    """Create admin engine for test database with proper disposal."""
-    engine = create_engine(test_db.admin_url())
-    try:
-        yield engine
-    finally:
-        engine.dispose()
+def engine(db: Database) -> Engine:
+    """Engine from the db fixture."""
+    return db.engine
 
 
-def _sync_test_fixtures(monkeypatch: pytest.MonkeyPatch) -> None:
+def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sync test fixtures to the current database."""
     monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(TEST_FIXTURES_PATH))
-    with get_session() as session:
+    with db.session() as session:
         sync_all(session, use_staged=True)
 
 
@@ -181,7 +163,7 @@ def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _session_synced_db(
     postgres_base_config: DatabaseConfig, session_monkeypatch: pytest.MonkeyPatch
-) -> AsyncGenerator[DatabaseConfig]:
+) -> AsyncGenerator[Database]:
     """Internal: Session-scoped synced database.
 
     Use synced_readonly_session instead of this directly.
@@ -192,40 +174,39 @@ async def _session_synced_db(
     test_config = postgres_base_config.with_database(db_name)
 
     postgres_config = postgres_base_config.with_database("postgres")
-    postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
+    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
-    dispose_db()
-    init_db(test_config)
-    recreate_database()
-
-    _sync_test_fixtures(session_monkeypatch)
+    database = Database(test_config)
+    database.recreate()
+    _sync_test_fixtures(database, session_monkeypatch)
 
     try:
-        yield test_config
+        yield database
     finally:
+        database.dispose()
         _terminate_and_drop_db(postgres_engine, db_name)
         postgres_engine.dispose()
 
 
 @pytest.fixture(scope="session")
-def synced_readonly_session(_session_synced_db: DatabaseConfig) -> Generator[Session]:
+def synced_readonly_session(_session_synced_db: Database) -> Generator[Session]:
     """Session-scoped SQLAlchemy Session for READ-ONLY tests.
 
-    WARNING: Do not commit/write via this session - use synced_test_db for write tests.
+    WARNING: Do not commit/write via this session - use synced_db for write tests.
     """
-    with get_session() as session:
+    with _session_synced_db.session() as session:
         yield session
 
 
 @pytest.fixture
-def synced_test_db(test_db: DatabaseConfig, monkeypatch: pytest.MonkeyPatch) -> DatabaseConfig:
+def synced_db(db: Database, monkeypatch: pytest.MonkeyPatch) -> Database:
     """Test database with test fixture specimens synced."""
-    _sync_test_fixtures(monkeypatch)
-    return test_db
+    _sync_test_fixtures(db, monkeypatch)
+    return db
 
 
 @pytest.fixture
-def synced_test_session(synced_test_db: DatabaseConfig) -> Generator[Session]:
+def synced_test_session(synced_db: Database) -> Generator[Session]:
     """Function-scoped session over synced test database (read-write)."""
-    with get_session() as session:
+    with synced_db.session() as session:
         yield session

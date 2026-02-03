@@ -22,8 +22,7 @@ from asyncpg.pool import PoolConnectionProxy
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run
 from props.core.ids import SnapshotSlug
 from props.core.loop_utils import WORKSPACE, render_system_prompt, setup_logging
-from props.db.config import get_database_config
-from props.db.session import get_session
+from props.db.database import Database
 from props.grader.drift_handler import check_grading_pending
 from props.grader.loop import run_grader_loop
 from props.grader.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
@@ -57,23 +56,22 @@ class DaemonState:
         self.wake_event.set()
 
 
-async def run_daemon(snapshot_slug: SnapshotSlug, model: str, system_prompt: str) -> int:
+async def run_daemon(snapshot_slug: SnapshotSlug, model: str, system_prompt: str, db: Database) -> int:
     """Run the daemon reconciliation loop.
 
     Grades until no drift, sleeps on pg_notify, repeats.
     """
     state = DaemonState(snapshot_slug)
-    db_config = get_database_config()
 
     # Start pg_notify listener
-    listener_conn = await asyncpg.connect(db_config.admin.url())
+    listener_conn = await db.config.asyncpg_connect()
     await listener_conn.add_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
     logger.info(f"Listening on channel '{GRADING_PENDING_CHANNEL}' for {snapshot_slug}")
 
     try:
         while not state.shutdown:
             # Check if there's drift to process
-            if not check_grading_pending(snapshot_slug):
+            if not check_grading_pending(snapshot_slug, db):
                 # No drift, wait for notification
                 logger.info(f"No drift for {snapshot_slug}, sleeping...")
                 state.wake_event.clear()
@@ -88,7 +86,7 @@ async def run_daemon(snapshot_slug: SnapshotSlug, model: str, system_prompt: str
 
             # There's drift, run agent loop
             logger.info("Drift detected, starting agent loop")
-            exit_code = await run_grader_loop(system_prompt, model, snapshot_slug)
+            exit_code = await run_grader_loop(system_prompt, model, snapshot_slug, db)
 
             if exit_code != 0:
                 # Agent reported failure
@@ -110,9 +108,10 @@ async def main() -> int:
     setup_logging()
 
     logger.info("Grader daemon starting")
+    db = Database.from_env()
 
     # Get snapshot and model from agent run config
-    with get_session() as session:
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         config = agent_run.grader_config()
         snapshot_slug = SnapshotSlug(config.snapshot_slug)
@@ -121,7 +120,7 @@ async def main() -> int:
 
     # Fetch snapshot
     logger.info("Fetching snapshot to %s", WORKSPACE)
-    fetch_snapshot(WORKSPACE)
+    fetch_snapshot(WORKSPACE, db)
 
     # Render system prompt
     logger.info("Rendering system prompt")
@@ -129,7 +128,7 @@ async def main() -> int:
 
     # Run the daemon loop
     logger.info("Starting daemon loop")
-    exit_code = await run_daemon(snapshot_slug, model, system_prompt)
+    exit_code = await run_daemon(snapshot_slug, model, system_prompt, db)
 
     logger.info("Daemon exited with code %d", exit_code)
     return exit_code

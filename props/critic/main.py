@@ -30,8 +30,8 @@ from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import BoundOpenAIModel, SystemMessage
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run, get_current_agent_run_id
 from props.core.models.examples import WholeSnapshotExample
+from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, FileSet, ReportedIssue, ReportedIssueOccurrence
-from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
 
 # --- Tool argument models ---
@@ -122,7 +122,7 @@ class ExitState:
     exit_code: int = 0
 
 
-def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
+def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProvider:
     """Create a tool provider with critic tools."""
     provider = DirectToolProvider()
 
@@ -134,7 +134,7 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
     @provider.tool
     def insert_issue(args: InsertIssueArgs) -> str:
         """Insert a reported issue. Call this before adding occurrences for the issue."""
-        with get_session() as session:
+        with db.session() as session:
             agent_run_id = get_current_agent_run_id(session)
             issue = ReportedIssue(agent_run_id=agent_run_id, issue_id=args.issue_id, rationale=args.rationale)
             session.add(issue)
@@ -143,7 +143,7 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
     @provider.tool
     def insert_occurrence(args: InsertOccurrenceArgs) -> str:
         """Insert a single-location occurrence for a reported issue. The issue must exist first."""
-        with get_session() as session:
+        with db.session() as session:
             agent_run_id = get_current_agent_run_id(session)
             occurrence = ReportedIssueOccurrence(
                 agent_run_id=agent_run_id,
@@ -162,7 +162,7 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
     @provider.tool
     def insert_occurrence_multi(args: InsertOccurrenceMultiArgs) -> str:
         """Insert a multi-location occurrence (e.g., duplication across files). Use for issues spanning multiple locations."""
-        with get_session() as session:
+        with db.session() as session:
             agent_run_id = get_current_agent_run_id(session)
             occurrence = ReportedIssueOccurrence(
                 agent_run_id=agent_run_id,
@@ -178,7 +178,7 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
     @provider.tool
     def delete_issue(args: DeleteIssueArgs) -> str:
         """Delete a reported issue and all its occurrences. Use to remove incorrect issues."""
-        with get_session() as session:
+        with db.session() as session:
             issue = session.query(ReportedIssue).filter_by(issue_id=args.issue_id).first()
             if issue is None:
                 raise ValueError(f"Issue not found: {args.issue_id}")
@@ -188,7 +188,7 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
     @provider.tool
     def list_issues() -> str:
         """List all issues reported in this critique run. Returns JSON with issue IDs, rationales, and occurrences."""
-        with get_session() as session:
+        with db.session() as session:
             agent_run_id = get_current_agent_run_id(session)
             issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
 
@@ -217,7 +217,7 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
     @provider.tool
     def submit(args: SubmitArgs) -> str:
         """Finalize and submit the critique. Validates all issues and marks the run as complete."""
-        with get_session() as session:
+        with db.session() as session:
             agent_run_id = get_current_agent_run_id(session)
             agent_run = session.get(AgentRun, agent_run_id)
 
@@ -265,7 +265,7 @@ def _create_tool_provider(exit_state: ExitState) -> DirectToolProvider:
     @provider.tool
     def report_failure(args: ReportFailureArgs) -> str:
         """Report that the critique could not be completed due to blocking issues (e.g., no files in scope)."""
-        with get_session() as session:
+        with db.session() as session:
             agent_run_id = get_current_agent_run_id(session)
             agent_run = session.get(AgentRun, agent_run_id)
 
@@ -361,14 +361,14 @@ def _load_prompt_template() -> str:
     return resource.read_text()
 
 
-async def _run_agent_loop(system_prompt: str, model: str) -> int:
+async def _run_agent_loop(system_prompt: str, model: str, db: Database) -> int:
     """Run the critic agent loop.
 
     Returns:
         Exit code (0 for success, non-zero for failure)
     """
     exit_state = ExitState()
-    tool_provider = _create_tool_provider(exit_state)
+    tool_provider = _create_tool_provider(exit_state, db)
 
     client = AsyncOpenAI(
         base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
@@ -408,8 +408,9 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     logger.info("Critic agent starting")
+    db = Database.from_env()
 
-    with get_session() as session:
+    with db.session() as session:
         agent_run = get_current_agent_run(session)
         model = agent_run.model
         logger.info("Agent run: %s, model: %s", agent_run.agent_run_id, model)
@@ -427,7 +428,7 @@ def main() -> int:
             scope_files = [member.file_path for member in file_set.members]
 
     logger.info("Fetching snapshot to %s", WORKSPACE)
-    fetch_snapshot(WORKSPACE)
+    fetch_snapshot(WORKSPACE, db)
 
     logger.info("Rendering system prompt")
     template_content = _load_prompt_template()
@@ -436,7 +437,7 @@ def main() -> int:
     )
 
     logger.info("Starting agent loop")
-    exit_code = asyncio.run(_run_agent_loop(system_prompt, model))
+    exit_code = asyncio.run(_run_agent_loop(system_prompt, model, db))
 
     logger.info("Agent loop finished with exit code %d", exit_code)
     return exit_code

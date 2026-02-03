@@ -19,11 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSo
 from pydantic import BaseModel, Field
 
 from props.backend.auth import require_admin_access
+from props.backend.deps import get_admin_db
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
 from props.core.splits import Split
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import (
     AgentRun,
@@ -35,7 +37,6 @@ from props.db.models import (
     LLMRunCost,
     Snapshot,
 )
-from props.db.session import get_session
 from props.orchestration.agent_registry import AgentRegistry
 
 router = APIRouter(dependencies=[Depends(require_admin_access)])
@@ -307,7 +308,7 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
 
 
 @router.get("/active")
-def list_active_runs(request: Request) -> ActiveRunsResponse:
+def list_active_runs(request: Request, db: Annotated[Database, Depends(get_admin_db)]) -> ActiveRunsResponse:
     """List all active agent runs.
 
     Queries database for runs with IN_PROGRESS status.
@@ -315,7 +316,7 @@ def list_active_runs(request: Request) -> ActiveRunsResponse:
     status is tracked only in the database.
     """
     # Query database for IN_PROGRESS runs
-    with get_session() as session:
+    with db.session() as session:
         db_runs = (
             session.query(AgentRun)
             .filter(AgentRun.status == AgentRunStatus.IN_PROGRESS)
@@ -346,6 +347,7 @@ def list_jobs() -> JobsResponse:
 
 @router.get("")
 def list_runs(
+    db: Annotated[Database, Depends(get_admin_db)],
     status: AgentRunStatus | None = None,
     image_digest: str | None = None,
     agent_type: AgentType | None = None,
@@ -367,7 +369,7 @@ def list_runs(
     """
     limit = min(limit, 500)  # Cap at 500
 
-    with get_session() as session:
+    with db.session() as session:
         query = session.query(AgentRun)
 
         if status:
@@ -415,7 +417,9 @@ def list_runs(
 
 
 @router.post("/validation")
-async def trigger_validation_runs(request: Request, body: ValidationRunRequest) -> ValidationRunResponse:
+async def trigger_validation_runs(
+    request: Request, body: ValidationRunRequest, db: Annotated[Database, Depends(get_admin_db)]
+) -> ValidationRunResponse:
     """Trigger validation critic runs: sample N examples, run 1 critic per example.
 
     Runs are started in the background in parallel. Poll /api/runs/jobs for status.
@@ -425,7 +429,7 @@ async def trigger_validation_runs(request: Request, body: ValidationRunRequest) 
     registry = get_registry(request)
 
     # Get examples of the requested kind and split
-    with get_session() as session:
+    with db.session() as session:
         examples = (
             session.query(Example)
             .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
@@ -456,7 +460,7 @@ async def trigger_validation_runs(request: Request, body: ValidationRunRequest) 
     _jobs[job_id] = job
 
     # Spawn background task with parallel execution
-    job.task = asyncio.create_task(_run_validation_batch(job=job, registry=registry))
+    job.task = asyncio.create_task(_run_validation_batch(job=job, registry=registry, db=db))
 
     slugs = [e.snapshot_slug for e in example_specs[:3]]
     message = f"Started {n_to_sample} validation runs. Snapshots: {slugs}{'...' if n_to_sample > 3 else ''}"
@@ -466,7 +470,7 @@ async def trigger_validation_runs(request: Request, body: ValidationRunRequest) 
     )
 
 
-async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> None:
+async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db: Database) -> None:
     """Run critic for each example in the job, in parallel.
 
     Registry semaphore limits actual concurrency.
@@ -491,7 +495,7 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
                 )
 
                 # Check critic status
-                with get_session() as session:
+                with db.session() as session:
                     critic_run = session.get(AgentRun, critic_run_id)
                     if critic_run is None or critic_run.status != AgentRunStatus.COMPLETED:
                         status = critic_run.status if critic_run else "not found"
@@ -527,9 +531,9 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
 
 
 @router.get("/{run_id}")
-def get_run(run_id: UUID) -> AgentRunDetail:
+def get_run(run_id: UUID, db: Annotated[Database, Depends(get_admin_db)]) -> AgentRunDetail:
     """Get details of a specific agent run."""
-    with get_session() as session:
+    with db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -707,9 +711,9 @@ def get_run(run_id: UUID) -> AgentRunDetail:
 
 
 @router.get("/{run_id}/llm_requests")
-def get_run_llm_requests(run_id: UUID) -> LLMRequestsResponse:
+def get_run_llm_requests(run_id: UUID, db: Annotated[Database, Depends(get_admin_db)]) -> LLMRequestsResponse:
     """Get LLM requests for a specific agent run."""
-    with get_session() as session:
+    with db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -797,10 +801,11 @@ async def runs_feed(websocket: WebSocket) -> None:
     """
     await websocket.accept()
     _feed_connections.add(websocket)
+    db: Database = websocket.app.state.db
 
     try:
         # Send initial state
-        with get_session() as session:
+        with db.session() as session:
             runs = _get_recent_runs(session)
             jobs = _get_active_jobs()
             await websocket.send_json(WsFeedRunsMessage(runs=runs).model_dump(mode="json"))
@@ -812,7 +817,7 @@ async def runs_feed(websocket: WebSocket) -> None:
         while True:
             await asyncio.sleep(1.0)
 
-            with get_session() as session:
+            with db.session() as session:
                 # Check for new/updated runs
                 current_runs = _get_recent_runs(session)
                 current_updated = max((r.updated_at for r in current_runs), default=datetime.min)

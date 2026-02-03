@@ -44,10 +44,9 @@ from props.critic_dev.optimize.orchestration_fixtures import (
 )
 from props.critic_dev.shared import TargetMetric
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
-from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, Snapshot
-from props.db.session import get_session
 from props.testing.fixtures.e2e_container import multi_model_e2e_stack
 from props.testing.mocks import PropsMock
 
@@ -113,13 +112,13 @@ def make_critic_mock_with_issue() -> PropsMock:
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-async def test_optimizer_critic_workflow(e2e_stack, synced_test_db, test_snapshot, critic_image):
+async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, critic_image, db: Database):
     """Test optimizer → critic workflow with data access verification.
 
     Note: Grading is handled by snapshot grader daemons (not tested here).
     """
     # Get the whole-snapshot example and convert to ExampleSpec
-    with get_session() as session:
+    with synced_db.session() as session:
         example = (
             session.query(Example)
             .filter_by(snapshot_slug=test_snapshot, example_kind=ExampleKind.WHOLE_SNAPSHOT)
@@ -143,7 +142,7 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_test_db, test_snapsho
         assert critic_run_id is not None
 
     # Verify critic status and data
-    with get_session() as session:
+    with synced_db.session() as session:
         critic_run = session.get(AgentRun, critic_run_id)
         assert critic_run is not None
         assert critic_run.status == AgentRunStatus.COMPLETED, f"Critic should complete, got {critic_run.status}"
@@ -300,7 +299,8 @@ def make_orchestration_critic_mock() -> PropsMock:
 @pytest.mark.requires_docker
 @pytest.mark.slow
 async def test_optimizer_orchestrates_critic(
-    synced_test_db: DatabaseConfig,
+    synced_db: Database,
+    db: Database,
     async_docker_client: aiodocker.Docker,
     docker_client,
     e2e_registry_url: str,
@@ -323,7 +323,7 @@ async def test_optimizer_orchestrates_critic(
     Uses MultiModelFakeOpenAI to route optimizer and critic to different mocks.
     """
     # Get a test snapshot with TRAIN split
-    with get_session() as session:
+    with synced_db.session() as session:
         snapshot = session.query(Snapshot).filter_by(split=Split.TRAIN).first()
         if not snapshot:
             pytest.skip("No TRAIN snapshots available for orchestration test")
@@ -352,7 +352,7 @@ async def test_optimizer_orchestrates_critic(
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
     async with multi_model_e2e_stack(
-        mocks, synced_test_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+        mocks, db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
     ) as stack:
         # Push all agent images through the proxy
         stack.push_image(prompt_optimizer_image)
@@ -390,7 +390,7 @@ async def test_optimizer_orchestrates_critic(
             logger.info(f"Orchestration test: prompt optimizer completed with run_id={run_id}")
 
             # Verify optimizer run status
-            with get_session() as session:
+            with synced_db.session() as session:
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None, "Optimizer run not found in database"
                 assert optimizer_run.status == AgentRunStatus.COMPLETED, (
@@ -398,7 +398,7 @@ async def test_optimizer_orchestrates_critic(
                 )
 
             # Verify a critic run was created and completed
-            with get_session() as session:
+            with synced_db.session() as session:
                 critic_runs = (
                     session.query(AgentRun)
                     .filter(
@@ -413,7 +413,7 @@ async def test_optimizer_orchestrates_critic(
                     assert cr.status == AgentRunStatus.COMPLETED, f"Critic run {cr.agent_run_id} should be COMPLETED"
 
             # Verify grading edges were created (drift resolved)
-            with get_session() as session:
+            with synced_db.session() as session:
                 for cr in critic_runs:
                     edges = session.query(GradingEdge).filter_by(critique_run_id=cr.agent_run_id).all()
                     logger.info(f"Critic {cr.agent_run_id} has {len(edges)} grading edges")

@@ -24,8 +24,8 @@ import pytest
 import pytest_bazel
 
 from agent_core.testing.responses import PlayGen
+from props.db.database import Database
 from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
-from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 from props.testing.mocks import GraderMock
@@ -68,7 +68,7 @@ def make_grader_daemon_mock() -> GraderMock:
 
 
 @pytest.mark.timeout(120)
-async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image):
+async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
     """Test that grader daemon detects and grades new critique issues."""
     mock = make_grader_daemon_mock()
 
@@ -85,7 +85,7 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
 
         # Create drift: insert a completed critic run with reported issues
         critic_run_id = uuid4()
-        with get_session() as session:
+        with db.session() as session:
             critic_run = make_fake_critic_run(
                 session=session,
                 example=all_files_scope,
@@ -118,7 +118,7 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
         for _ in range(30):  # Poll for up to 30 seconds
             await asyncio.sleep(1)
 
-            with get_session() as session:
+            with db.session() as session:
                 grading_edge = (
                     session.query(GradingEdge)
                     .filter_by(critique_run_id=critic_run_id, critique_issue_id="test-issue-1")

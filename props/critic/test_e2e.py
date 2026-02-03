@@ -23,8 +23,8 @@ from hamcrest import assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.db.session import get_session
 from props.testing.mocks import PropsMock
 
 # Test timeout (seconds) - applies to container execution
@@ -44,7 +44,7 @@ def make_critic_mock_zero_issues() -> PropsMock:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, critic_image):
+async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, critic_image, db: Database):
     """Test critic successfully submits zero issues."""
     mock = make_critic_mock_zero_issues()
 
@@ -62,7 +62,7 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
         assert critic_run_id is not None
 
         # Verify database records
-        with get_session() as session:
+        with db.session() as session:
             run = session.get(AgentRun, critic_run_id)
             assert run is not None
             assert run.critic_config().example.snapshot_slug == test_snapshot
@@ -91,7 +91,7 @@ def make_critic_mock_with_issues() -> PropsMock:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_scope, critic_image):
+async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_scope, critic_image, db: Database):
     """Test critic submits an issue with occurrence."""
     mock = make_critic_mock_with_issues()
 
@@ -109,7 +109,7 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
         assert critic_run_id is not None
 
         # Verify database records
-        with get_session() as session:
+        with db.session() as session:
             run = session.get(AgentRun, critic_run_id)
             assert run is not None
             assert run.critic_config().example.snapshot_slug == test_snapshot

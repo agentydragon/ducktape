@@ -19,19 +19,20 @@ Polling/waiting logic is implemented client-side in the agent containers.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 
 from props.backend.auth import CallerType, require_eval_api_access
+from props.backend.deps import get_admin_db
 from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.splits import Split
 from props.critic.exceptions import CriticExecutionError
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentDefinition, AgentRun, GradingEdge, GradingPending, Snapshot
-from props.db.session import get_session
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry
@@ -58,7 +59,10 @@ def get_registry(request: Request) -> AgentRegistry:
 
 @router.post("/run_critic")
 async def run_critic(
-    request: Request, body: RunCriticRequest, auth: tuple[CallerType, UUID | None] = Depends(require_eval_api_access)
+    request: Request,
+    body: RunCriticRequest,
+    db: Annotated[Database, Depends(get_admin_db)],
+    auth: Annotated[tuple[CallerType, UUID | None], Depends(require_eval_api_access)],
 ) -> RunCriticResponse:
     """Run critic agent using an agent package.
 
@@ -76,7 +80,7 @@ async def run_critic(
     registry = get_registry(request)
 
     # Validate definition exists
-    with get_session() as session:
+    with db.session() as session:
         definition = session.get(AgentDefinition, body.definition_id)
         if not definition:
             raise HTTPException(status_code=404, detail=f"Agent definition not found: {body.definition_id}")
@@ -114,7 +118,7 @@ async def run_critic(
         raise HTTPException(status_code=500, detail=f"Critic execution failed: {e}")
 
     # Get final status
-    with get_session() as session:
+    with db.session() as session:
         critic_run = session.get(AgentRun, critic_run_id)
         assert critic_run is not None
         status = critic_run.status
@@ -124,7 +128,9 @@ async def run_critic(
 
 @router.get("/grading_status/{critic_run_id}")
 async def get_grading_status(
-    critic_run_id: UUID, auth: tuple[CallerType, UUID | None] = Depends(require_eval_api_access)
+    critic_run_id: UUID,
+    db: Annotated[Database, Depends(get_admin_db)],
+    auth: Annotated[tuple[CallerType, UUID | None], Depends(require_eval_api_access)],
 ) -> GradingStatusResponse:
     """Check grading status for a critic run (non-blocking).
 
@@ -134,7 +140,7 @@ async def get_grading_status(
     A critique is "graded" when all (issue, GT_occurrence) pairs have
     corresponding grading edges - not just when a grader run exists.
     """
-    with get_session() as session:
+    with db.session() as session:
         # Check for remaining drift using grading_pending view
         pending_count = (
             session.query(func.count())

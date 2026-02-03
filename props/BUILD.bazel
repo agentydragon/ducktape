@@ -4,7 +4,19 @@
 
 load("@rules_python//python:defs.bzl", "py_library")
 
-exports_files(["conftest.py"])
+exports_files([
+    "config.toml",
+])
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = [".."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
 
 # Shared pytest configuration for all props tests
 py_library(

@@ -29,7 +29,7 @@ py_library(
         "//props/core:eval_client",
         "//props/core:loop_utils",
         "//props/critic_dev:loop",
-        "//props/db:session",
+        "//props/db:database",
     ],
 )
 
@@ -89,9 +89,9 @@ docker_py_test(
         "//props/critic_dev:shared",
         "//props/db:agent_definition_ids",
         "//props/db:config",
+        "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
-        "//props/db:session",
         "//props/testing",
         "//props/testing/fixtures:e2e_container",
         "@pypi//aiodocker",

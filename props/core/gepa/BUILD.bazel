@@ -15,8 +15,8 @@ py_library(
     deps = [
         "//props/core:ids",
         "//props/core:splits",
+        "//props/db:database",
         "//props/db:examples",
-        "//props/db:session",
         "@pypi//sqlalchemy",
     ],
 )
@@ -34,10 +34,9 @@ py_library(
         "//props/core:agent_workspace",
         "//props/core:display",
         "//props/core:splits",
-        "//props/db:config",
+        "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
-        "//props/db:session",
         "//props/db:snapshots",
         "@pypi//aiodocker",
         "@pypi//gepa",
@@ -57,8 +56,8 @@ docker_py_test(
     imports = ["../../.."],
     deps = [
         ":warm_start",
+        "//props/db:database",
         "//props/db:examples",
-        "//props/db:session",
         "//props/testing/fixtures:ground_truth",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",

@@ -13,8 +13,8 @@ In-container architecture:
 Usage:
     registry = AgentRegistry(
         docker_client=docker_client,
-        db_config=db_config,
-        llm_proxy_url="http://props-backend:8000",
+        db=db,
+        agent_base_env=config.agent_env,
         registry_config=RegistryProxyConfig(host="127.0.0.1", port=8000),
     )
     async with registry:
@@ -26,12 +26,6 @@ Usage:
             parent_run_id=None,
             budget_usd=None,
         )
-        # Check status from DB
-        with get_session() as session:
-            critic_run = session.get(AgentRun, critic_run_id)
-            if critic_run.status == AgentRunStatus.COMPLETED:
-                # Grading is handled by grader daemons
-                pass
 """
 
 from __future__ import annotations
@@ -64,8 +58,8 @@ from props.core.splits import Split
 from props.critic_dev.improve.main import TerminationSuccess
 from props.critic_dev.shared import TargetMetric
 from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, Snapshot
-from props.db.session import get_session
 from props.orchestration.loop_agent_env import ContainerResult, run_loop_agent
 
 logger = logging.getLogger(__name__)
@@ -117,14 +111,16 @@ class AgentRegistry:
     def __init__(
         self,
         docker_client: aiodocker.Docker,
+        db: Database,
         db_config: DatabaseConfig,
-        llm_proxy_url: str,
+        agent_base_env: dict[str, str],
         registry_config: RegistryProxyConfig,
         extra_hosts: dict[str, str] | None = None,
     ) -> None:
         self._docker_client = docker_client
+        self._db = db
         self._db_config = db_config
-        self._llm_proxy_url = llm_proxy_url
+        self._agent_base_env = agent_base_env
         self._registry_config = registry_config
         self._extra_hosts = extra_hosts
 
@@ -209,7 +205,7 @@ class AgentRegistry:
         logger.info(f"Resolved critic image {image_ref} → {image_digest}")
 
         # Phase 1: Write initial AgentRun to DB
-        with get_session() as session:
+        with self._db.session() as session:
             session.query(Snapshot).filter_by(slug=snapshot_slug).one()
 
             type_config = CriticTypeConfig(example=example)
@@ -232,7 +228,7 @@ class AgentRegistry:
             agent_run_id=agent_run_id,
             db_config=self._db_config,
             image=image,
-            llm_proxy_url=self._llm_proxy_url,
+            agent_base_env=self._agent_base_env,
             registry_config=self._registry_config,
             timeout_seconds=timeout_seconds,
             container_name=f"critic-{short_uuid(agent_run_id)}",
@@ -242,7 +238,7 @@ class AgentRegistry:
         # Phase 3: Interpret exit code and update status
         agent_status = self._interpret_container_result(result, agent_run_id)
 
-        with get_session() as session:
+        with self._db.session() as session:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
             # Only update if still IN_PROGRESS (container may have set COMPLETED/REPORTED_FAILURE)
@@ -264,7 +260,7 @@ class AgentRegistry:
     ) -> UUID:
         """Run a prompt optimizer agent. Returns agent run ID (query DB for status)."""
         # Get train snapshots from database
-        with get_session() as session:
+        with self._db.session() as session:
             train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).all()
             train_slugs = [SnapshotSlug(s.slug) for s in train_snapshots]
 
@@ -280,7 +276,7 @@ class AgentRegistry:
         logger.info(f"Resolved prompt-optimizer image {BUILTIN_TAG} → {image}")
 
         # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
-        with get_session() as session:
+        with self._db.session() as session:
             type_config = PromptOptimizerTypeConfig(
                 target_metric=target_metric,
                 optimizer_model=optimizer_model,
@@ -309,7 +305,7 @@ class AgentRegistry:
                 agent_run_id=agent_run_id,
                 db_config=self._db_config,
                 image=image,
-                llm_proxy_url=self._llm_proxy_url,
+                agent_base_env=self._agent_base_env,
                 registry_config=self._registry_config,
                 container_name=f"promptopt-{short_uuid(agent_run_id)}",
                 timeout_seconds=timeout_seconds,
@@ -331,7 +327,7 @@ class AgentRegistry:
                 final_status = AgentRunStatus.COMPLETED
             else:
                 final_status = AgentRunStatus.REPORTED_FAILURE
-            with get_session() as session:
+            with self._db.session() as session:
                 found_run = session.get(AgentRun, agent_run_id)
                 if found_run:
                     found_run.status = final_status
@@ -387,7 +383,7 @@ class AgentRegistry:
             grader_model=critic_model,  # Not actively used (grading by daemons)
         )
 
-        with get_session() as session:
+        with self._db.session() as session:
             agent_run = AgentRun(
                 agent_run_id=run_id,
                 image_digest=image_digest,
@@ -406,7 +402,7 @@ class AgentRegistry:
                 agent_run_id=run_id,
                 db_config=self._db_config,
                 image=image,
-                llm_proxy_url=self._llm_proxy_url,
+                agent_base_env=self._agent_base_env,
                 registry_config=self._registry_config,
                 container_name=f"improve-{short_uuid(run_id)}",
                 timeout_seconds=timeout_seconds,
@@ -428,7 +424,7 @@ class AgentRegistry:
                 final_status = AgentRunStatus.COMPLETED
             else:
                 final_status = AgentRunStatus.REPORTED_FAILURE
-            with get_session() as session:
+            with self._db.session() as session:
                 found_run = session.get(AgentRun, run_id)
                 if found_run:
                     found_run.status = final_status
@@ -455,7 +451,7 @@ class AgentRegistry:
     def _interpret_container_result(self, result: ContainerResult, agent_run_id: UUID) -> AgentRunStatus:
         if result.exit_code == 0:
             # Check DB - container should have set status to COMPLETED
-            with get_session() as session:
+            with self._db.session() as session:
                 run = session.get(AgentRun, agent_run_id)
                 if run and run.status == AgentRunStatus.COMPLETED:
                     return AgentRunStatus.COMPLETED
@@ -468,7 +464,7 @@ class AgentRegistry:
             return AgentRunStatus.TIMED_OUT
         else:
             # Non-zero exit - check if container set REPORTED_FAILURE
-            with get_session() as session:
+            with self._db.session() as session:
                 run = session.get(AgentRun, agent_run_id)
                 if run and run.status == AgentRunStatus.REPORTED_FAILURE:
                     return AgentRunStatus.REPORTED_FAILURE
@@ -478,7 +474,7 @@ class AgentRegistry:
     # --- State Tracking ---
 
     def get(self, run_id: UUID) -> AgentRunView | None:
-        with get_session() as session:
+        with self._db.session() as session:
             db_run = session.get(AgentRun, run_id)
             if not db_run:
                 return None
@@ -491,7 +487,7 @@ class AgentRegistry:
             )
 
     def list_recent(self, limit: int = 50) -> list[AgentRunView]:
-        with get_session() as session:
+        with self._db.session() as session:
             runs = session.query(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit).all()
             return [
                 AgentRunView(
@@ -519,7 +515,7 @@ class AgentRegistry:
         logger.info(f"Resolved grader image {BUILTIN_TAG} → {image_digest}")
 
         # Phase 1: Write initial AgentRun to DB
-        with get_session() as session:
+        with self._db.session() as session:
             # Verify snapshot exists
             session.query(Snapshot).filter_by(slug=snapshot_slug).one()
 
@@ -542,7 +538,7 @@ class AgentRegistry:
             agent_run_id=agent_run_id,
             db_config=self._db_config,
             image=image,
-            llm_proxy_url=self._llm_proxy_url,
+            agent_base_env=self._agent_base_env,
             registry_config=self._registry_config,
             container_name=f"grader-{short_uuid(agent_run_id)}",
             extra_hosts=self._extra_hosts,
@@ -551,7 +547,7 @@ class AgentRegistry:
         # Phase 3: Interpret exit code and update status
         agent_status = self._interpret_container_result(result, agent_run_id)
 
-        with get_session() as session:
+        with self._db.session() as session:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
             # Only update if still IN_PROGRESS

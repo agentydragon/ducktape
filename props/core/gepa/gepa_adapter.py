@@ -60,10 +60,9 @@ from props.core.agent_workspace import WorkspaceManager
 from props.core.display import short_sha
 from props.core.gepa.warm_start import build_historical_gepa_state
 from props.core.splits import Split
-from props.db.config import DatabaseConfig
+from props.db.database import Database
 from props.db.examples import Example, get_examples_for_split
 from props.db.models import AgentRun, AgentRunStatus, RecallByDefinitionExample
-from props.db.session import get_session
 from props.db.snapshots import DBCriticSubmitPayload
 
 logger = logging.getLogger(__name__)
@@ -134,9 +133,9 @@ class EvaluationResult:
 class ReflectionExample(BaseModel):
     """Example for GEPA's reflection dataset.
 
-    Includes both successful critiques and max_turns_exceeded cases.
+    Includes both successful critiques and timed_out cases.
     Status enums indicate whether critic/grader succeeded.
-    grader_status is None when critic exceeded max turns.
+    grader_status is None when critic timed out.
     """
 
     component_name: str
@@ -176,7 +175,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         self,
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
-        db_config: DatabaseConfig,
+        db: Database,
         workspace_manager: WorkspaceManager,
         run_dir: Path,
         reflection_model: str | None = None,
@@ -186,7 +185,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         _gepa_not_implemented()
         self.critic_client = critic_client
         self.grader_client = grader_client
-        self.db_config = db_config
+        self.db = db
         self.workspace_manager = workspace_manager
         self.reflection_model = reflection_model
         self.verbose = verbose
@@ -217,7 +216,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
             EvaluationResult with aggregate recall score from the view
         """
         # Fetch critic run info
-        with get_session() as session:
+        with self.db.session() as session:
             critic_run = session.get(AgentRun, critic_run_id)
             if critic_run is None:
                 raise ValueError(f"AgentRun {critic_run_id} not found")
@@ -239,7 +238,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
             )
 
         # Query recall_by_definition_example view for aggregate score across all runs
-        with get_session() as session:
+        with self.db.session() as session:
             recall_row = (
                 session.query(RecallByDefinitionExample)
                 .filter(
@@ -466,7 +465,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         cached_results: dict[int, EvaluationResult] = {}  # batch_idx -> result found in DB
         uncached_inputs: list[tuple[int, Example]] = []  # (batch_idx, input)
 
-        with get_session() as session:
+        with self.db.session() as session:
             # Query completed critic runs matching prompt and model
             critic_runs = (
                 session.query(AgentRun)
@@ -585,8 +584,8 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         for output, score, trajectory in zip(
             eval_batch.outputs, eval_batch.scores, eval_batch.trajectories, strict=True
         ):
-            # Include both successful critiques and max_turns_exceeded cases
-            # grader_status is None when critic exceeded max turns
+            # Include both successful critiques and timed_out cases
+            # grader_status is None when critic timed out
             example = ReflectionExample(
                 component_name="system_prompt",
                 current_text=candidate["system_prompt"],
@@ -606,7 +605,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
 # =============================================================================
 
 
-async def load_datasets() -> tuple[list[Example], list[Example]]:
+async def load_datasets(db: Database) -> tuple[list[Example], list[Example]]:
     """Load train and validation datasets for GEPA from database.
 
     Uses the shared datapoints module for consistent filtering logic across
@@ -614,6 +613,9 @@ async def load_datasets() -> tuple[list[Example], list[Example]]:
 
     Training set: All critic scopes (per-file + full-specimen) for tighter feedback loops
     Validation set: Only full-specimen scopes to measure terminal goal (comprehensive review)
+
+    Args:
+        db: Database instance for session access
 
     Returns:
         (trainset, valset) tuple of Example lists
@@ -623,7 +625,7 @@ async def load_datasets() -> tuple[list[Example], list[Example]]:
     """
     logger.info("Loading training examples from examples table")
 
-    with get_session() as session:
+    with db.session() as session:
         # Use shared datapoints module for consistent filtering logic
         trainset = get_examples_for_split(session, Split.TRAIN)
         valset = get_examples_for_split(session, Split.VALID)
@@ -638,14 +640,15 @@ async def load_datasets() -> tuple[list[Example], list[Example]]:
 # =============================================================================
 
 
-def _log_run_statistics(critic_model: str, grader_model: str) -> None:
-    """Log statistics about critic and grader run statuses (success vs max_turns_exceeded).
+def _log_run_statistics(critic_model: str, grader_model: str, db: Database) -> None:
+    """Log statistics about critic and grader run statuses (success vs timed_out).
 
     Args:
         critic_model: Critic model name to filter runs
         grader_model: Grader model name to filter runs
+        db: Database instance for session access
     """
-    with get_session() as session:
+    with db.session() as session:
         # Count critic run statuses using SQL aggregation
         critic_status_counts = (
             session.query(AgentRun.status, func.count(AgentRun.agent_run_id))
@@ -690,7 +693,7 @@ async def optimize_with_gepa(
     initial_prompt: str,
     critic_client: OpenAIModelProto,
     grader_client: OpenAIModelProto,
-    db_config: DatabaseConfig,
+    db: Database,
     workspace_manager: WorkspaceManager,
     *,
     reflection_model: str,
@@ -748,7 +751,7 @@ async def optimize_with_gepa(
 
     # Load datasets (always uses critic scopes from database)
     logger.info("Loading datasets...")
-    trainset, valset = await load_datasets()
+    trainset, valset = await load_datasets(db)
     logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
 
     # Prepare run directory with optional warm-start checkpoint
@@ -782,7 +785,7 @@ async def optimize_with_gepa(
     adapter = CriticAdapter(
         critic_client,
         grader_client,
-        db_config,
+        db,
         workspace_manager,
         Path(run_dir),
         reflection_model=reflection_model,
@@ -813,6 +816,6 @@ async def optimize_with_gepa(
     logger.info(f"GEPA optimization complete. Best score: {best_score:.3f}, Metric calls: {result.total_metric_calls}")
 
     # Log run statistics (critic/grader status breakdown)
-    _log_run_statistics(critic_client.model, grader_client.model)
+    _log_run_statistics(critic_client.model, grader_client.model, db)
 
     return optimized_prompt, result

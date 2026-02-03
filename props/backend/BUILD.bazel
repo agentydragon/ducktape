@@ -17,14 +17,26 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 # =============================================================================
 
 py_library(
+    name = "deps",
+    srcs = ["deps.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//props/db:database",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "auth",
     srcs = ["auth.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":deps",
         "//props/db:config",
+        "//props/db:database",
         "//props/db:models",
-        "//props/db:session",
         "@pypi//fastapi",
         "@pypi//psycopg",
         "@pypi//starlette",
@@ -39,6 +51,7 @@ py_library(
     deps = [
         ":auth",
         "//cli_util:logging",
+        "//props:config",
         "//props/backend/routes:eval",
         "//props/backend/routes:ground_truth",
         "//props/backend/routes:llm",
@@ -47,6 +60,7 @@ py_library(
         "//props/backend/routes:stats",
         "//props/core:oci_utils",
         "//props/db:config",
+        "//props/db:database",
         "//props/orchestration:agent_registry",
         "//props/orchestration:grader_supervisor",
         "@pypi//aiodocker",
@@ -63,7 +77,6 @@ py_library(
     deps = [
         ":app",
         "//cli_util:logging",
-        "//props/cli:common_options",
         "@pypi//typer_slim",
         "@pypi//uvicorn",
     ],
@@ -74,7 +87,11 @@ py_library(
     srcs = ["export_schema.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = [":app"],
+    deps = [
+        ":app",
+        "//props:config",
+        "//props/core:oci_utils",
+    ],
 )
 
 # =============================================================================

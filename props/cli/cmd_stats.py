@@ -29,6 +29,7 @@ from props.core.display import (
 )
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
+from props.db.database import Database
 from props.db.examples import count_available_examples_by_scope_all, count_available_examples_for_split
 from props.db.models import (
     AgentDefinition,
@@ -41,7 +42,6 @@ from props.db.models import (
     TpOccurrenceCredit,
 )
 from props.db.query_builders import query_recall_by_example
-from props.db.session import get_session
 
 # Stats subcommand group
 stats_app = typer.Typer(help="Statistics and metrics commands")
@@ -101,7 +101,7 @@ STATS_TABLE_LEGEND = """
   [cyan]N / {total}[/cyan]: Number of examples evaluated out of total available
   [cyan]Z[/cyan]: Count of examples with 0% recall
   [cyan]✓[/cyan]: Count of completed runs
-  [cyan]T[/cyan]: Count of timed out runs
+  [cyan]T[/cyan]: Count of runs that timed out
   [cyan]F[/cyan]: Count of runs that reported failure
 
 [bold]Split Groups:[/bold]
@@ -367,18 +367,20 @@ def _display_split_analysis(
 
 
 def _add_split_columns(table: Table, split_name: str, color: str, total_examples: int) -> None:
-    # Column order: Recall, LCB, N/{total}, Z, ✓, T, F
+    # Column order: Recall, LCB, N/{total}, Z, ✓, S, C, F
     table.add_column(f"[{color}]{split_name} Recall[/{color}]", justify="right", width=11)
     table.add_column(f"[{color}]LCB[/{color}]", justify="right", width=7)
     table.add_column(f"[{color}]N/{total_examples}[/{color}]", justify="right", width=4)
     table.add_column(f"[{color}]Z[/{color}]", justify="right", width=4)
     table.add_column(f"[{color}]✓[/{color}]", justify="right", width=4)
-    table.add_column(f"[{color}]T[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]S[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]C[/{color}]", justify="right", width=4)
     table.add_column(f"[{color}]F[/{color}]", justify="right", width=4)
 
 
 @stats_app.command("critic-leaderboard")
 def cmd_stats_critic_leaderboard(
+    ctx: typer.Context,
     split: Split | None = None,
     critic_model: str | None = None,
     example_kind: ExampleKind | None = None,
@@ -391,13 +393,14 @@ def cmd_stats_critic_leaderboard(
     Aggregates over all grader models (occurrence-based weighting).
     By default shows top 50 results. Use --top/--bottom to customize.
     """
+    db: Database = ctx.obj
     console = Console()
 
     # Default to showing top 50 if neither top nor bottom is specified
     if top is None and bottom is None:
         top = 50
 
-    with get_session() as session:
+    with db.session() as session:
         # Build base query with filters
         base_query = session.query(RecallByDefinitionSplitKind)
         if split:
@@ -444,6 +447,7 @@ def cmd_stats_critic_leaderboard(
 
 @stats_app.command("example")
 def cmd_stats_example(
+    ctx: typer.Context,
     split: Split | None = None,
     critic_model: str | None = None,
     top: int | None = typer.Option(None, help="Show top N results by recall"),
@@ -455,13 +459,14 @@ def cmd_stats_example(
     Aggregates over all grader models (occurrence-based weighting).
     By default shows top 50 results. Use --top/--bottom to customize.
     """
+    db: Database = ctx.obj
     console = Console()
 
     # Default to showing top 50 if neither top nor bottom is specified
     if top is None and bottom is None:
         top = 50
 
-    with get_session() as session:
+    with db.session() as session:
         # Build base query with filters
         base_query = session.query(RecallByExample)
         if split:
@@ -504,6 +509,7 @@ def cmd_stats_example(
 
 @stats_app.command("occurrence")
 def cmd_stats_occurrence(
+    ctx: typer.Context,
     split: Split | None = None,
     critic_model: str | None = None,
     top: int | None = typer.Option(None, help="Show top N results by mean credit"),
@@ -514,13 +520,14 @@ def cmd_stats_occurrence(
     Shows statistics for individual occurrences: mean/stddev/min/max credit, catch rate.
     By default shows top 50 results. Use --top/--bottom to customize.
     """
+    db: Database = ctx.obj
     console = Console()
 
     # Default to showing top 50 if neither top nor bottom is specified
     if top is None and bottom is None:
         top = 50
 
-    with get_session() as session:
+    with db.session() as session:
         # Build base query with filters
         base_query = session.query(OccurrenceStatistics)
         if split:
@@ -626,7 +633,8 @@ def cmd_stats(ctx: typer.Context) -> None:
     # Track example counts by (split, example_kind)
     example_counts: dict[tuple[Split, ExampleKind], int] = {}
 
-    with get_session() as session:
+    db: Database = ctx.obj
+    with db.session() as session:
         # Compute total available training examples per split using shared logic
         # IMPORTANT: Uses same logic as GEPA's dataset loading:
         # - TRAIN: all critic scopes (per-file + full-specimen for tighter feedback loops)
@@ -742,26 +750,28 @@ def cmd_stats(ctx: typer.Context) -> None:
         for status, count in grader_status_counts.items():
             status_counts["Grader"][status] = count
 
-    # Query aggregated view and group by definition
-    agg_results = (
-        session.query(RecallByDefinitionSplitKind)
-        .filter(RecallByDefinitionSplitKind.split.in_([Split.TRAIN, Split.VALID]))
-        .all()
-    )
+        # Query aggregated view and group by definition
+        agg_results = (
+            session.query(RecallByDefinitionSplitKind)
+            .filter(RecallByDefinitionSplitKind.split.in_([Split.TRAIN, Split.VALID]))
+            .all()
+        )
 
-    # Group by definition_id and build stats dict
-    definition_stats: dict[str, dict[tuple[Split, ExampleKind], RecallByDefinitionSplitKind]] = {}
-    for row in agg_results:
-        if row.critic_image_digest not in definition_stats:
-            definition_stats[row.critic_image_digest] = {}
-        definition_stats[row.critic_image_digest][(row.split, row.example_kind)] = row
+        # Group by definition_id and build stats dict
+        definition_stats: dict[str, dict[tuple[Split, ExampleKind], RecallByDefinitionSplitKind]] = {}
+        for row in agg_results:
+            if row.critic_image_digest not in definition_stats:
+                definition_stats[row.critic_image_digest] = {}
+            definition_stats[row.critic_image_digest][(row.split, row.example_kind)] = row
 
-    # Get definition metadata (created_at) from agent_definitions table
-    definition_metadata: dict[str, AgentDefinition] = {}
-    if definition_stats:
-        definitions = session.query(AgentDefinition).filter(AgentDefinition.digest.in_(definition_stats.keys())).all()
-        for d in definitions:
-            definition_metadata[d.digest] = d
+        # Get definition metadata (created_at) from agent_definitions table
+        definition_metadata: dict[str, AgentDefinition] = {}
+        if definition_stats:
+            definitions = (
+                session.query(AgentDefinition).filter(AgentDefinition.digest.in_(definition_stats.keys())).all()
+            )
+            for d in definitions:
+                definition_metadata[d.digest] = d
 
     # Sort by created_at DESC
     sorted_definition_ids = sorted(

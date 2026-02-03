@@ -15,15 +15,15 @@ from sqlalchemy import text
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from openai_utils.model import UserMessage
-from props.db.session import get_session
+from props.db.database import Database
 from props.grader.notifications import GradingPendingNotification
 
 logger = logging.getLogger(__name__)
 
 
-def check_grading_pending(snapshot_slug: str) -> bool:
+def check_grading_pending(snapshot_slug: str, db: Database) -> bool:
     """Check if there's pending grading work for the snapshot."""
-    with get_session() as session:
+    with db.session() as session:
         result = session.execute(
             text("SELECT 1 FROM grading_pending WHERE snapshot_slug = :slug LIMIT 1"), {"slug": snapshot_slug}
         )
@@ -51,11 +51,16 @@ class GraderDriftHandler(BaseHandler):
     """
 
     def __init__(
-        self, snapshot_slug: str, notification_queue: list[GradingPendingNotification], wake_event: asyncio.Event
+        self,
+        snapshot_slug: str,
+        notification_queue: list[GradingPendingNotification],
+        wake_event: asyncio.Event,
+        db: Database,
     ):
         self._snapshot_slug = snapshot_slug
         self._queue = notification_queue
         self._wake_event = wake_event
+        self._db = db
 
     def on_before_sample(self) -> LoopDecision:
         """Check drift status and decide whether to continue, inject, or abort."""
@@ -65,7 +70,7 @@ class GraderDriftHandler(BaseHandler):
         self._wake_event.clear()
 
         # Check actual drift from database
-        has_drift = check_grading_pending(self._snapshot_slug)
+        has_drift = check_grading_pending(self._snapshot_slug, self._db)
 
         if not has_drift:
             logger.info(f"No drift for {self._snapshot_slug}, daemon going to sleep")

@@ -15,9 +15,9 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from props.core.ids import SnapshotSlug
+from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import ReportedIssue, ReportedIssueOccurrence
-from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
@@ -25,10 +25,10 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest.fixture
-def test_critic_run(synced_test_db):
+def test_critic_run(synced_db: Database):
     """Create a test critic run using synced fixtures."""
-    with get_session() as session:
-        # Query an existing example from test fixtures (synced_test_db provides agent definitions)
+    with synced_db.session() as session:
+        # Query an existing example from test fixtures (synced_db provides agent definitions)
         example = session.query(Example).filter_by(snapshot_slug=SnapshotSlug("test-fixtures/train1")).first()
         assert example is not None, "Expected test-fixtures/train1 example to exist"
 
@@ -41,9 +41,9 @@ def test_critic_run(synced_test_db):
         return critic_run.agent_run_id
 
 
-def test_occurrence_single_location_valid(test_critic_run):
+def test_occurrence_single_location_valid(test_critic_run, db: Database):
     """Valid: occurrence with single location."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-1", rationale="Test issue")
         session.add(issue)
@@ -59,9 +59,9 @@ def test_occurrence_single_location_valid(test_critic_run):
         session.commit()  # Should succeed
 
 
-def test_occurrence_single_location_whole_file_valid(test_critic_run):
+def test_occurrence_single_location_whole_file_valid(test_critic_run, db: Database):
     """Valid: occurrence with file-level location (no line range)."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-2", rationale="Test issue")
         session.add(issue)
@@ -77,9 +77,9 @@ def test_occurrence_single_location_whole_file_valid(test_critic_run):
         session.commit()  # Should succeed
 
 
-def test_occurrence_multiple_locations_valid(test_critic_run):
+def test_occurrence_multiple_locations_valid(test_critic_run, db: Database):
     """Valid: occurrence with multiple locations (e.g., duplicated code)."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-3", rationale="Test issue")
         session.add(issue)
@@ -98,9 +98,9 @@ def test_occurrence_multiple_locations_valid(test_critic_run):
         session.commit()  # Should succeed
 
 
-def test_occurrence_empty_locations_invalid(test_critic_run):
+def test_occurrence_empty_locations_invalid(test_critic_run, db: Database):
     """Invalid: occurrence with empty locations array."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-4", rationale="Test issue")
         session.add(issue)
@@ -122,9 +122,9 @@ def test_occurrence_empty_locations_invalid(test_critic_run):
         session.rollback()
 
 
-def test_line_range_start_line_zero_invalid(test_critic_run):
+def test_line_range_start_line_zero_invalid(test_critic_run, db: Database):
     """Invalid: start_line = 0 (must be >= 1)."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-6", rationale="Test issue")
         session.add(issue)
@@ -139,9 +139,9 @@ def test_line_range_start_line_zero_invalid(test_critic_run):
             )
 
 
-def test_line_range_start_line_negative_invalid(test_critic_run):
+def test_line_range_start_line_negative_invalid(test_critic_run, db: Database):
     """Invalid: start_line < 0."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-7", rationale="Test issue")
         session.add(issue)
@@ -156,9 +156,9 @@ def test_line_range_start_line_negative_invalid(test_critic_run):
             )
 
 
-def test_line_range_end_line_zero_invalid(test_critic_run):
+def test_line_range_end_line_zero_invalid(test_critic_run, db: Database):
     """Invalid: end_line = 0 (must be >= 1)."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-8", rationale="Test issue")
         session.add(issue)
@@ -173,9 +173,9 @@ def test_line_range_end_line_zero_invalid(test_critic_run):
             )
 
 
-def test_line_range_valid_single_line(test_critic_run):
+def test_line_range_valid_single_line(test_critic_run, db: Database):
     """Valid: start_line = end_line (single line)."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="test-issue-9", rationale="Test issue")
         session.add(issue)
@@ -191,9 +191,9 @@ def test_line_range_valid_single_line(test_critic_run):
         session.commit()  # Should succeed
 
 
-def test_duplicate_issue_id_not_allowed(test_critic_run):
+def test_duplicate_issue_id_not_allowed(test_critic_run, db: Database):
     """Cannot have two issues with same ID in same run (primary key constraint)."""
-    with get_session() as session:
+    with db.session() as session:
         # Create first issue
         issue1 = ReportedIssue(agent_run_id=test_critic_run, issue_id="duplicate-id", rationale="First version")
         session.add(issue1)
@@ -214,9 +214,9 @@ def test_duplicate_issue_id_not_allowed(test_critic_run):
         session.rollback()
 
 
-def test_foreign_key_cascade_delete(test_critic_run):
+def test_foreign_key_cascade_delete(test_critic_run, db: Database):
     """Deleting reported_issue cascades to occurrences."""
-    with get_session() as session:
+    with db.session() as session:
         # Create issue with occurrence (use real fixture file)
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="cascade-test", rationale="Test issue")
         session.add(issue)
@@ -231,7 +231,7 @@ def test_foreign_key_cascade_delete(test_critic_run):
         occ_id = occ.id
 
     # Delete issue (should cascade to occurrence)
-    with get_session() as session:
+    with db.session() as session:
         issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="cascade-test").one()
         session.delete(issue)
         session.commit()

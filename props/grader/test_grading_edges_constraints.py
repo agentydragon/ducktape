@@ -13,17 +13,9 @@ import pytest_bazel
 from sqlalchemy.exc import IntegrityError
 
 from props.db.models import AgentRunStatus, GradingEdge
-from props.db.session import get_session
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run, make_reported_issues
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
-
-
-@pytest.fixture
-def session(synced_test_db):
-    """Provide a database session for the test."""
-    with get_session() as sess:
-        yield sess
 
 
 @pytest.fixture
