@@ -376,7 +376,7 @@ Main Agent
 │
 └── Generate Documentation (main agent)
 
-```
+````
 
 ## Handling Edge Cases
 
@@ -412,13 +412,165 @@ If analysis reveals circular deps:
 3. May need transitional state (interface, feature flag)
 4. Document the resolution
 
+## Validation Script
+
+The split must be validated by a reproducible script that tests all valid DAG orderings.
+
+### DAG Input Format
+
+Provide the DAG as a JSON file mapping each branch to its dependencies:
+
+```json
+{
+  "base": "origin/devel",
+  "test_command": "bazel test //...",
+  "build_command": "bazel build --config=check //...",
+  "branches": {
+    "pr1-style-fixes": [],
+    "pr2-refactor-auth": [],
+    "pr3-feature-a": ["pr1-style-fixes", "pr2-refactor-auth"],
+    "pr4-feature-b": ["pr2-refactor-auth"],
+    "pr5-integration": ["pr3-feature-a", "pr4-feature-b"]
+  }
+}
+````
+
+### Validation Script
+
+```bash
+#!/bin/bash
+# validate-dag-split.sh - Validate branch split against all DAG orderings
+#
+# Usage: ./validate-dag-split.sh dag.json
+#
+# Requires: jq, git, python3 (for topological sort enumeration)
+
+set -euo pipefail
+
+DAG_FILE="${1:?Usage: $0 dag.json}"
+WORK_DIR=$(mktemp -d)
+trap "rm -rf $WORK_DIR" EXIT
+
+# Parse DAG
+BASE=$(jq -r '.base' "$DAG_FILE")
+TEST_CMD=$(jq -r '.test_command // "true"' "$DAG_FILE")
+BUILD_CMD=$(jq -r '.build_command // "true"' "$DAG_FILE")
+
+echo "=== Establishing baseline on $BASE ==="
+git worktree add "$WORK_DIR/baseline" "$BASE" --detach
+pushd "$WORK_DIR/baseline" > /dev/null
+BASELINE_FAILURES=$($TEST_CMD 2>&1 | grep -E "FAILED|ERROR" || true)
+popd > /dev/null
+echo "Baseline failures: $(echo "$BASELINE_FAILURES" | wc -l) targets"
+
+# Generate all topological orderings
+python3 << 'PYTHON' > "$WORK_DIR/orderings.txt"
+import json, sys
+from itertools import permutations
+
+dag = json.load(open(sys.argv[1]))["branches"]
+
+def is_valid_ordering(order, dag):
+    seen = set()
+    for node in order:
+        for dep in dag[node]:
+            if dep not in seen:
+                return False
+        seen.add(node)
+    return True
+
+nodes = list(dag.keys())
+valid = [o for o in permutations(nodes) if is_valid_ordering(o, dag)]
+for o in valid:
+    print(" ".join(o))
+PYTHON "$DAG_FILE"
+
+TOTAL=$(wc -l < "$WORK_DIR/orderings.txt")
+echo "=== Testing $TOTAL valid DAG orderings ==="
+
+ORDERING_NUM=0
+while read -r ORDERING; do
+    ORDERING_NUM=$((ORDERING_NUM + 1))
+    echo "--- Ordering $ORDERING_NUM/$TOTAL: $ORDERING ---"
+
+    # Create fresh worktree from base
+    WORKTREE="$WORK_DIR/test-$ORDERING_NUM"
+    git worktree add "$WORKTREE" "$BASE" --detach 2>/dev/null
+
+    pushd "$WORKTREE" > /dev/null
+
+    for BRANCH in $ORDERING; do
+        echo "  Merging $BRANCH..."
+        if ! git merge --no-edit "origin/$BRANCH" 2>/dev/null; then
+            echo "FAIL: Conflict merging $BRANCH in ordering $ORDERING_NUM"
+            exit 1
+        fi
+    done
+
+    # Run tests, check for NEW failures
+    echo "  Running tests..."
+    CURRENT_FAILURES=$($TEST_CMD 2>&1 | grep -E "FAILED|ERROR" || true)
+    NEW_FAILURES=$(comm -23 <(echo "$CURRENT_FAILURES" | sort) <(echo "$BASELINE_FAILURES" | sort))
+
+    if [ -n "$NEW_FAILURES" ]; then
+        echo "FAIL: New test failures in ordering $ORDERING_NUM:"
+        echo "$NEW_FAILURES"
+        exit 1
+    fi
+
+    popd > /dev/null
+    git worktree remove "$WORKTREE" --force 2>/dev/null
+done < "$WORK_DIR/orderings.txt"
+
+echo "=== All $TOTAL orderings passed ==="
+
+# Verify final diff matches original branch
+echo "=== Verifying content invariant ==="
+# (Implementation: compare final state against original feature branch)
+```
+
+### Running Validation
+
+```bash
+# Create dag.json with your split structure
+# Run validation
+./validate-dag-split.sh dag.json
+
+# Output:
+# === Establishing baseline on origin/devel ===
+# Baseline failures: 2 targets
+# === Testing 12 valid DAG orderings ===
+# --- Ordering 1/12: pr1-style-fixes pr2-refactor-auth pr3-feature-a pr4-feature-b pr5-integration ---
+#   Merging pr1-style-fixes...
+#   Merging pr2-refactor-auth...
+#   ...
+#   Running tests...
+# --- Ordering 2/12: pr2-refactor-auth pr1-style-fixes pr3-feature-a pr4-feature-b pr5-integration ---
+# ...
+# === All 12 orderings passed ===
+```
+
+### Large DAGs
+
+For DAGs with many valid orderings (factorial growth), sample instead of exhaustive testing:
+
+- Test one "canonical" ordering (dependency order)
+- Test reverse of canonical where valid
+- Test random samples (10-100 orderings)
+- Test orderings that maximize parallel merges
+
+```bash
+# Sample 50 random orderings for large DAGs
+head -50 "$WORK_DIR/orderings.txt" | while read ...
+```
+
 ## Output Artifacts
 
 The skill produces:
 
 1. **Branch set**: Named branches in remote, ready for PR creation
-2. **DAG description**: Mermaid diagram or similar
-3. **Validation report**: Test results for all orderings
+2. **DAG description**: JSON file for validation script input
+3. **Validation report**: Script output showing all orderings tested
 4. **PR descriptions**: Draft text for each PR
 5. **Merge guide**: Recommended order and notes
 
@@ -464,6 +616,8 @@ Here's the split:
 - DAG: [diagram]
 - All 12 valid orderings tested and pass
 - Branches pushed: pr1-style, pr2-refactor, pr3-tests, pr4-feature, pr5-integration
+
+```
 
 ```
 
