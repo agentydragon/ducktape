@@ -564,6 +564,132 @@ For DAGs with many valid orderings (factorial growth), sample instead of exhaust
 head -50 "$WORK_DIR/orderings.txt" | while read ...
 ```
 
+### Handling Validation Failures (Iterate Until Clean)
+
+Validation failures are expected during initial splitting. **Do not stop at first failure** — iterate until all orderings pass.
+
+#### Common Failure Types and Fixes
+
+**1. Merge Conflict in Some Orderings**
+
+```
+FAIL: Conflict merging pr3-feature-a in ordering 5
+```
+
+The DAG is missing a dependency. PR3 touches files that PR1 or PR2 also touch.
+
+**Fix**: Add the missing edge to make the DAG more constraining:
+
+```json
+// Before: pr3-feature-a has no deps
+"pr3-feature-a": []
+
+// After: pr3-feature-a depends on pr1-style-fixes
+"pr3-feature-a": ["pr1-style-fixes"]
+```
+
+**2. Test Failures in Specific Orderings**
+
+```
+FAIL: New test failures in ordering 7:
+//module:test_integration FAILED
+```
+
+A test depends on code from another PR that hasn't been merged yet in this ordering.
+
+**Fix options**:
+
+- Add dependency edge so the test's PR always comes after its dependency
+- Move the test to the same PR as the code it tests
+- If test is in PR-A but tests code from PR-B, merge them or add A→B edge
+
+**3. Test Failures in All Orderings**
+
+```
+FAIL: New test failures in ordering 1:
+//module:test_foo FAILED
+...
+FAIL: New test failures in ordering 12:
+//module:test_foo FAILED
+```
+
+The split introduced a bug, or a PR is missing necessary changes.
+
+**Fix options**:
+
+- Check if a file edit was accidentally omitted from a PR
+- Verify cherry-picks were complete (no partial commits)
+- Re-examine the split — maybe changes that seemed independent aren't
+
+**4. Content Invariant Mismatch**
+
+```
+FAIL: Final diff doesn't match original branch
+```
+
+The union of all PRs doesn't equal the original branch's changes.
+
+**Fix**: Check for:
+
+- Commits that weren't assigned to any PR
+- Cherry-pick conflicts that were resolved differently than original
+- Files modified in original but not in any split PR
+
+#### Iteration Loop
+
+```
+while validation fails:
+    1. Run validation script
+    2. Identify failure type (conflict, test, invariant)
+    3. Apply fix:
+       - Conflict → add DAG edge
+       - Test failure in some orderings → add DAG edge or move test
+       - Test failure in all orderings → fix the PR content
+       - Invariant mismatch → find missing changes
+    4. Update branches (amend commits, force push)
+    5. Re-run validation
+
+until: all orderings pass AND content invariant holds
+```
+
+#### Example Iteration Session
+
+```
+$ ./validate-dag-split.sh dag.json
+FAIL: Conflict merging pr3-feature in ordering 3
+
+# Analyze: pr3 edits auth.py, pr2 also edits auth.py
+# Fix: pr3 must come after pr2
+
+$ vim dag.json  # add "pr2-refactor" to pr3's deps
+$ ./validate-dag-split.sh dag.json
+FAIL: Test failure //auth:test_login in ordering 1
+
+# Analyze: test_login tests code added in pr2, but test is in pr3
+# Fix: move test to pr2, or add edge pr3→pr2
+
+$ git -C ../split-pr2 cherry-pick <test-commit>
+$ git -C ../split-pr3 rebase -i  # remove test commit
+$ git push --force  # update both branches
+
+$ ./validate-dag-split.sh dag.json
+=== All 6 orderings passed ===
+```
+
+#### When Iteration Reveals Fundamental Issues
+
+Sometimes iteration reveals the split is wrong:
+
+- **Too many edges needed**: If most PRs depend on most others, the split adds no value
+- **Circular dependencies**: Can't add edges without creating a cycle
+- **Test coverage gaps**: Tests exist but in wrong PRs, hard to reassign
+
+In these cases, reconsider the split strategy:
+
+- Merge some PRs back together
+- Try a different split boundary
+- Accept a larger, tangled PR with documentation
+
 ## Output Artifacts
 
 The skill produces:
