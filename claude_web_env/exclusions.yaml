@@ -87,23 +87,8 @@ volatile_paths:
 
   # Python bytecode caches (.pyc): generated at import time, embed
   # compilation timestamps / magic numbers that differ between builds.
-  # fnmatch ** between slashes can't match empty, so we need both
-  # direct and nested patterns for each tree. Also match the bare
-  # __pycache__ directory entries themselves.
-  - "/usr/lib/python3/dist-packages/__pycache__"
-  - "/usr/lib/python3/dist-packages/__pycache__/**"
-  - "/usr/lib/python3/dist-packages/**/__pycache__"
-  - "/usr/lib/python3/dist-packages/**/__pycache__/**"
-  - "/usr/lib/python3.1[02]/__pycache__"
-  - "/usr/lib/python3.1[02]/__pycache__/**"
-  - "/usr/lib/python3.1[02]/**/__pycache__"
-  - "/usr/lib/python3.1[02]/**/__pycache__/**"
-  - "/usr/share/gcc/python/**/__pycache__"
-  - "/usr/share/gcc/python/**/__pycache__/**"
-  - "/usr/share/gdb/python/**/__pycache__"
-  - "/usr/share/gdb/python/**/__pycache__/**"
-  - "/usr/share/glib-2.0/**/__pycache__"
-  - "/usr/share/glib-2.0/**/__pycache__/**"
+  - "**/__pycache__"
+  - "**/__pycache__/**"
 
   # /etc config files that differ between builds (user database, hostname,
   # SSL certs, ld cache, machine-id, etc.)
