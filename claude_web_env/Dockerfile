@@ -81,7 +81,7 @@ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 # Layer 6: Core packages (base system, build tools, clang, libs, systemd, podman, fonts, java, postgres, redis)
 RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recommends \
     software-properties-common gnupg2 curl \
-    adduser apt-transport-https base-files bash bc \
+    adduser age apt-transport-https base-files bash bc \
     bsdutils bzip2 ca-certificates coreutils dash diffutils dpkg file findutils \
     gzip hostname less locales login lsof m4 mawk mount nano netbase \
     netcat-openbsd passwd patch perl procps psmisc sed sensible-utils \
@@ -333,7 +333,14 @@ RUN ln -sf /proc/mounts /etc/mtab && \
 # These exist in the live container and should remain for reproducibility.
 RUN rm -f \
     /etc/apt/sources.list.d/snapshot.sources \
-    /etc/apt/sources.list.d/live-archive.sources
+    /etc/apt/sources.list.d/live-archive.sources \
+    /etc/apt/preferences.d/snapshot-pin \
+    /etc/apt/preferences.d/live-archive-pin \
+    /etc/apt/preferences.d/glib-pin \
+    /etc/apt/preferences.d/libreoffice-pin \
+    /etc/apt/preferences.d/postgresql-pin \
+    /etc/apt/preferences.d/ppa-pin \
+    /etc/apt/preferences.d/php84-pin
 
 # =============================================================================
 # ENVIRONMENT

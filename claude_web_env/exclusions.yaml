@@ -53,6 +53,14 @@ skip_paths:
   - "/home/claude/.npm/**"
   - /home/claude/.claude/remote
   - "/home/claude/.claude/remote/**"
+  - /home/claude/.ssh
+  - "/home/claude/.ssh/**"
+
+  # Virtualenv and pnpm caches (created by pip install at build time or runtime)
+  - /root/.local/share/virtualenv
+  - "/root/.local/share/virtualenv/**"
+  - /root/.local/share/pnpm
+  - "/root/.local/share/pnpm/**"
 
   # Nix store (installed at runtime by session start hook, not part of base image)
   - /nix
@@ -177,6 +185,9 @@ only_in_live:
   - "/root/.gradle/**"
   - /root/.launchpadlib
   - "/root/.launchpadlib/**"
+
+  # Bazel config (written by session hook or user)
+  - /root/.bazelrc
 
   # User configs written at runtime
   - "/root/.config/**"

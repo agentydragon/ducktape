@@ -4,473 +4,36 @@
 
 ## Summary
 
-|                      | Count   | %        |
-| -------------------- | ------- | -------- |
-| Identical            | 120,924 | 15.4%    |
-| Excluded (expected)  | 662,767 | 84.5%    |
-| **Real differences** | **241** | **0.0%** |
-| Total                | 783,932 |          |
+|                      | Count     | %        |
+| -------------------- | --------- | -------- |
+| Identical            | 120,364   | 11.7%    |
+| Excluded (expected)  | 906,628   | 88.1%    |
+| **Real differences** | **2,132** | **0.2%** |
+| Total                | 1,029,124 |          |
 
 ## Real Differences
 
-### Only in live (9,780)
+### Only in live (1,742)
 
-**claude-config** (19)
+**claude-config** (1)
 
-- `/root/.claude/projects`
-- `/root/.claude/projects/-home-user-ducktape`
-- `/root/.claude/projects/-home-user-ducktape/0775ce23-04d5-4751-b6f1-cdbec04ac683.jsonl`
-- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7`
-- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7.jsonl`
-- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/subagents`
-- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/subagents/agent-acaacba.jsonl`
-- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/tool-results`
-- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/tool-results/toolu_01LMQEQ1TWubyFwvTpbBWNky.txt`
-- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/tool-results/toolu_01VCDzsPmsaBatFLMdT2jTUh.txt`
-- `/root/.claude/projects/-home-user-ducktape/08d4c172-8ccf-4762-81b5-d803729380c7/tool-results/toolu_01XdUkURbb7BW4uxonGYVj1Z.txt`
-- `/root/.claude/projects/-home-user-ducktape/31b379ae-b7b0-4577-a6f4-1e0ba0ab5a59.jsonl`
-- `/root/.claude/projects/-home-user-ducktape/50406050-908c-4557-b23f-d6d1b317af05`
-- `/root/.claude/projects/-home-user-ducktape/50406050-908c-4557-b23f-d6d1b317af05.jsonl`
-- `/root/.claude/projects/-home-user-ducktape/50406050-908c-4557-b23f-d6d1b317af05/tool-results`
-- `/root/.claude/projects/-home-user-ducktape/50406050-908c-4557-b23f-d6d1b317af05/tool-results/toolu_01HBJupEZkDhyp1WYkMXygJS.txt`
-- `/root/.claude/projects/-home-user-ducktape/afb10456-1b8a-4aab-bfbc-509654cb3fe0.jsonl`
-- `/root/.claude/projects/-home-user-ducktape/sessions-index.json`
 - `/root/.claude/stop-hook-git-check.sh`
 
-**docs** (2145)
+**docs** (9)
 
-- `/usr/share/doc`
-- `/usr/share/doc-base`
-- `/usr/share/doc-base/automake.automake-1.16`
-- `/usr/share/doc-base/base-passwd.users-and-groups`
-- `/usr/share/doc-base/bc.bc`
-- `/usr/share/doc-base/findutils.findutils`
-- `/usr/share/doc-base/fontconfig.fontconfig-user`
-- `/usr/share/doc-base/libexpat1-dev.expat`
-- `/usr/share/doc-base/libffi-dev.libffi`
-- `/usr/share/doc-base/libpng16-16t64.libpng16`
-- `/usr/share/doc-base/nano.nano`
-- `/usr/share/doc-base/nano.nano-faq`
-- `/usr/share/doc-base/ninja-build.ninja-build-manual`
-- `/usr/share/doc-base/python3.python-policy`
-- `/usr/share/doc-base/shared-mime-info.shared-mime-info`
-- `/usr/share/doc-base/valgrind.valgrind`
-- `/usr/share/doc/aardvark-dns`
-- `/usr/share/doc/aardvark-dns/changelog.Debian.gz`
-- `/usr/share/doc/aardvark-dns/copyright`
-- `/usr/share/doc/adduser`
-- `/usr/share/doc/adduser/changelog.gz`
-- `/usr/share/doc/adduser/copyright`
-- `/usr/share/doc/adduser/examples`
-- `/usr/share/doc/adduser/examples/adduser.local.conf.examples`
-- `/usr/share/doc/adduser/examples/adduser.local.conf.examples/skel`
-- `/usr/share/doc/adduser/examples/adduser.local.conf.examples/skel.other`
-- `/usr/share/doc/adwaita-icon-theme`
-- `/usr/share/doc/adwaita-icon-theme/changelog.Debian.gz`
-- `/usr/share/doc/adwaita-icon-theme/copyright`
 - `/usr/share/doc/age`
 - `/usr/share/doc/age/changelog.Debian.gz`
 - `/usr/share/doc/age/copyright`
-- `/usr/share/doc/apt`
-- `/usr/share/doc/apt-transport-https`
-- `/usr/share/doc/apt-transport-https/NEWS.Debian.gz`
-- `/usr/share/doc/apt-transport-https/changelog.gz`
-- `/usr/share/doc/apt-transport-https/copyright`
-- `/usr/share/doc/apt/NEWS.Debian.gz`
-- `/usr/share/doc/apt/changelog.gz`
-- `/usr/share/doc/apt/copyright`
-- `/usr/share/doc/apt/examples`
-- `/usr/share/doc/at-spi2-common`
-- `/usr/share/doc/at-spi2-common/changelog.Debian.gz`
-- `/usr/share/doc/at-spi2-common/copyright`
-- `/usr/share/doc/autoconf`
-- `/usr/share/doc/autoconf/changelog.Debian.gz`
-- `/usr/share/doc/autoconf/copyright`
-- `/usr/share/doc/automake`
-- `/usr/share/doc/automake/changelog.Debian.gz`
-- `/usr/share/doc/automake/copyright`
-- `/usr/share/doc/autotools-dev`
-- `/usr/share/doc/autotools-dev/changelog.gz`
-- `/usr/share/doc/autotools-dev/copyright`
-- `/usr/share/doc/base-files`
-- `/usr/share/doc/base-files/FAQ`
-- `/usr/share/doc/base-files/changelog.gz`
-- `/usr/share/doc/base-files/copyright`
-- `/usr/share/doc/base-passwd`
-- `/usr/share/doc/base-passwd/changelog.gz`
-- `/usr/share/doc/base-passwd/copyright`
-- `/usr/share/doc/bash`
-- `/usr/share/doc/bash/changelog.Debian.gz`
-- `/usr/share/doc/bash/copyright`
-- `/usr/share/doc/bc`
-- `/usr/share/doc/bc/changelog.Debian.gz`
-- `/usr/share/doc/bc/copyright`
-- `/usr/share/doc/bc/examples`
-- `/usr/share/doc/bigreqsproto`
-- `/usr/share/doc/binutils`
-- `/usr/share/doc/binutils-common`
-- `/usr/share/doc/binutils-common/changelog.Debian.gz`
-- `/usr/share/doc/binutils-common/copyright`
-- `/usr/share/doc/binutils/bfd`
-- `/usr/share/doc/binutils/changelog.Debian.gz`
-- `/usr/share/doc/binutils/copyright`
-- `/usr/share/doc/binutils/gas`
-- `/usr/share/doc/binutils/gprof`
-- `/usr/share/doc/binutils/ld`
-- `/usr/share/doc/bison`
-- `/usr/share/doc/bison/changelog.Debian.gz`
-- `/usr/share/doc/bison/copyright`
-- `/usr/share/doc/bison/examples`
-- `/usr/share/doc/bison/examples/c`
-- `/usr/share/doc/bison/examples/c++`
-- `/usr/share/doc/bison/examples/c++/calc++`
-- `/usr/share/doc/bison/examples/c/bistromathic`
-- `/usr/share/doc/bison/examples/c/calc`
-- `/usr/share/doc/bison/examples/c/glr`
-- `/usr/share/doc/bison/examples/c/lexcalc`
-- `/usr/share/doc/bison/examples/c/mfcalc`
-- `/usr/share/doc/bison/examples/c/pushcalc`
-- `/usr/share/doc/bison/examples/c/reccalc`
-- `/usr/share/doc/bison/examples/c/rpcalc`
-- `/usr/share/doc/bison/examples/d`
-- `/usr/share/doc/bison/examples/d/calc`
-- `/usr/share/doc/bison/examples/d/simple`
-- `/usr/share/doc/bison/examples/java`
-- `/usr/share/doc/bison/examples/java/calc`
-- `/usr/share/doc/bison/examples/java/simple`
-- `/usr/share/doc/bsdutils`
-- _...and 2045 more_
+- `/usr/share/doc/python3/_static`
+- `/usr/share/doc/python3/_static/doctools.js`
+- `/usr/share/doc/python3/_static/language_data.js`
+- `/usr/share/doc/python3/_static/searchtools.js`
+- `/usr/share/doc/python3/_static/sphinx_highlight.js`
+- `/usr/share/doc/python3/index.html`
 
-**etc** (5)
+**home** (1)
 
-- `/etc/apt/preferences.d`
-- `/etc/php/8.4/cli/conf.d/20-pdo_sqlite.ini`
-- `/etc/php/8.4/cli/conf.d/20-sqlite3.ini`
-- `/etc/php/8.4/mods-available/pdo_sqlite.ini`
-- `/etc/php/8.4/mods-available/sqlite3.ini`
-
-**headers** (4631)
-
-- `/usr/include`
-- `/usr/include/GL`
-- `/usr/include/GL/glxint.h`
-- `/usr/include/GL/glxmd.h`
-- `/usr/include/GL/glxproto.h`
-- `/usr/include/GL/glxtokens.h`
-- `/usr/include/GL/internal`
-- `/usr/include/GL/internal/glcore.h`
-- `/usr/include/X11`
-- `/usr/include/X11/DECkeysym.h`
-- `/usr/include/X11/HPkeysym.h`
-- `/usr/include/X11/ICE`
-- `/usr/include/X11/ICE/ICE.h`
-- `/usr/include/X11/ICE/ICEconn.h`
-- `/usr/include/X11/ICE/ICElib.h`
-- `/usr/include/X11/ICE/ICEmsg.h`
-- `/usr/include/X11/ICE/ICEproto.h`
-- `/usr/include/X11/ICE/ICEutil.h`
-- `/usr/include/X11/ImUtil.h`
-- `/usr/include/X11/SM`
-- `/usr/include/X11/SM/SM.h`
-- `/usr/include/X11/SM/SMlib.h`
-- `/usr/include/X11/SM/SMproto.h`
-- `/usr/include/X11/Sunkeysym.h`
-- `/usr/include/X11/X.h`
-- `/usr/include/X11/XF86keysym.h`
-- `/usr/include/X11/XKBlib.h`
-- `/usr/include/X11/XWDFile.h`
-- `/usr/include/X11/Xalloca.h`
-- `/usr/include/X11/Xarch.h`
-- `/usr/include/X11/Xatom.h`
-- `/usr/include/X11/Xauth.h`
-- `/usr/include/X11/Xcms.h`
-- `/usr/include/X11/Xdefs.h`
-- `/usr/include/X11/Xdmcp.h`
-- `/usr/include/X11/Xfuncproto.h`
-- `/usr/include/X11/Xfuncs.h`
-- `/usr/include/X11/Xlib.h`
-- `/usr/include/X11/XlibConf.h`
-- `/usr/include/X11/Xlibint.h`
-- `/usr/include/X11/Xlocale.h`
-- `/usr/include/X11/Xmd.h`
-- `/usr/include/X11/Xos.h`
-- `/usr/include/X11/Xos_r.h`
-- `/usr/include/X11/Xosdefs.h`
-- `/usr/include/X11/Xpoll.h`
-- `/usr/include/X11/Xproto.h`
-- `/usr/include/X11/Xprotostr.h`
-- `/usr/include/X11/Xregion.h`
-- `/usr/include/X11/Xresource.h`
-- `/usr/include/X11/Xthreads.h`
-- `/usr/include/X11/Xtrans`
-- `/usr/include/X11/Xtrans/Xtrans.c`
-- `/usr/include/X11/Xtrans/Xtrans.h`
-- `/usr/include/X11/Xtrans/Xtransint.h`
-- `/usr/include/X11/Xtrans/Xtranslcl.c`
-- `/usr/include/X11/Xtrans/Xtranssock.c`
-- `/usr/include/X11/Xtrans/Xtransutil.c`
-- `/usr/include/X11/Xtrans/transport.c`
-- `/usr/include/X11/Xutil.h`
-- `/usr/include/X11/Xw32defs.h`
-- `/usr/include/X11/Xwindows.h`
-- `/usr/include/X11/Xwinsock.h`
-- `/usr/include/X11/ap_keysym.h`
-- `/usr/include/X11/cursorfont.h`
-- `/usr/include/X11/dri`
-- `/usr/include/X11/dri/xf86dri.h`
-- `/usr/include/X11/dri/xf86driproto.h`
-- `/usr/include/X11/dri/xf86dristr.h`
-- `/usr/include/X11/extensions`
-- `/usr/include/X11/extensions/EVI.h`
-- `/usr/include/X11/extensions/EVIproto.h`
-- `/usr/include/X11/extensions/MITMisc.h`
-- `/usr/include/X11/extensions/XEVI.h`
-- `/usr/include/X11/extensions/XI.h`
-- `/usr/include/X11/extensions/XI2.h`
-- `/usr/include/X11/extensions/XI2proto.h`
-- `/usr/include/X11/extensions/XIproto.h`
-- `/usr/include/X11/extensions/XKB.h`
-- `/usr/include/X11/extensions/XKBgeom.h`
-- `/usr/include/X11/extensions/XKBproto.h`
-- `/usr/include/X11/extensions/XKBsrv.h`
-- `/usr/include/X11/extensions/XKBstr.h`
-- `/usr/include/X11/extensions/XLbx.h`
-- `/usr/include/X11/extensions/XResproto.h`
-- `/usr/include/X11/extensions/XShm.h`
-- `/usr/include/X11/extensions/Xag.h`
-- `/usr/include/X11/extensions/Xcup.h`
-- `/usr/include/X11/extensions/Xdbe.h`
-- `/usr/include/X11/extensions/Xext.h`
-- `/usr/include/X11/extensions/Xge.h`
-- `/usr/include/X11/extensions/Xrender.h`
-- `/usr/include/X11/extensions/Xv.h`
-- `/usr/include/X11/extensions/XvMC.h`
-- `/usr/include/X11/extensions/XvMCproto.h`
-- `/usr/include/X11/extensions/Xvproto.h`
-- `/usr/include/X11/extensions/ag.h`
-- `/usr/include/X11/extensions/agproto.h`
-- `/usr/include/X11/extensions/applewmconst.h`
-- `/usr/include/X11/extensions/applewmproto.h`
-- _...and 4531 more_
-
-**home** (128)
-
-- `/home/claude/.cache`
-- `/home/claude/.claude/remote`
-- `/home/claude/.claude/remote/.session_ingress_token`
-- `/home/claude/.npm`
-- `/home/claude/.npm/_cacache`
-- `/home/claude/.npm/_cacache/content-v2`
-- `/home/claude/.npm/_cacache/content-v2/sha512`
-- `/home/claude/.npm/_cacache/content-v2/sha512/0d`
-- `/home/claude/.npm/_cacache/content-v2/sha512/0d/7e`
-- `/home/claude/.npm/_cacache/content-v2/sha512/0d/7e/846dbbf4d16c88fdca02b327844fe2ba315592ca9e66998748e50944a19dee45a12685264c7bc5c79bce275bc5551e39de8f15aa8362320e787b7f32a48e`
-- `/home/claude/.npm/_cacache/content-v2/sha512/1e`
-- `/home/claude/.npm/_cacache/content-v2/sha512/1e/cf`
-- `/home/claude/.npm/_cacache/content-v2/sha512/1e/cf/6651a595aebf6d168d06ecc404199dfaa0c58d0caa928dbf9cd1e029dc8cbcf6c59d1c298e98befe0124a06597fa5f231786626eb135023a2ab143959f9d`
-- `/home/claude/.npm/_cacache/content-v2/sha512/32`
-- `/home/claude/.npm/_cacache/content-v2/sha512/32/65`
-- `/home/claude/.npm/_cacache/content-v2/sha512/32/65/a643788f159af421ebfe04081531bdd9c82e0a7857378c5c6735b10f6aceb47b57087debdbb6ec9ff670c623339a5bd3dd9c3722266fb0145693963e7163`
-- `/home/claude/.npm/_cacache/content-v2/sha512/3b`
-- `/home/claude/.npm/_cacache/content-v2/sha512/3b/4e`
-- `/home/claude/.npm/_cacache/content-v2/sha512/3b/4e/1c70c2f46802b7c3a55d50cc3b50148155d3950909d4948946dd53ae9061d29ec8163fc1b73e8cd04978c8d1dbf5833bfc48b8ba7fb365c2115e4333b61f`
-- `/home/claude/.npm/_cacache/content-v2/sha512/46`
-- `/home/claude/.npm/_cacache/content-v2/sha512/46/2d`
-- `/home/claude/.npm/_cacache/content-v2/sha512/46/2d/7f0ac60b84d6d74c01c140def327ea54e16d629deb9de1bccef9a1871dd77ff03eece9ecfec46b5dcb0b46c177bf9f7cc1613175e7708e8fdb18848b4491`
-- `/home/claude/.npm/_cacache/content-v2/sha512/4b`
-- `/home/claude/.npm/_cacache/content-v2/sha512/4b/91`
-- `/home/claude/.npm/_cacache/content-v2/sha512/4b/91/b0a2b2ddcfaaf622dcd4d208265d05219dbe4b2762f79fa89b35e44acdd5ac63b5269d2e5f35afe25765a0dce983dfc8abd596cf286c2c16eb8f41902b3e`
-- `/home/claude/.npm/_cacache/content-v2/sha512/5b`
-- `/home/claude/.npm/_cacache/content-v2/sha512/5b/70`
-- `/home/claude/.npm/_cacache/content-v2/sha512/5b/70/e5c3afa3be294d9ce0ffbe320b9dc702414b0ff974d7a3bc38f64d9efbbb3361ce194a9773e3385a655dabc0ff17a6af4c04b3704d3ae6682daa643477ec`
-- `/home/claude/.npm/_cacache/content-v2/sha512/73`
-- `/home/claude/.npm/_cacache/content-v2/sha512/73/15`
-- `/home/claude/.npm/_cacache/content-v2/sha512/73/15/4038c8d1ece43ba1c96889b4119f6190b63d8e98e26d71e5962b504b62c9cc42696532fcced4213df977ec14d0de93c5e7f57f850d3666d88c6aaeb9d4e1`
-- `/home/claude/.npm/_cacache/content-v2/sha512/7a`
-- `/home/claude/.npm/_cacache/content-v2/sha512/7a/7e`
-- `/home/claude/.npm/_cacache/content-v2/sha512/7a/7e/fa28b14637a0afe9dfcf0103094fcbcb6923c1df2befa24f9d29ae267594044915638d17710cb65406fbce61c1f785d106844d38bd7b7dafc7e7b8a850b8`
-- `/home/claude/.npm/_cacache/content-v2/sha512/7f`
-- `/home/claude/.npm/_cacache/content-v2/sha512/7f/63`
-- `/home/claude/.npm/_cacache/content-v2/sha512/7f/63/135df3d726e7ab2f0bc878ef753b56c088b3589e245e7a37e2050a196a87d851aa09eb8ee355cb814616431cbf7b4ada0aad64fa4adec43743ef91aab607`
-- `/home/claude/.npm/_cacache/content-v2/sha512/86`
-- `/home/claude/.npm/_cacache/content-v2/sha512/86/1f`
-- `/home/claude/.npm/_cacache/content-v2/sha512/86/1f/e037582a911c0149d9a43a9d2b365a53d8ba57b706ffb18b1addb07c9a2a177296416c0791fae7f56138025953a0ccdaf4cd0929b2b8ca32d114d7990e8a`
-- `/home/claude/.npm/_cacache/content-v2/sha512/8f`
-- `/home/claude/.npm/_cacache/content-v2/sha512/8f/f3`
-- `/home/claude/.npm/_cacache/content-v2/sha512/8f/f3/2f336697d2c7d207824dd19945d56c89376670d17870d23df231c7562aceab4a712019c57f6211867d357a44fe6d4a2601d8a52c9388616ed8749022bae6`
-- `/home/claude/.npm/_cacache/content-v2/sha512/9c`
-- `/home/claude/.npm/_cacache/content-v2/sha512/9c/e5`
-- `/home/claude/.npm/_cacache/content-v2/sha512/9c/e5/d71bbae9b87e6be902a29b5309f16980e98ed4c4238656ff85916cedea0dafc963e60cc55d29064037e717ae130ec48765939a3e3d541d8d6c2134ac0b33`
-- `/home/claude/.npm/_cacache/content-v2/sha512/a2`
-- `/home/claude/.npm/_cacache/content-v2/sha512/a2/90`
-- `/home/claude/.npm/_cacache/content-v2/sha512/a2/90/be3a4e6944d033bafab5006d1aafed68c2cbbce36fc06fee2abd4f3bf62a692411efc98e67da6c45d62cd7aa43d8946b8ffcce79eae879de344b266cd358`
-- `/home/claude/.npm/_cacache/content-v2/sha512/c7`
-- `/home/claude/.npm/_cacache/content-v2/sha512/c7/65`
-- `/home/claude/.npm/_cacache/content-v2/sha512/c7/65/5c69ec767ec60aace17bb1e7433df946a85595a9a86cc4a60ca30a05cbe39cecbb7e4dde1ebfdd060e29b84194a16a8d85a2dbe0fa7bc375c3f63f503f2e`
-- `/home/claude/.npm/_cacache/content-v2/sha512/de`
-- `/home/claude/.npm/_cacache/content-v2/sha512/de/56`
-- `/home/claude/.npm/_cacache/content-v2/sha512/de/56/621f5def4f31fe511a3ba1af19c976bcd109e8b1a61b7d12a497c246d31296543cde1aa8a150630b260d8a9f501a17ba4455a38576f6484785b2f7b4ae2c`
-- `/home/claude/.npm/_cacache/content-v2/sha512/e0`
-- `/home/claude/.npm/_cacache/content-v2/sha512/e0/f3`
-- `/home/claude/.npm/_cacache/content-v2/sha512/e0/f3/92ebc0b8cd7606e43f107a3918d313873ceb94dfb0383f8d9c64a64db74ed3cac00362775eaf5ee568e1a8e66a938442fb09b0cf49e119546f27cfb88f41`
-- `/home/claude/.npm/_cacache/content-v2/sha512/f2`
-- `/home/claude/.npm/_cacache/content-v2/sha512/f2/3f`
-- `/home/claude/.npm/_cacache/content-v2/sha512/f2/3f/8378e67d9e4a10b4069c605147af107da43544985aedadd22d8730260c20606151b50dbd6556bf6ce0aa1c1f2c49159ba00bc2e37989f333a49ed9907923`
-- `/home/claude/.npm/_cacache/content-v2/sha512/fd`
-- `/home/claude/.npm/_cacache/content-v2/sha512/fd/b5`
-- `/home/claude/.npm/_cacache/content-v2/sha512/fd/b5/2542e5ffea72abd59a9f8bff50eb17fb5a89d4064ef665f28a10d538595ac8156a93bffd0926ca16fdd1e897d401347bf27ca21e05b62ee1abc7351027b9`
-- `/home/claude/.npm/_cacache/index-v5`
-- `/home/claude/.npm/_cacache/index-v5/00`
-- `/home/claude/.npm/_cacache/index-v5/00/43`
-- `/home/claude/.npm/_cacache/index-v5/00/43/a0ead520e951af86b0b40b3df8be3134fff253466b80c30a550f951731d6`
-- `/home/claude/.npm/_cacache/index-v5/08`
-- `/home/claude/.npm/_cacache/index-v5/08/a6`
-- `/home/claude/.npm/_cacache/index-v5/08/a6/521cef516f9e0b5e4ce99282650a4fbca19fd04a8ec1ecb1e0b0ef39d6c5`
-- `/home/claude/.npm/_cacache/index-v5/14`
-- `/home/claude/.npm/_cacache/index-v5/14/a1`
-- `/home/claude/.npm/_cacache/index-v5/14/a1/a5a7642e43153dcca40946d6ed114d4d31e8bb77d300f1e1a4668becee8a`
-- `/home/claude/.npm/_cacache/index-v5/26`
-- `/home/claude/.npm/_cacache/index-v5/26/53`
-- `/home/claude/.npm/_cacache/index-v5/26/53/eb6f1082a41ac955362feab31a32f15571f5b09ce2082db5be486b750454`
-- `/home/claude/.npm/_cacache/index-v5/2a`
-- `/home/claude/.npm/_cacache/index-v5/2a/62`
-- `/home/claude/.npm/_cacache/index-v5/2a/62/d0d3541f4fc436104dd14b9f829fbc312a2e53a1c4f71791b0cf5c859f2c`
-- `/home/claude/.npm/_cacache/index-v5/37`
-- `/home/claude/.npm/_cacache/index-v5/37/fa`
-- `/home/claude/.npm/_cacache/index-v5/37/fa/2b5671ab311a0a6535b0d32c8404d9325fa5ce38827ac03e9e4680f1db01`
-- `/home/claude/.npm/_cacache/index-v5/41`
-- `/home/claude/.npm/_cacache/index-v5/41/c5`
-- `/home/claude/.npm/_cacache/index-v5/41/c5/4270bf1cd1aae004ed6fee83989ac428601f4c060987660e9a1aef9d53b6`
-- `/home/claude/.npm/_cacache/index-v5/44`
-- `/home/claude/.npm/_cacache/index-v5/44/b0`
-- `/home/claude/.npm/_cacache/index-v5/44/b0/79f421ad4e7e7b67c4b8bfb2d8f046a60ef531f26d64a980907323aa61f3`
-- `/home/claude/.npm/_cacache/index-v5/58`
-- `/home/claude/.npm/_cacache/index-v5/58/53`
-- `/home/claude/.npm/_cacache/index-v5/58/53/3547360701ba611d524ad8352e9692354308d04a95951b3d152c02e6ff16`
-- `/home/claude/.npm/_cacache/index-v5/66`
-- `/home/claude/.npm/_cacache/index-v5/66/61`
-- `/home/claude/.npm/_cacache/index-v5/66/61/0da7e0da899fb53831b2e9c4210493a56b6c00f8c5b822ef332b6480b041`
-- `/home/claude/.npm/_cacache/index-v5/80`
-- `/home/claude/.npm/_cacache/index-v5/80/b8`
-- `/home/claude/.npm/_cacache/index-v5/80/b8/d0499a46d0be0e0da3683c6801408a5a9943022610b91438a6289ae62534`
-- `/home/claude/.npm/_cacache/index-v5/81`
-- `/home/claude/.npm/_cacache/index-v5/81/5b`
-- _...and 28 more_
-
-**man-pages** (321)
-
-- `/usr/share/man`
-- `/usr/share/man/cs`
-- `/usr/share/man/cs/man5`
-- `/usr/share/man/cs/man8`
-- `/usr/share/man/da`
-- `/usr/share/man/da/man1`
-- `/usr/share/man/da/man8`
-- `/usr/share/man/de`
-- `/usr/share/man/de/man1`
-- `/usr/share/man/de/man5`
-- `/usr/share/man/de/man8`
-- `/usr/share/man/es`
-- `/usr/share/man/es/man1`
-- `/usr/share/man/es/man5`
-- `/usr/share/man/es/man8`
-- `/usr/share/man/fr`
-- `/usr/share/man/fr/man1`
-- `/usr/share/man/fr/man5`
-- `/usr/share/man/fr/man8`
-- `/usr/share/man/hu`
-- `/usr/share/man/hu/man1`
-- `/usr/share/man/id`
-- `/usr/share/man/id/man1`
-- `/usr/share/man/it`
-- `/usr/share/man/it/man1`
-- `/usr/share/man/it/man5`
-- `/usr/share/man/it/man8`
-- `/usr/share/man/ja`
-- `/usr/share/man/ja/man1`
-- `/usr/share/man/ja/man5`
-- `/usr/share/man/ja/man8`
-- `/usr/share/man/ko`
-- `/usr/share/man/ko/man1`
-- `/usr/share/man/man1`
-- `/usr/share/man/man1/clusterdb.1.gz`
-- `/usr/share/man/man1/createdb.1.gz`
-- `/usr/share/man/man1/createuser.1.gz`
-- `/usr/share/man/man1/dropdb.1.gz`
-- `/usr/share/man/man1/dropuser.1.gz`
-- `/usr/share/man/man1/initdb.1.gz`
-- `/usr/share/man/man1/jar.1.gz`
-- `/usr/share/man/man1/jarsigner.1.gz`
-- `/usr/share/man/man1/java.1.gz`
-- `/usr/share/man/man1/javac.1.gz`
-- `/usr/share/man/man1/javadoc.1.gz`
-- `/usr/share/man/man1/javap.1.gz`
-- `/usr/share/man/man1/jcmd.1.gz`
-- `/usr/share/man/man1/jconsole.1.gz`
-- `/usr/share/man/man1/jdb.1.gz`
-- `/usr/share/man/man1/jdeprscan.1.gz`
-- `/usr/share/man/man1/jdeps.1.gz`
-- `/usr/share/man/man1/jfr.1.gz`
-- `/usr/share/man/man1/jhsdb.1.gz`
-- `/usr/share/man/man1/jinfo.1.gz`
-- `/usr/share/man/man1/jlink.1.gz`
-- `/usr/share/man/man1/jmap.1.gz`
-- `/usr/share/man/man1/jmod.1.gz`
-- `/usr/share/man/man1/jpackage.1.gz`
-- `/usr/share/man/man1/jps.1.gz`
-- `/usr/share/man/man1/jrunscript.1.gz`
-- `/usr/share/man/man1/jshell.1.gz`
-- `/usr/share/man/man1/jstack.1.gz`
-- `/usr/share/man/man1/jstat.1.gz`
-- `/usr/share/man/man1/jstatd.1.gz`
-- `/usr/share/man/man1/jwebserver.1.gz`
-- `/usr/share/man/man1/keytool.1.gz`
-- `/usr/share/man/man1/oid2name.1.gz`
-- `/usr/share/man/man1/pg_amcheck.1.gz`
-- `/usr/share/man/man1/pg_archivecleanup.1.gz`
-- `/usr/share/man/man1/pg_basebackup.1.gz`
-- `/usr/share/man/man1/pg_checksums.1.gz`
-- `/usr/share/man/man1/pg_controldata.1.gz`
-- `/usr/share/man/man1/pg_ctl.1.gz`
-- `/usr/share/man/man1/pg_dump.1.gz`
-- `/usr/share/man/man1/pg_dumpall.1.gz`
-- `/usr/share/man/man1/pg_isready.1.gz`
-- `/usr/share/man/man1/pg_receivewal.1.gz`
-- `/usr/share/man/man1/pg_recvlogical.1.gz`
-- `/usr/share/man/man1/pg_resetwal.1.gz`
-- `/usr/share/man/man1/pg_restore.1.gz`
-- `/usr/share/man/man1/pg_rewind.1.gz`
-- `/usr/share/man/man1/pg_test_fsync.1.gz`
-- `/usr/share/man/man1/pg_test_timing.1.gz`
-- `/usr/share/man/man1/pg_upgrade.1.gz`
-- `/usr/share/man/man1/pg_verifybackup.1.gz`
-- `/usr/share/man/man1/pg_waldump.1.gz`
-- `/usr/share/man/man1/pgbench.1.gz`
-- `/usr/share/man/man1/postgres.1.gz`
-- `/usr/share/man/man1/psql.1.gz`
-- `/usr/share/man/man1/reindexdb.1.gz`
-- `/usr/share/man/man1/rmiregistry.1.gz`
-- `/usr/share/man/man1/serialver.1.gz`
-- `/usr/share/man/man1/vacuumdb.1.gz`
-- `/usr/share/man/man1/vacuumlo.1.gz`
-- `/usr/share/man/man3`
-- `/usr/share/man/man5`
-- `/usr/share/man/man7`
-- `/usr/share/man/man7/ABORT.7.gz`
-- `/usr/share/man/man7/ALTER_AGGREGATE.7.gz`
-- `/usr/share/man/man7/ALTER_COLLATION.7.gz`
-- _...and 221 more_
-
-**other** (8)
-
-- `/usr/lib/php/20240924/pdo_sqlite.so`
-- `/usr/lib/php/20240924/sqlite3.so`
-- `/usr/src`
-- `/usr/src/python3.12`
-- `/usr/src/python3.12/Grammar`
-- `/usr/src/python3.12/Grammar/python.gram`
-- `/usr/src/python3.12/Parser`
-- `/usr/src/python3.12/Parser/Python.asdl`
+- `/home/claude/.ssh/commit_signing_key.pub`
 
 **root-home** (1)
 
@@ -580,254 +143,76 @@
 - `/root/.local/share/virtualenv/wheel/3.11/image/1/CopyPipInstall/pip-25.3-py3-none-any/pip/_internal/commands/check.py`
 - _...and 1627 more_
 
-**system-binaries** (200)
+**system-binaries** (2)
 
 - `/usr/bin/age`
 - `/usr/bin/age-keygen`
-- `/usr/sbin`
-- `/usr/sbin/add-shell`
-- `/usr/sbin/addgnupghome`
-- `/usr/sbin/addgroup`
-- `/usr/sbin/adduser`
-- `/usr/sbin/agetty`
-- `/usr/sbin/applygnupgdefaults`
-- `/usr/sbin/arptables`
-- `/usr/sbin/arptables-nft`
-- `/usr/sbin/arptables-nft-restore`
-- `/usr/sbin/arptables-nft-save`
-- `/usr/sbin/arptables-restore`
-- `/usr/sbin/arptables-save`
-- `/usr/sbin/badblocks`
-- `/usr/sbin/blkdiscard`
-- `/usr/sbin/blkid`
-- `/usr/sbin/blkzone`
-- `/usr/sbin/blockdev`
-- `/usr/sbin/capsh`
-- `/usr/sbin/chcpu`
-- `/usr/sbin/chgpasswd`
-- `/usr/sbin/chmem`
-- `/usr/sbin/chpasswd`
-- `/usr/sbin/chroot`
-- `/usr/sbin/cpgr`
-- `/usr/sbin/cppw`
-- `/usr/sbin/ctrlaltdel`
-- `/usr/sbin/debugfs`
-- `/usr/sbin/delgroup`
-- `/usr/sbin/deluser`
-- `/usr/sbin/dpkg-preconfigure`
-- `/usr/sbin/dpkg-reconfigure`
-- `/usr/sbin/dumpe2fs`
-- `/usr/sbin/e2freefrag`
-- `/usr/sbin/e2fsck`
-- `/usr/sbin/e2image`
-- `/usr/sbin/e2label`
-- `/usr/sbin/e2mmpstatus`
-- `/usr/sbin/e2scrub`
-- `/usr/sbin/e2scrub_all`
-- `/usr/sbin/e2undo`
-- `/usr/sbin/e4crypt`
-- `/usr/sbin/e4defrag`
-- `/usr/sbin/ebtables`
-- `/usr/sbin/ebtables-nft`
-- `/usr/sbin/ebtables-nft-restore`
-- `/usr/sbin/ebtables-nft-save`
-- `/usr/sbin/ebtables-restore`
-- `/usr/sbin/ebtables-save`
-- `/usr/sbin/ebtables-translate`
-- `/usr/sbin/faillock`
-- `/usr/sbin/filefrag`
-- `/usr/sbin/findfs`
-- `/usr/sbin/fsck`
-- `/usr/sbin/fsck.cramfs`
-- `/usr/sbin/fsck.ext2`
-- `/usr/sbin/fsck.ext3`
-- `/usr/sbin/fsck.ext4`
-- `/usr/sbin/fsck.minix`
-- `/usr/sbin/fsfreeze`
-- `/usr/sbin/fstab-decode`
-- `/usr/sbin/fstrim`
-- `/usr/sbin/getcap`
-- `/usr/sbin/getpcaps`
-- `/usr/sbin/getty`
-- `/usr/sbin/groupadd`
-- `/usr/sbin/groupdel`
-- `/usr/sbin/groupmems`
-- `/usr/sbin/groupmod`
-- `/usr/sbin/grpck`
-- `/usr/sbin/grpconv`
-- `/usr/sbin/grpunconv`
-- `/usr/sbin/halt`
-- `/usr/sbin/iconvconfig`
-- `/usr/sbin/init`
-- `/usr/sbin/initctl`
-- `/usr/sbin/install-sgmlcatalog`
-- `/usr/sbin/installkernel`
-- `/usr/sbin/invoke-rc.d`
-- `/usr/sbin/ip6tables`
-- `/usr/sbin/ip6tables-apply`
-- `/usr/sbin/ip6tables-legacy`
-- `/usr/sbin/ip6tables-legacy-restore`
-- `/usr/sbin/ip6tables-legacy-save`
-- `/usr/sbin/ip6tables-nft`
-- `/usr/sbin/ip6tables-nft-restore`
-- `/usr/sbin/ip6tables-nft-save`
-- `/usr/sbin/ip6tables-restore`
-- `/usr/sbin/ip6tables-restore-translate`
-- `/usr/sbin/ip6tables-save`
-- `/usr/sbin/ip6tables-translate`
-- `/usr/sbin/iptables`
-- `/usr/sbin/iptables-apply`
-- `/usr/sbin/iptables-legacy`
-- `/usr/sbin/iptables-legacy-restore`
-- `/usr/sbin/iptables-legacy-save`
-- `/usr/sbin/iptables-nft`
-- `/usr/sbin/iptables-nft-restore`
-- _...and 100 more_
 
-**usr-local** (3)
+**usr-share** (1)
 
-- `/usr/local/include`
-- `/usr/local/sbin`
-- `/usr/local/src`
+- `/usr/share/lintian/overrides/age`
 
-**usr-share** (586)
+### Only in built (61)
 
-- `/usr/share/PackageKit`
-- `/usr/share/PackageKit/helpers`
-- `/usr/share/PackageKit/helpers/apt`
-- `/usr/share/PackageKit/helpers/apt/pkconffile.nodiff`
-- `/usr/share/PackageKit/helpers/test_spawn`
-- `/usr/share/PackageKit/helpers/test_spawn/search-name.sh`
-- `/usr/share/X11`
-- `/usr/share/X11/XErrorDB`
-- `/usr/share/X11/locale`
-- `/usr/share/X11/locale/C`
-- `/usr/share/X11/locale/C/Compose`
-- `/usr/share/X11/locale/C/XI18N_OBJS`
-- `/usr/share/X11/locale/C/XLC_LOCALE`
-- `/usr/share/X11/locale/am_ET.UTF-8`
-- `/usr/share/X11/locale/am_ET.UTF-8/Compose`
-- `/usr/share/X11/locale/am_ET.UTF-8/XI18N_OBJS`
-- `/usr/share/X11/locale/am_ET.UTF-8/XLC_LOCALE`
-- `/usr/share/X11/locale/armscii-8`
-- `/usr/share/X11/locale/armscii-8/Compose`
-- `/usr/share/X11/locale/armscii-8/XI18N_OBJS`
-- `/usr/share/X11/locale/armscii-8/XLC_LOCALE`
-- `/usr/share/X11/locale/compose.dir`
-- `/usr/share/X11/locale/cs_CZ.UTF-8`
-- `/usr/share/X11/locale/cs_CZ.UTF-8/Compose`
-- `/usr/share/X11/locale/cs_CZ.UTF-8/XI18N_OBJS`
-- `/usr/share/X11/locale/cs_CZ.UTF-8/XLC_LOCALE`
-- `/usr/share/X11/locale/el_GR.UTF-8`
-- `/usr/share/X11/locale/el_GR.UTF-8/Compose`
-- `/usr/share/X11/locale/el_GR.UTF-8/XI18N_OBJS`
-- `/usr/share/X11/locale/el_GR.UTF-8/XLC_LOCALE`
-- `/usr/share/X11/locale/en_US.UTF-8`
-- `/usr/share/X11/locale/en_US.UTF-8/Compose`
-- `/usr/share/X11/locale/en_US.UTF-8/XI18N_OBJS`
-- `/usr/share/X11/locale/en_US.UTF-8/XLC_LOCALE`
-- `/usr/share/X11/locale/fi_FI.UTF-8`
-- `/usr/share/X11/locale/fi_FI.UTF-8/Compose`
-- `/usr/share/X11/locale/fi_FI.UTF-8/XI18N_OBJS`
-- `/usr/share/X11/locale/fi_FI.UTF-8/XLC_LOCALE`
-- `/usr/share/X11/locale/georgian-academy`
-- `/usr/share/X11/locale/georgian-academy/Compose`
-- `/usr/share/X11/locale/georgian-academy/XI18N_OBJS`
-- `/usr/share/X11/locale/georgian-academy/XLC_LOCALE`
-- `/usr/share/X11/locale/georgian-ps`
-- `/usr/share/X11/locale/georgian-ps/Compose`
-- `/usr/share/X11/locale/georgian-ps/XI18N_OBJS`
-- `/usr/share/X11/locale/georgian-ps/XLC_LOCALE`
-- `/usr/share/X11/locale/ibm-cp1133`
-- `/usr/share/X11/locale/ibm-cp1133/Compose`
-- `/usr/share/X11/locale/ibm-cp1133/XI18N_OBJS`
-- `/usr/share/X11/locale/ibm-cp1133/XLC_LOCALE`
-- `/usr/share/X11/locale/iscii-dev`
-- `/usr/share/X11/locale/iscii-dev/Compose`
-- `/usr/share/X11/locale/iscii-dev/XI18N_OBJS`
-- `/usr/share/X11/locale/iscii-dev/XLC_LOCALE`
-- `/usr/share/X11/locale/isiri-3342`
-- `/usr/share/X11/locale/isiri-3342/Compose`
-- `/usr/share/X11/locale/isiri-3342/XI18N_OBJS`
-- `/usr/share/X11/locale/isiri-3342/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-1`
-- `/usr/share/X11/locale/iso8859-1/Compose`
-- `/usr/share/X11/locale/iso8859-1/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-1/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-10`
-- `/usr/share/X11/locale/iso8859-10/Compose`
-- `/usr/share/X11/locale/iso8859-10/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-10/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-11`
-- `/usr/share/X11/locale/iso8859-11/Compose`
-- `/usr/share/X11/locale/iso8859-11/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-11/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-13`
-- `/usr/share/X11/locale/iso8859-13/Compose`
-- `/usr/share/X11/locale/iso8859-13/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-13/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-14`
-- `/usr/share/X11/locale/iso8859-14/Compose`
-- `/usr/share/X11/locale/iso8859-14/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-14/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-15`
-- `/usr/share/X11/locale/iso8859-15/Compose`
-- `/usr/share/X11/locale/iso8859-15/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-15/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-2`
-- `/usr/share/X11/locale/iso8859-2/Compose`
-- `/usr/share/X11/locale/iso8859-2/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-2/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-3`
-- `/usr/share/X11/locale/iso8859-3/Compose`
-- `/usr/share/X11/locale/iso8859-3/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-3/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-4`
-- `/usr/share/X11/locale/iso8859-4/Compose`
-- `/usr/share/X11/locale/iso8859-4/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-4/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-5`
-- `/usr/share/X11/locale/iso8859-5/Compose`
-- `/usr/share/X11/locale/iso8859-5/XI18N_OBJS`
-- `/usr/share/X11/locale/iso8859-5/XLC_LOCALE`
-- `/usr/share/X11/locale/iso8859-6`
-- `/usr/share/X11/locale/iso8859-6/Compose`
-- _...and 486 more_
+**docs** (42)
 
-**var** (6)
+- `/usr/share/doc-base/python3.12-doc.python3.12-api`
+- `/usr/share/doc-base/python3.12-doc.python3.12-ext`
+- `/usr/share/doc-base/python3.12-doc.python3.12-lib`
+- `/usr/share/doc-base/python3.12-doc.python3.12-new`
+- `/usr/share/doc-base/python3.12-doc.python3.12-ref`
+- `/usr/share/doc-base/python3.12-doc.python3.12-tut`
+- `/usr/share/doc/python3-doc`
+- `/usr/share/doc/python3-doc/changelog.Debian.gz`
+- `/usr/share/doc/python3-doc/copyright`
+- `/usr/share/doc/python3.12-doc`
+- `/usr/share/doc/python3.12-doc/changelog.Debian.gz`
+- `/usr/share/doc/python3.12-doc/copyright`
+- `/usr/share/doc/python3.12/html`
+- `/usr/share/doc/python3.12/html/_downloads`
+- `/usr/share/doc/python3.12/html/_downloads/6dc1f3f4f0e6ca13cb42ddf4d6cbc8af`
+- `/usr/share/doc/python3.12/html/_images`
+- `/usr/share/doc/python3.12/html/_sources`
+- `/usr/share/doc/python3.12/html/_sources/c-api`
+- `/usr/share/doc/python3.12/html/_sources/distributing`
+- `/usr/share/doc/python3.12/html/_sources/extending`
+- `/usr/share/doc/python3.12/html/_sources/faq`
+- `/usr/share/doc/python3.12/html/_sources/howto`
+- `/usr/share/doc/python3.12/html/_sources/installing`
+- `/usr/share/doc/python3.12/html/_sources/library`
+- `/usr/share/doc/python3.12/html/_sources/reference`
+- `/usr/share/doc/python3.12/html/_sources/tutorial`
+- `/usr/share/doc/python3.12/html/_sources/using`
+- `/usr/share/doc/python3.12/html/_sources/whatsnew`
+- `/usr/share/doc/python3.12/html/_static`
+- `/usr/share/doc/python3.12/html/_static/jquery.js`
+- `/usr/share/doc/python3.12/html/_static/underscore.js`
+- `/usr/share/doc/python3.12/html/c-api`
+- `/usr/share/doc/python3.12/html/distributing`
+- `/usr/share/doc/python3.12/html/extending`
+- `/usr/share/doc/python3.12/html/faq`
+- `/usr/share/doc/python3.12/html/howto`
+- `/usr/share/doc/python3.12/html/installing`
+- `/usr/share/doc/python3.12/html/library`
+- `/usr/share/doc/python3.12/html/reference`
+- `/usr/share/doc/python3.12/html/tutorial`
+- `/usr/share/doc/python3.12/html/using`
+- `/usr/share/doc/python3.12/html/whatsnew`
 
-- `/var/lib/php/modules/8.4/cli/enabled_by_maint/pdo_sqlite`
-- `/var/lib/php/modules/8.4/cli/enabled_by_maint/sqlite3`
-- `/var/lib/php/modules/8.4/registry/pdo_sqlite`
-- `/var/lib/php/modules/8.4/registry/sqlite3`
-- `/var/lib/ucf/cache/:etc:php:8.4:mods-available:pdo_sqlite.ini`
-- `/var/lib/ucf/cache/:etc:php:8.4:mods-available:sqlite3.ini`
+**etc** (7)
 
-### Only in built (19)
+- `/etc/apt/preferences.d/glib-pin`
+- `/etc/apt/preferences.d/libreoffice-pin`
+- `/etc/apt/preferences.d/live-archive-pin`
+- `/etc/apt/preferences.d/php84-pin`
+- `/etc/apt/preferences.d/postgresql-pin`
+- `/etc/apt/preferences.d/ppa-pin`
+- `/etc/apt/preferences.d/snapshot-pin`
 
-**home** (1)
-
-- `/home/claude/scripts/README`
-
-**java** (1)
-
-- `/usr/lib/jvm/java-21-openjdk-amd64/docs`
-
-**other** (2)
-
-- `/process_api/process_api`
-- `/sbin`
-
-**usr-local** (2)
-
-- `/usr/local/bin/httpx`
-- `/usr/local/bin/websockets`
-
-**usr-share** (13)
+**usr-share** (12)
 
 - `/usr/share/devhelp`
 - `/usr/share/devhelp/books`
-- `/usr/share/devhelp/books/python3.12`
 - `/usr/share/info/python3.12`
 - `/usr/share/info/python3.12.info.gz`
 - `/usr/share/info/python3.12/hashlib-blake2-tree.png`
@@ -839,13 +224,38 @@
 - `/usr/share/info/python3.12/win_installer.png`
 - `/usr/share/lintian/overrides/python3.12-doc`
 
-### Type changed (1)
+### Content changed (hash differs) (329)
 
-**other** (1)
+**docs** (28)
 
-- `/process_api` — f->d
-
-### Content changed (hash differs) (300)
+- `/usr/share/doc/binutils-common/changelog.Debian.gz` — size 1928->1963
+- `/usr/share/doc/fonts-opensymbol/changelog.Debian.gz` — size 36166->42367
+- `/usr/share/doc/fonts-opensymbol/copyright` — size 21830->20199
+- `/usr/share/doc/gdb/changelog.Debian.gz` — size 4004->4529
+- `/usr/share/doc/gnupg-utils/changelog.Debian.gz` — size 6751->6657
+- `/usr/share/doc/gpgconf/changelog.Debian.gz` — size 6753->6659
+- `/usr/share/doc/gpgv/changelog.Debian.gz` — size 6751->6657
+- `/usr/share/doc/libavahi-common-data/changelog.Debian.gz` — size 7839->7616
+- `/usr/share/doc/libctf-nobfd0/changelog.Debian.gz` — size 1931->1965
+- `/usr/share/doc/libcups2t64/changelog.Debian.gz` — size 10464->10249
+- `/usr/share/doc/libglib2.0-0t64/changelog.Debian.gz` — size 31039->30498
+- `/usr/share/doc/libglib2.0-data/changelog.Debian.gz` — size 31039->30498
+- `/usr/share/doc/libheif-plugin-aomdec/changelog.Debian.gz` — size 3052->2889
+- `/usr/share/doc/libpng16-16t64/changelog.Debian.gz` — size 1963->1501
+- `/usr/share/doc/libpython3.12-minimal/changelog.Debian.gz` — size 10631->10516
+- `/usr/share/doc/libsframe1/changelog.Debian.gz` — size 1928->1962
+- `/usr/share/doc/libsodium23/changelog.Debian.gz` — size 749->530
+- `/usr/share/doc/libsubid4/changelog.Debian.gz` — size 6467->6641
+- `/usr/share/doc/libsystemd-shared/changelog.Debian.gz` — size 83113->82886
+- `/usr/share/doc/libsystemd0/changelog.Debian.gz` — size 83110->82883
+- `/usr/share/doc/libtasn1-6/changelog.Debian.gz` — size 2272->2158
+- `/usr/share/doc/libudev1/changelog.Debian.gz` — size 83112->82888
+- `/usr/share/doc/libxml2/changelog.Debian.gz` — size 5122->4762
+- `/usr/share/doc/libxslt1.1/changelog.Debian.gz` — size 1911->1731
+- `/usr/share/doc/linux-libc-dev/changelog.Debian.gz` — size 532128->531692
+- `/usr/share/doc/login/changelog.Debian.gz` — size 6466->6641
+- `/usr/share/doc/passwd/changelog.Debian.gz` — size 6467->6641
+- `/usr/share/doc/systemd-dev/changelog.Debian.gz` — size 83111->82884
 
 **etc** (2)
 
@@ -989,7 +399,7 @@
 - `/root/.gitconfig` — size 251->226
 - `/root/.wget-hsts` — size 209->209
 
-**system-binaries** (97)
+**system-binaries** (116)
 
 - `/usr/bin/busctl` — size 96864->96864
 - `/usr/bin/chage` — size 72184->72184
@@ -1086,16 +496,12 @@
 - `/usr/bin/x86_64-linux-gnu-size` — size 31184->31184
 - `/usr/bin/x86_64-linux-gnu-strings` — size 35440->35440
 - `/usr/bin/x86_64-linux-gnu-strip` — size 166568->166568
-- `/usr/sbin/agetty` — size 60992->60992
-- `/usr/sbin/blkdiscard` — size 22912->22912
-- `/usr/sbin/blkid` — size 55720->55720
-- `/usr/sbin/blkzone` — size 35200->35200
-- `/usr/sbin/blockdev` — size 35200->35200
-- `/usr/sbin/chcpu` — size 31104->31104
+- `/usr/bin/xmlcatalog` — size 22840->22840
+- `/usr/bin/xmllint` — size 80840->80840
 - `/usr/sbin/chgpasswd` — size 59720->59720
-- `/usr/sbin/chmem` — size 35200->35200
 - `/usr/sbin/chpasswd` — size 55736->55736
-- _...and 43 more_
+- `/usr/sbin/cppw` — size 49608->49608
+- _...and 16 more_
 
 **system-libs** (52)
 
@@ -1161,30 +567,9 @@
 - `/usr/share/gdb/python/gdb/dap/sources.py` — size 2990->3137
 - `/usr/share/info/gnupg-module-overview.png` — size 122772->122772
 
-**var** (18)
-
-- `/var/lib/ucf/hashfile` — size 3300->3149
-- `/var/lib/ucf/hashfile.0` — size 3231->3080
-- `/var/lib/ucf/hashfile.1` — size 3172->3021
-- `/var/lib/ucf/hashfile.2` — size 3102->2951
-- `/var/lib/ucf/hashfile.3` — size 3026->2875
-- `/var/lib/ucf/hashfile.4` — size 2953->2802
-- `/var/lib/ucf/hashfile.5` — size 2879->2728
-- `/var/lib/ucf/hashfile.6` — size 2804->2653
-- `/var/lib/ucf/hashfile.7` — size 2729->2578
-- `/var/lib/ucf/registry` — size 2494->2377
-- `/var/lib/ucf/registry.0` — size 2447->2330
-- `/var/lib/ucf/registry.1` — size 2409->2292
-- `/var/lib/ucf/registry.2` — size 2360->2243
-- `/var/lib/ucf/registry.3` — size 2303->2186
-- `/var/lib/ucf/registry.4` — size 2249->2132
-- `/var/lib/ucf/registry.5` — size 2194->2077
-- `/var/lib/ucf/registry.6` — size 2135->2018
-- `/var/lib/ucf/registry.7` — size 2076->1959
-
 ## Excluded (expected differences)
 
-- excluded: 861,439
+- excluded: 867,820
 - expected_only_left: 24,564
-- expected_only_right: 12,906
-- hash_excluded: 1,338
+- expected_only_right: 12,908
+- hash_excluded: 1,336
