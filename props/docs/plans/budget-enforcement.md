@@ -11,6 +11,16 @@ Move budget tracking from `PromptOptimizerTypeConfig.budget_limit` to a proper c
 - LLM proxy logs requests to `llm_requests` table
 - `model_metadata` table has cost info per model
 
+## Design Decisions
+
+- **Budget querying**: Agents query their budget/consumed via `agent_budget_status` view with RLS - no special API needed
+- **Grader budget**: High limit (e.g., $10000) instead of truly unlimited
+- **Unknown models**: Reject requests - enforce via FK that `agent_runs.model` references `model_metadata`
+- **Critic-dev budget**: PO/PI agents specify budget limit explicitly in their spawn tool call
+- **Concurrent overspend**: Acceptable if in-flight requests cause slight overage (leave TODO in impl)
+- **Pre-flight estimate**: Check consumed budget before each call, not estimate future cost
+- **Model metadata RLS**: Grant agents SELECT on `model_metadata` so they can see cost info
+
 ## Design
 
 ### Schema Changes
@@ -18,7 +28,15 @@ Move budget tracking from `PromptOptimizerTypeConfig.budget_limit` to a proper c
 **`agent_runs` table** (column already exists, just needs population):
 
 ```sql
-budget_usd: FLOAT NULL  -- Max USD cost for this agent tree. NULL = unlimited (grader only)
+budget_usd: FLOAT NULL  -- Max USD cost for this agent tree. NULL only for graders (high limit like $10000)
+```
+
+**Add FK constraint** to ensure model is known:
+
+```sql
+ALTER TABLE agent_runs
+ADD CONSTRAINT agent_runs_model_fk
+FOREIGN KEY (model) REFERENCES model_metadata(model_id);
 ```
 
 **Remove** `budget_limit` from `PromptOptimizerTypeConfig` after migration.
@@ -41,6 +59,7 @@ WITH RECURSIVE agent_tree AS (
 ),
 costs AS (
     -- Cost per agent (own LLM requests only)
+    -- INNER JOIN is safe since agent_runs.model has FK to model_metadata
     SELECT
         lr.agent_run_id,
         COALESCE(SUM(
@@ -48,7 +67,7 @@ costs AS (
             COALESCE(lr.output_tokens, 0) * mm.output_cost_per_token
         ), 0) AS own_cost_usd
     FROM llm_requests lr
-    LEFT JOIN model_metadata mm ON lr.model = mm.model_id
+    JOIN model_metadata mm ON lr.model = mm.model_id
     GROUP BY lr.agent_run_id
 )
 SELECT
@@ -79,6 +98,22 @@ Columns:
 - `tree_consumed_usd` - Total cost of this agent + all descendants
 - `remaining_usd` - Budget remaining (NULL if unlimited)
 
+### ORM Model for View
+
+```python
+class AgentBudgetStatus(Base):
+    """Read-only ORM model for agent_budget_status view."""
+
+    __tablename__ = "agent_budget_status"
+    __table_args__ = {"info": {"is_view": True}}
+
+    agent_run_id: Mapped[UUID] = mapped_column(primary_key=True)
+    budget_usd: Mapped[float | None]
+    own_consumed_usd: Mapped[float]
+    tree_consumed_usd: Mapped[float]
+    remaining_usd: Mapped[float | None]
+```
+
 ### Proxy Enforcement
 
 The LLM proxy (`/api/llm/v1/responses`) checks budget before forwarding:
@@ -87,23 +122,16 @@ The LLM proxy (`/api/llm/v1/responses`) checks budget before forwarding:
 async def check_budget(agent_run_id: UUID, db: Database) -> None:
     """Raise 402 Payment Required if agent is out of budget."""
     with db.session() as session:
-        result = session.execute(
-            text("""
-                SELECT budget_usd, tree_consumed_usd
-                FROM agent_budget_status
-                WHERE agent_run_id = :id
-            """),
-            {"id": agent_run_id}
-        ).fetchone()
+        status = session.get(AgentBudgetStatus, agent_run_id)
 
-        if result is None:
+        if status is None:
             raise HTTPException(404, "Agent run not found")
 
-        budget, consumed = result
-        if budget is not None and consumed >= budget:
+        if status.budget_usd is not None and status.tree_consumed_usd >= status.budget_usd:
             raise HTTPException(
                 402,
-                f"Budget exhausted: {consumed:.4f} USD consumed of {budget:.4f} USD limit"
+                f"Budget exhausted: {status.tree_consumed_usd:.4f} USD consumed "
+                f"of {status.budget_usd:.4f} USD limit"
             )
 ```
 
@@ -119,27 +147,26 @@ When spawning a child agent, validate:
 ```python
 def validate_child_budget(
     parent_run_id: UUID,
-    child_budget_usd: float | None,
+    child_budget_usd: float,
     db: Database
 ) -> None:
-    """Validate child agent can be spawned with requested budget."""
-    if child_budget_usd is None:
-        return  # Explicitly unlimited (only valid for graders)
+    """Validate child agent can be spawned with requested budget.
+
+    PO/PI agents specify budget explicitly when spawning critics via tool call.
+    """
+    if child_budget_usd <= 0:
+        raise ValueError(f"child_budget_usd must be positive, got {child_budget_usd}")
 
     with db.session() as session:
-        parent = session.execute(
-            text("SELECT remaining_usd FROM agent_budget_status WHERE agent_run_id = :id"),
-            {"id": parent_run_id}
-        ).fetchone()
+        parent_status = session.get(AgentBudgetStatus, parent_run_id)
 
-        if parent is None:
+        if parent_status is None:
             raise ValueError("Parent agent not found")
 
-        remaining = parent.remaining_usd
-        if remaining is not None and child_budget_usd > remaining:
+        if child_budget_usd > parent_status.remaining_usd:
             raise ValueError(
                 f"Cannot spawn child with budget {child_budget_usd:.4f} USD - "
-                f"parent only has {remaining:.4f} USD remaining"
+                f"parent only has {parent_status.remaining_usd:.4f} USD remaining"
             )
 ```
 
@@ -165,20 +192,17 @@ class AgentConfig(BaseModel):
 
 ### No Default Budget
 
-Budget must always be explicitly specified. The validation layer rejects requests without it (except for graders which are explicitly unlimited).
+Budget must always be explicitly specified. The validation layer rejects requests without it.
 
 ```python
 def validate_budget_for_agent_type(
     agent_type: AgentType,
-    budget_usd: float | None
+    budget_usd: float
 ) -> None:
-    """Ensure budget is appropriate for agent type."""
-    if agent_type == AgentType.GRADER:
-        if budget_usd is not None:
-            raise ValueError("Graders must have unlimited budget (budget_usd=None)")
-    else:
-        if budget_usd is None:
-            raise ValueError(f"{agent_type} agents require explicit budget_usd")
+    """Ensure budget is specified for all agent types."""
+    if budget_usd <= 0:
+        raise ValueError(f"budget_usd must be positive, got {budget_usd}")
+    # Graders get high limit (e.g., $10000), not unlimited
 ```
 
 ### Out of Budget Behavior
@@ -229,7 +253,8 @@ Agent-facing documentation (`.md.j2` templates) needs updates:
 - Budget is enforced at LLM proxy level
 - HTTP 402 response when budget exhausted
 - Agent should handle 402 gracefully (e.g., submit partial work before dying)
-- How to check remaining budget (if API exposed)
+- Query remaining budget via `agent_budget_status` view (RLS-protected)
+- Query model costs via `model_metadata` table
 - Child agent budget constraints (cannot exceed parent's remaining)
 
 ### Grant Permissions
@@ -238,26 +263,17 @@ The `agent_budget_status` view needs SELECT granted to `agent_base` so agents ca
 
 ```sql
 GRANT SELECT ON agent_budget_status TO agent_base;
+GRANT SELECT ON model_metadata TO agent_base;
 ```
 
-RLS on the view should filter to only show the agent's own tree (via `current_agent_run_id()`).
+RLS on the view filters to agent's own tree (via `current_agent_run_id()` and `is_agent_ancestor()`).
 
-## Open Questions
+## Implementation TODOs
 
-1. **Should agents be able to query their remaining budget?** If yes, need an MCP tool or API endpoint. The view exists, just needs exposure.
+Leave in implementation code:
 
-2. **Pre-flight estimate**: Should proxy estimate cost before making the call and reject if estimate would exceed budget? Or just check after each call? (Current design: check consumed budget before each call, not estimate)
-
-3. **Concurrent requests**: If agent makes parallel LLM calls, budget check happens per-request. Could slightly overspend if multiple requests are in flight when budget is nearly exhausted. Is this acceptable? (Likely yes - small overage is fine)
-
-4. **Budget for prompt optimizer's child critics**: When PO spawns critics, how is their budget determined? Options:
-   - PO specifies budget per critic explicitly
-   - Fixed fraction of PO's remaining budget
-   - Configurable in PO's type_config (new field: `per_critic_budget`)
-
-5. **Model metadata completeness**: What if `model_metadata` is missing for a model? Current design returns cost=0 for unknown models. Should we:
-   - Reject requests for unknown models?
-   - Use a default high cost to be safe?
-   - Log warning but allow?
-
-6. **Grader budget justification**: Why are graders unlimited? They're daemons that may run indefinitely. Should they have per-snapshot or per-session budgets instead?
+```python
+# TODO: Concurrent in-flight requests may cause slight budget overspend.
+# This is acceptable - budget check happens per-request before forwarding,
+# but parallel requests could all pass the check before any complete.
+```
