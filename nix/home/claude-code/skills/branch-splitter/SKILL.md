@@ -87,20 +87,7 @@ For each split PR, the rule becomes:
 - **Allowed to fail**: Tests/lint that already failed on base branch
 - **Must not introduce**: New failures not in the baseline
 
-```python
-def validate_pr_against_baseline(pr_branch, baseline_failures):
-    """PR is valid if it doesn't introduce new failures."""
-    pr_failures = run_tests_and_collect_failures(pr_branch)
-    new_failures = pr_failures - baseline_failures
-
-    if new_failures:
-        raise ValidationError(f"PR introduces new failures: {new_failures}")
-
-    # Bonus: check if PR fixes any baseline failures
-    fixed = baseline_failures - pr_failures
-    if fixed:
-        log(f"PR fixes {len(fixed)} pre-existing failures: {fixed}")
-```
+The validation script (`validate-dag-split.py`) implements this comparison — run tests, compare against baseline, and report only new failures.
 
 ### Documentation
 
@@ -251,30 +238,9 @@ For documentation-only PRs (plans, READMEs), build/test validation may be skippe
 
 #### 4.2: DAG Order Validation
 
-**Enumerate all valid orderings** of the DAG and verify each:
+**Enumerate all valid orderings** of the DAG and verify each. The `validate-dag-split.py` script does this automatically — it generates all topological sorts, tests merges in each ordering, and verifies the content invariant.
 
-```python
-def validate_dag_orderings(dag: dict[str, list[str]], branches: list[str], baseline_failures: set[str]):
-    """Validate patches apply cleanly in all valid DAG orderings."""
-    valid_orderings = list(all_topological_sorts(dag))
-
-    for ordering in valid_orderings:
-        with temp_worktree() as ws:
-            for branch in ordering:
-                # Apply branch as patch
-                result = apply_branch_as_patch(ws, branch)
-                assert result.success, f"Failed at {branch} in ordering {ordering}"
-
-                # Build and test - check for NEW failures only
-                current_failures = run_tests_collect_failures(ws)
-                new_failures = current_failures - baseline_failures
-                assert not new_failures, f"New failures at {branch}: {new_failures}"
-
-    # Verify final state matches original
-    assert diff_trees(result_tree, original_branch_tree) == empty
-```
-
-For small DAGs (< 10 nodes), test all orderings. For larger DAGs, sample representative orderings covering:
+For small DAGs (< 10 nodes), it tests all orderings. For larger DAGs, it samples representative orderings covering:
 
 - Each edge exercised at least once
 - Longest path through DAG
@@ -308,22 +274,7 @@ For each PR, verify:
 - [ ] **Docs match behavior**: Changed behavior has matching doc changes
 - [ ] **Tests accompany implementation**: New features include their tests
 
-```python
-def check_pr_consistency(pr_diff):
-    added_symbols = extract_added_symbols(pr_diff)
-    used_symbols = extract_used_symbols(pr_diff)
-    removed_usages = extract_removed_usages(pr_diff)
-
-    # Check no dead code
-    for sym in added_symbols:
-        assert sym in used_symbols, f"Added {sym} but never used"
-
-    # Check no orphaned code (requires full repo context)
-    for usage in removed_usages:
-        remaining = count_usages_in_repo(usage.symbol)
-        if remaining == 0:
-            assert symbol_deleted(usage.symbol), f"{usage.symbol} has no users but wasn't deleted"
-```
+These checks are manual code review items — the validation script handles merge conflicts and content invariants, but symbol usage analysis requires human judgment.
 
 ### Phase 5: Documentation
 

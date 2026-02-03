@@ -79,7 +79,7 @@ def all_topological_sorts(dag: dict[str, list[str]]) -> Iterator[list[str]]:
 
     def backtrack(current: list[str], remaining_in_degree: dict[str, int]) -> Iterator[list[str]]:
         # Find all nodes with in-degree 0 that haven't been added yet
-        available = [n for n in dag if remaining_in_degree[n] == 0 and n not in current]
+        available = [n for n in dag if remaining_in_degree.get(n, -1) == 0 and n not in current]
 
         if not available:
             # No more nodes available
