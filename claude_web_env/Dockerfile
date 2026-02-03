@@ -530,7 +530,8 @@ RUN ln -sf /proc/mounts /etc/mtab
 
 # Fix gcc/g++/python3 symlinks to use update-alternatives (matching live)
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 130 && \
-    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 130
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 130 && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
 # Create directories that exist in live (populated at runtime)
 RUN mkdir -p /root/.local/share/gem /root/.local/lib/python3.11
@@ -552,7 +553,10 @@ RUN rm -rf \
     /usr/share/PackageKit \
     /usr/local/include \
     /usr/local/sbin \
-    /usr/local/src
+    /usr/local/src \
+    /etc/apt/preferences.d \
+    /etc/apt/sources.list.d/snapshot.sources \
+    /etc/apt/sources.list.d/live-archive.sources
 
 # ============================================================================
 # ENVIRONMENT

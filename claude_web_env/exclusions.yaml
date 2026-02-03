@@ -132,9 +132,6 @@ volatile_paths:
   - "/usr/local/bin/golangci-lint"
   - "/usr/local/use-go-*.sh"
 
-  # Python3 symlink (live: /etc/alternatives/python3, built: python3.12)
-  - "/usr/bin/python3"
-
   # DRI drivers (mesa version drift adds/removes driver .so files)
   - "/usr/lib/x86_64-linux-gnu/dri/*"
 
@@ -213,11 +210,6 @@ session_hook_artifacts:
 # ─── Only in built ───────────────────────────────────────────────────────
 # Paths expected only in the built image (build artifacts not present at runtime).
 only_in_built:
-  # APT pinning files (build-time artifact to lock package versions)
-  - "/etc/apt/preferences.d/*"
-  - /etc/apt/sources.list.d/live-archive.sources
-  - /etc/apt/sources.list.d/snapshot.sources
-
   # npm cache from global installs (cleaned in live, present in built)
   - /root/.npm
   - "/root/.npm/**"
