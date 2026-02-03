@@ -62,7 +62,7 @@ PR3: feature.py + test_feature.py (from commit 2)
 
 When the original branch makes logically independent changes to the same file, those changes may belong in different PRs. For example, `models.py` might have both a new enum value (for feature A) and a renamed field (for refactor B).
 
-To split: include the file in both PRs, but apply only the relevant hunks in each. The planning phase must identify which hunks of each file belong to which PR and provide them to the extraction subagent. When two PRs both edit the same file, add a DAG edge between them so one always merges first — otherwise the second PR's diff will conflict.
+To split: include the file in both PRs, but apply only the relevant hunks in each. The planning phase must identify which hunks of each file belong to which PR and provide them to the extraction subagent. Git can auto-merge independent edits to the same file (non-overlapping, non-adjacent hunks), so same-file edits don't automatically require a DAG edge. Only add an edge when the hunks overlap or are adjacent enough to cause merge conflicts.
 
 ## 3. Output Artifacts
 
@@ -206,7 +206,7 @@ Use subagents liberally — they enable parallelism and preserve context.
 ### Coordination Rules
 
 1. **Worktree isolation** — Each subagent works in a separate git worktree
-2. **Shared files require DAG edges** — Multiple PRs can edit the same file, but they must be ordered in the DAG to avoid merge conflicts. When two PRs both modify `auth.py`, one must depend on the other
+2. **Shared files may need DAG edges** — Multiple PRs can edit the same file. Git auto-merges non-overlapping, non-adjacent hunks, so same-file edits don't automatically require ordering. Add a DAG edge only when edits overlap or are adjacent enough to cause merge conflicts
 3. **No shared state** — Subagents communicate via reports, not shared files
 4. **Sequential git ops** — Only one agent commits to a branch at a time
 
