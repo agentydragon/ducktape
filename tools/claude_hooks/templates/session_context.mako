@@ -1,12 +1,14 @@
 Claude Code session start hook [build: ${build_commit}] — ${status}
 Environment: gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-  Storage note: native overlay works on tmpfs (not 9p). `/dev/shm` is 315GB tmpfs. Mount a new exec tmpfs and use `CONTAINERS_STORAGE_CONF` with `driver = "overlay"` for layer caching. See <claude_web_env/docs/sandbox-investigation.md>.
 Bazel: wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
 % if podman:
 Podman: ${podman.status}, DOCKER_HOST=${podman.socket_url}. Use fully qualified image names (docker.io/library/...)
-  `podman run` works (with --network=host). `podman build` works (gVisor workarounds are pre-configured).
-  See tools/claude_hooks/docs/gvisor-dockerfile-build.md for details. Note: RUN steps producing >~3MB stdout may hit a buildah SIGPIPE bug — redirect output if needed.
+  `podman run` works (with --network=host). `podman build` does NOT work in gVisor.
+  See tools/claude_hooks/docs/gvisor-dockerfile-build.md for workaround (podman run+commit).
+% else:
+Podman: not started (run tools/claude_hooks to start)
 % endif
+  Storage: native overlay works on tmpfs (not 9p). `/dev/shm` is 315GB tmpfs. Mount exec tmpfs and use `CONTAINERS_STORAGE_CONF` with `driver = "overlay"` for layer caching. See <claude_web_env/docs/sandbox-investigation.md>.
 % if isinstance(precommit, PrecommitInstallingHooks):
 pre-commit: hook environments installing in background (pid ${precommit.pid}). First `git commit` may block briefly on pre-commit's flock until done. Log: ~/.cache/claude-hooks/pre-commit-install-hooks.log
 % endif

@@ -39,6 +39,9 @@ class Exclusions(BaseModel):
     # Volatile tool installations: any difference is expected (content, presence,
     # permissions). Covers non-deterministic builds like uv tools, rbenv, nvm.
     volatile_paths: list[str] = []
+    # Session start hook artifacts: created by tools/claude_hooks at runtime,
+    # not part of the base container image. Treated as expected_only_in_live.
+    session_hook_artifacts: list[str] = []
     # Skip owner/group comparison entirely (gVisor user namespaces make
     # ownership info in the live capture meaningless — all UIDs map to one user).
     ignore_owner: bool = False
@@ -56,7 +59,10 @@ class Exclusions(BaseModel):
         return any(fnmatch.fnmatch(path, pat) for pat in self.hash_may_differ)
 
     def expected_only_in_live(self, path: str) -> bool:
-        return any(fnmatch.fnmatch(path, pat) for pat in self.only_in_live)
+        # Includes both only_in_live and session_hook_artifacts (both are expected
+        # to exist only in the live container, not in the built image)
+        all_live_only = self.only_in_live + self.session_hook_artifacts
+        return any(fnmatch.fnmatch(path, pat) for pat in all_live_only)
 
     def expected_only_in_built(self, path: str) -> bool:
         return any(fnmatch.fnmatch(path, pat) for pat in self.only_in_built)

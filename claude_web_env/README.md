@@ -8,36 +8,34 @@ full-filesystem manifest diffing.
 ```bash
 cd claude_web_env
 
-# Set up overlay storage on tmpfs (315 GB, supports xattr unlike 9p root)
+# Set up tmpfs storage (REQUIRED - 9p root is too slow)
 mount -t tmpfs -o size=200G,exec tmpfs /tmp/tmpfs-exec
 mkdir -p /tmp/tmpfs-exec/containers/{storage,run}
-cat > /tmp/storage-overlay.conf << 'EOF'
+
+# Create storage config (VFS for >54 layer Dockerfiles)
+cat > /tmp/storage-tmpfs-vfs.conf << 'EOF'
 [storage]
-driver = "overlay"
+driver = "vfs"
 runroot = "/tmp/tmpfs-exec/containers/run"
 graphroot = "/tmp/tmpfs-exec/containers/storage"
 EOF
 
-# Build with overlay layer caching
-CONTAINERS_STORAGE_CONF=/tmp/storage-overlay.conf \
-  podman build \
-    --network=host --isolation=oci \
-    --runtime=/usr/local/bin/crun-gvisor-wrapper \
-    --format=docker \
+# Build (~20 min on tmpfs)
+CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
+  podman build --layers=false \
+    --network=host --isolation=oci --format=docker \
     -t claude-code-web-recreated .
 
 # Capture live manifest (ground truth)
 uv run --script tools/capture-manifest.py > live-manifest.ndjson
 
 # Capture built manifest (via podman mount — can't podman run under gVisor)
-CONTAINERS_STORAGE_CONF=/tmp/storage-overlay.conf \
+CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
   podman create --name capture-tmp localhost/claude-code-web-recreated /bin/true
-MOUNT_PATH=$(CONTAINERS_STORAGE_CONF=/tmp/storage-overlay.conf podman mount capture-tmp)
+MOUNT_PATH=$(CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman mount capture-tmp)
 uv run --script tools/capture-manifest.py "$MOUNT_PATH" > built-manifest.ndjson
-CONTAINERS_STORAGE_CONF=/tmp/storage-overlay.conf \
-  podman unmount capture-tmp && \
-CONTAINERS_STORAGE_CONF=/tmp/storage-overlay.conf \
-  podman rm capture-tmp
+CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman unmount capture-tmp
+CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman rm capture-tmp
 
 # Diff
 uv run --script tools/diff-manifests.py \
@@ -45,20 +43,29 @@ uv run --script tools/diff-manifests.py \
   --exclusions exclusions.yaml -o diff-report.md
 ```
 
-### Why overlay on tmpfs?
+## Storage Driver Choice
 
-The gVisor sandbox root filesystem is 9p (30 GB), which doesn't support xattr —
-required by the overlay filesystem driver. But `/dev/shm` is tmpfs (315 GB) with
-full xattr support. By mounting a new exec-enabled tmpfs and pointing podman's
-storage there, we get native overlay with **layer caching and deduplication**.
+The gVisor sandbox root filesystem is **9p** (30 GB), which is slow and lacks xattr.
+Always use **tmpfs** for podman storage — it's ~10x faster and has 315 GB of space.
 
-This means unchanged Dockerfile steps reuse cached layers instantly, and each
-layer stores only its diff (not a full filesystem copy like VFS).
+| Driver | Config | Layer caching | Layer limit | Speed |
+|--------|--------|---------------|-------------|-------|
+| Overlay on tmpfs | `driver = "overlay"` | Yes | ~54 layers | Fast (cached steps skip) |
+| VFS on tmpfs | `driver = "vfs"` + `--layers=false` | No | None | ~20 min full rebuild |
+| VFS on 9p | Default podman config | No | None | ~60 min (slow I/O) |
 
-**Fallback** (if tmpfs is unavailable): add `--layers=false` and use the default
-VFS driver on 9p. This works but requires a full rebuild every time.
+**Our 98-step Dockerfile exceeds the ~54 layer limit**, so use VFS on tmpfs.
+Multi-stage builds with <50 steps per stage could enable overlay caching.
 
-See <docs/sandbox-investigation.md> for detailed sandbox characterization.
+## Sandbox Constraints
+
+Key constraints when building under gVisor (see <docs/sandbox-investigation.md>):
+
+- **9p root**: No xattr, no overlay. Use tmpfs for container storage.
+- **No `podman run`**: Use `podman create` + `podman mount` for inspection.
+- **`--format=docker`**: Required. Buildah default causes SIGPIPE under gVisor.
+- **`--network=host`**: Required. No bridge networking in gVisor.
+- **Disk budget**: 30 GB on 9p, 315 GB on tmpfs. Always prefer tmpfs.
 
 ## Directory Layout
 
@@ -80,10 +87,20 @@ container filesystem. The Dockerfile COPYs from these paths:
 ```
 rootfs/
 ├── etc/
-│   ├── apt/preferences.d/     # APT version pins
+│   ├── apt/
+│   │   ├── preferences.d/     # APT version pins (php84-pin)
+│   │   └── sources.list.d/    # PPA sources (deb822 format)
 │   └── profile.d/             # Shell profile scripts
-├── home/claude/               # Claude user home
+├── home/claude/
+│   ├── .claude/               # Claude Code settings, hooks, skills
+│   ├── scripts/               # Helper scripts directory
+│   └── README.md
+├── process_api/               # Proprietary process API server
+│   └── process_api            # ELF binary from live container
 ├── root/
+│   ├── .bashrc                # Shell config
+│   ├── .profile               # Login profile
+│   ├── .claude/               # Claude Code settings, skills
 │   ├── .gitconfig
 │   └── .local/bin/env
 └── usr/local/

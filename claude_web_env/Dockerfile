@@ -1,11 +1,10 @@
 # Claude Code Web Container Recreation
 # See docs/container-spec.md for runtime details and gVisor constraints.
 #
-# Build (gVisor/Claude Code web):
-#   podman build --network=host --isolation=oci \
-#     --runtime=/usr/local/bin/crun-gvisor-wrapper \
-#     --format=docker \
-#     -t claude-code-web-recreated .
+# Build (gVisor/Claude Code web — see AGENTS.md for tmpfs setup):
+#   CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
+#     podman build --layers=false --network=host --isolation=oci \
+#     --format=docker -t claude-code-web-recreated .
 #
 # See README.md for the full build/capture/diff recipe.
 
@@ -82,11 +81,10 @@ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 # APT PACKAGES (from snapshot repos)
 # ============================================================================
 
-# Add PHP repository (for PHP 8.4)
+# Add PHP repository (for PHP 8.4) using deb822 .sources format matching live container
+COPY rootfs/etc/apt/sources.list.d/ondrej-ubuntu-php-noble.sources /etc/apt/sources.list.d/ondrej-ubuntu-php-noble.sources
 RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recommends \
     software-properties-common gnupg2 curl && \
-    echo "deb [trusted=yes] http://ppa.launchpadcontent.net/ondrej/php/ubuntu noble main" \
-      > /etc/apt/sources.list.d/ondrej-php.list && \
     printf '%s\n' 'Package: *' 'Pin: origin ppa.launchpadcontent.net' 'Pin-Priority: 1002' \
       > /etc/apt/preferences.d/ppa-pin
 
@@ -146,6 +144,8 @@ RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recomme
     libreoffice-core libreoffice-common python3-uno \
     # JavaScript documentation libraries
     libjs-jquery libjs-sphinxdoc libjs-underscore \
+    # Python documentation
+    python3-doc \
     # Firewall
     nftables \
     # Python 3.12 dev headers (provides python3-config, pkg-config files)
@@ -171,12 +171,9 @@ RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recomme
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python versions from deadsnakes PPA
-# Use direct sources.list instead of add-apt-repository to avoid
-# launchpadlib SSL issues behind TLS-inspecting proxies.
-# Use [trusted=yes] because keyservers may be unreachable in some build environments.
-RUN echo "deb [trusted=yes] http://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu noble main" \
-        > /etc/apt/sources.list.d/deadsnakes-ppa.list && \
-    apt-get update && apt-get install --allow-downgrades -y --no-install-recommends \
+# Use deb822 .sources format matching live container (GPG key inline).
+COPY rootfs/etc/apt/sources.list.d/deadsnakes-ubuntu-ppa-noble.sources /etc/apt/sources.list.d/deadsnakes-ubuntu-ppa-noble.sources
+RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recommends \
     python3.10 python3.10-dev python3.10-venv python3.10-distutils \
     python3.11 python3.11-dev python3.11-venv python3.11-distutils \
     python3.12 python3.12-dev python3.12-venv python3.12-minimal \
@@ -456,8 +453,13 @@ COPY rootfs/usr/local/bin/check-tools /usr/local/bin/check-tools
 RUN chmod +x /usr/local/bin/check-tools
 COPY rootfs/usr/local/bin/use-php-8.4 /usr/local/bin/use-php-8.4
 RUN chmod +x /usr/local/bin/use-php-8.4
-COPY rootfs/usr/local/bin/crun-gvisor-wrapper /usr/local/bin/crun-gvisor-wrapper
-RUN chmod +x /usr/local/bin/crun-gvisor-wrapper
+
+# ============================================================================
+# PROCESS API SERVER
+# ============================================================================
+# Proprietary server from live container (captured as reference/process_api.gz)
+COPY rootfs/process_api/process_api /process_api/process_api
+RUN chmod +x /process_api/process_api
 
 # ============================================================================
 # USER SETUP
@@ -473,6 +475,10 @@ RUN mkdir -p /home/user /home/claude/.claude /home/claude/.ssh /home/claude/scri
 COPY rootfs/root/.local/bin/env /root/.local/bin/env
 RUN chmod +x /root/.local/bin/env
 
+# Root shell dotfiles (captured from live container)
+COPY rootfs/root/.bashrc /root/.bashrc
+COPY rootfs/root/.profile /root/.profile
+
 # Git config
 COPY rootfs/root/.gitconfig /root/.gitconfig
 RUN cp /root/.gitconfig /home/claude/.gitconfig && \
@@ -480,6 +486,23 @@ RUN cp /root/.gitconfig /home/claude/.gitconfig && \
 
 # Claude home README
 COPY rootfs/home/claude/README.md /home/claude/README.md
+
+# Claude scripts directory README
+COPY rootfs/home/claude/scripts/README /home/claude/scripts/README
+
+# ============================================================================
+# CLAUDE CODE CONFIGURATION
+# ============================================================================
+
+# Claude Code settings and hooks for both root and claude user
+COPY rootfs/root/.claude/settings.json /root/.claude/settings.json
+COPY rootfs/root/.claude/skills/session-start-hook/SKILL.md /root/.claude/skills/session-start-hook/SKILL.md
+
+COPY rootfs/home/claude/.claude/settings.json /home/claude/.claude/settings.json
+COPY rootfs/home/claude/.claude/skills/session-start-hook/SKILL.md /home/claude/.claude/skills/session-start-hook/SKILL.md
+COPY rootfs/home/claude/.claude/stop-hook-git-check.sh /home/claude/.claude/stop-hook-git-check.sh
+RUN chmod +x /home/claude/.claude/stop-hook-git-check.sh && \
+    chown -R claude:claude /home/claude/.claude
 
 # ============================================================================
 # PERMISSIONS AND SYMLINKS

@@ -1,0 +1,12 @@
+[user]
+	name = Claude
+	email = noreply@anthropic.com
+	signingkey = /home/claude/.ssh/commit_signing_key.pub
+[gpg]
+	format = ssh
+[gpg "ssh"]
+	program = /tmp/code-sign
+[commit]
+	gpgsign = true
+[http]
+    proxyAuthMethod = basic
