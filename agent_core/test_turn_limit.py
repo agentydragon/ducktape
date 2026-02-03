@@ -16,7 +16,7 @@ from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from openai_utils.model import OpenAIModelProto, UserMessage
 
 
-def echo_n_times(m: EchoMock, n: int, *, then_text: str | None = None) -> Generator[Any, Any]:
+def echo_n_times(m: EchoMock, n: int, then_text: str | None) -> Generator[Any, Any]:
     """Generate n echo roundtrips, optionally followed by assistant text."""
     for i in range(n):
         yield from m.echo_roundtrip(f"call{i + 1}")
@@ -25,14 +25,14 @@ def echo_n_times(m: EchoMock, n: int, *, then_text: str | None = None) -> Genera
 
 
 @pytest.fixture
-def make_agent_with_turn_limit(mcp_tool_provider_echo, recording_handler):
+def make_agent_with_turn_limit(mcp_tool_provider_echo):
     """Factory for creating agents with turn limit."""
 
     async def _make(client: OpenAIModelProto, max_turns: int):
         return await Agent.create(
             tool_provider=mcp_tool_provider_echo,
             client=client,
-            handlers=[FinishOnTextMessageHandler(), recording_handler, MaxTurnsHandler(max_turns=max_turns)],
+            handlers=[FinishOnTextMessageHandler(), MaxTurnsHandler(max_turns=max_turns)],
             tool_policy=RequireAnyTool(),
         )
 
@@ -45,7 +45,7 @@ async def test_turn_limit_exceeded(make_agent_with_turn_limit) -> None:
     @EchoMock.mock()
     def mock(m: EchoMock):
         yield
-        yield from echo_n_times(m, 4)
+        yield from echo_n_times(m, 4, None)
 
     agent = await make_agent_with_turn_limit(mock, max_turns=3)
     agent.process_message(UserMessage.text("keep calling echo"))
@@ -63,7 +63,7 @@ async def test_turn_limit_within_bounds(make_agent_with_turn_limit) -> None:
     @EchoMock.mock()
     def mock(m: EchoMock):
         yield
-        yield from echo_n_times(m, 2, then_text="done")
+        yield from echo_n_times(m, 2, "done")
 
     agent = await make_agent_with_turn_limit(mock, max_turns=5)
     agent.process_message(UserMessage.text("call echo twice"))
@@ -78,7 +78,7 @@ async def test_turn_limit_exactly_at_boundary(make_agent_with_turn_limit) -> Non
     @EchoMock.mock()
     def mock(m: EchoMock):
         yield
-        yield from echo_n_times(m, 2, then_text="done")
+        yield from echo_n_times(m, 2, "done")
 
     agent = await make_agent_with_turn_limit(mock, max_turns=3)
     agent.process_message(UserMessage.text("call echo twice"))
