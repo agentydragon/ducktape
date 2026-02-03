@@ -102,49 +102,41 @@ and `CLONE_NEWUSER`).
 
 ## Kernel Keyring Quota Limit
 
-gVisor imposes a **per-session kernel keyring quota** that limits the total number
-of container builds that can run in a single Claude Code session.
+**Status: FIXED** — The `crun-gvisor-wrapper` now injects `--no-new-keyring` to
+prevent keyring creation entirely. Builds with 100+ RUN steps work without
+hitting quota limits.
 
-**Symptoms**:
+### Background
+
+gVisor imposes a **per-session kernel keyring quota** (~60-70 keyrings). By
+default, crun creates a new session keyring for each container. Without the fix,
+this would limit Dockerfile builds to ~60 RUN steps per session.
+
+**Why crun creates keyrings**: The Linux kernel keyring provides credential
+isolation — secrets stored in a container's keyring are inaccessible to other
+containers. crun uses `keyctl(KEYCTL_JOIN_SESSION_KEYRING)` to create a new
+session keyring when starting each container.
+
+**The fix**: The `--no-new-keyring` flag tells crun to skip keyring creation
+and inherit the parent's session keyring. Our `crun-gvisor-wrapper` injects
+this flag for all `crun create` and `crun run` invocations.
+
+### Historical Context (before fix)
+
+**Symptoms** (no longer occur with the fix):
 
 - `create keyring 'buildah-buildah...': Disk quota exceeded`
 - Builds fail at early RUN steps after previous builds consumed the quota
-- Cleaning up containers/storage does NOT restore quota (keyrings are session-scoped)
+- Cleaning up containers/storage does NOT restore quota
 
-**Root cause**: Each buildah RUN step creates a kernel keyring for credential
-isolation. gVisor's keyring implementation has a fixed quota (exact limit unknown,
-but ~60-70 keyring creations observed before exhaustion). Unlike native Linux
-where `/proc/sys/kernel/keys/*` sysctls can tune limits, gVisor doesn't expose
-these controls.
-
-**Practical impact**:
-
-- VFS storage with `--layers=false`: Each RUN step creates a keyring. A 111-step
-  Dockerfile consumes ~111 keyring slots. After one build attempt that completes
-  ~62 steps, only ~9 slots remain. A retry fails at step 9.
-- Overlay storage with `--layers=true`: Same keyring creation per step, but
-  cached steps don't create new keyrings on rebuild. More efficient for iterative
-  development.
-
-**Workarounds**:
-
-1. Use overlay storage for iterative builds (cached steps don't consume keyrings)
-2. Consolidate RUN instructions to minimize keyring usage per build
-3. For VFS builds, ensure the Dockerfile fits within a single session's quota
-4. Session refresh: Start a new Claude Code session to reset keyring quota
-
-**Diagnostics**: gVisor doesn't expose `/proc/key-users` or keyring sysctls.
-The only indication is the "Disk quota exceeded" error on keyring creation.
-
-**Cannot recover within session**: Testing via direct syscalls confirms:
+**Why recovery was impossible**: gVisor's keyring syscall support is limited:
 
 - `keyctl(KEYCTL_GET_KEYRING_ID)` returns `EDQUOT` once quota is exceeded
 - `keyctl(KEYCTL_CLEAR)` returns `ENOSYS` (not implemented in gVisor)
 - `keyctl(KEYCTL_REVOKE)` returns `ENOSYS` (not implemented in gVisor)
 - `add_key()` returns `EACCES` (permission denied)
 
-gVisor's keyring implementation does not support clearing or revoking keyrings.
-The only recovery path is starting a new Claude Code session.
+gVisor doesn't expose `/proc/sys/kernel/keys/*` sysctls to tune limits.
 
 ## Supported Filesystem Types
 

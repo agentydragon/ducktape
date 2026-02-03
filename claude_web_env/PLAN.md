@@ -1,11 +1,8 @@
 # Current Plan
 
-## Priority 1: Verify Build v11 (Requires Fresh Session)
+## Priority 1: Verify Build v11
 
-The build was blocked by **kernel keyring quota exhaustion** after ~62 RUN steps.
-This is a gVisor limitation documented in `docs/sandbox-investigation.md`.
-
-**Next session**: Run a full build with the latest changes:
+Run a full build with the latest changes:
 
 ```bash
 # Set up tmpfs storage (required for reasonable build times)
@@ -39,7 +36,6 @@ Recent changes to verify:
 
 - **84 layer-creating instructions**: 1 FROM + 43 RUN + 40 COPY
 - **Overlay limit**: 55 total layers (54 RUN/COPY/ADD + 1 FROM)
-- **Keyring limit**: ~60-70 RUN steps per session
 
 ### Consolidation Opportunities
 
@@ -87,9 +83,18 @@ May require post-processing (strip, objcopy) to match exactly.
 
 ## Session Notes
 
-### gVisor Limitations Discovered
+### gVisor Limitations and Fixes
 
-1. **Kernel keyring quota**: ~60-70 keyrings per session. Each buildah RUN creates
-   a keyring. Quota does NOT reset when containers are cleaned up.
+1. **Kernel keyring quota**: ✅ **FIXED** — `crun-gvisor-wrapper` now injects
+   `--no-new-keyring` to prevent keyring creation. Tested with 70+ RUN steps.
 2. **Overlay layer limit**: 55 total layers due to mount option string page size limit.
 3. **Overlay works on tmpfs**: Tested with 55-layer build - cache reuse confirmed.
+
+### Keyring Fix Details
+
+- **Root cause**: crun creates a session keyring for each container via
+  `keyctl(KEYCTL_JOIN_SESSION_KEYRING)` for credential isolation.
+- **gVisor limit**: ~60-70 keyrings per session, not recoverable.
+- **Solution**: `--no-new-keyring` flag tells crun to skip keyring creation.
+- **Implementation**: `tools/claude_hooks/config/podman/crun_gvisor_wrapper.py`
+  now injects this flag for all `crun create` and `crun run` commands.
