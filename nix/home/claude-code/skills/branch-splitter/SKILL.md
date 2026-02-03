@@ -192,6 +192,16 @@ git worktree add ../split-pr2 -b pr2-refactor-x origin/main
 git worktree add ../split-pr3 -b pr3-feature-a pr1-style-fixes  # depends on PR1
 ```
 
+**Worktree Setup**: After creating each worktree, install repo-specific commit hooks:
+
+```bash
+cd ../split-pr1
+pre-commit install  # If repo uses pre-commit
+# Or run any other repo-specific setup scripts
+```
+
+This ensures commits in worktrees go through the same validation as the main repo.
+
 Assign each worktree to a subagent:
 
 ```

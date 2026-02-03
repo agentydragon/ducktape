@@ -17,6 +17,7 @@ DAG JSON format:
 {
   "base": "origin/devel",
   "original_branch": "origin/claude/my-feature-branch",
+  "remote": "origin",
   "test_command": "bazel test //...",
   "build_command": "bazel build --config=check //...",
   "branches": {
@@ -43,13 +44,19 @@ from pydantic import BaseModel
 
 
 class DagConfig(BaseModel):
-    """Configuration for DAG validation."""
+    """Configuration for DAG validation.
+
+    This is a skeleton - customize for your repo by:
+    1. Setting appropriate test_command and build_command
+    2. Optionally adding pre-commit or other validation hooks
+    """
 
     base: str
     original_branch: str
     branches: dict[str, list[str]]
-    test_command: str = "true"
-    build_command: str = "true"
+    remote: str = "origin"  # Remote name for fetching branches
+    test_command: str = "true"  # TODO: Set to your test command, e.g. "bazel test //..."
+    build_command: str = "true"  # TODO: Set to your build command, e.g. "bazel build --config=check //..."
 
 
 def parse_dag_config(path: Path) -> DagConfig:
@@ -145,7 +152,9 @@ def validate_ordering(
         if verbose:
             print(f"    Merging {branch}...")
 
-        result = run_git("merge", "--no-ff", f"origin/{branch}", cwd=worktree, check=False)
+        # Use configured remote (default: origin)
+        branch_ref = f"{config.remote}/{branch}" if config.remote else branch
+        result = run_git("merge", "--no-ff", branch_ref, cwd=worktree, check=False)
 
         if result.returncode != 0:
             return False, f"Conflict merging {branch}: {result.stderr}"
@@ -308,7 +317,8 @@ def main() -> int:
             run_git("checkout", config.base, cwd=worktree)
             run_git("reset", "--hard", config.base, cwd=worktree)
             for branch in orderings[0]:
-                run_git("merge", "--no-ff", f"origin/{branch}", cwd=worktree)
+                branch_ref = f"{config.remote}/{branch}" if config.remote else branch
+                run_git("merge", "--no-ff", branch_ref, cwd=worktree)
 
             success, error = validate_content_invariant(worktree, config, orderings[0], original_diff, args.verbose)
 
