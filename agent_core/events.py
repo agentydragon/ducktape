@@ -34,6 +34,7 @@ __all__ = [
     "SystemText",
     "ToolCall",
     "ToolCallOutput",
+    "TranscriptEvent",
     "UserText",
 ]
 
@@ -120,6 +121,10 @@ EventType = Annotated[
 
 # Alias for cleaner imports
 AgentEvent = EventType
+
+# Subset of events relevant for scripted handlers (ScriptHandler generators).
+# Only ToolCallOutput for now; extend if scripts need to react to other events.
+TranscriptEvent = ToolCallOutput
 
 # Event types relevant for GEPA reflection - excludes ApiRequest/Response to prevent O(n²) context blowup
 REFLECTION_EVENT_TYPES = (ToolCall, ToolCallOutput, AssistantText, ReasoningItem)
