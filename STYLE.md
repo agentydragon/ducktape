@@ -136,6 +136,7 @@ Style and convention rules for this repository. Package-specific elaborations be
 
 ## Testing
 
+- **Test file placement**: Tests for module `a/b/c.py` should be in `a/b/test_c.py`. Keep test files adjacent to the modules they test. This makes it easy to find tests and ensures test coverage is visible in directory listings. Integration tests that span multiple modules can use descriptive names like `test_agent_mcp_integration.py`.
 - **DRY test fixtures**: Extract shared setup logic into pytest fixtures. Avoid duplicating fixture definitions across test files. Prefer conftest.py for fixtures used by multiple test modules.
 - **Fixture imports belong in conftest.py, not test files**: Never import pytest fixtures directly in `test_*.py` files. Instead, add fixture imports to the nearest `conftest.py`. Ruff ignores F401 in conftest files via `per-file-ignores` in `ruff.toml` (`"**/conftest.py" = ["F401"]`), so no `# noqa` comments are needed. Importing fixtures in test files causes F811 (redefinition) when the same name appears as a test function parameter.
 - **Concise test bodies**: Keep test functions focused on assertions. Delegate setup to fixtures.
