@@ -11,7 +11,7 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import uuid4
 
 import anyio
@@ -64,9 +64,6 @@ from openai_utils.model import (
 from openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass
@@ -496,7 +493,7 @@ class Agent:
                 h.on_system_text_event(evt)
 
         else:
-            raise AssertionError(f"Unhandled transcript item type: {type(item).__name__}")
+            raise TypeError(f"Unhandled transcript item type: {type(item).__name__}")
 
     def process_message(self, message: Message) -> None:
         """Add a message to the transcript and notify handlers.
@@ -953,8 +950,8 @@ class Agent:
                     raise ValueError("FunctionCallOutputItem.output is None")
                 result = _openai_to_tool_result(item.output)
                 original_call_id = item.call_id
-                assert isinstance(original_call_id, str)
-                assert original_call_id
+                if not isinstance(original_call_id, str) or not original_call_id:
+                    raise ValueError(f"FunctionCallOutputItem has invalid call_id: {original_call_id!r}")
                 tool_output = ToolCallOutput(call_id=original_call_id, result=result)
                 handled_call_ids.add(original_call_id)
                 self._transcript.append(tool_output)

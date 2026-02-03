@@ -39,7 +39,8 @@ class LoggingHandler(BaseHandler):
         self._logger.debug("Response %s: model=%s tokens=%s", evt.response_id, evt.model, evt.usage.total_tokens)
 
     def on_reasoning(self, item: ReasoningItem) -> None:
-        self._logger.debug("Reasoning: %s", _trunc(item.summary or ""))
+        summary_text = " ".join(s.text for s in item.summary) if item.summary else "(no summary)"
+        self._logger.debug("Reasoning: %s", _trunc(summary_text))
 
     def on_error(self, exc: Exception) -> None:
         self._logger.error("Agent error: %s", exc)

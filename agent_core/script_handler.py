@@ -8,7 +8,7 @@ yields agent actions (tool calls, messages) and receives transcript events
 Generator protocol (batch semantics)::
 
     yield: Sequence[ScriptItem] | None  →  items to inject (None = no action)
-    send:  list[TranscriptEvent]        →  events since last yield
+    send:  list[ScriptEvent]        →  events since last yield
 
 - First yield must be None (prime yield — receive pre-existing events)
 - StopIteration (generator returns) → handler becomes passive (NoAction forever)
@@ -45,7 +45,7 @@ from collections.abc import Callable, Generator, Sequence
 from more_itertools import one
 from pydantic import BaseModel, TypeAdapter
 
-from agent_core.events import ToolCallOutput, TranscriptEvent
+from agent_core.events import ScriptEvent, ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
 from agent_core.tool_provider import ToolResult
@@ -57,7 +57,7 @@ ScriptItem = SystemMessage | UserMessage | FunctionCallItem
 
 type ScriptGen[T = None] = Generator[
     Sequence[ScriptItem] | None,  # yield
-    list[TranscriptEvent],  # send
+    list[ScriptEvent],  # send
     T,  # return
 ]
 
@@ -66,7 +66,7 @@ class ScriptError(Exception):
     """Raised when a scripted step fails."""
 
 
-def find_tool_result(events: list[TranscriptEvent], call_id: str) -> ToolResult:
+def find_tool_result(events: list[ScriptEvent], call_id: str) -> ToolResult:
     """Find the single ToolResult for a specific call_id in a batch of events."""
     return one(
         (evt.result for evt in events if evt.call_id == call_id),
@@ -75,7 +75,7 @@ def find_tool_result(events: list[TranscriptEvent], call_id: str) -> ToolResult:
     )
 
 
-def find_tool_result_typed[T: BaseModel](events: list[TranscriptEvent], call_id: str, output_type: type[T]) -> T:
+def find_tool_result_typed[T: BaseModel](events: list[ScriptEvent], call_id: str, output_type: type[T]) -> T:
     """Find and parse typed structured content for a call_id."""
     result = find_tool_result(events, call_id)
     if result.is_error:
@@ -119,7 +119,7 @@ class ScriptHandler(BaseHandler):
 
     def __init__(self, gen: ScriptGen) -> None:
         self._gen = gen
-        self._events: list[TranscriptEvent] = []
+        self._events: list[ScriptEvent] = []
         self._exhausted = False
 
         # Prime: advance to first yield and assert it's None

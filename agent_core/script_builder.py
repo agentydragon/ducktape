@@ -14,7 +14,7 @@ import pydantic_core
 from pydantic import BaseModel
 from pydantic.networks import AnyUrl
 
-from agent_core.events import TranscriptEvent
+from agent_core.events import ScriptEvent
 from agent_core.script_handler import ScriptError, ScriptGen, find_tool_result_typed
 from mcp_infra.compositor.resources_server import ResourcesReadArgs, ResourcesServer
 from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited
@@ -88,7 +88,7 @@ class ScriptBuilder(ItemFactory):
     ) -> ScriptGen[BaseExecResult]:
         """Yield docker exec call, return BaseExecResult."""
         call = self.docker_exec(runtime, cmd, timeout_ms=timeout_ms)
-        events: list[TranscriptEvent] = yield [call]
+        events: list[ScriptEvent] = yield [call]
         return find_tool_result_typed(events, call.call_id, BaseExecResult)
 
     def exec_ok(
@@ -106,5 +106,5 @@ class ScriptBuilder(ItemFactory):
     ) -> ScriptGen[T]:
         """Yield MCP tool call, return parsed typed output."""
         call = self.call(server, tool, payload)
-        events: list[TranscriptEvent] = yield [call]
+        events: list[ScriptEvent] = yield [call]
         return find_tool_result_typed(events, call.call_id, output_type)

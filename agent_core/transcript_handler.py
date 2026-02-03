@@ -5,12 +5,9 @@ from pathlib import Path
 
 import pydantic_core
 
-from agent_core.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
+from agent_core.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, TranscriptEvent, UserText
 from agent_core.handler import BaseHandler, Response
 from openai_utils.model import ReasoningItem
-
-# Union of all event types we write to transcript
-TranscriptEvent = UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem | Response | ApiRequest
 
 
 class TranscriptHandler(BaseHandler):

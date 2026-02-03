@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agent_core.events import ToolCallOutput, TranscriptEvent
+from agent_core.events import ScriptEvent, ToolCallOutput
 from agent_core.loop_control import InjectItems, NoAction
 from agent_core.script_builder import ScriptBuilder
 from agent_core.script_handler import (
@@ -158,7 +158,7 @@ def test_message_injection():
 
 def test_yield_from_sub_generator():
     def sub_step() -> ScriptGen[str]:
-        events: list[TranscriptEvent] = yield [FunctionCallItem(call_id="sub1", name="sub_tool", arguments="{}")]
+        events: list[ScriptEvent] = yield [FunctionCallItem(call_id="sub1", name="sub_tool", arguments="{}")]
         result = find_tool_result(events, "sub1")
         assert result.structured_content is not None
         return "sub_result"
