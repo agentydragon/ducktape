@@ -12,18 +12,19 @@ from mako.template import Template
 from pydantic import Field
 
 from agent_core.agent import Agent
-from agent_core.handler import BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
-from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, NoAction
+from agent_core.handler import BaseHandler, RedirectOnTextMessageHandler
+from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, NoAction
 from agent_core.mcp_provider import MCPToolProvider
+from agent_core.script_builder import ScriptBuilder
+from agent_core.script_handler import ScriptGen, ScriptHandler
 from git_commit_ai.git_ro.server import DiffFormat, DiffInput, GitRoServer, ListSlice, ShowInput, StatusInput, TextSlice
-from mcp_infra.bootstrap.bootstrap import TypedBootstrapBuilder
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.simple import SimpleFastMCP
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.client_factory import build_client
-from openai_utils.model import FunctionCallItem, UserMessage
+from openai_utils.model import UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Line width limits for commit messages
@@ -33,21 +34,20 @@ COMMIT_MESSAGE_BODY_WIDTH = 80
 _COMMIT_PROMPT_TEMPLATE = Template(filename=str(Path(__file__).parent / "commit_prompt.mako"))
 
 
-def make_commit_bootstrap_calls(
-    builder: TypedBootstrapBuilder, mount_prefix: MCPMountPrefix, git_server: GitRoServer, *, amend: bool
-) -> list[FunctionCallItem]:
-    """Build bootstrap calls for commit message generation."""
-    # Shared slices to avoid repetition
+def commit_bootstrap(
+    b: ScriptBuilder, mount_prefix: MCPMountPrefix, git_server: GitRoServer, *, amend: bool
+) -> ScriptGen:
+    """Bootstrap generator: inject git_ro calls for commit context."""
+    yield None  # prime
+
     no_text_slice = TextSlice(offset_chars=0, max_chars=0)
     patch_text_slice = TextSlice(offset_chars=0, max_chars=50_000)
     staged_list_slice = ListSlice(offset=0, limit=2000)
     patch_list_slice = ListSlice(offset=0, limit=100)
 
     calls = [
-        builder.call(
-            mount_prefix, git_server.status_tool.name, StatusInput(list_slice=ListSlice(offset=0, limit=1000))
-        ),
-        builder.call(
+        b.call(mount_prefix, git_server.status_tool.name, StatusInput(list_slice=ListSlice(offset=0, limit=1000))),
+        b.call(
             mount_prefix,
             git_server.diff_tool.name,
             DiffInput(
@@ -62,7 +62,7 @@ def make_commit_bootstrap_calls(
                 list_slice=staged_list_slice,
             ),
         ),
-        builder.call(
+        b.call(
             mount_prefix,
             git_server.diff_tool.name,
             DiffInput(
@@ -77,7 +77,7 @@ def make_commit_bootstrap_calls(
                 list_slice=staged_list_slice,
             ),
         ),
-        builder.call(
+        b.call(
             mount_prefix,
             git_server.diff_tool.name,
             DiffInput(
@@ -97,14 +97,14 @@ def make_commit_bootstrap_calls(
     if amend:
         calls.extend(
             [
-                builder.call(
+                b.call(
                     mount_prefix,
                     git_server.show_tool.name,
                     ShowInput(
                         object="HEAD", format=DiffFormat.PATCH, slice=patch_text_slice, list_slice=patch_list_slice
                     ),
                 ),
-                builder.call(
+                b.call(
                     mount_prefix,
                     git_server.diff_tool.name,
                     DiffInput(
@@ -122,7 +122,7 @@ def make_commit_bootstrap_calls(
             ]
         )
 
-    return calls
+    yield calls
 
 
 class CommitMessage(OpenAIStrictModeBaseModel):
@@ -211,9 +211,8 @@ async def generate_commit_message_agent(
     )
 
     async with CommitCompositor(repo, submit_state) as comp:
-        builder = TypedBootstrapBuilder.for_server(comp.git_ro.server)
-        bootstrap_calls = make_commit_bootstrap_calls(builder, comp.git_ro.prefix, comp.git_ro.server, amend=amend)
-        bootstrap_handler = SequenceHandler([InjectItems(items=bootstrap_calls)])
+        b = ScriptBuilder()
+        bootstrap_handler = ScriptHandler(commit_bootstrap(b, comp.git_ro.prefix, comp.git_ro.server, amend=amend))
 
         reminder = (
             "You sent a text message instead of taking action. "
