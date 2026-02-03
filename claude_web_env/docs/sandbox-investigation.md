@@ -136,6 +136,16 @@ these controls.
 **Diagnostics**: gVisor doesn't expose `/proc/key-users` or keyring sysctls.
 The only indication is the "Disk quota exceeded" error on keyring creation.
 
+**Cannot recover within session**: Testing via direct syscalls confirms:
+
+- `keyctl(KEYCTL_GET_KEYRING_ID)` returns `EDQUOT` once quota is exceeded
+- `keyctl(KEYCTL_CLEAR)` returns `ENOSYS` (not implemented in gVisor)
+- `keyctl(KEYCTL_REVOKE)` returns `ENOSYS` (not implemented in gVisor)
+- `add_key()` returns `EACCES` (permission denied)
+
+gVisor's keyring implementation does not support clearing or revoking keyrings.
+The only recovery path is starting a new Claude Code session.
+
 ## Supported Filesystem Types
 
 From `/proc/filesystems`:
