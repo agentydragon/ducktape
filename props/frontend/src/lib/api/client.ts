@@ -74,7 +74,7 @@ export async function fetchOverview() {
 
 // Fetch all definitions
 export async function fetchDefinitions(agentType?: AgentType) {
-  const { data, error } = await api.GET("/api/stats/definitions", {
+  const { data, error } = await api.GET("/api/definitions", {
     params: { query: agentType ? { agent_type: agentType } : {} },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch definitions"));

@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 
 from cli_util.logging import LogLevel, configure_logging
 from props.backend.auth import AuthMiddleware
-from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
+from props.backend.routes import agent_definitions, eval, ground_truth, llm, registry, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
@@ -122,6 +122,7 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
     app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
     app.include_router(ground_truth.router, prefix="/api/gt", tags=["ground_truth"])
+    app.include_router(agent_definitions.router, prefix="/api/definitions", tags=["definitions"])
     app.include_router(eval.router, prefix="/api/eval", tags=["eval"])
     app.include_router(llm.router, tags=["llm_proxy"])
     app.include_router(registry.router, tags=["registry_proxy"])

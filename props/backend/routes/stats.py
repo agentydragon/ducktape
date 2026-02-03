@@ -31,16 +31,6 @@ from props.db.models import (
 router = APIRouter(dependencies=[Depends(require_admin_access)])
 
 
-class DefinitionInfo(BaseModel):
-    image_digest: str
-    agent_type: AgentType
-    created_at: datetime
-
-
-class DefinitionsResponse(BaseModel):
-    definitions: list[DefinitionInfo]
-
-
 class SplitScopeStats(BaseModel):
     recall_stats: StatsWithCI | None
     n_examples: int
@@ -118,22 +108,6 @@ def get_overview(admin_db: AdminDb) -> OverviewResponse:
             nested_counts[s][k] = v
 
         return OverviewResponse(definitions=rows, example_counts=dict(nested_counts), total_definitions=len(rows))
-
-
-@router.get("/definitions")
-def list_definitions(admin_db: AdminDb, agent_type: AgentType | None = None) -> DefinitionsResponse:
-    """List all agent definitions, optionally filtered by type."""
-    with admin_db.session() as session:
-        query = session.query(AgentDefinition)
-        if agent_type:
-            query = query.filter_by(agent_type=agent_type)
-        definitions = query.order_by(AgentDefinition.created_at.desc()).all()
-        return DefinitionsResponse(
-            definitions=[
-                DefinitionInfo(image_digest=d.digest, agent_type=AgentType(d.agent_type), created_at=d.created_at)
-                for d in definitions
-            ]
-        )
 
 
 # Per-example stats for a definition

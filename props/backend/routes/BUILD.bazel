@@ -1,6 +1,21 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "agent_definitions",
+    srcs = ["agent_definitions.py"],
+    imports = ["../../.."],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        "//props/backend:auth",
+        "//props/backend:deps",
+        "//props/core:agent_types",
+        "//props/db:models",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "eval",
     srcs = ["eval.py"],
     imports = ["../../.."],

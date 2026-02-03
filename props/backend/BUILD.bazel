@@ -10,7 +10,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 # Per-file targets in this directory:
 #   :app, :auth, :cli, :export_schema
 # Route targets in routes/:
-#   //props/backend/routes:eval, :ground_truth, :llm, :registry, :runs, :stats
+#   //props/backend/routes:agent_definitions, :eval, :ground_truth, :llm, :registry, :runs, :stats
 
 # =============================================================================
 # Per-file targets
@@ -52,6 +52,7 @@ py_library(
         ":auth",
         "//cli_util:logging",
         "//props:config",
+        "//props/backend/routes:agent_definitions",
         "//props/backend/routes:eval",
         "//props/backend/routes:ground_truth",
         "//props/backend/routes:llm",
