@@ -478,6 +478,7 @@ RUN chmod +x /root/.local/bin/env
 # Root shell dotfiles (captured from live container)
 COPY rootfs/root/.bashrc /root/.bashrc
 COPY rootfs/root/.profile /root/.profile
+COPY rootfs/root/.wget-hsts /root/.wget-hsts
 
 # Git config
 COPY rootfs/root/.gitconfig /root/.gitconfig

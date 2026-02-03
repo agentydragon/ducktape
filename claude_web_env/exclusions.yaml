@@ -220,7 +220,6 @@ session_hook_artifacts:
   - /root/.nix-defexpr
   - "/root/.nix-defexpr/**"
   - /root/.nix-profile
-  - /root/.wget-hsts
   # crun-gvisor-wrapper installed by hooks for podman compatibility
   - /usr/local/bin/crun-gvisor-wrapper
   # containers.conf with keep_original_groups fix
