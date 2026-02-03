@@ -86,27 +86,8 @@ def parse_ndjson(path: str) -> dict[str, Entry]:
             stripped = raw_line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
-            if stripped.startswith("{"):
-                entry = Entry.model_validate_json(stripped)
-                entries[entry.path] = entry
-            else:
-                # Legacy TSV fallback
-                parts = stripped.split("\t", 6)
-                if len(parts) != 7:
-                    continue
-                ftype, perms, owner, group, size_str, hash_or_target, fpath = parts
-                sha256 = hash_or_target if ftype == "f" and hash_or_target not in ("-", "LARGE", "UNREADABLE") else None
-                link_target = hash_or_target if ftype == "l" else None
-                entries[fpath] = Entry(
-                    path=fpath,
-                    type=ftype,
-                    perms=perms,
-                    owner=owner,
-                    group=group,
-                    size=int(size_str) if size_str.isdigit() else 0,
-                    sha256=sha256,
-                    link_target=link_target,
-                )
+            entry = Entry.model_validate_json(stripped)
+            entries[entry.path] = entry
     return entries
 
 
