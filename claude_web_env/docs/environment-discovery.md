@@ -35,6 +35,7 @@ PID 1: /process_api --addr 0.0.0.0:2024 \
 **Binary**: `/process_api` (Rust, ELF 64-bit, stripped)
 
 **Help output**:
+
 ```
 Usage: process_api [OPTIONS] --addr <ADDR>
 
@@ -50,6 +51,7 @@ Options:
 ```
 
 **Purpose**:
+
 - Acts as container init (PID 1)
 - Exposes WebSocket API on port 2024
 - Manages container resources (memory: 16GB, CPU shares: 4096)
@@ -121,28 +123,12 @@ From `/usr/local/bin/environment-manager print-sandbox-settings`:
 ```json
 {
   "network": {
-    "allowedDomains": [
-      "api.anthropic.com",
-      "api-staging.anthropic.com",
-      "*.anthropic.com"
-    ],
+    "allowedDomains": ["api.anthropic.com", "api-staging.anthropic.com", "*.anthropic.com"],
     "deniedDomains": []
   },
   "filesystem": {
-    "denyRead": [
-      "~/.ssh",
-      "~/.aws",
-      "~/.config/gcloud",
-      "/etc/shadow",
-      "/etc/passwd-",
-      "/secrets"
-    ],
-    "allowWrite": [
-      "/tmp",
-      "/tmp/claude",
-      "~",
-      "/workspace"
-    ],
+    "denyRead": ["~/.ssh", "~/.aws", "~/.config/gcloud", "/etc/shadow", "/etc/passwd-", "/secrets"],
+    "allowWrite": ["/tmp", "/tmp/claude", "~", "/workspace"],
     "denyWrite": [],
     "allowGitConfig": true
   },
@@ -259,12 +245,12 @@ Flags:
 
 ### Session Modes
 
-| Mode | Description |
-|------|-------------|
-| `new` | Full setup: clone repos, install languages, run init scripts |
-| `resume` | Skip clone, fetch latest, checkout branch |
+| Mode            | Description                                                       |
+| --------------- | ----------------------------------------------------------------- |
+| `new`           | Full setup: clone repos, install languages, run init scripts      |
+| `resume`        | Skip clone, fetch latest, checkout branch                         |
 | `resume-cached` | Reuse existing container state (fastest, default for self-hosted) |
-| `setup-only` | Exit after setup without starting claude |
+| `setup-only`    | Exit after setup without starting claude                          |
 
 ### What It Does (from logs)
 
@@ -297,11 +283,11 @@ Flags:
 
 ### Key Endpoints
 
-| Endpoint | Protocol | Purpose |
-|----------|----------|---------|
-| `wss://api.anthropic.com/v1/session_ingress/ws/{session_id}` | WebSocket | Bidirectional real-time communication |
-| `https://api.anthropic.com/v1/session_ingress/session/{session_id}` | HTTP | Session persistence/recovery |
-| `https://api.anthropic.com/v2/session_ingress/session/{session_id}/events` | HTTP POST | Environment manager logs |
+| Endpoint                                                                   | Protocol  | Purpose                               |
+| -------------------------------------------------------------------------- | --------- | ------------------------------------- |
+| `wss://api.anthropic.com/v1/session_ingress/ws/{session_id}`               | WebSocket | Bidirectional real-time communication |
+| `https://api.anthropic.com/v1/session_ingress/session/{session_id}`        | HTTP      | Session persistence/recovery          |
+| `https://api.anthropic.com/v2/session_ingress/session/{session_id}/events` | HTTP POST | Environment manager logs              |
 
 ### Streaming Protocol
 
@@ -315,6 +301,7 @@ claude \
 ```
 
 **Data Flow:**
+
 ```
 User types in browser
         │
@@ -335,10 +322,10 @@ Rendered in browser UI
 
 Tokens are passed via **file descriptors** (not env vars or CLI args):
 
-| FD | Environment Variable | Purpose |
-|----|---------------------|---------|
-| 3 | `CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR` | WebSocket auth token |
-| 4 | `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` | OAuth token |
+| FD  | Environment Variable                         | Purpose              |
+| --- | -------------------------------------------- | -------------------- |
+| 3   | `CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR` | WebSocket auth token |
+| 4   | `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR`    | OAuth token          |
 
 This keeps secrets out of process listings (`ps aux`) and environment dumps.
 
@@ -433,6 +420,7 @@ strings /tmp/env-mgr-heap.bin | grep -E '^sk-ant-' | sort -u
 ```
 
 **Expected output** (three token types):
+
 ```
 sk-ant-ccsr-eyJ0eXAi...  (Code Signing Request Token)
 sk-ant-oat01-...         (OAuth Access Token)
@@ -440,6 +428,7 @@ sk-ant-si-eyJ0eXAi...    (Session Ingress Token)
 ```
 
 **Decode JWT tokens**:
+
 ```python
 import base64, json
 
@@ -456,16 +445,17 @@ def decode_jwt(token):
 
 #### Token API Capabilities
 
-| Token | Endpoint | Result |
-|-------|----------|--------|
-| OAuth (`sk-ant-oat01-`) | `GET /api/hello` | ✓ `{"message": "hello"}` |
-| OAuth (`sk-ant-oat01-`) | `GET /api/oauth/claude_cli/roles` | ✗ Missing scope `user:profile` |
-| OAuth (`sk-ant-oat01-`) | `POST /v1/messages` | ✗ "OAuth authentication not supported" |
-| Session Ingress (`sk-ant-si-`) | `WSS session_ingress/ws/{id}` | ✗ Single-use (already connected) |
-| Session Ingress (`sk-ant-si-`) | `POST /v1/messages` | ✗ Invalid x-api-key |
-| CCSR (`sk-ant-ccsr-`) | MCP codesign server | ✓ Code signing operations |
+| Token                          | Endpoint                          | Result                                 |
+| ------------------------------ | --------------------------------- | -------------------------------------- |
+| OAuth (`sk-ant-oat01-`)        | `GET /api/hello`                  | ✓ `{"message": "hello"}`               |
+| OAuth (`sk-ant-oat01-`)        | `GET /api/oauth/claude_cli/roles` | ✗ Missing scope `user:profile`         |
+| OAuth (`sk-ant-oat01-`)        | `POST /v1/messages`               | ✗ "OAuth authentication not supported" |
+| Session Ingress (`sk-ant-si-`) | `WSS session_ingress/ws/{id}`     | ✗ Single-use (already connected)       |
+| Session Ingress (`sk-ant-si-`) | `POST /v1/messages`               | ✗ Invalid x-api-key                    |
+| CCSR (`sk-ant-ccsr-`)          | MCP codesign server               | ✓ Code signing operations              |
 
 **Key findings**:
+
 - OAuth token IS valid (authenticates to `/api/hello`) but has limited scopes
 - Session ingress token is single-use per WebSocket connection
 - Inference happens over WebSocket (`session_ingress`), not REST API
@@ -508,6 +498,7 @@ http://container_{container_id}:jwt_{JWT_TOKEN}@21.0.0.127:15004
 ```
 
 **JWT Payload** (decoded):
+
 ```json
 {
   "iss": "anthropic-egress-control",
@@ -523,6 +514,7 @@ http://container_{container_id}:jwt_{JWT_TOKEN}@21.0.0.127:15004
 ```
 
 **JWT Properties**:
+
 - `iss`: Issuer is `anthropic-egress-control`
 - `exp`: ~4 hour expiry from issuance
 - `allowed_hosts`: `*` (but network layer may filter)
@@ -551,11 +543,13 @@ Container runtime
 For tools that don't natively support proxy env vars (e.g., Bazel), the proxy URL can be:
 
 1. **Read from environment** (recommended):
+
    ```bash
    PROXY_URL="$HTTP_PROXY"
    ```
 
 2. **Extracted from PID 1** (if env var not available):
+
    ```bash
    xargs -0 -n1 < /proc/1/environ | grep ^HTTP_PROXY=
    ```
@@ -570,16 +564,17 @@ each tool invocation is safe and reliable - there's no race condition.
 
 **Environment Variables** (all point to same proxy):
 
-| Variable | Purpose |
-|----------|---------|
-| `HTTP_PROXY`, `http_proxy` | Standard HTTP proxy |
-| `HTTPS_PROXY`, `https_proxy` | Standard HTTPS proxy |
-| `GLOBAL_AGENT_HTTP_PROXY` | Node.js global-agent |
-| `GLOBAL_AGENT_HTTPS_PROXY` | Node.js global-agent |
+| Variable                              | Purpose              |
+| ------------------------------------- | -------------------- |
+| `HTTP_PROXY`, `http_proxy`            | Standard HTTP proxy  |
+| `HTTPS_PROXY`, `https_proxy`          | Standard HTTPS proxy |
+| `GLOBAL_AGENT_HTTP_PROXY`             | Node.js global-agent |
+| `GLOBAL_AGENT_HTTPS_PROXY`            | Node.js global-agent |
 | `YARN_HTTP_PROXY`, `YARN_HTTPS_PROXY` | Yarn package manager |
-| `ELECTRON_GET_USE_PROXY=1` | Electron downloads |
+| `ELECTRON_GET_USE_PROXY=1`            | Electron downloads   |
 
 **Bypass List** (`NO_PROXY`, `no_proxy`, `GLOBAL_AGENT_NO_PROXY`):
+
 ```
 localhost,127.0.0.1,169.254.169.254,metadata.google.internal,
 *.svc.cluster.local,*.local,*.googleapis.com,*.google.com
@@ -592,23 +587,27 @@ Git operations use a separate local proxy managed by environment-manager.
 **Proxy Address**: `127.0.0.1:{dynamic_port}` (e.g., 58929)
 
 **Authentication**: Basic auth via URL username:
+
 ```
 http://local_proxy@127.0.0.1:58929/git/{owner}/{repo}
 ```
 
 **Git Remote Rewrite**:
+
 ```
 Original:  https://github.com/user/repo.git
 Rewritten: http://local_proxy@127.0.0.1:58929/git/user/repo
 ```
 
 **Git Configuration** (`~/.gitconfig`):
+
 ```ini
 [http]
     proxyAuthMethod = basic
 ```
 
 **Purpose**:
+
 - Routes git operations through session ingress
 - Enables branch restrictions (e.g., `claude/*` branches only)
 - Provides authentication without exposing tokens
@@ -681,14 +680,15 @@ $ curl -s -X POST http://localhost:$CODESIGN_MCP_PORT/mcp \
 ```
 
 Response:
+
 ```json
 {
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
     "protocolVersion": "2024-11-05",
-    "capabilities": {"tools": {"listChanged": true}},
-    "serverInfo": {"name": "codesign", "version": "1.0.0"}
+    "capabilities": { "tools": { "listChanged": true } },
+    "serverInfo": { "name": "codesign", "version": "1.0.0" }
   }
 }
 ```
@@ -712,10 +712,14 @@ $ curl -s -X POST http://localhost:$CODESIGN_MCP_PORT/mcp \
         "type": "object",
         "required": ["file_path"],
         "properties": {
-          "file_path": {"type": "string", "description": "Path to the file to sign"},
-          "git_object_format": {"type": "string", "default": "sha1", "description": "Git object format (sha1 or sha256)"},
-          "output_path": {"type": "string", "description": "Optional path for signature output"},
-          "repo_directory": {"type": "string", "description": "Git repository working directory"}
+          "file_path": { "type": "string", "description": "Path to the file to sign" },
+          "git_object_format": {
+            "type": "string",
+            "default": "sha1",
+            "description": "Git object format (sha1 or sha256)"
+          },
+          "output_path": { "type": "string", "description": "Optional path for signature output" },
+          "repo_directory": { "type": "string", "description": "Git repository working directory" }
         }
       }
     }
@@ -809,35 +813,35 @@ Located at `~/.claude/skills/session-start-hook/SKILL.md`, teaches how to create
 
 ### Claude-Specific
 
-| Variable | Description |
-|----------|-------------|
-| `CLAUDECODE=true` | Indicates Claude Code environment |
-| `CLAUDE_CODE_CONTAINER_ID` | Container identifier |
-| `CLAUDE_CODE_DEBUG=true` | Debug mode enabled |
-| `CLAUDE_CODE_REMOTE=true` | Running in remote/container environment |
-| `CLAUDE_CODE_SESSION_ID` | Current session identifier |
-| `CLAUDE_CODE_VERSION` | Claude Code version |
-| `CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR=3` | FD for WebSocket auth |
-| `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=4` | FD for OAuth token |
-| `CLAUDE_CODE_PROXY_RESOLVES_HOSTS=true` | Git proxy configuration |
+| Variable                                       | Description                             |
+| ---------------------------------------------- | --------------------------------------- |
+| `CLAUDECODE=true`                              | Indicates Claude Code environment       |
+| `CLAUDE_CODE_CONTAINER_ID`                     | Container identifier                    |
+| `CLAUDE_CODE_DEBUG=true`                       | Debug mode enabled                      |
+| `CLAUDE_CODE_REMOTE=true`                      | Running in remote/container environment |
+| `CLAUDE_CODE_SESSION_ID`                       | Current session identifier              |
+| `CLAUDE_CODE_VERSION`                          | Claude Code version                     |
+| `CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR=3` | FD for WebSocket auth                   |
+| `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=4`    | FD for OAuth token                      |
+| `CLAUDE_CODE_PROXY_RESOLVES_HOSTS=true`        | Git proxy configuration                 |
 
 ### MCP-Specific
 
-| Variable | Description |
-|----------|-------------|
-| `CODESIGN_MCP_PORT` | Port for codesign MCP server |
-| `CODESIGN_MCP_TOKEN` | Auth token for codesign MCP |
-| `MCP_TOOL_TIMEOUT` | Timeout for MCP tool calls |
-| `ENABLE_EXPERIMENTAL_MCP_CLI=true` | Experimental MCP features |
+| Variable                           | Description                  |
+| ---------------------------------- | ---------------------------- |
+| `CODESIGN_MCP_PORT`                | Port for codesign MCP server |
+| `CODESIGN_MCP_TOKEN`               | Auth token for codesign MCP  |
+| `MCP_TOOL_TIMEOUT`                 | Timeout for MCP tool calls   |
+| `ENABLE_EXPERIMENTAL_MCP_CLI=true` | Experimental MCP features    |
 
 ### Proxy Configuration
 
-| Variable | Description |
-|----------|-------------|
-| `GLOBAL_AGENT_HTTPS_PROXY` | HTTPS proxy URL |
-| `GLOBAL_AGENT_HTTP_PROXY` | HTTP proxy URL |
-| `GLOBAL_AGENT_NO_PROXY` | Proxy bypass list |
-| `ANTHROPIC_BASE_URL` | API base URL |
+| Variable                   | Description       |
+| -------------------------- | ----------------- |
+| `GLOBAL_AGENT_HTTPS_PROXY` | HTTPS proxy URL   |
+| `GLOBAL_AGENT_HTTP_PROXY`  | HTTP proxy URL    |
+| `GLOBAL_AGENT_NO_PROXY`    | Proxy bypass list |
+| `ANTHROPIC_BASE_URL`       | API base URL      |
 
 ## Git Proxy
 
@@ -860,6 +864,7 @@ Rewritten: http://local_proxy@127.0.0.1:58929/git/user/repo
 ```
 
 The local proxy then forwards to session ingress:
+
 ```
 https://api.anthropic.com/v1/session_ingress/session/{session_id}/git_proxy/{owner}/{repo}.git/{path}
 ```
@@ -869,6 +874,7 @@ https://api.anthropic.com/v1/session_ingress/session/{session_id}/git_proxy/{own
 The git proxy is implemented in `environment-manager`:
 
 **Source Location** (from binary strings):
+
 ```
 github.com/anthropics/anthropic/api-go/environment-manager/internal/gitproxy/
 ├── handler.go
@@ -877,12 +883,14 @@ github.com/anthropics/anthropic/api-go/environment-manager/internal/gitproxy/
 ```
 
 **Key Types**:
+
 - `gitproxy.Server` - HTTP server handling git requests
 - `gitproxy.Manager` - Lifecycle management, start/stop
 - `gitproxy.RepoAuth` - Per-repository authentication tokens
 - `gitproxy.handler` - Request processing logic
 
 **Environment Variable**:
+
 - `CCR_TEST_GITPROXY=1` - Enables git proxy testing mode
 
 ### Path Validation (Security Analysis)
@@ -891,22 +899,23 @@ Tested whether the git proxy could be used for arbitrary egress (bypassing the J
 
 **Test Results**:
 
-| Path | Response | Conclusion |
-|------|----------|------------|
-| `/` | `Invalid path format` | Root rejected |
-| `/git/agentydragon/ducktape` | 400 Bad Request | Needs full path |
-| `/git/agentydragon/ducktape/info/refs?service=git-upload-pack` | Git protocol data | ✅ Works for authorized repo |
-| `/git/torvalds/linux/info/refs` | `Proxy error: repository not authorized` | Unauthorized repos blocked |
-| `/https://example.com` | `Invalid path format` | Arbitrary URLs rejected |
-| `/api/something` | `Invalid path format` | Non-git paths rejected |
-| `/agentydragon/ducktape` | `Invalid path format` | Must start with `/git/` |
-| `/git/agentydragon/ducktape/../../../etc/passwd` | `Invalid path format` | Path traversal rejected |
-| `/git/agentydragon/ducktape%2f..%2f..%2fetc%2fpasswd` | `Proxy error: invalid git path` | URL-encoded traversal rejected |
-| `/git/agentydragon/ducktape%252f..%252f` | `Invalid path format` | Double-encoded rejected |
-| `/git/agentydragon/*` | `Invalid path format` | Wildcards rejected |
-| HTTP CONNECT to external hosts | No response | CONNECT method not supported |
+| Path                                                           | Response                                 | Conclusion                     |
+| -------------------------------------------------------------- | ---------------------------------------- | ------------------------------ |
+| `/`                                                            | `Invalid path format`                    | Root rejected                  |
+| `/git/agentydragon/ducktape`                                   | 400 Bad Request                          | Needs full path                |
+| `/git/agentydragon/ducktape/info/refs?service=git-upload-pack` | Git protocol data                        | ✅ Works for authorized repo   |
+| `/git/torvalds/linux/info/refs`                                | `Proxy error: repository not authorized` | Unauthorized repos blocked     |
+| `/https://example.com`                                         | `Invalid path format`                    | Arbitrary URLs rejected        |
+| `/api/something`                                               | `Invalid path format`                    | Non-git paths rejected         |
+| `/agentydragon/ducktape`                                       | `Invalid path format`                    | Must start with `/git/`        |
+| `/git/agentydragon/ducktape/../../../etc/passwd`               | `Invalid path format`                    | Path traversal rejected        |
+| `/git/agentydragon/ducktape%2f..%2f..%2fetc%2fpasswd`          | `Proxy error: invalid git path`          | URL-encoded traversal rejected |
+| `/git/agentydragon/ducktape%252f..%252f`                       | `Invalid path format`                    | Double-encoded rejected        |
+| `/git/agentydragon/*`                                          | `Invalid path format`                    | Wildcards rejected             |
+| HTTP CONNECT to external hosts                                 | No response                              | CONNECT method not supported   |
 
 **Error Messages** (from binary):
+
 - `Invalid path format` - Path doesn't match expected pattern
 - `Invalid path format - missing components` - Path incomplete
 - `Proxy error: repository not authorized` - Valid path but unauthorized
@@ -915,11 +924,13 @@ Tested whether the git proxy could be used for arbitrary egress (bypassing the J
 **Path Validation Logic**:
 
 Based on strings in the binary, the proxy appears to use regex validation:
+
 ```
 ^([\w./]+)/((?:\w+)|[*])(.+)?$
 ```
 
 The proxy strictly validates:
+
 1. Path must start with `/git/`
 2. Must have `{owner}/{repo}` format
 3. Repository must be pre-authorized (from session config)
@@ -995,6 +1006,7 @@ Git commits are signed using a bridge between git's GPG interface and the MCP co
 ```
 
 **How it works**:
+
 1. Git calls `/tmp/code-sign` with the file to sign
 2. `code-sign` calls the MCP server's `sign_file` tool
 3. MCP server signs with Ed25519 key (key never leaves server)
@@ -1031,12 +1043,12 @@ Git commits are signed using a bridge between git's GPG interface and the MCP co
 
 #### What's Available
 
-| Method | Works? | Reason |
-|--------|--------|--------|
-| Built-in `Task` tool | ✅ | Official sanctioned mechanism |
-| `claude -p` CLI | ❌ | No auth - tokens in parent's FDs |
-| Direct API calls | ❌ | No `ANTHROPIC_API_KEY` in env |
-| WebSocket hijacking | ❌ | Auth token not accessible |
+| Method               | Works? | Reason                           |
+| -------------------- | ------ | -------------------------------- |
+| Built-in `Task` tool | ✅     | Official sanctioned mechanism    |
+| `claude -p` CLI      | ❌     | No auth - tokens in parent's FDs |
+| Direct API calls     | ❌     | No `ANTHROPIC_API_KEY` in env    |
+| WebSocket hijacking  | ❌     | Auth token not accessible        |
 
 #### Auth Isolation
 
@@ -1049,6 +1061,7 @@ Git commits are signed using a bridge between git's GPG interface and the MCP co
 ```
 
 File descriptors 3 and 4 contain auth tokens but are:
+
 - Pipes, not regular files
 - Not inherited by child processes
 - Not readable from other processes
@@ -1142,9 +1155,7 @@ The Claude CLI inside the container communicates with the Anthropic backend usin
   "messages": [
     {
       "role": "user",
-      "content": [
-        {"type": "text", "text": "User prompt here"}
-      ]
+      "content": [{ "type": "text", "text": "User prompt here" }]
     }
   ],
   "tools": [
@@ -1154,8 +1165,8 @@ The Claude CLI inside the container communicates with the Anthropic backend usin
       "input_schema": {
         "type": "object",
         "properties": {
-          "command": {"type": "string"},
-          "timeout": {"type": "number"}
+          "command": { "type": "string" },
+          "timeout": { "type": "number" }
         },
         "required": ["command"]
       }
@@ -1169,16 +1180,16 @@ The Claude CLI inside the container communicates with the Anthropic backend usin
 
 When `stream: true`, the API returns Server-Sent Events (SSE) with these event types:
 
-| Event Type | Description |
-|------------|-------------|
-| `message_start` | Initial message metadata (id, model, usage) |
-| `content_block_start` | New content block beginning (text or tool_use) |
+| Event Type            | Description                                              |
+| --------------------- | -------------------------------------------------------- |
+| `message_start`       | Initial message metadata (id, model, usage)              |
+| `content_block_start` | New content block beginning (text or tool_use)           |
 | `content_block_delta` | Incremental content (`text_delta` or `input_json_delta`) |
-| `content_block_stop` | Content block finished |
-| `message_delta` | Message-level updates (stop_reason, usage) |
-| `message_stop` | Stream complete |
-| `ping` | Keep-alive |
-| `error` | Error occurred |
+| `content_block_stop`  | Content block finished                                   |
+| `message_delta`       | Message-level updates (stop_reason, usage)               |
+| `message_stop`        | Stream complete                                          |
+| `ping`                | Keep-alive                                               |
+| `error`               | Error occurred                                           |
 
 ### Event Flow Example
 
@@ -1251,7 +1262,9 @@ Over the WebSocket connection, messages are wrapped with session context:
 {
   "type": "api_request",
   "session_id": "session_018FEX...",
-  "request": { /* Standard Messages API payload */ }
+  "request": {
+    /* Standard Messages API payload */
+  }
 }
 ```
 
@@ -1262,7 +1275,9 @@ Responses include:
   "type": "api_response",
   "session_id": "session_018FEX...",
   "event": "content_block_delta",
-  "data": { /* SSE data payload */ }
+  "data": {
+    /* SSE data payload */
+  }
 }
 ```
 
@@ -1277,7 +1292,7 @@ Responses include:
 The WebSocket connection maintains a heartbeat:
 
 ```json
-{"sessionID":"session_018FEX...","lastUpdate":1737316840}
+{ "sessionID": "session_018FEX...", "lastUpdate": 1737316840 }
 ```
 
 ## Making Additional Inference Requests
@@ -1288,12 +1303,12 @@ The WebSocket connection maintains a heartbeat:
 
 The architecture deliberately prevents unauthorized inference requests:
 
-| Method | Result | Reason |
-|--------|--------|--------|
-| Direct Messages API with OAuth token | ❌ 401 | "OAuth authentication not supported" |
-| Direct Messages API with SI token | ❌ 401 | "invalid x-api-key" |
-| New WebSocket with SI token | ❌ 401 | Token is single-use, already consumed |
-| Write to claude stdin via `/proc` | ⚠️ Buffered | Messages queue but format may be wrong |
+| Method                               | Result      | Reason                                 |
+| ------------------------------------ | ----------- | -------------------------------------- |
+| Direct Messages API with OAuth token | ❌ 401      | "OAuth authentication not supported"   |
+| Direct Messages API with SI token    | ❌ 401      | "invalid x-api-key"                    |
+| New WebSocket with SI token          | ❌ 401      | Token is single-use, already consumed  |
+| Write to claude stdin via `/proc`    | ⚠️ Buffered | Messages queue but format may be wrong |
 
 ### Token Single-Use Constraint
 
@@ -1324,6 +1339,7 @@ os.close(fd)
 ```
 
 However:
+
 1. Messages queue in the pipe buffer until claude reads them
 2. The exact format required includes UUIDs and other fields
 3. Claude may reject malformed messages
@@ -1331,11 +1347,11 @@ However:
 
 ### Verified Local Services
 
-| Port | Service | Auth Required | Purpose |
-|------|---------|---------------|---------|
-| `$CODESIGN_MCP_PORT` | Codesign MCP | `$CODESIGN_MCP_TOKEN` | Git commit signing |
-| Dynamic (e.g., 24864) | Git Proxy | Basic auth in URL | Git operations |
-| 2024 | process_api | N/A | Container init (no HTTP API) |
+| Port                  | Service      | Auth Required         | Purpose                      |
+| --------------------- | ------------ | --------------------- | ---------------------------- |
+| `$CODESIGN_MCP_PORT`  | Codesign MCP | `$CODESIGN_MCP_TOKEN` | Git commit signing           |
+| Dynamic (e.g., 24864) | Git Proxy    | Basic auth in URL     | Git operations               |
+| 2024                  | process_api  | N/A                   | Container init (no HTTP API) |
 
 ### WebSocket Hijacking Attempts
 
@@ -1343,18 +1359,19 @@ Can we hijack the existing authenticated WebSocket connection?
 
 **Summary: No, multiple layers of protection.**
 
-| Method | Result | Reason |
-|--------|--------|--------|
-| Open socket via `/proc/{pid}/fd/` | ❌ `ENXIO` | Kernel prevents re-opening sockets |
-| `process_vm_readv/writev` | ❌ `EFAULT` | Memory access denied |
-| Read TLS session keys from memory | ❌ Not found | Keys not in accessible heap region |
-| `/dev/mem` access | ❌ Not accessible | Device not available in container |
-| SCM_RIGHTS socket passing | ❌ N/A | Requires target process cooperation |
-| gdb ptrace injection | ⚠️ Possible | But TLS encryption still blocks raw socket I/O |
+| Method                            | Result            | Reason                                         |
+| --------------------------------- | ----------------- | ---------------------------------------------- |
+| Open socket via `/proc/{pid}/fd/` | ❌ `ENXIO`        | Kernel prevents re-opening sockets             |
+| `process_vm_readv/writev`         | ❌ `EFAULT`       | Memory access denied                           |
+| Read TLS session keys from memory | ❌ Not found      | Keys not in accessible heap region             |
+| `/dev/mem` access                 | ❌ Not accessible | Device not available in container              |
+| SCM_RIGHTS socket passing         | ❌ N/A            | Requires target process cooperation            |
+| gdb ptrace injection              | ⚠️ Possible       | But TLS encryption still blocks raw socket I/O |
 
 **Detailed findings:**
 
 1. **Socket FDs are protected**: Opening `/proc/43/fd/21` (a socket) returns `ENXIO`:
+
    ```python
    os.open("/proc/43/fd/21", os.O_RDWR)
    # OSError: [Errno 6] No such device or address
@@ -1371,36 +1388,40 @@ Can we hijack the existing authenticated WebSocket connection?
    - Then call `SSL_write()` with correct context
 
 4. **Memory layout**:
+
    ```
    SSL_write @ 0x1f15e20 (in Node.js binary)
    SSL_read  @ 0x1f153f0
    TLS_client_method @ 0x1f00dc0
    ```
+
    But finding the SSL context pointer for the WebSocket connection requires:
    - Understanding V8 heap structure
-   - Finding the WebSocket object → TLS socket → SSL*
+   - Finding the WebSocket object → TLS socket → SSL\*
 
 5. **Heap scanning results**:
    - Found 768 potential SSL structures in 80MB heap dump
    - Tested candidates with `SSL_get_fd()` - all returned -1
-   - SSL* pointers likely in V8's managed heap, not the C heap
+   - SSL\* pointers likely in V8's managed heap, not the C heap
    - WebSocket URL found in memory: `wss://api.anthropic.com/v1/session_ingress/ws/{session_id}`
 
 6. **Syscall interception (ptrace)**:
    - Can intercept `write()` syscalls, but data is already TLS-encrypted
    - SSL_write is a library call, not a syscall - can't intercept with ptrace
    - Would need gdb breakpoint on SSL_write + buffer modification
-   - Requires finding the correct SSL* context first
+   - Requires finding the correct SSL\* context first
 
 ### Security Conclusion
 
 The system enforces authentication boundaries:
+
 - **Inference**: Only via the pre-authenticated WebSocket connection
 - **Git operations**: Via authenticated git proxy
 - **Code signing**: Via MCP with separate token
 - **No ANTHROPIC_API_KEY**: Environment has no direct API access
 
 This design ensures that:
+
 1. Only the authorized claude process can make inference requests
 2. Tool execution cannot spawn additional inference
 3. All operations are auditable through session ingress
@@ -1408,13 +1429,13 @@ This design ensures that:
 
 ## Sandbox Constraints Summary
 
-| Category | Constraint |
-|----------|------------|
-| **Network** | Only `*.anthropic.com` domains allowed |
-| **Filesystem read denied** | `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `/etc/shadow`, `/secrets` |
-| **Filesystem write allowed** | `/tmp`, `~`, `/workspace` |
-| **Git config** | Allowed |
-| **Nested sandbox** | Weaker nested sandbox enabled |
+| Category                     | Constraint                                                        |
+| ---------------------------- | ----------------------------------------------------------------- |
+| **Network**                  | Only `*.anthropic.com` domains allowed                            |
+| **Filesystem read denied**   | `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `/etc/shadow`, `/secrets` |
+| **Filesystem write allowed** | `/tmp`, `~`, `/workspace`                                         |
+| **Git config**               | Allowed                                                           |
+| **Nested sandbox**           | Weaker nested sandbox enabled                                     |
 
 ## Process Tree
 

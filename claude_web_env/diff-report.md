@@ -26,12 +26,12 @@ For exact binary matching, still need to pin:
 
 ## Summary
 
-| | Count | % |
-|---|---|---|
-| Identical | 120,924 | 15.4% |
-| Excluded (expected) | 662,767 | 84.5% |
+|                      | Count   | %        |
+| -------------------- | ------- | -------- |
+| Identical            | 120,924 | 15.4%    |
+| Excluded (expected)  | 662,767 | 84.5%    |
 | **Real differences** | **241** | **0.0%** |
-| Total | 783,932 | |
+| Total                | 783,932 |          |
 
 ## Real Differences
 
@@ -235,7 +235,7 @@ For exact binary matching, still need to pin:
 - `/usr/sbin/chgpasswd` — size 59720->59720
 - `/usr/sbin/chmem` — size 35200->35200
 - `/usr/sbin/chpasswd` — size 55736->55736
-- *...and 43 more*
+- _...and 43 more_
 
 **system-libs** (20)
 

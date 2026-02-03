@@ -25,17 +25,17 @@ Usage: process_api [OPTIONS] --addr <ADDR>
 
 Options:
       --addr <ADDR>
-          
+
       --max-ws-buffer-size <MAX_WS_BUFFER_SIZE>
           [default: 32768]
       --memory-limit-bytes <MEMORY_LIMIT_BYTES>
-          
+
       --cpu-shares <CPU_SHARES>
-          
+
       --oom-polling-period-ms <OOM_POLLING_PERIOD_MS>
           [default: 100]
       --cgroupv2
-          
+
       --control-server-addr <CONTROL_SERVER_ADDR>
           Control server address for graceful shutdown and container name updates
       --block-local-connections

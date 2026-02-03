@@ -22,7 +22,8 @@ import os
 import pwd
 import stat
 import sys
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
 
 from manifest import Entry, write_entry
 
@@ -54,14 +55,14 @@ def gid_to_name(gid: int) -> str:
 def sha256_file(path: str) -> str | None:
     h = hashlib.sha256()
     try:
-        with open(path, "rb") as f:
+        with Path(path).open("rb") as f:
             while True:
                 chunk = f.read(1 << 16)
                 if not chunk:
                     break
                 h.update(chunk)
         return h.hexdigest()
-    except (OSError, IOError):
+    except OSError:
         return None
 
 
@@ -89,7 +90,7 @@ def main() -> None:
 
     # Batch entries then flush — submit hash futures for files, write
     # results in order to keep output deterministic.
-    BATCH_SIZE = 500
+    batch_size = 500
 
     with ThreadPoolExecutor(max_workers=HASH_WORKERS) as pool:
         # Each batch item: (entry_without_hash, hash_future_or_None)
@@ -109,7 +110,7 @@ def main() -> None:
         for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
             dirnames.sort()
 
-            entries = [dirpath] + [os.path.join(dirpath, n) for n in sorted(filenames)]
+            entries = [dirpath] + [str(Path(dirpath) / n) for n in sorted(filenames)]
             for path in entries:
                 try:
                     lst = os.lstat(path)
@@ -126,20 +127,20 @@ def main() -> None:
 
                 if stat.S_ISLNK(mode):
                     try:
-                        link_target = os.readlink(path)
+                        link_target = str(Path(path).readlink())
                     except OSError:
                         link_target = None
                 elif stat.S_ISREG(mode) and size <= MAX_HASH_SIZE:
                     hash_future = pool.submit(sha256_file, path)
 
-                recorded_path = path[len(strip_prefix):] if strip_prefix else path
+                recorded_path = path[len(strip_prefix) :] if strip_prefix else path
                 if not recorded_path:
                     recorded_path = "/"
 
                 entry = Entry(
                     path=recorded_path,
                     type=ftype,
-                    perms=oct(stat.S_IMODE(mode))[2:],
+                    perms=f"{stat.S_IMODE(mode):o}",
                     owner=uid_to_name(lst.st_uid),
                     group=gid_to_name(lst.st_gid),
                     size=size,
@@ -147,7 +148,7 @@ def main() -> None:
                 )
                 batch.append((entry, hash_future))
 
-                if len(batch) >= BATCH_SIZE:
+                if len(batch) >= batch_size:
                     flush_batch()
 
         flush_batch()

@@ -22,6 +22,7 @@ CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
 ```
 
 Recent changes to verify:
+
 - **Stripping**: Removes `/usr/share/doc`, `/usr/share/man`, `/usr/include`, `/usr/sbin`
 - **APT sources**: Uses exact deb822 `.sources` files matching live container
 - **process_api**: Baked in from `reference/process_api.gz`
@@ -49,6 +50,7 @@ The 98-step Dockerfile exceeds the overlay layer limit (~54 layers). To enable c
 ## Low Priority: Investigate Remaining Diffs
 
 After achieving <50 differences, investigate individual content changes:
+
 - Timestamps embedded in binaries
 - Build IDs in ELF headers
 - Compilation-time constants

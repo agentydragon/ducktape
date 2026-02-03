@@ -6,7 +6,6 @@ NDJSON format: one JSON object per line per filesystem entry.
 from __future__ import annotations
 
 import fnmatch
-import json
 import sys
 from pathlib import Path
 
@@ -73,7 +72,7 @@ def load_exclusions(path: str | None) -> Exclusions:
         return Exclusions()
     text = Path(path).read_text()
     if path.endswith((".yaml", ".yml")):
-        import yaml
+        import yaml  # noqa: PLC0415  # deferred: pyyaml is optional (only diff-manifests declares it)
 
         data = yaml.safe_load(text)
         return Exclusions.model_validate(data)
@@ -83,25 +82,21 @@ def load_exclusions(path: str | None) -> Exclusions:
 def parse_ndjson(path: str) -> dict[str, Entry]:
     """Parse an NDJSON manifest file into a dict keyed by path."""
     entries: dict[str, Entry] = {}
-    with open(path) as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or line.startswith("#"):
+    with Path(path).open() as fh:
+        for raw_line in fh:
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
                 continue
-            if line.startswith("{"):
-                entry = Entry.model_validate_json(line)
+            if stripped.startswith("{"):
+                entry = Entry.model_validate_json(stripped)
                 entries[entry.path] = entry
             else:
                 # Legacy TSV fallback
-                parts = line.split("\t", 6)
+                parts = stripped.split("\t", 6)
                 if len(parts) != 7:
                     continue
                 ftype, perms, owner, group, size_str, hash_or_target, fpath = parts
-                sha256 = (
-                    hash_or_target
-                    if ftype == "f" and hash_or_target not in ("-", "LARGE", "UNREADABLE")
-                    else None
-                )
+                sha256 = hash_or_target if ftype == "f" and hash_or_target not in ("-", "LARGE", "UNREADABLE") else None
                 link_target = hash_or_target if ftype == "l" else None
                 entries[fpath] = Entry(
                     path=fpath,

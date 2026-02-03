@@ -5,15 +5,15 @@ web sessions, with focus on container build capabilities and storage drivers.
 
 ## Runtime Identity
 
-| Property | Value |
-|----------|-------|
-| Kernel | gVisor (reports `4.4.0`, boot: `vmlinuz-4.4.0-gvisor`) |
-| Platform | x86_64 GNU/Linux |
-| Cgroup hierarchy | v1 (7 controllers: cpu, cpuacct, cpuset, devices, job, memory, pids) |
-| Container ID format | `container_{session_id}--claude_code_remote--{instance_id}` |
-| Root UID | 0 (runs as root inside sandbox) |
-| CPU | 16 cores |
-| Memory | 21 GiB |
+| Property            | Value                                                                |
+| ------------------- | -------------------------------------------------------------------- |
+| Kernel              | gVisor (reports `4.4.0`, boot: `vmlinuz-4.4.0-gvisor`)               |
+| Platform            | x86_64 GNU/Linux                                                     |
+| Cgroup hierarchy    | v1 (7 controllers: cpu, cpuacct, cpuset, devices, job, memory, pids) |
+| Container ID format | `container_{session_id}--claude_code_remote--{instance_id}`          |
+| Root UID            | 0 (runs as root inside sandbox)                                      |
+| CPU                 | 16 cores                                                             |
+| Memory              | 21 GiB                                                               |
 
 gVisor emulates Linux kernel 4.4.0 but supports many newer syscalls. The kernel
 version string is hardcoded and does not reflect the actual gVisor release
@@ -22,13 +22,13 @@ training Redcode AI...", "Preparing for the zombie uprising...").
 
 ## Filesystem Layout
 
-| Mount point | Type | Size | Notes |
-|-------------|------|------|-------|
-| `/` | 9p (v9fs) | 30 GB | Root filesystem, shared with `/tmp` |
-| `/dev/shm` | tmpfs | 315 GB | Shared memory, `noexec,nosuid` by default |
-| `/dev` | tmpfs (devtmpfs) | — | Minimal device nodes |
-| `/proc` | proc | — | gVisor-emulated procfs |
-| `/sys` | sysfs | — | Limited sysfs |
+| Mount point | Type             | Size   | Notes                                     |
+| ----------- | ---------------- | ------ | ----------------------------------------- |
+| `/`         | 9p (v9fs)        | 30 GB  | Root filesystem, shared with `/tmp`       |
+| `/dev/shm`  | tmpfs            | 315 GB | Shared memory, `noexec,nosuid` by default |
+| `/dev`      | tmpfs (devtmpfs) | —      | Minimal device nodes                      |
+| `/proc`     | proc             | —      | gVisor-emulated procfs                    |
+| `/sys`      | sysfs            | —      | Limited sysfs                             |
 
 The 9p filesystem is the primary I/O bottleneck. It supports symlinks, hardlinks,
 and standard POSIX operations, but **does not support extended attributes (xattr)**.
@@ -37,25 +37,25 @@ and standard POSIX operations, but **does not support extended attributes (xattr
 
 Granted (bitmask `0xa82c35fb`):
 
-| Capability | Status |
-|------------|--------|
-| `CAP_CHOWN` | granted |
-| `CAP_DAC_OVERRIDE` | granted |
-| `CAP_FOWNER` | granted |
-| `CAP_FSETID` | granted |
-| `CAP_KILL` | granted |
-| `CAP_SETGID` | granted |
-| `CAP_SETUID` | granted |
-| `CAP_SETPCAP` | granted |
-| `CAP_NET_BIND_SERVICE` | granted |
-| `CAP_NET_ADMIN` | granted |
-| `CAP_NET_RAW` | granted |
-| `CAP_SYS_CHROOT` | granted |
-| `CAP_SYS_PTRACE` | granted |
-| `CAP_SYS_ADMIN` | granted |
-| `CAP_MKNOD` | granted (but `mknod` fails: EPERM) |
-| `CAP_AUDIT_WRITE` | granted |
-| `CAP_SETFCAP` | granted |
+| Capability             | Status                             |
+| ---------------------- | ---------------------------------- |
+| `CAP_CHOWN`            | granted                            |
+| `CAP_DAC_OVERRIDE`     | granted                            |
+| `CAP_FOWNER`           | granted                            |
+| `CAP_FSETID`           | granted                            |
+| `CAP_KILL`             | granted                            |
+| `CAP_SETGID`           | granted                            |
+| `CAP_SETUID`           | granted                            |
+| `CAP_SETPCAP`          | granted                            |
+| `CAP_NET_BIND_SERVICE` | granted                            |
+| `CAP_NET_ADMIN`        | granted                            |
+| `CAP_NET_RAW`          | granted                            |
+| `CAP_SYS_CHROOT`       | granted                            |
+| `CAP_SYS_PTRACE`       | granted                            |
+| `CAP_SYS_ADMIN`        | granted                            |
+| `CAP_MKNOD`            | granted (but `mknod` fails: EPERM) |
+| `CAP_AUDIT_WRITE`      | granted                            |
+| `CAP_SETFCAP`          | granted                            |
 
 Notable absences: `CAP_DAC_READ_SEARCH`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`,
 `CAP_SYS_RESOURCE`, `CAP_SYS_TIME`.
@@ -64,40 +64,40 @@ Notable absences: `CAP_DAC_READ_SEARCH`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`,
 
 All Linux namespace types are functional via `unshare()`:
 
-| Namespace | Status |
-|-----------|--------|
-| `CLONE_NEWUSER` | works |
-| `CLONE_NEWNS` | works |
-| `CLONE_NEWPID` | works |
-| `CLONE_NEWNET` | works |
-| `CLONE_NEWUTS` | works |
-| `CLONE_NEWIPC` | works |
-| `CLONE_NEWCGROUP` | works |
+| Namespace         | Status |
+| ----------------- | ------ |
+| `CLONE_NEWUSER`   | works  |
+| `CLONE_NEWNS`     | works  |
+| `CLONE_NEWPID`    | works  |
+| `CLONE_NEWNET`    | works  |
+| `CLONE_NEWUTS`    | works  |
+| `CLONE_NEWIPC`    | works  |
+| `CLONE_NEWCGROUP` | works  |
 
 This is why podman/buildah can run container builds (they use `CLONE_NEWNS`
 and `CLONE_NEWUSER`).
 
 ## Syscall Support
 
-| Syscall | Status | Notes |
-|---------|--------|-------|
-| `mount(overlay)` on 9p | EINVAL | 9p lacks xattr support required by overlay |
-| `mount(overlay)` on tmpfs | works | tmpfs supports xattr |
-| `mount(tmpfs)` | works | Can create new tmpfs mounts with arbitrary options |
-| `mount -o remount` | works | Can change mount flags (e.g., remove `noexec`) |
-| `xattr` on 9p | ENOTSUP | Extended attributes not supported on 9p |
-| `xattr` on tmpfs | works | Full xattr support |
-| `mknod` | EPERM | Even with `CAP_MKNOD` |
-| `chroot` | works | |
-| FUSE (`/dev/fuse`) | partial | FUSE mounts succeed but `FUSE_CAP_READDIRPLUS` (0x40) is not supported; fuse-overlayfs silently fails to enumerate lower dir |
-| `inotify` | works | |
-| `epoll` | works | |
-| `eventfd` | works | |
-| `memfd_create` | works | |
-| `pipe2` | works | |
-| `sendfile` | works | |
-| `timerfd_create` | works | |
-| `signalfd` | EINVAL | |
+| Syscall                   | Status  | Notes                                                                                                                        |
+| ------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `mount(overlay)` on 9p    | EINVAL  | 9p lacks xattr support required by overlay                                                                                   |
+| `mount(overlay)` on tmpfs | works   | tmpfs supports xattr                                                                                                         |
+| `mount(tmpfs)`            | works   | Can create new tmpfs mounts with arbitrary options                                                                           |
+| `mount -o remount`        | works   | Can change mount flags (e.g., remove `noexec`)                                                                               |
+| `xattr` on 9p             | ENOTSUP | Extended attributes not supported on 9p                                                                                      |
+| `xattr` on tmpfs          | works   | Full xattr support                                                                                                           |
+| `mknod`                   | EPERM   | Even with `CAP_MKNOD`                                                                                                        |
+| `chroot`                  | works   |                                                                                                                              |
+| FUSE (`/dev/fuse`)        | partial | FUSE mounts succeed but `FUSE_CAP_READDIRPLUS` (0x40) is not supported; fuse-overlayfs silently fails to enumerate lower dir |
+| `inotify`                 | works   |                                                                                                                              |
+| `epoll`                   | works   |                                                                                                                              |
+| `eventfd`                 | works   |                                                                                                                              |
+| `memfd_create`            | works   |                                                                                                                              |
+| `pipe2`                   | works   |                                                                                                                              |
+| `sendfile`                | works   |                                                                                                                              |
+| `timerfd_create`          | works   |                                                                                                                              |
+| `signalfd`                | EINVAL  |                                                                                                                              |
 
 ## Supported Filesystem Types
 
@@ -194,11 +194,11 @@ No block devices, no loop devices, no `/dev/mapper`.
 Podman 4.1.1+ supports BuildKit-style `RUN --mount=type=cache` syntax natively
 (no separate BuildKit daemon needed). However, under gVisor:
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Single cache mount | works | `RUN --mount=type=cache,target=/path` |
-| Multiple cache mounts | fails | Exit status 100 with gVisor |
-| `sharing=locked` option | fails | gVisor doesn't support this mode |
+| Feature                 | Status | Notes                                 |
+| ----------------------- | ------ | ------------------------------------- |
+| Single cache mount      | works  | `RUN --mount=type=cache,target=/path` |
+| Multiple cache mounts   | fails  | Exit status 100 with gVisor           |
+| `sharing=locked` option | fails  | gVisor doesn't support this mode      |
 
 **Workaround**: Use separate RUN instructions for each cache mount, or combine
 directories under a single mount target.

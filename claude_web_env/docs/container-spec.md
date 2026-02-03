@@ -8,24 +8,24 @@ parts that aren't captured there.
 
 ## Runtime Environment
 
-| Property | Value |
-|----------|-------|
-| OS | Ubuntu 24.04.3 LTS (Noble Numbat) |
-| Kernel | Linux 4.4.0 (gVisor sandbox) |
-| Architecture | x86_64 |
-| CPUs | 16 |
-| Memory | 21Gi |
-| Disk | 30G root filesystem |
-| Hostname | runsc |
+| Property     | Value                             |
+| ------------ | --------------------------------- |
+| OS           | Ubuntu 24.04.3 LTS (Noble Numbat) |
+| Kernel       | Linux 4.4.0 (gVisor sandbox)      |
+| Architecture | x86_64                            |
+| CPUs         | 16                                |
+| Memory       | 21Gi                              |
+| Disk         | 30G root filesystem               |
+| Hostname     | runsc                             |
 
 ## Anthropic-Specific Components
 
 Proprietary binaries stored in `binaries/`:
 
-| Binary | Path | Purpose |
-|--------|------|---------|
-| environment-manager | `/usr/local/bin/environment-manager` | Process manager, HTTP proxy |
-| process_api | `/process_api` | Container process API (not snapshotted) |
+| Binary              | Path                                 | Purpose                                 |
+| ------------------- | ------------------------------------ | --------------------------------------- |
+| environment-manager | `/usr/local/bin/environment-manager` | Process manager, HTTP proxy             |
+| process_api         | `/process_api`                       | Container process API (not snapshotted) |
 
 `/container_info.json` contains per-session metadata (`container_name`,
 `creation_time`).
@@ -66,8 +66,8 @@ required (gVisor breaks the build sandbox). See `tools/claude_hooks/nix_setup.py
 
 ## Users
 
-| User | UID | Home | Shell |
-|------|-----|------|-------|
-| root | 0 | /root | /bin/bash |
-| claude | 999 | /home/claude | /bin/bash |
+| User   | UID  | Home         | Shell     |
+| ------ | ---- | ------------ | --------- |
+| root   | 0    | /root        | /bin/bash |
+| claude | 999  | /home/claude | /bin/bash |
 | ubuntu | 1000 | /home/ubuntu | /bin/bash |

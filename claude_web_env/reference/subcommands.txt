@@ -15,7 +15,7 @@ Provide a JSON object via stdin with the following structure:
   "auth": [
     {
       "type": "github_app",
-      "url": "github.com",  
+      "url": "github.com",
       "token": "ghs_..."
     }
   ]

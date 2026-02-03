@@ -32,14 +32,7 @@ from pathlib import Path
 from manifest import Entry, Exclusions, load_exclusions, parse_ndjson
 from pydantic import BaseModel
 
-REAL_DIFF_STATUSES = {
-    "only_left",
-    "only_right",
-    "type_changed",
-    "content_changed",
-    "link_changed",
-    "metadata_changed",
-}
+REAL_DIFF_STATUSES = {"only_left", "only_right", "type_changed", "content_changed", "link_changed", "metadata_changed"}
 
 
 class DiffResult(BaseModel):
@@ -52,11 +45,7 @@ class DiffResult(BaseModel):
     right: Entry | None = None
 
 
-def diff_manifests(
-    left: dict[str, Entry],
-    right: dict[str, Entry],
-    excl: Exclusions,
-) -> list[DiffResult]:
+def diff_manifests(left: dict[str, Entry], right: dict[str, Entry], excl: Exclusions) -> list[DiffResult]:
     all_paths = sorted(set(left) | set(right))
     results: list[DiffResult] = []
 
@@ -81,7 +70,8 @@ def diff_manifests(
                 results.append(DiffResult(path=path, status="only_right", right=re))
             continue
 
-        assert le and re
+        assert le
+        assert re
 
         # Volatile paths: any difference is expected
         volatile = excl.is_volatile(path)
@@ -91,9 +81,7 @@ def diff_manifests(
                 results.append(DiffResult(path=path, status="hash_excluded", details="volatile", left=le, right=re))
                 continue
             results.append(
-                DiffResult(
-                    path=path, status="type_changed", details=f"{le.type}->{re.type}", left=le, right=re
-                )
+                DiffResult(path=path, status="type_changed", details=f"{le.type}->{re.type}", left=le, right=re)
             )
             continue
 
@@ -103,11 +91,7 @@ def diff_manifests(
                 continue
             results.append(
                 DiffResult(
-                    path=path,
-                    status="link_changed",
-                    details=f"{le.link_target}->{re.link_target}",
-                    left=le,
-                    right=re,
+                    path=path, status="link_changed", details=f"{le.link_target}->{re.link_target}", left=le, right=re
                 )
             )
             continue
@@ -115,23 +99,11 @@ def diff_manifests(
         if le.type == "f" and le.sha256 and re.sha256 and le.sha256 != re.sha256:
             if excl.hash_ok_to_differ(path) or volatile:
                 results.append(
-                    DiffResult(
-                        path=path,
-                        status="hash_excluded",
-                        details="hash differs (expected)",
-                        left=le,
-                        right=re,
-                    )
+                    DiffResult(path=path, status="hash_excluded", details="hash differs (expected)", left=le, right=re)
                 )
                 continue
             results.append(
-                DiffResult(
-                    path=path,
-                    status="content_changed",
-                    details=f"size {le.size}->{re.size}",
-                    left=le,
-                    right=re,
-                )
+                DiffResult(path=path, status="content_changed", details=f"size {le.size}->{re.size}", left=le, right=re)
             )
             continue
 
@@ -147,9 +119,7 @@ def diff_manifests(
                 results.append(DiffResult(path=path, status="hash_excluded", details="volatile", left=le, right=re))
                 continue
             results.append(
-                DiffResult(
-                    path=path, status="metadata_changed", details=", ".join(changes), left=le, right=re
-                )
+                DiffResult(path=path, status="metadata_changed", details=", ".join(changes), left=le, right=re)
             )
             continue
 
@@ -198,9 +168,7 @@ def generate_report(results: list[DiffResult], left_label: str, right_label: str
     lines: list[str] = []
     matches = [r for r in results if r.status == "match"]
     excluded = [
-        r
-        for r in results
-        if r.status in ("excluded", "hash_excluded", "expected_only_left", "expected_only_right")
+        r for r in results if r.status in ("excluded", "hash_excluded", "expected_only_left", "expected_only_right")
     ]
     real_diffs = [r for r in results if r.status in REAL_DIFF_STATUSES]
 
@@ -213,11 +181,9 @@ def generate_report(results: list[DiffResult], left_label: str, right_label: str
     total = len(results)
     lines.append("| | Count | % |")
     lines.append("|---|---|---|")
-    lines.append(f"| Identical | {len(matches):,} | {100*len(matches)/total:.1f}% |")
-    lines.append(f"| Excluded (expected) | {len(excluded):,} | {100*len(excluded)/total:.1f}% |")
-    lines.append(
-        f"| **Real differences** | **{len(real_diffs):,}** | **{100*len(real_diffs)/total:.1f}%** |"
-    )
+    lines.append(f"| Identical | {len(matches):,} | {100 * len(matches) / total:.1f}% |")
+    lines.append(f"| Excluded (expected) | {len(excluded):,} | {100 * len(excluded) / total:.1f}% |")
+    lines.append(f"| **Real differences** | **{len(real_diffs):,}** | **{100 * len(real_diffs) / total:.1f}%** |")
     lines.append(f"| Total | {total:,} | |")
     lines.append("")
 
@@ -232,14 +198,7 @@ def generate_report(results: list[DiffResult], left_label: str, right_label: str
 
     lines.append("## Real Differences")
     lines.append("")
-    for status in [
-        "only_left",
-        "only_right",
-        "type_changed",
-        "content_changed",
-        "link_changed",
-        "metadata_changed",
-    ]:
+    for status in ["only_left", "only_right", "type_changed", "content_changed", "link_changed", "metadata_changed"]:
         items = by_status.get(status, [])
         if not items:
             continue
@@ -267,7 +226,7 @@ def generate_report(results: list[DiffResult], left_label: str, right_label: str
                 detail = f" — {r.details}" if r.details else ""
                 lines.append(f"- `{r.path}`{detail}")
             if len(cat_items) > 100:
-                lines.append(f"- *...and {len(cat_items)-100} more*")
+                lines.append(f"- *...and {len(cat_items) - 100} more*")
             lines.append("")
 
     # Summary of excluded items

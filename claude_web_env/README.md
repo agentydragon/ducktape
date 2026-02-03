@@ -48,11 +48,11 @@ uv run --script tools/diff-manifests.py \
 The gVisor sandbox root filesystem is **9p** (30 GB), which is slow and lacks xattr.
 Always use **tmpfs** for podman storage — it's ~10x faster and has 315 GB of space.
 
-| Driver | Config | Layer caching | Layer limit | Speed |
-|--------|--------|---------------|-------------|-------|
-| Overlay on tmpfs | `driver = "overlay"` | Yes | ~54 layers | Fast (cached steps skip) |
-| VFS on tmpfs | `driver = "vfs"` + `--layers=false` | No | None | ~20 min full rebuild |
-| VFS on 9p | Default podman config | No | None | ~60 min (slow I/O) |
+| Driver           | Config                              | Layer caching | Layer limit | Speed                    |
+| ---------------- | ----------------------------------- | ------------- | ----------- | ------------------------ |
+| Overlay on tmpfs | `driver = "overlay"`                | Yes           | ~54 layers  | Fast (cached steps skip) |
+| VFS on tmpfs     | `driver = "vfs"` + `--layers=false` | No            | None        | ~20 min full rebuild     |
+| VFS on 9p        | Default podman config               | No            | None        | ~60 min (slow I/O)       |
 
 **Our 98-step Dockerfile exceeds the ~54 layer limit**, so use VFS on tmpfs.
 Multi-stage builds with <50 steps per stage could enable overlay caching.
@@ -69,15 +69,15 @@ Key constraints when building under gVisor (see <docs/sandbox-investigation.md>)
 
 ## Directory Layout
 
-| Path | Purpose |
-|------|---------|
-| `Dockerfile` | Full container build from Ubuntu 24.04 |
-| `exclusions.yaml` | Diff-time exclusion rules (commented) |
-| `rootfs/` | **Container content** — mirrors live filesystem structure |
-| `tools/` | Build/diff tooling (capture-manifest.py, diff-manifests.py) |
-| `reference/` | Reference snapshots from live (not used in build) |
-| `docs/` | Container spec, sandbox investigation, skill definitions |
-| `proxy-ca/` | Build-time TLS certificates (from TLS-inspecting proxy) |
+| Path              | Purpose                                                     |
+| ----------------- | ----------------------------------------------------------- |
+| `Dockerfile`      | Full container build from Ubuntu 24.04                      |
+| `exclusions.yaml` | Diff-time exclusion rules (commented)                       |
+| `rootfs/`         | **Container content** — mirrors live filesystem structure   |
+| `tools/`          | Build/diff tooling (capture-manifest.py, diff-manifests.py) |
+| `reference/`      | Reference snapshots from live (not used in build)           |
+| `docs/`           | Container spec, sandbox investigation, skill definitions    |
+| `proxy-ca/`       | Build-time TLS certificates (from TLS-inspecting proxy)     |
 
 ### `rootfs/` Structure
 
@@ -127,26 +127,26 @@ Exclusions apply at diff time only, so manifests never need recapturing.
 
 Configured in `exclusions.yaml`:
 
-| Category | Purpose |
-|----------|---------|
-| `skip_paths` | Ignored entirely (`/proc`, `/sys`, caches) |
-| `volatile_paths` | Differences expected (tool builds: rbenv, nvm, uv, rustup) |
-| `hash_may_differ` | File must exist on both sides, content may differ |
-| `only_in_live` | Expected only in live (proprietary binaries, runtime state) |
-| `only_in_built` | Expected only in built (npm cache artifacts) |
-| `ignore_owner`/`ignore_group` | Skip ownership (gVisor UID mapping) |
+| Category                      | Purpose                                                     |
+| ----------------------------- | ----------------------------------------------------------- |
+| `skip_paths`                  | Ignored entirely (`/proc`, `/sys`, caches)                  |
+| `volatile_paths`              | Differences expected (tool builds: rbenv, nvm, uv, rustup)  |
+| `hash_may_differ`             | File must exist on both sides, content may differ           |
+| `only_in_live`                | Expected only in live (proprietary binaries, runtime state) |
+| `only_in_built`               | Expected only in built (npm cache artifacts)                |
+| `ignore_owner`/`ignore_group` | Skip ownership (gVisor UID mapping)                         |
 
 ## Installed Runtimes
 
-| Component | Versions |
-|-----------|----------|
-| Node.js | 20.19.6, 21.7.3, 22.21.1 (active) |
-| Python | 3.10, 3.11, 3.12, 3.13 |
-| Ruby | 3.1.6, 3.2.6, 3.3.6 |
-| Go | 1.24.7, 1.25.1 |
-| Rust | stable (minimal) |
-| Bun | 1.3.4 |
-| Java | OpenJDK 21 |
-| PHP | 8.4 |
+| Component | Versions                          |
+| --------- | --------------------------------- |
+| Node.js   | 20.19.6, 21.7.3, 22.21.1 (active) |
+| Python    | 3.10, 3.11, 3.12, 3.13            |
+| Ruby      | 3.1.6, 3.2.6, 3.3.6               |
+| Go        | 1.24.7, 1.25.1                    |
+| Rust      | stable (minimal)                  |
+| Bun       | 1.3.4                             |
+| Java      | OpenJDK 21                        |
+| PHP       | 8.4                               |
 
 See <docs/container-spec.md> for runtime details and gVisor constraints.
