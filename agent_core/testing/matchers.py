@@ -6,7 +6,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties, instance_of, is_not
+from hamcrest import assert_that, has_entries, has_item, has_items, has_properties, instance_of, is_not
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 
@@ -40,10 +40,6 @@ def has_function_call_output_structured(**kvs):
 def assert_payloads_have(payloads: list[object], *matchers):
     """Assert payloads contain all matchers using has_items."""
     assert_that(payloads, has_items(*matchers))
-
-
-# Convenience alias for substring assertions
-contains_err = contains_string
 
 
 # ------------------------
