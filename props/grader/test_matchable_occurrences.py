@@ -89,9 +89,7 @@ class TestMatchableOccurrences:
             {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
-        if not cross_cutting:
-            pytest.skip("No cross-cutting TPs in test fixtures")
-
+        assert cross_cutting, "Expected cross-cutting TPs (tp-003..tp-005) in test fixtures"
         cross_cutting_ids = {row.tp_id for row in cross_cutting}
 
         # These should be matchable from ANY file
