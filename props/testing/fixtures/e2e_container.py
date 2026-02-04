@@ -30,6 +30,12 @@ Usage:
                 budget_usd=None,
             )
             # Assert on database state
+
+    # Multi-model usage (pass dict of mocks):
+    async def test_orchestration(e2e_stack, ...):
+        mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
+        async with e2e_stack(mocks, images=[...]) as stack:
+            ...
 """
 
 from __future__ import annotations
@@ -56,7 +62,7 @@ from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
-from props.testing.fake_openai_server import FakeOpenAIServer, MultiModelFakeOpenAI, _BaseServer
+from props.testing.fake_openai_server import FakeOpenAIServer
 from test_util.oci import BazelImage, crane_push
 
 logger = logging.getLogger(__name__)
@@ -113,12 +119,6 @@ class E2EStack:
 
     registry: AgentRegistry
     model: str
-    _proxy_port: int
-
-    def push_image(self, image: BazelImage, tag: str = BUILTIN_TAG) -> None:
-        """Push an OCI image layout through the backend proxy (records agent_definition)."""
-        proxy_url = f"localhost:{self._proxy_port}"
-        crane_push(image, proxy_url, tag)
 
 
 def _build_agent_base_env(db_config: DatabaseConfig, backend_port: int) -> dict[str, str]:
@@ -174,7 +174,7 @@ def _set_backend_env(monkeypatch: pytest.MonkeyPatch, db_config: DatabaseConfig,
 
 @asynccontextmanager
 async def _make_stack(
-    fake_openai: _BaseServer,
+    fake_openai: FakeOpenAIServer,
     db: Database,
     async_docker_client: aiodocker.Docker,
     e2e_registry_url: str,
@@ -207,10 +207,10 @@ async def _make_stack(
             )
 
             try:
-                stack = E2EStack(registry=registry, model=model, _proxy_port=backend_port)
+                proxy_url = f"localhost:{backend_port}"
                 for image in images:
-                    stack.push_image(image)
-                yield stack
+                    crane_push(image, proxy_url, BUILTIN_TAG)
+                yield E2EStack(registry=registry, model=model)
             finally:
                 await registry.close()
 
@@ -224,48 +224,36 @@ async def e2e_stack(
 ):
     """Fixture factory for creating e2e test stacks.
 
+    Accepts a single mock (all requests go to it) or a dict of mocks
+    (routes by model name in the request body).
+
     Usage:
+        # Single mock
         async def test_something(e2e_stack, critic_image):
             mock = make_my_mock()
             async with e2e_stack(mock, images=[critic_image]) as stack:
                 run_id = await stack.registry.run_critic(...)
-    """
 
-    @asynccontextmanager
-    async def _factory(
-        mock: OpenAIModelProto, model: str = TEST_MODEL, *, images: Sequence[BazelImage] = ()
-    ) -> AsyncIterator[E2EStack]:
-        fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
-        async with _make_stack(
-            fake_openai, synced_db, async_docker_client, e2e_registry_url, monkeypatch, model=model, images=images
-        ) as stack:
-            yield stack
-
-    yield _factory
-
-
-@pytest_asyncio.fixture
-async def multi_model_e2e_stack(
-    synced_db: Database, async_docker_client: aiodocker.Docker, e2e_registry_url: str, monkeypatch: pytest.MonkeyPatch
-):
-    """Fixture factory for creating multi-model e2e test stacks.
-
-    Each key in `mocks` is a model name routed to the corresponding mock.
-
-    Usage:
-        async def test_something(multi_model_e2e_stack, critic_image):
+        # Multi-model
+        async def test_orchestration(e2e_stack, ...):
             mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
-            async with multi_model_e2e_stack(mocks, images=[...]) as stack:
+            async with e2e_stack(mocks, images=[...]) as stack:
                 ...
     """
 
     @asynccontextmanager
     async def _factory(
-        mocks: Mapping[str, OpenAIModelProto], *, images: Sequence[BazelImage] = ()
+        mock: OpenAIModelProto | Mapping[str, OpenAIModelProto],
+        model: str = TEST_MODEL,
+        *,
+        images: Sequence[BazelImage] = (),
     ) -> AsyncIterator[E2EStack]:
-        fake_openai = MultiModelFakeOpenAI(dict(mocks), host="0.0.0.0", port=0)
+        if isinstance(mock, Mapping):
+            fake_openai = FakeOpenAIServer(dict(mock), host="0.0.0.0", port=0)
+        else:
+            fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
         async with _make_stack(
-            fake_openai, synced_db, async_docker_client, e2e_registry_url, monkeypatch, model="", images=images
+            fake_openai, synced_db, async_docker_client, e2e_registry_url, monkeypatch, model=model, images=images
         ) as stack:
             yield stack
 

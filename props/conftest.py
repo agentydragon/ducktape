@@ -33,7 +33,7 @@ from props.testing.fixtures.db import (
 from props.testing.fixtures.e2e import make_openai_client, mock_snapshot_slug, noop_openai_client, success_termination
 
 # Import e2e container fixture directly from its module
-from props.testing.fixtures.e2e_container import e2e_stack, multi_model_e2e_stack
+from props.testing.fixtures.e2e_container import e2e_stack
 from props.testing.fixtures.e2e_infra import (
     critic_image,
     e2e_registry,

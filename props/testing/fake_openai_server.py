@@ -4,11 +4,18 @@ Implements the OpenAI Responses API (/v1/responses) backed by mock objects
 like PropsMock or StepRunner. Used in e2e tests where containers talk to
 a real LLM proxy, which forwards to this fake upstream.
 
+Accepts either a single mock (all requests go to it) or a dict of mocks
+(requests are routed by the `model` field in the request body).
+
 Usage:
+    # Single mock - all requests handled by one mock
     mock = make_critic_mock()
     async with FakeOpenAIServer(mock) as server:
-        # server.url is e.g. "http://127.0.0.1:8765"
-        # Configure proxy's OPENAI_UPSTREAM_URL to point here
+        ...
+
+    # Multi-model - route by model name
+    mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
+    async with FakeOpenAIServer(mocks) as server:
         ...
 """
 
@@ -22,17 +29,23 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from openai.types.responses import Response as OpenAIResponse
-from pydantic import TypeAdapter, ValidationError
+from openai.types.responses import (
+    Response as OpenAIResponse,
+    ResponseFunctionToolCall,
+    ResponseOutputMessage,
+    ResponseOutputText,
+)
+from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+from pydantic import ValidationError
 
 from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
-    FunctionCallOutputItem,
     InputTokensDetails,
     OpenAIModelProto,
     OutputTokensDetails,
     ReasoningItem,
+    ResponseOutItem,
     ResponsesRequest,
     ResponsesResult,
     ResponseUsage,
@@ -40,49 +53,35 @@ from openai_utils.model import (
 
 logger = logging.getLogger(__name__)
 
-# TypeAdapter for SDK Response (for validation/construction)
-_openai_response_adapter: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
+# SDK output item type union
+_SDKOutputItem = ResponseOutputMessage | ResponseFunctionToolCall | ResponseReasoningItem
 
 
-def _output_item_to_sdk_dict(
-    item: AssistantMessageOut | FunctionCallItem | FunctionCallOutputItem | ReasoningItem,
-) -> dict[str, Any]:
-    """Convert internal output item to SDK Response output format."""
-    if isinstance(item, AssistantMessageOut):
-        return {
-            "type": "message",
-            "role": "assistant",
-            "id": item.id or "msg_test",
-            "status": "completed",
-            "content": [
-                {"type": "output_text", "text": part.text, "annotations": part.annotations or []} for part in item.parts
-            ],
-        }
+def _to_sdk_output_item(item: ResponseOutItem) -> _SDKOutputItem:
+    """Convert internal output item to SDK Response output model.
+
+    FunctionCallItem and ReasoningItem fields match the SDK closely, so
+    model_dump() + model_validate() works with minimal fixups.
+    AssistantMessageOut uses different field names and needs explicit construction.
+    """
     if isinstance(item, FunctionCallItem):
-        return {
-            "type": "function_call",
-            "id": item.id or f"fc_{item.call_id}",
-            "call_id": item.call_id,
-            "name": item.name,
-            "arguments": item.arguments or "{}",
-            "status": item.status or "completed",
-        }
-    if isinstance(item, FunctionCallOutputItem):
-        # Function call outputs typically appear as input items, but may be echoed in output
-        output_str = item.output if isinstance(item.output, str) else str(item.output)
-        return {
-            "type": "function_call_output",
-            "id": f"fco_{item.call_id}",
-            "call_id": item.call_id,
-            "output": output_str,
-        }
+        return ResponseFunctionToolCall.model_validate(
+            item.model_dump() | {"id": item.id or f"fc_{item.call_id}", "arguments": item.arguments or "{}"}
+        )
     if isinstance(item, ReasoningItem):
-        return {
-            "type": "reasoning",
-            "id": item.id or "rs_test",
-            "summary": [{"type": s.type, "text": s.text} for s in item.summary],
-        }
-    raise ValueError(f"Unknown output item type: {type(item)}")
+        return ResponseReasoningItem.model_validate(item.model_dump() | {"id": item.id or "rs_test"})
+    if isinstance(item, AssistantMessageOut):
+        return ResponseOutputMessage(
+            type="message",
+            role="assistant",
+            id=item.id or "msg_test",
+            status="completed",
+            content=[
+                ResponseOutputText(type="output_text", text=part.text, annotations=part.annotations or [])
+                for part in item.content
+            ],
+        )
+    raise ValueError(f"Unexpected output item type: {type(item)}")
 
 
 def result_to_sdk_response(result: ResponsesResult, *, model: str = "test-model") -> OpenAIResponse:
@@ -97,32 +96,35 @@ def result_to_sdk_response(result: ResponsesResult, *, model: str = "test-model"
             output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
         )
 
-    # Build SDK-compatible dict and validate into Response
-    response_dict: dict[str, Any] = {
-        "id": result.id,
-        "object": "response",
-        "created_at": 0,
-        "model": model,
-        "status": "completed",
-        "output": [_output_item_to_sdk_dict(item) for item in result.output],
-        "parallel_tool_calls": True,
-        "tool_choice": "auto",
-        "tools": [],
-        "usage": usage.model_dump(),
-    }
-    return _openai_response_adapter.validate_python(response_dict)
+    return OpenAIResponse(
+        id=result.id,
+        object="response",
+        created_at=0,
+        model=model,
+        status="completed",
+        output=[_to_sdk_output_item(item) for item in result.output],
+        parallel_tool_calls=True,
+        tool_choice="auto",
+        tools=[],
+        usage=usage.model_dump(),
+    )
 
 
-class _BaseServer:
-    """Base class for fake OpenAI servers with shared uvicorn lifecycle.
+class FakeOpenAIServer:
+    """Fake OpenAI Responses API server for e2e testing.
+
+    Accepts a single mock or a dict of mocks keyed by model name.
+    When given a dict, routes requests to the mock matching the request's
+    `model` field.
 
     Implements fail-fast error handling: exceptions from mocks are captured
     and re-raised when the server is stopped or when check_errors() is called.
-    This ensures test failures are highly visible rather than being silently
-    converted to HTTP 500 responses.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 0) -> None:
+    def __init__(
+        self, mock: OpenAIModelProto | dict[str, OpenAIModelProto], host: str = "127.0.0.1", port: int = 0
+    ) -> None:
+        self._mock = mock
         self._host = host
         self._port = port
         self._server: uvicorn.Server | None = None
@@ -152,8 +154,50 @@ class _BaseServer:
         if self._captured_error is not None:
             raise self._captured_error
 
+    def _resolve_mock(self, body: dict[str, Any]) -> OpenAIModelProto:
+        """Resolve the mock for a request body."""
+        if isinstance(self._mock, dict):
+            model = body.get("model")
+            if not model:
+                raise HTTPException(status_code=400, detail="model field required")
+            mock = self._mock.get(model)
+            if mock is None:
+                available = list(self._mock.keys())
+                raise HTTPException(status_code=400, detail=f"No mock for model '{model}'. Available: {available}")
+            return mock
+        return self._mock
+
     def _create_app(self) -> FastAPI:
-        raise NotImplementedError
+        app = FastAPI(title="Fake OpenAI Server")
+        server_self = self
+
+        @app.post("/v1/responses")
+        async def responses(request: Request) -> JSONResponse:
+            try:
+                body = await request.json()
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+            mock = server_self._resolve_mock(body)
+
+            try:
+                req = ResponsesRequest.model_validate(body)
+            except ValidationError as e:
+                logger.warning("Failed to parse request: %s", e)
+                raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+
+            try:
+                result = await mock.responses_create(req)
+            except Exception as e:
+                logger.exception("Mock raised exception")
+                server_self._capture_error(e)
+                raise HTTPException(status_code=500, detail=f"Mock error: {e}")
+
+            request_model = body.get("model", "test-model")
+            sdk_response = result_to_sdk_response(result, model=request_model)
+            return JSONResponse(content=sdk_response.model_dump(mode="json"))
+
+        return app
 
     async def start(self) -> None:
         app = self._create_app()
@@ -173,7 +217,7 @@ class _BaseServer:
                 break
             break
 
-        logger.info("%s started on %s", self.__class__.__name__, self.url)
+        logger.info("FakeOpenAIServer started on %s", self.url)
 
     async def stop(self) -> None:
         if self._server is not None:
@@ -185,11 +229,11 @@ class _BaseServer:
                     self._task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await self._task
-            logger.info("%s stopped", self.__class__.__name__)
+            logger.info("FakeOpenAIServer stopped")
         # Re-raise any captured mock errors so tests fail visibly
         self.check_errors()
 
-    async def __aenter__(self) -> _BaseServer:
+    async def __aenter__(self) -> FakeOpenAIServer:
         await self.start()
         return self
 
@@ -197,134 +241,3 @@ class _BaseServer:
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object
     ) -> None:
         await self.stop()
-
-
-class FakeOpenAIServer(_BaseServer):
-    """HTTP server that serves mock OpenAI Responses API.
-
-    Wraps a mock implementing OpenAIModelProto and exposes it via HTTP.
-    Use as async context manager to start/stop the server.
-
-    Example:
-        @PropsMock.mock()
-        def mock(m: PropsMock):
-            yield None
-            yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Done"])
-
-        async with FakeOpenAIServer(mock) as server:
-            # server.url is the base URL (e.g., "http://127.0.0.1:8765")
-            # Configure OPENAI_UPSTREAM_URL to point here
-            ...
-    """
-
-    def __init__(self, mock: OpenAIModelProto, host: str = "127.0.0.1", port: int = 0) -> None:
-        super().__init__(host, port)
-        self._mock = mock
-
-    def _create_app(self) -> FastAPI:
-        app = FastAPI(title="Fake OpenAI Server")
-        mock = self._mock
-        capture_error = self._capture_error
-
-        @app.get("/health")
-        async def health() -> dict[str, str]:
-            return {"status": "ok"}
-
-        @app.post("/v1/responses")
-        async def responses(request: Request) -> JSONResponse:
-            try:
-                body = await request.json()
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
-
-            try:
-                req = ResponsesRequest.model_validate(body)
-            except ValidationError as e:
-                logger.warning("Failed to parse request: %s", e)
-                raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
-
-            try:
-                result = await mock.responses_create(req)
-            except Exception as e:
-                logger.exception("Mock raised exception")
-                capture_error(e)
-                raise HTTPException(status_code=500, detail=f"Mock error: {e}")
-
-            # Convert to SDK Response and serialize
-            request_model = body.get("model", "test-model")
-            sdk_response = result_to_sdk_response(result, model=request_model)
-            return JSONResponse(content=sdk_response.model_dump(mode="json"))
-
-        return app
-
-    async def __aenter__(self) -> FakeOpenAIServer:
-        await self.start()
-        return self
-
-
-class MultiModelFakeOpenAI(_BaseServer):
-    """Fake OpenAI server that routes requests to different mocks by model.
-
-    Useful for testing prompt optimizers that spawn critics and graders
-    with different model strings.
-
-    Example:
-        mocks = {
-            "gpt-5-optimizer": optimizer_mock,
-            "gpt-4o-critic": critic_mock,
-            "gpt-4o-grader": grader_mock,
-        }
-        async with MultiModelFakeOpenAI(mocks) as server:
-            ...
-    """
-
-    def __init__(self, mocks: dict[str, OpenAIModelProto], host: str = "127.0.0.1", port: int = 0) -> None:
-        super().__init__(host, port)
-        self._mocks = mocks
-
-    def _create_app(self) -> FastAPI:
-        app = FastAPI(title="Multi-Model Fake OpenAI Server")
-        mocks = self._mocks
-        capture_error = self._capture_error
-
-        @app.get("/health")
-        async def health() -> dict[str, str]:
-            return {"status": "ok"}
-
-        @app.post("/v1/responses")
-        async def responses(request: Request) -> JSONResponse:
-            try:
-                body = await request.json()
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
-
-            model = body.get("model")
-            if not model:
-                raise HTTPException(status_code=400, detail="model field required")
-
-            mock = mocks.get(model)
-            if mock is None:
-                available = list(mocks.keys())
-                raise HTTPException(status_code=400, detail=f"No mock for model '{model}'. Available: {available}")
-
-            try:
-                req = ResponsesRequest.model_validate(body)
-            except ValidationError as e:
-                raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
-
-            try:
-                result = await mock.responses_create(req)
-            except Exception as e:
-                logger.exception("Mock raised exception for model %s", model)
-                capture_error(e)
-                raise HTTPException(status_code=500, detail=f"Mock error: {e}")
-
-            # Convert to SDK Response and serialize
-            sdk_response = result_to_sdk_response(result, model=model)
-            return JSONResponse(content=sdk_response.model_dump(mode="json"))
-
-        return app
-
-    async def __aenter__(self) -> MultiModelFakeOpenAI:
-        await self.start()
-        return self

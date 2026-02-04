@@ -218,8 +218,6 @@ async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_wit
 # =============================================================================
 # Multi-Model Orchestration Tests
 # =============================================================================
-# These tests use MultiModelFakeOpenAI to route optimizer and critic to
-# different mocks, testing the full orchestration flow.
 
 
 def make_orchestration_optimizer_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
@@ -293,7 +291,7 @@ def make_orchestration_critic_mock() -> PropsMock:
 @pytest.mark.requires_docker
 @pytest.mark.slow
 async def test_optimizer_orchestrates_critic(
-    synced_db: Database, multi_model_e2e_stack, prompt_optimizer_image, critic_image, grader_image
+    synced_db: Database, e2e_stack, prompt_optimizer_image, critic_image, grader_image
 ):
     """Test optimizer can orchestrate critic runs with simulated grading.
 
@@ -306,7 +304,7 @@ async def test_optimizer_orchestrates_critic(
     6. Optimizer's wait_until_graded_tool returns (polls database directly)
     7. Optimizer reports success
 
-    Uses MultiModelFakeOpenAI to route optimizer and critic to different mocks.
+    Uses multi-model FakeOpenAIServer to route optimizer and critic to different mocks.
     """
     # Get a test snapshot with TRAIN split
     with synced_db.session() as session:
@@ -337,7 +335,7 @@ async def test_optimizer_orchestrates_critic(
         ORCHESTRATION_CRITIC_MODEL: critic_mock,
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
-    async with multi_model_e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
+    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
         # Start grader daemon in background - it will sleep until there's drift
         grader_task: asyncio.Task[None] | None = None
 

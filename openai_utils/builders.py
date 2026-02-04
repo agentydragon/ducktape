@@ -26,7 +26,7 @@ def make_item_tool_call(*, call_id: str, name: str, arguments: dict[str, Any] | 
 
 
 def make_item_assistant_text(text: str) -> AssistantMessageOut:
-    return AssistantMessageOut(parts=[OutputText(text=text)])
+    return AssistantMessageOut(content=[OutputText(text=text)])
 
 
 class ItemFactory:

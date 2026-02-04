@@ -33,7 +33,9 @@ class SummarizingClient(OpenAIModelProto):
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         self.call_count += 1
         return ResponsesResult(
-            id="test-response-id", usage=None, output=[AssistantMessageOut(parts=[OutputText(text=self.summary_text)])]
+            id="test-response-id",
+            usage=None,
+            output=[AssistantMessageOut(content=[OutputText(text=self.summary_text)])],
         )
 
 

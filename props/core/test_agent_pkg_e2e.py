@@ -222,7 +222,7 @@ def make_critic_mock_with_token_check(expected_token: str) -> PropsMock:
 @pytest.mark.timeout(300)
 @pytest.mark.slow
 async def test_po_orchestrates_critic_with_system_prompt_check(
-    synced_db, multi_model_e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
+    synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
 ):
     """Test prompt optimizer orchestration with critic system prompt verification.
 
@@ -247,7 +247,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         ORCHESTRATION_CRITIC_MODEL: critic_mock,
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
-    async with multi_model_e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
+    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
         # Start grader daemon in background
         grader_task = asyncio.create_task(
             stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
@@ -281,7 +281,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
 @pytest.mark.slow
 @pytest.mark.skip(reason="Requires registry proxy: pass PROPS_REGISTRY_PROXY_* env vars to containers")
 async def test_po_creates_custom_critic_with_token(
-    synced_db, multi_model_e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
+    synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
 ):
     """Test full custom image flow: PO creates critic image, critic verifies prompt token.
 
@@ -305,7 +305,7 @@ async def test_po_creates_custom_critic_with_token(
         ORCHESTRATION_CRITIC_MODEL: critic_mock,
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
-    async with multi_model_e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
+    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
         grader_task = asyncio.create_task(
             stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
         )

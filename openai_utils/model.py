@@ -247,28 +247,28 @@ class OutputText(BaseModel):
 
 
 class AssistantMessageOut(BaseModel):
-    """Adapter-level assistant message output (text parts only for now).
+    """Adapter-level assistant message output (text content only for now).
 
-    Matches the SDK's message content shape we actually use: a list of text parts
+    Matches the SDK's message content shape we actually use: a list of text items
     with optional annotations. This keeps a stable, Pydantic-validated shape
-    for downstream use and can be extended if we support non-text parts later.
+    for downstream use and can be extended if we support non-text content later.
 
     When an assistant message follows a reasoning item, OpenAI requires the message
     id when sending back as input (to link the message to the reasoning item).
     """
 
     kind: Literal["assistant_message"] = "assistant_message"
-    parts: list[OutputText]
+    content: list[OutputText]
     id: str | None = None  # Message ID from SDK response (required for reasoning continuation)
     model_config = ConfigDict(extra="allow")
 
     @property
     def text(self) -> str:
-        return "\n".join(part.text for part in self.parts if part.text)
+        return "\n".join(part.text for part in self.content if part.text)
 
     def to_input_item(self) -> AssistantMessage:
         content_parts: list[OutputTextPart] = []
-        for part in self.parts:
+        for part in self.content:
             part_data = part.model_dump()
             part_data.setdefault("type", "output_text")
             content_parts.append(OutputTextPart.model_validate(part_data))
@@ -312,7 +312,7 @@ def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMes
     if not parts:
         raise ValueError("ResponseOutputMessage has no text parts")
     # Preserve id - OpenAI requires it when the message follows a reasoning item
-    return AssistantMessageOut(parts=parts, id=message.id)
+    return AssistantMessageOut(content=parts, id=message.id)
 
 
 class ResponsesResult(BaseModel):
