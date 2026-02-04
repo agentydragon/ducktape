@@ -54,7 +54,6 @@ from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig, is_digest
-from props.core.splits import Split
 from props.critic_dev.improve.main import TerminationSuccess
 from props.critic_dev.shared import TargetMetric
 from props.db.config import DatabaseConfig
@@ -145,6 +144,7 @@ class AgentRegistry:
         """Resolve image reference to digest via registry proxy.
 
         Uses self._db_config credentials for HTTP basic auth to the proxy.
+        Maps "builtin" to BUILTIN_TAG ("latest") for standard builtins.
 
         Returns:
             Digest (sha256:...) - either the provided digest or resolved from tag
@@ -155,6 +155,10 @@ class AgentRegistry:
         if is_digest(ref):
             logger.debug(f"Reference {ref} is already a digest, returning as-is")
             return ref
+
+        # Map "builtin" to the actual registry tag
+        if ref == "builtin":
+            ref = BUILTIN_TAG
 
         repository = str(agent_type)
 
@@ -188,6 +192,24 @@ class AgentRegistry:
         logger.info(f"Resolved {repository}:{ref} → {digest}")
         return str(digest)
 
+    async def _resolve_image(self, agent_type: AgentType, ref: str) -> tuple[str, str]:
+        """Resolve image ref to (digest, full OCI reference)."""
+        digest = await self._resolve_image_ref(agent_type, ref)
+        oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
+        return digest, oci_ref
+
+    def _finalize_run(self, result: ContainerResult, agent_run_id: UUID) -> AgentRunStatus:
+        """Interpret container exit, update AgentRun status in DB, return final status."""
+        status = self._interpret_container_result(result, agent_run_id)
+        with self._db.session() as session:
+            found_run = session.get(AgentRun, agent_run_id)
+            assert found_run is not None, f"Agent run {agent_run_id} not found in database"
+            if found_run.status == AgentRunStatus.IN_PROGRESS:
+                found_run.status = status
+                session.commit()
+                logger.info(f"Updated {agent_run_id} status to {status}")
+        return status
+
     # --- Execution Methods ---
 
     async def run_critic(
@@ -201,33 +223,23 @@ class AgentRegistry:
         budget_usd: float | None,
     ) -> UUID:
         """Run a critic agent. Returns agent run ID (query DB for status)."""
-        snapshot_slug = example.snapshot_slug
         agent_run_id = uuid4()
+        image_digest, image = await self._resolve_image(AgentType.CRITIC, image_ref)
 
-        # Resolve image reference to digest, then build full OCI reference
-        image_digest = await self._resolve_image_ref(AgentType.CRITIC, image_ref)
-        image = self._registry_config.build_oci_reference(AgentType.CRITIC, image_digest)
-        logger.info(f"Resolved critic image {image_ref} → {image_digest}")
-
-        # Phase 1: Write initial AgentRun to DB
         with self._db.session() as session:
-            session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-
-            type_config = CriticTypeConfig(example=example)
+            session.query(Snapshot).filter_by(slug=example.snapshot_slug).one()
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,
                 image_digest=image_digest,
                 parent_agent_run_id=parent_run_id,
                 model=model,
-                type_config=type_config,
+                type_config=CriticTypeConfig(example=example),
                 status=AgentRunStatus.IN_PROGRESS,
             )
             session.add(agent_run)
             session.commit()
-            logger.info(f"Created critic run: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
 
-        # Phase 2: Run container with in-container agent loop
         result = await run_loop_agent(
             docker_client=self._docker_client,
             agent_run_id=agent_run_id,
@@ -240,18 +252,7 @@ class AgentRegistry:
             extra_hosts=self._extra_hosts,
         )
 
-        # Phase 3: Interpret exit code and update status
-        agent_status = self._interpret_container_result(result, agent_run_id)
-
-        with self._db.session() as session:
-            found_run = session.get(AgentRun, agent_run_id)
-            assert found_run is not None, f"Agent run {agent_run_id} not found in database"
-            # Only update if still IN_PROGRESS (container may have set COMPLETED/REPORTED_FAILURE)
-            if found_run.status == AgentRunStatus.IN_PROGRESS:
-                found_run.status = agent_status
-                session.commit()
-                logger.info(f"Updated critic run: agent_run_id={agent_run_id}, status={agent_status}")
-
+        self._finalize_run(result, agent_run_id)
         return agent_run_id
 
     async def run_prompt_optimizer(
@@ -264,23 +265,9 @@ class AgentRegistry:
         timeout_seconds: int,
     ) -> UUID:
         """Run a prompt optimizer agent. Returns agent run ID (query DB for status)."""
-        # Get train snapshots from database
-        with self._db.session() as session:
-            train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).all()
-            train_slugs = [SnapshotSlug(s.slug) for s in train_snapshots]
-
-        logger.info(f"Using {len(train_slugs)} train snapshots (agent will fetch from database)")
-
-        # Generate unique ID for this run
         agent_run_id = uuid4()
-        logger.info(f"Prompt optimizer agent_run_id: {agent_run_id}")
+        image_digest, image = await self._resolve_image(AgentType.PROMPT_OPTIMIZER, BUILTIN_TAG)
 
-        # Resolve builtin prompt-optimizer image to digest
-        image_digest = await self._resolve_image_ref(AgentType.PROMPT_OPTIMIZER, BUILTIN_TAG)
-        image = self._registry_config.build_oci_reference(AgentType.PROMPT_OPTIMIZER, image_digest)
-        logger.info(f"Resolved prompt-optimizer image {BUILTIN_TAG} → {image}")
-
-        # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
         with self._db.session() as session:
             type_config = PromptOptimizerTypeConfig(
                 target_metric=target_metric,
@@ -300,51 +287,19 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        logger.info(f"Created prompt optimizer AgentRun: {agent_run_id}")
+        result = await run_loop_agent(
+            docker_client=self._docker_client,
+            agent_run_id=agent_run_id,
+            db_config=self._db_config,
+            image=image,
+            agent_base_env=self._agent_base_env,
+            registry_config=self._registry_config,
+            container_name=f"promptopt-{short_uuid(agent_run_id)}",
+            timeout_seconds=timeout_seconds,
+            extra_hosts=self._extra_hosts,
+        )
 
-        try:
-            # Run the container with in-container agent loop
-            # Container uses REST API (PROPS_BACKEND_URL) instead of MCP
-            result = await run_loop_agent(
-                docker_client=self._docker_client,
-                agent_run_id=agent_run_id,
-                db_config=self._db_config,
-                image=image,
-                agent_base_env=self._agent_base_env,
-                registry_config=self._registry_config,
-                container_name=f"promptopt-{short_uuid(agent_run_id)}",
-                timeout_seconds=timeout_seconds,
-                extra_hosts=self._extra_hosts,
-            )
-
-            timed_out = result.exit_code == -1
-            if timed_out:
-                logger.error(f"Container timed out after {timeout_seconds} seconds")
-            else:
-                logger.info(f"Container exited with code {result.exit_code}")
-            if result.stderr:
-                logger.info(f"Container stderr:\n{result.stderr}")
-
-            # Update status based on exit code
-            if timed_out:
-                final_status = AgentRunStatus.TIMED_OUT
-            elif result.exit_code == 0:
-                final_status = AgentRunStatus.COMPLETED
-            else:
-                final_status = AgentRunStatus.REPORTED_FAILURE
-            with self._db.session() as session:
-                found_run = session.get(AgentRun, agent_run_id)
-                if found_run:
-                    found_run.status = final_status
-                    session.commit()
-                    logger.info(f"Updated agent_run status to {final_status.value}")
-
-        finally:
-            pass  # No cleanup needed - we use self as the registry
-
-        logger.info("Optimization session complete.")
-        logger.info(f"Budget: ${budget:.2f}")
-
+        self._finalize_run(result, agent_run_id)
         return agent_run_id
 
     async def run_improvement_agent(
@@ -369,16 +324,7 @@ class AgentRegistry:
         output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(
-            f"Starting improvement agent run {run_id}: "
-            f"{len(examples)} examples, {token_budget:,} token budget, model={improvement_model}"
-        )
-        logger.info(f"Output directory: {output_dir}")
-
-        # Always use builtin improvement image
-        image_digest = await self._resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
-        image = self._registry_config.build_oci_reference(AgentType.IMPROVEMENT, image_digest)
-        logger.info(f"Using builtin improvement image: {image_digest}")
+        image_digest, image = await self._resolve_image(AgentType.IMPROVEMENT, BUILTIN_TAG)
 
         type_config = ImprovementTypeConfig(
             baseline_image_refs=baseline_image_refs,
@@ -399,59 +345,30 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        try:
-            # Run the container with in-container agent loop
-            # Container uses REST API (PROPS_BACKEND_URL) instead of MCP
-            result = await run_loop_agent(
-                docker_client=self._docker_client,
-                agent_run_id=run_id,
-                db_config=self._db_config,
-                image=image,
-                agent_base_env=self._agent_base_env,
-                registry_config=self._registry_config,
-                container_name=f"improve-{short_uuid(run_id)}",
-                timeout_seconds=timeout_seconds,
-                extra_hosts=self._extra_hosts,
-            )
+        result = await run_loop_agent(
+            docker_client=self._docker_client,
+            agent_run_id=run_id,
+            db_config=self._db_config,
+            image=image,
+            agent_base_env=self._agent_base_env,
+            registry_config=self._registry_config,
+            container_name=f"improve-{short_uuid(run_id)}",
+            timeout_seconds=timeout_seconds,
+            extra_hosts=self._extra_hosts,
+        )
 
-            timed_out = result.exit_code == -1
-            if timed_out:
-                logger.error(f"Container timed out after {timeout_seconds} seconds")
-            else:
-                logger.info(f"Container exited with code {result.exit_code}")
-            if result.stderr:
-                logger.info(f"Container stderr:\n{result.stderr}")
+        final_status = self._finalize_run(result, run_id)
 
-            # Update status based on exit code
-            if timed_out:
-                final_status = AgentRunStatus.TIMED_OUT
-            elif result.exit_code == 0:
-                final_status = AgentRunStatus.COMPLETED
-            else:
-                final_status = AgentRunStatus.REPORTED_FAILURE
-            with self._db.session() as session:
-                found_run = session.get(AgentRun, run_id)
-                if found_run:
-                    found_run.status = final_status
-                    found_run.container_exit_code = result.exit_code if not timed_out else None
-                    session.commit()
-                    logger.info(f"Updated agent_run status to {final_status.value}")
+        # Determine outcome from final status
+        outcome: ImprovementOutcome
+        if final_status == AgentRunStatus.TIMED_OUT:
+            outcome = OutcomeUnexpectedTermination(message=f"Container timed out after {timeout_seconds} seconds")
+        elif final_status == AgentRunStatus.COMPLETED:
+            outcome = OutcomeExhausted()  # TODO: Parse actual success details from DB
+        else:
+            outcome = OutcomeUnexpectedTermination(message=f"Container exited with code {result.exit_code}")
 
-            # Determine outcome
-            outcome: ImprovementOutcome
-            if timed_out:
-                outcome = OutcomeUnexpectedTermination(message=f"Container timed out after {timeout_seconds} seconds")
-            elif result.exit_code == 0:
-                # Success - for now just return exhausted (container writes details to DB)
-                outcome = OutcomeExhausted()  # TODO: Parse actual success details from DB
-            else:
-                outcome = OutcomeUnexpectedTermination(message=f"Container exited with code {result.exit_code}")
-
-            logger.info(f"Improvement agent completed: kind={outcome.kind}")
-            return ImprovementResult(tokens_used=0, run_id=run_id, outcome=outcome)  # TODO: Track tokens
-
-        finally:
-            pass  # No cleanup needed
+        return ImprovementResult(tokens_used=0, run_id=run_id, outcome=outcome)  # TODO: Track tokens
 
     def _interpret_container_result(self, result: ContainerResult, agent_run_id: UUID) -> AgentRunStatus:
         if result.exit_code == 0:
@@ -513,31 +430,21 @@ class AgentRegistry:
         Daemons run indefinitely until cancelled.
         """
         agent_run_id = uuid4()
+        image_digest, image = await self._resolve_image(AgentType.GRADER, BUILTIN_TAG)
 
-        # Resolve builtin grader image to digest
-        image_digest = await self._resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
-        image = self._registry_config.build_oci_reference(AgentType.GRADER, image_digest)
-        logger.info(f"Resolved grader image {BUILTIN_TAG} → {image_digest}")
-
-        # Phase 1: Write initial AgentRun to DB
         with self._db.session() as session:
-            # Verify snapshot exists
             session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-
-            type_config = GraderTypeConfig(snapshot_slug=snapshot_slug)
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,
                 image_digest=image_digest,
                 model=model,
-                type_config=type_config,
+                type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
                 status=AgentRunStatus.IN_PROGRESS,
             )
             session.add(agent_run)
             session.commit()
-            logger.info(f"Created snapshot_grader run: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
 
-        # Phase 2: Run container with in-container agent loop
         result = await run_loop_agent(
             docker_client=self._docker_client,
             agent_run_id=agent_run_id,
@@ -549,16 +456,5 @@ class AgentRegistry:
             extra_hosts=self._extra_hosts,
         )
 
-        # Phase 3: Interpret exit code and update status
-        agent_status = self._interpret_container_result(result, agent_run_id)
-
-        with self._db.session() as session:
-            found_run = session.get(AgentRun, agent_run_id)
-            assert found_run is not None, f"Agent run {agent_run_id} not found in database"
-            # Only update if still IN_PROGRESS
-            if found_run.status == AgentRunStatus.IN_PROGRESS:
-                found_run.status = agent_status
-                session.commit()
-                logger.info(f"Updated snapshot_grader run: agent_run_id={agent_run_id}, status={agent_status}")
-
+        self._finalize_run(result, agent_run_id)
         return agent_run_id

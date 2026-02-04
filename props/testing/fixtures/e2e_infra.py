@@ -60,28 +60,15 @@ def push_image_to_proxy(
     Tags the image for the proxy URL and pushes via Docker SDK. The proxy
     forwards to the raw registry and records the digest in agent_definitions.
 
-    Pushes with both the specified tag and the repo_name as tag (e.g., "critic")
-    so that both BUILTIN_TAG ("latest") and agent-specific refs (e.g., CRITIC_IMAGE_REF)
-    resolve correctly.
-
     Returns:
         The registry tag that was pushed (e.g., "localhost:12345/grader:latest")
     """
     local_image = docker_client.images.get(image.local_tag)
 
-    # Push with the specified tag (default: "latest")
     registry_tag = f"{proxy_url}/{image.repo_name}:{tag}"
     local_image.tag(registry_tag)
     docker_client.images.push(registry_tag)
     logger.info(f"Pushed {image.local_tag} → {registry_tag} (through proxy)")
-
-    # Also push with repo_name as tag so agent-specific refs resolve
-    # (e.g., CRITIC_IMAGE_REF = "critic" resolves critic:critic)
-    if tag != image.repo_name:
-        alias_tag = f"{proxy_url}/{image.repo_name}:{image.repo_name}"
-        local_image.tag(alias_tag)
-        docker_client.images.push(alias_tag)
-        logger.info(f"Pushed alias {alias_tag} (through proxy)")
 
     return registry_tag
 

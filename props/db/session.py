@@ -48,7 +48,7 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import ConnectionPoolEntry
 
-from props.db.config import DatabaseConfig, get_database_config
+from props.db.config import DatabaseConfig
 from props.db.models import Base
 
 logger = logging.getLogger(__name__)
@@ -75,10 +75,10 @@ def _get_engine(config: DatabaseConfig | None = None):
             return _engine
 
         if config is None:
-            config = get_database_config()
+            config = DatabaseConfig()
 
-        url = config.admin_url()
-        logger.info(f"Connecting to database: {config.admin.host}:{config.admin.port}/{config.admin.database}")
+        url = config.url
+        logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
 
         # Connection pool sized for parallel evaluation (default max_parallelism=20 + overhead)
         _engine = create_engine(url, echo=False, pool_size=20, max_overflow=12)

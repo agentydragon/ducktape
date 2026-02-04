@@ -46,8 +46,7 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
     """Test critic successfully submits zero issues."""
     mock = make_critic_mock_zero_issues()
 
-    async with e2e_stack(mock) as stack:
-        await stack.push_image(critic_image)
+    async with e2e_stack(mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=all_files_scope,
@@ -92,8 +91,7 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
     """Test critic submits an issue with occurrence."""
     mock = make_critic_mock_with_issues()
 
-    async with e2e_stack(mock) as stack:
-        await stack.push_image(critic_image)
+    async with e2e_stack(mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=all_files_scope,

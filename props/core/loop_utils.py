@@ -11,6 +11,7 @@ from typing import Any
 import psycopg2
 from jinja2 import Environment
 from openai import AsyncOpenAI
+from psycopg2 import sql
 
 from openai_utils.model import BoundOpenAIModel
 from props.core.agent_helpers import get_current_agent_run
@@ -29,38 +30,34 @@ def setup_logging() -> None:
 def _describe_relation(relation_name: str) -> str:
     """Return schema description of a database relation.
 
-    Uses PG* environment variables for connection. Replacement for
+    Uses PG* environment variables for connection and psycopg2's
+    cursor.description to introspect columns. Replacement for
     psql ``\\d+`` that works in distroless containers without psql.
     """
     conn = psycopg2.connect(
-        host=os.environ.get("PGHOST", "localhost"),
-        port=int(os.environ.get("PGPORT", "5432")),
-        dbname=os.environ.get("PGDATABASE", "props"),
-        user=os.environ.get("PGUSER", ""),
-        password=os.environ.get("PGPASSWORD", ""),
+        host=os.environ["PGHOST"],
+        port=int(os.environ["PGPORT"]),
+        dbname=os.environ["PGDATABASE"],
+        user=os.environ["PGUSER"],
+        password=os.environ["PGPASSWORD"],
     )
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT column_name, data_type, is_nullable, column_default
-                FROM information_schema.columns
-                WHERE table_name = %s
-                ORDER BY ordinal_position
-                """,
-                (relation_name,),
-            )
-            rows = cur.fetchall()
-
-            if not rows:
+            cur.execute(sql.SQL("SELECT * FROM {} LIMIT 0").format(sql.Identifier(relation_name)))
+            if cur.description is None:
                 return f"Relation '{relation_name}' not found."
 
-            header = f"{'Column':<30} {'Type':<30} {'Nullable':<8} {'Default'}"
-            separator = "-" * len(header)
+            # Resolve type OIDs to human-readable names via pg_type
+            oids = list({col.type_code for col in cur.description})
+            cur.execute("SELECT oid, typname FROM pg_catalog.pg_type WHERE oid = ANY(%s)", (oids,))
+            type_names = dict(cur.fetchall())
+
+            header = f"{'Column':<30} {'Type':<20}"
+            separator = "-" * 50
             lines = [f'Table "{relation_name}"', header, separator]
-            for col_name, data_type, nullable, default in rows:
-                default_str = str(default) if default else ""
-                lines.append(f"{col_name:<30} {data_type:<30} {nullable:<8} {default_str}")
+            for col in cur.description:
+                type_name = type_names.get(col.type_code, str(col.type_code))
+                lines.append(f"{col.name:<30} {type_name:<20}")
 
             return "\n".join(lines)
     finally:

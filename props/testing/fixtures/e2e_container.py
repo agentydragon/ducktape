@@ -38,12 +38,11 @@ import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 
 import aiodocker
-import docker
 import pytest
 import pytest_asyncio
 import uvicorn
@@ -57,7 +56,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
 from props.testing.fake_openai_server import FakeOpenAIServer, MultiModelFakeOpenAI
-from props.testing.fixtures.e2e_infra import LoadedImage, push_image_to_proxy
+from props.testing.fixtures.e2e_infra import LoadedImage
 
 logger = logging.getLogger(__name__)
 
@@ -80,17 +79,20 @@ class E2EStack:
     registry: AgentRegistry
     model: str
     _proxy_port: int
-    _docker_client: docker.DockerClient
+    _docker: aiodocker.Docker
 
-    async def push_image(self, image: LoadedImage, tag: str = "latest") -> str:
-        """Push a loaded image through the backend proxy (records agent_definition).
+    async def push_image(self, image: LoadedImage, tag: str = "latest") -> None:
+        """Push a loaded image through the backend proxy (records agent_definition)."""
+        proxy_url = f"localhost:{self._proxy_port}"
+        registry_tag = f"{proxy_url}/{image.repo_name}:{tag}"
+        await self._docker.images.tag(image.local_tag, repo=registry_tag)
+        await self._docker.images.push(registry_tag)
+        logger.info("Pushed %s -> %s (through proxy)", image.local_tag, registry_tag)
 
-        Runs the blocking Docker push in a thread to avoid deadlocking
-        the event loop (the backend server needs to process push requests).
-        """
-        return await asyncio.get_event_loop().run_in_executor(
-            None, push_image_to_proxy, self._docker_client, image, f"localhost:{self._proxy_port}", tag
-        )
+    async def push_images(self, *images: LoadedImage, tag: str = "latest") -> None:
+        """Push multiple images through the backend proxy."""
+        for image in images:
+            await self.push_image(image, tag=tag)
 
 
 def _build_agent_base_env(db_config: DatabaseConfig, backend_port: int) -> dict[str, str]:
@@ -150,11 +152,7 @@ E2EStackFactory = Callable[[OpenAIModelProto], AbstractAsyncContextManager[E2ESt
 
 @pytest_asyncio.fixture
 async def e2e_stack(
-    synced_db: Database,
-    async_docker_client: aiodocker.Docker,
-    docker_client: docker.DockerClient,
-    e2e_registry_url: str,
-    monkeypatch: pytest.MonkeyPatch,
+    synced_db: Database, async_docker_client: aiodocker.Docker, e2e_registry_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncIterator[E2EStackFactory]:
     """Fixture factory for creating e2e test stacks.
 
@@ -162,16 +160,17 @@ async def e2e_stack(
     RegistryProxyConfig is constructed directly from the backend's port (determined upfront).
 
     Usage:
-        async def test_something(e2e_stack, all_files_scope):
+        async def test_something(e2e_stack, all_files_scope, critic_image):
             mock = make_my_mock()
-            async with e2e_stack(mock) as stack:
-                await stack.push_image(grader_image)
+            async with e2e_stack(mock, images=[critic_image]) as stack:
                 run_id = await stack.registry.run_critic(...)
     """
     _set_backend_env(monkeypatch, synced_db.config, e2e_registry_url)
 
     @asynccontextmanager
-    async def _factory(mock: OpenAIModelProto, model: str = TEST_MODEL) -> AsyncIterator[E2EStack]:
+    async def _factory(
+        mock: OpenAIModelProto, model: str = TEST_MODEL, *, images: Sequence[LoadedImage] = ()
+    ) -> AsyncIterator[E2EStack]:
         fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
         await fake_openai.start()
 
@@ -197,9 +196,11 @@ async def e2e_stack(
                 )
 
                 try:
-                    yield E2EStack(
-                        registry=registry, model=model, _proxy_port=backend_port, _docker_client=docker_client
+                    stack = E2EStack(
+                        registry=registry, model=model, _proxy_port=backend_port, _docker=async_docker_client
                     )
+                    await stack.push_images(*images)
+                    yield stack
                 finally:
                     await registry.close()
 
@@ -214,9 +215,10 @@ async def multi_model_e2e_stack(
     mocks: Mapping[str, OpenAIModelProto],
     db: Database,
     async_docker_client: aiodocker.Docker,
-    sync_docker_client: docker.DockerClient,
     e2e_registry_url: str,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    images: Sequence[LoadedImage] = (),
 ) -> AsyncIterator[E2EStack]:
     """Set up full e2e stack with multi-model routing.
 
@@ -246,7 +248,9 @@ async def multi_model_e2e_stack(
             )
 
             try:
-                yield E2EStack(registry=registry, model="", _proxy_port=backend_port, _docker_client=sync_docker_client)
+                stack = E2EStack(registry=registry, model="", _proxy_port=backend_port, _docker=async_docker_client)
+                await stack.push_images(*images)
+                yield stack
             finally:
                 await registry.close()
 

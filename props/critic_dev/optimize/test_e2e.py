@@ -77,8 +77,7 @@ async def test_po_agent_psql_connectivity(e2e_stack, prompt_optimizer_image):
     """Test that psql works from the agent container using PG* env vars."""
     mock = make_psql_connectivity_mock()
 
-    async with e2e_stack(mock) as stack:
-        await stack.push_image(prompt_optimizer_image)
+    async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -129,8 +128,7 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
 
     # First: run critic separately to verify it works
     critic_mock = make_critic_mock_with_issue()
-    async with e2e_stack(critic_mock) as stack:
-        await stack.push_image(critic_image)
+    async with e2e_stack(critic_mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=example_spec,
@@ -177,8 +175,7 @@ async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_r
 
     mock = make_leaderboard_check_mock()
 
-    async with e2e_stack(mock) as stack:
-        await stack.push_image(prompt_optimizer_image)
+    async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -210,8 +207,7 @@ async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_wit
 
     mock = make_hard_examples_check_mock()
 
-    async with e2e_stack(mock) as stack:
-        await stack.push_image(prompt_optimizer_image)
+    async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -302,7 +298,6 @@ async def test_optimizer_orchestrates_critic(
     synced_db: Database,
     db: Database,
     async_docker_client: aiodocker.Docker,
-    docker_client,
     e2e_registry_url: str,
     prompt_optimizer_image,
     critic_image,
@@ -352,13 +347,13 @@ async def test_optimizer_orchestrates_critic(
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
     async with multi_model_e2e_stack(
-        mocks, db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+        mocks,
+        db,
+        async_docker_client,
+        e2e_registry_url,
+        monkeypatch,
+        images=[prompt_optimizer_image, critic_image, grader_image],
     ) as stack:
-        # Push all agent images through the proxy
-        await stack.push_image(prompt_optimizer_image)
-        await stack.push_image(critic_image)
-        await stack.push_image(grader_image)
-
         # Start grader daemon in background - it will sleep until there's drift
         grader_task: asyncio.Task[None] | None = None
 

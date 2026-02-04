@@ -40,8 +40,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_DEFAULT_UPSTREAM_REGISTRY_URL = "http://props-registry:5000"
-
 
 def _upstream_registry_url() -> str:
     """Read upstream registry URL from env on each call.
@@ -49,7 +47,7 @@ def _upstream_registry_url() -> str:
     Avoids caching at import time, which breaks tests that set
     PROPS_REGISTRY_UPSTREAM_URL via monkeypatch after module import.
     """
-    return os.environ.get("PROPS_REGISTRY_UPSTREAM_URL", _DEFAULT_UPSTREAM_REGISTRY_URL)
+    return os.environ["PROPS_REGISTRY_UPSTREAM_URL"]
 
 
 # =============================================================================
@@ -63,9 +61,9 @@ def _require_push_tag(caller_type: CallerType, ref: str) -> None:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push by tag")
 
 
-async def _proxy_to_upstream(request: Request, path: str) -> Response:
+async def _proxy_to_upstream(request: Request) -> Response:
     """Forward request to upstream registry and return response."""
-    upstream_url = f"{_upstream_registry_url()}/{path}"
+    upstream_url = f"{_upstream_registry_url()}{request.url.path}"
     if request.url.query:
         upstream_url += f"?{request.url.query}"
 
@@ -173,7 +171,7 @@ async def get_catalog(
     request: Request, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
 ) -> Response:
     """List repositories."""
-    return await _proxy_to_upstream(request, "v2/_catalog")
+    return await _proxy_to_upstream(request)
 
 
 @router.get("/v2/{repo}/tags/list")
@@ -181,7 +179,7 @@ async def get_tags(
     request: Request, repo: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
 ) -> Response:
     """List tags for a repository."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/tags/list")
+    return await _proxy_to_upstream(request)
 
 
 @router.get("/v2/{repo}/manifests/{ref}")
@@ -190,7 +188,7 @@ async def get_manifest(
     request: Request, repo: str, ref: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
 ) -> Response:
     """Get a manifest by tag or digest."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/manifests/{ref}")
+    return await _proxy_to_upstream(request)
 
 
 @router.put("/v2/{repo}/manifests/{ref}")
@@ -208,7 +206,7 @@ async def put_manifest(
     body = await request.body()
 
     # Forward to upstream
-    upstream_url = f"{_upstream_registry_url()}/v2/{repo}/manifests/{ref}"
+    upstream_url = f"{_upstream_registry_url()}{request.url.path}"
     async with httpx.AsyncClient() as client:
         headers = dict(request.headers)
         headers.pop("host", None)
@@ -219,20 +217,8 @@ async def put_manifest(
             logger.error(f"Upstream request failed: {e}")
             raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
 
-        # Record manifest push if successful, using the canonical digest from
-        # the upstream registry (not locally computed, which may differ due to
-        # manifest re-serialization).
         if upstream_response.status_code in (200, 201):
-            manifest_digest = upstream_response.headers.get("docker-content-digest")
-            logger.info(
-                f"Upstream PUT response: status={upstream_response.status_code}, "
-                f"docker-content-digest={manifest_digest}, "
-                f"headers={dict(upstream_response.headers)}"
-            )
-            if not manifest_digest:
-                # Fallback to locally computed digest
-                manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
-                logger.warning(f"Upstream didn't return Docker-Content-Digest, using local digest: {manifest_digest}")
+            manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
             await _record_manifest_push(repo, manifest_digest, body, agent_run_id, admin_db)
 
         return Response(
@@ -248,7 +234,7 @@ async def get_blob(
     request: Request, repo: str, digest: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
 ) -> Response:
     """Get a blob by digest."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/{digest}")
+    return await _proxy_to_upstream(request)
 
 
 @router.post("/v2/{repo}/blobs/uploads/")
@@ -256,7 +242,7 @@ async def start_blob_upload(
     request: Request, repo: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
 ) -> Response:
     """Start a blob upload."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/")
+    return await _proxy_to_upstream(request)
 
 
 @router.patch("/v2/{repo}/blobs/uploads/{uuid}")
@@ -264,7 +250,7 @@ async def continue_blob_upload(
     request: Request, repo: str, uuid: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
 ) -> Response:
     """Continue a blob upload (chunked)."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")
+    return await _proxy_to_upstream(request)
 
 
 @router.put("/v2/{repo}/blobs/uploads/{uuid}")
@@ -272,4 +258,4 @@ async def complete_blob_upload(
     request: Request, repo: str, uuid: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
 ) -> Response:
     """Complete a blob upload."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")
+    return await _proxy_to_upstream(request)

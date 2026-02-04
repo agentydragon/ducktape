@@ -226,7 +226,6 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     synced_db,
     db: Database,
     async_docker_client,
-    docker_client,
     e2e_registry_url,
     test_snapshot,
     prompt_optimizer_image,
@@ -258,12 +257,13 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
     async with multi_model_e2e_stack(
-        mocks, synced_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+        mocks,
+        synced_db,
+        async_docker_client,
+        e2e_registry_url,
+        monkeypatch,
+        images=[prompt_optimizer_image, critic_image, grader_image],
     ) as stack:
-        await stack.push_image(prompt_optimizer_image)
-        await stack.push_image(critic_image)
-        await stack.push_image(grader_image)
-
         # Start grader daemon in background
         grader_task = asyncio.create_task(
             stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
@@ -300,7 +300,6 @@ async def test_po_creates_custom_critic_with_token(
     synced_db,
     db: Database,
     async_docker_client,
-    docker_client,
     e2e_registry_url,
     test_snapshot,
     prompt_optimizer_image,
@@ -331,12 +330,13 @@ async def test_po_creates_custom_critic_with_token(
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
     async with multi_model_e2e_stack(
-        mocks, synced_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+        mocks,
+        synced_db,
+        async_docker_client,
+        e2e_registry_url,
+        monkeypatch,
+        images=[prompt_optimizer_image, critic_image, grader_image],
     ) as stack:
-        await stack.push_image(prompt_optimizer_image)
-        await stack.push_image(critic_image)
-        await stack.push_image(grader_image)
-
         grader_task = asyncio.create_task(
             stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
         )
@@ -398,8 +398,7 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
     """
     mock = make_critic_push_attempt_mock()
 
-    async with e2e_stack(mock) as stack:
-        await stack.push_image(critic_image)
+    async with e2e_stack(mock, images=[critic_image]) as stack:
         run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=all_files_scope,
