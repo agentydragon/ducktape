@@ -43,11 +43,8 @@ def setup_crane_auth() -> None:
         logger.warning("PROPS_BACKEND_URL not set, skipping crane auth setup")
         return
 
-    username = os.environ.get("PGUSER", "")
-    password = os.environ.get("PGPASSWORD", "")
-    if not username or not password:
-        logger.warning("PGUSER/PGPASSWORD not set, skipping crane auth setup")
-        return
+    username = os.environ["PGUSER"]
+    password = os.environ["PGPASSWORD"]
 
     # Registry proxy is at the same host:port as the backend
     registry = urlparse(backend_url).netloc
