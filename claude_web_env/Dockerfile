@@ -26,7 +26,7 @@ LABEL maintainer="Claude Code Recreation"
 LABEL description="Recreated Claude Code web development environment"
 
 # Redirect RUN output to avoid SIGPIPE under gVisor+buildah (requires --format=docker)
-SHELL ["/bin/bash", "-c", "set -euo pipefail; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
+SHELL ["/bin/bash", "-c", "set -euo pipefail; eval \"$0\" > /tmp/build-step.log 2>&1 || { tail -100 /tmp/build-step.log >&2; exit 1; }"]
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
@@ -51,7 +51,7 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     printf '%s\n' 'Package: *' 'Pin: origin snapshot.ubuntu.com' 'Pin-Priority: 1001' \
       > /etc/apt/preferences.d/snapshot-pin && \
     printf '%s\n' 'Package: libglib2.0-* gir1.2-glib-2.0 libgirepository-2.0-0' \
-      'Pin: version 2.80.0-6ubuntu3.5' 'Pin-Priority: 1002' \
+      'Pin: version 2.80.0-6ubuntu3.7' 'Pin-Priority: 1002' \
       > /etc/apt/preferences.d/glib-pin && \
     printf '%s\n' \
       'Package: libreoffice-* fonts-opensymbol libuno-* uno-libs-private ure python3-uno libreoffice-style-* libreoffice-uiconfig-*' \
@@ -111,7 +111,7 @@ RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recomme
     fonts-liberation fonts-noto-color-emoji fonts-opensymbol fonts-tlwg-loma-otf \
     fonts-unifont fonts-wqy-zenhei xfonts-cyrillic xfonts-scalable \
     libreoffice-core libreoffice-common python3-uno \
-    libjs-jquery libjs-sphinxdoc libjs-underscore python3-doc nftables libpython3-dev \
+    libjs-jquery libjs-sphinxdoc libjs-underscore nftables libpython3-dev python3-dev \
     openjdk-21-jdk openjdk-21-jre ca-certificates-java \
     postgresql-16 postgresql-common postgresql-client-16 redis-server redis-tools \
     libwayland-server0 libdrm2 libdrm-amdgpu1 libdrm-intel1 libdrm-common \
@@ -340,7 +340,8 @@ RUN rm -f \
     /etc/apt/preferences.d/libreoffice-pin \
     /etc/apt/preferences.d/postgresql-pin \
     /etc/apt/preferences.d/ppa-pin \
-    /etc/apt/preferences.d/php84-pin
+    /etc/apt/preferences.d/php84-pin \
+    /etc/apt/preferences.d/version-drift-pin
 
 # =============================================================================
 # ENVIRONMENT

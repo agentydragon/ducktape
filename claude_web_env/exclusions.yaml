@@ -153,6 +153,9 @@ volatile_paths:
   - "/usr/local/bin/golangci-lint"
   - "/usr/local/use-go-*.sh"
 
+  # wget HSTS database (timestamps from build-time downloads differ per build)
+  - "/root/.wget-hsts"
+
   # DRI drivers (mesa version drift adds/removes driver .so files)
   - "/usr/lib/x86_64-linux-gnu/dri/*"
 
@@ -175,16 +178,21 @@ only_in_live:
   - /container_info.json
   - /.dockerenv
 
-  # Claude Code runtime-generated config (we bake in base settings.json, but
-  # these runtime files are written during sessions)
+  # Claude Code runtime-generated config and state
   - /root/.claude.json
   - /root/.claude.json.backup
+  - /root/.claude/stats-cache.json
+  - /root/.claude/stop-hook-git-check.sh
 
   # Gradle and launchpadlib caches (created by runtime tool usage)
   - /root/.gradle
   - "/root/.gradle/**"
   - /root/.launchpadlib
   - "/root/.launchpadlib/**"
+
+  # pnpm state (populated at runtime by npm tool usage)
+  - /root/.local/state
+  - "/root/.local/state/**"
 
   # Bazel config (written by session hook or user)
   - /root/.bazelrc

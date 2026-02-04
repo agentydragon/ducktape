@@ -9,4 +9,6 @@
 [commit]
 	gpgsign = true
 [http]
-    proxyAuthMethod = basic
+	proxyAuthMethod = basic
+[core]
+	checkStat = minimal

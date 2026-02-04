@@ -1,73 +1,52 @@
 # Current Plan
 
-## Latest Build Results (2026-02-03, build v2)
+## Latest Build Results (2026-02-04, build v4)
 
-**Diff Summary**: 2,132 real differences (down from 10,100)
+**Diff Summary**: 69 real differences (down from 2,132)
 
 | Category        | Count  |
 | --------------- | ------ |
-| Identical       | 120.4k |
-| Excluded        | 906.6k |
-| **Real diffs**  | 2,132  |
-| Only in live    | 1,742  |
-| Only in built   | 61     |
-| Content changed | 329    |
+| Identical       | 120.6k |
+| Excluded        | 907.0k |
+| **Real diffs**  | 69     |
+| Only in live    | 11     |
+| Only in built   | 0      |
+| Content changed | 58     |
 
 ### Remaining Diff Breakdown
 
-**Only in live (1,742):**
+**Only in live (11):**
 
-| Category   | Count | Main items                                            | Action                 |
-| ---------- | ----- | ----------------------------------------------------- | ---------------------- |
-| root-local | 1,727 | virtualenv/pnpm caches                                | ✅ Added to exclusions |
-| docs       | 9     | age docs, python3 `_static`                           | ✅ Added age package   |
-| others     | 6     | stop-hook, .ssh, .bazelrc, .gitconfig, commit signing | ✅ Added to exclusions |
+| Category      | Count | Main items                                   | Action                               |
+| ------------- | ----- | -------------------------------------------- | ------------------------------------ |
+| claude-config | 2     | `stats-cache.json`, `stop-hook-git-check.sh` | ✅ Added to exclusions               |
+| docs          | 6     | `python3/_static` (from `python3-dev`)       | ✅ Added `python3-dev` to Dockerfile |
+| root-local    | 3     | `pnpm-state.json`                            | ✅ Added to exclusions               |
 
-**Only in built (61):**
+**Content changed (58):**
 
-| Category  | Count | Main items            | Action                                |
-| --------- | ----- | --------------------- | ------------------------------------- |
-| docs      | 42    | python3.12-doc extras | Minor — live doesn't install this doc |
-| etc       | 7     | APT preference files  | ✅ Cleaned up in Dockerfile           |
-| usr-share | 12    | python devhelp/info   | Minor — from python3-doc package      |
+| Category        | Count | Cause                                            |
+| --------------- | ----- | ------------------------------------------------ |
+| python-libs     | 52    | Python 3.12 `.so` files (version drift 0.9→0.10) |
+| docs            | 2     | libpng/python3.12 changelog.gz                   |
+| system-binaries | 1     | `python3.12` binary                              |
+| system-libs     | 3     | `libpng16.a`, `libpng16.so`, `libpython3.12.so`  |
 
-**Content changed (329):**
+All 58 content-changed files are python3.12 version drift (3.12.3-1ubuntu0.9 vs 0.10) or libpng.
+Python3.12 can't be pinned via APT preferences due to deadsnakes PPA priority conflict.
 
-| Category        | Count | Cause                                  |
-| --------------- | ----- | -------------------------------------- |
-| docs            | 28    | Changelog.gz diffs (version mismatch)  |
-| other           | 70    | systemd/gnupg binaries (version drift) |
-| python-libs     | 52    | Python 3.12 .so files (version drift)  |
-| system-binaries | 97    | systemd/gnupg/gdb/login/glib (version) |
-| etc             | 2     | deadsnakes sources, pam.d/login        |
-| home/root-home  | 3     | .gitconfig, .wget-hsts                 |
+## Next Priority: Python 3.12 Version Drift (58 files)
 
-## Next Priority: Version Drift (329 files)
+The remaining 58 content-changed files are all from the python3.12 package family
+(snapshot has 3.12.3-1ubuntu0.9, live has 3.12.3-1ubuntu0.10). The version-drift-pin
+approach doesn't work for python3.12 because the deadsnakes PPA pin (priority 1002)
+creates a conflict.
 
-The 329 content-changed files are all version drift — the snapshot.ubuntu.com archive (2025-12-01) provides slightly different package versions than what the live container has.
+### Possible approaches
 
-### Live container package versions
-
-```
-systemd=255.4-1ubuntu8.12
-gnupg=2.4.4-2ubuntu17.4
-python3.12=3.12.3-1ubuntu0.10
-gdb=15.0.50.20240403-0ubuntu1
-login/passwd=1:4.13+dfsg1-4ubuntu3.2
-libpam=1.5.3-5ubuntu5.5
-util-linux=2.39.3-9ubuntu6.4
-binutils=2.42-4ubuntu2.8
-```
-
-### Approach
-
-The snapshot archive from 2025-12-01 likely has earlier point releases. Options:
-
-1. **Update snapshot date** to one that has the exact versions
-2. **Pin specific versions** with `apt-get install pkg=VERSION`
-3. **Use archive.ubuntu.com** with higher priority for these packages
-
-Option 2 is the most reliable. Add version pins to the apt-get install line for drifting packages.
+1. **Update snapshot date** to one after python3.12 0.10 was released
+2. **Explicit `apt-get install python3.12=VERSION`** in the Python install step
+3. **Exclude python3.12 version drift** in exclusions.yaml (accept the drift)
 
 ## Completed
 
@@ -76,10 +55,16 @@ Option 2 is the most reliable. Add version pins to the apt-get install line for 
 - ✅ Removed stripping step (was stripping `/usr/share/doc`, `/usr/include`, etc.)
 - ✅ Fixed `/process_api` structure (file, not directory)
 - ✅ Renamed `scripts/README` → `README.md`
-- ✅ Added `php8.4-sqlite3`, `age` packages
-- ✅ Added runtime exclusions (virtualenv, pnpm, .ssh, .bazelrc, projects)
+- ✅ Added `php8.4-sqlite3`, `age`, `python3-dev` packages
+- ✅ Added runtime exclusions (virtualenv, pnpm, .ssh, .bazelrc, projects, claude state)
 - ✅ Cleaned up APT preference files from built image
-- ✅ Diff reduced from 10,100 → 2,132 real differences
+- ✅ Diff reduced from 10,100 → 2,132 → 69 real differences
+- ✅ Version-drift-pin file pins 18 package families to live versions
+- ✅ Fixed `.gitconfig` (added `[core]` section, fixed indentation)
+- ✅ Fixed deadsnakes sources (trailing space on `Signed-By:`)
+- ✅ Removed `python3-doc` (not in live container)
+- ✅ Updated glib pin version (ubuntu3.5 → ubuntu3.7)
+- ✅ Debug SHELL shows last 100 lines on build failure
 
 ## Session Notes
 
