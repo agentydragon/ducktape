@@ -51,6 +51,7 @@ from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import BackendDeps, create_app
 from props.config import PropsConfig
+from props.core.docker_env import PROPS_NETWORK_NAME
 from props.core.oci_utils import RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
@@ -70,6 +71,36 @@ E2E_HOST_HOSTNAME = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.inter
 
 # Host gateway for container access to host services (only needed for bridge networking)
 HOST_GATEWAY = {E2E_HOST_HOSTNAME: "host-gateway"} if E2E_HOST_HOSTNAME == "host.docker.internal" else {}
+
+
+@asynccontextmanager
+async def ensure_agent_network(docker_client: aiodocker.Docker) -> AsyncIterator[None]:
+    """Ensure the agent Docker network exists, creating it if needed.
+
+    For "host" networking (CI/Firecracker), this is a no-op.
+    For bridge networking, creates the network and removes it on cleanup.
+    """
+    if PROPS_NETWORK_NAME == "host":
+        yield
+        return
+
+    # Check if network already exists
+    existing = await docker_client.networks.list(filters={"name": [PROPS_NETWORK_NAME]})
+    # Filter for exact name match (Docker list uses substring matching)
+    already_exists = any(n["Name"] == PROPS_NETWORK_NAME for n in existing)
+
+    if already_exists:
+        logger.info("Docker network %s already exists", PROPS_NETWORK_NAME)
+        yield
+        return
+
+    logger.info("Creating Docker network %s", PROPS_NETWORK_NAME)
+    network = await docker_client.networks.create({"Name": PROPS_NETWORK_NAME, "Driver": "bridge"})
+    try:
+        yield
+    finally:
+        logger.info("Removing Docker network %s", PROPS_NETWORK_NAME)
+        await network.delete()
 
 
 @dataclass
@@ -185,7 +216,7 @@ async def e2e_stack(
                 config=PropsConfig(agent_env=agent_base_env), registry_proxy_config=registry_proxy_config
             )
 
-            async with run_backend(deps, port=backend_port) as _port:
+            async with ensure_agent_network(async_docker_client), run_backend(deps, port=backend_port) as _port:
                 registry = AgentRegistry(
                     docker_client=async_docker_client,
                     db=synced_db,
@@ -237,7 +268,7 @@ async def multi_model_e2e_stack(
 
         deps = BackendDeps(config=PropsConfig(agent_env=agent_base_env), registry_proxy_config=registry_proxy_config)
 
-        async with run_backend(deps, port=backend_port) as _port:
+        async with ensure_agent_network(async_docker_client), run_backend(deps, port=backend_port) as _port:
             registry = AgentRegistry(
                 docker_client=async_docker_client,
                 db=db,

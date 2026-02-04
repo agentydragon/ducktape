@@ -47,6 +47,7 @@ py_library(
         "//openai_utils:model",
         "//props:config",
         "//props/backend:app",
+        "//props/core:docker_env",
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
