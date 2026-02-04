@@ -31,7 +31,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from props.backend.auth import ACL_CAN_PUSH_TAGS, CallerType, require_registry_push, require_registry_read
-from props.backend.deps import get_admin_db
+from props.backend.deps import AdminDb
 from props.core.oci_utils import is_digest
 from props.db.database import Database
 from props.db.models import AgentDefinition, AgentType
@@ -190,7 +190,7 @@ async def put_manifest(
     request: Request,
     repo: str,
     ref: str,
-    db: Annotated[Database, Depends(get_admin_db)],
+    admin_db: AdminDb,
     auth: Annotated[tuple[CallerType, UUID | None], Depends(require_registry_push)],
 ) -> Response:
     """Push a manifest."""
@@ -215,7 +215,7 @@ async def put_manifest(
 
         # Record manifest push if successful
         if upstream_response.status_code in (200, 201):
-            await _record_manifest_push(repo, manifest_digest, body, agent_run_id, db)
+            await _record_manifest_push(repo, manifest_digest, body, agent_run_id, admin_db)
 
         return Response(
             content=upstream_response.content,

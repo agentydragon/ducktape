@@ -66,7 +66,7 @@ def _make_lifespan(deps: BackendDeps):
         docker_client = aiodocker.Docker()
         db_config = DatabaseConfig()
         db = Database(db_config)
-        app.state.db = db
+        app.state.admin_db = db
 
         app.state.registry = AgentRegistry(
             docker_client=docker_client,

@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from props.backend.auth import AuthContext, get_auth_context
-from props.backend.deps import get_admin_db
+from props.backend.deps import AdminDb
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 
@@ -48,7 +48,7 @@ def require_llm_access(request: Request) -> tuple[UUID, str]:
     Returns (agent_run_id, allowed_model) or raises HTTPException.
     """
     auth: AuthContext = get_auth_context(request)
-    db: Database = request.app.state.db
+    db: Database = request.app.state.admin_db
 
     # Check for auth errors
     if auth.error:
@@ -98,9 +98,7 @@ def _log_request(
 
 @router.post("/v1/responses")
 async def responses(
-    request: Request,
-    db: Annotated[Database, Depends(get_admin_db)],
-    auth: Annotated[tuple[UUID, str], Depends(require_llm_access)],
+    request: Request, admin_db: AdminDb, auth: Annotated[tuple[UUID, str], Depends(require_llm_access)]
 ) -> JSONResponse:
     """Proxy OpenAI Responses API requests.
 
@@ -149,7 +147,7 @@ async def responses(
             )
         except httpx.TimeoutException:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            with db.session() as session:
+            with admin_db.session() as session:
                 _log_request(
                     session=session,
                     agent_run_id=agent_run_id,
@@ -162,7 +160,7 @@ async def responses(
             raise HTTPException(status_code=504, detail="Upstream timeout")
         except httpx.RequestError as e:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            with db.session() as session:
+            with admin_db.session() as session:
                 _log_request(
                     session=session,
                     agent_run_id=agent_run_id,
@@ -187,7 +185,7 @@ async def responses(
     if upstream_response.status_code >= 400:
         error = f"HTTP {upstream_response.status_code}"
 
-    with db.session() as session:
+    with admin_db.session() as session:
         _log_request(
             session=session,
             agent_run_id=agent_run_id,

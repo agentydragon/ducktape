@@ -16,7 +16,7 @@ def get_admin_db(request: Request) -> Database:
     genuinely require admin privileges (INSERT into llm_requests,
     launching agent runs, etc).
     """
-    return request.app.state.db  # type: ignore[no-any-return]
+    return request.app.state.admin_db  # type: ignore[no-any-return]
 
 
 # Type alias for admin database dependency (use in FastAPI route signatures)

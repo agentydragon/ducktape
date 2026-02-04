@@ -9,7 +9,6 @@ import io
 import tarfile
 from collections import Counter, defaultdict
 from datetime import datetime
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -17,11 +16,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from props.backend.auth import require_admin_access
-from props.backend.deps import get_admin_db
+from props.backend.deps import AdminDb
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import LineRange
 from props.core.splits import Split
-from props.db.database import Database
 from props.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
@@ -159,9 +157,9 @@ def _get_snapshot_or_404(session: Session, snapshot_slug: SnapshotSlug) -> Snaps
 
 
 @router.get("/snapshots")
-def list_snapshots(db: Annotated[Database, Depends(get_admin_db)]) -> SnapshotsListResponse:
+def list_snapshots(admin_db: AdminDb) -> SnapshotsListResponse:
     """List all snapshots with issue counts."""
-    with db.session() as session:
+    with admin_db.session() as session:
         # Get snapshots with TP/FP counts
         snapshots = session.query(Snapshot).order_by(Snapshot.created_at.desc()).all()
 
@@ -194,11 +192,9 @@ def list_snapshots(db: Annotated[Database, Depends(get_admin_db)]) -> SnapshotsL
 
 
 @router.get("/snapshots/{snapshot_slug:path}")
-def get_snapshot_detail(
-    snapshot_slug: SnapshotSlug, db: Annotated[Database, Depends(get_admin_db)]
-) -> SnapshotDetailResponse:
+def get_snapshot_detail(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> SnapshotDetailResponse:
     """Get detailed snapshot info with all TPs and FPs."""
-    with db.session() as session:
+    with admin_db.session() as session:
         snapshot = _get_snapshot_or_404(session, snapshot_slug)
 
         # Get TPs with eager loading
@@ -323,9 +319,9 @@ class FileTreeResponse(BaseModel):
 
 
 @router.get("/snapshots/{snapshot_slug:path}/tree")
-def get_snapshot_tree(snapshot_slug: SnapshotSlug, db: Annotated[Database, Depends(get_admin_db)]) -> FileTreeResponse:
+def get_snapshot_tree(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> FileTreeResponse:
     """Get directory tree with issue occurrence counts."""
-    with db.session() as session:
+    with admin_db.session() as session:
         _get_snapshot_or_404(session, snapshot_slug)
 
         # Get all snapshot files
@@ -436,11 +432,9 @@ class FileContentResponse(BaseModel):
 
 
 @router.get("/snapshots/{snapshot_slug:path}/files/{file_path:path}")
-def get_snapshot_file(
-    snapshot_slug: SnapshotSlug, file_path: str, db: Annotated[Database, Depends(get_admin_db)]
-) -> FileContentResponse:
+def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str, admin_db: AdminDb) -> FileContentResponse:
     """Get file content from snapshot tar archive."""
-    with db.session() as session:
+    with admin_db.session() as session:
         snapshot = _get_snapshot_or_404(session, snapshot_slug)
 
         if not snapshot.content:

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSo
 from pydantic import BaseModel, Field
 
 from props.backend.auth import require_admin_access
-from props.backend.deps import get_admin_db
+from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
 from props.core.models.examples import ExampleKind, ExampleSpec
@@ -308,7 +308,7 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
 
 
 @router.get("/active")
-def list_active_runs(request: Request, db: Annotated[Database, Depends(get_admin_db)]) -> ActiveRunsResponse:
+def list_active_runs(request: Request, admin_db: AdminDb) -> ActiveRunsResponse:
     """List all active agent runs.
 
     Queries database for runs with IN_PROGRESS status.
@@ -316,7 +316,7 @@ def list_active_runs(request: Request, db: Annotated[Database, Depends(get_admin
     status is tracked only in the database.
     """
     # Query database for IN_PROGRESS runs
-    with db.session() as session:
+    with admin_db.session() as session:
         db_runs = (
             session.query(AgentRun)
             .filter(AgentRun.status == AgentRunStatus.IN_PROGRESS)
@@ -347,7 +347,7 @@ def list_jobs() -> JobsResponse:
 
 @router.get("")
 def list_runs(
-    db: Annotated[Database, Depends(get_admin_db)],
+    admin_db: AdminDb,
     status: AgentRunStatus | None = None,
     image_digest: str | None = None,
     agent_type: AgentType | None = None,
@@ -369,7 +369,7 @@ def list_runs(
     """
     limit = min(limit, 500)  # Cap at 500
 
-    with db.session() as session:
+    with admin_db.session() as session:
         query = session.query(AgentRun)
 
         if status:
@@ -418,7 +418,7 @@ def list_runs(
 
 @router.post("/validation")
 async def trigger_validation_runs(
-    request: Request, body: ValidationRunRequest, db: Annotated[Database, Depends(get_admin_db)]
+    request: Request, body: ValidationRunRequest, admin_db: AdminDb
 ) -> ValidationRunResponse:
     """Trigger validation critic runs: sample N examples, run 1 critic per example.
 
@@ -429,7 +429,7 @@ async def trigger_validation_runs(
     registry = get_registry(request)
 
     # Get examples of the requested kind and split
-    with db.session() as session:
+    with admin_db.session() as session:
         examples = (
             session.query(Example)
             .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
@@ -460,7 +460,7 @@ async def trigger_validation_runs(
     _jobs[job_id] = job
 
     # Spawn background task with parallel execution
-    job.task = asyncio.create_task(_run_validation_batch(job=job, registry=registry, db=db))
+    job.task = asyncio.create_task(_run_validation_batch(job=job, registry=registry, db=admin_db))
 
     slugs = [e.snapshot_slug for e in example_specs[:3]]
     message = f"Started {n_to_sample} validation runs. Snapshots: {slugs}{'...' if n_to_sample > 3 else ''}"
@@ -531,9 +531,9 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
 
 
 @router.get("/{run_id}")
-def get_run(run_id: UUID, db: Annotated[Database, Depends(get_admin_db)]) -> AgentRunDetail:
+def get_run(run_id: UUID, admin_db: AdminDb) -> AgentRunDetail:
     """Get details of a specific agent run."""
-    with db.session() as session:
+    with admin_db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -711,9 +711,9 @@ def get_run(run_id: UUID, db: Annotated[Database, Depends(get_admin_db)]) -> Age
 
 
 @router.get("/{run_id}/llm_requests")
-def get_run_llm_requests(run_id: UUID, db: Annotated[Database, Depends(get_admin_db)]) -> LLMRequestsResponse:
+def get_run_llm_requests(run_id: UUID, admin_db: AdminDb) -> LLMRequestsResponse:
     """Get LLM requests for a specific agent run."""
-    with db.session() as session:
+    with admin_db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -801,7 +801,7 @@ async def runs_feed(websocket: WebSocket) -> None:
     """
     await websocket.accept()
     _feed_connections.add(websocket)
-    db: Database = websocket.app.state.db
+    db: Database = websocket.app.state.admin_db
 
     try:
         # Send initial state

@@ -223,7 +223,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 username, password = parsed
 
                 # Validate credentials and determine access level
-                db: Database = request.app.state.db
+                db: Database = request.app.state.admin_db
                 result = validate_postgres_credentials(username, password, db.config)
                 if not result.is_valid:
                     logger.warning(f"Invalid postgres credentials for user: {username}")
@@ -277,36 +277,36 @@ def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID |
 # =============================================================================
 
 
-def require_registry_read(request: Request, db: AdminDb) -> tuple[CallerType, UUID | None]:
+def require_registry_read(request: Request, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring registry read permission. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
-    caller_type, agent_run_id = get_caller_type(auth, db)
+    caller_type, agent_run_id = get_caller_type(auth, admin_db)
     if caller_type not in ACL_CAN_READ_REGISTRY:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read from registry")
     return caller_type, agent_run_id
 
 
-def require_registry_push(request: Request, db: AdminDb) -> tuple[CallerType, UUID | None]:
+def require_registry_push(request: Request, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring registry push permission. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
-    caller_type, agent_run_id = get_caller_type(auth, db)
+    caller_type, agent_run_id = get_caller_type(auth, admin_db)
     if caller_type not in ACL_CAN_PUSH_REGISTRY:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
     return caller_type, agent_run_id
 
 
-def require_eval_api_access(request: Request, db: AdminDb) -> tuple[CallerType, UUID | None]:
+def require_eval_api_access(request: Request, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring eval API access. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
-    caller_type, agent_run_id = get_caller_type(auth, db)
+    caller_type, agent_run_id = get_caller_type(auth, admin_db)
     if caller_type not in ACL_CAN_USE_EVAL_API:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to access eval endpoints")
     return caller_type, agent_run_id
 
 
-def require_admin_access(request: Request, db: AdminDb) -> None:
+def require_admin_access(request: Request, admin_db: AdminDb) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
     auth = get_auth_context(request)
-    caller_type, _ = get_caller_type(auth, db)
+    caller_type, _ = get_caller_type(auth, admin_db)
     if caller_type != CallerType.ADMIN:
         raise HTTPException(status_code=403, detail="Admin access required")
