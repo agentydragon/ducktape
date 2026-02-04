@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
 import functools
 import importlib.resources
+import json
 import logging
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import psycopg2
 from jinja2 import Environment
@@ -26,6 +29,37 @@ WORKSPACE = Path("/workspace")
 def setup_logging() -> None:
     """Configure logging for in-container agent loops."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+def setup_crane_auth() -> None:
+    """Configure Docker/crane auth for the OCI registry proxy.
+
+    Derives the registry address from PROPS_BACKEND_URL (the registry proxy
+    shares the backend's host:port) and authenticates with PGUSER/PGPASSWORD.
+    Writes ~/.docker/config.json so crane can push/pull via Basic auth.
+    """
+    backend_url = os.environ.get("PROPS_BACKEND_URL", "")
+    if not backend_url:
+        logger.warning("PROPS_BACKEND_URL not set, skipping crane auth setup")
+        return
+
+    username = os.environ.get("PGUSER", "")
+    password = os.environ.get("PGPASSWORD", "")
+    if not username or not password:
+        logger.warning("PGUSER/PGPASSWORD not set, skipping crane auth setup")
+        return
+
+    # Registry proxy is at the same host:port as the backend
+    registry = urlparse(backend_url).netloc
+
+    auth_token = base64.b64encode(f"{username}:{password}".encode()).decode()
+    config = {"auths": {registry: {"auth": auth_token}}}
+
+    config_dir = Path.home() / ".docker"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "config.json"
+    config_path.write_text(json.dumps(config))
+    logger.info("Crane auth configured for registry %s", registry)
 
 
 def _describe_relation(db: Database, relation_name: str) -> str:

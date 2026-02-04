@@ -1,12 +1,14 @@
 """Shared authentication utilities and FastAPI dependencies for backend APIs.
 
-Authentication uses Bearer tokens with Postgres credentials validation:
+Authentication uses Bearer or Basic tokens with Postgres credentials validation:
 - Admin users: Any valid Postgres user (non-agent_* username)
 - Agent users: Format agent_{uuid} with temp credentials
 - Localhost admin: Empty/no creds from localhost = admin (for local dev and dashboard)
 
-Bearer tokens contain base64-encoded username:password (the OpenAI SDK sends
-api_key as a Bearer token, and agent containers encode credentials this way).
+Tokens contain base64-encoded username:password. Both schemes are supported:
+- Bearer: OpenAI SDK sends api_key as Bearer token; agent containers encode creds this way
+- Basic: OCI/crane tooling doesn't support token auth (Bearer); crane/docker
+  send Basic auth from Docker config
 
 This module provides:
 - Credential validation with access level determination
@@ -140,18 +142,24 @@ def validate_postgres_credentials(
     return CredentialValidationResult.admin()
 
 
-def parse_bearer_credentials(authorization: str | None) -> tuple[str, str] | None:
-    """Parse Bearer token containing base64-encoded username:password.
+def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
+    """Parse Bearer or Basic token containing base64-encoded username:password.
 
-    The OpenAI SDK sends api_key as a Bearer token. Agent containers encode
-    their credentials as base64(username:password) in the api_key, so this
-    extracts those credentials from the Bearer token.
+    Both schemes carry the same payload (base64 of username:password):
+    - Bearer: used by OpenAI SDK and agent containers
+    - Basic: OCI/crane tooling does not support token auth (Bearer), so we
+      accept Basic for Docker/crane clients (crane push/pull, docker push/pull)
     """
-    if not authorization or not authorization.startswith("Bearer "):
+    if not authorization:
+        return None
+    if authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ")
+    elif authorization.startswith("Basic "):
+        token = authorization.removeprefix("Basic ")
+    else:
         return None
 
     try:
-        token = authorization.removeprefix("Bearer ")
         decoded = base64.b64decode(token).decode("utf-8")
         if ":" not in decoded:
             return None
@@ -212,7 +220,7 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
             return AuthContext.localhost_admin()
         return AuthContext.anonymous()
 
-    parsed = parse_bearer_credentials(authorization)
+    parsed = parse_credentials(authorization)
     if not parsed:
         raise HTTPException(status_code=401, detail="Invalid authorization format")
 

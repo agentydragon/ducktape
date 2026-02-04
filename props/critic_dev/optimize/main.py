@@ -20,7 +20,7 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from openai_utils.model import SystemMessage
 from props.core.agent_helpers import get_current_agent_run
 from props.core.eval_client import EvalClient
-from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_logging
+from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_crane_auth, setup_logging
 from props.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoggingHandler, LoopState, LoopStatus, create_tool_provider
 from props.db.database import Database
 
@@ -70,6 +70,7 @@ async def run_prompt_optimizer_loop(
 async def main() -> int:
     """Main entry point for prompt optimizer agent."""
     setup_logging()
+    setup_crane_auth()
 
     logger.info("Prompt optimizer agent starting")
     db = Database.from_env()

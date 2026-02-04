@@ -100,7 +100,10 @@ oci_image(
     base = "@distroless_cc_linux_amd64",
     cmd = py_binary_distroless_cmd("optimize"),
     env = py_binary_distroless_env("optimize"),
-    tars = [":main_tar"],
+    tars = [
+        ":main_tar",
+        "//props:crane_tar",
+    ],
     visibility = ["//visibility:public"],
     workdir = "/workspace",
 )

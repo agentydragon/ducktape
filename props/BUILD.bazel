@@ -2,11 +2,21 @@
 # gazelle:python_library_naming_convention $package_name$_lib
 # Props workspace - top-level package
 
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_library")
 
 exports_files([
     "config.toml",
 ])
+
+# Crane binary for agent images that need OCI push/pull (PO, PI).
+pkg_tar(
+    name = "crane_tar",
+    srcs = ["@crane"],
+    mode = "0755",
+    package_dir = "/usr/local/bin",
+    visibility = ["//props:__subpackages__"],
+)
 
 py_library(
     name = "config",

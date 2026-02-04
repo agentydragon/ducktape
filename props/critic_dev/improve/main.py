@@ -31,7 +31,7 @@ from props.core.agent_helpers import get_current_agent_run
 from props.core.agent_types import ImprovementTypeConfig
 from props.core.eval_client import EvalClient
 from props.core.ids import DefinitionId
-from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_logging
+from props.core.loop_utils import create_bound_model_from_env, render_system_prompt, setup_crane_auth, setup_logging
 from props.core.models.examples import SingleFileSetExample
 from props.critic_dev.loop import LoggingHandler, LoopState, LoopStatus, create_tool_provider
 from props.db.database import Database
@@ -436,6 +436,7 @@ async def run_improvement_loop(
 async def main() -> int:
     """Main entry point for improvement agent."""
     setup_logging()
+    setup_crane_auth()
 
     logger.info("Improvement agent starting")
 
