@@ -23,7 +23,6 @@ import asyncio
 import contextlib
 import logging
 
-import aiodocker
 import pytest
 import pytest_bazel
 from hamcrest import all_of, assert_that
@@ -47,7 +46,6 @@ from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, Snapshot
-from props.testing.fixtures.e2e_container import multi_model_e2e_stack
 from props.testing.mocks import PropsMock
 
 logger = logging.getLogger(__name__)
@@ -295,14 +293,7 @@ def make_orchestration_critic_mock() -> PropsMock:
 @pytest.mark.requires_docker
 @pytest.mark.slow
 async def test_optimizer_orchestrates_critic(
-    synced_db: Database,
-    db: Database,
-    async_docker_client: aiodocker.Docker,
-    e2e_registry_url: str,
-    prompt_optimizer_image,
-    critic_image,
-    grader_image,
-    monkeypatch: pytest.MonkeyPatch,
+    synced_db: Database, multi_model_e2e_stack, prompt_optimizer_image, critic_image, grader_image
 ):
     """Test optimizer can orchestrate critic runs with simulated grading.
 
@@ -346,14 +337,7 @@ async def test_optimizer_orchestrates_critic(
         ORCHESTRATION_CRITIC_MODEL: critic_mock,
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
-    async with multi_model_e2e_stack(
-        mocks,
-        db,
-        async_docker_client,
-        e2e_registry_url,
-        monkeypatch,
-        images=[prompt_optimizer_image, critic_image, grader_image],
-    ) as stack:
+    async with multi_model_e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
         # Start grader daemon in background - it will sleep until there's drift
         grader_task: asyncio.Task[None] | None = None
 

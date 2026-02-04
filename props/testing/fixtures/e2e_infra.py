@@ -1,27 +1,13 @@
 """Testcontainers-based e2e infrastructure fixtures.
 
-Provides hermetic e2e test infrastructure using testcontainers:
-- Docker registry for agent images
-- OCI image layout directories from Bazel oci_image targets
-- crane-based push to test registry (no Docker tagging)
-
-Images are pushed directly from Bazel OCI layouts via crane,
-bypassing Docker load/tag/push entirely.
-
-Usage in BUILD.bazel:
-    docker_py_test(
-        name = "test_e2e",
-        data = [
-            "//props/critic:image",
-            "@oci_crane_linux_amd64//:crane",
-        ],
-        deps = ["//props/testing/fixtures:e2e_infra"],
-    )
+Provides session-scoped test infrastructure:
+- Docker registry (testcontainers registry:2)
+- BazelImage fixtures for agent images (from Bazel oci_image layout directories)
 
 Usage in tests:
     @pytest.mark.requires_docker
     async def test_something(e2e_registry, grader_image, e2e_stack):
-        async with e2e_stack(mock) as stack:
+        async with e2e_stack(mock, images=[grader_image]) as stack:
             run_id = await stack.registry.run_snapshot_grader(...)
 """
 

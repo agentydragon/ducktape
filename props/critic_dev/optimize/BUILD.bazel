@@ -91,8 +91,6 @@ docker_py_test(
         "//props/db:examples",
         "//props/db:models",
         "//props/testing",
-        "//props/testing/fixtures:e2e_container",
-        "@pypi//aiodocker",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
