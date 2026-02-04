@@ -98,7 +98,7 @@ async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_examp
     mock = make_improvement_mock()
 
     async with e2e_stack(mock) as stack:
-        stack.push_image(improvement_image)
+        await stack.push_image(improvement_image)
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],
@@ -130,7 +130,7 @@ async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot, im
     mock = make_improvement_mock()
 
     async with e2e_stack(mock) as stack:
-        stack.push_image(improvement_image)
+        await stack.push_image(improvement_image)
         result = await stack.registry.run_improvement_agent(
             examples=allowed_examples,
             baseline_image_refs=[CRITIC_IMAGE_REF],
@@ -186,7 +186,7 @@ async def test_cli_leaderboard_in_improvement_agent(
     mock = make_leaderboard_check_mock()
 
     async with e2e_stack(mock) as stack:
-        stack.push_image(improvement_image)
+        await stack.push_image(improvement_image)
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],
@@ -208,7 +208,7 @@ async def test_cli_hard_examples_in_improvement_agent(
     mock = make_hard_examples_check_mock()
 
     async with e2e_stack(mock) as stack:
-        stack.push_image(improvement_image)
+        await stack.push_image(improvement_image)
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],

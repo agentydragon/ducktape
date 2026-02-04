@@ -154,6 +154,27 @@ def parse_basic_auth_header(authorization: str | None) -> tuple[str, str] | None
         return None
 
 
+def parse_bearer_credentials(authorization: str | None) -> tuple[str, str] | None:
+    """Parse Bearer token containing base64-encoded username:password.
+
+    The OpenAI SDK sends api_key as a Bearer token. Agent containers encode
+    their credentials as base64(username:password) in the api_key, so this
+    extracts those credentials from the Bearer token.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+
+    try:
+        token = authorization.removeprefix("Bearer ")
+        decoded = base64.b64decode(token).decode("utf-8")
+        if ":" not in decoded:
+            return None
+        username, password = decoded.split(":", 1)
+        return (username, password)
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 def is_localhost_request(request: Request) -> bool:
     client = request.client
     return bool(client and client.host in LOCALHOST_ADDRESSES)
@@ -215,7 +236,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # Anonymous access
                 request.state.auth = AuthContext.anonymous()
         else:
-            parsed = parse_basic_auth_header(authorization)
+            parsed = parse_basic_auth_header(authorization) or parse_bearer_credentials(authorization)
             if not parsed:
                 # Malformed auth header
                 request.state.auth = AuthContext.failed("Invalid authorization format")

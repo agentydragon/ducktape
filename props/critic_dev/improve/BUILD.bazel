@@ -13,6 +13,7 @@ The container runs an agent loop that:
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 py_library(
@@ -84,11 +85,8 @@ docker_py_test(
 oci_image(
     name = "image",
     base = "@distroless_cc_linux_amd64",
-    cmd = ["/app/improve"],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
+    cmd = py_binary_distroless_cmd("improve"),
+    env = py_binary_distroless_env("improve"),
     tars = [":main_tar"],
     workdir = "/workspace",
 )

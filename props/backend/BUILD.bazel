@@ -3,6 +3,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
 
 # NOTE: No aggregator target - use specific per-file targets
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -143,14 +144,8 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@distroless_cc_linux_amd64",
-    entrypoint = [
-        "/app/backend_cli",
-        "serve",
-    ],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
+    entrypoint = py_binary_distroless_cmd("backend_cli") + ["serve"],
+    env = py_binary_distroless_env("backend_cli"),
     tars = [":app_tar"],
 )
 

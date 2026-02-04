@@ -11,6 +11,7 @@ Architecture:
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
 
 def critic_variant(name, prompt_md):
     """Build a critic variant using the new in-container model.
@@ -55,12 +56,10 @@ def critic_variant(name, prompt_md):
     oci_image(
         name = name,
         base = "@distroless_cc_linux_amd64",
-        cmd = ["/app/main"],
-        env = {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONUNBUFFERED": "1",
+        cmd = py_binary_distroless_cmd("critic", binary_package = "props/critic"),
+        env = py_binary_distroless_env("critic", extra_env = {
             "PROMPT_TEMPLATE_PATH": "/prompt.md.j2",
-        },
+        }),
         tars = [
             "//props/critic:main_tar",
             ":" + name + "_prompt_tar",

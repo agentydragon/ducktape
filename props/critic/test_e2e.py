@@ -4,10 +4,10 @@ Tests the critic agent end-to-end using:
 - Real Docker containers running agent loops
 - Real PostgreSQL database with temporary RLS-scoped users
 - Real LLM proxy (validates auth, logs requests)
-- Fake OpenAI server (returns scripted responses from PropsMock)
+- Fake OpenAI server (returns scripted responses from DecoratorMock)
 
 The test stack is:
-    Container → LLM Proxy → Fake OpenAI → PropsMock
+    Container → LLM Proxy → Fake OpenAI → DecoratorMock
 
 Covers:
 - Zero issues submission (clean code)
@@ -18,26 +18,24 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
-from hamcrest import assert_that
 
-from agent_core.testing.responses import PlayGen
-from mcp_infra.exec.matchers import exited_successfully
+from agent_core.testing.responses import DecoratorMock, PlayGen
+from props.critic.main import InsertIssueArgs, InsertOccurrenceArgs, SubmitArgs
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.testing.mocks import PropsMock
 
 # Test timeout (seconds) - applies to container execution
 TEST_TIMEOUT_SECONDS = 120
 
 
-def make_critic_mock_zero_issues() -> PropsMock:
+def make_critic_mock_zero_issues() -> DecoratorMock:
     """Create mock for critic that finds zero issues."""
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @DecoratorMock.mock(check_consumed=False)
+    def mock(m: DecoratorMock) -> PlayGen:
         yield None  # First request
-        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Reviewed code, no issues found"])
+        yield m.tool_call("submit", SubmitArgs(issues_count=0, summary="Reviewed code, no issues found"))
 
     return mock
 
@@ -49,7 +47,7 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
     mock = make_critic_mock_zero_issues()
 
     async with e2e_stack(mock) as stack:
-        stack.push_image(critic_image)
+        await stack.push_image(critic_image)
         critic_run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=all_files_scope,
@@ -70,21 +68,20 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
             assert len(run.reported_issues) == 0
 
 
-def make_critic_mock_with_issues() -> PropsMock:
+def make_critic_mock_with_issues() -> DecoratorMock:
     """Create mock for critic that finds and submits issues."""
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @DecoratorMock.mock(check_consumed=False)
+    def mock(m: DecoratorMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.docker_exec_roundtrip(
-            ["critique", "insert-issue", "dead-import", "Unused import detected in subtract.py"]
+        yield m.tool_call(
+            "insert_issue", InsertIssueArgs(issue_id="dead-import", rationale="Unused import detected in subtract.py")
         )
-        assert_that(result, exited_successfully())
-        result = yield from m.docker_exec_roundtrip(
-            ["critique", "insert-occurrence", "dead-import", "subtract.py", "-s", "1", "-e", "1"]
+        yield m.tool_call(
+            "insert_occurrence",
+            InsertOccurrenceArgs(issue_id="dead-import", file="subtract.py", start_line=1, end_line=1),
         )
-        assert_that(result, exited_successfully())
-        yield from m.docker_exec_roundtrip(["critique", "submit", "1", "Found 1 dead code issue"])
+        yield m.tool_call("submit", SubmitArgs(issues_count=1, summary="Found 1 dead code issue"))
 
     return mock
 
@@ -96,7 +93,7 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
     mock = make_critic_mock_with_issues()
 
     async with e2e_stack(mock) as stack:
-        stack.push_image(critic_image)
+        await stack.push_image(critic_image)
         critic_run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=all_files_scope,

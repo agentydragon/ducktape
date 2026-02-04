@@ -17,7 +17,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from jinja2 import Environment
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -29,6 +28,7 @@ from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import BoundOpenAIModel, SystemMessage
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run, get_current_agent_run_id
+from props.core.loop_utils import render_template_string
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, FileSet, ReportedIssue, ReportedIssueOccurrence
@@ -311,44 +311,6 @@ class _LoggingHandler(BaseHandler):
         raise exc
 
 
-def _setup_jinja_env(helpers: dict | None = None) -> Environment:
-    """Create Jinja2 environment with standard helpers."""
-    env = Environment()
-    env.globals["workspace_dir"] = str(WORKSPACE)
-
-    def include_doc(pkg_path: str, *, raw: bool = False) -> str:
-        """Include doc from package resources."""
-        pkg, _, p = pkg_path.partition("/")
-        content = (importlib.resources.files(pkg) / p).read_text()
-        if raw:
-            return f'<doc source="{pkg_path}">\n{content}\n</doc>'
-        rendered = env.from_string(content).render()
-        return f'<doc source="{pkg_path}">\n{rendered}\n</doc>'
-
-    def include_file(file_path: str, *, raw: bool = False) -> str:
-        """Include file from filesystem."""
-        content = Path(file_path).read_text()
-        if raw:
-            return f'<doc source="{file_path}">\n{content}\n</doc>'
-        rendered = env.from_string(content).render()
-        return f'<doc source="{file_path}">\n{rendered}\n</doc>'
-
-    env.globals["include_doc"] = include_doc
-    env.globals["include_file"] = include_file
-
-    if helpers:
-        env.globals.update(helpers)
-
-    return env
-
-
-def _render_template(content: str, helpers: dict | None = None) -> str:
-    """Render a Jinja2 template string with helpers."""
-    env = _setup_jinja_env(helpers)
-    template = env.from_string(content)
-    return template.render()
-
-
 def _load_prompt_template() -> str:
     """Load prompt template content from env var path or default package resource."""
     prompt_path = os.environ.get("PROMPT_TEMPLATE_PATH")
@@ -432,7 +394,7 @@ def main() -> int:
 
     logger.info("Rendering system prompt")
     template_content = _load_prompt_template()
-    system_prompt = _render_template(
+    system_prompt = render_template_string(
         template_content, helpers={"snapshot_slug": snapshot_slug, "scope_files": scope_files}
     )
 

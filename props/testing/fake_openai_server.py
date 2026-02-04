@@ -85,7 +85,7 @@ def _output_item_to_sdk_dict(
     raise ValueError(f"Unknown output item type: {type(item)}")
 
 
-def result_to_sdk_response(result: ResponsesResult) -> OpenAIResponse:
+def result_to_sdk_response(result: ResponsesResult, *, model: str = "test-model") -> OpenAIResponse:
     """Convert ResponsesResult to SDK Response object."""
     usage = result.usage
     if usage is None:
@@ -98,13 +98,16 @@ def result_to_sdk_response(result: ResponsesResult) -> OpenAIResponse:
         )
 
     # Build SDK-compatible dict and validate into Response
-    response_dict = {
+    response_dict: dict[str, Any] = {
         "id": result.id,
         "object": "response",
         "created_at": 0,
+        "model": model,
         "status": "completed",
         "output": [_output_item_to_sdk_dict(item) for item in result.output],
         "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
         "usage": usage.model_dump(),
     }
     return _openai_response_adapter.validate_python(response_dict)
@@ -248,7 +251,8 @@ class FakeOpenAIServer(_BaseServer):
                 raise HTTPException(status_code=500, detail=f"Mock error: {e}")
 
             # Convert to SDK Response and serialize
-            sdk_response = result_to_sdk_response(result)
+            request_model = body.get("model", "test-model")
+            sdk_response = result_to_sdk_response(result, model=request_model)
             return JSONResponse(content=sdk_response.model_dump(mode="json"))
 
         return app
@@ -316,7 +320,7 @@ class MultiModelFakeOpenAI(_BaseServer):
                 raise HTTPException(status_code=500, detail=f"Mock error: {e}")
 
             # Convert to SDK Response and serialize
-            sdk_response = result_to_sdk_response(result)
+            sdk_response = result_to_sdk_response(result, model=model)
             return JSONResponse(content=sdk_response.model_dump(mode="json"))
 
         return app

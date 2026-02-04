@@ -82,9 +82,15 @@ class E2EStack:
     _proxy_port: int
     _docker_client: docker.DockerClient
 
-    def push_image(self, image: LoadedImage) -> str:
-        """Push a loaded image through the backend proxy (records agent_definition)."""
-        return push_image_to_proxy(self._docker_client, image, f"localhost:{self._proxy_port}")
+    async def push_image(self, image: LoadedImage, tag: str = "latest") -> str:
+        """Push a loaded image through the backend proxy (records agent_definition).
+
+        Runs the blocking Docker push in a thread to avoid deadlocking
+        the event loop (the backend server needs to process push requests).
+        """
+        return await asyncio.get_event_loop().run_in_executor(
+            None, push_image_to_proxy, self._docker_client, image, f"localhost:{self._proxy_port}", tag
+        )
 
 
 def _build_agent_base_env(db_config: DatabaseConfig, backend_port: int) -> dict[str, str]:
@@ -159,7 +165,7 @@ async def e2e_stack(
         async def test_something(e2e_stack, all_files_scope):
             mock = make_my_mock()
             async with e2e_stack(mock) as stack:
-                stack.push_image(grader_image)
+                await stack.push_image(grader_image)
                 run_id = await stack.registry.run_critic(...)
     """
     _set_backend_env(monkeypatch, synced_db.config, e2e_registry_url)

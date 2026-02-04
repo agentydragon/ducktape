@@ -54,8 +54,8 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "@pypi//aiodocker",
+        "@pypi//httpx",
         "@pypi//pydantic",
-        "@pypi//requests",
     ],
 )
 

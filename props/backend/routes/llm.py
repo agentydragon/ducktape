@@ -34,12 +34,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Environment configuration
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_BASE_URL = os.environ.get("OPENAI_UPSTREAM_URL", "https://api.openai.com")
-
 # Request timeout for upstream OpenAI calls
 UPSTREAM_TIMEOUT_SECONDS = 300  # 5 minutes
+
+
+def _upstream_api_key() -> str:
+    """Read upstream OpenAI API key at call time (not import time) for testability."""
+    return os.environ.get("OPENAI_API_KEY", "")
+
+
+def _upstream_base_url() -> str:
+    """Read upstream OpenAI base URL at call time (not import time) for testability."""
+    return os.environ.get("OPENAI_UPSTREAM_URL", "https://api.openai.com")
 
 
 def require_llm_access(request: Request) -> tuple[UUID, str]:
@@ -127,22 +133,21 @@ async def responses(
     if body.get("stream"):
         raise HTTPException(status_code=400, detail="Streaming is not supported")
 
-    # Reject stateful API modes (we log everything ourselves)
-    if body.get("store"):
-        raise HTTPException(status_code=400, detail="Stateful mode 'store' is not supported")
+    # Strip stateful API modes (we log everything ourselves)
+    body.pop("store", None)
     if body.get("previous_response_id"):
         raise HTTPException(status_code=400, detail="Stateful mode 'previous_response_id' is not supported")
 
     # Forward request to OpenAI
     start_time = time.monotonic()
-    upstream_url = f"{OPENAI_BASE_URL}/v1/responses"
+    upstream_url = f"{_upstream_base_url()}/v1/responses"
 
     async with httpx.AsyncClient() as client:
         try:
             upstream_response = await client.post(
                 upstream_url,
                 json=body,
-                headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {_upstream_api_key()}", "Content-Type": "application/json"},
                 timeout=UPSTREAM_TIMEOUT_SECONDS,
             )
         except httpx.TimeoutException:

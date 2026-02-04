@@ -19,6 +19,7 @@ Host scaffold responsibilities:
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -78,12 +79,15 @@ async def run_loop_agent(
         name = container_name or f"agent-{short_uuid(agent_run_id)}"
 
         backend_url = agent_base_env.get("PROPS_BACKEND_URL", "")
+        # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
+        # accepts Bearer tokens containing base64-encoded username:password.
+        api_key = base64.b64encode(f"{creds.username}:{creds.password}".encode()).decode()
         env = {
             **agent_base_env,
             "PGUSER": creds.username,
             "PGPASSWORD": creds.password,
             "OPENAI_BASE_URL": f"{backend_url}/v1",
-            "OPENAI_API_KEY": creds.password,
+            "OPENAI_API_KEY": api_key,
         }
 
         # Create and start container

@@ -40,7 +40,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 import aiodocker
-import requests
+import httpx
 from pydantic import BaseModel, Field
 
 from props.core.agent_types import (
@@ -141,7 +141,7 @@ class AgentRegistry:
     # (that one resolves via Docker daemon inspect/pull; this one resolves tags
     # to digests via the registry proxy).
 
-    def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
+    async def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
         """Resolve image reference to digest via registry proxy.
 
         Uses self._db_config credentials for HTTP basic auth to the proxy.
@@ -160,14 +160,19 @@ class AgentRegistry:
 
         proxy_url = self._registry_config.proxy_url
         manifest_url = f"{proxy_url}/v2/{repository}/manifests/{ref}"
-        headers = {"Accept": "application/vnd.oci.image.manifest.v1+json"}
-        auth = (self._db_config.user, self._db_config.password)
+        headers = {
+            "Accept": ", ".join(
+                ["application/vnd.docker.distribution.manifest.v2+json", "application/vnd.oci.image.manifest.v1+json"]
+            )
+        }
+        auth = httpx.BasicAuth(self._db_config.user, self._db_config.password)
 
         logger.info(f"Resolving tag {repository}:{ref} via proxy at {proxy_url}")
 
         try:
-            resp = requests.head(manifest_url, headers=headers, auth=auth, timeout=10)
-        except requests.RequestException as e:
+            async with httpx.AsyncClient() as client:
+                resp = await client.head(manifest_url, headers=headers, auth=auth, timeout=10)
+        except httpx.HTTPError as e:
             raise ValueError(f"Failed to resolve tag {repository}:{ref}: {e}")
 
         if resp.status_code == 404:
@@ -200,7 +205,7 @@ class AgentRegistry:
         agent_run_id = uuid4()
 
         # Resolve image reference to digest, then build full OCI reference
-        image_digest = self._resolve_image_ref(AgentType.CRITIC, image_ref)
+        image_digest = await self._resolve_image_ref(AgentType.CRITIC, image_ref)
         image = self._registry_config.build_oci_reference(AgentType.CRITIC, image_digest)
         logger.info(f"Resolved critic image {image_ref} → {image_digest}")
 
@@ -271,7 +276,7 @@ class AgentRegistry:
         logger.info(f"Prompt optimizer agent_run_id: {agent_run_id}")
 
         # Resolve builtin prompt-optimizer image to digest
-        image_digest = self._resolve_image_ref(AgentType.PROMPT_OPTIMIZER, BUILTIN_TAG)
+        image_digest = await self._resolve_image_ref(AgentType.PROMPT_OPTIMIZER, BUILTIN_TAG)
         image = self._registry_config.build_oci_reference(AgentType.PROMPT_OPTIMIZER, image_digest)
         logger.info(f"Resolved prompt-optimizer image {BUILTIN_TAG} → {image}")
 
@@ -371,7 +376,7 @@ class AgentRegistry:
         logger.info(f"Output directory: {output_dir}")
 
         # Always use builtin improvement image
-        image_digest = self._resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
+        image_digest = await self._resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
         image = self._registry_config.build_oci_reference(AgentType.IMPROVEMENT, image_digest)
         logger.info(f"Using builtin improvement image: {image_digest}")
 
@@ -468,7 +473,7 @@ class AgentRegistry:
                 run = session.get(AgentRun, agent_run_id)
                 if run and run.status == AgentRunStatus.REPORTED_FAILURE:
                     return AgentRunStatus.REPORTED_FAILURE
-            logger.error(f"Container failed with exit code {result.exit_code}: {result.stderr[:500]}")
+            logger.error(f"Container failed with exit code {result.exit_code}: stderr={result.stderr[:500]}")
             return AgentRunStatus.REPORTED_FAILURE
 
     # --- State Tracking ---
@@ -510,7 +515,7 @@ class AgentRegistry:
         agent_run_id = uuid4()
 
         # Resolve builtin grader image to digest
-        image_digest = self._resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
+        image_digest = await self._resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
         image = self._registry_config.build_oci_reference(AgentType.GRADER, image_digest)
         logger.info(f"Resolved grader image {BUILTIN_TAG} → {image_digest}")
 

@@ -40,8 +40,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Environment variables for registry configuration
-UPSTREAM_REGISTRY_URL = os.environ.get("PROPS_REGISTRY_UPSTREAM_URL", "http://props-registry:5000")
+_DEFAULT_UPSTREAM_REGISTRY_URL = "http://props-registry:5000"
+
+
+def _upstream_registry_url() -> str:
+    """Read upstream registry URL from env on each call.
+
+    Avoids caching at import time, which breaks tests that set
+    PROPS_REGISTRY_UPSTREAM_URL via monkeypatch after module import.
+    """
+    return os.environ.get("PROPS_REGISTRY_UPSTREAM_URL", _DEFAULT_UPSTREAM_REGISTRY_URL)
 
 
 # =============================================================================
@@ -57,14 +65,14 @@ def _require_push_tag(caller_type: CallerType, ref: str) -> None:
 
 async def _proxy_to_upstream(request: Request, path: str) -> Response:
     """Forward request to upstream registry and return response."""
-    upstream_url = f"{UPSTREAM_REGISTRY_URL}/{path}"
+    upstream_url = f"{_upstream_registry_url()}/{path}"
     if request.url.query:
         upstream_url += f"?{request.url.query}"
 
     async with httpx.AsyncClient() as client:
         headers = dict(request.headers)
         headers.pop("host", None)
-        body = await request.body()
+        body = await request.body() if request.method not in ("GET", "HEAD") else b""
 
         try:
             upstream_response = await client.request(
@@ -93,7 +101,7 @@ async def _extract_base_digest(manifest_body: bytes, repository: str) -> str | N
         if not config_digest:
             return None
 
-        config_url = f"{UPSTREAM_REGISTRY_URL}/v2/{repository}/blobs/{config_digest}"
+        config_url = f"{_upstream_registry_url()}/v2/{repository}/blobs/{config_digest}"
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(config_url, timeout=5.0)
@@ -197,12 +205,10 @@ async def put_manifest(
     caller_type, agent_run_id = auth
     _require_push_tag(caller_type, ref)
 
-    # Read body for digest computation and recording
     body = await request.body()
-    manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
 
     # Forward to upstream
-    upstream_url = f"{UPSTREAM_REGISTRY_URL}/v2/{repo}/manifests/{ref}"
+    upstream_url = f"{_upstream_registry_url()}/v2/{repo}/manifests/{ref}"
     async with httpx.AsyncClient() as client:
         headers = dict(request.headers)
         headers.pop("host", None)
@@ -213,8 +219,20 @@ async def put_manifest(
             logger.error(f"Upstream request failed: {e}")
             raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
 
-        # Record manifest push if successful
+        # Record manifest push if successful, using the canonical digest from
+        # the upstream registry (not locally computed, which may differ due to
+        # manifest re-serialization).
         if upstream_response.status_code in (200, 201):
+            manifest_digest = upstream_response.headers.get("docker-content-digest")
+            logger.info(
+                f"Upstream PUT response: status={upstream_response.status_code}, "
+                f"docker-content-digest={manifest_digest}, "
+                f"headers={dict(upstream_response.headers)}"
+            )
+            if not manifest_digest:
+                # Fallback to locally computed digest
+                manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
+                logger.warning(f"Upstream didn't return Docker-Content-Digest, using local digest: {manifest_digest}")
             await _record_manifest_push(repo, manifest_digest, body, agent_run_id, admin_db)
 
         return Response(

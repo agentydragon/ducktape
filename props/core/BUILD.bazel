@@ -141,6 +141,7 @@ py_library(
         "//props/db:database",
         "@pypi//jinja2",
         "@pypi//openai",
+        "@pypi//psycopg2_binary",
     ],
 )
 
