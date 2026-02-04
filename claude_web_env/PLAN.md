@@ -1,52 +1,54 @@
 # Current Plan
 
-## Latest Build Results (2026-02-04, build v4)
+## Latest Build Results (2026-02-04, build v13)
 
-**Diff Summary**: 69 real differences (down from 2,132)
+**Diff Summary**: ~113 real differences (down from 10,100 → 2,132 → 69 → 0 → 114)
 
 | Category        | Count  |
 | --------------- | ------ |
 | Identical       | 120.6k |
-| Excluded        | 907.0k |
-| **Real diffs**  | 69     |
-| Only in live    | 11     |
-| Only in built   | 0      |
-| Content changed | 58     |
+| Excluded        | 907.1k |
+| **Real diffs**  | ~113   |
+| Only in built   | 1      |
+| Content changed | ~112   |
 
 ### Remaining Diff Breakdown
 
-**Only in live (11):**
+All remaining diffs are **genuinely unpinnable** — the exact versions in the live
+container have been superseded and no longer exist in any available repository.
 
-| Category      | Count | Main items                                   | Action                               |
-| ------------- | ----- | -------------------------------------------- | ------------------------------------ |
-| claude-config | 2     | `stats-cache.json`, `stop-hook-git-check.sh` | ✅ Added to exclusions               |
-| docs          | 6     | `python3/_static` (from `python3-dev`)       | ✅ Added `python3-dev` to Dockerfile |
-| root-local    | 3     | `pnpm-state.json`                            | ✅ Added to exclusions               |
+**Python 3.13 (deadsnakes PPA) — ~110 files:**
 
-**Content changed (58):**
+The deadsnakes PPA only keeps the latest version. Live has `3.13.11-1+noble1`,
+PPA now serves `3.13.12-1+noble1`. Files affected: `.py` libs, `.so` modules,
+headers, binary, changelogs.
 
-| Category        | Count | Cause                                            |
-| --------------- | ----- | ------------------------------------------------ |
-| python-libs     | 52    | Python 3.12 `.so` files (version drift 0.9→0.10) |
-| docs            | 2     | libpng/python3.12 changelog.gz                   |
-| system-binaries | 1     | `python3.12` binary                              |
-| system-libs     | 3     | `libpng16.a`, `libpng16.so`, `libpython3.12.so`  |
+**libpng — 2 files:**
 
-All 58 content-changed files are python3.12 version drift (3.12.3-1ubuntu0.9 vs 0.10) or libpng.
-Python3.12 can't be pinned via APT preferences due to deadsnakes PPA priority conflict.
+Snapshot (2025-12-01) has `1.6.43-5build1`, live has `1.6.43-5ubuntu0.3`
+(security update released after snapshot date, since superseded by `.4`).
 
-## Next Priority: Python 3.12 Version Drift (58 files)
+**linux-libc-dev — 1 file:**
 
-The remaining 58 content-changed files are all from the python3.12 package family
-(snapshot has 3.12.3-1ubuntu0.9, live has 3.12.3-1ubuntu0.10). The version-drift-pin
-approach doesn't work for python3.12 because the deadsnakes PPA pin (priority 1002)
-creates a conflict.
+Snapshot has `6.8.0-88.89`, live has `6.8.0-90.91` (security update released
+after snapshot date, since superseded by `6.8.0-94.96`).
 
-### Possible approaches
+### What's been pinned successfully
 
-1. **Update snapshot date** to one after python3.12 0.10 was released
-2. **Explicit `apt-get install python3.12=VERSION`** in the Python install step
-3. **Exclude python3.12 version drift** in exclusions.yaml (accept the drift)
+Version-drift pins now match the live container for **30+ package families**:
+
+- System core: libc6, libssl, systemd, util-linux, gnupg, login, binutils,
+  libpam, bsdutils, linux-libc-dev (attempted)
+- Libraries: libxml2, libxslt, libsodium, libtasn1, libavahi, libcups, libheif,
+  libdrm, mesa, libboost, libldap, libapparmor, fonts-opensymbol
+- Runtimes: python3.12 (exact version), openjdk-21, python3-apt
+
+### Build infrastructure improvements
+
+- **HTTPS for snapshot**: Switched from HTTP to HTTPS for `snapshot.ubuntu.com`
+  to avoid 503 errors from the TLS-inspecting egress proxy.
+- **-dev package pins**: Added `libblkid-dev`, `libmount-dev`, `uuid-dev` to
+  the util-linux pin group to resolve exact-version dependency conflicts.
 
 ## Completed
 

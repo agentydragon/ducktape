@@ -24,7 +24,7 @@ Package: libpam0g libpam-modules libpam-modules-bin libpam-runtime
 Pin: version 1.5.3-5ubuntu5.5
 Pin-Priority: 1002
 
-Package: util-linux mount libfdisk1 libsmartcols1 libuuid1 libblkid1 libmount1
+Package: util-linux mount libfdisk1 libsmartcols1 libuuid1 libblkid1 libmount1 libblkid-dev libmount-dev uuid-dev
 Pin: version 2.39.3-9ubuntu6.4
 Pin-Priority: 1002
 
@@ -64,12 +64,44 @@ Package: linux-libc-dev
 Pin: version 6.8.0-90.91
 Pin-Priority: 1002
 
+Package: libapparmor1
+Pin: version 4.0.1really4.0.1-0ubuntu0.24.04.5
+Pin-Priority: 1002
+
 Package: python3.12 python3.12-dev python3.12-venv python3.12-minimal libpython3.12-minimal libpython3.12-stdlib libpython3.12-dev libpython3.12t64
 Pin: version 3.12.3-1ubuntu0.10
 Pin-Priority: 1002
 
 Package: python3-apt python-apt-common
 Pin: version 2.7.7ubuntu5.1
+Pin-Priority: 1002
+
+Package: libc6 libc6-dev libc6-dbg libc-bin libc-dev-bin locales
+Pin: version 2.39-0ubuntu8.6
+Pin-Priority: 1002
+
+Package: libssl3t64 libssl-dev openssl
+Pin: version 3.0.13-0ubuntu3.6
+Pin-Priority: 1002
+
+Package: libgbm1 libgl1-mesa-dri libglx-mesa0 mesa-libgallium
+Pin: version 25.0.7-0ubuntu0.24.04.2
+Pin-Priority: 1002
+
+Package: libdrm2 libdrm-common libdrm-amdgpu1 libdrm-intel1
+Pin: version 2.4.122-1~ubuntu0.24.04.2
+Pin-Priority: 1002
+
+Package: openjdk-21-jdk openjdk-21-jdk-headless openjdk-21-jre openjdk-21-jre-headless
+Pin: version 21.0.9+10-1~24.04
+Pin-Priority: 1002
+
+Package: libboost-iostreams1.83.0 libboost-locale1.83.0 libboost-thread1.83.0
+Pin: version 1.83.0-2.1ubuntu3.1
+Pin-Priority: 1002
+
+Package: libldap2
+Pin: version 2.6.7+dfsg-1~exp1ubuntu8.2
 Pin-Priority: 1002
 
 Package: fonts-opensymbol

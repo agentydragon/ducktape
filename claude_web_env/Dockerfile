@@ -46,7 +46,7 @@ COPY rootfs/etc/apt/preferences.d/* /etc/apt/preferences.d/
 
 # Layer 5: Configure APT snapshot repos + install ca-certificates
 RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
-    printf 'Types: deb\nURIs: http://snapshot.ubuntu.com/ubuntu/20251201T000000Z\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+    printf 'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/20251201T000000Z\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
       > /etc/apt/sources.list.d/snapshot.sources && \
     printf '%s\n' 'Package: *' 'Pin: origin snapshot.ubuntu.com' 'Pin-Priority: 1001' \
       > /etc/apt/preferences.d/snapshot-pin && \
