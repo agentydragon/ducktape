@@ -31,9 +31,7 @@ from agent_core.testing.responses import PlayGen, tool_roundtrip
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.core.agent_types import AgentType
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
-from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
-from props.core.splits import Split
 from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -45,7 +43,7 @@ from props.critic_dev.shared import TargetMetric
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.database import Database
 from props.db.examples import Example
-from props.db.models import AgentRun, AgentRunStatus, GradingEdge, Snapshot
+from props.db.models import AgentRun, AgentRunStatus, GradingEdge
 from props.testing.mocks import PropsMock
 
 logger = logging.getLogger(__name__)
@@ -193,7 +191,7 @@ async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_wit
 @pytest.mark.requires_docker
 @pytest.mark.slow
 async def test_optimizer_orchestrates_critic(
-    synced_db: Database, e2e_stack, prompt_optimizer_image, critic_image, grader_image
+    synced_db: Database, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
 ):
     """Test optimizer can orchestrate critic runs with simulated grading.
 
@@ -208,23 +206,7 @@ async def test_optimizer_orchestrates_critic(
 
     Uses multi-model FakeOpenAIServer to route optimizer and critic to different mocks.
     """
-    # Get a test snapshot with TRAIN split
-    with synced_db.session() as session:
-        snapshot = session.query(Snapshot).filter_by(split=Split.TRAIN).first()
-        if not snapshot:
-            pytest.skip("No TRAIN snapshots available for orchestration test")
-
-        # Verify there's an example for this snapshot
-        example = (
-            session.query(Example)
-            .filter_by(snapshot_slug=snapshot.slug, example_kind=ExampleKind.WHOLE_SNAPSHOT)
-            .first()
-        )
-        if not example:
-            pytest.skip(f"No whole_snapshot example for {snapshot.slug}")
-
-        snapshot_slug = SnapshotSlug(snapshot.slug)
-
+    snapshot_slug = test_snapshot
     logger.info(f"Running orchestration test with snapshot: {snapshot_slug}")
 
     @PropsMock.mock()
