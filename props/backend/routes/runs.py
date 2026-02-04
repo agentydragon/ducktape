@@ -258,27 +258,6 @@ class LLMRequestsResponse(BaseModel):
     total_count: int
 
 
-# --- WebSocket Message Types (Discriminated Union) ---
-
-
-class WsStatusMessage(BaseModel):
-    """WebSocket message containing run status."""
-
-    type: Literal["status"] = "status"
-    status: AgentRunStatus
-    container_exit_code: int | None
-
-
-class WsCompleteMessage(BaseModel):
-    """WebSocket message indicating stream is complete."""
-
-    type: Literal["complete"] = "complete"
-
-
-# Discriminated union of all WebSocket message types
-WsMessage = Annotated[WsStatusMessage | WsCompleteMessage, Field(discriminator="type")]
-
-
 # --- Job Tracking ---
 
 
@@ -745,64 +724,6 @@ def get_run_llm_requests(run_id: UUID) -> LLMRequestsResponse:
         return LLMRequestsResponse(
             requests=[LLMRequestInfo.model_validate(req) for req in requests], total_count=len(requests)
         )
-
-
-# --- WebSocket for Live Event Streaming ---
-
-# Track active WebSocket connections per run
-_ws_connections: dict[UUID, set[WebSocket]] = {}
-
-
-@router.websocket("/run/{run_id}/stream")
-async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
-    """WebSocket endpoint for run status streaming.
-
-    Events table deprecated. Now only streams status updates until run completes.
-    """
-    await websocket.accept()
-
-    # Verify run exists
-    with get_session() as session:
-        run = session.get(AgentRun, run_id)
-        if run is None:
-            await websocket.close(code=4004, reason=f"Agent run {run_id} not found")
-            return
-
-    # Track connection
-    if run_id not in _ws_connections:
-        _ws_connections[run_id] = set()
-    _ws_connections[run_id].add(websocket)
-
-    def _make_status_msg(run: AgentRun) -> WsStatusMessage:
-        return WsStatusMessage(status=run.status, container_exit_code=run.container_exit_code)
-
-    try:
-        # Send initial status
-        with get_session() as session:
-            run = session.get(AgentRun, run_id)
-            if run:
-                await websocket.send_json(_make_status_msg(run).model_dump(mode="json"))
-
-        # Poll for status changes (until run completes or client disconnects)
-        while True:
-            await asyncio.sleep(0.5)  # Poll every 500ms
-
-            with get_session() as session:
-                run = session.get(AgentRun, run_id)
-                if run and run.status != AgentRunStatus.IN_PROGRESS:
-                    # Send final status and close
-                    await websocket.send_json(_make_status_msg(run).model_dump(mode="json"))
-                    await websocket.send_json(WsCompleteMessage().model_dump(mode="json"))
-                    break
-
-    except WebSocketDisconnect:
-        logger.debug(f"WebSocket disconnected for run {run_id}")
-    finally:
-        # Clean up connection tracking
-        if run_id in _ws_connections:
-            _ws_connections[run_id].discard(websocket)
-            if not _ws_connections[run_id]:
-                del _ws_connections[run_id]
 
 
 # --- WebSocket for Runs Feed (list updates) ---
