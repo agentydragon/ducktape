@@ -33,6 +33,12 @@ def _describe_relation(db: Database, relation_name: str) -> str:
 
     Uses psycopg2's cursor.description to introspect columns. Replacement for
     psql ``\\d+`` that works in distroless containers without psql.
+
+    TODO: This opens a separate psycopg2 connection instead of using the
+    Database's SQLAlchemy engine. Consider using SQLAlchemy inspect() or
+    the engine's raw DBAPI connection — the current approach exists because
+    distroless containers lack psql, but we're essentially working around
+    py_binary packaging rather than solving it properly.
     """
     config = db.config
     conn = psycopg2.connect(
