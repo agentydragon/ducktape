@@ -25,9 +25,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from props.backend.auth import AuthContext, get_auth_context
+from props.backend.auth import Auth
 from props.backend.deps import AdminDb
-from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 
 logger = logging.getLogger(__name__)
@@ -48,28 +47,21 @@ def _upstream_base_url() -> str:
     return os.environ.get("OPENAI_UPSTREAM_URL", "https://api.openai.com")
 
 
-def require_llm_access(request: Request) -> tuple[UUID, str]:
+def require_llm_access(auth: Auth, admin_db: AdminDb) -> tuple[UUID, str]:
     """FastAPI dependency requiring LLM API access (agent credentials only).
 
     Returns (agent_run_id, allowed_model) or raises HTTPException.
     """
-    auth: AuthContext = get_auth_context(request)
-    db: Database = request.app.state.admin_db
-
-    # Check for auth errors
     if auth.error:
         raise HTTPException(status_code=401, detail=auth.error)
 
-    # Require authentication
     if not auth.is_authenticated:
         raise HTTPException(status_code=401, detail="Authorization required")
 
-    # Require agent credentials (not admin)
     if auth.agent_run_id is None:
         raise HTTPException(status_code=401, detail="Invalid agent token format")
 
-    # Look up agent run to get allowed model and verify status
-    with db.session() as session:
+    with admin_db.session() as session:
         agent_run = session.get(AgentRun, auth.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Agent run not found")

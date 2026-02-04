@@ -28,7 +28,6 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from cli_util.logging import LogLevel, configure_logging
-from props.backend.auth import AuthMiddleware
 from props.backend.routes import agent_definitions, eval, ground_truth, llm, registry, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
@@ -107,8 +106,6 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
         lifespan=_make_lifespan(deps),
         debug=True,
     )
-
-    app.add_middleware(AuthMiddleware)
 
     cors_origins = os.environ.get(ENV_CORS_ORIGINS, DEFAULT_CORS_ORIGINS)
     app.add_middleware(

@@ -1,4 +1,4 @@
-"""Shared authentication utilities and middleware for backend APIs.
+"""Shared authentication utilities and FastAPI dependencies for backend APIs.
 
 Authentication uses Bearer tokens with Postgres credentials validation:
 - Admin users: Any valid Postgres user (non-agent_* username)
@@ -11,8 +11,7 @@ api_key as a Bearer token, and agent containers encode credentials this way).
 This module provides:
 - Credential validation with access level determination
 - Caller type determination for ACL enforcement
-- Starlette middleware for request-level auth
-- Auth context attached to request.state
+- FastAPI dependency for per-request auth (get_auth_context)
 - Dependency functions for ACL enforcement (require_read, require_push, require_eval_access)
 """
 
@@ -23,12 +22,11 @@ import logging
 import os
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Annotated
 from uuid import UUID
 
 import psycopg
-from fastapi import HTTPException, Request
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
+from fastapi import Depends, HTTPException, Request
 
 from props.backend.deps import AdminDb
 from props.db.config import DatabaseConfig
@@ -170,7 +168,7 @@ def is_localhost_request(request: Request) -> bool:
 
 @dataclass
 class AuthContext:
-    """Authentication context attached to request.state.auth."""
+    """Authentication context resolved per-request by the get_auth_context dependency."""
 
     is_authenticated: bool = False
     is_admin: bool = False
@@ -203,53 +201,38 @@ class AuthContext:
         return cls(is_authenticated=False, error=error)
 
 
-class AuthMiddleware(BaseHTTPMiddleware):
-    """Middleware that parses and validates auth, attaching context to request.state.
+def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
+    """FastAPI dependency that parses Authorization header and validates credentials.
 
-    After this middleware runs, request.state.auth will contain an AuthContext with
-    one of: localhost_admin, anonymous, admin, agent, or failed. Routes check
-    request.state.auth and decide how to handle each case. This middleware does
-    NOT reject requests - it only parses and validates.
+    Returns one of: localhost_admin, anonymous, admin, agent, or failed.
+    FastAPI caches the result per-request, so downstream dependencies that
+    also Depends(get_auth_context) reuse the same AuthContext.
     """
+    authorization = request.headers.get("authorization")
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        authorization = request.headers.get("authorization")
+    if not authorization:
+        if ALLOW_LOCALHOST_ADMIN and is_localhost_request(request):
+            logger.debug("Localhost admin access granted (no auth required)")
+            return AuthContext.localhost_admin()
+        return AuthContext.anonymous()
 
-        if not authorization:
-            # No auth header - check for localhost admin access
-            if ALLOW_LOCALHOST_ADMIN and is_localhost_request(request):
-                logger.debug("Localhost admin access granted (no auth required)")
-                request.state.auth = AuthContext.localhost_admin()
-            else:
-                # Anonymous access
-                request.state.auth = AuthContext.anonymous()
-        else:
-            parsed = parse_bearer_credentials(authorization)
-            if not parsed:
-                # Malformed auth header
-                request.state.auth = AuthContext.failed("Invalid authorization format")
-            else:
-                username, password = parsed
+    parsed = parse_bearer_credentials(authorization)
+    if not parsed:
+        return AuthContext.failed("Invalid authorization format")
 
-                # Validate credentials and determine access level
-                db: Database = request.app.state.admin_db
-                result = validate_postgres_credentials(username, password, db.config)
-                if not result.is_valid:
-                    logger.warning(f"Invalid postgres credentials for user: {username}")
-                    request.state.auth = AuthContext.failed(result.error or "Invalid credentials")
-                elif result.access_level == AccessLevel.AGENT:
-                    assert result.agent_run_id is not None
-                    request.state.auth = AuthContext.agent(username, password, result.agent_run_id)
-                else:
-                    request.state.auth = AuthContext.admin(username, password)
-
-        return await call_next(request)
+    username, password = parsed
+    result = validate_postgres_credentials(username, password, admin_db.config)
+    if not result.is_valid:
+        logger.warning(f"Invalid postgres credentials for user: {username}")
+        return AuthContext.failed(result.error or "Invalid credentials")
+    if result.access_level == AccessLevel.AGENT:
+        assert result.agent_run_id is not None
+        return AuthContext.agent(username, password, result.agent_run_id)
+    return AuthContext.admin(username, password)
 
 
-def get_auth_context(request: Request) -> AuthContext:
-    """Get auth context from request state. Middleware always sets this."""
-    auth: AuthContext | None = request.state.auth
-    return auth if auth is not None else AuthContext.anonymous()
+# Type alias for auth context dependency (use in FastAPI route signatures)
+Auth = Annotated[AuthContext, Depends(get_auth_context)]
 
 
 def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID | None]:
@@ -286,36 +269,32 @@ def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID |
 # =============================================================================
 
 
-def require_registry_read(request: Request, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
+def require_registry_read(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring registry read permission. Raises HTTPException 403 if not allowed."""
-    auth = get_auth_context(request)
     caller_type, agent_run_id = get_caller_type(auth, admin_db)
     if caller_type not in ACL_CAN_READ_REGISTRY:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read from registry")
     return caller_type, agent_run_id
 
 
-def require_registry_push(request: Request, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
+def require_registry_push(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring registry push permission. Raises HTTPException 403 if not allowed."""
-    auth = get_auth_context(request)
     caller_type, agent_run_id = get_caller_type(auth, admin_db)
     if caller_type not in ACL_CAN_PUSH_REGISTRY:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
     return caller_type, agent_run_id
 
 
-def require_eval_api_access(request: Request, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
+def require_eval_api_access(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
     """FastAPI dependency requiring eval API access. Raises HTTPException 403 if not allowed."""
-    auth = get_auth_context(request)
     caller_type, agent_run_id = get_caller_type(auth, admin_db)
     if caller_type not in ACL_CAN_USE_EVAL_API:
         raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to access eval endpoints")
     return caller_type, agent_run_id
 
 
-def require_admin_access(request: Request, admin_db: AdminDb) -> None:
+def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
-    auth = get_auth_context(request)
     caller_type, _ = get_caller_type(auth, admin_db)
     if caller_type != CallerType.ADMIN:
         raise HTTPException(status_code=403, detail="Admin access required")

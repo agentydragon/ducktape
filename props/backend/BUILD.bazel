@@ -40,7 +40,6 @@ py_library(
         "//props/db:models",
         "@pypi//fastapi",
         "@pypi//psycopg",
-        "@pypi//starlette",
     ],
 )
 
@@ -50,7 +49,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":auth",
         "//cli_util:logging",
         "//props:config",
         "//props/backend/routes:agent_definitions",

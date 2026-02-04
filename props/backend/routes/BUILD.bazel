@@ -62,7 +62,6 @@ py_library(
     deps = [
         "//props/backend:auth",
         "//props/backend:deps",
-        "//props/db:database",
         "//props/db:models",
         "@pypi//fastapi",
         "@pypi//httpx",
