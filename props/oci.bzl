@@ -6,6 +6,12 @@ no shell, so the bash wrapper fails with "no such file or directory".
 
 These helpers compute the CMD and env that bypass the bash wrapper by directly
 invoking the hermetic Python interpreter and stage2 bootstrap from runfiles.
+
+TODO: This is a workaround — we're hand-computing internal rules_python paths
+(venv layout, stage2 bootstrap) that could break on rules_python upgrades.
+Investigate whether rules_python or rules_oci have a first-class solution for
+distroless py_binary containers, or whether switching to a non-distroless base
+with a shell (e.g. cc-debian) would be simpler.
 """
 
 def py_binary_distroless_cmd(binary_name, binary_package = None):
