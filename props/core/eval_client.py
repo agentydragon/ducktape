@@ -13,7 +13,7 @@ Usage (inside container):
 
     async with EvalClient.from_env() as client:
         result = await client.run_critic(
-            definition_id="critic",
+            definition_id="latest",
             example={"kind": "whole_snapshot", "snapshot_slug": "repo/2025-01-01"},
         )
 
@@ -258,7 +258,7 @@ class EvalClient:
         """Run a critic agent on an example.
 
         Args:
-            definition_id: Agent package ID (e.g., 'critic' or a digest)
+            definition_id: Image ref — OCI digest (sha256:...) or tag (e.g., 'latest')
             example: Example to evaluate
             timeout_seconds: Max seconds before container is killed
             budget_usd: Max USD cost for this agent

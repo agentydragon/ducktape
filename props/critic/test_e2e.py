@@ -20,8 +20,8 @@ import pytest
 import pytest_bazel
 
 from agent_core.testing.responses import DecoratorMock, PlayGen
+from props.core.oci_utils import BUILTIN_TAG
 from props.critic.main import InsertIssueArgs, InsertOccurrenceArgs, SubmitArgs
-from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 
@@ -48,7 +48,7 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
 
     async with e2e_stack(mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
-            image_ref=CRITIC_IMAGE_REF,
+            image_ref=BUILTIN_TAG,
             example=all_files_scope,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -93,7 +93,7 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
 
     async with e2e_stack(mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
-            image_ref=CRITIC_IMAGE_REF,
+            image_ref=BUILTIN_TAG,
             example=all_files_scope,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,

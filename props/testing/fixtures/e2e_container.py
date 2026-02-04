@@ -22,7 +22,7 @@ Usage:
         mock = make_critic_mock()
         async with e2e_stack(mock, images=[critic_image]) as stack:
             run_id = await stack.registry.run_critic(
-                image_ref="builtin",
+                image_ref=BUILTIN_TAG,
                 example=all_files_scope,
                 model=stack.model,
                 timeout_seconds=60,

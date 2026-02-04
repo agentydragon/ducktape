@@ -68,7 +68,7 @@ docker_py_test(
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props:conftest",
-        "//props/db:agent_definition_ids",
+        "//props/core:oci_utils",
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",

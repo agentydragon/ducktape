@@ -139,7 +139,7 @@ docker_py_test(
         ":main",
         "//agent_core/testing:responses",
         "//props:conftest",
-        "//props/db:agent_definition_ids",
+        "//props/core:oci_utils",
         "//props/db:database",
         "//props/db:models",
         "@pypi//pytest",

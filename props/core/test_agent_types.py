@@ -18,7 +18,7 @@ from props.core.agent_types import (
 )
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import WholeSnapshotExample
-from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.core.oci_utils import BUILTIN_TAG
 
 
 @pytest.fixture
@@ -163,13 +163,13 @@ class TestAgentConfig:
     def test_basic_construction_with_critic(self) -> None:
         """AgentConfig accepts all required fields with CriticTypeConfig."""
         config = AgentConfig(
-            image_ref=CRITIC_IMAGE_REF,
+            image_ref=BUILTIN_TAG,
             model="claude-sonnet-4-20250514",
             type_config=CriticTypeConfig(
                 example=WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))
             ),
         )
-        assert config.image_ref == CRITIC_IMAGE_REF
+        assert config.image_ref == BUILTIN_TAG
         assert config.model == "claude-sonnet-4-20250514"
         assert config.parent_agent_run_id is None
         assert isinstance(config.type_config, CriticTypeConfig)
@@ -212,7 +212,7 @@ class TestAgentConfig:
     def test_json_serialization_roundtrip(self) -> None:
         """AgentConfig can be serialized to JSON and back."""
         original = AgentConfig(
-            image_ref=CRITIC_IMAGE_REF,
+            image_ref=BUILTIN_TAG,
             model="claude-sonnet-4-20250514",
             parent_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
             type_config=CriticTypeConfig(

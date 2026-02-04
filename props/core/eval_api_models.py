@@ -26,7 +26,7 @@ from props.db.models import AgentRunStatus
 class RunCriticRequest(BaseModel):
     """Request to run a critic agent."""
 
-    definition_id: DefinitionId = Field(description="Agent package ID (e.g., 'critic' or a digest)")
+    definition_id: DefinitionId = Field(description="Image ref: OCI digest (sha256:...) or tag (e.g., 'latest')")
     example: ExampleSpec = Field(description="Example to evaluate")
     timeout_seconds: int = Field(default=3600, description="Max seconds before container is killed")
     budget_usd: float | None = Field(default=None, description="Max USD cost for this agent")

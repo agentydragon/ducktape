@@ -19,7 +19,7 @@ Usage:
     )
     async with registry:
         critic_run_id = await registry.run_critic(
-            image_ref="builtin",
+            image_ref=BUILTIN_TAG,
             example=example,
             model="gpt-4o",
             timeout_seconds=3600,
@@ -144,7 +144,6 @@ class AgentRegistry:
         """Resolve image reference to digest via registry proxy.
 
         Uses self._db_config credentials for HTTP basic auth to the proxy.
-        Maps "builtin" to BUILTIN_TAG ("latest") for standard builtins.
 
         Returns:
             Digest (sha256:...) - either the provided digest or resolved from tag
@@ -155,10 +154,6 @@ class AgentRegistry:
         if is_digest(ref):
             logger.debug(f"Reference {ref} is already a digest, returning as-is")
             return ref
-
-        # Map "builtin" to the actual registry tag
-        if ref == "builtin":
-            ref = BUILTIN_TAG
 
         repository = str(agent_type)
 

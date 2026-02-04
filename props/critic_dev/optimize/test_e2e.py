@@ -32,6 +32,7 @@ from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.core.agent_types import AgentType
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
+from props.core.oci_utils import BUILTIN_TAG
 from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -40,7 +41,6 @@ from props.critic_dev.optimize.orchestration_fixtures import (
     make_orchestration_grader_mock,
 )
 from props.critic_dev.shared import TargetMetric
-from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge
@@ -111,7 +111,7 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
 
     async with e2e_stack(critic_mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
-            image_ref=CRITIC_IMAGE_REF,
+            image_ref=BUILTIN_TAG,
             example=example_spec,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -216,7 +216,7 @@ async def test_optimizer_orchestrates_critic(
         # Call run_critic tool (DirectToolProvider tool that calls REST API)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id="builtin", example=example, timeout_seconds=120, budget_usd=None
+            definition_id=BUILTIN_TAG, example=example, timeout_seconds=120, budget_usd=None
         )
 
         call = m.tool_call("run_critic", run_critic_args)

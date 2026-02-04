@@ -26,7 +26,7 @@ from hamcrest import all_of, assert_that
 
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
-from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.core.oci_utils import BUILTIN_TAG
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
@@ -100,7 +100,7 @@ async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_examp
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_image_refs=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[BUILTIN_TAG],
             token_budget=100_000,
             improvement_model=stack.model,
             critic_model=stack.model,
@@ -131,7 +131,7 @@ async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot, im
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
             examples=allowed_examples,
-            baseline_image_refs=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[BUILTIN_TAG],
             token_budget=100_000,
             improvement_model=stack.model,
             critic_model=stack.model,
@@ -166,7 +166,7 @@ async def test_cli_leaderboard_in_improvement_agent(
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_image_refs=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[BUILTIN_TAG],
             token_budget=100_000,
             improvement_model=stack.model,
             critic_model=stack.model,
@@ -193,7 +193,7 @@ async def test_cli_hard_examples_in_improvement_agent(
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_image_refs=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[BUILTIN_TAG],
             token_budget=100_000,
             improvement_model=stack.model,
             critic_model=stack.model,

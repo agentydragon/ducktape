@@ -50,7 +50,7 @@ class RunCriticToolArgs(BaseModel):
     """Arguments for run_critic tool (subset of RunCriticRequest for agent use)."""
 
     definition_id: DefinitionId = Field(
-        description="Agent package ID (from 'props agent-pkg create' or 'critic' for baseline)"
+        description="Image ref: OCI digest (sha256:...) for custom images, or 'latest' for builtin"
     )
     example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
     timeout_seconds: int = Field(default=3600, description="Max seconds before container is killed")

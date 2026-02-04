@@ -29,6 +29,7 @@ from mcp_infra.exec.matchers import exited_successfully
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
+from props.core.oci_utils import BUILTIN_TAG
 from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -37,7 +38,6 @@ from props.critic_dev.optimize.orchestration_fixtures import (
     make_orchestration_grader_mock,
 )
 from props.critic_dev.shared import TargetMetric
-from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 from props.testing.mocks import PropsMock, get_system_message_text
@@ -75,7 +75,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         # Call run_critic tool (DirectToolProvider)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id="builtin", example=example, timeout_seconds=120, budget_usd=None
+            definition_id=BUILTIN_TAG, example=example, timeout_seconds=120, budget_usd=None
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -310,7 +310,7 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
 
     async with e2e_stack(mock, images=[critic_image]) as stack:
         run_id = await stack.registry.run_critic(
-            image_ref=CRITIC_IMAGE_REF,
+            image_ref=BUILTIN_TAG,
             example=all_files_scope,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
