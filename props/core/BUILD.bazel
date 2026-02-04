@@ -223,9 +223,9 @@ docker_py_test(
     name = "test_agent_pkg_e2e",
     srcs = ["test_agent_pkg_e2e.py"],
     data = [
-        "//props/critic:load",  # Critic agent image
-        "//props/critic_dev/optimize:load",  # Optimizer agent image
-        "//props/grader:load",  # Grader agent image
+        "//props/critic:image",
+        "//props/critic_dev/optimize:image",
+        "//props/grader:image",
     ],
     imports = ["../.."],
     tags = [

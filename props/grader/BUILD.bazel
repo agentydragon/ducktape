@@ -168,7 +168,7 @@ docker_py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
-        ":load",  # Grader daemon image
+        ":image",
     ],
     imports = ["../.."],
     tags = [
@@ -199,6 +199,7 @@ oci_image(
     cmd = py_binary_distroless_cmd("grader"),
     env = py_binary_distroless_env("grader"),
     tars = [":main_tar"],
+    visibility = ["//visibility:public"],
     workdir = "/workspace",
 )
 

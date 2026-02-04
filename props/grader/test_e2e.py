@@ -73,7 +73,7 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
     mock = make_grader_daemon_mock()
 
     async with e2e_stack(mock) as stack:
-        await stack.push_image(grader_image)
+        stack.push_image(grader_image)
 
         # Start grader daemon in background task
         daemon_task = asyncio.create_task(

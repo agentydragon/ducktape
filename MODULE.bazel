@@ -70,7 +70,11 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
 )
-use_repo(oci, "distroless_cc", "distroless_cc_linux_amd64", "python_slim", "python_slim_linux_amd64")
+use_repo(oci, "distroless_cc", "distroless_cc_linux_amd64", "oci_crane_linux_amd64", "python_slim", "python_slim_linux_amd64")
+
+# Re-export crane binary with public visibility for py_test data deps
+crane = use_extension("//tools:crane_export.bzl", "crane_export")
+use_repo(crane, "crane")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")

@@ -14,3 +14,14 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "oci",
+    srcs = ["oci.py"],
+    data = ["@crane"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:runfiles",
+    ],
+)

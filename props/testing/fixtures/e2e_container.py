@@ -57,7 +57,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
 from props.testing.fake_openai_server import FakeOpenAIServer, MultiModelFakeOpenAI
-from props.testing.fixtures.e2e_infra import LoadedImage
+from test_util.oci import BazelImage, crane_push
 
 logger = logging.getLogger(__name__)
 
@@ -114,20 +114,16 @@ class E2EStack:
     registry: AgentRegistry
     model: str
     _proxy_port: int
-    _docker: aiodocker.Docker
 
-    async def push_image(self, image: LoadedImage, tag: str = BUILTIN_TAG) -> None:
-        """Push a loaded image through the backend proxy (records agent_definition)."""
+    def push_image(self, image: BazelImage, tag: str = BUILTIN_TAG) -> None:
+        """Push an OCI image layout through the backend proxy (records agent_definition)."""
         proxy_url = f"localhost:{self._proxy_port}"
-        registry_tag = f"{proxy_url}/{image.repo_name}:{tag}"
-        await self._docker.images.tag(image.local_tag, repo=registry_tag)
-        await self._docker.images.push(registry_tag)
-        logger.info("Pushed %s -> %s (through proxy)", image.local_tag, registry_tag)
+        crane_push(image, proxy_url, tag)
 
-    async def push_images(self, *images: LoadedImage, tag: str = BUILTIN_TAG) -> None:
+    def push_images(self, *images: BazelImage, tag: str = BUILTIN_TAG) -> None:
         """Push multiple images through the backend proxy."""
         for image in images:
-            await self.push_image(image, tag=tag)
+            self.push_image(image, tag=tag)
 
 
 def _build_agent_base_env(db_config: DatabaseConfig, backend_port: int) -> dict[str, str]:
@@ -204,7 +200,7 @@ async def e2e_stack(
 
     @asynccontextmanager
     async def _factory(
-        mock: OpenAIModelProto, model: str = TEST_MODEL, *, images: Sequence[LoadedImage] = ()
+        mock: OpenAIModelProto, model: str = TEST_MODEL, *, images: Sequence[BazelImage] = ()
     ) -> AsyncIterator[E2EStack]:
         fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
         await fake_openai.start()
@@ -231,10 +227,8 @@ async def e2e_stack(
                 )
 
                 try:
-                    stack = E2EStack(
-                        registry=registry, model=model, _proxy_port=backend_port, _docker=async_docker_client
-                    )
-                    await stack.push_images(*images)
+                    stack = E2EStack(registry=registry, model=model, _proxy_port=backend_port)
+                    stack.push_images(*images)
                     yield stack
                 finally:
                     await registry.close()
@@ -253,7 +247,7 @@ async def multi_model_e2e_stack(
     e2e_registry_url: str,
     monkeypatch: pytest.MonkeyPatch,
     *,
-    images: Sequence[LoadedImage] = (),
+    images: Sequence[BazelImage] = (),
 ) -> AsyncIterator[E2EStack]:
     """Set up full e2e stack with multi-model routing.
 
@@ -283,8 +277,8 @@ async def multi_model_e2e_stack(
             )
 
             try:
-                stack = E2EStack(registry=registry, model="", _proxy_port=backend_port, _docker=async_docker_client)
-                await stack.push_images(*images)
+                stack = E2EStack(registry=registry, model="", _proxy_port=backend_port)
+                stack.push_images(*images)
                 yield stack
             finally:
                 await registry.close()

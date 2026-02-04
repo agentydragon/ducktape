@@ -127,8 +127,8 @@ docker_py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
-        ":load",  # Critic agent image
-        "//props/grader:load",  # Grader for grading critic output
+        ":image",
+        "//props/grader:image",
     ],
     imports = ["../.."],
     tags = [
@@ -158,6 +158,7 @@ oci_image(
     cmd = py_binary_distroless_cmd("critic"),
     env = py_binary_distroless_env("critic"),
     tars = [":main_tar"],
+    visibility = ["//visibility:public"],
     workdir = "/workspace",
 )
 

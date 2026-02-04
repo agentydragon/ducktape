@@ -36,7 +36,6 @@ from props.testing.fixtures.e2e import make_openai_client, mock_snapshot_slug, n
 from props.testing.fixtures.e2e_container import e2e_stack
 from props.testing.fixtures.e2e_infra import (
     critic_image,
-    docker_client,
     e2e_registry,
     e2e_registry_url,
     grader_image,
