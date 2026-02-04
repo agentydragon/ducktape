@@ -37,13 +37,9 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres, pytest.mar
 TEST_TIMEOUT_SECONDS = 60
 
 
-def make_grader_daemon_mock() -> GraderMock:
-    """Create mock for grader daemon that grades one pending issue.
-
-    Note: Grader daemons are eternal - they don't submit/exit. The daemon
-    will keep running after grading, sleeping until more drift appears.
-    The test cancels the daemon task after verifying grading completed.
-    """
+@pytest.mark.timeout(120)
+async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
+    """Test that grader daemon detects and grades new critique issues."""
 
     @GraderMock.mock()
     def mock(m: GraderMock) -> PlayGen:
@@ -53,24 +49,14 @@ def make_grader_daemon_mock() -> GraderMock:
         pending = yield from m.list_pending_roundtrip()
         logger.info(f"Grader found {len(pending)} pending items")
 
-        # Grade each pending item
+        # Grade each pending item — mark as no match (FP with 0 credit)
         for edge in pending:
             logger.info(f"Grading issue {edge.critique_issue_id} from run {edge.critique_run_id}")
-
-            # Mark as no match (FP with 0 credit)
             yield from m.fill_remaining_roundtrip(
                 edge.critique_run_id, edge.critique_issue_id, 0, "No matching ground truth"
             )
 
         # Daemon continues running (eternal) - test will cancel after verifying grading
-
-    return mock
-
-
-@pytest.mark.timeout(120)
-async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
-    """Test that grader daemon detects and grades new critique issues."""
-    mock = make_grader_daemon_mock()
 
     async with e2e_stack(mock, images=[grader_image]) as stack:
         # Start grader daemon in background task

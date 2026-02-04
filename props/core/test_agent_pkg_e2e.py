@@ -50,17 +50,26 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres, pytest.mar
 TEST_TIMEOUT_SECONDS = 120
 
 
-def make_po_orchestration_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
-    """Create PO mock that orchestrates critic runs.
+@pytest.mark.timeout(300)
+@pytest.mark.slow
+async def test_po_orchestrates_critic_with_system_prompt_check(
+    synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
+):
+    """Test prompt optimizer orchestration with critic system prompt verification.
 
-    The mock:
-    1. Calls run_critic tool (DirectToolProvider, calls REST API)
-    2. Waits for grading via wait_until_graded_tool (polls database)
-    3. Reports success
+    Verifies:
+    1. Optimizer can call run_critic MCP tool
+    2. Critic receives a valid system prompt (mechanism check)
+    3. Grader processes the edges
+    4. Optimizer's wait_until_graded returns
+
+    The critic mock verifies it receives a proper system message, proving
+    the in-container architecture properly passes prompts to agents.
     """
+    snapshot_slug = SnapshotSlug(test_snapshot)
 
     @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    def optimizer_mock(m: PropsMock) -> PlayGen:
         yield None  # First request
 
         # Call run_critic tool (DirectToolProvider)
@@ -84,30 +93,85 @@ def make_po_orchestration_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
         # Report success
         yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
 
-    return mock
+    @PropsMock.mock()
+    def critic_mock(m: PropsMock) -> PlayGen:
+        # Capture first request to verify system message is present
+        first_request = yield None
+
+        # Verify we received a non-empty system message
+        system_text = get_system_message_text(first_request)
+        assert system_text, "Expected non-empty system message"
+        assert "critic" in system_text.lower(), (
+            f"Expected system message to mention 'critic'. Got: {system_text[:200]}..."
+        )
+        logger.info(f"Critic received system message ({len(system_text)} chars)")
+
+        # Submit zero issues
+        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Critic completed"])
+
+    grader_mock = make_orchestration_grader_mock()
+
+    mocks = {
+        ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,
+        ORCHESTRATION_CRITIC_MODEL: critic_mock,
+        ORCHESTRATION_GRADER_MODEL: grader_mock,
+    }
+    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
+        # Start grader daemon in background
+        grader_task = asyncio.create_task(
+            stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+        )
+
+        try:
+            # Run prompt optimizer
+            run_id = await stack.registry.run_prompt_optimizer(
+                budget=1.0,
+                optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
+                critic_model=ORCHESTRATION_CRITIC_MODEL,
+                target_metric=TargetMetric.WHOLE_REPO,
+                timeout_seconds=180,
+            )
+
+            # Verify optimizer completed
+            with synced_db.session() as session:
+                optimizer_run = session.get(AgentRun, run_id)
+                assert optimizer_run is not None
+                assert optimizer_run.status == AgentRunStatus.COMPLETED, (
+                    f"Expected COMPLETED, got {optimizer_run.status}"
+                )
+
+        finally:
+            grader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await grader_task
 
 
-def make_po_custom_image_mock(snapshot_slug: SnapshotSlug, random_token: str) -> PropsMock:
-    """Create PO mock that creates a custom critic image with a verification token.
+@pytest.mark.timeout(300)
+@pytest.mark.slow
+@pytest.mark.skip(reason="Requires registry proxy: pass PROPS_REGISTRY_PROXY_* env vars to containers")
+async def test_po_creates_custom_critic_with_token(
+    synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
+):
+    """Test full custom image flow: PO creates critic image, critic verifies prompt token.
 
-    The mock:
-    1. Creates /workspace/custom_critic/ directory with agent.md containing the token
-    2. Calls 'props agent-pkg create' CLI to build and push the image
-    3. Extracts the new digest and calls run_critic with it
-    4. Waits for grading via wait_until_graded_tool (polls database)
-    5. Reports success
-
-    NOTE: Requires registry proxy to be available for agent-pkg create to succeed.
+    This test verifies the complete workflow:
+    1. Optimizer creates a custom agent.md with a unique verification token
+    2. Optimizer builds and pushes custom critic image via registry proxy
+    3. Optimizer calls run_critic with the new custom image
+    4. Critic receives system prompt and asserts it contains the token
+    5. Grading completes
     """
+    snapshot_slug = SnapshotSlug(test_snapshot)
+    verification_token = f"VERIFY_{secrets.token_hex(8)}"
 
     @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    def optimizer_mock(m: PropsMock) -> PlayGen:
         yield None  # First request
 
         # Create custom critic directory with agent.md containing the random token
         agent_md_content = f"""# Custom Critic with Verification Token
 
-You are a code critic. VERIFICATION_TOKEN: {random_token}
+You are a code critic. VERIFICATION_TOKEN: {verification_token}
 
 Find issues in the code and report them.
 """
@@ -166,138 +230,22 @@ AGENT_EOF
         # Report success
         yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
 
-    return mock
-
-
-def make_critic_mock_with_system_check() -> PropsMock:
-    """Create critic mock that verifies it receives a system message.
-
-    Verifies the mechanism works: critic mock can access and inspect the system prompt.
-    """
-
     @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
-        # Capture first request to verify system message is present
-        first_request = yield None
-
-        # Verify we received a non-empty system message
-        system_text = get_system_message_text(first_request)
-        assert system_text, "Expected non-empty system message"
-        assert "critic" in system_text.lower(), (
-            f"Expected system message to mention 'critic'. Got: {system_text[:200]}..."
-        )
-        logger.info(f"Critic received system message ({len(system_text)} chars)")
-
-        # Submit zero issues
-        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Critic completed"])
-
-    return mock
-
-
-def make_critic_mock_with_token_check(expected_token: str) -> PropsMock:
-    """Create critic mock that verifies system message contains a specific token.
-
-    Used with custom critic images to verify the custom prompt was used.
-    """
-
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    def critic_mock(m: PropsMock) -> PlayGen:
         # Capture first request to verify system message contains the token
         first_request = yield None
 
         # Verify the system message contains our expected token
         system_text = get_system_message_text(first_request)
-        assert expected_token in system_text, (
-            f"Expected token '{expected_token}' not found in system message. "
+        assert verification_token in system_text, (
+            f"Expected token '{verification_token}' not found in system message. "
             f"System message starts with: {system_text[:200]}..."
         )
-        logger.info(f"Critic received system message with expected token: {expected_token}")
+        logger.info(f"Critic received system message with expected token: {verification_token}")
 
         # Submit zero issues
         yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Custom critic completed"])
 
-    return mock
-
-
-@pytest.mark.timeout(300)
-@pytest.mark.slow
-async def test_po_orchestrates_critic_with_system_prompt_check(
-    synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
-):
-    """Test prompt optimizer orchestration with critic system prompt verification.
-
-    Verifies:
-    1. Optimizer can call run_critic MCP tool
-    2. Critic receives a valid system prompt (mechanism check)
-    3. Grader processes the edges
-    4. Optimizer's wait_until_graded returns
-
-    The critic mock verifies it receives a proper system message, proving
-    the in-container architecture properly passes prompts to agents.
-    """
-    snapshot_slug = SnapshotSlug(test_snapshot)
-
-    # Create mocks - critic verifies it receives a system prompt
-    optimizer_mock = make_po_orchestration_mock(snapshot_slug)
-    critic_mock = make_critic_mock_with_system_check()
-    grader_mock = make_orchestration_grader_mock()
-
-    mocks = {
-        ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,
-        ORCHESTRATION_CRITIC_MODEL: critic_mock,
-        ORCHESTRATION_GRADER_MODEL: grader_mock,
-    }
-    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
-        # Start grader daemon in background
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
-        )
-
-        try:
-            # Run prompt optimizer
-            run_id = await stack.registry.run_prompt_optimizer(
-                budget=1.0,
-                optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-                target_metric=TargetMetric.WHOLE_REPO,
-                timeout_seconds=180,
-            )
-
-            # Verify optimizer completed
-            with synced_db.session() as session:
-                optimizer_run = session.get(AgentRun, run_id)
-                assert optimizer_run is not None
-                assert optimizer_run.status == AgentRunStatus.COMPLETED, (
-                    f"Expected COMPLETED, got {optimizer_run.status}"
-                )
-
-        finally:
-            grader_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await grader_task
-
-
-@pytest.mark.timeout(300)
-@pytest.mark.slow
-@pytest.mark.skip(reason="Requires registry proxy: pass PROPS_REGISTRY_PROXY_* env vars to containers")
-async def test_po_creates_custom_critic_with_token(
-    synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
-):
-    """Test full custom image flow: PO creates critic image, critic verifies prompt token.
-
-    This test verifies the complete workflow:
-    1. Optimizer creates a custom agent.md with a unique verification token
-    2. Optimizer builds and pushes custom critic image via registry proxy
-    3. Optimizer calls run_critic with the new custom image
-    4. Critic receives system prompt and asserts it contains the token
-    5. Grading completes
-    """
-    snapshot_slug = SnapshotSlug(test_snapshot)
-    verification_token = f"VERIFY_{secrets.token_hex(8)}"
-
-    # Create mocks
-    optimizer_mock = make_po_custom_image_mock(snapshot_slug, verification_token)
-    critic_mock = make_critic_mock_with_token_check(verification_token)
     grader_mock = make_orchestration_grader_mock()
 
     mocks = {
@@ -330,8 +278,18 @@ async def test_po_creates_custom_critic_with_token(
                 await grader_task
 
 
-def make_critic_push_attempt_mock() -> PropsMock:
-    """Create critic mock that attempts to push an image (should fail with 403)."""
+@pytest.mark.timeout(180)
+@pytest.mark.slow
+async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_files_scope, critic_image):
+    """Test that critic agents cannot push images to registry.
+
+    Critic agents should only be able to read from the registry, not write.
+    Attempting to push should result in a 403 Forbidden error.
+
+    Note: This test verifies the permission model at the registry proxy level.
+    The critic container has RLS-scoped database access via a temp user,
+    and the registry proxy should check the agent type before allowing pushes.
+    """
 
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
@@ -349,23 +307,6 @@ def make_critic_push_attempt_mock() -> PropsMock:
 
         # Report failure since we couldn't push (expected behavior)
         yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Push attempt completed (expected to fail)"])
-
-    return mock
-
-
-@pytest.mark.timeout(180)
-@pytest.mark.slow
-async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_files_scope, critic_image):
-    """Test that critic agents cannot push images to registry.
-
-    Critic agents should only be able to read from the registry, not write.
-    Attempting to push should result in a 403 Forbidden error.
-
-    Note: This test verifies the permission model at the registry proxy level.
-    The critic container has RLS-scoped database access via a temp user,
-    and the registry proxy should check the agent type before allowing pushes.
-    """
-    mock = make_critic_push_attempt_mock()
 
     async with e2e_stack(mock, images=[critic_image]) as stack:
         run_id = await stack.registry.run_critic(

@@ -1,9 +1,12 @@
 """Shared authentication utilities and middleware for backend APIs.
 
-Authentication uses Basic auth with Postgres credentials validation:
+Authentication uses Bearer tokens with Postgres credentials validation:
 - Admin users: Any valid Postgres user (non-agent_* username)
 - Agent users: Format agent_{uuid} with temp credentials
 - Localhost admin: Empty/no creds from localhost = admin (for local dev and dashboard)
+
+Bearer tokens contain base64-encoded username:password (the OpenAI SDK sends
+api_key as a Bearer token, and agent containers encode credentials this way).
 
 This module provides:
 - Credential validation with access level determination
@@ -139,21 +142,6 @@ def validate_postgres_credentials(
     return CredentialValidationResult.admin()
 
 
-def parse_basic_auth_header(authorization: str | None) -> tuple[str, str] | None:
-    """Parse Basic auth header into (username, password). Returns None if invalid."""
-    if not authorization or not authorization.startswith("Basic "):
-        return None
-
-    try:
-        encoded = authorization.removeprefix("Basic ")
-        decoded = base64.b64decode(encoded).decode("utf-8")
-        username, password = decoded.split(":", 1)
-        return (username, password)
-    except (ValueError, UnicodeDecodeError) as e:
-        logger.warning(f"Failed to parse Basic auth: {e}")
-        return None
-
-
 def parse_bearer_credentials(authorization: str | None) -> tuple[str, str] | None:
     """Parse Bearer token containing base64-encoded username:password.
 
@@ -236,7 +224,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # Anonymous access
                 request.state.auth = AuthContext.anonymous()
         else:
-            parsed = parse_basic_auth_header(authorization) or parse_bearer_credentials(authorization)
+            parsed = parse_bearer_credentials(authorization)
             if not parsed:
                 # Malformed auth header
                 request.state.auth = AuthContext.failed("Invalid authorization format")

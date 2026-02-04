@@ -85,7 +85,7 @@ async def main() -> int:
         logger.info("Connected to backend at %s", eval_client.backend_url)
 
         logger.info("Rendering system prompt")
-        system_prompt = render_system_prompt("props/docs/agents/prompt_optimizer.md.j2")
+        system_prompt = render_system_prompt("props/docs/agents/prompt_optimizer.md.j2", db)
 
         logger.info("Starting agent loop")
         exit_code = await run_prompt_optimizer_loop(system_prompt, eval_client, critic_model, db)

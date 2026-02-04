@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import importlib.resources
 import logging
 import os
@@ -27,19 +28,15 @@ def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
-def _describe_relation(relation_name: str) -> str:
+def _describe_relation(db: Database, relation_name: str) -> str:
     """Return schema description of a database relation.
 
-    Uses PG* environment variables for connection and psycopg2's
-    cursor.description to introspect columns. Replacement for
+    Uses psycopg2's cursor.description to introspect columns. Replacement for
     psql ``\\d+`` that works in distroless containers without psql.
     """
+    config = db.config
     conn = psycopg2.connect(
-        host=os.environ["PGHOST"],
-        port=int(os.environ["PGPORT"]),
-        dbname=os.environ["PGDATABASE"],
-        user=os.environ["PGUSER"],
-        password=os.environ["PGPASSWORD"],
+        host=config.host, port=config.port, dbname=config.database, user=config.user, password=config.password
     )
     try:
         with conn.cursor() as cur:
@@ -64,18 +61,18 @@ def _describe_relation(relation_name: str) -> str:
         conn.close()
 
 
-def _setup_jinja_env(helpers: dict[str, Any] | None = None) -> Environment:
+def _setup_jinja_env(db: Database, helpers: dict[str, Any] | None = None) -> Environment:
     """Create Jinja2 environment with standard helpers.
 
     Globals:
     - workspace_dir — default workspace path
-    - describe_relation(name) — schema description via information_schema
+    - describe_relation(name) — schema description via cursor introspection
     - include_doc(pkg/path) — include from package resources
     - include_file(path) — include from filesystem
     """
     env = Environment()
     env.globals["workspace_dir"] = str(WORKSPACE)
-    env.globals["describe_relation"] = _describe_relation
+    env.globals["describe_relation"] = functools.partial(_describe_relation, db)
 
     def include_doc(pkg_path: str, *, raw: bool = False) -> str:
         """Include doc from package resources."""
@@ -103,28 +100,16 @@ def _setup_jinja_env(helpers: dict[str, Any] | None = None) -> Environment:
     return env
 
 
-def render_system_prompt(template_path: str, helpers: dict[str, Any] | None = None) -> str:
-    """Render system prompt from package resource, returning as string.
-
-    Args:
-        template_path: Package path like "props/docs/agents/grader.md.j2"
-        helpers: Optional dict of additional Jinja2 helpers
-
-    Returns:
-        Rendered system prompt
-    """
+def render_system_prompt(template_path: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
+    """Render system prompt from package resource, returning as string."""
     package, _, pkg_path = template_path.partition("/")
     resource = importlib.resources.files(package) / pkg_path
-    root_content = resource.read_text()
-
-    env = _setup_jinja_env(helpers)
-    template = env.from_string(root_content)
-    return template.render()
+    return render_template_string(resource.read_text(), db, helpers)
 
 
-def render_template_string(content: str, helpers: dict[str, Any] | None = None) -> str:
+def render_template_string(content: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
     """Render a Jinja2 template string with standard helpers."""
-    env = _setup_jinja_env(helpers)
+    env = _setup_jinja_env(db, helpers)
     return env.from_string(content).render()
 
 

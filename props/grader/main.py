@@ -124,7 +124,7 @@ async def main() -> int:
 
     # Render system prompt
     logger.info("Rendering system prompt")
-    system_prompt = render_system_prompt("props/docs/agents/grader.md.j2", helpers={"snapshot_slug": snapshot_slug})
+    system_prompt = render_system_prompt("props/docs/agents/grader.md.j2", db, helpers={"snapshot_slug": snapshot_slug})
 
     # Run the daemon loop
     logger.info("Starting daemon loop")

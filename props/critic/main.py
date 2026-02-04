@@ -395,7 +395,7 @@ def main() -> int:
     logger.info("Rendering system prompt")
     template_content = _load_prompt_template()
     system_prompt = render_template_string(
-        template_content, helpers={"snapshot_slug": snapshot_slug, "scope_files": scope_files}
+        template_content, db, helpers={"snapshot_slug": snapshot_slug, "scope_files": scope_files}
     )
 
     logger.info("Starting agent loop")
