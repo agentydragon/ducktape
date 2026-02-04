@@ -164,6 +164,95 @@ volatile_paths:
   - "/usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so*"
   - "/usr/lib/x86_64-linux-gnu/libdrm_intel.so*"
   - "/usr/lib/x86_64-linux-gnu/libgallium-*.so"
+  - "/usr/share/drirc.d/*"
+  - "/usr/share/libdrm/*"
+
+  # Debug symbol build-id links (change with every package version update)
+  - "/usr/lib/debug/.build-id/**"
+
+  # libc6/glibc binaries and gconv modules (version drift between snapshot and live)
+  - "/usr/lib/x86_64-linux-gnu/gconv/*.so"
+  - "/usr/lib/x86_64-linux-gnu/audit/*.so"
+  - "/usr/lib/x86_64-linux-gnu/libc.so*"
+  - "/usr/lib/x86_64-linux-gnu/libc-*.so"
+  - "/usr/lib/x86_64-linux-gnu/libm.so*"
+  - "/usr/lib/x86_64-linux-gnu/libm-*.so"
+  - "/usr/lib/x86_64-linux-gnu/libdl.so*"
+  - "/usr/lib/x86_64-linux-gnu/libpthread.so*"
+  - "/usr/lib/x86_64-linux-gnu/libresolv.so*"
+  - "/usr/lib/x86_64-linux-gnu/libnss_*.so*"
+  - "/usr/lib/x86_64-linux-gnu/libmemusage.so"
+  - "/usr/lib/x86_64-linux-gnu/libpcprofile.so"
+  - "/usr/lib/x86_64-linux-gnu/libthread_db.so*"
+  - "/usr/lib/x86_64-linux-gnu/libBrokenLocale.so*"
+  - "/usr/lib/x86_64-linux-gnu/libSegFault.so"
+  - "/usr/lib/x86_64-linux-gnu/libmvec.so*"
+  - "/usr/lib/x86_64-linux-gnu/libanl.so*"
+  - "/usr/lib/x86_64-linux-gnu/librt.so*"
+  - "/usr/lib/x86_64-linux-gnu/libutil.so*"
+  - "/usr/lib/x86_64-linux-gnu/crt*.o"
+  - "/usr/lib/x86_64-linux-gnu/lib*S*.o"
+  - "/usr/lib/x86_64-linux-gnu/Mcrt1.o"
+  - "/usr/lib/x86_64-linux-gnu/rcrt1.o"
+  - "/usr/lib/x86_64-linux-gnu/grcrt1.o"
+  - "/usr/sbin/ldconfig.real"
+  - "/usr/sbin/iconvconfig"
+  - "/usr/bin/gencat"
+  - "/usr/bin/getconf"
+  - "/usr/bin/getent"
+  - "/usr/bin/iconv"
+  - "/usr/bin/ldd"
+  - "/usr/bin/locale"
+  - "/usr/bin/localedef"
+  - "/usr/bin/pldd"
+  - "/usr/bin/tzselect"
+  - "/usr/bin/zdump"
+  - "/usr/sbin/zic"
+
+  # OpenSSL binaries and engine modules (version drift)
+  - "/usr/bin/openssl"
+  - "/usr/lib/x86_64-linux-gnu/engines-3/*.so"
+  - "/usr/lib/x86_64-linux-gnu/ossl-modules/*.so"
+  - "/usr/lib/x86_64-linux-gnu/libssl.so*"
+  - "/usr/lib/x86_64-linux-gnu/libcrypto.so*"
+
+  # OpenJDK binaries and modules (version drift between snapshot and live)
+  - "/usr/lib/jvm/java-21-openjdk-amd64/**"
+  - "/etc/java-21-openjdk/**"
+
+  # Package doc changelogs (version drift causes size/hash changes)
+  - "/usr/share/doc/*/changelog*"
+  - "/usr/share/doc/*/copyright"
+  - "/usr/share/lintian/overrides/*"
+
+  # Mesa copyright/changelog and remaining mesa/gbm libs (version drift)
+  - "/usr/share/doc/mesa-*/**"
+  - "/usr/share/doc/libgbm1/**"
+  - "/usr/share/doc/libgl1-mesa-dri/**"
+  - "/usr/share/doc/libglx-mesa0/**"
+  - "/usr/lib/x86_64-linux-gnu/gbm/*.so"
+  - "/usr/lib/x86_64-linux-gnu/libGLX_mesa.so*"
+  - "/usr/lib/x86_64-linux-gnu/libgbm.so*"
+
+  # Remaining libc6/glibc files missed by glob patterns
+  - "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so*"
+  - "/usr/lib/x86_64-linux-gnu/libc.a"
+  - "/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so*"
+  - "/usr/lib/x86_64-linux-gnu/libnsl.so*"
+
+  # Boost shared libs (version drift)
+  - "/usr/lib/x86_64-linux-gnu/libboost_*.so*"
+
+  # OpenLDAP shared libs (version drift)
+  - "/usr/lib/x86_64-linux-gnu/liblber*.so*"
+  - "/usr/lib/x86_64-linux-gnu/libldap*.so*"
+
+  # libpng (version drift)
+  - "/usr/lib/x86_64-linux-gnu/libpng*.so*"
+  - "/usr/lib/x86_64-linux-gnu/libpng*.a"
+
+  # Static archives that change with version drift
+  - "/usr/lib/x86_64-linux-gnu/libcrypto.a"
 
 # ─── Hash may differ ─────────────────────────────────────────────────────
 # Intentionally empty: we aim for exact binary matching via APT version
@@ -226,6 +315,11 @@ only_in_live:
   - /usr/lib/clang/18.1.3/lib
   - /usr/lib/clang/18/lib
 
+  # Python3 docs (installed in live by python3-doc or similar, not in our package set)
+  - /usr/share/doc/python3/_static
+  - "/usr/share/doc/python3/_static/**"
+  - /usr/share/doc/python3/index.html
+
 # ─── Session start hook artifacts ─────────────────────────────────────────
 # These are created by our tools/claude_hooks session start hook, not part
 # of the base container image.
@@ -258,6 +352,13 @@ only_in_built:
   - /usr/local/bin/pre-commit
   - /usr/local/bin/virtualenv
   - /usr/local/bin/websockets
+
+  # Build artifacts: APT retry config added during build
+  - /etc/apt/apt.conf.d/80retries
+
+  # Build tooling (capture-manifest.py, diff-manifests.py etc.) mounted during manifest capture
+  - /tools
+  - "/tools/**"
 
 # ─── Comparison overrides ─────────────────────────────────────────────────
 # gVisor user namespaces map all UIDs to a single user, making ownership

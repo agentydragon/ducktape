@@ -12,10 +12,6 @@ Package: gnupg gnupg2 gnupg-utils gpg gpg-agent gpgconf gpgsm gpgv dirmngr keybo
 Pin: version 2.4.4-2ubuntu17.4
 Pin-Priority: 1002
 
-Package: gdb
-Pin: version 15.0.50.20240403-0ubuntu1
-Pin-Priority: 1002
-
 Package: login passwd libsubid4 uidmap
 Pin: version 1:4.13+dfsg1-4ubuntu3.2
 Pin-Priority: 1002
@@ -44,10 +40,6 @@ Package: libxslt1.1
 Pin: version 1.1.39-0exp1ubuntu0.24.04.3
 Pin-Priority: 1002
 
-Package: libpng16-16t64 libpng-dev
-Pin: version 1.6.43-5ubuntu0.3
-Pin-Priority: 1002
-
 Package: libsodium23
 Pin: version 1.0.18-1ubuntu0.24.04.1
 Pin-Priority: 1002
@@ -70,6 +62,14 @@ Pin-Priority: 1002
 
 Package: linux-libc-dev
 Pin: version 6.8.0-90.91
+Pin-Priority: 1002
+
+Package: python3.12 python3.12-dev python3.12-venv python3.12-minimal libpython3.12-minimal libpython3.12-stdlib libpython3.12-dev libpython3.12t64
+Pin: version 3.12.3-1ubuntu0.10
+Pin-Priority: 1002
+
+Package: python3-apt python-apt-common
+Pin: version 2.7.7ubuntu5.1
 Pin-Priority: 1002
 
 Package: fonts-opensymbol

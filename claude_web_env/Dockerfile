@@ -26,7 +26,7 @@ LABEL maintainer="Claude Code Recreation"
 LABEL description="Recreated Claude Code web development environment"
 
 # Redirect RUN output to avoid SIGPIPE under gVisor+buildah (requires --format=docker)
-SHELL ["/bin/bash", "-c", "set -euo pipefail; eval \"$0\" > /tmp/build-step.log 2>&1 || { tail -100 /tmp/build-step.log >&2; exit 1; }"]
+SHELL ["/bin/bash", "-c", "set -euo pipefail; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
@@ -46,7 +46,7 @@ COPY rootfs/etc/apt/preferences.d/* /etc/apt/preferences.d/
 
 # Layer 5: Configure APT snapshot repos + install ca-certificates
 RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
-    printf 'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/20251201T000000Z\nSuites: noble noble-updates noble-backports noble-security noble-proposed\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+    printf 'Types: deb\nURIs: http://snapshot.ubuntu.com/ubuntu/20251201T000000Z\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
       > /etc/apt/sources.list.d/snapshot.sources && \
     printf '%s\n' 'Package: *' 'Pin: origin snapshot.ubuntu.com' 'Pin-Priority: 1001' \
       > /etc/apt/preferences.d/snapshot-pin && \
@@ -60,26 +60,33 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     printf '%s\n' 'Package: postgresql-* libpq5 libpq-dev' \
       'Pin: version 16.11*' 'Pin-Priority: 1003' \
       > /etc/apt/preferences.d/postgresql-pin && \
-    printf 'Types: deb\nURIs: http://archive.ubuntu.com/ubuntu\nSuites: noble-updates noble-security\nComponents: main\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+    printf 'Types: deb\nURIs: http://archive.ubuntu.com/ubuntu\nSuites: noble noble-updates noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
       > /etc/apt/sources.list.d/live-archive.sources && \
     printf '%s\n' 'Package: *' 'Pin: origin archive.ubuntu.com' 'Pin-Priority: 100' \
       > /etc/apt/preferences.d/live-archive-pin && \
     printf '%s\n' 'Package: *' 'Pin: origin ppa.launchpadcontent.net' 'Pin-Priority: 1002' \
       > /etc/apt/preferences.d/ppa-pin && \
     echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99no-verify && \
-    apt-get update && \
+    printf 'Acquire::Retries "3";\nAcquire::https::Timeout "30";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80retries && \
+    for attempt in 1 2 3 4 5; do \
+      rm -rf /var/lib/apt/lists/* && \
+      apt-get update 2>&1 | tee /tmp/apt-update.log && \
+      if ! grep -qi 'Failed to fetch\|Could not\|Bad Gateway\|Internal Server Error' /tmp/apt-update.log; then break; fi; \
+      echo "apt-get update had partial failures (attempt $attempt/5), retrying in 15s..."; \
+      sleep 15; \
+    done && \
     apt-get install --allow-downgrades -y gpgv libsystemd0 libudev1 && \
     apt-get install --allow-downgrades -y --no-install-recommends ca-certificates && \
     update-ca-certificates && \
-    rm /etc/apt/apt.conf.d/99no-verify && \
-    rm -rf /var/lib/apt/lists/*
+    rm /etc/apt/apt.conf.d/99no-verify
 
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 # Layer 6: Core packages (base system, build tools, clang, libs, systemd, podman, fonts, java, postgres, redis)
-RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recommends \
+# NOTE: apt lists persist from Layer 5 - no apt-get update needed here
+RUN apt-get install --allow-downgrades -y --no-install-recommends \
     software-properties-common gnupg2 curl \
     adduser age apt-transport-https base-files bash bc \
     bsdutils bzip2 ca-certificates coreutils dash diffutils dpkg file findutils \
@@ -120,22 +127,24 @@ RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recomme
     libavahi-client3 libavahi-common3 libavahi-common-data \
     libheif1 libheif-plugin-aomdec libheif-plugin-libde265 \
     libgirepository-2.0-0 mesa-libgallium libgbm1 libgl1-mesa-dri libglx-mesa0 \
-    linux-libc-dev \
-    && rm -rf /var/lib/apt/lists/*
+    linux-libc-dev
 
 # Layer 7: Python versions from deadsnakes
-RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recommends \
+# NOTE: apt lists persist from Layer 5 (includes deadsnakes PPA indexes)
+RUN apt-get install --allow-downgrades -y --no-install-recommends \
     python3.10 python3.10-dev python3.10-venv python3.10-distutils \
     python3.11 python3.11-dev python3.11-venv python3.11-distutils \
-    python3.12 python3.12-dev python3.12-venv python3.12-minimal \
-    libpython3.12-minimal libpython3.12-stdlib libpython3.12-dev libpython3.12t64 \
+    python3.12=3.12.3-1ubuntu0.10 python3.12-dev=3.12.3-1ubuntu0.10 \
+    python3.12-venv=3.12.3-1ubuntu0.10 python3.12-minimal=3.12.3-1ubuntu0.10 \
+    libpython3.12-minimal=3.12.3-1ubuntu0.10 libpython3.12-stdlib=3.12.3-1ubuntu0.10 \
+    libpython3.12-dev=3.12.3-1ubuntu0.10 libpython3.12t64=3.12.3-1ubuntu0.10 \
     python3.13 python3.13-dev python3.13-venv \
     python3-pip python3-setuptools python3-wheel \
-    python3-apt=2.7.7ubuntu5.1 python-apt-common=2.7.7ubuntu5.1 \
-    && rm -rf /var/lib/apt/lists/*
+    python3-apt=2.7.7ubuntu5.1 python-apt-common=2.7.7ubuntu5.1
 
 # Layer 8: PHP 8.4
-RUN apt-get update && apt-get install --allow-downgrades -y --no-install-recommends \
+# NOTE: apt lists persist from Layer 5 (includes PHP PPA indexes)
+RUN apt-get install --allow-downgrades -y --no-install-recommends \
     php-common php8.4-cli php8.4-common php8.4-curl php8.4-dev php8.4-gd \
     php8.4-intl php8.4-mbstring php8.4-mysql php8.4-opcache \
     php8.4-pgsql php8.4-readline php8.4-sqlite3 php8.4-xml php8.4-zip \
