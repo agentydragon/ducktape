@@ -70,9 +70,6 @@ docker_py_test(
         "//props/critic:load",
         "//props/grader:load",
     ],
-    env = {
-        "PROPS_DOCKER_NETWORK": "host",
-    },
     imports = ["../../.."],
     tags = ["e2e"],
     deps = [

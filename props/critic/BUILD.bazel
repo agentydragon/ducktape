@@ -130,10 +130,6 @@ docker_py_test(
         ":load",  # Critic agent image
         "//props/grader:load",  # Grader for grading critic output
     ],
-    env = {
-        # E2E container networking
-        "PROPS_DOCKER_NETWORK": "host",
-    },
     imports = ["../.."],
     tags = [
         "e2e",

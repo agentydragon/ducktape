@@ -62,9 +62,6 @@ docker_py_test(
     data = [
         ":load",
     ],
-    env = {
-        "PROPS_DOCKER_NETWORK": "host",
-    },
     imports = ["../../.."],
     tags = ["e2e"],
     deps = [

@@ -170,10 +170,6 @@ docker_py_test(
     data = [
         ":load",  # Grader daemon image
     ],
-    env = {
-        # E2E container networking
-        "PROPS_DOCKER_NETWORK": "host",
-    },
     imports = ["../.."],
     tags = [
         "e2e",

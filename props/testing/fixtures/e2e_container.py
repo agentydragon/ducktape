@@ -99,8 +99,12 @@ async def ensure_agent_network(docker_client: aiodocker.Docker) -> AsyncIterator
     try:
         yield
     finally:
-        logger.info("Removing Docker network %s", PROPS_NETWORK_NAME)
-        await network.delete()
+        try:
+            logger.info("Removing Docker network %s", PROPS_NETWORK_NAME)
+            await network.delete()
+        except RuntimeError:
+            # Docker session may already be closed during test teardown
+            logger.debug("Could not remove network %s (session closed)", PROPS_NETWORK_NAME)
 
 
 @dataclass
