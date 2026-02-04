@@ -164,7 +164,7 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["critic-agent:latest"],
+    repo_tags = ["critic:latest"],
     visibility = ["//visibility:public"],
 )
 

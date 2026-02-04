@@ -71,7 +71,7 @@ def critic_variant(name, prompt_md):
     oci_load(
         name = name + "_load",
         image = ":" + name,
-        repo_tags = ["critic-agent:" + name],
+        repo_tags = ["critic:" + name],
     )
 
     # Push to registry

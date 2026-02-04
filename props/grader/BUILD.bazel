@@ -205,7 +205,7 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["grader-agent:latest"],
+    repo_tags = ["grader:latest"],
     visibility = ["//visibility:public"],
 )
 

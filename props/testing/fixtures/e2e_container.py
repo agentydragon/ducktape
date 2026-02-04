@@ -52,7 +52,7 @@ from openai_utils.model import OpenAIModelProto
 from props.backend.app import BackendDeps, create_app
 from props.config import PropsConfig
 from props.core.docker_env import PROPS_NETWORK_NAME
-from props.core.oci_utils import RegistryProxyConfig
+from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
@@ -116,7 +116,7 @@ class E2EStack:
     _proxy_port: int
     _docker: aiodocker.Docker
 
-    async def push_image(self, image: LoadedImage, tag: str = "latest") -> None:
+    async def push_image(self, image: LoadedImage, tag: str = BUILTIN_TAG) -> None:
         """Push a loaded image through the backend proxy (records agent_definition)."""
         proxy_url = f"localhost:{self._proxy_port}"
         registry_tag = f"{proxy_url}/{image.repo_name}:{tag}"
@@ -124,7 +124,7 @@ class E2EStack:
         await self._docker.images.push(registry_tag)
         logger.info("Pushed %s -> %s (through proxy)", image.local_tag, registry_tag)
 
-    async def push_images(self, *images: LoadedImage, tag: str = "latest") -> None:
+    async def push_images(self, *images: LoadedImage, tag: str = BUILTIN_TAG) -> None:
         """Push multiple images through the backend proxy."""
         for image in images:
             await self.push_image(image, tag=tag)

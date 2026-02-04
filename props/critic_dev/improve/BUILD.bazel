@@ -91,7 +91,7 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["improvement-agent:latest"],
+    repo_tags = ["improvement:latest"],
     visibility = ["//visibility:public"],
 )
 

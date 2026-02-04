@@ -111,7 +111,7 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["prompt-optimizer-agent:latest"],
+    repo_tags = ["prompt_optimizer:latest"],
     visibility = ["//visibility:public"],
 )
 
@@ -119,5 +119,5 @@ oci_push(
     name = "push",
     image = ":image",
     remote_tags = ["latest"],
-    repository = "localhost:8000/prompt-optimizer",
+    repository = "localhost:8000/prompt_optimizer",
 )

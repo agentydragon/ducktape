@@ -66,6 +66,7 @@ py_library(
     srcs = ["e2e_infra.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//props/core:oci_utils",
         "//test_util",
         "@pypi//docker",
         "@pypi//pytest",

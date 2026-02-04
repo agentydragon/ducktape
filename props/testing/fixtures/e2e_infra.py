@@ -39,6 +39,7 @@ import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
+from props.core.oci_utils import BUILTIN_TAG
 from test_util.docker import load_bazel_image
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ class LoadedImage:
 
 
 def push_image_to_proxy(
-    docker_client: docker.DockerClient, image: LoadedImage, proxy_url: str, tag: str = "latest"
+    docker_client: docker.DockerClient, image: LoadedImage, proxy_url: str, tag: str = BUILTIN_TAG
 ) -> str:
     """Push a loaded image through the backend proxy (which records agent_definitions).
 
@@ -125,9 +126,9 @@ def _make_image_fixture(load_script: str, repo_name: str, local_tag: str):
     return _fixture
 
 
-critic_image = _make_image_fixture("props/critic/load.sh", "critic", "critic-agent:latest")
-grader_image = _make_image_fixture("props/grader/load.sh", "grader", "grader-agent:latest")
+critic_image = _make_image_fixture("props/critic/load.sh", "critic", f"critic:{BUILTIN_TAG}")
+grader_image = _make_image_fixture("props/grader/load.sh", "grader", f"grader:{BUILTIN_TAG}")
 prompt_optimizer_image = _make_image_fixture(
-    "props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer-agent:latest"
+    "props/critic_dev/optimize/load.sh", "prompt_optimizer", f"prompt_optimizer:{BUILTIN_TAG}"
 )
-improvement_image = _make_image_fixture("props/critic_dev/improve/load.sh", "improvement", "improvement-agent:latest")
+improvement_image = _make_image_fixture("props/critic_dev/improve/load.sh", "improvement", f"improvement:{BUILTIN_TAG}")
