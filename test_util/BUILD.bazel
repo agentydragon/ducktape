@@ -16,6 +16,16 @@ py_library(
 )
 
 py_library(
+    name = "image_loader",
+    srcs = ["image_loader.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:runfiles",
+    ],
+)
+
+py_library(
     name = "oci",
     srcs = ["oci.py"],
     data = ["@crane"],

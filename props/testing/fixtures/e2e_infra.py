@@ -22,6 +22,7 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
 import runfiles
+from test_util.image_loader import load_image
 from test_util.oci import BazelImage
 
 logger = logging.getLogger(__name__)
@@ -30,12 +31,16 @@ logger = logging.getLogger(__name__)
 # --- Session-scoped infrastructure ---
 
 
+_REGISTRY_TARBALL_RLOCATION = "_main/props/testing/fixtures/registry_2_load/tarball.tar"
+
+
 @pytest.fixture(scope="session")
 def e2e_registry() -> Generator[DockerContainer]:
     """Session-scoped Docker registry for e2e tests.
 
     Starts a registry:2 container and waits for it to be ready.
     """
+    load_image(_REGISTRY_TARBALL_RLOCATION)
     with DockerContainer("registry:2").with_exposed_ports(5000) as registry:
         wait_for_logs(registry, "listening on")
         time.sleep(0.5)

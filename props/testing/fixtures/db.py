@@ -19,6 +19,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import sync_all
+from test_util.image_loader import load_image
 
 # Path to test specimens (git-tracked fixtures)
 TEST_FIXTURES_PATH = Path(__file__).parent / "testdata" / "specimens"
@@ -40,6 +41,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+_POSTGRES_TARBALL_RLOCATION = "_main/props/testing/fixtures/postgres_16_load/tarball.tar"
+
+
 @pytest.fixture(scope="session")
 def postgres_container() -> Generator[PostgresContainer]:
     """Session-scoped PostgreSQL container.
@@ -47,6 +51,7 @@ def postgres_container() -> Generator[PostgresContainer]:
     Starts a fresh PostgreSQL 16 container for the entire test session.
     All tests share this container but get isolated databases.
     """
+    load_image(_POSTGRES_TARBALL_RLOCATION)
     with PostgresContainer(
         image="postgres:16", username="postgres", password="postgres", dbname="postgres"
     ) as postgres:
