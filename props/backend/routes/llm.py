@@ -52,9 +52,6 @@ def require_llm_access(auth: Auth, admin_db: AdminDb) -> tuple[UUID, str]:
 
     Returns (agent_run_id, allowed_model) or raises HTTPException.
     """
-    if auth.error:
-        raise HTTPException(status_code=401, detail=auth.error)
-
     if not auth.is_authenticated:
         raise HTTPException(status_code=401, detail="Authorization required")
 

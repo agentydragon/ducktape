@@ -176,7 +176,6 @@ class AuthContext:
     username: str | None = None
     password: str | None = None
     agent_run_id: UUID | None = None
-    error: str | None = None
 
     @classmethod
     def anonymous(cls) -> AuthContext:
@@ -196,15 +195,12 @@ class AuthContext:
             is_authenticated=True, is_admin=False, username=username, password=password, agent_run_id=agent_run_id
         )
 
-    @classmethod
-    def failed(cls, error: str) -> AuthContext:
-        return cls(is_authenticated=False, error=error)
-
 
 def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
     """FastAPI dependency that parses Authorization header and validates credentials.
 
-    Returns one of: localhost_admin, anonymous, admin, agent, or failed.
+    Raises HTTPException 401 for malformed or invalid credentials.
+    Returns anonymous for unauthenticated requests (downstream ACL decides access).
     FastAPI caches the result per-request, so downstream dependencies that
     also Depends(get_auth_context) reuse the same AuthContext.
     """
@@ -218,13 +214,13 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
 
     parsed = parse_bearer_credentials(authorization)
     if not parsed:
-        return AuthContext.failed("Invalid authorization format")
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
 
     username, password = parsed
     result = validate_postgres_credentials(username, password, admin_db.config)
     if not result.is_valid:
         logger.warning(f"Invalid postgres credentials for user: {username}")
-        return AuthContext.failed(result.error or "Invalid credentials")
+        raise HTTPException(status_code=401, detail=result.error or "Invalid credentials")
     if result.access_level == AccessLevel.AGENT:
         assert result.agent_run_id is not None
         return AuthContext.agent(username, password, result.agent_run_id)
@@ -237,9 +233,6 @@ Auth = Annotated[AuthContext, Depends(get_auth_context)]
 
 def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID | None]:
     """Determine caller type from auth context. Does DB lookup for agent users."""
-    if auth.error:
-        raise HTTPException(status_code=401, detail=auth.error)
-
     if not auth.is_authenticated:
         return CallerType.ANONYMOUS, None
 
@@ -267,22 +260,6 @@ def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID |
 # =============================================================================
 # Dependency functions for ACL enforcement
 # =============================================================================
-
-
-def require_registry_read(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
-    """FastAPI dependency requiring registry read permission. Raises HTTPException 403 if not allowed."""
-    caller_type, agent_run_id = get_caller_type(auth, admin_db)
-    if caller_type not in ACL_CAN_READ_REGISTRY:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read from registry")
-    return caller_type, agent_run_id
-
-
-def require_registry_push(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
-    """FastAPI dependency requiring registry push permission. Raises HTTPException 403 if not allowed."""
-    caller_type, agent_run_id = get_caller_type(auth, admin_db)
-    if caller_type not in ACL_CAN_PUSH_REGISTRY:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
-    return caller_type, agent_run_id
 
 
 def require_eval_api_access(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
