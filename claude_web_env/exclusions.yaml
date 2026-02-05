@@ -57,9 +57,6 @@ skip_paths:
   # Nix store (installed at runtime by session start hook, not part of base image)
   - /nix
 
-  # Work directory (runtime workspace)
-  - /work
-
 # ─── Volatile paths ──────────────────────────────────────────────────────
 # Non-deterministic tool installations where ANY difference is expected:
 # different file sets, different hashes, different permissions. These tools

@@ -1,71 +1,77 @@
 # Current Plan
 
-## Latest Build Results (2026-02-05, build v14)
+## Latest Build Results (2026-02-05, build v14, corrected capture)
 
-**Diff Summary**: 4,149 real differences (up from ~113 in v13 due to new
-only-in-live files, not regressions in content matching)
+**Diff Summary**: 112 real differences
 
 | Category        | Count     |
 | --------------- | --------- |
-| Identical       | 115,397   |
-| Excluded        | 1,669,595 |
-| **Real diffs**  | **4,149** |
-| Only in live    | 4,036     |
-| Only in built   | 2         |
+| Identical       | 120,576   |
+| Excluded        | 1,664,740 |
+| **Real diffs**  | **112**   |
+| Only in built   | 1         |
 | Content changed | 111       |
 
-### Why the diff count increased from v13
+Previous session reported 4,149 diffs — this was a **manifest capture bug**:
+the built manifest was captured from a raw VFS layer directory instead of a
+properly `podman mount`-ed container, missing ~8,000 entries (all of `/var/`,
+parts of `/usr/share/`). After recapture with `podman create` + `podman mount`,
+the actual diff is 112.
 
-The live manifest now captures 1.76M entries (vs ~1M previously) because the
-container has accumulated more runtime files. The increase is almost entirely
-**only-in-live** files, not content regressions:
+### Remaining diff breakdown (112 files)
 
-- **3,802 PHP files** in `/usr/share/php8.4-*` and `/var/lib/php/modules/8.4/`
-  — present in live but missing from built image. Likely a missing PHP package
-  or module registration step in the Dockerfile. Needs investigation.
-- **228 `/var` entries** — directories and state files created at runtime
-  (`/var/lib/pam`, `/var/lib/php`, `/var/cache/PackageKit`, etc.).
-- **6 python3.12 source files** in `/usr/src/python3.12/` — only in live.
+**Python 3.13 from deadsnakes PPA (108 files):**
 
-### Content-changed breakdown (111 files)
+- 97 `.py` source files, ~30 `.so` modules, 6 headers, 4 changelogs,
+  1 binary, 1 only-in-built (`module_docs.py` — new file in newer version)
+- Live: `3.13.11-1+noble1`, PPA now serves `3.13.12-1+noble1`
+- Root cause: deadsnakes PPA only keeps the latest version; no snapshot/archive
+  mechanism exists. The exact version in live has been superseded.
 
-All content-changed diffs remain **genuinely unpinnable** — the exact versions
-in the live container have been superseded.
+**libpng (2 files):**
 
-**Python 3.13 (deadsnakes PPA) — 97 `.py`/`.so` files + 6 headers + 4 docs + 1 binary:**
+- Live: `1.6.43-5ubuntu0.3` (security update), Built: `1.6.43-5build1`
+- The `.3` security update was released after the snapshot date (2025-12-01)
+  and has since been superseded by `.4`.
 
-The deadsnakes PPA only keeps the latest version. Live has `3.13.11-1+noble1`,
-PPA now serves `3.13.12-1+noble1`.
+**linux-libc-dev (1 file):**
 
-**libpng — 2 files:**
+- Live: newer kernel headers, Built: snapshot version
+- Same pattern — security update released after snapshot date.
 
-Snapshot (2025-12-01) has `1.6.43-5build1`, live has `1.6.43-5ubuntu0.3`
-(security update since superseded).
+### Exclusion utilization
 
-**linux-libc-dev — 1 file:**
+109 patterns, 10 unused:
 
-Snapshot has older version, live has newer security update (since superseded).
+- 1 `skip_paths`: `/nix` (defensive — Nix installed by session hooks at runtime)
+- 3 `volatile_paths`: `**/__pycache__`, `/var/lib/sgml-base/**`,
+  `/var/lib/systemd/**` (currently identical between sides, but genuinely
+  volatile across builds — keep as defensive)
+- 1 `only_in_live`: `/var/lib/dpkg/alternatives/python3` (currently identical
+  on both sides — keep as defensive)
+- 5 `session_hook_artifacts`: runtime-only, untestable from within container
 
-### Exclusion pattern cleanup
+### What could reduce the diff further
 
-Reduced exclusion patterns from **144 → 110** by removing 34 patterns with 0
-hits. The diff script now reports per-pattern match counts.
+1. **Pin python3.13 via cached `.deb` files (108→0):** Download the exact
+   `3.13.11` `.deb` files from the deadsnakes PPA and cache them in the repo
+   or a build cache. Install with `dpkg -i` instead of `apt-get install`.
+   This is the only way to pin a PPA that doesn't support snapshots.
+   Affects: `python3.13`, `python3.13-dev`, `python3.13-venv`,
+   `libpython3.13-stdlib`, `libpython3.13-dev`, `libpython3.13`.
 
-| Category                 | Before | After | Removed |
-| ------------------------ | ------ | ----- | ------- |
-| `skip_paths`             | 39     | 31    | 8       |
-| `volatile_paths`         | 53     | 44    | 9       |
-| `only_in_live`           | 33     | 24    | 9       |
-| `only_in_built`          | 14     | 6     | 8       |
-| `session_hook_artifacts` | 5      | 5     | 0       |
-| **Total**                | 144    | 110   | 34      |
+2. **Update snapshot date for libpng and linux-libc-dev (3→0):** Move the
+   Ubuntu snapshot from 2025-12-01 to a date after the security updates were
+   published. Risk: this may change other package versions and introduce new
+   diffs. Alternatively, pin these 2 packages to their exact live versions
+   using APT preferences.
 
-After trimming, only 7 patterns remain unused:
-
-- 2 defensive `skip_paths` (`/nix`, `/work`) — not populated in this capture
-  but legitimately expected in other containers
-- 5 `session_hook_artifacts` — created by session start hooks at runtime,
-  cannot be tested from within the container
+3. **Accept python3.13 drift as inherent:** The 108 python3.13 diffs are all
+   from a PPA that fundamentally doesn't support version pinning. If caching
+   `.deb` files isn't worth the maintenance burden, these can be moved to
+   `volatile_paths` as `/usr/lib/python3.13/**` + `/usr/include/python3.13/**`
+   - `/usr/bin/python3.13`. This would give 0 actionable diffs but at the
+     cost of not tracking python3.13 content changes.
 
 ### What's been pinned successfully
 
@@ -87,22 +93,16 @@ Version-drift pins now match the live container for **30+ package families**:
   of build log on failure (saves fd 3 as original stderr, traps ERR).
 - **Per-pattern match counts**: `diff-manifests.py` now tracks and reports how
   many files each exclusion pattern matched, enabling data-driven trimming.
-
-### Next steps
-
-1. **Fix PHP files only-in-live**: Investigate why 3,802 `/usr/share/php8.4-*`
-   files are present in live but missing from built image. Likely need to add
-   `php8.4-common` or related packages, or trigger module registration.
-2. **Fix `/var` only-in-live**: Add missing `/var` paths to `skip_paths` or
-   `only_in_live` (runtime state dirs like `/var/lib/pam`, `/var/cache/PackageKit`).
-3. **Fix python3.12 source**: Add `python3.12-dev` or equivalent package to get
-   `/usr/src/python3.12/` grammar files.
-4. **Pin python3.13**: Requires snapshot of deadsnakes PPA or freezing the version.
+- **Manifest capture fix**: Built manifest must use `podman create` + `podman
+mount` (not raw VFS dir access) to get the properly merged container
+  filesystem.
 
 ## Completed
 
+- ✅ Manifest capture bug found and fixed (VFS raw dir → `podman mount`)
+- ✅ Removed `/work` from `skip_paths` (was unused defensive pattern)
 - ✅ Per-pattern match count reporting in diff script
-- ✅ Exclusion pattern trimming (144 → 110 patterns, 34 unused removed)
+- ✅ Exclusion pattern trimming (144 → 109 patterns, 35 unused removed)
 - ✅ SHELL directive error visibility (dumps last 200 lines on build failure)
 - ✅ Build script captures proprietary binaries
 - ✅ Documented exclusion minimization goal
