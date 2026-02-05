@@ -9,13 +9,14 @@ load("//tools/testing:docker.bzl", "docker_py_test")
 py_library(
     name = "cli",
     srcs = ["cli.py"],
+    data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":agent_runner",
         ":runner",
         ":submit_server",
-        "//agent_pkg/host:builder",
+        "//:runfiles",
         "//cli_util:decorators",
         "//cli_util:logging",
         "//openai_utils:client_factory",

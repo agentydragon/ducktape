@@ -15,11 +15,9 @@ An **agent package** is a Docker image that runs a self-contained agent loop:
 
 ```
 agent_pkg/
-├── host/      # Legacy: docker buildx image builder (editor agents)
 └── runtime/   # Container-side: utilities for agent init and prompt rendering
 ```
 
-- **host/** — Legacy image builder using `docker buildx build` from directory-based definitions. Slated for migration to Bazel OCI builds.
 - **runtime/** — Minimal utilities installed in containers for system prompt generation and output formatting. Has minimal dependencies (no workspace deps) since it's installed separately in container images.
 
 ## Agent Images

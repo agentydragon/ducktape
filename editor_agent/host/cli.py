@@ -8,6 +8,7 @@ edited content via the helper script which calls the host-side submit server.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Annotated
@@ -15,7 +16,7 @@ from typing import Annotated
 import aiodocker
 import typer
 
-from agent_pkg.host.builder import ensure_image
+import runfiles
 from cli_util.decorators import async_run
 from cli_util.logging import make_logging_callback
 from editor_agent.host.agent_runner import run_editor_docker_agent
@@ -24,10 +25,8 @@ from editor_agent.host.submit_server import SubmitStateFailure, SubmitStatePendi
 from openai_utils.client_factory import build_client
 
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
-# Dockerfile path relative to repo root (build context)
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
-_DOCKERFILE = "editor_agent/runtime/Dockerfile"
 EDITOR_IMAGE_TAG = "adgn-editor:latest"
+_EDITOR_LOAD_RLOCATION = "_main/editor_agent/runtime/load.sh"
 
 # Environment variable override for network
 _ENV_NETWORK = os.getenv("ADGN_EDITOR_DOCKER_NETWORK", DEFAULT_NETWORK)
@@ -74,10 +73,17 @@ async def edit(
 
     model_client = build_client(model, enable_debug_logging=True)
 
+    # Load editor image from Bazel oci_load target
+    load_script = runfiles.get_required_path(_EDITOR_LOAD_RLOCATION)
+    proc = await asyncio.create_subprocess_exec(
+        load_script, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to load editor image: {stderr.decode()}")
+
     async with aiodocker.Docker() as docker_client:
-        # Build or reuse editor agent image (context is repo root, Dockerfile in editor_agent/runtime)
-        image_id = await ensure_image(docker_client, _REPO_ROOT, EDITOR_IMAGE_TAG, dockerfile=_DOCKERFILE)
-        typer.echo(f"Editing {file} with {model} (image {image_id[:12]})")
+        typer.echo(f"Editing {file} with {model} (image {EDITOR_IMAGE_TAG})")
 
         result = await run_editor_docker_agent(
             file_path=file,
@@ -85,7 +91,7 @@ async def edit(
             docker_client=docker_client,
             model_client=model_client,
             max_turns=max_turns,
-            image_id=image_id,
+            image_id=EDITOR_IMAGE_TAG,
             network=network,
             verbose=verbose,
         )
