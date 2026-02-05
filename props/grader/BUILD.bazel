@@ -168,7 +168,7 @@ docker_py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
-        ":image",
+        ":tarball",
     ],
     imports = ["../.."],
     tags = [
@@ -207,6 +207,14 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["grader:latest"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "tarball",
+    testonly = True,
+    srcs = [":load"],
+    output_group = "tarball",
     visibility = ["//visibility:public"],
 )
 

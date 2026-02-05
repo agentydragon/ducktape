@@ -2,7 +2,7 @@
 
 Provides session-scoped test infrastructure:
 - Docker registry (testcontainers registry:2)
-- BazelImage fixtures for agent images (from Bazel oci_image layout directories)
+- BazelImage fixtures for agent images (from Bazel oci_load tarballs)
 
 Usage in tests:
     @pytest.mark.requires_docker
@@ -21,7 +21,6 @@ import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
-import runfiles
 from test_util.image_loader import load_image
 from test_util.oci import BazelImage
 
@@ -32,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 _REGISTRY_TARBALL_RLOCATION = "_main/props/testing/fixtures/registry_2_load/tarball.tar"
+_RYUK_TARBALL_RLOCATION = "_main/props/testing/fixtures/ryuk_load/tarball.tar"
 
 
 @pytest.fixture(scope="session")
@@ -40,6 +40,7 @@ def e2e_registry() -> Generator[DockerContainer]:
 
     Starts a registry:2 container and waits for it to be ready.
     """
+    load_image(_RYUK_TARBALL_RLOCATION)
     load_image(_REGISTRY_TARBALL_RLOCATION)
     with DockerContainer("registry:2").with_exposed_ports(5000) as registry:
         wait_for_logs(registry, "listening on")
@@ -54,21 +55,30 @@ def e2e_registry_url(e2e_registry: DockerContainer) -> str:
     return f"http://localhost:{port}"
 
 
-# --- Agent image fixtures (session-scoped, from Bazel oci_image outputs) ---
+# --- Agent image fixtures (session-scoped, from Bazel oci_load tarballs) ---
 
 
-def _make_image_fixture(image_runfiles_path: str, repo_name: str):
-    """Factory for agent image fixtures from Bazel oci_image layout directories."""
+# Map of repo_name → (tarball_rlocation, oci_load_tag)
+_AGENT_IMAGES = {
+    "critic": ("_main/props/critic/load/tarball.tar", "critic:latest"),
+    "grader": ("_main/props/grader/load/tarball.tar", "grader:latest"),
+    "prompt_optimizer": ("_main/props/critic_dev/optimize/load/tarball.tar", "prompt_optimizer:latest"),
+    "improvement": ("_main/props/critic_dev/improve/load/tarball.tar", "improvement:latest"),
+}
+
+
+def _make_image_fixture(repo_name: str):
+    """Factory for agent image fixtures from Bazel oci_load tarballs."""
+    tarball_rlocation, load_tag = _AGENT_IMAGES[repo_name]
 
     @pytest.fixture(scope="session")
     def _fixture() -> BazelImage:
-        layout_dir = runfiles.get_required_path(f"_main/{image_runfiles_path}")
-        return BazelImage(repo_name=repo_name, layout_dir=layout_dir)
+        return BazelImage(repo_name=repo_name, tarball_rlocation=tarball_rlocation, load_tag=load_tag)
 
     return _fixture
 
 
-critic_image = _make_image_fixture("props/critic/image", "critic")
-grader_image = _make_image_fixture("props/grader/image", "grader")
-prompt_optimizer_image = _make_image_fixture("props/critic_dev/optimize/image", "prompt_optimizer")
-improvement_image = _make_image_fixture("props/critic_dev/improve/image", "improvement")
+critic_image = _make_image_fixture("critic")
+grader_image = _make_image_fixture("grader")
+prompt_optimizer_image = _make_image_fixture("prompt_optimizer")
+improvement_image = _make_image_fixture("improvement")

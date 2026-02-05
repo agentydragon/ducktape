@@ -66,9 +66,9 @@ docker_py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
-        ":image",
-        "//props/critic:image",
-        "//props/grader:image",
+        ":tarball",
+        "//props/critic:tarball",
+        "//props/grader:tarball",
     ],
     imports = ["../../.."],
     tags = ["e2e"],
@@ -112,6 +112,14 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["prompt_optimizer:latest"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "tarball",
+    testonly = True,
+    srcs = [":load"],
+    output_group = "tarball",
     visibility = ["//visibility:public"],
 )
 

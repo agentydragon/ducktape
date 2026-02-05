@@ -42,6 +42,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 _POSTGRES_TARBALL_RLOCATION = "_main/props/testing/fixtures/postgres_16_load/tarball.tar"
+_RYUK_TARBALL_RLOCATION = "_main/props/testing/fixtures/ryuk_load/tarball.tar"
 
 
 @pytest.fixture(scope="session")
@@ -51,6 +52,7 @@ def postgres_container() -> Generator[PostgresContainer]:
     Starts a fresh PostgreSQL 16 container for the entire test session.
     All tests share this container but get isolated databases.
     """
+    load_image(_RYUK_TARBALL_RLOCATION)
     load_image(_POSTGRES_TARBALL_RLOCATION)
     with PostgresContainer(
         image="postgres:16", username="postgres", password="postgres", dbname="postgres"

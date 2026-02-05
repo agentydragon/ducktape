@@ -32,13 +32,28 @@ filegroup(
     output_group = "tarball",
 )
 
+oci_load(
+    name = "ryuk_load",
+    image = "@ryuk_linux_amd64",
+    repo_tags = ["testcontainers/ryuk:0.8.1"],
+)
+
+filegroup(
+    name = "ryuk_tarball",
+    srcs = [":ryuk_load"],
+    output_group = "tarball",
+)
+
 # NOTE: No aggregator target - use specific per-file targets like :db, :e2e, :ground_truth, etc.
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
     name = "db",
     srcs = ["db.py"],
-    data = glob(["testdata/specimens/**"]) + [":postgres_16_tarball"],
+    data = glob(["testdata/specimens/**"]) + [
+        ":postgres_16_tarball",
+        ":ryuk_tarball",
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:config",
@@ -92,10 +107,12 @@ py_library(
 py_library(
     name = "e2e_infra",
     srcs = ["e2e_infra.py"],
-    data = [":registry_2_tarball"],
+    data = [
+        ":registry_2_tarball",
+        ":ryuk_tarball",
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//:runfiles",
         "//test_util:image_loader",
         "//test_util:oci",
         "@pypi//pytest",

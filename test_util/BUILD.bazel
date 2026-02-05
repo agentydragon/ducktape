@@ -28,7 +28,6 @@ py_library(
 py_library(
     name = "oci",
     srcs = ["oci.py"],
-    data = ["@crane"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
