@@ -6,7 +6,7 @@ Tests the orchestration workflow:
 3. Grader processes edges
 4. Optimizer waits for grading and reports success
 
-Custom image flow (skipped, requires registry proxy):
+Custom image flow:
 1. Create custom agent.md content with random token
 2. Use crane push to push OCI layout to registry proxy
 3. Proxy automatically creates agent_definitions row
@@ -154,7 +154,6 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
 
 @pytest.mark.timeout(300)
 @pytest.mark.slow
-@pytest.mark.skip(reason="Requires registry proxy: pass PROPS_REGISTRY_PROXY_* env vars to containers")
 async def test_po_creates_custom_critic_with_token(
     synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
 ):

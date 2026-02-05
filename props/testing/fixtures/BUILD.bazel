@@ -21,6 +21,7 @@ py_library(
         "//props/db:setup",
         "//props/db/sync",
         "//test_util:image_loader",
+        "//third_party/containers:rlocations",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",
@@ -75,6 +76,7 @@ py_library(
     deps = [
         "//test_util:image_loader",
         "//test_util:oci",
+        "//third_party/containers:rlocations",
         "@pypi//pytest",
         "@pypi//testcontainers",
     ],

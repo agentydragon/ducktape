@@ -8,8 +8,16 @@
 #     data = ["//third_party/containers:postgres_16_tarball"]
 
 load("@rules_oci//oci:defs.bzl", "oci_load")
+load("@rules_python//python:defs.bzl", "py_library")
 
 package(default_testonly = True)
+
+py_library(
+    name = "rlocations",
+    srcs = ["rlocations.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
 
 oci_load(
     name = "postgres_16_load",
