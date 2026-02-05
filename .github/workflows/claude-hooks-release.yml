@@ -159,7 +159,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build //tools/claude_hooks:wheel
+        run: bazel build --remote_download_toplevel //tools/claude_hooks:wheel
 
       - name: Install wheel
         run: uv tool install bazel-bin/tools/claude_hooks/claude_hooks-*.whl
@@ -213,7 +213,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build //tools/claude_hooks:wheel
+        run: bazel build --remote_download_toplevel //tools/claude_hooks:wheel
 
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV

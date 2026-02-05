@@ -77,7 +77,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build ${{ inputs.bazel_target }}
+        run: bazel build --remote_download_toplevel ${{ inputs.bazel_target }}
 
       - name: Prepare wheel
         run: |
