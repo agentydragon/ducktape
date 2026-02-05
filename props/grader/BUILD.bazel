@@ -168,7 +168,7 @@ docker_py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
-        ":tarball",
+        ":image",
     ],
     imports = ["../.."],
     tags = [

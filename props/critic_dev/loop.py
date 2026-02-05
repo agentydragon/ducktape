@@ -74,6 +74,7 @@ class LoopStatus(StrEnum):
     """Agent loop execution status."""
 
     IN_PROGRESS = auto()
+    EXITED_SUCCESS = auto()
     EXITED_FAILURE = auto()
 
 
@@ -112,6 +113,12 @@ def create_tool_provider(
     async def exec(args: DirectExecArgs) -> BaseExecResult:
         """Execute a shell command. Use for file operations, running tests, etc."""
         return await run_direct_exec(args, default_cwd=WORKSPACE)
+
+    @provider.tool
+    def report_success() -> None:
+        """Report that the task completed successfully. Signals exit with success status."""
+        state.status = LoopStatus.EXITED_SUCCESS
+        logger.info("Reported success")
 
     @provider.tool
     def report_failure(args: ReportFailureArgs) -> None:

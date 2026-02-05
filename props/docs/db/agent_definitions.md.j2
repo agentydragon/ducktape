@@ -1,17 +1,23 @@
 # Agent Definitions Table
 
-The `agent_definitions` table stores agent package archives (Docker build contexts).
+The `agent_definitions` table stores OCI image metadata for agent variants.
+Rows are created automatically by the registry proxy when images are pushed.
 
 {{ describe_relation("agent_definitions") }}
 
-## CLI Commands
+## Creating Custom Agent Definitions
 
-Use the CLI to fetch and create packages:
+Agents create custom definitions by pushing OCI layouts to the registry proxy
+using crane:
 
 ```bash
-# Fetch existing package to a directory
-props agent-pkg fetch <pkg_id> /workspace/my_pkg/
+# Create an OCI layout directory with custom agent.md
+mkdir -p /workspace/custom_critic
+cat > /workspace/custom_critic/agent.md << 'EOF'
+# Custom Critic Prompt
+...
+EOF
 
-# Create new package from a directory
-props agent-pkg create /workspace/my_pkg/
+# Push to registry proxy (creates agent_definitions row automatically)
+crane push /workspace/custom_critic/ $REGISTRY_HOST:$REGISTRY_PORT/custom_critic:latest --insecure
 ```

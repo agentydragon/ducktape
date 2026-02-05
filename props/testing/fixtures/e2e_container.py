@@ -63,7 +63,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
 from props.testing.fake_openai_server import FakeOpenAIServer
-from test_util.oci import BazelImage, docker_push
+from test_util.oci import BazelImage, crane_push
 
 logger = logging.getLogger(__name__)
 
@@ -209,10 +209,7 @@ async def _make_stack(
             try:
                 proxy_url = f"localhost:{backend_port}"
                 for image in images:
-                    # Run in thread to avoid blocking the event loop — the
-                    # backend (uvicorn) is an asyncio task on this loop and
-                    # must be able to serve the registry push requests.
-                    await asyncio.to_thread(docker_push, image, proxy_url, BUILTIN_TAG)
+                    await crane_push(image, proxy_url, BUILTIN_TAG)
                 yield E2EStack(registry=registry, model=model)
             finally:
                 await registry.close()

@@ -44,7 +44,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 
 **Features:**
 
-- Package ID with copyable CLI command (`props agent-pkg fetch <id> ./`)
+- Package ID (OCI image digest)
 - Stats table: split × kind metrics (recall, runs, zero, done, stalled)
 - Embedded runs browser filtered to this definition
 - Back navigation to leaderboard

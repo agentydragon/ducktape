@@ -420,6 +420,9 @@ async def run_improvement_loop(
         return 0
 
     match state.status:
+        case LoopStatus.EXITED_SUCCESS:
+            logger.info("Improvement reported success")
+            return 0
         case LoopStatus.EXITED_FAILURE:
             logger.info("Improvement failed")
             return 1

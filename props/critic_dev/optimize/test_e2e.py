@@ -33,7 +33,8 @@ from props.core.agent_types import AgentType
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.core.oci_utils import BUILTIN_TAG
-from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
+from props.critic.main import InsertIssueArgs, InsertOccurrenceArgs, SubmitArgs
+from props.critic_dev.loop import ReportFailureArgs, RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
@@ -64,7 +65,7 @@ async def test_po_agent_psql_connectivity(e2e_stack, prompt_optimizer_image):
         yield None  # Receive first request
         result = yield from m.psql_roundtrip("SELECT 1")
         assert_that(result, all_of(exited_successfully(), stdout_contains("1")))
-        yield from m.exec_roundtrip(["critic-dev", "report-failure", "psql connectivity verified"])
+        yield m.tool_call("report_failure", ReportFailureArgs(message="psql connectivity verified"))
 
     async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
@@ -101,13 +102,12 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
     @PropsMock.mock()
     def critic_mock(m: PropsMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.exec_roundtrip(["critique", "insert-issue", "test-issue-001", "Test issue"])
-        assert_that(result, exited_successfully())
-        result = yield from m.exec_roundtrip(
-            ["critique", "insert-occurrence", "test-issue-001", "subtract.py", "-s", "1", "-e", "5"]
+        yield m.tool_call("insert_issue", InsertIssueArgs(issue_id="test-issue-001", rationale="Test issue"))
+        yield m.tool_call(
+            "insert_occurrence",
+            InsertOccurrenceArgs(issue_id="test-issue-001", file="subtract.py", start_line=1, end_line=5),
         )
-        assert_that(result, exited_successfully())
-        yield from m.exec_roundtrip(["critique", "submit", "1", "Found 1 test issue"])
+        yield m.tool_call("submit", SubmitArgs(issues_count=1, summary="Found 1 test issue"))
 
     async with e2e_stack(critic_mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
@@ -146,7 +146,7 @@ async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_r
         yield None  # First request
         result = yield from m.exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"])
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
+        yield m.tool_call("report_failure", ReportFailureArgs(message="Leaderboard test completed"))
 
     async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
@@ -170,7 +170,7 @@ async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_wit
         yield None  # First request
         result = yield from m.exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"])
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
+        yield m.tool_call("report_failure", ReportFailureArgs(message="Hard examples test completed"))
 
     async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
@@ -236,25 +236,24 @@ async def test_optimizer_orchestrates_critic(
         logger.info(f"Orchestration optimizer got grading: total_credit={total_credit}, recall={recall:.2%}")
 
         # Report success
-        yield from m.exec_roundtrip(["prompt-optimize-dev", "report-success"])
+        yield m.tool_call("report_success", {})
 
     @PropsMock.mock()
     def critic_mock(m: PropsMock) -> PlayGen:
         yield None  # First request (system message)
 
         # Insert an issue and occurrence
-        result = yield from m.exec_roundtrip(
-            ["critique", "insert-issue", "orchestration-test-001", "Test issue from orchestration"]
+        yield m.tool_call(
+            "insert_issue",
+            InsertIssueArgs(issue_id="orchestration-test-001", rationale="Test issue from orchestration"),
         )
-        assert_that(result, exited_successfully())
-
-        result = yield from m.exec_roundtrip(
-            ["critique", "insert-occurrence", "orchestration-test-001", "test.py", "-s", "1", "-e", "10"]
+        yield m.tool_call(
+            "insert_occurrence",
+            InsertOccurrenceArgs(issue_id="orchestration-test-001", file="test.py", start_line=1, end_line=10),
         )
-        assert_that(result, exited_successfully())
 
         # Submit the critique
-        yield from m.exec_roundtrip(["critique", "submit", "1", "Found 1 orchestration test issue"])
+        yield m.tool_call("submit", SubmitArgs(issues_count=1, summary="Found 1 orchestration test issue"))
 
     grader_mock = make_orchestration_grader_mock()
 

@@ -62,6 +62,9 @@ async def run_prompt_optimizer_loop(
             # Ran until budget/timeout — that's success for PO
             logger.info("Optimization completed (exhausted budget/turns)")
             return 0
+        case LoopStatus.EXITED_SUCCESS:
+            logger.info("Optimization reported success")
+            return 0
         case LoopStatus.EXITED_FAILURE:
             logger.info("Optimization failed")
             return 1

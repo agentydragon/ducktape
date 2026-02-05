@@ -14,7 +14,7 @@ Tests verify:
 - Database access works from container
 - CLI helpers work in container context
 
-Note: These tests terminate via report-failure since actual termination
+Note: These tests terminate via the report_failure tool since actual termination
 condition checks would require real grading infrastructure.
 """
 
@@ -27,6 +27,7 @@ from hamcrest import all_of, assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.core.oci_utils import BUILTIN_TAG
+from props.critic_dev.loop import ReportFailureArgs
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
@@ -85,8 +86,8 @@ chmod +x /workspace/improved/init""",
             timeout_ms=15000,
         )
         assert_that(result, exited_successfully())
-        # Terminate via report-failure (real termination requires grading infrastructure)
-        yield from m.exec_roundtrip(["critic-dev", "report-failure", "Package created, test complete"])
+        # Terminate via report_failure tool (real termination requires grading infrastructure)
+        yield m.tool_call("report_failure", ReportFailureArgs(message="Package created, test complete"))
 
     return mock
 
@@ -107,7 +108,7 @@ async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_examp
             timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    # Agent terminated via report-failure, so run_id should be valid
+    # Agent terminated via report_failure tool, so run_id should be valid
     assert result.run_id is not None
 
     with db.session() as session:
@@ -161,7 +162,7 @@ async def test_cli_leaderboard_in_improvement_agent(
         yield None  # First request
         result = yield from m.exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000)
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
+        yield m.tool_call("report_failure", ReportFailureArgs(message="Leaderboard test completed"))
 
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
@@ -188,7 +189,7 @@ async def test_cli_hard_examples_in_improvement_agent(
         yield None  # First request
         result = yield from m.exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000)
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
+        yield m.tool_call("report_failure", ReportFailureArgs(message="Hard examples test completed"))
 
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
