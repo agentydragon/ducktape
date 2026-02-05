@@ -20,7 +20,6 @@ OPT_GRADER_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for grader exe
 
 # Options - Output
 OPT_OUT_DIR = typer.Option(None, "--out-dir", "-o", help="Output directory")
-OPT_PROMPT_SHA256 = typer.Option(None, "--prompt-sha256", "-p", help="Prompt SHA256 to improve")
 
 # Options - Snapshot & Files
 OPT_FILES_FILTER = typer.Option(None, "--files", help="Limit review to specific files (relative paths)")

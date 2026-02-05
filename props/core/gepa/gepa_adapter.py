@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import hashlib
 import json
 import logging
 import pickle
@@ -57,7 +56,6 @@ from agent_core.events import EventType
 from openai_utils.model import OpenAIModelProto
 from props.core.agent_types import AgentType
 from props.core.agent_workspace import WorkspaceManager
-from props.core.display import short_sha
 from props.core.gepa.warm_start import build_historical_gepa_state
 from props.core.splits import Split
 from props.db.database import Database
@@ -413,146 +411,43 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
     async def _evaluate_one_specimen(
         self,
         specimen_input: Example,
-        prompt_sha256: str,
         capture_traces: bool,
         semaphore: asyncio.Semaphore,
         docker_client: aiodocker.Docker,
     ) -> EvaluationResult:
-        """Evaluate a single specimen (for parallel execution).
-
-        Uses semaphore to limit concurrent critic/grader runs.
-        """
+        """Evaluate a single specimen (for parallel execution)."""
         async with semaphore:
-            return await self._evaluate_one_specimen_impl(specimen_input, prompt_sha256, capture_traces, docker_client)
+            return await self._evaluate_one_specimen_impl(specimen_input, capture_traces, docker_client)
 
     async def _evaluate_one_specimen_impl(
-        self, specimen_input: Example, prompt_sha256: str, capture_traces: bool, docker_client: aiodocker.Docker
+        self, specimen_input: Example, capture_traces: bool, docker_client: aiodocker.Docker
     ) -> EvaluationResult:
         """Implementation of single specimen evaluation (called under semaphore)."""
-        # NOTE: This code is unreachable because CriticAdapter.__init__ calls _gepa_not_implemented()
-        # Keeping signature for type checking purposes only
         _gepa_not_implemented()
         raise AssertionError("unreachable")
 
     async def _evaluate_async(
         self, batch: list[Example], candidate: dict[str, str], capture_traces: bool, docker_client: aiodocker.Docker
     ) -> list[EvaluationResult]:
-        """Async implementation with database-backed caching.
-
-        Three phases:
-        1. Check cache: Query for existing (prompt_sha256, snapshot_slug, scope_hash)
-        2. Evaluate uncached: Run critic+grader only for cache misses
-        3. Reorder results: Return in original batch order
+        """Async implementation: evaluate all specimens in parallel.
 
         Semaphore ensures max_parallelism concurrent critic/grader runs.
-
-        Args:
-            batch: List of Example to evaluate
-            candidate: Prompt candidate dictionary
-            capture_traces: Whether to capture execution traces
-            docker_client: Docker client created in this event loop
         """
-        # Create semaphore for this evaluation batch (scoped to this event loop)
+        _gepa_not_implemented()
         semaphore = asyncio.Semaphore(self.max_parallelism)
 
-        system_prompt = candidate["system_prompt"]
-        # Hash prompt for cache lookup (no DB storage - GEPA is broken anyway)
-        prompt_sha256 = hashlib.sha256(system_prompt.encode()).hexdigest()
-
-        # Phase 1: Check DB for each input (single query with LEFT JOIN)
-        cached_results: dict[int, EvaluationResult] = {}  # batch_idx -> result found in DB
-        uncached_inputs: list[tuple[int, Example]] = []  # (batch_idx, input)
-
-        with self.db.session() as session:
-            # Query completed critic runs matching prompt and model
-            critic_runs = (
-                session.query(AgentRun)
-                .filter(
-                    AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-                    AgentRun.type_config["prompt_sha256"].astext == prompt_sha256,
-                    AgentRun.model == self.critic_client.model,
-                    AgentRun.status == AgentRunStatus.COMPLETED,
-                )
-                .all()
-            )
-
-            # Index critics by their frozen ExampleSpec (hashable discriminated union)
-            critic_by_key = {c.critic_config().example: c for c in critic_runs}
-
-            # Note: Grader lookup disabled - the new daemon model grades all critiques per snapshot,
-            # not individual critic runs. This causes cache misses for graded runs.
-            # TODO: Implement snapshot-based grader lookup if needed for GEPA caching.
-            grader_by_critic_id: dict[UUID, AgentRun] = {}
-
-            # Process each specimen using indexed results
-            for idx, specimen_input in enumerate(batch):
-                # Use frozen ExampleSpec as cache key (hashable discriminated union)
-                cache_key = specimen_input.to_example_spec()
-
-                critic_run = critic_by_key.get(cache_key)
-                if not critic_run:
-                    logger.info(
-                        f"Cache MISS: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
-                    )
-                    uncached_inputs.append((idx, specimen_input))
-                    continue
-
-                # Use critic_run_id directly for events/trajectory
-                critic_run_id = critic_run.agent_run_id
-
-                # Check if grader run is required but missing
-                grader_run = grader_by_critic_id.get(critic_run_id)
-                if critic_run.status == AgentRunStatus.COMPLETED and not grader_run:
-                    logger.info(
-                        f"Cache MISS (no grader): {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
-                    )
-                    uncached_inputs.append((idx, specimen_input))
-                    continue
-
-                # Cache hit - use aggregate recall from view
-                logger.info(
-                    f"Cache HIT: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
-                )
-                cached_results[idx] = self._make_evaluation_result(specimen_input, critic_run_id, capture_traces)
-
-        # Phase 2: Evaluate uncached inputs in parallel
-        fresh_results: dict[int, EvaluationResult] = {}
-        if uncached_inputs:
-            tasks = [
-                asyncio.create_task(
-                    self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces, semaphore, docker_client)
-                )
-                for _, specimen_input in uncached_inputs
-            ]
-            try:
-                evaluated = await asyncio.gather(*tasks)
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                # Cancel all tasks on interrupt to ensure clean shutdown
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
-                # Wait for all tasks to actually cancel
-                await asyncio.gather(*tasks, return_exceptions=True)
-                raise
-
-            for (batch_idx, _), result in zip(uncached_inputs, evaluated, strict=True):
-                fresh_results[batch_idx] = result
-
-        # Phase 3: Reorder results to match original batch
-        results: list[EvaluationResult] = []
-        for idx in range(len(batch)):
-            if idx in cached_results:
-                results.append(cached_results[idx])
-            elif idx in fresh_results:
-                results.append(fresh_results[idx])
-            else:
-                raise RuntimeError(f"Missing result for batch index {idx}")
-
-        logger.info(
-            f"Evaluation complete: {len(cached_results)} cached, {len(fresh_results)} fresh, {len(results)} total"
-        )
-
-        return results
+        tasks = [
+            asyncio.create_task(self._evaluate_one_specimen(specimen_input, capture_traces, semaphore, docker_client))
+            for specimen_input in batch
+        ]
+        try:
+            return list(await asyncio.gather(*tasks))
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
     def make_reflective_dataset(
         self,

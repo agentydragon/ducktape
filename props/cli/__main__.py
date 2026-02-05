@@ -162,7 +162,6 @@ async def prompt_improve_cmd(
     token_budget: int = typer.Option(200_000, "--token-budget", help="Maximum token budget"),
     improvement_model: str = opt.OPT_OPTIMIZER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
-    prompt_sha256: str | None = opt.OPT_PROMPT_SHA256,
     out_dir: Path | None = opt.OPT_OUT_DIR,
     timeout_seconds: int = opt.OPT_TIMEOUT_SECONDS,
 ) -> None:
@@ -174,7 +173,7 @@ async def prompt_improve_cmd(
 
     Example:
         props prompt-improve
-        props prompt-improve -n 20 -t 100000 -p abc123def...
+        props prompt-improve -n 20 -t 100000
     """
     console = Console()
     console.print("\n[bold cyan]Prompt Improvement Agent[/bold cyan]\n")
@@ -202,19 +201,9 @@ async def prompt_improve_cmd(
     db: Database = ctx.obj
 
     # 1. Select agent definition to improve
-    # NOTE: The --prompt-sha256 option is deprecated. This command now works on agent definitions.
     console.print("[dim]Loading agent definition from database...[/dim]")
     with db.session() as session:
-        if prompt_sha256:
-            # Legacy option - no longer supported
-            console.print(
-                "[red]Error:[/red] The --prompt-sha256 option is deprecated. "
-                "The improvement command now operates on agent definitions."
-            )
-            console.print("[dim]This command needs redesign for the in-container architecture[/dim]")
-            raise typer.Exit(1)
-        # Auto-select: find prompts with enough training examples, pick best by validation LCB
-        # Count training examples per prompt using two-phase approach for unified AgentRun model
+        # Auto-select: find definitions with enough training examples, pick best by validation LCB
         # Phase 1: Get all completed critic runs with grader runs on TRAIN split
         critic_runs = (
             session.query(AgentRun)
@@ -226,7 +215,6 @@ async def prompt_improve_cmd(
         )
 
         # Build index: image_digest -> set of ExampleSpec for examples that have grader runs
-        # NOTE: Originally indexed by prompt_sha256, but prompts were replaced by agent_definitions
         definition_to_examples: dict[str, set[ExampleSpec]] = {}
         for cr in critic_runs:
             critic_config = cr.critic_config()

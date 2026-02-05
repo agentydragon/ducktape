@@ -7,17 +7,9 @@ Rows are created automatically by the registry proxy when images are pushed.
 
 ## Creating Custom Agent Definitions
 
-Agents create custom definitions by pushing OCI layouts to the registry proxy
-using crane:
+Critic-dev agents create custom definitions by layering onto the base critic
+image with `crane` and pushing to the backend's registry proxy. The registry
+address is the host:port from `PROPS_BACKEND_URL`. Pushing automatically creates
+an `agent_definitions` row.
 
-```bash
-# Create an OCI layout directory with custom agent.md
-mkdir -p /workspace/custom_critic
-cat > /workspace/custom_critic/agent.md << 'EOF'
-# Custom Critic Prompt
-...
-EOF
-
-# Push to registry proxy (creates agent_definitions row automatically)
-crane push /workspace/custom_critic/ $REGISTRY_HOST:$REGISTRY_PORT/custom_critic:latest --insecure
-```
+See the critic-dev system prompt for full `crane append` / `crane mutate` workflows.

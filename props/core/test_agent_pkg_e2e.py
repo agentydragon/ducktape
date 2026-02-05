@@ -14,7 +14,7 @@ Custom image flow (skipped, requires registry proxy):
 5. Verify new agent got the custom agent.md in its system message
 
 Uses the in-container architecture with:
-- FakeOpenAI server backed by PropsMock/GraderMock
+- FakeOpenAI server backed by CriticDevMock/CriticMock/GraderMock
 - LLM proxy for auth and logging
 - AgentRegistry for container orchestration
 """
@@ -36,7 +36,6 @@ from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.core.oci_utils import BUILTIN_TAG
-from props.critic.main import SubmitArgs
 from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -47,7 +46,7 @@ from props.critic_dev.optimize.orchestration_fixtures import (
 from props.critic_dev.shared import TargetMetric
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.testing.mocks import PropsMock, get_system_message_text
+from props.testing.mocks import CriticDevMock, CriticMock, get_system_message_text
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +74,8 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     """
     snapshot_slug = SnapshotSlug(test_snapshot)
 
-    @PropsMock.mock()
-    def optimizer_mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
 
         # Call run_critic tool (DirectToolProvider)
@@ -98,10 +97,10 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success
-        yield m.tool_call("report_success", {})
+        yield m.report_success()
 
-    @PropsMock.mock()
-    def critic_mock(m: PropsMock) -> PlayGen:
+    @CriticMock.mock()
+    def critic_mock(m: CriticMock) -> PlayGen:
         # Capture first request to verify system message is present
         first_request = yield None
 
@@ -114,7 +113,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         logger.info(f"Critic received system message ({len(system_text)} chars)")
 
         # Submit zero issues
-        yield m.tool_call("submit", SubmitArgs(issues_count=0, summary="Critic completed"))
+        yield m.submit(issues_count=0, summary="Critic completed")
 
     grader_mock = make_orchestration_grader_mock()
 
@@ -171,8 +170,8 @@ async def test_po_creates_custom_critic_with_token(
     snapshot_slug = SnapshotSlug(test_snapshot)
     verification_token = f"VERIFY_{secrets.token_hex(8)}"
 
-    @PropsMock.mock()
-    def optimizer_mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
 
         # Create custom critic directory with agent.md containing the random token
@@ -240,10 +239,10 @@ AGENT_EOF
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success
-        yield m.tool_call("report_success", {})
+        yield m.report_success()
 
-    @PropsMock.mock()
-    def critic_mock(m: PropsMock) -> PlayGen:
+    @CriticMock.mock()
+    def critic_mock(m: CriticMock) -> PlayGen:
         # Capture first request to verify system message contains the token
         first_request = yield None
 
@@ -256,7 +255,7 @@ AGENT_EOF
         logger.info(f"Critic received system message with expected token: {verification_token}")
 
         # Submit zero issues
-        yield m.tool_call("submit", SubmitArgs(issues_count=0, summary="Custom critic completed"))
+        yield m.submit(issues_count=0, summary="Custom critic completed")
 
     grader_mock = make_orchestration_grader_mock()
 
@@ -303,8 +302,8 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
     and the registry proxy should check the agent type before allowing pushes.
     """
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @CriticMock.mock()
+    def mock(m: CriticMock) -> PlayGen:
         yield None  # First request
 
         # Try crane push from critic container — should fail because
@@ -319,7 +318,7 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
         logger.info(f"Critic push attempt stderr: {stderr}")
 
         # Submit zero issues (expected behavior: push failed, critic still completes)
-        yield m.tool_call("submit", SubmitArgs(issues_count=0, summary="Push attempt completed (expected to fail)"))
+        yield m.submit(issues_count=0, summary="Push attempt completed (expected to fail)")
 
     async with e2e_stack(mock, images=[critic_image]) as stack:
         run_id = await stack.registry.run_critic(

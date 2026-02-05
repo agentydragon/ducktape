@@ -1,48 +1,8 @@
 """Props test fixtures package."""
 
-load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
 
 package(default_testonly = True)
-
-# Pre-built container images for Testcontainers (avoids Docker Hub pulls at test time).
-# oci_load produces a tarball via the "tarball" output group; filegroup extracts it
-# so test fixtures can `docker load -i` the image before Testcontainers starts.
-oci_load(
-    name = "postgres_16_load",
-    image = "@postgres_16_linux_amd64",
-    repo_tags = ["postgres:16"],
-)
-
-filegroup(
-    name = "postgres_16_tarball",
-    srcs = [":postgres_16_load"],
-    output_group = "tarball",
-)
-
-oci_load(
-    name = "registry_2_load",
-    image = "@registry_2_linux_amd64",
-    repo_tags = ["registry:2"],
-)
-
-filegroup(
-    name = "registry_2_tarball",
-    srcs = [":registry_2_load"],
-    output_group = "tarball",
-)
-
-oci_load(
-    name = "ryuk_load",
-    image = "@ryuk_linux_amd64",
-    repo_tags = ["testcontainers/ryuk:0.8.1"],
-)
-
-filegroup(
-    name = "ryuk_tarball",
-    srcs = [":ryuk_load"],
-    output_group = "tarball",
-)
 
 # NOTE: No aggregator target - use specific per-file targets like :db, :e2e, :ground_truth, etc.
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -51,8 +11,8 @@ py_library(
     name = "db",
     srcs = ["db.py"],
     data = glob(["testdata/specimens/**"]) + [
-        ":postgres_16_tarball",
-        ":ryuk_tarball",
+        "//third_party/containers:postgres_16_tarball",
+        "//third_party/containers:ryuk_tarball",
     ],
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -108,8 +68,8 @@ py_library(
     name = "e2e_infra",
     srcs = ["e2e_infra.py"],
     data = [
-        ":registry_2_tarball",
-        ":ryuk_tarball",
+        "//third_party/containers:registry_2_tarball",
+        "//third_party/containers:ryuk_tarball",
     ],
     visibility = ["//props:__subpackages__"],
     deps = [

@@ -41,8 +41,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-_POSTGRES_TARBALL_RLOCATION = "_main/props/testing/fixtures/postgres_16_load/tarball.tar"
-_RYUK_TARBALL_RLOCATION = "_main/props/testing/fixtures/ryuk_load/tarball.tar"
+_POSTGRES_TARBALL_RLOCATION = "_main/third_party/containers/postgres_16_load/tarball.tar"
+_RYUK_TARBALL_RLOCATION = "_main/third_party/containers/ryuk_load/tarball.tar"
 
 
 @pytest.fixture(scope="session")

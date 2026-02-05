@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 # --- Session-scoped infrastructure ---
 
 
-_REGISTRY_TARBALL_RLOCATION = "_main/props/testing/fixtures/registry_2_load/tarball.tar"
-_RYUK_TARBALL_RLOCATION = "_main/props/testing/fixtures/ryuk_load/tarball.tar"
+_REGISTRY_TARBALL_RLOCATION = "_main/third_party/containers/registry_2_load/tarball.tar"
+_RYUK_TARBALL_RLOCATION = "_main/third_party/containers/ryuk_load/tarball.tar"
 
 
 @pytest.fixture(scope="session")

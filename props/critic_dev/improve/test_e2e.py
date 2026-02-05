@@ -4,10 +4,10 @@ Tests the improvement agent workflow using:
 - Real Docker containers running agent loops
 - Real PostgreSQL database with temporary RLS-scoped users
 - Real LLM proxy (validates auth, logs requests)
-- Fake OpenAI server (returns scripted responses from PropsMock)
+- Fake OpenAI server (returns scripted responses from CriticDevMock)
 
 The test stack is:
-    Container → LLM Proxy → Fake OpenAI → PropsMock
+    Container → LLM Proxy → Fake OpenAI → CriticDevMock
 
 Tests verify:
 - Creating improved package directory via subprocess exec
@@ -27,11 +27,10 @@ from hamcrest import all_of, assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.core.oci_utils import BUILTIN_TAG
-from props.critic_dev.loop import ReportFailureArgs
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
-from props.testing.mocks import PropsMock
+from props.testing.mocks import CriticDevMock
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -63,11 +62,11 @@ print("Ready to begin.")
 """
 
 
-def make_improvement_mock() -> PropsMock:
+def make_improvement_mock() -> CriticDevMock:
     """Create mock for improvement agent that creates files and terminates."""
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
         # Create package directory and write files
         result = yield from m.exec_roundtrip(
@@ -87,7 +86,7 @@ chmod +x /workspace/improved/init""",
         )
         assert_that(result, exited_successfully())
         # Terminate via report_failure tool (real termination requires grading infrastructure)
-        yield m.tool_call("report_failure", ReportFailureArgs(message="Package created, test complete"))
+        yield m.report_failure("Package created, test complete")
 
     return mock
 
@@ -157,12 +156,12 @@ async def test_cli_leaderboard_in_improvement_agent(
 ):
     """Test that leaderboard CLI command works from improvement agent container."""
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
         result = yield from m.exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000)
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield m.tool_call("report_failure", ReportFailureArgs(message="Leaderboard test completed"))
+        yield m.report_failure("Leaderboard test completed")
 
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
@@ -184,12 +183,12 @@ async def test_cli_hard_examples_in_improvement_agent(
 ):
     """Test that hard-examples CLI command works from improvement agent container."""
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
         result = yield from m.exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000)
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield m.tool_call("report_failure", ReportFailureArgs(message="Hard examples test completed"))
+        yield m.report_failure("Hard examples test completed")
 
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(

@@ -56,7 +56,7 @@ def _compute_pareto_frontier_from_sql(
         critic_model: Model name to filter
         split: Split to filter (e.g., "valid")
         valset_idx_by_key: Maps (snapshot_slug, scope_hash) to validation dataset index
-        sha_to_prog_idx: Maps prompt_sha256 to program index in checkpoint
+        sha_to_prog_idx: Maps prompt SHA to program index in checkpoint
 
     Returns:
         (pareto_front_valset, program_at_pareto_front_valset) tuple where:

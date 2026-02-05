@@ -15,16 +15,16 @@ An **agent package** is a Docker image that runs a self-contained agent loop:
 
 ```
 agent_pkg/
-├── host/      # Host-side: image building (docker buildx)
+├── host/      # Host-side: image building (docker buildx, for editor agents)
 └── runtime/   # Container-side: utilities for agent init and prompt rendering
 ```
 
-- **host/** — Builds images from agent definition directories using `docker buildx build`. Used by both props agents (OCI images built by Bazel) and editor agents (built from repo filesystem).
+- **host/** — Builds images from agent definition directories using `docker buildx build`. Used by editor agents (built from repo filesystem).
 - **runtime/** — Minimal utilities installed in containers for system prompt generation and output formatting. Has minimal dependencies (no workspace deps) since it's installed separately in container images.
 
 ## Props Agent Images
 
-Props agent images are built by Bazel as OCI images (`oci_image` rules) and pushed to a registry. Agent types: critic, grader, prompt_optimizer, improvement. See <props/docs/agent-loop-inside-container.md> for the in-container architecture.
+Props agent images are built by Bazel as OCI images (`oci_image` rules) and pushed to registries via crane. Agent types: critic, grader, prompt_optimizer, improvement. See <props/docs/agent-loop-inside-container.md> for the in-container architecture.
 
 ## Editor Agent Images
 

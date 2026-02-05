@@ -169,14 +169,6 @@ oci_load(
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "tarball",
-    testonly = True,
-    srcs = [":load"],
-    output_group = "tarball",
-    visibility = ["//visibility:public"],
-)
-
 oci_push(
     name = "push",
     image = ":image",

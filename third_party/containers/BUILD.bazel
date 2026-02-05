@@ -1,0 +1,51 @@
+# Pre-built container images for Testcontainers-based tests.
+#
+# These images are bundled as Bazel deps so hermetic tests don't need Docker Hub
+# access. Test fixtures use `docker load -i <tarball>` to pre-load them before
+# Testcontainers starts the containers.
+#
+# Usage in BUILD.bazel data deps:
+#     data = ["//third_party/containers:postgres_16_tarball"]
+
+load("@rules_oci//oci:defs.bzl", "oci_load")
+
+package(default_testonly = True)
+
+oci_load(
+    name = "postgres_16_load",
+    image = "@postgres_16_linux_amd64",
+    repo_tags = ["postgres:16"],
+)
+
+filegroup(
+    name = "postgres_16_tarball",
+    srcs = [":postgres_16_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "registry_2_load",
+    image = "@registry_2_linux_amd64",
+    repo_tags = ["registry:2"],
+)
+
+filegroup(
+    name = "registry_2_tarball",
+    srcs = [":registry_2_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "ryuk_load",
+    image = "@ryuk_linux_amd64",
+    repo_tags = ["testcontainers/ryuk:0.8.1"],
+)
+
+filegroup(
+    name = "ryuk_tarball",
+    srcs = [":ryuk_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)
