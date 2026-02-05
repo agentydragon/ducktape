@@ -119,10 +119,19 @@ npm.npm_translate_lock(
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
     ],
-    # Disable postinstall for unrs-resolver - it tries to download native bindings from npm registry
-    # which fails in Bazel's sandboxed build (network blocked). Safe to skip since @storybook/test-runner
-    # (the only consumer via jest-resolve) isn't executed during bazel build - only used for manual testing.
-    lifecycle_hooks_exclude = ["unrs-resolver"],
+    # Disable postinstall for packages that download binaries during lifecycle hooks.
+    # These fail in Bazel's sandboxed builds (network blocked, gVisor, RBE).
+    lifecycle_hooks_exclude = [
+        # Tries to download native bindings from npm registry. Safe to skip since
+        # @storybook/test-runner (the only consumer via jest-resolve) isn't executed
+        # during bazel build - only used for manual testing.
+        "unrs-resolver",
+        # Postinstall downloads Chromium (~280MB) which fails in sandboxed builds.
+        # .puppeteerrc.cjs (skipDownload: true) isn't visible inside the lifecycle
+        # hook sandbox. Browsers are provided hermetically via rules_playwright
+        # (@playwright_browsers//:chromium-headless-shell) and PUPPETEER_EXECUTABLE_PATH.
+        "puppeteer",
+    ],
     npmrc = "@@//:.npmrc",
     # Root pnpm-lock.yaml with workspace packages
     pnpm_lock = "//:pnpm-lock.yaml",
