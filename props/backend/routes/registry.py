@@ -131,16 +131,20 @@ async def _record_manifest_push(
 
 
 # Routes — order matters: specific routes must precede the catch-all proxy.
+# All registry routes are excluded from OpenAPI schema (include_in_schema=False)
+# because they're OCI distribution spec endpoints proxied to an upstream registry,
+# not part of our API. The catch-all api_route also causes duplicate operationId
+# collisions in the generated schema since one function serves multiple methods.
 
 
-@router.get("/v2/")
-@router.head("/v2/")
+@router.get("/v2/", include_in_schema=False)
+@router.head("/v2/", include_in_schema=False)
 async def v2_check() -> Response:
     """API version check - allows anonymous access per OCI spec."""
     return Response(content=b"{}", status_code=200, headers={"Docker-Distribution-API-Version": "registry/2.0"})
 
 
-@router.put("/v2/{repo}/manifests/{ref}")
+@router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
 async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
     """Push a manifest — records agent definition on success."""
     caller_type, agent_run_id = get_caller_type(auth, admin_db)
@@ -159,7 +163,7 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
     return response
 
 
-@router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PATCH", "PUT"])
+@router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PATCH", "PUT"], include_in_schema=False)
 async def registry_proxy(request: Request, path: str, auth: Auth, admin_db: AdminDb) -> Response:
     """Proxy OCI registry requests with method-based ACL (read for GET/HEAD, write for mutations)."""
     caller_type, _ = get_caller_type(auth, admin_db)
