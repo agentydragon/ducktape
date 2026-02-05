@@ -11,7 +11,7 @@ All agent loops run inside Docker containers. Each container is a self-contained
 ```
 Host Scaffold                      Container
 ─────────────                      ─────────
-AgentEnvironment (simplified)
+run_loop_agent()
 ├─ Create temp DB user
 ├─ [Subagent spawn endpoint for PO/PI]
 └─ Create container ─────────────> Container starts (CMD)

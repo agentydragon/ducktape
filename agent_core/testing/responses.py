@@ -196,7 +196,7 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
     OpenAIModelProto for use as a mock client.
 
     Subclass and override play() to provide the generator.
-    For MCP-aware methods (call_roundtrip, mcp_tool_call, docker_exec_roundtrip),
+    For MCP-aware methods (call_roundtrip, mcp_tool_call),
     use MCPDecoratorMock from agent_core.testing.mcp.responses.
     """
 

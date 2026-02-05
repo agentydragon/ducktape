@@ -91,7 +91,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success
-        yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
+        yield from m.exec_roundtrip(["prompt-optimize-dev", "report-success"])
 
     @PropsMock.mock()
     def critic_mock(m: PropsMock) -> PlayGen:
@@ -107,7 +107,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         logger.info(f"Critic received system message ({len(system_text)} chars)")
 
         # Submit zero issues
-        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Critic completed"])
+        yield from m.exec_roundtrip(["critique", "submit", "0", "Critic completed"])
 
     grader_mock = make_orchestration_grader_mock()
 
@@ -175,7 +175,7 @@ You are a code critic. VERIFICATION_TOKEN: {verification_token}
 
 Find issues in the code and report them.
 """
-        result = yield from m.docker_exec_roundtrip(
+        result = yield from m.exec_roundtrip(
             [
                 "sh",
                 "-c",
@@ -190,14 +190,14 @@ AGENT_EOF
         assert_that(result, exited_successfully())
 
         # Build and push the custom image via registry proxy
-        result = yield from m.docker_exec_roundtrip(
+        result = yield from m.exec_roundtrip(
             ["props", "agent-pkg", "create", "/workspace/custom_critic/"], timeout_ms=60000
         )
         assert_that(result, exited_successfully())
         logger.info(f"agent-pkg create output: {result.stdout}")
 
         # Extract digest from the created agent definition
-        result = yield from m.docker_exec_roundtrip(
+        result = yield from m.exec_roundtrip(
             ["psql", "-t", "-c", "SELECT digest FROM agent_definitions ORDER BY created_at DESC LIMIT 1"],
             timeout_ms=10000,
         )
@@ -228,7 +228,7 @@ AGENT_EOF
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success
-        yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
+        yield from m.exec_roundtrip(["prompt-optimize-dev", "report-success"])
 
     @PropsMock.mock()
     def critic_mock(m: PropsMock) -> PlayGen:
@@ -244,7 +244,7 @@ AGENT_EOF
         logger.info(f"Critic received system message with expected token: {verification_token}")
 
         # Submit zero issues
-        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Custom critic completed"])
+        yield from m.exec_roundtrip(["critique", "submit", "0", "Custom critic completed"])
 
     grader_mock = make_orchestration_grader_mock()
 
@@ -297,7 +297,7 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
 
         # Try to call agent-pkg create from critic container
         # This should fail because critics don't have registry write access
-        result = yield from m.docker_exec_roundtrip(["props", "agent-pkg", "create", "/workspace/"], timeout_ms=30000)
+        result = yield from m.exec_roundtrip(["props", "agent-pkg", "create", "/workspace/"], timeout_ms=30000)
         # The command should fail - check for non-zero exit or error message
         # We expect a 403 Forbidden from the registry proxy
         stdout = result.stdout if hasattr(result, "stdout") else ""
@@ -306,7 +306,7 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
         logger.info(f"Critic push attempt stderr: {stderr}")
 
         # Report failure since we couldn't push (expected behavior)
-        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Push attempt completed (expected to fail)"])
+        yield from m.exec_roundtrip(["critique", "submit", "0", "Push attempt completed (expected to fail)"])
 
     async with e2e_stack(mock, images=[critic_image]) as stack:
         run_id = await stack.registry.run_critic(

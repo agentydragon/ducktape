@@ -1,31 +1,31 @@
 # agent_pkg - Agent Packages
 
-Infrastructure for **agent packages** — Docker build contexts that define agents that run within a dedicated container.
+Infrastructure for **agent packages** — Docker images that define agents running within dedicated containers.
 
 ## Concept
 
-An **agent package** is a directory containing:
+An **agent package** is a Docker image that runs a self-contained agent loop:
 
-- A `Dockerfile` that builds an agent container
-- An `/init` script that outputs the agent's system prompt when executed
-
-The host builds the image, starts a container, runs `/init`, and uses its stdout as the system prompt for the agent loop.
-
-## Image Contract
-
-The built image must have `/init` which:
-
-- Is executable
-- Prints the system prompt to stdout
-- Exits 0 on success
+- The container starts via `CMD` and runs its own agent loop
+- The agent talks to the LLM proxy via `OPENAI_BASE_URL`
+- Tools are executed via subprocess inside the container
+- The container exits 0 on success, non-zero on failure
 
 ## Package Structure
 
 ```
 agent_pkg/
-├── host/      # Host-side: image building, init runner
-└── runtime/   # Container-side: utilities for init scripts
+├── host/      # Host-side: image building (docker buildx)
+└── runtime/   # Container-side: utilities for agent init and prompt rendering
 ```
 
-- **host/** — Builds images from agent packages, runs `/init`, validates the image contract. Depends on `mcp-infra` (workspace member).
-- **runtime/** — Minimal utilities installed in containers. Has minimal dependencies (no workspace deps) since it's installed separately in container images.
+- **host/** — Builds images from agent definition directories using `docker buildx build`. Used by both props agents (OCI images built by Bazel) and editor agents (built from repo filesystem).
+- **runtime/** — Minimal utilities installed in containers for system prompt generation and output formatting. Has minimal dependencies (no workspace deps) since it's installed separately in container images.
+
+## Props Agent Images
+
+Props agent images are built by Bazel as OCI images (`oci_image` rules) and pushed to a registry. Agent types: critic, grader, prompt_optimizer, improvement. See <props/docs/agent-loop-inside-container.md> for the in-container architecture.
+
+## Editor Agent Images
+
+Editor agent images are built from directories on the host filesystem using `ensure_image()`. The editor agent uses a different architecture with a host-side agent loop — see `editor_agent/`.

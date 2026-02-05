@@ -10,7 +10,7 @@ The test stack is:
     Container → LLM Proxy → Fake OpenAI → PropsMock
 
 Tests verify:
-- Creating improved package directory via docker_exec
+- Creating improved package directory via subprocess exec
 - Database access works from container
 - CLI helpers work in container context
 
@@ -69,7 +69,7 @@ def make_improvement_mock() -> PropsMock:
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
         # Create package directory and write files
-        result = yield from m.docker_exec_roundtrip(
+        result = yield from m.exec_roundtrip(
             [
                 "sh",
                 "-c",
@@ -86,7 +86,7 @@ chmod +x /workspace/improved/init""",
         )
         assert_that(result, exited_successfully())
         # Terminate via report-failure (real termination requires grading infrastructure)
-        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Package created, test complete"])
+        yield from m.exec_roundtrip(["critic-dev", "report-failure", "Package created, test complete"])
 
     return mock
 
@@ -159,9 +159,9 @@ async def test_cli_leaderboard_in_improvement_agent(
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.docker_exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000)
+        result = yield from m.exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000)
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
+        yield from m.exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
 
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
@@ -186,9 +186,9 @@ async def test_cli_hard_examples_in_improvement_agent(
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.docker_exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000)
+        result = yield from m.exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000)
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
+        yield from m.exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
 
     async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(

@@ -398,7 +398,7 @@ This test must exercise the complete agent-creates-agent workflow using only aff
 3. **Push via proxy**
    - Push manifest by digest via `PUT /v2/critic/manifests/{digest}`
    - **Proxy automatically creates `agent_definitions` row** (agent doesn't create it manually)
-   - Agent uses actual CLI commands (python -c '...', curl) in container via `docker_exec_roundtrip()`
+   - Agent uses actual CLI commands (python -c '...', curl) in container via `exec_roundtrip()`
 
 4. **Launch custom agent**
    - Test harness triggers new critic run with custom digest

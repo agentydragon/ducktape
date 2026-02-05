@@ -1,14 +1,31 @@
 from __future__ import annotations
 
+from collections.abc import Generator
+
 import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
-from agent_core.testing.responses import PlayGen
+from agent_core.testing.responses import PlayGen, tool_roundtrip
 from editor_agent.host.agent_runner import run_editor_docker_agent
 from editor_agent.host.submit_server import SubmitStateSuccess
+from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.matchers import exited_successfully
+from mcp_infra.exec.models import BaseExecResult, make_exec_input
+from openai_utils.model import FunctionCallItem, ResponsesRequest
+
+
+class HostDockerExecMock(MCPDecoratorMock):
+    """Mock for host-side docker exec into containers (editor_agent pattern)."""
+
+    def docker_exec_roundtrip(
+        self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None, tool_name: str = "exec"
+    ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
+        """Yield MCP docker exec call (host-side docker exec into container)."""
+        exec_input = make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd)
+        call = self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
+        return tool_roundtrip(call, BaseExecResult)
 
 
 @pytest.mark.requires_docker
@@ -18,8 +35,8 @@ async def test_editor_step_sequence(tmp_path, async_docker_client, editor_image_
     target = tmp_path / fname
     target.write_text("hello", encoding="utf-8")
 
-    @MCPDecoratorMock.mock()
-    def mock(m: MCPDecoratorMock) -> PlayGen:
+    @HostDockerExecMock.mock()
+    def mock(m: HostDockerExecMock) -> PlayGen:
         yield None  # First request
         # Edit the file
         result = yield from m.docker_exec_roundtrip(["sh", "-c", f"echo 'modified content' > /workspace/{fname}"])

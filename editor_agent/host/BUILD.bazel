@@ -58,7 +58,10 @@ docker_py_test(
         ":submit_server",
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
+        "//mcp_infra/exec:docker",
         "//mcp_infra/exec:matchers",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

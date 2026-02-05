@@ -61,7 +61,7 @@ class MCPDecoratorMock(DecoratorMock):
     """DecoratorMock with MCP-aware convenience methods.
 
     Use this base class instead of DecoratorMock when your mock needs
-    call_roundtrip, mcp_tool_call, or docker_exec_roundtrip.
+    call_roundtrip or mcp_tool_call.
     """
 
     def call_roundtrip[S: FastMCP, U: BaseModel](
@@ -76,14 +76,6 @@ class MCPDecoratorMock(DecoratorMock):
     ) -> FunctionCallItem:
         """Create tool call for MCP server/tool with automatic naming."""
         return self.tool_call(build_mcp_function(server, tool), arguments, call_id)
-
-    def docker_exec_roundtrip(
-        self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None, tool_name: str = "exec"
-    ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
-        """Yield docker exec call, receive response, return typed result."""
-        exec_input = make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd)
-        call = self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
-        return tool_roundtrip(call, BaseExecResult)
 
 
 class DockerExecMock(MCPDecoratorMock):

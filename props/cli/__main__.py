@@ -211,7 +211,7 @@ async def prompt_improve_cmd(
                 "[red]Error:[/red] The --prompt-sha256 option is deprecated. "
                 "The improvement command now operates on agent definitions."
             )
-            console.print("[dim]This command needs redesign per Task 7 in docs/design/agent-definitions.md[/dim]")
+            console.print("[dim]This command needs redesign for the in-container architecture[/dim]")
             raise typer.Exit(1)
         # Auto-select: find prompts with enough training examples, pick best by validation LCB
         # Count training examples per prompt using two-phase approach for unified AgentRun model

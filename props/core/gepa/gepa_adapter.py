@@ -71,9 +71,7 @@ logger = logging.getLogger(__name__)
 def _gepa_not_implemented() -> None:
     """Raise NotImplementedError for GEPA - called at runtime entrypoints."""
     raise NotImplementedError(
-        "GEPA is broken: run_critic_legacy() has been removed. "
-        "GEPA needs migration to definition-based run_critic(). "
-        "See docs/design/agent-definitions.md Task 9."
+        "GEPA is broken: run_critic_legacy() has been removed. GEPA needs migration to definition-based run_critic()."
     )
 
 

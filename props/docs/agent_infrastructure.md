@@ -1,42 +1,28 @@
 # Agent Infrastructure: Implementation Notes
 
-This document covers implementation details for agent infrastructure. For agent-facing documentation, see `agent_defs/common/docs/`.
+This document covers implementation details for agent infrastructure. For the full in-container architecture, see <agent-loop-inside-container.md>.
 
 ## Directory Structure
 
 ```
-props/core/
-├── agent_defs/              # Agent definitions (OCI images)
-│   ├── critic/              # Critic agent definition
-│   ├── grader/              # Grader agent definition
-│   ├── improvement/         # Improvement agent definition
-│   ├── prompt_optimizer/    # Prompt optimizer definition
-│   ├── init                 # Shared init script for critic variants
-│   ├── critic_init          # Critic-specific init script
-│   └── grader_init          # Grader-specific init script
-├── critic/                  # Critic runtime (MCP server, persistence)
-├── grader/                  # Grader runtime
-├── prompt_optimize/         # Optimizer runtime
-├── prompt_improve/          # Improvement runtime
-├── db/                      # Database layer (ORM, migrations)
-└── cli/                     # CLI commands
+props/
+├── critic/                 # Critic agent (main.py entry point, DirectToolProvider)
+├── grader/                 # Grader agent (loop.py, daemon.py)
+├── critic_dev/             # Critic-dev agents
+│   ├── optimize/           # Prompt optimizer agent
+│   └── improve/            # Improvement agent
+├── orchestration/          # Host scaffold (agent_registry, loop_agent_env)
+├── backend/                # Unified backend (LLM proxy, registry proxy, eval API)
+├── db/                     # Database layer (ORM, migrations)
+├── cli/                    # CLI commands
+├── testing/                # Test fixtures and mocks
+└── docs/                   # Documentation
 ```
 
-## Testing Requirements
+## Agent Images
 
-### Example Script Tests
+Agent images are built by Bazel as OCI images (`oci_image` rules in each agent's `BUILD.bazel`). Each image has a `CMD` that starts the agent's own loop. See <agent-loop-inside-container.md> for the full architecture.
 
-All example scripts must:
+## Testing
 
-1. Import from helpers (not duplicate logic)
-2. Work with zero configuration (auto-detect from environment)
-3. Have tests verifying they run correctly
-
-```python
-def test_listing_example_runs(synced_test_fixtures):
-    """listing.py should run without errors."""
-    from props_core.prompt_optimize.examples import listing
-    # Example runs during import or has main() that can be called
-```
-
-See `tests/props/CLAUDE.md` for comprehensive testing conventions.
+See `props/testing/` for shared test fixtures (database, e2e infrastructure, mocks).

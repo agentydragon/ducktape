@@ -7,8 +7,8 @@ from more_itertools import one
 from pydantic import TypeAdapter
 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
-from agent_core.testing.responses import DecoratorMock
-from mcp_infra.exec.models import BaseExecResult
+from agent_core.testing.responses import DecoratorMock, tool_roundtrip
+from mcp_infra.exec.models import BaseExecResult, make_exec_input
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage
 from props.grader.tools import FillRemainingArgs, ListPendingArgs, PendingEdge
 
@@ -18,12 +18,6 @@ def get_system_message_text(req: ResponsesRequest) -> str:
 
     Concatenates all text parts from all SystemMessage items in the request.
     Useful for mocks that need to verify the system prompt contains expected content.
-
-    Args:
-        req: The ResponsesRequest to extract from
-
-    Returns:
-        Concatenated system message text, or empty string if none found
     """
     if isinstance(req.input, str):
         return ""
@@ -37,14 +31,33 @@ def get_system_message_text(req: ResponsesRequest) -> str:
     return "\n".join(parts)
 
 
-class PropsMock(MCPDecoratorMock):
+class SubprocessExecMock(MCPDecoratorMock):
+    """Mock for in-container subprocess exec (DirectToolProvider).
+
+    Uses plain tool name ``exec`` matching DirectToolProvider registration
+    in in-container agent loops (critic, grader, PO/PI).
+
+    For host-side docker exec via MCP server (editor_agent), use
+    DockerExecMock from agent_core.testing.mcp.responses instead.
+    """
+
+    def exec_roundtrip(
+        self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None
+    ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
+        """Yield exec call for in-container subprocess, return typed result."""
+        exec_input = make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd)
+        call = self.tool_call("exec", exec_input)
+        return tool_roundtrip(call, BaseExecResult)
+
+
+class PropsMock(SubprocessExecMock):
     """Mock with props-specific helpers (psql, etc.)."""
 
     def psql_roundtrip(
         self, query: str, *, timeout_ms: int = 5000
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
-        """Execute psql query via docker exec and return result."""
-        return self.docker_exec_roundtrip(["psql", "-c", query], timeout_ms=timeout_ms)
+        """Execute psql query via in-container exec and return result."""
+        return self.exec_roundtrip(["psql", "-c", query], timeout_ms=timeout_ms)
 
 
 def _extract_raw_output(req: ResponsesRequest, call: FunctionCallItem) -> str:
