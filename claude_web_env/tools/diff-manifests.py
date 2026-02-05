@@ -45,12 +45,23 @@ class DiffResult(BaseModel):
     right: Entry | None = None
 
 
-def diff_manifests(left: dict[str, Entry], right: dict[str, Entry], excl: Exclusions) -> list[DiffResult]:
+PatternHits = dict[tuple[str, str], int]
+
+
+def diff_manifests(
+    left: dict[str, Entry], right: dict[str, Entry], excl: Exclusions
+) -> tuple[list[DiffResult], PatternHits]:
     all_paths = sorted(set(left) | set(right))
     results: list[DiffResult] = []
+    hits: PatternHits = defaultdict(int)
+
+    def record(category: str, pattern: str) -> None:
+        hits[(category, pattern)] += 1
 
     for path in all_paths:
-        if excl.should_skip(path):
+        skip_pat = excl.matching_skip(path)
+        if skip_pat is not None:
+            record("skip_paths", skip_pat)
             results.append(DiffResult(path=path, status="excluded"))
             continue
 
@@ -58,13 +69,25 @@ def diff_manifests(left: dict[str, Entry], right: dict[str, Entry], excl: Exclus
         re = right.get(path)
 
         if le and not re:
-            if excl.expected_only_in_live(path) or excl.is_volatile(path):
+            live_match = excl.matching_only_in_live(path)
+            vol_pat = excl.matching_volatile(path)
+            if live_match is not None:
+                record(*live_match)
+                results.append(DiffResult(path=path, status="expected_only_left", left=le))
+            elif vol_pat is not None:
+                record("volatile_paths", vol_pat)
                 results.append(DiffResult(path=path, status="expected_only_left", left=le))
             else:
                 results.append(DiffResult(path=path, status="only_left", left=le))
             continue
         if re and not le:
-            if excl.expected_only_in_built(path) or excl.is_volatile(path):
+            built_pat = excl.matching_only_in_built(path)
+            vol_pat = excl.matching_volatile(path)
+            if built_pat is not None:
+                record("only_in_built", built_pat)
+                results.append(DiffResult(path=path, status="expected_only_right", right=re))
+            elif vol_pat is not None:
+                record("volatile_paths", vol_pat)
                 results.append(DiffResult(path=path, status="expected_only_right", right=re))
             else:
                 results.append(DiffResult(path=path, status="only_right", right=re))
@@ -73,11 +96,13 @@ def diff_manifests(left: dict[str, Entry], right: dict[str, Entry], excl: Exclus
         assert le
         assert re
 
-        # Volatile paths: any difference is expected
-        volatile = excl.is_volatile(path)
+        vol_pat = excl.matching_volatile(path)
+        volatile = vol_pat is not None
 
         if le.type != re.type:
             if volatile:
+                assert vol_pat is not None
+                record("volatile_paths", vol_pat)
                 results.append(DiffResult(path=path, status="hash_excluded", details="volatile", left=le, right=re))
                 continue
             results.append(
@@ -87,6 +112,8 @@ def diff_manifests(left: dict[str, Entry], right: dict[str, Entry], excl: Exclus
 
         if le.type == "l" and le.link_target != re.link_target:
             if volatile:
+                assert vol_pat is not None
+                record("volatile_paths", vol_pat)
                 results.append(DiffResult(path=path, status="hash_excluded", details="volatile", left=le, right=re))
                 continue
             results.append(
@@ -97,7 +124,16 @@ def diff_manifests(left: dict[str, Entry], right: dict[str, Entry], excl: Exclus
             continue
 
         if le.type == "f" and le.sha256 and re.sha256 and le.sha256 != re.sha256:
-            if excl.hash_ok_to_differ(path) or volatile:
+            hash_pat = excl.matching_hash_ok(path)
+            if hash_pat is not None:
+                record("hash_may_differ", hash_pat)
+                results.append(
+                    DiffResult(path=path, status="hash_excluded", details="hash differs (expected)", left=le, right=re)
+                )
+                continue
+            if volatile:
+                assert vol_pat is not None
+                record("volatile_paths", vol_pat)
                 results.append(
                     DiffResult(path=path, status="hash_excluded", details="hash differs (expected)", left=le, right=re)
                 )
@@ -116,6 +152,8 @@ def diff_manifests(left: dict[str, Entry], right: dict[str, Entry], excl: Exclus
             changes.append(f"group {le.group}->{re.group}")
         if changes:
             if volatile:
+                assert vol_pat is not None
+                record("volatile_paths", vol_pat)
                 results.append(DiffResult(path=path, status="hash_excluded", details="volatile", left=le, right=re))
                 continue
             results.append(
@@ -125,7 +163,7 @@ def diff_manifests(left: dict[str, Entry], right: dict[str, Entry], excl: Exclus
 
         results.append(DiffResult(path=path, status="match", left=le, right=re))
 
-    return results
+    return results, hits
 
 
 def categorize_path(path: str) -> str:
@@ -164,7 +202,13 @@ def categorize_path(path: str) -> str:
     return "other"
 
 
-def generate_report(results: list[DiffResult], left_label: str, right_label: str) -> str:
+def generate_report(
+    results: list[DiffResult],
+    left_label: str,
+    right_label: str,
+    pattern_hits: PatternHits | None = None,
+    excl: Exclusions | None = None,
+) -> str:
     lines: list[str] = []
     matches = [r for r in results if r.status == "match"]
     excluded = [
@@ -189,45 +233,51 @@ def generate_report(results: list[DiffResult], left_label: str, right_label: str
 
     if not real_diffs:
         lines.append("**Clean diff** (no unexpected differences)")
-        return "\n".join(lines)
+    else:
+        # Breakdown by status
+        by_status: dict[str, list[DiffResult]] = defaultdict(list)
+        for r in real_diffs:
+            by_status[r.status].append(r)
 
-    # Breakdown by status
-    by_status: dict[str, list[DiffResult]] = defaultdict(list)
-    for r in real_diffs:
-        by_status[r.status].append(r)
-
-    lines.append("## Real Differences")
-    lines.append("")
-    for status in ["only_left", "only_right", "type_changed", "content_changed", "link_changed", "metadata_changed"]:
-        items = by_status.get(status, [])
-        if not items:
-            continue
-        label = {
-            "only_left": f"Only in {left_label}",
-            "only_right": f"Only in {right_label}",
-            "type_changed": "Type changed",
-            "content_changed": "Content changed (hash differs)",
-            "link_changed": "Symlink target changed",
-            "metadata_changed": "Metadata changed",
-        }[status]
-        lines.append(f"### {label} ({len(items):,})")
+        lines.append("## Real Differences")
         lines.append("")
-
-        # Group by category
-        by_cat: dict[str, list[DiffResult]] = defaultdict(list)
-        for r in items:
-            by_cat[categorize_path(r.path)].append(r)
-
-        for cat in sorted(by_cat):
-            cat_items = sorted(by_cat[cat], key=lambda r: r.path)
-            lines.append(f"**{cat}** ({len(cat_items)})")
+        for status in [
+            "only_left",
+            "only_right",
+            "type_changed",
+            "content_changed",
+            "link_changed",
+            "metadata_changed",
+        ]:
+            items = by_status.get(status, [])
+            if not items:
+                continue
+            label = {
+                "only_left": f"Only in {left_label}",
+                "only_right": f"Only in {right_label}",
+                "type_changed": "Type changed",
+                "content_changed": "Content changed (hash differs)",
+                "link_changed": "Symlink target changed",
+                "metadata_changed": "Metadata changed",
+            }[status]
+            lines.append(f"### {label} ({len(items):,})")
             lines.append("")
-            for r in cat_items[:100]:
-                detail = f" — {r.details}" if r.details else ""
-                lines.append(f"- `{r.path}`{detail}")
-            if len(cat_items) > 100:
-                lines.append(f"- *...and {len(cat_items) - 100} more*")
-            lines.append("")
+
+            # Group by category
+            by_cat: dict[str, list[DiffResult]] = defaultdict(list)
+            for r in items:
+                by_cat[categorize_path(r.path)].append(r)
+
+            for cat in sorted(by_cat):
+                cat_items = sorted(by_cat[cat], key=lambda r: r.path)
+                lines.append(f"**{cat}** ({len(cat_items)})")
+                lines.append("")
+                for r in cat_items[:100]:
+                    detail = f" — {r.details}" if r.details else ""
+                    lines.append(f"- `{r.path}`{detail}")
+                if len(cat_items) > 100:
+                    lines.append(f"- *...and {len(cat_items) - 100} more*")
+                lines.append("")
 
     # Summary of excluded items
     if excluded:
@@ -238,6 +288,56 @@ def generate_report(results: list[DiffResult], left_label: str, right_label: str
             excl_by_status[r.status] += 1
         for st, count in sorted(excl_by_status.items()):
             lines.append(f"- {st}: {count:,}")
+        lines.append("")
+
+    # Pattern utilization
+    if pattern_hits is not None and excl is not None:
+        lines.append(_generate_pattern_section(pattern_hits, excl, len(excluded), len(real_diffs)))
+
+    return "\n".join(lines)
+
+
+def _generate_pattern_section(hits: PatternHits, excl: Exclusions, total_excluded: int, total_real_diffs: int) -> str:
+    all_pats = excl.all_patterns()
+    total_patterns = len(all_pats)
+    unused = [p for p in all_pats if hits.get(p, 0) == 0]
+    total_hits = sum(hits.values())
+
+    lines: list[str] = []
+    lines.append("## Exclusion Pattern Utilization")
+    lines.append("")
+    lines.append(
+        f"{total_patterns} patterns excluded {total_excluded:,} paths "
+        f"({total_hits:,} attributed to specific patterns). "
+        f"{len(unused)} patterns matched 0 paths."
+    )
+    if total_real_diffs > 0:
+        lines.append(f"Ratio: {total_patterns / total_real_diffs:.1f}x patterns per real diff.")
+    lines.append("")
+
+    # Group by category, preserving YAML order
+    categories = [
+        "skip_paths",
+        "volatile_paths",
+        "hash_may_differ",
+        "only_in_live",
+        "session_hook_artifacts",
+        "only_in_built",
+    ]
+    for cat in categories:
+        cat_pats = [(pat, hits.get((cat, pat), 0)) for c, pat in all_pats if c == cat]
+        if not cat_pats:
+            continue
+        cat_total = sum(count for _, count in cat_pats)
+        cat_unused = sum(1 for _, count in cat_pats if count == 0)
+        lines.append(f"### `{cat}` ({len(cat_pats)} patterns, {cat_total:,} hits, {cat_unused} unused)")
+        lines.append("")
+        lines.append("| Hits | Pattern |")
+        lines.append("|-----:|---------|")
+        # Sort: nonzero descending, then zero-hit patterns
+        for pat, count in sorted(cat_pats, key=lambda x: (-x[1], x[0])):
+            marker = " **UNUSED**" if count == 0 else ""
+            lines.append(f"| {count:,} | `{pat}`{marker} |")
         lines.append("")
 
     return "\n".join(lines)
@@ -264,9 +364,9 @@ def main() -> int:
     print(f"  {len(right):,} entries", file=sys.stderr)
 
     print("Comparing...", file=sys.stderr)
-    results = diff_manifests(left, right, excl)
+    results, pattern_hits = diff_manifests(left, right, excl)
 
-    report = generate_report(results, args.left_label, args.right_label)
+    report = generate_report(results, args.left_label, args.right_label, pattern_hits, excl)
     real_diffs = sum(1 for r in results if r.status in REAL_DIFF_STATUSES)
 
     if args.output:

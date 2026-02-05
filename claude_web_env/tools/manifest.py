@@ -48,24 +48,71 @@ class Exclusions(BaseModel):
     ignore_group: bool = False
     ignore_perms: bool = False
 
+    def matching_skip(self, path: str) -> str | None:
+        for p in self.skip_paths:
+            if path == p or path.startswith(p + "/"):
+                return p
+        return None
+
     def should_skip(self, path: str) -> bool:
-        return any(path == p or path.startswith(p + "/") for p in self.skip_paths)
+        return self.matching_skip(path) is not None
+
+    def matching_volatile(self, path: str) -> str | None:
+        for pat in self.volatile_paths:
+            if fnmatch.fnmatch(path, pat):
+                return pat
+        return None
 
     def is_volatile(self, path: str) -> bool:
-        """True if any difference in this path is expected (non-deterministic tool installs)."""
-        return any(fnmatch.fnmatch(path, pat) for pat in self.volatile_paths)
+        return self.matching_volatile(path) is not None
+
+    def matching_hash_ok(self, path: str) -> str | None:
+        for pat in self.hash_may_differ:
+            if fnmatch.fnmatch(path, pat):
+                return pat
+        return None
 
     def hash_ok_to_differ(self, path: str) -> bool:
-        return any(fnmatch.fnmatch(path, pat) for pat in self.hash_may_differ)
+        return self.matching_hash_ok(path) is not None
+
+    def matching_only_in_live(self, path: str) -> tuple[str, str] | None:
+        """Return (category, pattern) for matching only_in_live or session_hook_artifacts."""
+        for pat in self.only_in_live:
+            if fnmatch.fnmatch(path, pat):
+                return ("only_in_live", pat)
+        for pat in self.session_hook_artifacts:
+            if fnmatch.fnmatch(path, pat):
+                return ("session_hook_artifacts", pat)
+        return None
 
     def expected_only_in_live(self, path: str) -> bool:
-        # Includes both only_in_live and session_hook_artifacts (both are expected
-        # to exist only in the live container, not in the built image)
-        all_live_only = self.only_in_live + self.session_hook_artifacts
-        return any(fnmatch.fnmatch(path, pat) for pat in all_live_only)
+        return self.matching_only_in_live(path) is not None
+
+    def matching_only_in_built(self, path: str) -> str | None:
+        for pat in self.only_in_built:
+            if fnmatch.fnmatch(path, pat):
+                return pat
+        return None
 
     def expected_only_in_built(self, path: str) -> bool:
-        return any(fnmatch.fnmatch(path, pat) for pat in self.only_in_built)
+        return self.matching_only_in_built(path) is not None
+
+    def all_patterns(self) -> list[tuple[str, str]]:
+        """All (category, pattern) pairs across all exclusion categories."""
+        result: list[tuple[str, str]] = []
+        for p in self.skip_paths:
+            result.append(("skip_paths", p))
+        for p in self.volatile_paths:
+            result.append(("volatile_paths", p))
+        for p in self.hash_may_differ:
+            result.append(("hash_may_differ", p))
+        for p in self.only_in_live:
+            result.append(("only_in_live", p))
+        for p in self.session_hook_artifacts:
+            result.append(("session_hook_artifacts", p))
+        for p in self.only_in_built:
+            result.append(("only_in_built", p))
+        return result
 
 
 def load_exclusions(path: str | None) -> Exclusions:

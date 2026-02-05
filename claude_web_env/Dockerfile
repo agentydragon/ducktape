@@ -25,8 +25,9 @@ FROM docker.io/library/ubuntu:24.04
 LABEL maintainer="Claude Code Recreation"
 LABEL description="Recreated Claude Code web development environment"
 
-# Redirect RUN output to avoid SIGPIPE under gVisor+buildah (requires --format=docker)
-SHELL ["/bin/bash", "-c", "set -euo pipefail; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
+# Redirect RUN output to avoid SIGPIPE under gVisor+buildah (requires --format=docker).
+# On failure, copy last 200 lines to fd 3 (the original stderr, saved before redirect).
+SHELL ["/bin/bash", "-c", "exec 3>&2; set -euo pipefail; trap 'rc=$?; tail -200 /tmp/build-step.log >&3; exit $rc' ERR; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
