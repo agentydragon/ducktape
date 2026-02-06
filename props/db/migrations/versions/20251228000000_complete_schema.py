@@ -1690,7 +1690,7 @@ A diligent critic reviewing file.py might discover issues in bar.py it depends o
     """)
 
     # ============================================================================
-    # 2. Helper functions for snapshot_grader agent type
+    # 2. Helper functions for grader agent type
     # ============================================================================
     op.execute("""
         CREATE FUNCTION current_grader_snapshot_slug() RETURNS TEXT
@@ -1698,13 +1698,13 @@ A diligent critic reviewing file.py might discover issues in bar.py it depends o
             SELECT (type_config->>'snapshot_slug')::text
             FROM agent_runs
             WHERE agent_run_id = current_agent_run_id()
-              AND (type_config->>'agent_type') = 'snapshot_grader'
+              AND (type_config->>'agent_type') = 'grader'
         $$
     """)
 
     op.execute("""
         COMMENT ON FUNCTION current_grader_snapshot_slug() IS
-        'Returns snapshot_slug for snapshot_grader agents. NULL for other agent types.
+        'Returns snapshot_slug for grader agents. NULL for other agent types.
 Used by RLS to scope snapshot-wide access for grader daemons.'
     """)
 
@@ -1722,7 +1722,7 @@ Used by RLS to scope snapshot-wide access for grader daemons.'
 
     op.execute("""
         COMMENT ON FUNCTION is_critique_on_grader_snapshot(UUID) IS
-        'Returns TRUE if the given critique run is on the current snapshot_grader daemon''s snapshot.
+        'Returns TRUE if the given critique run is on the current grader daemon''s snapshot.
 Used by RLS to allow daemon access to all critiques for its snapshot.'
     """)
 
@@ -1864,22 +1864,19 @@ When this view returns no rows for a grader''s scope, grading is complete.'
     # ============================================================================
     op.execute("ALTER TABLE grading_edges ENABLE ROW LEVEL SECURITY")
 
-    # Per-critique grader (existing pattern) - writes edges for graded critique only
+    # Grader daemon - writes edges for any critique on its snapshot
     op.execute("""
         CREATE POLICY grader_insert_edges ON grading_edges FOR INSERT WITH CHECK (
             current_agent_type() = 'grader'
             AND grader_run_id = current_agent_run_id()
-            AND critique_run_id = current_graded_agent_run_id()
+            AND is_critique_on_grader_snapshot(critique_run_id)
         )
     """)
 
     op.execute("""
         CREATE POLICY grader_select_edges ON grading_edges FOR SELECT USING (
             current_agent_type() = 'grader'
-            AND (
-                grader_run_id = current_agent_run_id()
-                OR critique_run_id = current_graded_agent_run_id()
-            )
+            AND is_critique_on_grader_snapshot(critique_run_id)
         )
     """)
 
@@ -1893,36 +1890,6 @@ When this view returns no rows for a grader''s scope, grading is complete.'
     op.execute("""
         CREATE POLICY grader_delete_edges ON grading_edges FOR DELETE USING (
             current_agent_type() = 'grader'
-            AND grader_run_id = current_agent_run_id()
-        )
-    """)
-
-    # Snapshot grader (daemon) - writes edges for any critique on its snapshot
-    op.execute("""
-        CREATE POLICY snapshot_grader_insert_edges ON grading_edges FOR INSERT WITH CHECK (
-            current_agent_type() = 'snapshot_grader'
-            AND grader_run_id = current_agent_run_id()
-            AND is_critique_on_grader_snapshot(critique_run_id)
-        )
-    """)
-
-    op.execute("""
-        CREATE POLICY snapshot_grader_select_edges ON grading_edges FOR SELECT USING (
-            current_agent_type() = 'snapshot_grader'
-            AND is_critique_on_grader_snapshot(critique_run_id)
-        )
-    """)
-
-    op.execute("""
-        CREATE POLICY snapshot_grader_update_edges ON grading_edges FOR UPDATE USING (
-            current_agent_type() = 'snapshot_grader'
-            AND grader_run_id = current_agent_run_id()
-        )
-    """)
-
-    op.execute("""
-        CREATE POLICY snapshot_grader_delete_edges ON grading_edges FOR DELETE USING (
-            current_agent_type() = 'snapshot_grader'
             AND grader_run_id = current_agent_run_id()
         )
     """)
@@ -1951,28 +1918,28 @@ When this view returns no rows for a grader''s scope, grading is complete.'
     """)
 
     # ============================================================================
-    # 6. RLS policies for snapshot_grader on reported_issues
+    # 6. RLS policies for grader on reported_issues
     # ============================================================================
     op.execute("""
-        CREATE POLICY snapshot_grader_read_critiques ON reported_issues FOR SELECT USING (
-            current_agent_type() = 'snapshot_grader'
+        CREATE POLICY grader_read_critiques ON reported_issues FOR SELECT USING (
+            current_agent_type() = 'grader'
             AND is_critique_on_grader_snapshot(agent_run_id)
         )
     """)
 
     op.execute("""
-        CREATE POLICY snapshot_grader_read_critique_occs ON reported_issue_occurrences FOR SELECT USING (
-            current_agent_type() = 'snapshot_grader'
+        CREATE POLICY grader_read_critique_occs ON reported_issue_occurrences FOR SELECT USING (
+            current_agent_type() = 'grader'
             AND is_critique_on_grader_snapshot(agent_run_id)
         )
     """)
 
     # ============================================================================
-    # 7. RLS policy for snapshot_grader on agent_runs
+    # 7. RLS policy for grader on agent_runs
     # ============================================================================
     op.execute("""
-        CREATE POLICY snapshot_grader_read_runs ON agent_runs FOR SELECT USING (
-            current_agent_type() = 'snapshot_grader'
+        CREATE POLICY grader_read_runs ON agent_runs FOR SELECT USING (
+            current_agent_type() = 'grader'
             AND (
                 agent_run_id = current_agent_run_id()
                 OR (
@@ -1984,9 +1951,8 @@ When this view returns no rows for a grader''s scope, grading is complete.'
     """)
 
     # ============================================================================
-    # 8. Update can_access_snapshot() for snapshot_grader
+    # 8. Update can_access_snapshot() for grader
     # ============================================================================
-    # Drop and recreate the function to add snapshot_grader support
     op.execute("DROP FUNCTION IF EXISTS can_access_snapshot(VARCHAR)")
 
     op.execute("""
@@ -1995,8 +1961,7 @@ When this view returns no rows for a grader''s scope, grading is complete.'
         BEGIN
             RETURN (
                 (current_agent_type() = 'prompt_optimizer' AND is_train_snapshot(p_slug))
-                OR (current_agent_type() = 'grader' AND p_slug = get_graded_snapshot_slug(current_agent_run_id()))
-                OR (current_agent_type() = 'snapshot_grader' AND p_slug = current_grader_snapshot_slug())
+                OR (current_agent_type() = 'grader' AND p_slug = current_grader_snapshot_slug())
                 OR (current_agent_type() = 'improvement' AND is_improvement_snapshot_allowed(p_slug))
             );
         END;
@@ -2007,8 +1972,7 @@ When this view returns no rows for a grader''s scope, grading is complete.'
         COMMENT ON FUNCTION can_access_snapshot(VARCHAR) IS
         'Checks if current agent can access a snapshot''s ground truth.
 - prompt_optimizer: TRAIN snapshots only
-- grader: snapshot of the critique being graded
-- snapshot_grader: the daemon''s assigned snapshot
+- grader: the daemon''s assigned snapshot
 - improvement: allowed snapshots from config'
     """)
 
@@ -2048,7 +2012,7 @@ When this view returns no rows for a grader''s scope, grading is complete.'
 
     op.execute("""
         COMMENT ON FUNCTION notify_gt_changed() IS
-        'Sends pg_notify when ground truth changes. Used to wake snapshot_grader daemons.
+        'Sends pg_notify when ground truth changes. Used to wake grader daemons.
 Fires on INSERT/DELETE of TPs/FPs (not UPDATE - minor wording fixes don''t need re-grade).'
     """)
 
@@ -2120,7 +2084,7 @@ Fires on INSERT/DELETE of TPs/FPs (not UPDATE - minor wording fixes don''t need 
 
     op.execute("""
         COMMENT ON FUNCTION notify_critique_changed() IS
-        'Sends pg_notify when new critiques are reported. Used to wake snapshot_grader daemons.
+        'Sends pg_notify when new critiques are reported. Used to wake grader daemons.
 Fires on INSERT of reported_issues and reported_issue_occurrences.
 Looks up snapshot_slug from agent_run type_config since critique tables do not store it directly.'
     """)
@@ -2713,6 +2677,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("GRANT USAGE ON SEQUENCE llm_requests_id_seq TO agent_base")
     op.execute("GRANT SELECT ON TABLE false_positives TO agent_base")
     op.execute("GRANT SELECT ON TABLE grading_edge_credit_sums TO agent_base")
+    op.execute("GRANT SELECT ON TABLE grading_pending TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE grading_edges_id_seq TO agent_base")
     op.execute("GRANT SELECT ON TABLE true_positives TO agent_base")
     op.execute("GRANT SELECT ON TABLE occurrence_credits TO agent_base")
@@ -2725,6 +2690,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issue_occurrences TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE reported_issue_occurrences_id_seq TO agent_base")
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issues TO agent_base")
+    op.execute("GRANT EXECUTE ON FUNCTION matchable_occurrences(VARCHAR, VARCHAR[]) TO agent_base")
 
     # =========================================================================
     # 11. RLS Policies
@@ -2942,7 +2908,6 @@ The proxy intercepts manifest pushes and creates agent_definitions rows automati
         CREATE POLICY reported_issues_agent_select ON reported_issues FOR SELECT USING (
             (current_agent_type() = 'prompt_optimizer' AND is_train_agent_run(agent_run_id))
             OR (agent_run_id = current_agent_run_id())
-            OR (current_agent_type() = 'grader' AND agent_run_id = get_graded_agent_run_id(current_agent_run_id()))
             OR (current_agent_type() = 'improvement'
                 AND agent_run_id IN (SELECT get_improvement_allowed_agent_run_ids()))
         )
@@ -2962,7 +2927,6 @@ The proxy intercepts manifest pushes and creates agent_definitions rows automati
         CREATE POLICY reported_issue_occurrences_agent_select ON reported_issue_occurrences FOR SELECT USING (
             (current_agent_type() = 'prompt_optimizer' AND is_train_agent_run(agent_run_id))
             OR (agent_run_id = current_agent_run_id())
-            OR (current_agent_type() = 'grader' AND agent_run_id = get_graded_agent_run_id(current_agent_run_id()))
             OR (current_agent_type() = 'improvement'
                 AND agent_run_id IN (SELECT get_improvement_allowed_agent_run_ids()))
         )
