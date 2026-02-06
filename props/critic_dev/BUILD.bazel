@@ -22,6 +22,7 @@ py_library(
         "//agent_core:handler",
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
+        "//openai_utils:pydantic_strict_mode",
         "//props/core:eval_client",
         "//props/core:ids",
         "//props/core/models:examples",

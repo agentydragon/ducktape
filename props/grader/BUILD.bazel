@@ -28,6 +28,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//openai_utils:pydantic_strict_mode",
         "@pypi//pydantic",
     ],
 )

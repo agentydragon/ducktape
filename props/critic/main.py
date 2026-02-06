@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from openai import AsyncOpenAI
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
@@ -27,6 +27,7 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import BoundOpenAIModel, SystemMessage
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run, get_current_agent_run_id
 from props.core.loop_utils import render_template_string
 from props.core.models.examples import WholeSnapshotExample
@@ -37,46 +38,39 @@ from props.db.snapshots import DBLocationAnchor
 # --- Tool argument models ---
 
 
-class InsertIssueArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class InsertIssueArgs(OpenAIStrictModeBaseModel):
     issue_id: str = Field(..., description="Unique identifier for this issue (kebab-case slug)")
     rationale: str = Field(..., description="Explanation of why this is an issue")
 
 
-class InsertOccurrenceArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class InsertOccurrenceArgs(OpenAIStrictModeBaseModel):
     issue_id: str = Field(..., description="ID of the issue this occurrence belongs to")
     file: str = Field(..., description="File path relative to workspace root")
     start_line: int | None = Field(None, description="Starting line number")
     end_line: int | None = Field(None, description="Ending line number")
 
 
-class LocationSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class LocationSpec(OpenAIStrictModeBaseModel):
     file: str
     start_line: int | None = None
     end_line: int | None = None
 
 
-class InsertOccurrenceMultiArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class InsertOccurrenceMultiArgs(OpenAIStrictModeBaseModel):
     issue_id: str = Field(..., description="ID of the issue this occurrence belongs to")
     locations: list[LocationSpec] = Field(..., description="List of locations for this occurrence")
 
 
-class DeleteIssueArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class DeleteIssueArgs(OpenAIStrictModeBaseModel):
     issue_id: str = Field(..., description="ID of the issue to delete")
 
 
-class SubmitArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class SubmitArgs(OpenAIStrictModeBaseModel):
     issues_count: int = Field(..., description="Total number of issues reported")
     summary: str = Field(..., description="Brief summary of the code review findings")
 
 
-class ReportFailureArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class ReportFailureArgs(OpenAIStrictModeBaseModel):
     message: str = Field(..., description="Description of why the critique could not be completed")
 
 

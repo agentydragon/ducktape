@@ -37,6 +37,7 @@ py_library(
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
         "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
         "//props/core:agent_helpers",
         "//props/core:loop_utils",
         "//props/core/models:examples",

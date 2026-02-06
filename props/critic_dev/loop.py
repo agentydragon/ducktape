@@ -12,12 +12,13 @@ from enum import StrEnum, auto
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import BaseHandler
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.core.eval_client import EvalClient, wait_until_graded
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
@@ -40,13 +41,13 @@ WORKSPACE = Path("/workspace")
 # =============================================================================
 
 
-class ReportFailureArgs(BaseModel):
+class ReportFailureArgs(OpenAIStrictModeBaseModel):
     """Arguments for report_failure tool."""
 
     message: str = Field(..., description="Description of why optimization could not be completed")
 
 
-class RunCriticToolArgs(BaseModel):
+class RunCriticToolArgs(OpenAIStrictModeBaseModel):
     """Arguments for run_critic tool (subset of RunCriticRequest for agent use)."""
 
     definition_id: DefinitionId = Field(
@@ -57,7 +58,7 @@ class RunCriticToolArgs(BaseModel):
     budget_usd: float | None = Field(default=None, description="Max USD cost for this agent")
 
 
-class WaitUntilGradedToolArgs(BaseModel):
+class WaitUntilGradedToolArgs(OpenAIStrictModeBaseModel):
     """Arguments for wait_until_graded tool."""
 
     critic_run_id: str = Field(description="agent_run_id of the critic run to wait for grading")
