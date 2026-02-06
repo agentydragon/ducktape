@@ -14,8 +14,6 @@ py_library(
         "//agent_core/testing/mcp:responses",
         "//mcp_infra/exec:models",
         "//openai_utils:model",
-        "//props/critic:main",
-        "//props/critic_dev:loop",
         "//props/grader:tools",
         "@pypi//more_itertools",
         "@pypi//pydantic",

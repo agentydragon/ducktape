@@ -33,6 +33,7 @@ from props.core.agent_types import AgentType
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.core.oci_utils import BUILTIN_TAG
+from props.critic.testing.mocks import CriticMock
 from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -41,10 +42,10 @@ from props.critic_dev.optimize.orchestration_fixtures import (
     make_orchestration_grader_mock,
 )
 from props.critic_dev.shared import TargetMetric
+from props.critic_dev.testing.mocks import CriticDevMock
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge
-from props.testing.mocks import CriticDevMock, CriticMock
 
 logger = logging.getLogger(__name__)
 

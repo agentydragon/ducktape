@@ -27,10 +27,10 @@ from hamcrest import all_of, assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.core.oci_utils import BUILTIN_TAG
+from props.critic_dev.testing.mocks import CriticDevMock
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
-from props.testing.mocks import CriticDevMock
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

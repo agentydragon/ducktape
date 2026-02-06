@@ -1,0 +1,16 @@
+"""Shared test fixtures for critic_dev agents (optimizer, improvement)."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "mocks",
+    testonly = True,
+    srcs = ["mocks.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "//props/critic_dev:loop",
+        "//props/testing",
+    ],
+)

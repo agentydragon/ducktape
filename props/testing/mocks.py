@@ -10,13 +10,6 @@ from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import DecoratorMock, tool_roundtrip
 from mcp_infra.exec.models import BaseExecResult, make_exec_input
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage
-from props.critic.main import (
-    InsertIssueArgs,
-    InsertOccurrenceArgs,
-    ReportFailureArgs as CriticReportFailureArgs,
-    SubmitArgs,
-)
-from props.critic_dev.loop import ReportFailureArgs as CriticDevReportFailureArgs
 from props.grader.tools import FillRemainingArgs, ListPendingArgs, PendingEdge
 
 
@@ -65,59 +58,6 @@ class PropsMock(SubprocessExecMock):
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
         """Execute psql query via in-container exec and return result."""
         return self.exec_roundtrip(["psql", "-c", query], timeout_ms=timeout_ms)
-
-
-class CriticMock(PropsMock):
-    """Mock for critic agent with tool convenience methods.
-
-    Example:
-        @CriticMock.mock()
-        def mock(m: CriticMock) -> PlayGen:
-            yield None  # First request
-            yield m.insert_issue("issue-1", "Found dead code")
-            yield m.insert_occurrence("issue-1", "foo.py", 1, 5)
-            yield m.submit(issues_count=1, summary="Found 1 issue")
-    """
-
-    def insert_issue(self, issue_id: str, rationale: str) -> FunctionCallItem:
-        """Insert a reported issue."""
-        return self.tool_call("insert_issue", InsertIssueArgs(issue_id=issue_id, rationale=rationale))
-
-    def insert_occurrence(
-        self, issue_id: str, file: str, start_line: int | None = None, end_line: int | None = None
-    ) -> FunctionCallItem:
-        """Insert an occurrence for a reported issue."""
-        return self.tool_call(
-            "insert_occurrence",
-            InsertOccurrenceArgs(issue_id=issue_id, file=file, start_line=start_line, end_line=end_line),
-        )
-
-    def submit(self, *, issues_count: int, summary: str) -> FunctionCallItem:
-        """Submit the critique."""
-        return self.tool_call("submit", SubmitArgs(issues_count=issues_count, summary=summary))
-
-    def report_failure(self, message: str) -> FunctionCallItem:
-        """Report that the critique could not be completed."""
-        return self.tool_call("report_failure", CriticReportFailureArgs(message=message))
-
-
-class CriticDevMock(PropsMock):
-    """Mock for critic-dev agents (prompt optimizer, improvement) with tool convenience methods.
-
-    Example:
-        @CriticDevMock.mock()
-        def mock(m: CriticDevMock) -> PlayGen:
-            yield None  # First request
-            yield m.report_failure("Test complete")
-    """
-
-    def report_failure(self, message: str) -> FunctionCallItem:
-        """Report that the task could not be completed."""
-        return self.tool_call("report_failure", CriticDevReportFailureArgs(message=message))
-
-    def report_success(self) -> FunctionCallItem:
-        """Report that the task completed successfully."""
-        return self.tool_call("report_success", {})
 
 
 def _extract_raw_output(req: ResponsesRequest, call: FunctionCallItem) -> str:

@@ -69,6 +69,7 @@ docker_py_test(
         "//mcp_infra/exec:matchers",
         "//props:conftest",
         "//props/core:oci_utils",
+        "//props/critic_dev/testing:mocks",
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
