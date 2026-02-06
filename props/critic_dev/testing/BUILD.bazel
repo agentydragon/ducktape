@@ -14,3 +14,15 @@ py_library(
         "//props/testing",
     ],
 )
+
+py_library(
+    name = "orchestration_fixtures",
+    testonly = True,
+    srcs = ["orchestration_fixtures.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core/testing:responses",
+        "//props/testing",
+    ],
+)

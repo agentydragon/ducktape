@@ -38,14 +38,14 @@ from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.core.oci_utils import BUILTIN_TAG
 from props.critic.testing.mocks import CriticMock
 from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
-from props.critic_dev.optimize.orchestration_fixtures import (
+from props.critic_dev.shared import TargetMetric
+from props.critic_dev.testing.mocks import CriticDevMock
+from props.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
     make_orchestration_grader_mock,
 )
-from props.critic_dev.shared import TargetMetric
-from props.critic_dev.testing.mocks import CriticDevMock
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 from props.testing.mocks import get_system_message_text

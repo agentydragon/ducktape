@@ -50,18 +50,6 @@ pkg_tar(
     visibility = ["//props:__subpackages__"],
 )
 
-py_library(
-    name = "orchestration_fixtures",
-    testonly = True,
-    srcs = ["orchestration_fixtures.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//agent_core/testing:responses",
-        "//props/testing",
-    ],
-)
-
 docker_py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
@@ -74,7 +62,6 @@ docker_py_test(
     tags = ["e2e"],
     deps = [
         ":main",
-        ":orchestration_fixtures",
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props:conftest",
@@ -86,6 +73,7 @@ docker_py_test(
         "//props/critic_dev:loop",
         "//props/critic_dev:shared",
         "//props/critic_dev/testing:mocks",
+        "//props/critic_dev/testing:orchestration_fixtures",
         "//props/db:config",
         "//props/db:database",
         "//props/db:examples",
