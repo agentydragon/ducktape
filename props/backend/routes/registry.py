@@ -1,7 +1,7 @@
 """OCI Registry Proxy routes - ACL enforcement and metadata tracking.
 
 Endpoints:
-- GET, HEAD /v2/ - API version check (anonymous)
+- GET, HEAD /v2/ - API version check (returns 401 auth challenge if unauthenticated)
 - PUT /v2/{repo}/manifests/{ref} - Push manifest with metadata recording
 - All other /v2/* - Proxied with method-based ACL (GET/HEAD=read, POST/PATCH/PUT=write)
 """
@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_OCI_VERSION_HEADER = {"Docker-Distribution-API-Version": "registry/2.0"}
+
 
 def _upstream_registry_url() -> str:
     """Read upstream registry URL from env on each call.
@@ -46,6 +48,7 @@ async def _proxy_to_upstream(request: Request) -> Response:
     async with httpx.AsyncClient() as client:
         headers = dict(request.headers)
         headers.pop("host", None)
+
         body = await request.body() if request.method not in ("GET", "HEAD") else b""
 
         try:
@@ -139,9 +142,15 @@ async def _record_manifest_push(
 
 @router.get("/v2/", include_in_schema=False)
 @router.head("/v2/", include_in_schema=False)
-async def v2_check() -> Response:
-    """API version check - allows anonymous access per OCI spec."""
-    return Response(content=b"{}", status_code=200, headers={"Docker-Distribution-API-Version": "registry/2.0"})
+async def v2_check(auth: Auth) -> Response:
+    """OCI API version check with auth challenge.
+
+    Per OCI distribution spec, returns 401 with WWW-Authenticate for
+    unauthenticated callers so Docker/crane know to send credentials.
+    """
+    if not auth.is_authenticated:
+        return Response(status_code=401, headers={**_OCI_VERSION_HEADER, "WWW-Authenticate": 'Basic realm="props"'})
+    return Response(content=b"{}", status_code=200, headers=_OCI_VERSION_HEADER)
 
 
 @router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
