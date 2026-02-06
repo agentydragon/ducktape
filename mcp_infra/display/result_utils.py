@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from agent_core.tool_provider import TextContent, ToolResult
+from agent_core.tool_provider import TextContent, ToolOutputData, ToolResult
 
 
-def extract_display_data(result: ToolResult) -> dict[str, Any] | str | None:
+def extract_display_data(result: ToolResult) -> ToolOutputData | str | None:
     """Extract display-friendly data from ToolResult.
 
     Prefers structured_content if present, otherwise extracts text from content blocks.

@@ -42,7 +42,7 @@ from agent_core.loop_control import (
     RequireSpecific,
     ToolPolicy,
 )
-from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolProvider, ToolResult
+from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolOutputData, ToolProvider, ToolResult
 from openai_utils.model import (
     AssistantMessage,
     AssistantMessageOut,
@@ -235,7 +235,7 @@ def _check_size(result: str) -> None:
         raise RuntimeError(f"Tool output too large: {len(result)} > {MAX_TOOL_RESULT_BYTES}")
 
 
-def _content_is_redundant(content: list[ResultContent], sc: dict[str, Any]) -> bool:
+def _content_is_redundant(content: list[ResultContent], sc: ToolOutputData) -> bool:
     """Check if content is just JSON serialization of structuredContent."""
     if len(content) != 1:
         return False
@@ -289,7 +289,7 @@ def _tool_result_to_openai(result: ToolResult) -> FunctionCallOutputType:
 def _openai_to_tool_result(output: FunctionCallOutputType) -> ToolResult:
     """Convert OpenAI FunctionCallOutputItem.output format to ToolResult."""
     content: list[ResultContent] = []
-    structured_content: dict[str, Any] | None = None
+    structured_content: ToolOutputData | None = None
 
     if isinstance(output, str):
         # Try to parse as JSON for structured_content

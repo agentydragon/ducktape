@@ -30,6 +30,10 @@ class ImageContent(BaseModel):
 
 ResultContent = Annotated[TextContent | ImageContent, Field(discriminator="type")]
 
+# Structured tool output data. Wider than MCP's structuredContent (dict[str, Any] | None)
+# because DirectToolProvider bypasses MCP and can return lists directly. OpenAI's tool
+# output is ultimately a JSON string, so any JSON-serializable value works.
+ToolOutputData = dict[str, Any] | list[Any]
 
 # --- Tool result ---
 
@@ -38,7 +42,7 @@ class ToolResult(BaseModel):
     """Result from a tool invocation."""
 
     content: list[ResultContent] = Field(default_factory=list)
-    structured_content: dict[str, Any] | None = None
+    structured_content: ToolOutputData | None = None
     is_error: bool = False
 
     @classmethod
@@ -52,8 +56,8 @@ class ToolResult(BaseModel):
         return cls(content=[TextContent(text=message)], is_error=True)
 
     @classmethod
-    def structured(cls, data: dict[str, Any], *, is_error: bool = False) -> ToolResult:
-        """Create a structured result with JSON data."""
+    def structured(cls, data: ToolOutputData, *, is_error: bool = False) -> ToolResult:
+        """Create a structured result with JSON data (dict or list)."""
         return cls(structured_content=data, is_error=is_error)
 
     def extract_structured[T](self, output_type: type[T]) -> T:
