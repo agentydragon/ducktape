@@ -8,8 +8,13 @@ by Bazel's oci_image rule.
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
+import os
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 import runfiles
 
@@ -30,32 +35,41 @@ class BazelImage:
     image_rlocation: str
 
 
-async def crane_push(image: BazelImage, registry_url: str, tag: str) -> None:
+async def crane_push(
+    image: BazelImage, registry_url: str, tag: str, *, username: str | None = None, password: str | None = None
+) -> None:
     """Push an OCI layout directory to a registry via crane.
 
     Uses asyncio subprocess to avoid blocking the event loop while uvicorn
     serves registry proxy requests on the same loop.
 
-    Args:
-        image: Bazel-built OCI image with layout directory.
-        registry_url: Registry host:port (e.g., "localhost:12345").
-        tag: Tag to push (e.g., "latest").
+    When username/password are provided, a temporary Docker config is created
+    so crane authenticates with the registry proxy.
     """
     crane = runfiles.get_required_path(_CRANE_RLOCATION)
     image_path = runfiles.get_required_path(image.image_rlocation)
     dest = f"{registry_url}/{image.repo_name}:{tag}"
 
-    logger.info("Pushing %s -> %s via crane", image_path, dest)
-    proc = await asyncio.create_subprocess_exec(
-        crane,
-        "push",
-        str(image_path),
-        dest,
-        "--insecure",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        raise RuntimeError(f"crane push failed for {dest}: {stderr.decode()}")
-    logger.info("Pushed %s: %s", dest, stdout.decode().strip())
+    env: dict[str, str] | None = None
+    with tempfile.TemporaryDirectory(prefix="crane_auth_") as config_dir_str:
+        if username and password:
+            config_dir = Path(config_dir_str)
+            token = base64.b64encode(f"{username}:{password}".encode()).decode()
+            (config_dir / "config.json").write_text(json.dumps({"auths": {registry_url: {"auth": token}}}))
+            env = {**os.environ, "DOCKER_CONFIG": config_dir_str}
+
+        logger.info("Pushing %s -> %s via crane", image_path, dest)
+        proc = await asyncio.create_subprocess_exec(
+            crane,
+            "push",
+            str(image_path),
+            dest,
+            "--insecure",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"crane push failed for {dest}: {stderr.decode()}")
+        logger.info("Pushed %s: %s", dest, stdout.decode().strip())

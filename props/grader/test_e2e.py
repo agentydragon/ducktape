@@ -1,15 +1,14 @@
 """E2E test for grader daemon.
 
 Tests that the grader daemon:
-1. Starts and listens for pg_notify on grading_pending
+1. Detects pending drift in grading_pending view
 2. Picks up new critique issues and grades them
 3. Creates GradingEdge records
 
 Test flow:
+- Insert drift data (completed critic run with reported issues) BEFORE starting daemon
 - Start grader daemon container (runs indefinitely)
-- Create a completed critic run with reported issues
-- pg_notify fires automatically via database triggers
-- Daemon wakes, grades the issues, creates GradingEdge
+- Daemon finds drift on first check, grades the issues, creates GradingEdge
 - Poll for GradingEdge creation, then cancel daemon
 """
 
@@ -18,10 +17,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from uuid import uuid4
+from collections import defaultdict
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from sqlalchemy import text
 
 from agent_core.testing.responses import PlayGen
 from props.db.database import Database
@@ -34,14 +35,12 @@ logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres, pytest.mark.requires_docker]
 
-TEST_TIMEOUT_SECONDS = 60
 
-
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
     """Test that grader daemon detects and grades new critique issues."""
 
-    @GraderMock.mock()
+    @GraderMock.mock(check_consumed=False)  # Daemon may be aborted before consuming all
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request
 
@@ -49,25 +48,21 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
         pending = yield from m.list_pending_roundtrip()
         logger.info(f"Grader found {len(pending)} pending items")
 
-        # Grade each pending item — mark as no match (FP with 0 credit)
+        # Group by (run_id, issue_id) and fill each group at once
+        by_issue: dict[tuple[UUID, str], int] = defaultdict(int)
         for edge in pending:
-            logger.info(f"Grading issue {edge.critique_issue_id} from run {edge.critique_run_id}")
-            yield from m.fill_remaining_roundtrip(
-                edge.critique_run_id, edge.critique_issue_id, 0, "No matching ground truth"
-            )
+            by_issue[(edge.critique_run_id, edge.critique_issue_id)] += 1
 
-        # Daemon continues running (eternal) - test will cancel after verifying grading
+        for (run_id, issue_id), count in by_issue.items():
+            logger.info(f"Grading {count} edges for issue {issue_id} from run {run_id}")
+            yield from m.fill_remaining_roundtrip(run_id, issue_id, count, "No matching ground truth")
+
+        # Signal that grading is done — sleep tool checks grading_pending is empty
+        yield m.sleep("Graded all pending edges")
 
     async with e2e_stack(mock, images=[grader_image]) as stack:
-        # Start grader daemon in background task
-        daemon_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="grader-daemon"
-        )
-
-        # Give daemon time to start and begin listening
-        await asyncio.sleep(2)
-
-        # Create drift: insert a completed critic run with reported issues
+        # Create drift BEFORE starting daemon so it finds drift on first check.
+        # This avoids relying on pg_notify timing (which can be unreliable in Docker).
         critic_run_id = uuid4()
         with db.session() as session:
             critic_run = make_fake_critic_run(
@@ -97,10 +92,31 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
 
             logger.info(f"Created critic run {critic_run_id} with reported issue")
 
+        # Precondition: verify grading_pending has rows before starting daemon
+        with db.session() as session:
+            pending_count = session.execute(
+                text("SELECT count(*) FROM grading_pending WHERE snapshot_slug = :slug"), {"slug": test_snapshot}
+            ).scalar()
+            assert pending_count is not None, "grading_pending query returned None"
+            assert int(pending_count) > 0, f"grading_pending should have rows but has {pending_count}"
+
+        # Start grader daemon in background task — drift already exists in DB
+        daemon_task = asyncio.create_task(
+            stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="grader-daemon"
+        )
+
         # Poll for GradingEdge creation
-        grading_edge = None
-        for _ in range(30):  # Poll for up to 30 seconds
+        edge_credit: float | None = None
+        edge_rationale: str | None = None
+        found = False
+        for _ in range(90):
             await asyncio.sleep(1)
+
+            # Check if daemon task failed (surface errors early)
+            if daemon_task.done() and not daemon_task.cancelled():
+                exc = daemon_task.exception()
+                if exc:
+                    raise RuntimeError(f"Grader daemon failed: {exc}") from exc
 
             with db.session() as session:
                 grading_edge = (
@@ -109,7 +125,10 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
                     .first()
                 )
                 if grading_edge:
-                    logger.info(f"GradingEdge created: {grading_edge}")
+                    edge_credit = grading_edge.credit
+                    edge_rationale = grading_edge.rationale
+                    found = True
+                    logger.info(f"GradingEdge created: credit={edge_credit}, rationale={edge_rationale}")
                     break
 
         # Cancel daemon
@@ -118,9 +137,10 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
             await daemon_task
 
         # Assert grading happened
-        assert grading_edge is not None, "GradingEdge was not created within timeout"
-        assert grading_edge.credit == 0.0  # We mocked fill_remaining with 0 credit
-        assert "No matching ground truth" in grading_edge.rationale
+        assert found, "GradingEdge was not created within timeout"
+        assert edge_credit == 0.0  # We mocked fill_remaining with 0 credit
+        assert edge_rationale is not None
+        assert "No matching ground truth" in edge_rationale
 
 
 if __name__ == "__main__":

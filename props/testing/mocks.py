@@ -17,13 +17,7 @@ def get_system_message_text(req: ResponsesRequest) -> str:
     if isinstance(req.input, str):
         return ""
 
-    parts: list[str] = []
-    for item in req.input:
-        if isinstance(item, SystemMessage):
-            for part in item.content:
-                if hasattr(part, "text"):
-                    parts.append(part.text)
-    return "\n".join(parts)
+    return "\n".join(part.text for item in req.input if isinstance(item, SystemMessage) for part in item.content)
 
 
 class SubprocessExecMock(MCPDecoratorMock):

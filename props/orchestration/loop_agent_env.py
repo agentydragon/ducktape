@@ -65,8 +65,9 @@ async def run_loop_agent(
     agent_base_env: Static env vars from PropsConfig.agent_env (PGHOST, PGPORT, etc.).
         Per-run PGUSER/PGPASSWORD/OPENAI_API_KEY are appended automatically.
     """
-    # Resolve image from OCI reference
-    image_id = await resolve_image_ref_async(docker_client, image, registry_config)
+    # Resolve image from OCI reference (pass DB credentials for registry auth)
+    registry_auth = {"username": db_config.user, "password": db_config.password}
+    image_id = await resolve_image_ref_async(docker_client, image, registry_config, auth=registry_auth)
     logger.info("Using image %s from %s", image_id[:19], image)
 
     # Ensure agent database role exists

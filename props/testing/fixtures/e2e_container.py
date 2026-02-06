@@ -209,7 +209,9 @@ async def _make_stack(
             try:
                 proxy_url = f"localhost:{backend_port}"
                 for image in images:
-                    await crane_push(image, proxy_url, BUILTIN_TAG)
+                    await crane_push(
+                        image, proxy_url, BUILTIN_TAG, username=db.config.user, password=db.config.password
+                    )
                 yield E2EStack(registry=registry, model=model)
             finally:
                 await registry.close()

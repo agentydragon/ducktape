@@ -81,11 +81,16 @@ def is_digest(ref: str) -> bool:
 
 
 async def resolve_image_ref_async(
-    docker: aiodocker.Docker, image_ref: str, registry_config: RegistryProxyConfig
+    docker: aiodocker.Docker,
+    image_ref: str,
+    registry_config: RegistryProxyConfig,
+    *,
+    auth: dict[str, str] | None = None,
 ) -> str:
     """Resolve an OCI image reference to a Docker image ID.
 
     Pulls the image if not present locally.
+    auth: Optional {"username": ..., "password": ...} for registry authentication.
     """
     full_ref = registry_config.normalize_image_ref(image_ref)
 
@@ -99,7 +104,7 @@ async def resolve_image_ref_async(
 
     logger.info(f"Pulling image {full_ref}")
     try:
-        await docker.pull(full_ref)
+        await docker.pull(full_ref, auth=auth)
         image = await docker.images.inspect(full_ref)
         image_id = image["Id"]
         logger.info(f"Pulled image {image_id[:19]} for {full_ref}")
