@@ -31,7 +31,7 @@ from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, 
 from props.core.splits import Split
 from props.critic.exceptions import CriticExecutionError
 from props.db.examples import Example
-from props.db.models import AgentDefinition, AgentRun, GradingEdge, GradingPending, Snapshot
+from props.db.models import AgentRun, GradingEdge, GradingPending, Snapshot
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry
@@ -78,32 +78,24 @@ async def run_critic(
     _, parent_run_id = auth
     registry = get_registry(request)
 
-    # Validate definition exists
+    # Validate snapshot and example
     with admin_db.session() as session:
-        definition = session.get(AgentDefinition, body.definition_id)
-        if not definition:
-            raise HTTPException(status_code=404, detail=f"Agent definition not found: {body.definition_id}")
-
-        # Load and validate snapshot
         snapshot_slug = body.example.snapshot_slug
         db_snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one_or_none()
         if not db_snapshot:
             raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_slug} not found")
 
-        # Validate split-based access restrictions
         if db_snapshot.split == Split.TEST:
             raise HTTPException(
                 status_code=403,
                 detail=f"Access denied: test split is off-limits. Snapshot {snapshot_slug} is in test split.",
             )
 
-        # Look up example from database to validate it exists
         example = Example.from_spec_or_none(session, body.example)
-
         if not example:
             raise HTTPException(status_code=404, detail=f"Example not found: {body.example.model_dump()}")
 
-    # Execute critic run using registry
+    # Execute critic run — registry resolves image ref and raises on errors
     try:
         critic_run_id = await registry.run_critic(
             image_ref=body.definition_id,
@@ -115,6 +107,8 @@ async def run_critic(
         )
     except CriticExecutionError as e:
         raise HTTPException(status_code=500, detail=f"Critic execution failed: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
     # Get final status
     with admin_db.session() as session:
