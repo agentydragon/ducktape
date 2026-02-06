@@ -63,6 +63,7 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
+    data = ["//props/docs"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
