@@ -46,10 +46,6 @@ workflows:
   rbe-image:
     trigger: { kind: path, pattern: "^tools/rbe_image/" }
 
-  props-cli-image:
-    trigger: { kind: bazel_query, query: "$targets intersect //props/cli/..." }
-    secrets: [BUILDBUDDY_API_KEY]
-
   # Path-based workflows (non-Bazel)
   nix-flake-check:
     trigger: { kind: path, pattern: "^nix/" }

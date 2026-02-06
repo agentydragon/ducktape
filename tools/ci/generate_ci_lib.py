@@ -167,7 +167,7 @@ def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
         jobs[name] = build_workflow_job(name, config, has_rbe_image_job=has_rbe_image_job)
 
     # Jobs that push container images need packages:write.
-    image_jobs = {"rbe-image", "props-cli-image"}
+    image_jobs = {"rbe-image"}
     permissions: dict[str, str] = {"contents": "read"}
     if image_jobs & manifest.workflows.keys():
         permissions["packages"] = "write"

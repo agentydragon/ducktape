@@ -3,8 +3,6 @@
 """CLI module - per-file targets."""
 
 # gazelle:python_library_naming_convention $package_name$_lib
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 # =============================================================================
@@ -188,46 +186,4 @@ py_binary(
     main_module = "props.cli",
     visibility = ["//visibility:public"],
     deps = [":main"],
-)
-
-# =============================================================================
-# Shared CLI packaging (used by all agent images)
-# =============================================================================
-
-pkg_tar(
-    name = "app_tar",
-    srcs = [":cli"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
-    visibility = ["//props:__subpackages__"],
-)
-
-# =============================================================================
-# OCI Image for GHCR (specimens validation)
-# =============================================================================
-
-oci_image(
-    name = "image",
-    base = "@distroless_cc_linux_amd64",
-    entrypoint = ["/app/cli"],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
-    tars = [":app_tar"],
-    workdir = "/specimens",
-)
-
-oci_load(
-    name = "load",
-    image = ":image",
-    repo_tags = ["props-cli:latest"],
-)
-
-oci_push(
-    name = "push_ghcr",
-    image = ":image",
-    remote_tags = ["latest"],
-    repository = "ghcr.io/agentydragon/props-cli",
 )
