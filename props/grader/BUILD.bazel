@@ -39,6 +39,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":drift_handler",
         ":tools",
         "//agent_core:agent",
         "//agent_core:direct_provider",
@@ -75,6 +76,7 @@ py_library(
         "//props/core:loop_utils",
         "//props/db:config",
         "//props/db:database",
+        "//props/db:snapshot_io",
         "@pypi//asyncpg",
         "@pypi//asyncpg_stubs",
         "@pypi//jinja2",
@@ -183,7 +185,7 @@ docker_py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
-        "//props/testing",
+        "//props/grader/testing:mocks",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

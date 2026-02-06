@@ -27,8 +27,8 @@ from agent_core.testing.responses import PlayGen
 from props.db.database import Database
 from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import DBLocationAnchor
+from props.grader.testing.mocks import GraderMock
 from props.testing.fixtures.runs import make_fake_critic_run
-from props.testing.mocks import GraderMock
 
 logger = logging.getLogger(__name__)
 

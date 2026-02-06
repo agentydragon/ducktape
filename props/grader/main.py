@@ -19,10 +19,11 @@ from typing import Any
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
 
-from props.core.agent_helpers import fetch_snapshot, get_current_agent_run
+from props.core.agent_helpers import get_current_agent_run
 from props.core.ids import SnapshotSlug
 from props.core.loop_utils import WORKSPACE, render_system_prompt, setup_logging
 from props.db.database import Database
+from props.db.snapshot_io import fetch_snapshot_to_path
 from props.grader.drift_handler import check_grading_pending
 from props.grader.loop import run_grader_loop
 from props.grader.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
@@ -120,7 +121,7 @@ async def main() -> int:
 
     # Fetch snapshot
     logger.info("Fetching snapshot to %s", WORKSPACE)
-    fetch_snapshot(WORKSPACE, db)
+    fetch_snapshot_to_path(snapshot_slug, WORKSPACE, db)
 
     # Render system prompt
     logger.info("Rendering system prompt")

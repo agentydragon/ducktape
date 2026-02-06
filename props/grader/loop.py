@@ -1,6 +1,8 @@
 """In-container agent loop for daemon grader agents using agent_core.Agent.
 
-Grades all critiques for a snapshot. Drift handler controls sleep/wake cycle.
+Grades all critiques for a snapshot. The agent calls ``sleep`` when it believes
+grading is complete; the sleep tool verifies grading_pending is empty before
+allowing the daemon to sleep.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
+from props.grader.drift_handler import check_grading_pending
 from props.grader.tools import (
     DeleteEdgesArgs,
     FillRemainingArgs,
@@ -48,6 +51,7 @@ from props.grader.tools import (
     ShowFPArgs,
     ShowIssueArgs,
     ShowTPArgs,
+    SleepArgs,
     TPRef,
 )
 
@@ -56,7 +60,8 @@ logger = logging.getLogger(__name__)
 # Reminder sent when agent outputs text instead of using tools
 TEXT_OUTPUT_REMINDER = (
     "You must use tools to grade issues. Do not output text directly. "
-    "Use list_pending to see pending edges, insert_edges to grade them, then call submit when done."
+    "Use list_pending to see pending edges, then insert_edges or fill_remaining to grade them. "
+    "Call sleep when you believe all grading is complete."
 )
 
 # Default workspace path
@@ -65,9 +70,10 @@ WORKSPACE = Path("/workspace")
 
 @dataclass
 class ExitState:
-    """Tracks whether a tool has requested exit."""
+    """Tracks whether a tool has requested exit and the reason."""
 
     should_exit: bool = False
+    failed: bool = False
 
 
 def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
@@ -276,7 +282,23 @@ def create_grader_tool_provider(
         Use when there are blocking issues. Signals exit.
         """
         exit_state.should_exit = True
+        exit_state.failed = True
         logger.info("Reported failure: %s", args.message)
+
+    @provider.tool
+    def sleep(args: SleepArgs) -> str:
+        """Signal that grading work is complete and the daemon should sleep.
+
+        Call this when you believe all pending edges have been graded.
+        If there is still pending work in grading_pending, this returns an error
+        and you should continue grading. Otherwise the daemon goes to sleep
+        until new work arrives.
+        """
+        if check_grading_pending(snapshot_slug, db):
+            raise ValueError("There is still pending grading work. Continue grading before sleeping.")
+        exit_state.should_exit = True
+        logger.info("Sleep requested: %s", args.summary)
+        return "Going to sleep. Will wake when new grading work arrives."
 
     return provider
 
@@ -313,8 +335,8 @@ async def run_grader_loop(system_prompt: str, model: str, snapshot_slug: Snapsho
     # Create handlers
     handlers: list[BaseHandler] = [
         LoggingHandler(),
-        RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
         AbortIf(lambda: exit_state.should_exit),
+        RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
     ]
 
     # Create and run agent
@@ -330,9 +352,9 @@ async def run_grader_loop(system_prompt: str, model: str, snapshot_slug: Snapsho
     agent.process_message(SystemMessage.text(system_prompt))
 
     await agent.run()
-    if exit_state.should_exit:
-        print("Grading completed")
-        return 0
+    if exit_state.failed:
+        logger.error("Grading failed via report_failure")
+        return 1
 
-    logger.warning("Agent finished without explicit exit")
-    return 1
+    logger.info("Grading round complete (sleep requested)")
+    return 0

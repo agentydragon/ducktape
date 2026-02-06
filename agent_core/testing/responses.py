@@ -17,7 +17,7 @@ from collections.abc import Callable, Generator
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
 from openai_utils.builders import ItemFactory
 from openai_utils.model import (
@@ -155,7 +155,7 @@ def openai_mock(fn: MockScriptFn) -> GeneratorRunner:
     return GeneratorRunner(gen, factory)
 
 
-def extract_call_output[T: BaseModel](req: ResponsesRequest, call: FunctionCallItem, output_type: type[T]) -> T:
+def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output_type: type[T]) -> T:
     """Extract typed output for a specific function call from the request.
 
     Finds the FunctionCallOutputItem matching call.call_id in the request's input,
@@ -177,9 +177,7 @@ def extract_call_output[T: BaseModel](req: ResponsesRequest, call: FunctionCallI
     return TypeAdapter(output_type).validate_python(json.loads(output))
 
 
-def tool_roundtrip[T: BaseModel](
-    call: FunctionCallItem, output_type: type[T]
-) -> Generator[FunctionCallItem, ResponsesRequest, T]:
+def tool_roundtrip[T](call: FunctionCallItem, output_type: type[T]) -> Generator[FunctionCallItem, ResponsesRequest, T]:
     """Yield tool call, receive response, return typed output."""
     req = yield call
     return extract_call_output(req, call, output_type)

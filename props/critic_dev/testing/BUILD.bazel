@@ -23,6 +23,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core/testing:responses",
-        "//props/testing",
+        "//props/grader/testing:mocks",
     ],
 )

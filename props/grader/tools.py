@@ -81,8 +81,8 @@ class DeleteEdgesArgs(OpenAIStrictModeBaseModel):
     issue_id: str = Field(..., description="Critique issue ID")
 
 
-class SubmitArgs(OpenAIStrictModeBaseModel):
-    summary: str = Field(..., description="Brief summary of grading results")
+class SleepArgs(OpenAIStrictModeBaseModel):
+    summary: str = Field(..., description="Brief summary of what was accomplished this round")
 
 
 class ReportFailureArgs(OpenAIStrictModeBaseModel):

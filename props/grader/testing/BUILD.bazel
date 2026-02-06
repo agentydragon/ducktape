@@ -1,0 +1,17 @@
+"""Shared test fixtures for grader agents."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "mocks",
+    testonly = True,
+    srcs = ["mocks.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core/testing:responses",
+        "//openai_utils:model",
+        "//props/grader:tools",
+        "@pypi//more_itertools",
+    ],
+)

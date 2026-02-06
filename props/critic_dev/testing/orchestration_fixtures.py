@@ -7,7 +7,7 @@ from collections import defaultdict
 from uuid import UUID
 
 from agent_core.testing.responses import PlayGen
-from props.testing.mocks import GraderMock
+from props.grader.testing.mocks import GraderMock
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def make_orchestration_grader_mock() -> GraderMock:
             logger.info(f"Grader mock: filling {count} edges for {run_id}/{issue_id}")
             yield from m.fill_remaining_roundtrip(run_id, issue_id, count, "Mock: no GT matches")
 
-        # After filling, the drift handler will see no drift and abort the loop
-        logger.info("Grader mock: all edges filled, drift handler should abort")
+        # Signal that grading is done — sleep tool checks grading_pending is empty
+        yield m.sleep("All edges graded")
 
     return mock
