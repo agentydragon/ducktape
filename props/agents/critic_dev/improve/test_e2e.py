@@ -109,11 +109,8 @@ async def test_prompt_improve_e2e_creates_package(
             timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    # Agent terminated via report_failure tool, so run_id should be valid
-    assert result.run_id is not None
-
     with db.session() as session:
-        agent_run = session.query(AgentRun).filter_by(agent_run_id=result.run_id).one()
+        agent_run = session.query(AgentRun).filter_by(agent_run_id=result).one()
         improvement_config = agent_run.critic_dev_improve_config()
         assert improvement_config.agent_type == "critic_dev_improve"
         assert improvement_config.allowed_examples is not None
@@ -142,10 +139,8 @@ async def test_prompt_improve_e2e_multiple_examples(
             timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    assert result.run_id is not None
-
     with db.session() as session:
-        session.query(AgentRun).filter_by(agent_run_id=result.run_id).one()
+        session.query(AgentRun).filter_by(agent_run_id=result).one()
 
 
 # =============================================================================
@@ -171,7 +166,7 @@ async def test_cli_leaderboard_in_improvement_agent(
             timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    assert result.run_id is not None
+    assert result is not None
 
 
 @pytest.mark.timeout(180)
@@ -192,7 +187,7 @@ async def test_cli_hard_examples_in_improvement_agent(
             timeout_seconds=TEST_TIMEOUT_SECONDS,
         )
 
-    assert result.run_id is not None
+    assert result is not None
 
 
 if __name__ == "__main__":

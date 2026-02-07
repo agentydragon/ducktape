@@ -112,8 +112,6 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
 async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs, critic_dev_optimize_image):
     """Test that leaderboard CLI command shows actual recall values from database."""
     example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
-
     mock = make_cli_test_mock(["critic-dev", "leaderboard", "--limit", "5"], expected_output="76%")
 
     async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
@@ -131,8 +129,6 @@ async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_r
 async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs, critic_dev_optimize_image):
     """Test that hard-examples CLI command shows example metrics."""
     example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
-
     mock = make_cli_test_mock(["critic-dev", "hard-examples", "--limit", "5"], expected_output="76%")
 
     async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:

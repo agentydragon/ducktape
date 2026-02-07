@@ -69,6 +69,7 @@
         example_kind: selectedKind,
         n_samples: nSamples,
         critic_model: "gpt-5.1-codex-mini",
+        budget_usd: 5.0,
       });
       toast.success(result.message);
       onClose();

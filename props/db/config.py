@@ -6,6 +6,8 @@ Tests construct their own DatabaseConfig with per-test database names.
 
 from __future__ import annotations
 
+import base64
+
 import asyncpg
 import psycopg2
 from pydantic import Field
@@ -28,6 +30,11 @@ class DatabaseConfig(BaseSettings):
     database: str = Field(alias="PGDATABASE")
     user: str = Field(alias="PGUSER")
     password: str = Field(alias="PGPASSWORD")
+
+    @property
+    def basic_auth_token(self) -> str:
+        """Base64-encoded user:password for HTTP Basic auth."""
+        return base64.b64encode(f"{self.user}:{self.password}".encode()).decode()
 
     @property
     def url(self) -> str:

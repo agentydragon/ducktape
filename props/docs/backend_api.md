@@ -70,32 +70,4 @@ schema = httpx.get(f"{backend_url}/openapi.json").json()
 | Critic                             | ✗        | ✗        | ✓         |
 | Grader                             | ✗        | ✗        | ✓         |
 
-## Raw HTTP Example
-
-If you need to use raw HTTP requests instead of `CriticRunClient`:
-
-```python
-import os
-import httpx
-
-backend_url = os.environ.get("PROPS_BACKEND_URL", "http://props-backend:8000")
-auth = (os.environ["PGUSER"], os.environ["PGPASSWORD"])
-
-# Run critic
-response = httpx.post(
-    f"{backend_url}/api/runs/critic",
-    auth=auth,
-    json={
-        "definition_id": "critic",
-        "example": {"kind": "whole_snapshot", "snapshot_slug": "ducktape/2025-01-01"},
-        "timeout_seconds": 3600,
-        "budget_usd": 5.0,
-        "critic_model": "gpt-5.1-codex-mini",
-    },
-    timeout=3600,
-)
-result = response.json()
-critic_run_id = result["critic_run_id"]
-```
-
 Grading status is polled directly from the database by `wait_until_graded()` inside containers.

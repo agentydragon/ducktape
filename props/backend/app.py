@@ -12,7 +12,6 @@ view directly, not as a REST endpoint.
 
 from __future__ import annotations
 
-import base64
 import logging
 import os
 import traceback
@@ -88,7 +87,7 @@ def _make_lifespan(deps: BackendDeps):
             app.state.grader_supervisor = None
             logger.info("Daemon manager disabled (grader_model not set in config)")
 
-        admin_token = base64.b64encode(f"{db_config.user}:{db_config.password}".encode()).decode()
+        admin_token = db_config.basic_auth_token
         protocol = "https" if deps.port == 443 else "http"
         logger.info(f"Admin token: {admin_token}")
         logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")

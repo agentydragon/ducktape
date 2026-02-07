@@ -32,7 +32,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -226,7 +225,7 @@ class AgentRegistry:
             backend_url = self._backend_url
             # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
             # accepts Bearer tokens containing base64-encoded username:password.
-            api_key = base64.b64encode(f"{creds.username}:{creds.password}".encode()).decode()
+            api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
             env = {
                 **self._agent_base_env,
                 "PGUSER": creds.username,

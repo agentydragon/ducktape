@@ -9,11 +9,11 @@ discriminant determines behavior:
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -55,7 +55,7 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
         raise RuntimeError("PROPS_BACKEND_URL must be set for crane auth setup")
 
     registry = urlparse(backend_url).netloc
-    auth_token = base64.b64encode(f"{config.user}:{config.password}".encode()).decode()
+    auth_token = config.basic_auth_token
     docker_config = {"auths": {registry: {"auth": auth_token}}}
 
     config_dir = Path.home() / ".docker"
@@ -79,10 +79,10 @@ class TerminationSuccess(BaseModel):
 class BlockingStatus(BaseModel):
     kind: Literal["blocking"] = "blocking"
     message: str = Field(description="Human-readable explanation of what's blocking termination")
-    baseline_avg_issues: float | None = Field(
+    baseline_avg_credit: float | None = Field(
         default=None, description="Average total_credit across baseline definitions"
     )
-    best_candidate_issues: float | None = Field(default=None, description="Best candidate's total_credit")
+    best_candidate_credit: float | None = Field(default=None, description="Best candidate's total_credit")
     best_candidate_id: str | None = Field(default=None, description="ID of the best candidate definition so far")
     edges_needing_grading_count: int = Field(
         default=0, description="Number of edges in grading_pending still awaiting grading"
@@ -109,7 +109,7 @@ def check_termination_condition(
         baseline_issues AS (
             SELECT
                 oc.critic_image_digest AS agent_definition_id,
-                SUM(oc.found_credit) as total_issues
+                SUM(oc.found_credit) as total_credit
             FROM tp_occurrence_credits oc
             JOIN allowed_examples ae ON (
                 oc.snapshot_slug = ae.snapshot_slug
@@ -119,7 +119,7 @@ def check_termination_condition(
             WHERE oc.critic_image_digest = ANY(:baseline_ids)
             GROUP BY oc.critic_image_digest
         )
-        SELECT AVG(total_issues) as avg_issues
+        SELECT AVG(total_credit) as avg_credit
         FROM baseline_issues
     """).bindparams(
         bindparam("baseline_ids", type_=ARRAY(String)),
@@ -142,7 +142,7 @@ def check_termination_condition(
         },
     ).fetchone()
 
-    baseline_avg = baseline_result.avg_issues if baseline_result and baseline_result.avg_issues else None
+    baseline_avg = baseline_result.avg_credit if baseline_result and baseline_result.avg_credit else None
 
     candidate_query = text("""
         WITH allowed_examples AS (
@@ -160,7 +160,7 @@ def check_termination_condition(
             SELECT
                 cd.agent_definition_id,
                 COUNT(DISTINCT (oc.snapshot_slug, oc.example_kind, COALESCE(oc.files_hash, ''))) as covered_examples,
-                SUM(oc.found_credit) as total_issues
+                SUM(oc.found_credit) as total_credit
             FROM candidate_defs cd
             LEFT JOIN tp_occurrence_credits oc ON oc.critic_image_digest = cd.agent_definition_id
             LEFT JOIN allowed_examples ae ON (
@@ -174,9 +174,9 @@ def check_termination_condition(
         SELECT
             agent_definition_id,
             covered_examples,
-            total_issues
+            total_credit
         FROM candidate_coverage
-        ORDER BY total_issues DESC NULLS LAST
+        ORDER BY total_credit DESC NULLS LAST
     """).bindparams(
         bindparam("snapshot_slugs", type_=ARRAY(String)),
         bindparam("example_kinds", type_=ARRAY(String)),
@@ -193,26 +193,26 @@ def check_termination_condition(
         },
     ).fetchall()
 
-    best_candidate_id: str | None = None
-    best_candidate_issues: float | None = None
-    best_partial_candidate_id: str | None = None
-    best_partial_issues: float | None = None
-    best_partial_coverage: int = 0
+    @dataclass
+    class _CandidateScore:
+        definition_id: str
+        total_credit: float
+        coverage: int
+
+    best_full: _CandidateScore | None = None
+    best_partial: _CandidateScore | None = None
 
     for row in candidate_results:
         covered = row.covered_examples or 0
-        issues = row.total_issues or 0.0
+        credit = row.total_credit or 0.0
 
         if covered >= n_examples:
-            if best_candidate_issues is None or issues > best_candidate_issues:
-                best_candidate_id = row.agent_definition_id
-                best_candidate_issues = issues
-        elif covered > best_partial_coverage or (
-            covered == best_partial_coverage and (best_partial_issues is None or issues > best_partial_issues)
+            if best_full is None or credit > best_full.total_credit:
+                best_full = _CandidateScore(row.agent_definition_id, credit, covered)
+        elif best_partial is None or covered > best_partial.coverage or (
+            covered == best_partial.coverage and credit > best_partial.total_credit
         ):
-            best_partial_candidate_id = row.agent_definition_id
-            best_partial_issues = issues
-            best_partial_coverage = covered
+            best_partial = _CandidateScore(row.agent_definition_id, credit, covered)
 
     # Count edges awaiting grading from the grading_pending view
     pending_grading_edges = (
@@ -223,35 +223,35 @@ def check_termination_condition(
         or 0
     )
 
-    if best_candidate_id is not None and best_candidate_issues is not None:
+    if best_full is not None:
         if baseline_avg is None:
             return BlockingStatus(
                 message=(
-                    f"Definition '{best_candidate_id}' has {best_candidate_issues:.1f} issues found, "
+                    f"Definition '{best_full.definition_id}' has {best_full.total_credit:.1f} total credit, "
                     f"but baseline definitions have no evals yet. "
                     f"{pending_grading_edges} edges still awaiting grading."
                 ),
-                best_candidate_issues=best_candidate_issues,
-                best_candidate_id=best_candidate_id,
+                best_candidate_credit=best_full.total_credit,
+                best_candidate_id=best_full.definition_id,
                 edges_needing_grading_count=pending_grading_edges,
             )
 
-        if best_candidate_issues > baseline_avg:
+        if best_full.total_credit > baseline_avg:
             return TerminationSuccess(
-                definition_id=DefinitionId(best_candidate_id),
-                total_credit=best_candidate_issues,
+                definition_id=DefinitionId(best_full.definition_id),
+                total_credit=best_full.total_credit,
                 baseline_avg=baseline_avg,
             )
 
         return BlockingStatus(
             message=(
-                f"Definition '{best_candidate_id}' found {best_candidate_issues:.1f} issues, "
+                f"Definition '{best_full.definition_id}' has {best_full.total_credit:.1f} total credit, "
                 f"but baseline average is {baseline_avg:.1f}. "
-                f"Need to find more issues or create a better definition."
+                f"Need better credit or create a better definition."
             ),
-            baseline_avg_issues=baseline_avg,
-            best_candidate_issues=best_candidate_issues,
-            best_candidate_id=best_candidate_id,
+            baseline_avg_credit=baseline_avg,
+            best_candidate_credit=best_full.total_credit,
+            best_candidate_id=best_full.definition_id,
         )
 
     if not candidate_results:
@@ -260,24 +260,25 @@ def check_termination_condition(
                 "No definitions created yet. "
                 "Create an improved definition at /workspace/improved/ and call create_definition."
             ),
-            baseline_avg_issues=baseline_avg,
+            baseline_avg_credit=baseline_avg,
             edges_needing_grading_count=pending_grading_edges,
         )
 
-    missing_examples = n_examples - best_partial_coverage
+    assert best_partial is not None
+    missing_examples = n_examples - best_partial.coverage
     return BlockingStatus(
         message=(
-            f"Definition '{best_partial_candidate_id}' has evals for {best_partial_coverage}/{n_examples} examples. "
+            f"Definition '{best_partial.definition_id}' has evals for {best_partial.coverage}/{n_examples} examples. "
             f"Run evals for the remaining {missing_examples} examples to check if it beats baseline "
-            f"(baseline avg: {baseline_avg:.1f} issues)."
+            f"(baseline avg: {baseline_avg:.1f} credit)."
             if baseline_avg
-            else f"Definition '{best_partial_candidate_id}' has evals for {best_partial_coverage}/{n_examples} examples. "
+            else f"Definition '{best_partial.definition_id}' has evals for {best_partial.coverage}/{n_examples} examples. "
             f"Run evals for the remaining {missing_examples} examples. "
             f"{pending_grading_edges} edges still awaiting grading."
         ),
-        baseline_avg_issues=baseline_avg,
-        best_candidate_issues=best_partial_issues,
-        best_candidate_id=best_partial_candidate_id,
+        baseline_avg_credit=baseline_avg,
+        best_candidate_credit=best_partial.total_credit,
+        best_candidate_id=best_partial.definition_id,
         edges_needing_grading_count=pending_grading_edges,
     )
 
@@ -304,7 +305,7 @@ class ImprovementReminderHandler(BaseHandler):
         if isinstance(result, TerminationSuccess):
             logger.info(
                 f"Critic developer terminating: "
-                f"definition '{result.definition_id}' with {result.total_credit:.1f} issues "
+                f"definition '{result.definition_id}' with {result.total_credit:.1f} credit "
                 f"beats baseline avg {result.baseline_avg:.1f}"
             )
             return Abort()
@@ -318,11 +319,11 @@ class ImprovementReminderHandler(BaseHandler):
     def _build_reminder(self, status: BlockingStatus) -> str:
         lines = ["=== Critic Developer Status ===", "", f"Blocking: {status.message}", ""]
 
-        if status.baseline_avg_issues is not None:
-            lines.append(f"Baseline average: {status.baseline_avg_issues:.1f} issues")
+        if status.baseline_avg_credit is not None:
+            lines.append(f"Baseline average credit: {status.baseline_avg_credit:.1f}")
 
-        if status.best_candidate_issues is not None:
-            lines.append(f"Best candidate: {status.best_candidate_issues:.1f} issues ({status.best_candidate_id})")
+        if status.best_candidate_credit is not None:
+            lines.append(f"Best candidate credit: {status.best_candidate_credit:.1f} ({status.best_candidate_id})")
 
         if status.edges_needing_grading_count > 0:
             lines.append(f"Edges awaiting grading: {status.edges_needing_grading_count}")
@@ -394,7 +395,7 @@ async def run_agent_loop(
     if reminder_handler is not None and isinstance(reminder_handler.last_result, TerminationSuccess):
         result = reminder_handler.last_result
         logger.info(
-            "Critic developer succeeded: definition '%s' with %.1f issues beats baseline avg %.1f",
+            "Critic developer succeeded: definition '%s' with %.1f credit beats baseline avg %.1f",
             result.definition_id,
             result.total_credit,
             result.baseline_avg,
