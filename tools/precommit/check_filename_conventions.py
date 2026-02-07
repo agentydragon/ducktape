@@ -10,17 +10,26 @@ import pygit2
 def check_filename_conventions(repo: pygit2.Repository) -> list[str]:
     """Check newly staged files for filename convention violations.
 
-    Only flags files with GIT_STATUS_INDEX_NEW (newly added to the index),
+    Only flags files newly added to the index (not in HEAD),
     so existing files with dashes are grandfathered in.
     """
-    new_files = [path for path, flags in repo.status().items() if flags & pygit2.GIT_STATUS_INDEX_NEW]
-    if not new_files:
-        return []
-
     try:
         head_tree = repo.head.peel(pygit2.Tree)
     except pygit2.GitError:
         head_tree = None  # No HEAD yet (initial commit)
+
+    # Use index.diff_to_tree(HEAD) instead of repo.status().
+    # repo.status() diffs the working tree against the index, triggering ~160k
+    # syscalls in libgit2 (stat/readlink/access per file). On 9p filesystems
+    # this takes ~12s. diff_to_tree only compares the index to HEAD (~0.003s).
+    repo.index.read()
+    if head_tree is not None:
+        diff = repo.index.diff_to_tree(head_tree)
+        new_files = [delta.new_file.path for delta in diff.deltas if delta.status == pygit2.GIT_DELTA_ADDED]
+    else:
+        new_files = [entry.path for entry in repo.index]
+    if not new_files:
+        return []
 
     violations: list[str] = []
     checked_dirs: set[str] = set()
