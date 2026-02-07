@@ -26,7 +26,7 @@ Usage:
                 model=stack.model,
                 timeout_seconds=60,
                 parent_run_id=None,
-                budget_usd=None,
+                budget_usd=5.0,
             )
             # Assert on database state
 

@@ -157,40 +157,4 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
-    name = "test_agent_pkg_e2e",
-    srcs = ["test_agent_pkg_e2e.py"],
-    data = [
-        "//props/agents/critic:image",
-        "//props/agents/critic_dev/optimize:image",
-        "//props/agents/grader:image",
-    ],
-    imports = ["../.."],
-    tags = [
-        "e2e",
-        "integration",
-        "slow",
-    ],
-    deps = [
-        ":eval_api_models",
-        ":ids",
-        "//agent_core/testing:responses",
-        "//mcp_infra/exec:matchers",
-        "//props:conftest",
-        "//props/agents/critic/testing:mocks",
-        "//props/agents/critic_dev:loop",
-        "//props/agents/critic_dev:shared",
-        "//props/agents/critic_dev/testing:mocks",
-        "//props/agents/critic_dev/testing:orchestration_fixtures",
-        "//props/core:oci_utils",
-        "//props/core/models:examples",
-        "//props/db:database",
-        "//props/db:models",
-        "//props/testing",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 # Collect all library targets for ruff

@@ -1,6 +1,6 @@
 # Agent Infrastructure
 
-This document covers the OCI image architecture for agents. For the in-container agent loop, see <agent-loop-inside-container.md>.
+This document covers the OCI image architecture for agents. For the in-container agent loop, see <agent_loop_inside_container.md>.
 
 ## Directory Structure
 

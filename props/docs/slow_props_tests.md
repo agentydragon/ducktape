@@ -4,52 +4,7 @@ Generated: 2025-12-23
 
 ## Failing Tests Diagnosis
 
-### 1. `test_clustering_http_mode_assign_to_existing` and `test_grader_comprehensive_data_access`
-
-**Error**: `InternalError: Could not determine snapshot for grader run <UUID>`
-
-**Root cause**: The PostgreSQL trigger `check_unknown_mapping_exists()` fails when inserting into `unknown_assignments`.
-
-The trigger tries to find the snapshot slug by:
-
-1. Looking up the grader run's `type_config->>'graded_agent_run_id'`
-2. Joining to the critic run to get `type_config -> 'example' ->> 'snapshot_slug'`
-
-But the join returns NULL because either:
-
-- The grader run's `graded_agent_run_id` doesn't point to a valid critic run
-- The critic run exists but its `type_config -> 'example'` is malformed or missing `snapshot_slug`
-
-**Investigation needed**:
-
-- Check if `make_grader_run()` / `make_critic_run()` are setting up the JSON correctly
-- Verify the agent_runs records exist and have proper type_config before the unknown_assignment insert
-- The clustering CLI tool (`clustering assign-to-tp`) is inserting the assignment INSIDE THE CONTAINER, so the grader_run_id it's using must exist with proper linkage
-
-**Confirmed JSON structure**:
-
-- `GraderTypeConfig` serializes `graded_agent_run_id` correctly to top-level key
-- `CriticTypeConfig` serializes `example.snapshot_slug` correctly
-
-**Debugging steps**:
-
-1. The trigger `check_unknown_mapping_exists()` is at line 708-757 in `20251223000000_schema_squashed.py`
-2. It uses `get_graded_agent_run_id(gr.agent_run_id)` to look up the critic run ID
-3. Then joins to get `type_config -> 'example' ->> 'snapshot_slug'` from the critic run
-
-**Possible causes**:
-
-1. The grader run exists but its `type_config->>'graded_agent_run_id'` is NULL (serialization issue)
-2. The critic run doesn't exist when the trigger runs (transaction isolation)
-3. The critic run exists but doesn't have `type_config.example.snapshot_slug` (wrong type_config)
-
-**Action**: Add debug logging to the test to verify the agent_runs table state before the CLI command runs.
-
-### 2. `test_cli_leaderboard_shows_recall` and `test_cli_hard_examples_shows_metrics`
-
-**Status**: Likely the same trigger issue as #1 (these tests also create grader runs and insert decisions)
-
-### 3. `test_specimen_references_are_valid`
+### 1. `test_specimen_references_are_valid`
 
 **Status**: Timing out during fixture setup (`synced_production_db`)
 
@@ -104,17 +59,15 @@ Total test time: ~627s (~10.5 minutes) for 243 tests
 
 | Duration | Phase | Test                                                                                           |
 | -------- | ----- | ---------------------------------------------------------------------------------------------- |
-| 72.30s   | call  | `prompt_optimize/test_e2e.py::test_three_agent_workflow_with_grader_data_access`               |
+| 72.30s   | call  | `critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic`                          |
 | 35.19s   | setup | `db/test_splits.py::test_specimen_has_valid_split`                                             |
 | 32.65s   | call  | `critic/test_e2e.py::test_critic_http_mode_submit_with_issues`                                 |
-| 29.86s   | call  | `clustering/test_e2e.py::test_clustering_http_mode_assign_to_cluster`                          |
 | 29.16s   | setup | `grader/test_e2e.py::test_grader_comprehensive_data_access`                                    |
-| 19.54s   | call  | `prompt_optimize/test_e2e.py::test_cli_hard_examples_shows_metrics`                            |
+| 19.54s   | call  | `critic_dev/optimize/test_e2e.py::test_cli_hard_examples_shows_metrics`                        |
 | 19.31s   | call  | `critic/test_e2e.py::test_critic_http_mode_zero_issues`                                        |
-| 19.31s   | call  | `prompt_optimize/test_e2e.py::test_cli_leaderboard_shows_recall`                               |
+| 19.31s   | call  | `critic_dev/optimize/test_e2e.py::test_cli_leaderboard_shows_recall`                           |
 | 19.29s   | call  | `critic/test_e2e.py::test_critic_does_not_infinite_loop_on_zero_issues`                        |
-| 19.10s   | call  | `prompt_optimize/test_e2e.py::test_po_agent_psql_connectivity`                                 |
-| 19.06s   | call  | `clustering/test_e2e.py::test_clustering_http_mode_assign_to_existing`                         |
+| 19.10s   | call  | `critic_dev/optimize/test_e2e.py::test_optimizer_critic_workflow`                              |
 | 18.04s   | call  | `critic/test_e2e.py::test_critic_zero_issues`                                                  |
 | 17.52s   | setup | `grader/test_e2e.py::test_grader_http_mode_sql_workflow`                                       |
 | 17.44s   | call  | `grader/test_e2e.py::test_grader_http_mode_sql_workflow`                                       |
@@ -123,15 +76,15 @@ Total test time: ~627s (~10.5 minutes) for 243 tests
 | 16.72s   | call  | `grader/test_e2e.py::test_grader_http_mode_zero_issues`                                        |
 | 16.13s   | call  | `db/test_splits.py::test_all_specimens_in_splits_can_load`                                     |
 | 14.67s   | call  | `grader/test_e2e.py::test_grader_comprehensive_data_access`                                    |
-| 12.92s   | call  | `prompt_improve/test_e2e.py::test_cli_hard_examples_in_improvement_agent`                      |
-| 12.79s   | call  | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_multiple_examples`                        |
-| 12.31s   | call  | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_success`                                  |
-| 12.29s   | call  | `prompt_improve/test_e2e.py::test_cli_leaderboard_in_improvement_agent`                        |
+| 12.92s   | call  | `critic_dev/improve/test_e2e.py::test_cli_hard_examples_in_improvement_agent`                  |
+| 12.79s   | call  | `critic_dev/improve/test_e2e.py::test_prompt_improve_e2e_multiple_examples`                    |
+| 12.31s   | call  | `critic_dev/improve/test_e2e.py::test_prompt_improve_e2e_creates_package`                      |
+| 12.29s   | call  | `critic_dev/improve/test_e2e.py::test_cli_leaderboard_in_improvement_agent`                    |
 | 6.12s    | call  | `critic/test_temp_user_permissions.py::test_docker_minimal_insert`                             |
 | 1.68s    | setup | `critic/test_critic_sql_integration.py::test_critic_sql_multi_location_occurrence`             |
 | 1.63s    | setup | `critic/test_critic_sql_integration.py::test_critic_sql_rls_isolation`                         |
 | 1.47s    | setup | `grader/test_grader_sql_integration.py::test_grader_report_failure_prevents_subsequent_submit` |
-| 1.34s    | setup | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_success`                                  |
+| 1.34s    | setup | `critic_dev/improve/test_e2e.py::test_prompt_improve_e2e_success`                              |
 | 1.31s    | call  | `critic/test_temp_user_permissions.py::test_docker_connection_info`                            |
 | 1.26s    | setup | `db/test_tp_occurrence_credits.py::test_occurrence_statistics_has_correct_n_critic_runs`       |
 
@@ -155,9 +108,9 @@ Tests that spin up Docker containers for agent execution:
 
 ### 2. Three-Agent Workflow (72s)
 
-`test_three_agent_workflow_with_grader_data_access` is the slowest single test.
+`test_optimizer_orchestrates_critic` is the slowest single test.
 
-**Root cause**: Runs critic → grader → prompt_optimizer sequentially, each with its own container lifecycle.
+**Root cause**: Runs critic → grader → critic_dev_optimize sequentially, each with its own container lifecycle.
 
 **Potential optimizations**:
 

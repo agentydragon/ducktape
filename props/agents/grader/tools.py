@@ -123,5 +123,5 @@ class GTDetails(BaseModel):
 
     gt_ref: GTRef
     rationale: str
-    files: dict[str, tuple[int | None, int | None]]  # file -> (start, end)
+    files: dict[str, tuple[int | None, int | None]] = Field(description="file -> (start_line, end_line)")
     note: str | None

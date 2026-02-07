@@ -12,7 +12,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":constants",
-        "//agent_pkg/runtime:mcp",
+        "//agent_pkg:mcp",
         "//cli_util:decorators",
         "//cli_util:logging",
         "@pypi//typer",
@@ -27,7 +27,7 @@ py_binary(
     visibility = ["//:__subpackages__"],
     deps = [
         ":constants",
-        "//agent_pkg/runtime:mcp",
+        "//agent_pkg:mcp",
         "//cli_util:decorators",
         "//cli_util:logging",
         "@pypi//typer_slim",

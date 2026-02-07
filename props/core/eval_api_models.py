@@ -1,8 +1,8 @@
-"""Shared models for the eval API.
+"""Shared models for critic run and grading APIs.
 
 These models are used by both:
-- Backend routes (props/backend/routes/eval.py)
-- Container agents (props/critic_dev/optimize/main.py, props/critic_dev/improve/main.py)
+- Backend routes (props/backend/routes/runs.py — critic run endpoints)
+- Container agents (props/agents/critic_dev/ — eval client)
 
 This ensures consistent serialization/deserialization between backend and containers.
 """
@@ -28,9 +28,9 @@ class RunCriticRequest(BaseModel):
 
     definition_id: DefinitionId = Field(description="Image ref: OCI digest (sha256:...) or tag (e.g., 'latest')")
     example: ExampleSpec = Field(description="Example to evaluate")
-    timeout_seconds: int = Field(default=3600, description="Max seconds before container is killed")
-    budget_usd: float | None = Field(description="Max USD cost for this agent")
-    critic_model: str = Field(default="gpt-5.1-codex-mini", description="Model for the critic agent")
+    timeout_seconds: int = Field(gt=0, description="Max seconds before container is killed")
+    budget_usd: float = Field(gt=0, description="Max USD cost for this agent")
+    critic_model: str = Field(description="Model for the critic agent")
 
 
 # =============================================================================
@@ -56,8 +56,8 @@ class GradingStatusResponse(BaseModel):
     pending_count: int = Field(description="Number of grading edges still pending")
 
     # Fields below are only populated when is_complete=True
-    grader_run_id: UUID | None = Field(default=None, description="agent_run_id of the grader run")
+    grader_run_ids: list[UUID] = Field(default_factory=list, description="agent_run_ids of grader runs")
     total_credit: float | None = Field(default=None, description="Sum of credits for TP matches")
-    max_credit: int | None = Field(default=None, description="Number of distinct TP occurrences")
+    max_credit: int | None = Field(default=None, description="Number of distinct TP occurrences (recall denominator)")
     split: Split | None = Field(default=None, description="Data split of the evaluated example")
     example_kind: ExampleKind | None = Field(default=None, description="Kind of example")

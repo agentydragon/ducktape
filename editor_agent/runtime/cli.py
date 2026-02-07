@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from agent_pkg.runtime.mcp import mcp_client_from_env, read_text_resource
+from agent_pkg.mcp import mcp_client_from_env, read_text_resource
 from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
 from editor_agent.runtime.constants import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI

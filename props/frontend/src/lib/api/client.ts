@@ -50,8 +50,8 @@ export type RunsListResponse = components["schemas"]["RunsListResponse"];
 export type CriticTypeConfig = components["schemas"]["CriticTypeConfig"];
 export type GraderTypeConfig = components["schemas"]["GraderTypeConfig"];
 export type FreeformTypeConfig = components["schemas"]["FreeformTypeConfig"];
-export type PromptOptimizerTypeConfig = components["schemas"]["PromptOptimizerTypeConfig"];
-export type ImprovementTypeConfig = components["schemas"]["ImprovementTypeConfig"];
+export type CriticDevOptimizeTypeConfig = components["schemas"]["CriticDevOptimizeTypeConfig"];
+export type CriticDevImproveTypeConfig = components["schemas"]["CriticDevImproveTypeConfig"];
 export type WholeSnapshotExample = components["schemas"]["WholeSnapshotExample-Output"];
 export type SingleFileSetExample = components["schemas"]["SingleFileSetExample-Output"];
 export type Split = components["schemas"]["Split"];
@@ -66,7 +66,13 @@ export type GradingTarget = TpTarget | FpTarget;
 // Enum value arrays for UI dropdowns (must match schema definitions)
 export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = ["in_progress", "exited", "timed_out"];
 
-export const AGENT_TYPE_VALUES: AgentType[] = ["critic", "grader", "prompt_optimizer", "improvement", "freeform"];
+export const AGENT_TYPE_VALUES: AgentType[] = [
+  "critic",
+  "grader",
+  "critic_dev_optimize",
+  "critic_dev_improve",
+  "freeform",
+];
 
 // Extract error message from API error response
 function extractErrorMessage(error: unknown, fallback: string): string {

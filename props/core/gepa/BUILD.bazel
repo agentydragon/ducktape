@@ -13,11 +13,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core:ids",
-        "//props/core:splits",
-        "//props/db:database",
         "//props/db:examples",
-        "@pypi//sqlalchemy",
     ],
 )
 

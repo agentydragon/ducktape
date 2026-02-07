@@ -34,12 +34,12 @@ def get_current_agent_run_id(session: Session) -> UUID:
     """
     result = session.execute(text("SELECT current_agent_run_id()"))
     agent_run_id = result.scalar()
-    if not isinstance(agent_run_id, UUID):
+    if agent_run_id is None:
         raise RuntimeError(
-            "current_agent_run_id() returned non-UUID — not connected as an agent user. "
-            "Make sure you're using agent credentials (e.g., critic_agent_{uuid})."
+            "current_agent_run_id() returned NULL — not connected as an agent user. "
+            "Make sure you're using agent credentials (e.g., agent_{uuid})."
         )
-    return agent_run_id
+    return UUID(str(agent_run_id))
 
 
 def get_current_agent_run(session: Session) -> AgentRun:
@@ -91,6 +91,24 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
         return desc.model_dump_json(indent=2, exclude_defaults=True)
 
     ctx["describe_relation"] = _describe_relation
+
+    def _source_inspection(binary: str, files: list[tuple[str, str]]) -> str:
+        """Generate Source Code Inspection section for agent prompts."""
+        lines = [
+            "## Source Code Inspection",
+            "",
+            f"The `props` library is bundled in your container at `/app/{binary}.runfiles/_main/`. Key files:",
+            "",
+            "```bash",
+        ]
+        for path, desc in files:
+            lines.append(f"cat /app/{binary}.runfiles/_main/{path}   # {desc}")
+        lines.append("```")
+        lines.append("")
+        lines.append("For schema introspection (no DB connection needed), see the Schema Discovery section below.")
+        return "\n".join(lines)
+
+    ctx["source_inspection"] = _source_inspection
 
     def _include(source: str, content: str, *, raw: bool) -> str:
         if raw:

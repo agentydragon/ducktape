@@ -2,12 +2,13 @@
 
 ## Overview
 
-Move budget tracking from `PromptOptimizerTypeConfig.budget_limit` to a proper column on `agent_runs`, with enforcement at the LLM proxy level.
+Move budget tracking from `CriticDevOptimizeTypeConfig.budget_limit` to a proper column on `agent_runs`, with enforcement at the LLM proxy level.
 
 ## Current State
 
-- `budget_limit` exists only in `PromptOptimizerTypeConfig`
-- `budget_usd` column already exists on `agent_runs` (nullable, not populated)
+- `budget_usd` column on `agent_runs` is NOT NULL and populated for all agent types
+- `RunCriticRequest` requires `budget_usd` with `gt=0` validation
+- Grader daemons get $10k default budget
 - LLM proxy logs requests to `llm_requests` table
 - `model_metadata` table has cost info per model
 
@@ -39,7 +40,7 @@ ADD CONSTRAINT agent_runs_model_fk
 FOREIGN KEY (model) REFERENCES model_metadata(model_id);
 ```
 
-**Remove** `budget_limit` from `PromptOptimizerTypeConfig` after migration.
+**Remove** `budget_limit` from `CriticDevOptimizeTypeConfig` after migration.
 
 ### New Database View: `agent_budget_status`
 
@@ -186,9 +187,9 @@ class AgentConfig(BaseModel):
 
 **HTTP endpoints that launch agents**:
 
-- `POST /api/eval/run-critic` - Add required `budget_usd` parameter
-- `POST /api/eval/run-grader` - High budget (e.g., $10000) for long-running daemon
-- Any critic-dev spawn endpoints - Add required `budget_usd` parameter
+- `POST /api/runs/critic` - Requires `budget_usd` parameter (gt=0)
+- Grader daemons - High budget ($10000) for long-running daemon
+- Any critic-dev spawn endpoints - Requires `budget_usd` parameter
 
 ### No Default Budget
 
@@ -224,29 +225,29 @@ No new `AgentRunStatus.BUDGET_EXCEEDED` - the natural failure mode is sufficient
 4. **Update LLM proxy** to check budget before forwarding
 5. **Update eval endpoints** to require budget parameter
 6. **Update spawn validation** to check parent's remaining budget
-7. **Remove** `budget_limit` from `PromptOptimizerTypeConfig`
+7. **Remove** `budget_limit` from `CriticDevOptimizeTypeConfig`
 8. **Backfill** existing critic-dev optimizer runs (copy from type_config)
 
 ### Files to Modify
 
-| File                                    | Changes                                                |
-| --------------------------------------- | ------------------------------------------------------ |
-| `props/db/models.py`                    | Remove `budget_limit` from `PromptOptimizerTypeConfig` |
-| `props/core/agent_types.py`             | Remove `budget_limit` field                            |
-| `props/orchestration/agent_registry.py` | Populate `budget_usd` on launch, validate spawn budget |
-| `props/backend/routes/llm.py`           | Add budget check before proxy                          |
-| `props/backend/routes/eval.py`          | Add `budget_usd` parameter to endpoints                |
-| `props/db/migrations/versions/...`      | Add view, backfill data                                |
+| File                                    | Changes                                                  |
+| --------------------------------------- | -------------------------------------------------------- |
+| `props/db/models.py`                    | Remove `budget_limit` from `CriticDevOptimizeTypeConfig` |
+| `props/core/agent_types.py`             | Remove `budget_limit` field                              |
+| `props/orchestration/agent_registry.py` | Populate `budget_usd` on launch, validate spawn budget   |
+| `props/backend/routes/llm.py`           | Add budget check before proxy                            |
+| `props/backend/routes/runs.py`          | `budget_usd` parameter on critic run endpoints           |
+| `props/db/migrations/versions/...`      | Add view, backfill data                                  |
 
 ### Agent Documentation Updates
 
 Agent-facing documentation (`.md.j2` templates) needs updates:
 
-| File                                       | Changes                                         |
-| ------------------------------------------ | ----------------------------------------------- |
-| `props/docs/agents/critic.md.j2`           | Document budget behavior, 402 response handling |
-| `props/docs/agents/prompt_optimizer.md.j2` | Document budget management for spawned critics  |
-| Any other agent prompts                    | Budget awareness guidance                       |
+| File                                          | Changes                                         |
+| --------------------------------------------- | ----------------------------------------------- |
+| `props/docs/agents/critic.md.j2`              | Document budget behavior, 402 response handling |
+| `props/docs/agents/critic_dev_optimize.md.j2` | Document budget management for spawned critics  |
+| Any other agent prompts                       | Budget awareness guidance                       |
 
 **Documentation should cover:**
 

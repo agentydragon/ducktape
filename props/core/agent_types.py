@@ -1,7 +1,7 @@
 """Agent type definitions for the unified agent system.
 
 This module defines the AgentType enum and type-specific configuration models
-used across all agent types (critic, grader, prompt_optimizer, freeform).
+used across all agent types (critic, grader, critic_dev_optimize, critic_dev_improve, freeform).
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ class AgentType(StrEnum):
 
     CRITIC = "critic"
     GRADER = "grader"  # Grader daemon (grades all critiques for a snapshot)
-    PROMPT_OPTIMIZER = "prompt_optimizer"
-    IMPROVEMENT = "improvement"  # Analyzes runs and proposes improved prompts
+    CRITIC_DEV_OPTIMIZE = "critic_dev_optimize"  # Optimizes critic prompts via eval loops
+    CRITIC_DEV_IMPROVE = "critic_dev_improve"  # Analyzes runs and proposes improved prompts
     FREEFORM = "freeform"  # Ad-hoc sub-agents created by other agents
 
 
@@ -42,7 +42,7 @@ class CriticTypeConfig(BaseModel):
     """
 
     agent_type: Literal[AgentType.CRITIC] = AgentType.CRITIC
-    example: ExampleSpec  # Complete example specification (snapshot_slug + scope)
+    example: ExampleSpec = Field(description="Example specification (snapshot_slug + scope)")
 
 
 class GraderTypeConfig(BaseModel):
@@ -57,7 +57,7 @@ class GraderTypeConfig(BaseModel):
     """
 
     agent_type: Literal[AgentType.GRADER] = AgentType.GRADER
-    snapshot_slug: SnapshotSlug  # Snapshot this daemon is responsible for
+    snapshot_slug: SnapshotSlug = Field(description="Snapshot this daemon is responsible for")
 
 
 class FreeformTypeConfig(BaseModel):
@@ -70,8 +70,8 @@ class FreeformTypeConfig(BaseModel):
     agent_type: Literal[AgentType.FREEFORM] = AgentType.FREEFORM
 
 
-class PromptOptimizerTypeConfig(BaseModel):
-    """Prompt optimizer configuration.
+class CriticDevOptimizeTypeConfig(BaseModel):
+    """Critic developer (optimize) configuration.
 
     The target_metric controls validation split access:
     - WHOLE_REPO: TRAIN ground truth only, VALID metrics via SECURITY DEFINER function
@@ -84,19 +84,18 @@ class PromptOptimizerTypeConfig(BaseModel):
     - Aggregate views join ground truth tables, so inherit TRAIN-only restriction
     - Only SECURITY DEFINER can bypass RLS to compute VALID aggregates
 
-    RLS uses current_prompt_optimizer_target_metric() to gate direct data access.
+    RLS uses current_critic_dev_optimize_target_metric() to gate direct data access.
     """
 
-    agent_type: Literal[AgentType.PROMPT_OPTIMIZER] = AgentType.PROMPT_OPTIMIZER
+    agent_type: Literal[AgentType.CRITIC_DEV_OPTIMIZE] = AgentType.CRITIC_DEV_OPTIMIZE
     target_metric: TargetMetric
     optimizer_model: str = Field(description="Model used for the optimizer agent itself")
     critic_model: str = Field(description="Model used for critic evaluations")
-    # Note: grader_model removed - grading is handled by snapshot grader daemons
     budget_limit: float = Field(description="Dollar budget limit for optimization")
 
 
-class ImprovementTypeConfig(BaseModel):
-    """Improvement agent configuration.
+class CriticDevImproveTypeConfig(BaseModel):
+    """Critic developer (improve) configuration.
 
     Improvement agents analyze critic/grader runs and propose improved agent definitions.
 
@@ -106,7 +105,7 @@ class ImprovementTypeConfig(BaseModel):
     - Can create new definitions and run evals on allowed_examples
     """
 
-    agent_type: Literal[AgentType.IMPROVEMENT] = AgentType.IMPROVEMENT
+    agent_type: Literal[AgentType.CRITIC_DEV_IMPROVE] = AgentType.CRITIC_DEV_IMPROVE
     baseline_image_digests: list[str] = Field(
         min_length=1, description="One or more agent image digests (sha256:...) to study and improve"
     )
@@ -119,7 +118,7 @@ class ImprovementTypeConfig(BaseModel):
 
 # Discriminated union for type-specific config
 TypeConfig = Annotated[
-    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig | ImprovementTypeConfig,
+    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | CriticDevOptimizeTypeConfig | CriticDevImproveTypeConfig,
     Field(discriminator="agent_type"),
 ]
 

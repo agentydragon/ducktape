@@ -57,8 +57,8 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 
 - List all runs with status IN_PROGRESS
 - Show: run ID, definition, agent type (critic/grader), model, example info
-- Show last event (concise preview)
-- Live update (WebSocket or fast polling)
+- Show container status (running, exited, exit code) — agent internals are opaque
+- Periodic polling refresh
 - Click to open run detail view
 
 ### 5. Run Detail
@@ -68,13 +68,12 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Features:**
 
 - Run metadata: ID, type, definition, model, status, created_at
-- Parent run link (for graders)
-- Child run links (critic → grader)
-- Events timeline rendered like chat:
-  - User messages, assistant text, tool calls, outputs, reasoning
-  - Sequence numbers
-  - Full content (expandable for long items)
-- Live update while in_progress
+- Parent run link (for child agents)
+- Child run links
+- LLM requests table (from `llm_requests`):
+  - Model, latency, token counts, cost
+  - Expandable request/response bodies
+- Container stdout/stderr (from `agent_runs.container_stdout/stderr`)
 - Completion summary when done
 - Grading summary (for grader runs): TP matches, FP hits, recall score
 
@@ -89,9 +88,9 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 - Columns: ID, type, definition, model, status, created_at, example
 - Click through to run detail
 
-### 7. Validation Trigger (Modal)
+### 7. Critic Run Trigger (Modal)
 
-**Purpose:** Start evaluation runs on examples
+**Purpose:** Start critic evaluation runs on examples (human user or critic-dev agent)
 
 **Features:**
 
@@ -102,6 +101,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 - Select split (train/valid)
 - Select example kind (whole_snapshot/file_set)
 - Set sample count (1-50)
+- Configure timeout_seconds and budget_usd (required)
 - Jobs list shows triggered jobs with progress (in-memory, not persisted)
 
 ### 8. Example Browser
@@ -115,17 +115,6 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 - Show TP/FP counts per example
 - Click through to example detail with ground truth
 
-### 9. Live Rollout View
-
-**Purpose:** Monitor validation batches in progress
-
-**Features:**
-
-- Grid of validation jobs with progress bars
-- Per-job: completed/failed/total counts
-- Per-run timeline: critic -> grader pairs
-- Real-time status updates
-
 ## API Endpoints
 
 ### Stats
@@ -137,11 +126,9 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 
 - `GET /api/runs` - Browse all runs with filters/pagination
 - `GET /api/runs/active` - Currently executing runs
-- `GET /api/runs/jobs` - Validation job status
-- `POST /api/runs/validation` - Trigger validation (with split param)
+- `POST /api/runs/critic` - Start a critic run (used by frontend UI and critic-dev agents)
 - `GET /api/runs/{id}` - Single run detail
-- `GET /api/runs/{id}/events` - Run events (paginated)
-- `WS /api/runs/{id}/stream` - Live event stream
+- `GET /api/runs/{id}/llm_requests` - LLM requests for a run (paginated)
 
 ### Examples
 
@@ -153,8 +140,23 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 - Structured logging to file and stdout
 - IN_PROGRESS runs not counted in completed stats
 - "X runs in progress" indicator when applicable
-- WebSocket for live updates (vs polling)
 - Typed API client (OpenAPI generated)
+
+## Agent Status Model
+
+Agent status is opaque from the dashboard's perspective:
+
+- We see the container and its exit code
+- LLM requests are logged by the proxy to the `llm_requests` table
+- Container stdout/stderr captured after exit
+- No real-time introspection into agent internals
+- Agents query the LLM proxy as they see fit (or may never do so)
+
+Terminal states are determined by the host scaffold from exit code:
+
+- Exit 0 → `EXITED`
+- Timeout → `TIMED_OUT`
+- Non-zero exit → `EXITED` (with non-zero `container_exit_code`)
 
 ---
 
@@ -194,42 +196,6 @@ Per-occurrence statistics:
 - Individual TP occurrences with hit rates across runs
 - Find consistently-missed occurrences
 - Useful for debugging specific issue patterns
-
----
-
-## Live Agent State Display
-
-Real-time visibility into running agents.
-
-### Agent Run States
-
-Display current state of each active run:
-
-- **Waiting**: Queued, awaiting resources
-- **Initializing**: Container starting, init script running
-- **Sampling**: LLM API call in flight
-- **Processing**: Agent loop between tool calls
-- **Tool Call**: Executing MCP tool
-- **Completed/Failed/Exceeded**: Terminal states
-
-### Live Event Stream
-
-For each active run, show:
-
-- Last N events (scrollable)
-- Current tool call in progress (if any)
-- Token counts / cost accumulator
-- Turn counter vs max turns
-- Time elapsed
-
-### Batch Progress
-
-For validation jobs:
-
-- Progress bar: completed/total
-- Success/failure/in-progress counts
-- Estimated time remaining
-- Abort button
 
 ---
 

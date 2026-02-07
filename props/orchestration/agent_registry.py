@@ -25,7 +25,7 @@ Usage:
             model="gpt-4o",
             timeout_seconds=3600,
             parent_run_id=None,
-            budget_usd=None,
+            budget_usd=5.0,
         )
 """
 
@@ -47,10 +47,10 @@ import httpx
 from props.agents.critic_dev.shared import TargetMetric
 from props.core.agent_types import (
     AgentType,
+    CriticDevImproveTypeConfig,
+    CriticDevOptimizeTypeConfig,
     CriticTypeConfig,
     GraderTypeConfig,
-    ImprovementTypeConfig,
-    PromptOptimizerTypeConfig,
 )
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
@@ -319,7 +319,7 @@ class AgentRegistry:
         model: str,
         timeout_seconds: int,
         parent_run_id: UUID | None,
-        budget_usd: float | None,
+        budget_usd: float,
     ) -> UUID:
         """Run a critic agent. Returns agent run ID (query DB for status)."""
         agent_run_id = uuid4()
@@ -335,6 +335,7 @@ class AgentRegistry:
                 model=model,
                 type_config=CriticTypeConfig(example=example),
                 status=AgentRunStatus.IN_PROGRESS,
+                budget_usd=budget_usd,
             )
             session.add(agent_run)
             session.commit()
@@ -342,7 +343,7 @@ class AgentRegistry:
         await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
         return agent_run_id
 
-    async def run_prompt_optimizer(
+    async def run_critic_dev_optimize(
         self,
         *,
         budget: float,
@@ -353,10 +354,10 @@ class AgentRegistry:
     ) -> UUID:
         """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
         agent_run_id = uuid4()
-        image_digest, image = await self._resolve_image(AgentType.PROMPT_OPTIMIZER, BUILTIN_TAG)
+        image_digest, image = await self._resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
 
         with self._db.session() as session:
-            type_config = PromptOptimizerTypeConfig(
+            type_config = CriticDevOptimizeTypeConfig(
                 target_metric=target_metric,
                 optimizer_model=optimizer_model,
                 critic_model=critic_model,
@@ -369,6 +370,7 @@ class AgentRegistry:
                 model=optimizer_model,
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
+                budget_usd=budget,
             )
             session.add(agent_run)
             session.commit()
@@ -376,18 +378,18 @@ class AgentRegistry:
         await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
         return agent_run_id
 
-    async def run_improvement_agent(
+    async def run_critic_dev_improve(
         self,
         *,
         examples: list[ExampleSpec],
         baseline_image_digests: list[str],
-        token_budget: int,
+        budget_usd: float,
         improvement_model: str,
         critic_model: str,
         timeout_seconds: int,
         output_dir: Path | None = None,
     ) -> UUID:
-        """Run an improvement agent that creates definitions to beat baselines on the allowed examples.
+        """Run a critic-dev improve agent that creates definitions to beat baselines on the allowed examples.
 
         Returns agent run ID. Query DB for final status.
         """
@@ -401,12 +403,12 @@ class AgentRegistry:
         output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        image_digest, image = await self._resolve_image(AgentType.IMPROVEMENT, BUILTIN_TAG)
+        image_digest, image = await self._resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
 
         # Resolve baseline refs to digests (tags → sha256:...)
         resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
 
-        type_config = ImprovementTypeConfig(
+        type_config = CriticDevImproveTypeConfig(
             baseline_image_digests=resolved_baselines,
             allowed_examples=examples,
             improvement_model=improvement_model,
@@ -420,6 +422,7 @@ class AgentRegistry:
                 model=improvement_model,
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
+                budget_usd=budget_usd,
             )
             session.add(agent_run)
             session.commit()
@@ -475,6 +478,7 @@ class AgentRegistry:
                 model=model,
                 type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
                 status=AgentRunStatus.IN_PROGRESS,
+                budget_usd=10_000.0,
             )
             session.add(agent_run)
             session.commit()

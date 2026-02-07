@@ -1,6 +1,9 @@
+<%!
+    from props.core.agent_types import CriticDevOptimizeTypeConfig, CriticDevImproveTypeConfig
+%>\
 ${include_doc("props/agents/critic_dev/prompt_base.md.mako")}
 
-% if mode == "optimize":
+% if isinstance(type_config, CriticDevOptimizeTypeConfig):
 ## Your Goal
 
 Maximize validation recall. Your target metric mode is printed in init output.
@@ -47,7 +50,7 @@ Query `llm_run_costs` to understand per-run costs before launching expensive eva
    - Any improvement becomes new baseline
 
 Keep iterating until your budget runs out. There is no explicit termination — maximize the number of improvement cycles you can fit.
-% elif mode == "improve":
+% elif isinstance(type_config, CriticDevImproveTypeConfig):
 ## Your Goal
 
 Beat the average of baseline definitions on sum of issues found across your `allowed_examples`.

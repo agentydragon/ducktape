@@ -113,14 +113,6 @@ def build_recall_columns() -> list[ColumnDef[HasRecallStats, float | None]]:
     ]
 
 
-def ellipticize(text: str, max_len: int) -> str:
-    """Truncate text with "...(N more)" suffix if it exceeds max_len."""
-    if len(text) <= max_len:
-        return text
-    remaining = len(text) - max_len
-    return f"{text[:max_len]}...({remaining} more)"
-
-
 def format_truncation_footer(total_count: int, displayed_count: int, item_name: str = "items") -> str:
     """Return "... (N more {item_name})" or empty string if all shown."""
     if total_count > displayed_count:

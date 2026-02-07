@@ -1,13 +1,13 @@
 """Discover MCP server instructions and available tools.
 
 Run this script to see what the MCP server provides:
-    python -m agent_pkg.runtime.examples.mcp_discover
+    python -m agent_pkg.examples.mcp_discover
 """
 
 import asyncio
 import json
 
-from agent_pkg.runtime.mcp import mcp_client_from_env
+from agent_pkg.mcp import mcp_client_from_env
 
 
 async def main() -> None:

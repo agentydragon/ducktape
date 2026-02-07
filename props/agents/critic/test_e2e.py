@@ -52,7 +52,7 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
             parent_run_id=None,
-            budget_usd=None,
+            budget_usd=5.0,
         )
 
         assert critic_run_id is not None
@@ -96,7 +96,7 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
             parent_run_id=None,
-            budget_usd=None,
+            budget_usd=5.0,
         )
 
         assert critic_run_id is not None

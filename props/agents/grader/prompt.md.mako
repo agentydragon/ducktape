@@ -52,18 +52,12 @@ Each wake cycle:
 2. For each issue: inspect with `show_issue`, examine GT with `show_tp`/`show_fp`, create edges with `insert_edges`, fill remainder with `fill_remaining`
 3. When `list_pending` returns no edges, you'll be paused until the next change
 
-## Source Code Inspection
-
-The `props` library is bundled in your container at `/app/grader.runfiles/_main/`. Key files:
-
-```bash
-cat /app/grader.runfiles/_main/props/agents/grader/main.py   # Entry point
-cat /app/grader.runfiles/_main/props/agents/grader/loop.py   # Grading loop
-cat /app/grader.runfiles/_main/props/agents/grader/tools.py  # Tool implementations
-cat /app/grader.runfiles/_main/props/db/models.py            # SQLAlchemy models
-```
-
-For schema introspection (no DB connection needed), see the Schema Discovery section below.
+${source_inspection("grader", [
+    ("props/agents/grader/main.py", "Entry point"),
+    ("props/agents/grader/loop.py", "Grading loop"),
+    ("props/agents/grader/tools.py", "Tool implementations"),
+    ("props/db/models.py", "SQLAlchemy models"),
+])}
 
 ${include_doc("props/agents/docs/database_access.md")}
 ${include_doc("props/agents/docs/db/agent_runs.md.mako")}

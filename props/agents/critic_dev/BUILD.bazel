@@ -4,6 +4,7 @@ Shared infrastructure for critic developer agents (optimize and improve modes).
 """
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 exports_files([
     "authoring_agents.md.mako",
@@ -19,14 +20,23 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/agents:runtime",
         "//props/core:eval_api_models",
         "//props/core:ids",
         "//props/core/models:examples",
-        "//props/db:database",
-        "//props/db:examples",
-        "//props/db:models",
         "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "grading",
+    srcs = ["grading.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/agents:runtime",
+        "//props/core:eval_api_models",
+        "//props/db:database",
+        "//props/db:models",
         "@pypi//sqlalchemy",
     ],
 )
@@ -57,6 +67,7 @@ py_library(
         ":loop",
         "//agent_core:agent",
         "//agent_core:handler",
+        "//agent_core:logging_handler",
         "//agent_core:loop_control",
         "//openai_utils:model",
         "//props/agents:runtime",
@@ -84,11 +95,12 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":eval_client",
+        ":grading",
         "//agent_core:direct_provider",
-        "//agent_core:handler",
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
         "//openai_utils:pydantic_strict_mode",
+        "//props/core:eval_api_models",
         "//props/core:ids",
         "//props/core/models:examples",
         "//props/db:database",
@@ -119,18 +131,12 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cli_helpers",
-        ":eval_client",
-        "//cli_util:decorators",
-        "//cli_util:logging",
         "//props/agents:runtime",
         "//props/cli:cmd_stats",
         "//props/core:agent_types",
         "//props/core:display",
-        "//props/core:ids",
         "//props/core:splits",
-        "//props/core/models:examples",
         "//props/db:database",
-        "//props/db:models",
         "@pypi//rich",
         "@pypi//sqlalchemy",
         "@pypi//typer",
@@ -145,5 +151,40 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":cli",
+    ],
+)
+
+docker_py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    data = [
+        "//props/agents/critic:image",
+        "//props/agents/critic_dev/optimize:image",
+        "//props/agents/grader:image",
+    ],
+    imports = ["../../.."],
+    tags = [
+        "e2e",
+        "integration",
+        "slow",
+    ],
+    deps = [
+        ":loop",
+        ":shared",
+        "//agent_core/testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//props:conftest",
+        "//props/agents/critic/testing:mocks",
+        "//props/agents/critic_dev/testing:mocks",
+        "//props/agents/critic_dev/testing:orchestration_fixtures",
+        "//props/core:eval_api_models",
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

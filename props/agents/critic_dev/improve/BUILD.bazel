@@ -68,7 +68,7 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["improvement:latest"],
+    repo_tags = ["critic_dev_improve:latest"],
     visibility = ["//visibility:public"],
 )
 
@@ -76,5 +76,5 @@ oci_push(
     name = "push",
     image = ":image",
     remote_tags = ["latest"],
-    repository = "localhost:8000/improvement",
+    repository = "localhost:8000/critic_dev_improve",
 )

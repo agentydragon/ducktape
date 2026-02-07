@@ -78,7 +78,7 @@ npm.npm_translate_lock(
    - When a package like `@playwright/test` re-exports from `playwright`, symlink resolution can cause the same module to be loaded with different filesystem paths
    - Node.js caches modules by resolved path, not by identity
    - This breaks packages that use module identity for internal state (e.g., Playwright's test registry)
-   - Documented in ducktape investigation: `props/frontend/docs/playwright-bazel-investigation.md`
+   - Documented in ducktape investigation: `props/frontend/docs/playwright_bazel_investigation.md`
    - **Workaround:** Use native Playwright install or rules_playwright directly instead of aspect_rules_js wrappers
 
 2. **Sandbox Symlink Escape via esbuild (Issue #58 aspect_rules_esbuild)**
@@ -450,4 +450,4 @@ Given the current architecture (2 Svelte frontends, 1 React):
 - [rules_js documentation](https://docs.aspect.build/rulesets/aspect_rules_js/)
 - [rules_lint documentation](https://docs.aspect.build/workflows/features/lint/)
 - [pnpm Workspaces Documentation](https://pnpm.io/workspaces)
-- [Ducktape Playwright Investigation](../../props/frontend/docs/playwright-bazel-investigation.md)
+- [Ducktape Playwright Investigation](../../props/frontend/docs/playwright_bazel_investigation.md)

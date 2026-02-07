@@ -25,14 +25,12 @@ import logging
 
 import pytest
 import pytest_bazel
-from hamcrest import all_of, assert_that
 
 from agent_core.testing.responses import PlayGen, tool_roundtrip
-from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.agents.critic_dev.shared import TargetMetric
-from props.agents.critic_dev.testing.mocks import CriticDevMock
+from props.agents.critic_dev.testing.mocks import CriticDevMock, make_cli_test_mock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
@@ -91,7 +89,7 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
             parent_run_id=None,
-            budget_usd=None,
+            budget_usd=5.0,
         )
         assert critic_run_id is not None
 
@@ -111,20 +109,15 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
 
 @pytest.mark.timeout(120)
 @pytest.mark.requires_docker
-async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs, prompt_optimizer_image):
+async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs, critic_dev_optimize_image):
     """Test that leaderboard CLI command shows actual recall values from database."""
     example, _critic_run, _grader_run = test_train_example_with_runs
     assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
-    @CriticDevMock.mock()
-    def mock(m: CriticDevMock) -> PlayGen:
-        yield None  # First request
-        result = yield from m.exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"])
-        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield m.report_failure("Leaderboard test completed")
+    mock = make_cli_test_mock(["critic-dev", "leaderboard", "--limit", "5"], expected_output="76%")
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[prompt_optimizer_image]) as stack:
-        await stack.registry.run_prompt_optimizer(
+    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
+        await stack.registry.run_critic_dev_optimize(
             budget=1.0,
             optimizer_model=stack.model,
             critic_model=stack.model,
@@ -135,20 +128,15 @@ async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_r
 
 @pytest.mark.timeout(120)
 @pytest.mark.requires_docker
-async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs, prompt_optimizer_image):
+async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs, critic_dev_optimize_image):
     """Test that hard-examples CLI command shows example metrics."""
     example, _critic_run, _grader_run = test_train_example_with_runs
     assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
-    @CriticDevMock.mock()
-    def mock(m: CriticDevMock) -> PlayGen:
-        yield None  # First request
-        result = yield from m.exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"])
-        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield m.report_failure("Hard examples test completed")
+    mock = make_cli_test_mock(["critic-dev", "hard-examples", "--limit", "5"], expected_output="76%")
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[prompt_optimizer_image]) as stack:
-        await stack.registry.run_prompt_optimizer(
+    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
+        await stack.registry.run_critic_dev_optimize(
             budget=1.0,
             optimizer_model=stack.model,
             critic_model=stack.model,
@@ -166,7 +154,7 @@ async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_wit
 @pytest.mark.requires_docker
 @pytest.mark.slow
 async def test_optimizer_orchestrates_critic(
-    synced_db: Database, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
+    synced_db: Database, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
     """Test optimizer can orchestrate critic runs with simulated grading.
 
@@ -194,7 +182,7 @@ async def test_optimizer_orchestrates_critic(
         # Call run_critic tool (DirectToolProvider tool that calls REST API)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=None
+            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=5.0
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -234,7 +222,7 @@ async def test_optimizer_orchestrates_critic(
         ORCHESTRATION_CRITIC_MODEL: critic_mock,
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
-    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
+    async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
         # Start grader daemon in background - it will sleep until there's drift
         grader_task: asyncio.Task[None] | None = None
@@ -256,7 +244,7 @@ async def test_optimizer_orchestrates_critic(
         try:
             # Run critic-dev optimizer - this triggers the full orchestration
             # The grader daemon running in background will process edges when critic completes
-            run_id = await stack.registry.run_prompt_optimizer(
+            run_id = await stack.registry.run_critic_dev_optimize(
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,

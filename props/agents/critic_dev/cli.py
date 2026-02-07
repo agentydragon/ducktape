@@ -14,25 +14,17 @@ import typer
 from rich.console import Console
 from sqlalchemy import text
 
-from cli_util.decorators import async_run
 from props.agents.critic_dev.cli_helpers import show_execution_traces, show_grading_summary, show_run_status
-from props.agents.critic_dev.eval_client import EvalClient
 from props.agents.runtime import get_current_agent_run, get_current_agent_run_id
 from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.core.agent_types import AgentType
 from props.core.display import ColumnDef, build_table_from_schema
-from props.core.ids import DefinitionId
-from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 from props.db.database import Database
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
 
 Common workflows:
-
-  Run evaluation pipeline:
-    props critic-dev run-critic "my-def-id" "snapshot-slug" "scope-hash"
-    props critic-dev run-grader "critic-run-uuid"
 
   Analyze runs spawned by this agent:
     props critic-dev run-status
@@ -53,51 +45,6 @@ def _critic_dev_callback(ctx: typer.Context) -> None:
     """Initialize Database for critic-dev commands."""
     if ctx.obj is None:
         ctx.obj = Database.from_env()
-
-
-@app.command("run-critic")
-@async_run
-async def run_critic_cmd(
-    image_ref: Annotated[str, typer.Argument(help="Agent image reference (tag or digest, or 'critic' for baseline)")],
-    snapshot_slug: Annotated[str, typer.Argument(help="Snapshot identifier (e.g., 'test-fixtures/train1')")],
-    files_hash: Annotated[
-        str | None, typer.Argument(help="Files hash for file_set example, or omit/empty for whole_snapshot")
-    ] = None,
-    timeout_seconds: Annotated[
-        int, typer.Option("--timeout", "-t", help="Max seconds before container timeout")
-    ] = 3600,
-    budget_usd: Annotated[float | None, typer.Option("--budget", "-b", help="Max USD cost for this run")] = None,
-    critic_model: Annotated[str, typer.Option("--model", "-m", help="Model to use for the critic")] = "gpt-4o",
-) -> None:
-    """Run critic on an example using an agent image.
-
-    Returns the critic_run_id which can be used with run-grader.
-
-    Examples:
-        # Whole snapshot review
-        props critic-dev run-critic critic "test-fixtures/train1"
-
-        # File set review (specific files)
-        props critic-dev run-critic critic "ducktape/2025-11-26-00" "abc123..."
-    """
-    # Construct example spec based on whether files_hash is provided
-    example: ExampleSpec
-    if files_hash:
-        example = SingleFileSetExample(snapshot_slug=snapshot_slug, files_hash=files_hash)
-    else:
-        example = WholeSnapshotExample(snapshot_slug=snapshot_slug)
-
-    async with EvalClient.from_env() as client:
-        response = await client.run_critic(
-            definition_id=DefinitionId(image_ref),
-            example=example,
-            timeout_seconds=timeout_seconds,
-            budget_usd=budget_usd,
-            critic_model=critic_model,
-        )
-        typer.echo(f"Critic run ID: {response.critic_run_id}")
-        typer.echo(f"Status: {response.status}")
-        typer.echo("Note: Grading is handled automatically by snapshot grader daemons.")
 
 
 @app.command("run-status")
@@ -137,7 +84,7 @@ def leaderboard_cmd(
     db: Database = ctx.obj
     with db.session() as session:
         agent_run = get_current_agent_run(session)
-        split_filter = Split.TRAIN if agent_run.type_config.agent_type == AgentType.PROMPT_OPTIMIZER else None
+        split_filter = Split.TRAIN if agent_run.type_config.agent_type == AgentType.CRITIC_DEV_OPTIMIZE else None
     cmd_stats_critic_leaderboard(ctx, split=split_filter, example_kind=None, top=limit, bottom=None)
 
 
@@ -149,7 +96,7 @@ def hard_examples_cmd(
     db: Database = ctx.obj
     with db.session() as session:
         agent_run = get_current_agent_run(session)
-        split_filter = Split.TRAIN if agent_run.type_config.agent_type == AgentType.PROMPT_OPTIMIZER else None
+        split_filter = Split.TRAIN if agent_run.type_config.agent_type == AgentType.CRITIC_DEV_OPTIMIZE else None
     cmd_stats_example(ctx, split=split_filter, top=None, bottom=limit)
 
 

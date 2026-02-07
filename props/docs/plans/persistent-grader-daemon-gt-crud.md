@@ -53,7 +53,7 @@ Grader CLI and docs completed:
 ### Phase F: Snapshot Grader RLS ✅
 
 - `current_grader_snapshot_slug()`, `is_critique_on_grader_snapshot()` helpers
-- RLS policies for grader, snapshot_grader, prompt_optimizer, improvement
+- RLS policies for grader, snapshot_grader, critic_dev_optimize, critic_dev_improve
 - pg_notify triggers for GT changes (INSERT/DELETE on TP/FP tables)
 
 ### Phase E: Documentation Updates ✅

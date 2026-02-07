@@ -317,66 +317,69 @@ def critic_runs_for_snapshot_parameterized() -> Select:
     return critic_runs_for_snapshot(bindparam("snapshot_slug"), limit=5)  # type: ignore[arg-type]
 
 
-def po_run_costs(po_run_id: UUID) -> Select:
-    """Get per-run costs and totals for a prompt optimization run.
+def critic_dev_run_costs(critic_dev_run_id: UUID) -> Select:
+    """Get per-run costs and totals for a critic developer run.
 
     Uses AgentRun with JSONB filtering to find all child runs (critics, graders)
     of a critic-dev agent run.
 
     Args:
-        po_run_id: Prompt optimization agent run UUID (agent_run_id)
+        critic_dev_run_id: Critic developer agent run UUID (agent_run_id)
 
     Returns:
         Query selecting transcript details with cost/token metrics from llm_run_costs view
     """
-    # CTE for PO transcripts (all child agent runs + the PO agent's own run)
-    # Child runs have parent_agent_run_id = po_run_id
+    # CTE for critic-dev transcripts (all child agent runs + the critic-dev agent's own run)
     child_runs = select(
         AgentRun.agent_run_id,
         AgentRun.type_config["example"]["snapshot_slug"].astext.label("snapshot_slug"),
         AgentRun.type_config["agent_type"].astext.label("run_type"),
         AgentRun.created_at,
-    ).where(AgentRun.parent_agent_run_id == po_run_id)
+    ).where(AgentRun.parent_agent_run_id == critic_dev_run_id)
 
-    # The PO agent's own run
-    po_agent_run = select(
+    # The critic-dev agent's own run
+    critic_dev_agent_run = select(
         AgentRun.agent_run_id,
-        literal(None).label("snapshot_slug"),  # PO agent doesn't target a specific snapshot
-        literal("prompt_optimizer").label("run_type"),
+        literal(None).label("snapshot_slug"),
+        literal("critic_dev_optimize").label("run_type"),
         AgentRun.created_at,
-    ).where(AgentRun.agent_run_id == po_run_id)
+    ).where(AgentRun.agent_run_id == critic_dev_run_id)
 
-    po_runs = union_all(child_runs, po_agent_run).cte("po_runs")
+    critic_dev_runs = union_all(child_runs, critic_dev_agent_run).cte("critic_dev_runs")
 
     # Main query joining with llm_run_costs view (LLM requests logged by proxy)
     return (
         select(
-            po_runs.c.agent_run_id,
-            po_runs.c.snapshot_slug,
-            po_runs.c.run_type,
+            critic_dev_runs.c.agent_run_id,
+            critic_dev_runs.c.snapshot_slug,
+            critic_dev_runs.c.run_type,
             LLMRunCost.model,
             func.sum(LLMRunCost.cost_usd).label("cost_usd"),
             func.sum(LLMRunCost.input_tokens).label("input_tokens"),
             func.sum(LLMRunCost.cached_input_tokens).label("cached_tokens"),
             func.sum(LLMRunCost.output_tokens).label("output_tokens"),
-            po_runs.c.created_at,
+            critic_dev_runs.c.created_at,
         )
-        .select_from(po_runs)
-        .join(LLMRunCost, po_runs.c.agent_run_id == LLMRunCost.agent_run_id)
+        .select_from(critic_dev_runs)
+        .join(LLMRunCost, critic_dev_runs.c.agent_run_id == LLMRunCost.agent_run_id)
         .group_by(
-            po_runs.c.agent_run_id, po_runs.c.snapshot_slug, po_runs.c.run_type, LLMRunCost.model, po_runs.c.created_at
+            critic_dev_runs.c.agent_run_id,
+            critic_dev_runs.c.snapshot_slug,
+            critic_dev_runs.c.run_type,
+            LLMRunCost.model,
+            critic_dev_runs.c.created_at,
         )
-        .order_by(po_runs.c.created_at.desc())
+        .order_by(critic_dev_runs.c.created_at.desc())
     )
 
 
 # TODO: Consider removing - no usages found (only non-param version used)
-def po_run_costs_parameterized() -> Select:
-    """PO run costs (parameterized with :po_run_id placeholder).
+def critic_dev_run_costs_parameterized() -> Select:
+    """Critic-dev run costs (parameterized with :critic_dev_run_id placeholder).
 
-    Agents fill in :po_run_id at runtime.
+    Agents fill in :critic_dev_run_id at runtime.
     """
-    return po_run_costs(bindparam("po_run_id"))  # type: ignore[arg-type]
+    return critic_dev_run_costs(bindparam("critic_dev_run_id"))  # type: ignore[arg-type]
 
 
 # ============================================================================

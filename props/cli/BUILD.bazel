@@ -32,18 +32,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "shared",
-    srcs = ["shared.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:ids",
-        "//props/core/models:examples",
-        "@pypi//typer_slim",
-    ],
-)
-
 # =============================================================================
 # Subcommand modules
 # =============================================================================
@@ -152,7 +140,6 @@ py_library(
         ":cmd_snapshot",
         ":cmd_stats",
         ":common_options",
-        ":shared",
         "//cli_util:decorators",
         "//cli_util:logging",
         "//openai_utils:model",

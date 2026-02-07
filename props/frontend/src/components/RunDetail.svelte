@@ -14,8 +14,8 @@
     type AgentRunDetail,
     type CriticTypeConfig,
     type GraderTypeConfig,
-    type ImprovementTypeConfig,
-    type PromptOptimizerTypeConfig,
+    type CriticDevImproveTypeConfig,
+    type CriticDevOptimizeTypeConfig,
     type SnapshotDetailResponse,
     type FileContentResponse,
     type GradingEdgeInfo,
@@ -274,6 +274,10 @@
           <span class="text-gray-500">LLM Calls:</span>
           <span class="ml-1">{run.llm_call_count}</span>
         </div>
+        <div>
+          <span class="text-gray-500">Budget:</span>
+          <span class="ml-1">${run.budget_usd.toFixed(2)}</span>
+        </div>
         {#if run.parent_agent_run_id}
           <div>
             <span class="text-gray-500">Parent:</span>
@@ -303,8 +307,8 @@
           <span class="text-gray-500">Snapshot:</span>
           {config.snapshot_slug}
         </div>
-      {:else if getAgentType(run) === "improvement"}
-        {@const config = run.type_config as ImprovementTypeConfig}
+      {:else if getAgentType(run) === "critic_dev_improve"}
+        {@const config = run.type_config as CriticDevImproveTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span
             ><span class="text-gray-500">Baselines:</span>
@@ -318,8 +322,8 @@
             ><span class="text-gray-500">Models:</span> improvement={config.improvement_model}, critic={config.critic_model}</span
           >
         </div>
-      {:else if getAgentType(run) === "prompt_optimizer"}
-        {@const config = run.type_config as PromptOptimizerTypeConfig}
+      {:else if getAgentType(run) === "critic_dev_optimize"}
+        {@const config = run.type_config as CriticDevOptimizeTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span><span class="text-gray-500">Target:</span> {config.target_metric}</span>
           <span><span class="text-gray-500">Budget:</span> ${config.budget_limit}</span>

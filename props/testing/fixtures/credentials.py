@@ -27,6 +27,7 @@ async def make_agent_credentials(db: Database, type_config: BaseModel, image_dig
             model="test-model",
             status=AgentRunStatus.EXITED,
             type_config=type_config.model_dump(),
+            budget_usd=5.0,
         )
         session.add(agent_run)
         session.commit()

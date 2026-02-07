@@ -15,26 +15,6 @@ py_library(
 )
 
 py_library(
-    name = "eval",
-    srcs = ["eval.py"],
-    imports = ["../../.."],
-    visibility = ["//props/backend:__subpackages__"],
-    deps = [
-        "//props/agents/critic:exceptions",
-        "//props/backend:auth",
-        "//props/backend:deps",
-        "//props/core:eval_api_models",
-        "//props/core:splits",
-        "//props/db:database",
-        "//props/db:examples",
-        "//props/db:models",
-        "//props/orchestration:agent_registry",
-        "@pypi//fastapi",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "ground_truth",
     srcs = ["ground_truth.py"],
     imports = ["../../.."],
@@ -91,9 +71,11 @@ py_library(
     visibility = ["//props/backend:__subpackages__"],
     deps = [
         ":ground_truth",
+        "//props/agents/critic:exceptions",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/core:agent_types",
+        "//props/core:eval_api_models",
         "//props/core:splits",
         "//props/core/models:examples",
         "//props/core/models:true_positive",
@@ -103,6 +85,7 @@ py_library(
         "//props/orchestration:agent_registry",
         "@pypi//fastapi",
         "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )
 

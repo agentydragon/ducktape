@@ -9,11 +9,11 @@ from pydantic import TypeAdapter, ValidationError
 from props.core.agent_types import (
     AgentConfig,
     AgentType,
+    CriticDevImproveTypeConfig,
+    CriticDevOptimizeTypeConfig,
     CriticTypeConfig,
     FreeformTypeConfig,
     GraderTypeConfig,
-    ImprovementTypeConfig,
-    PromptOptimizerTypeConfig,
     TypeConfig,
 )
 from props.core.ids import SnapshotSlug
@@ -27,8 +27,8 @@ TEST_DIGEST = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789
 
 def _improvement_config(
     *, baseline_image_digests: list[str] | None = None, allowed_examples: list[ExampleSpec] | None = None
-) -> ImprovementTypeConfig:
-    return ImprovementTypeConfig(
+) -> CriticDevImproveTypeConfig:
+    return CriticDevImproveTypeConfig(
         baseline_image_digests=baseline_image_digests if baseline_image_digests is not None else [TEST_DIGEST],
         allowed_examples=allowed_examples if allowed_examples is not None else [TEST_EXAMPLE],
         improvement_model="test-model",
@@ -56,23 +56,23 @@ class TestTypeConfigDiscriminatedUnion:
             ({"agent_type": "freeform"}, FreeformTypeConfig),
             (
                 {
-                    "agent_type": "prompt_optimizer",
+                    "agent_type": "critic_dev_optimize",
                     "target_metric": "whole-repo",
                     "optimizer_model": "test-optimizer",
                     "critic_model": "test-critic",
                     "budget_limit": 100.0,
                 },
-                PromptOptimizerTypeConfig,
+                CriticDevOptimizeTypeConfig,
             ),
             (
                 {
-                    "agent_type": "improvement",
+                    "agent_type": "critic_dev_improve",
                     "baseline_image_digests": [TEST_DIGEST],
                     "allowed_examples": [{"kind": "whole_snapshot", "snapshot_slug": "test/2025-01-01-00"}],
                     "improvement_model": "test-improvement",
                     "critic_model": "test-critic",
                 },
-                ImprovementTypeConfig,
+                CriticDevImproveTypeConfig,
             ),
         ],
     )
@@ -104,15 +104,15 @@ class TestGraderTypeConfig:
             GraderTypeConfig()  # type: ignore[call-arg]
 
 
-class TestImprovementTypeConfig:
-    """Tests for ImprovementTypeConfig behavior."""
+class TestCriticDevImproveTypeConfig:
+    """Tests for CriticDevImproveTypeConfig behavior."""
 
     def test_valid_construction(self) -> None:
-        """ImprovementTypeConfig accepts valid data."""
+        """CriticDevImproveTypeConfig accepts valid data."""
         config = _improvement_config()
         assert config.baseline_image_digests == [TEST_DIGEST]
         assert len(config.allowed_examples) == 1
-        assert config.agent_type == AgentType.IMPROVEMENT
+        assert config.agent_type == AgentType.CRITIC_DEV_IMPROVE
         assert config.improvement_model == "test-model"
         assert config.critic_model == "test-critic-model"
 

@@ -10,7 +10,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from props.backend.auth import AgentDb
 from props.core.agent_types import AgentType
@@ -208,9 +208,9 @@ class ExampleDetailResponse(BaseModel):
     files_hash: str | None
     split: Split
     recall_denominator: int
-    files: list[str] | None  # For file_set examples
-    definitions: list[DefinitionStatsForExample]  # Per-definition stats
-    credit_stats: StatsWithCI | None  # Aggregate metrics across all definitions
+    files: list[str] | None = Field(description="Resolved file paths for file_set examples")
+    definitions: list[DefinitionStatsForExample] = Field(description="Per-definition stats")
+    credit_stats: StatsWithCI | None = Field(description="Aggregate metrics across all definitions")
 
 
 @router.get("/examples")

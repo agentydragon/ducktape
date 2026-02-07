@@ -17,7 +17,14 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from props.backend.auth import ACL_CAN_PUSH_REGISTRY, ACL_CAN_PUSH_TAGS, ACL_CAN_READ_REGISTRY, Auth, get_caller_type
+from props.backend.auth import (
+    ACL_CAN_PUSH_REGISTRY,
+    ACL_CAN_PUSH_TAGS,
+    ACL_CAN_READ_REGISTRY,
+    Auth,
+    get_caller_type,
+    has_access,
+)
 from props.backend.deps import AdminDb
 from props.core.oci_utils import is_digest
 from props.db.database import Database
@@ -166,11 +173,11 @@ async def v2_check(auth: Auth) -> Response:
 @router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
 async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
     """Push a manifest — records agent definition on success."""
-    caller_type, agent_run_id = get_caller_type(auth, admin_db)
-    if caller_type not in ACL_CAN_PUSH_REGISTRY:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
-    if not is_digest(ref) and caller_type not in ACL_CAN_PUSH_TAGS:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push by tag")
+    caller, agent_run_id = get_caller_type(auth, admin_db)
+    if not has_access(caller, ACL_CAN_PUSH_REGISTRY):
+        raise HTTPException(status_code=403, detail=f"{caller} not allowed to push to registry")
+    if not is_digest(ref) and not has_access(caller, ACL_CAN_PUSH_TAGS):
+        raise HTTPException(status_code=403, detail=f"{caller} not allowed to push by tag")
 
     body = await request.body()
     response = await _proxy_to_upstream(request)
@@ -185,10 +192,10 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
 @router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PATCH", "PUT"], include_in_schema=False)
 async def registry_proxy(request: Request, path: str, auth: Auth, admin_db: AdminDb) -> Response:
     """Proxy OCI registry requests with method-based ACL (read for GET/HEAD, write for mutations)."""
-    caller_type, _ = get_caller_type(auth, admin_db)
+    caller, _ = get_caller_type(auth, admin_db)
     if request.method in ("GET", "HEAD"):
-        if caller_type not in ACL_CAN_READ_REGISTRY:
-            raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read from registry")
-    elif caller_type not in ACL_CAN_PUSH_REGISTRY:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
+        if not has_access(caller, ACL_CAN_READ_REGISTRY):
+            raise HTTPException(status_code=403, detail=f"{caller} not allowed to read from registry")
+    elif not has_access(caller, ACL_CAN_PUSH_REGISTRY):
+        raise HTTPException(status_code=403, detail=f"{caller} not allowed to push to registry")
     return await _proxy_to_upstream(request)

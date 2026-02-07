@@ -9,7 +9,7 @@ directly in tests, and the same query builders are compiled to SQL for j2 templa
 
 Does NOT test:
 - RLS policies (covered in test_db_integration.py)
-- Docker integration (covered in test_prompt_optimizer_integration.py)
+- Docker integration (covered in test_critic_dev_integration.py)
 - Database setup/teardown (uses existing db fixture)
 """
 

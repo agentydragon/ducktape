@@ -6,8 +6,8 @@ An MCP server is available via Streamable HTTP transport. Connection environment
 
 ## Example: Discovering Tools
 
-${include_doc("agent_pkg/runtime/examples/mcp_discover.py", raw=True)}
+${include_doc("agent_pkg/examples/mcp_discover.py", raw=True)}
 
 ## Server Info
 
-${run_command("python -m agent_pkg.runtime.examples.mcp_discover")}
+${run_command("python -m agent_pkg.examples.mcp_discover")}

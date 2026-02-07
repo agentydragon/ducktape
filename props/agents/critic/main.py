@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
+from agent_core.logging_handler import LoggingHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
@@ -282,14 +283,6 @@ def _validate_occurrence(occ: ReportedIssueOccurrence) -> None:
                 raise ValueError(f"Location {i}: end_line ({loc.end_line}) must be >= start_line ({loc.start_line})")
 
 
-class _LoggingHandler(BaseHandler):
-    """Handler that logs events for debugging."""
-
-    def on_error(self, exc: Exception) -> None:
-        logger.error("Agent error: %s", exc)
-        raise exc
-
-
 async def _run_agent_loop(system_prompt: str, db: Database) -> int:
     """Run the critic agent loop.
 
@@ -301,7 +294,7 @@ async def _run_agent_loop(system_prompt: str, db: Database) -> int:
     bound_model = create_bound_model_from_env(db)
 
     handlers: list[BaseHandler] = [
-        _LoggingHandler(),
+        LoggingHandler(logger),
         RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
         AbortIf(lambda: exit_state.should_exit),
     ]
@@ -327,7 +320,7 @@ async def _run_agent_loop(system_prompt: str, db: Database) -> int:
     return 1
 
 
-def main() -> int:
+async def main() -> int:
     """Main entry point for critic agent."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -363,11 +356,11 @@ def main() -> int:
         system_prompt = render_system_prompt("props/agents/critic/prompt.md.mako", db, helpers)
 
     logger.info("Starting agent loop")
-    exit_code = asyncio.run(_run_agent_loop(system_prompt, db))
+    exit_code = await _run_agent_loop(system_prompt, db)
 
     logger.info("Agent loop finished with exit code %d", exit_code)
     return exit_code
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))

@@ -32,17 +32,11 @@ Use descriptive kebab-case slugs:
 
 - **Line ranges must be valid** (start_line > 0, end_line >= start_line)
 
-## Source Code Inspection
-
-The `props` library is bundled in your container at `/app/critic.runfiles/_main/`. Key files:
-
-```bash
-cat /app/critic.runfiles/_main/props/agents/critic/main.py   # Your entry point and tools
-cat /app/critic.runfiles/_main/props/agents/runtime.py       # Runtime helpers
-cat /app/critic.runfiles/_main/props/db/models.py            # SQLAlchemy models
-```
-
-For schema introspection (no DB connection needed), see the Schema Discovery section below.
+${source_inspection("critic", [
+    ("props/agents/critic/main.py", "Your entry point and tools"),
+    ("props/agents/runtime.py", "Runtime helpers"),
+    ("props/db/models.py", "SQLAlchemy models"),
+])}
 
 ${include_doc("props/agents/docs/database_access.md")}
 ${include_doc("props/agents/docs/db/critiques.md.mako")}

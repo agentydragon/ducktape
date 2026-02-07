@@ -13,7 +13,7 @@ This module provides:
 - Credential validation with access level determination
 - Caller type determination for ACL enforcement
 - FastAPI dependency for per-request auth (get_auth_context)
-- Dependency functions for ACL enforcement (require_read, require_push, require_eval_access)
+- Dependency functions for ACL enforcement (require_admin_access, require_critic_run_access)
 """
 
 from __future__ import annotations
@@ -44,29 +44,42 @@ class AccessLevel(StrEnum):
     AGENT = "agent"  # Agent access (agent_{uuid} pattern)
 
 
-class CallerType(StrEnum):
-    """Type of caller accessing APIs - used for fine-grained ACL enforcement.
-
-    While AccessLevel distinguishes admin vs agent at the auth layer,
-    CallerType provides more granular distinctions for ACL decisions:
-    - Different agent types have different permissions
-    - ANONYMOUS represents unauthenticated callers (e.g., for /v2/ check)
-    """
-
-    ANONYMOUS = "anonymous"  # No auth - limited access (e.g., /v2/ check only)
-    ADMIN = "admin"  # postgres user - full access
-    PROMPT_OPTIMIZER = "prompt-optimizer"  # PO agent - can read/push
-    PROMPT_IMPROVER = "prompt-improver"  # PI agent - can read/push
-    CRITIC = "critic"  # Critic agent - limited access (LLM only)
-    GRADER = "grader"  # Grader agent - limited access (LLM only)
-    UNKNOWN = "unknown"  # Invalid/unrecognized caller
+# --- Caller type: discriminated union ---
 
 
-# ACL permission sets - which CallerTypes can perform each operation
-ACL_CAN_READ_REGISTRY = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
-ACL_CAN_PUSH_REGISTRY = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
-ACL_CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
-ACL_CAN_USE_EVAL_API = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerType.PROMPT_IMPROVER}
+@dataclass(frozen=True)
+class AnonymousCaller:
+    """Unauthenticated caller (e.g., for /v2/ check)."""
+
+
+@dataclass(frozen=True)
+class AdminCaller:
+    """Admin caller (postgres user) — full access."""
+
+
+@dataclass(frozen=True)
+class AgentCaller:
+    """Agent caller with a specific agent type."""
+
+    agent_type: AgentType
+
+
+CallerType = AnonymousCaller | AdminCaller | AgentCaller
+
+
+def has_access(caller: CallerType, allowed_agent_types: set[AgentType]) -> bool:
+    """Check if caller has access. Admin always allowed; agents checked against the set."""
+    if isinstance(caller, AdminCaller):
+        return True
+    return isinstance(caller, AgentCaller) and caller.agent_type in allowed_agent_types
+
+
+# ACL permission sets — agent types that can perform each operation (admin always allowed)
+_CRITIC_DEV_TYPES = {AgentType.CRITIC_DEV_OPTIMIZE, AgentType.CRITIC_DEV_IMPROVE}
+ACL_CAN_READ_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
+ACL_CAN_PUSH_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
+ACL_CAN_PUSH_TAGS: set[AgentType] = set()  # Admin only
+ACL_CAN_RUN_CRITICS: set[AgentType] = _CRITIC_DEV_TYPES
 
 
 @dataclass(frozen=True)
@@ -221,10 +234,10 @@ Auth = Annotated[AuthContext, Depends(get_auth_context)]
 def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID | None]:
     """Determine caller type from auth context. Does DB lookup for agent users."""
     if not auth.is_authenticated:
-        return CallerType.ANONYMOUS, None
+        return AnonymousCaller(), None
 
     if auth.is_admin:
-        return CallerType.ADMIN, None
+        return AdminCaller(), None
 
     # For agents, look up run in database to determine type
     if auth.agent_run_id is None:
@@ -234,14 +247,7 @@ def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID |
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
 
-        agent_type = agent_run.type_config.agent_type
-        caller_type_map = {
-            AgentType.PROMPT_OPTIMIZER: CallerType.PROMPT_OPTIMIZER,
-            AgentType.IMPROVEMENT: CallerType.PROMPT_IMPROVER,
-            AgentType.CRITIC: CallerType.CRITIC,
-            AgentType.GRADER: CallerType.GRADER,
-        }
-        return caller_type_map.get(agent_type, CallerType.UNKNOWN), auth.agent_run_id
+        return AgentCaller(agent_type=agent_run.type_config.agent_type), auth.agent_run_id
 
 
 # =============================================================================
@@ -249,18 +255,18 @@ def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID |
 # =============================================================================
 
 
-def require_eval_api_access(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
-    """FastAPI dependency requiring eval API access. Raises HTTPException 403 if not allowed."""
-    caller_type, agent_run_id = get_caller_type(auth, admin_db)
-    if caller_type not in ACL_CAN_USE_EVAL_API:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to access eval endpoints")
-    return caller_type, agent_run_id
+def require_critic_run_access(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
+    """FastAPI dependency requiring critic run access. Raises HTTPException 403 if not allowed."""
+    caller, agent_run_id = get_caller_type(auth, admin_db)
+    if not has_access(caller, ACL_CAN_RUN_CRITICS):
+        raise HTTPException(status_code=403, detail=f"{caller} not allowed to run critics")
+    return caller, agent_run_id
 
 
 def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
-    caller_type, _ = get_caller_type(auth, admin_db)
-    if caller_type != CallerType.ADMIN:
+    caller, _ = get_caller_type(auth, admin_db)
+    if not isinstance(caller, AdminCaller):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 

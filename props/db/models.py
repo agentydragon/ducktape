@@ -36,11 +36,11 @@ from sqlalchemy.types import TypeDecorator
 
 from props.core.agent_types import (
     AgentType,
+    CriticDevImproveTypeConfig,
+    CriticDevOptimizeTypeConfig,
     CriticTypeConfig,
     FreeformTypeConfig,
     GraderTypeConfig,
-    ImprovementTypeConfig,
-    PromptOptimizerTypeConfig,
     TypeConfig,
 )
 from props.core.ids import SnapshotSlug, _SnapshotSlugBase
@@ -1285,7 +1285,7 @@ class AgentDefinition(Base):
     """
 
     __tablename__ = "agent_definitions"
-    __table_args__ = (CheckConstraint("digest ~ '^sha256:[0-9a-f]{64}$'", name="check_digest_format"),)
+    __table_args__ = (CheckConstraint("is_valid_digest(digest)", name="check_digest_format"),)
 
     digest: Mapped[str] = mapped_column(String, primary_key=True, comment="OCI image digest (sha256:...)")
     agent_type: Mapped[AgentType] = mapped_column(String, nullable=False, comment="Agent type enum")
@@ -1372,8 +1372,8 @@ class AgentRun(Base):
     )
 
     # Resource limits (set at launch time)
-    budget_usd: Mapped[float | None] = mapped_column(
-        nullable=True, comment="Max USD cost allowed for this agent (including child agents). Enforced by proxy."
+    budget_usd: Mapped[float] = mapped_column(
+        nullable=False, comment="Max USD cost allowed for this agent (including child agents). Enforced by proxy."
     )
     timeout_seconds: Mapped[int | None] = mapped_column(
         nullable=True, comment="Max seconds before agent is killed. Enforced by agent_registry."
@@ -1422,15 +1422,15 @@ class AgentRun(Base):
             return self.type_config
         raise ValueError(f"Expected GraderTypeConfig, got {type(self.type_config).__name__}")
 
-    def improvement_config(self) -> ImprovementTypeConfig:
-        if isinstance(self.type_config, ImprovementTypeConfig):
+    def critic_dev_improve_config(self) -> CriticDevImproveTypeConfig:
+        if isinstance(self.type_config, CriticDevImproveTypeConfig):
             return self.type_config
-        raise ValueError(f"Expected ImprovementTypeConfig, got {type(self.type_config).__name__}")
+        raise ValueError(f"Expected CriticDevImproveTypeConfig, got {type(self.type_config).__name__}")
 
-    def prompt_optimizer_config(self) -> PromptOptimizerTypeConfig:
-        if isinstance(self.type_config, PromptOptimizerTypeConfig):
+    def critic_dev_optimize_config(self) -> CriticDevOptimizeTypeConfig:
+        if isinstance(self.type_config, CriticDevOptimizeTypeConfig):
             return self.type_config
-        raise ValueError(f"Expected PromptOptimizerTypeConfig, got {type(self.type_config).__name__}")
+        raise ValueError(f"Expected CriticDevOptimizeTypeConfig, got {type(self.type_config).__name__}")
 
     def freeform_config(self) -> FreeformTypeConfig:
         if isinstance(self.type_config, FreeformTypeConfig):

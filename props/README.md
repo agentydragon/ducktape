@@ -99,11 +99,7 @@ bazelisk build --config=check //props/...  # Lint + typecheck
 ### Service URLs
 
 - Frontend: <http://localhost:5173>
-- Backend API: <http://localhost:8000>
-  - Dashboard: `/api/stats`, `/api/runs`, `/api/gt`
-  - LLM Proxy: `/v1/responses`
-  - Registry Proxy: `/v2/*`
-  - Eval API: `/api/eval/*`
+- Backend API: <http://localhost:8000> — see <docs/backend_api.md> for endpoint reference
 - PostgreSQL: localhost:5433
 - Registry: localhost:5000 (direct, for debugging)
 

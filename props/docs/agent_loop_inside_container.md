@@ -176,7 +176,7 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 
 | Aspect          | Decision                                                                        |
 | --------------- | ------------------------------------------------------------------------------- |
-| Spawn           | REST API call to backend (`/api/eval/run_critic`)                               |
+| Spawn           | REST API call to backend (`/api/runs/critic`)                                   |
 | Status query    | Direct Postgres query (no external call needed)                                 |
 | Results/logs    | Direct Postgres query                                                           |
 | Cost accounting | Counts against parent's budget                                                  |
@@ -188,7 +188,7 @@ Critic-dev agents have `DirectToolProvider` tools that call the backend REST API
 ```
 Backend                                 Container (critic-dev)
 ───────                                 ──────────────────────
-/api/eval/run_critic (REST)             DirectToolProvider
+/api/runs/critic (REST)             DirectToolProvider
 ├─ Spawns critic container   ◄──────────  run_critic tool (HTTP POST)
 └─ Returns critic_run_id
 
@@ -243,7 +243,7 @@ Services in `props/compose.yaml`:
 
 - `postgres` (5433:5432) - on `props-internal` + `props-agents`
 - `registry` (5000:5000) - on `props-internal` + `default`
-- `backend` (8000:8000) - on `props-internal` + `props-agents` (serves LLM proxy at `/v1/responses`, registry proxy at `/v2/*`, eval API at `/api/eval/*`, dashboard API)
+- `backend` (8000:8000) - on `props-internal` + `props-agents` (serves LLM proxy at `/v1/responses`, registry proxy at `/v2/*`, critic runs API at `/api/runs/critic`, dashboard API)
 
 **Network topology:**
 

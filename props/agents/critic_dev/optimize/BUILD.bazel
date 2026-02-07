@@ -78,7 +78,7 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["prompt_optimizer:latest"],
+    repo_tags = ["critic_dev_optimize:latest"],
     visibility = ["//visibility:public"],
 )
 
@@ -86,5 +86,5 @@ oci_push(
     name = "push",
     image = ":image",
     remote_tags = ["latest"],
-    repository = "localhost:8000/prompt_optimizer",
+    repository = "localhost:8000/critic_dev_optimize",
 )

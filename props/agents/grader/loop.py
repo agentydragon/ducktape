@@ -17,6 +17,7 @@ from sqlalchemy import select
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
+from agent_core.logging_handler import LoggingHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
@@ -301,14 +302,6 @@ def create_grader_tool_provider(
     return provider
 
 
-class LoggingHandler(BaseHandler):
-    """Handler that logs events for debugging."""
-
-    def on_error(self, exc: Exception) -> None:
-        logger.error("Agent error: %s", exc)
-        raise exc
-
-
 async def run_grader_loop(system_prompt: str, snapshot_slug: SnapshotSlug, db: Database) -> int:
     """Run the grader agent loop.
 
@@ -327,7 +320,7 @@ async def run_grader_loop(system_prompt: str, snapshot_slug: SnapshotSlug, db: D
 
     # Create handlers
     handlers: list[BaseHandler] = [
-        LoggingHandler(),
+        LoggingHandler(logger),
         AbortIf(lambda: exit_state.should_exit),
         RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
     ]

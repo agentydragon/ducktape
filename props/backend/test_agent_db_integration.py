@@ -54,6 +54,7 @@ async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_
             model="test-model",
             status=AgentRunStatus.EXITED,
             type_config=type_config.model_dump(),
+            budget_usd=5.0,
         )
         session.add(admin_run)
         session.commit()

@@ -41,9 +41,3 @@ def make_openai_client() -> Callable[[list[ResponsesResult]], FakeOpenAIModel]:
 @pytest.fixture
 def success_termination() -> TerminationSuccess:
     return TerminationSuccess(definition_id="test-improved-critic", total_credit=2.0, baseline_avg=1.0)
-
-
-# NOTE: run_prompt_optimizer_with_steps and run_improvement_agent_with_steps fixtures
-# have been removed - they used the old direct-call architecture where mock clients
-# could be passed directly. Use e2e_container.py fixtures for the new in-container
-# architecture instead.

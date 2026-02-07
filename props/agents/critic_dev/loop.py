@@ -15,11 +15,12 @@ from uuid import UUID
 from pydantic import Field
 
 from agent_core.direct_provider import DirectToolProvider
-from agent_core.handler import BaseHandler
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from props.agents.critic_dev.eval_client import EvalClient, wait_until_graded
+from props.agents.critic_dev.eval_client import CriticRunClient
+from props.agents.critic_dev.grading import wait_until_graded
+from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
 from props.db.database import Database
@@ -53,7 +54,7 @@ class RunCriticToolArgs(OpenAIStrictModeBaseModel):
     definition_id: DefinitionId = Field(
         description="Image ref: OCI digest (sha256:...) for custom images, or 'latest' for builtin"
     )
-    example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
+    example: ExampleSpec = Field(description="Example to evaluate")
     timeout_seconds: int = Field(description="Max seconds before container is killed")
     budget_usd: float = Field(description="Max USD cost for this agent")
 
@@ -61,9 +62,8 @@ class RunCriticToolArgs(OpenAIStrictModeBaseModel):
 class WaitUntilGradedToolArgs(OpenAIStrictModeBaseModel):
     """Arguments for wait_until_graded tool."""
 
-    critic_run_id: str = Field(description="agent_run_id of the critic run to wait for grading")
+    critic_run_id: UUID = Field(description="agent_run_id of the critic run to wait for grading")
     timeout_seconds: int = Field(default=300, ge=10, le=3600, description="Max time to wait (default 300s)")
-    poll_interval_seconds: int = Field(default=5, ge=1, le=60, description="Polling interval (default 5s)")
 
 
 # =============================================================================
@@ -87,25 +87,12 @@ class LoopState:
 
 
 # =============================================================================
-# Handlers
-# =============================================================================
-
-
-class LoggingHandler(BaseHandler):
-    """Handler that logs errors for debugging."""
-
-    def on_error(self, exc: Exception) -> None:
-        logger.error("Agent error: %s", exc)
-        raise exc
-
-
-# =============================================================================
 # Tool provider
 # =============================================================================
 
 
 def create_tool_provider(
-    state: LoopState, eval_client: EvalClient, critic_model: str, db: Database
+    state: LoopState, eval_client: CriticRunClient, critic_model: str, db: Database
 ) -> DirectToolProvider:
     """Create tool provider with shared tools (no submit)."""
     provider = DirectToolProvider()
@@ -132,7 +119,7 @@ def create_tool_provider(
         logger.info("Reported failure: %s", args.message)
 
     @provider.tool
-    async def run_critic(args: RunCriticToolArgs) -> str:
+    async def run_critic(args: RunCriticToolArgs) -> RunCriticResponse:
         """Run critic agent on an example.
 
         Returns critic_run_id. Use wait_until_graded to get grading results.
@@ -146,34 +133,19 @@ def create_tool_provider(
             critic_model=critic_model,
         )
         logger.info(f"Critic run completed: {response.critic_run_id}, status={response.status}")
-        return (
-            f"Critic run completed.\n"
-            f"critic_run_id: {response.critic_run_id}\n"
-            f"status: {response.status.value}\n\n"
-            f"Use wait_until_graded with this critic_run_id to get grading results."
-        )
+        return response
 
     @provider.tool
-    async def wait_until_graded_tool(args: WaitUntilGradedToolArgs) -> str:
+    async def wait_until_graded_tool(args: WaitUntilGradedToolArgs) -> GradingStatusResponse:
         """Wait for a critic run to be fully graded.
 
         Polls the database directly until grading is complete or timeout.
         """
-        critic_run_id = UUID(args.critic_run_id)
-        logger.info(f"Waiting for grading: {critic_run_id}")
+        logger.info(f"Waiting for grading: {args.critic_run_id}")
         response = await wait_until_graded(
-            critic_run_id, db, timeout_seconds=args.timeout_seconds, poll_interval_seconds=args.poll_interval_seconds
+            args.critic_run_id, db, timeout_seconds=args.timeout_seconds, poll_interval_seconds=5
         )
         logger.info(f"Grading complete: total_credit={response.total_credit}, max_credit={response.max_credit}")
-        return (
-            f"Grading complete.\n"
-            f"grader_run_id: {response.grader_run_id}\n"
-            f"total_credit: {response.total_credit}\n"
-            f"max_credit: {response.max_credit}\n"
-            f"split: {response.split}\n"
-            f"example_kind: {response.example_kind}\n\n"
-            f"Query aggregate metrics: SELECT * FROM recall_by_definition_split_kind "
-            f"WHERE critique_run_id = '{critic_run_id}';"
-        )
+        return response
 
     return provider

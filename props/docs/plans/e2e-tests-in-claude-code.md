@@ -7,7 +7,7 @@ This document outlines the plan for running props e2e tests in the Claude Code
 
 ### What Exists
 
-1. **`props/start-infra-podman.sh`** - Partial implementation that starts:
+1. **`props/start_infra_podman.sh`** - Partial implementation that starts:
    - PostgreSQL on port 5433
    - OCI Registry on port 5050
    - Registry Proxy on port 5051
@@ -75,7 +75,7 @@ Update session start hook to trigger props infrastructure when enabled.
 
 2. **When triggered, the session hook will**:
    - Start podman system service (already done)
-   - Run `props/start-infra-podman.sh` to start containers only (no bazel)
+   - Run `props/start_infra_podman.sh` to start containers only (no bazel)
    - Export all required env vars to `CLAUDE_ENV_FILE`
 
 3. **Manual setup steps** (run after session starts):
@@ -124,7 +124,7 @@ containers and export env vars:
 if os.environ.get("SESSION_HOOK_PROPS_SETUP") == "1":
     # Run props infrastructure setup (containers only, no bazel)
     subprocess.run(
-        ["bash", "props/start-infra-podman.sh"],
+        ["bash", "props/start_infra_podman.sh"],
         cwd=project_dir,
         check=True,
     )
@@ -146,7 +146,7 @@ if os.environ.get("SESSION_HOOK_PROPS_SETUP") == "1":
             f.write("export DOCKER_HOST=unix:///run/podman/podman.sock\n")
 ```
 
-The `start-infra-podman.sh` script should only start containers (postgres, registry,
+The `start_infra_podman.sh` script should only start containers (postgres, registry,
 registry-proxy). Database setup and image builds are done manually after session starts.
 
 ### Task 2: Verify aiodocker with Podman

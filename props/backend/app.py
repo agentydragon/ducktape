@@ -1,14 +1,13 @@
-"""FastAPI application for props backend - unified dashboard, proxy, and eval APIs.
+"""FastAPI application for props backend - unified dashboard, proxy, and run APIs.
 
 This is the unified props backend that includes:
 - Dashboard API: /api/stats, /api/runs, /api/gt
 - LLM Proxy: /v1/responses
 - Registry Proxy: /v2/*
-- Eval API: /api/eval/run_critic, /api/eval/grading_status/{critic_run_id}
+- Critic Run API: /api/runs/critic
 
 Note: wait_until_graded is implemented inside containers by polling the grading_pending
-view directly, not as a REST endpoint. The grading_status endpoint provides a non-blocking
-status check that containers can poll.
+view directly, not as a REST endpoint.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from cli_util.logging import LogLevel, configure_logging
-from props.backend.routes import agent_definitions, eval, ground_truth, llm, registry, runs, stats
+from props.backend.routes import agent_definitions, ground_truth, llm, registry, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
@@ -128,7 +127,6 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
     app.include_router(ground_truth.router, prefix="/api/gt", tags=["ground_truth"])
     app.include_router(agent_definitions.router, prefix="/api/definitions", tags=["definitions"])
-    app.include_router(eval.router, prefix="/api/eval", tags=["eval"])
     app.include_router(llm.router, tags=["llm_proxy"])
     app.include_router(registry.router, tags=["registry_proxy"])
 

@@ -47,6 +47,7 @@ py_library(
         "//agent_core:agent",
         "//agent_core:direct_provider",
         "//agent_core:handler",
+        "//agent_core:logging_handler",
         "//agent_core:loop_control",
         "//mcp_infra/exec:direct",
         "//mcp_infra/exec:models",

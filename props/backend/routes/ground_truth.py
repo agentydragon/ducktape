@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -309,7 +309,7 @@ class FileTreeNode(BaseModel):
     is_dir: bool
     tp_count: int = 0
     fp_count: int = 0
-    children: list[FileTreeNode] | None = None  # None for files, list for directories
+    children: list[FileTreeNode] | None = Field(default=None, description="None for files, list for directories")
 
 
 class FileTreeResponse(BaseModel):

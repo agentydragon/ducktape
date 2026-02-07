@@ -11,15 +11,14 @@ An **agent package** is a Docker image that runs a self-contained agent loop:
 - Tools are executed via subprocess inside the container
 - The container exits 0 on success, non-zero on failure
 
-## Package Structure
+## Modules
 
-```
-agent_pkg/
-└── runtime/   # Container-side: utilities for agent init and prompt rendering
-```
+- **mcp.py** — MCP client helpers for connecting to MCP servers from within containers
+- **output.py** — Output formatting (`print_section`, `run_command`, `print_file`, `render_doc`) and Mako template rendering
 
-- **runtime/** — Minimal utilities installed in containers for system prompt generation and output formatting. Has minimal dependencies (no workspace deps) since it's installed separately in container images.
+Minimal dependencies (no workspace deps like `adgn`) since this is installed separately in container images.
 
-## Agent Images
+## Users
 
-All agent images (props and editor) should be built by Bazel as OCI images (`oci_image` rules). Props agent types: critic, grader, prompt_optimizer, improvement. See <props/docs/agent-loop-inside-container.md> for the in-container architecture.
+- **editor_agent** uses `agent_pkg` for in-container utilities.
+- **props** has its own agent infrastructure and does not depend on `agent_pkg`.

@@ -2,7 +2,7 @@
 
 Read endpoints use agent credential passthrough - RLS policies filter results
 based on the caller's database role. Write endpoints (validation triggers)
-require admin access.
+require admin access. Critic run endpoint (POST /critic) requires critic_run_access ACL.
 """
 
 from __future__ import annotations
@@ -20,10 +20,19 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from props.backend.auth import AgentDb, parse_credentials, require_admin_access, validate_postgres_credentials
+from props.agents.critic.exceptions import CriticExecutionError
+from props.backend.auth import (
+    AgentDb,
+    CallerType,
+    parse_credentials,
+    require_admin_access,
+    require_critic_run_access,
+    validate_postgres_credentials,
+)
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
+from props.core.eval_api_models import RunCriticRequest, RunCriticResponse
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
 from props.core.splits import Split
@@ -76,8 +85,8 @@ class ValidationRunRequest(BaseModel):
     example_kind: ExampleKind
     split: Split = Split.VALID
     n_samples: int = Field(ge=1, le=50, default=5)
-    critic_model: str = "gpt-5.1-codex-mini"
-    # Note: grader_model removed - grading is handled by snapshot grader daemons
+    critic_model: str
+    budget_usd: float = Field(default=5.0, description="Max USD cost per critic agent")
 
 
 class ValidationRunResponse(BaseModel):
@@ -118,7 +127,7 @@ class GraderRunInfo(BaseModel):
 
     agent_run_id: UUID
     status: AgentRunStatus
-    grading_edges: list[GradingEdgeInfo]  # This grader's output edges
+    grading_edges: list[GradingEdgeInfo] = Field(description="This grader's output edges")
 
 
 class GradingEdgeInfo(BaseModel):
@@ -152,22 +161,22 @@ class CriticRunSpecifics(BaseModel):
     """Critic-specific fields."""
 
     agent_type: Literal[AgentType.CRITIC] = AgentType.CRITIC
-    resolved_files: list[str] | None  # For file_set examples
-    grader_runs: list[GraderRunInfo]  # Grader runs with their edges nested
-    reported_issues: list[ReportedIssueInfo]  # Issues found by the critic
+    resolved_files: list[str] | None = Field(description="Resolved file paths for file_set examples")
+    grader_runs: list[GraderRunInfo] = Field(description="Grader runs with their edges nested")
+    reported_issues: list[ReportedIssueInfo] = Field(description="Issues found by the critic")
 
 
 class GraderRunSpecifics(BaseModel):
     """Grader-specific fields."""
 
     agent_type: Literal[AgentType.GRADER] = AgentType.GRADER
-    grading_edges: list[GradingEdgeInfo]  # Output edges from this grader
+    grading_edges: list[GradingEdgeInfo] = Field(description="Output edges from this grader")
 
 
 class OtherRunSpecifics(BaseModel):
     """Other agent types have no specific fields."""
 
-    agent_type: Literal[AgentType.PROMPT_OPTIMIZER, AgentType.IMPROVEMENT, AgentType.FREEFORM]
+    agent_type: Literal[AgentType.CRITIC_DEV_OPTIMIZE, AgentType.CRITIC_DEV_IMPROVE, AgentType.FREEFORM]
 
 
 RunSpecifics = Annotated[CriticRunSpecifics | GraderRunSpecifics | OtherRunSpecifics, Field(discriminator="agent_type")]
@@ -181,7 +190,9 @@ class LLMCostStats(BaseModel):
     total_cached_tokens: int
     total_output_tokens: int
     total_cost_usd: float
-    by_model: dict[str, dict]  # model -> {requests, input_tokens, cached_tokens, output_tokens, cost_usd}
+    by_model: dict[str, dict] = Field(
+        description="model -> {requests, input_tokens, cached_tokens, output_tokens, cost_usd}"
+    )
 
 
 class AgentRunDetail(BaseModel):
@@ -193,6 +204,7 @@ class AgentRunDetail(BaseModel):
     parent_agent_run_id: UUID | None
     model: str
     status: AgentRunStatus
+    budget_usd: float
     container_exit_code: int | None
     created_at: datetime
     updated_at: datetime
@@ -266,16 +278,14 @@ class LLMRequestsResponse(BaseModel):
 
 @dataclass
 class ValidationJob:
-    """Tracks a validation batch job.
-
-    Note: grader_model removed - grading is handled by snapshot grader daemons.
-    """
+    """Tracks a validation batch job."""
 
     job_id: UUID
     image_digest: str
     example_kind: ExampleKind
     n_samples: int
     critic_model: str
+    budget_usd: float
     status: JobStatus = JobStatus.RUNNING
     completed: int = 0
     failed: int = 0
@@ -447,6 +457,7 @@ async def trigger_validation_runs(
         example_kind=body.example_kind,
         n_samples=n_to_sample,
         critic_model=body.critic_model,
+        budget_usd=body.budget_usd,
         examples=example_specs,
     )
     _jobs[job_id] = job
@@ -482,7 +493,7 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
                     model=job.critic_model,
                     timeout_seconds=timeout_seconds,
                     parent_run_id=None,
-                    budget_usd=None,
+                    budget_usd=job.budget_usd,
                 )
 
                 # Check critic status
@@ -520,6 +531,69 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
     except Exception:
         logger.exception(f"[Job {job.job_id}] Batch failed")
         job.status = JobStatus.FAILED
+
+
+# --- Critic Run Endpoints ---
+
+
+@router.post("/critic")
+async def run_critic(
+    request: Request,
+    body: RunCriticRequest,
+    admin_db: AdminDb,
+    auth: Annotated[tuple[CallerType, UUID | None], Depends(require_critic_run_access)],
+) -> RunCriticResponse:
+    """Run critic agent using an agent package.
+
+    Validates split-based access restrictions:
+    - TRAIN split: all example types allowed
+    - VALID split: restrictions depend on target_metric mode
+    - TEST split: completely off-limits
+
+    Returns critic_run_id. Use GET /critic/{critic_run_id}/grading_status to poll for results.
+    """
+    _, parent_run_id = auth
+    registry = get_registry(request)
+
+    # Validate snapshot and example
+    with admin_db.session() as session:
+        snapshot_slug = body.example.snapshot_slug
+        db_snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one_or_none()
+        if not db_snapshot:
+            raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_slug} not found")
+
+        if db_snapshot.split == Split.TEST:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied: test split is off-limits. Snapshot {snapshot_slug} is in test split.",
+            )
+
+        example = Example.from_spec_or_none(session, body.example)
+        if not example:
+            raise HTTPException(status_code=404, detail=f"Example not found: {body.example.model_dump()}")
+
+    # Execute critic run — registry resolves image ref and raises on errors
+    try:
+        critic_run_id = await registry.run_critic(
+            image_ref=body.definition_id,
+            example=body.example,
+            model=body.critic_model,
+            timeout_seconds=body.timeout_seconds,
+            parent_run_id=parent_run_id,
+            budget_usd=body.budget_usd,
+        )
+    except CriticExecutionError as e:
+        raise HTTPException(status_code=500, detail=f"Critic execution failed: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    # Get final status
+    with admin_db.session() as session:
+        critic_run = session.get(AgentRun, critic_run_id)
+        assert critic_run is not None
+        status = critic_run.status
+
+    return RunCriticResponse(critic_run_id=critic_run_id, status=status)
 
 
 # --- Run Detail Endpoints ---
@@ -692,6 +766,7 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
             parent_agent_run_id=run.parent_agent_run_id,
             model=run.model,
             status=run.status,
+            budget_usd=run.budget_usd,
             container_exit_code=run.container_exit_code,
             created_at=run.created_at,
             updated_at=run.updated_at,

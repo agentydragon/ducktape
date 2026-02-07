@@ -47,12 +47,7 @@ services:
       - props-internal
       - default # For host port publishing (internal network blocks it)
 
-  # Unified backend: dashboard API + LLM proxy + registry proxy + eval API
-  # Dashboard API: /api/stats, /api/runs, /api/gt
-  # LLM Proxy: POST /v1/responses
-  # Registry Proxy: /v2/* (OCI Distribution API)
-  # Eval API: /api/eval/run_critic, /api/eval/grading_status/{run_id}
-  # Note: wait_until_graded is implemented by agents polling the database directly
+  # Unified backend — see docs/backend_api.md for endpoint reference
   backend:
     image: props-backend:latest
     container_name: props-backend

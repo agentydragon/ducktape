@@ -11,8 +11,8 @@ from props.core.splits import Split
 class GitSource(BaseModel):
     vcs: Literal["git"]
     url: str
-    commit: str  # Full commit SHA for cache validation
-    ref: str | None = None  # Optional tag/branch name for convenience
+    commit: str = Field(description="Full commit SHA for cache validation")
+    ref: str | None = Field(default=None, description="Optional tag/branch name for convenience")
 
 
 class GitHubSource(BaseModel):
@@ -41,7 +41,7 @@ class BundleFilter(BaseModel):
     - No wildcards needed for "everything under" (e.g., "adgn/" includes all of adgn/)
     """
 
-    source_commit: str  # Full commit SHA in the original source repository
+    source_commit: str = Field(description="Full commit SHA in the original source repository")
     include: list[str] | None = None
     exclude: list[str] | None = None
 

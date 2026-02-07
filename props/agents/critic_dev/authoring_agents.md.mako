@@ -41,7 +41,7 @@ The backend's LLM proxy at `OPENAI_BASE_URL` authenticates with `OPENAI_API_KEY`
 |------------|--------|--------|------------------------|
 | PostgreSQL (RLS-scoped) | Yes | Yes | Yes |
 | LLM proxy (`/v1/responses`) | Yes | Yes | Yes |
-| Eval API (`/api/eval/*`) | No | No | Yes |
+| Runs API (`/api/runs/critic`) | No | No | Yes |
 | Registry proxy (`/v2/*`) | No | No | Yes |
 
 ## Available Base Images
@@ -111,8 +111,7 @@ The unified backend at `PROPS_BACKEND_URL` serves all functionality:
 
 | Path | Description | Your access |
 |------|-------------|-------------|
-| `/api/eval/run_critic` | Run a critic agent on an example | Yes |
-| `/api/eval/grading_status/{id}` | Poll for grading completion | Yes |
+| `POST /api/runs/critic` | Run a critic agent on an example | Yes |
 | `/v2/*` | Registry proxy (OCI API) | Yes |
 | `/v1/responses` | LLM proxy (OpenAI API) | Yes |
 | `/api/stats/*` | Dashboard stats | No (admin) |
@@ -127,16 +126,18 @@ The backend is a FastAPI app. Discover all endpoints and request/response schema
 curl -s $PROPS_BACKEND_URL/openapi.json | python3 -m json.tool
 ```
 
-### Eval API
+### Runs API
 
-Use the `run_critic` and `wait_until_graded` tools provided to you, or the bundled `EvalClient`:
+Use the `run_critic` and `wait_until_graded` tools provided to you, or the bundled `CriticRunClient`:
 
 ```python
-from props.agents.critic_dev.eval_client import EvalClient
+from props.agents.critic_dev.eval_client import CriticRunClient
 
-async with EvalClient.from_env() as client:
+async with CriticRunClient.from_env() as client:
     result = await client.run_critic(definition_id="sha256:...", ...)
-    grading = await client.wait_until_graded(result.critic_run_id)
+    # Wait for grading (polls DB directly, not via REST API)
+    from props.agents.critic_dev.grading import wait_until_graded
+    grading = await wait_until_graded(result.critic_run_id, db)
 ```
 
 The backend serves as your OCI registry — use `PROPS_BACKEND_URL` as the registry host for all `crane` and `/v2/` operations.

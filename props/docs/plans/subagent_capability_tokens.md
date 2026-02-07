@@ -4,7 +4,7 @@
 > The separate `critic_runs`, `grader_runs`, and `prompt_optimization_runs` tables
 > described here have been replaced by a single `agent_runs` table with `type_config` JSONB.
 > Some concepts (capability tokens, RLS patterns) are still relevant but the schema details are outdated.
-> See `docs/agent-loop-inside-container.md` for the current architecture.
+> See `docs/agent_loop_inside_container.md` for the current architecture.
 
 ## Summary
 

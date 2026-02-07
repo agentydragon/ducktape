@@ -65,8 +65,8 @@ def e2e_registry_url(e2e_registry: DockerContainer) -> str:
 _AGENT_IMAGES = {
     "critic": "_main/props/agents/critic/image",
     "grader": "_main/props/agents/grader/image",
-    "prompt_optimizer": "_main/props/agents/critic_dev/optimize/image",
-    "improvement": "_main/props/agents/critic_dev/improve/image",
+    "critic_dev_optimize": "_main/props/agents/critic_dev/optimize/image",
+    "critic_dev_improve": "_main/props/agents/critic_dev/improve/image",
 }
 
 
@@ -83,5 +83,5 @@ def _make_image_fixture(repo_name: str):
 
 critic_image = _make_image_fixture("critic")
 grader_image = _make_image_fixture("grader")
-prompt_optimizer_image = _make_image_fixture("prompt_optimizer")
-improvement_image = _make_image_fixture("improvement")
+critic_dev_optimize_image = _make_image_fixture("critic_dev_optimize")
+critic_dev_improve_image = _make_image_fixture("critic_dev_improve")

@@ -61,7 +61,7 @@ TEST_TIMEOUT_SECONDS = 120
 @pytest.mark.timeout(300)
 @pytest.mark.slow
 async def test_po_orchestrates_critic_with_system_prompt_check(
-    synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
+    synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
     """Test critic-dev optimizer orchestration with critic system prompt verification.
 
@@ -86,7 +86,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         # Call run_critic tool (DirectToolProvider)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=None
+            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=5.0
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -127,7 +127,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         ORCHESTRATION_CRITIC_MODEL: critic_mock,
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
-    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
+    async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
 
         # Start grader daemon in background
@@ -137,7 +137,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
 
         try:
             # Run critic-dev optimizer
-            run_id = await stack.registry.run_prompt_optimizer(
+            run_id = await stack.registry.run_critic_dev_optimize(
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,
@@ -160,7 +160,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
 @pytest.mark.timeout(300)
 @pytest.mark.slow
 async def test_po_creates_custom_critic_with_token(
-    synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
+    synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
     """Test full custom image flow: PO creates critic image, critic verifies prompt token.
 
@@ -227,7 +227,7 @@ AGENT_EOF
             definition_id=new_digest,  # Use the custom image!
             example=example,
             timeout_seconds=120,
-            budget_usd=None,
+            budget_usd=5.0,
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -268,13 +268,13 @@ AGENT_EOF
         ORCHESTRATION_CRITIC_MODEL: critic_mock,
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
-    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
+    async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         grader_task = asyncio.create_task(
             stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
         )
 
         try:
-            run_id = await stack.registry.run_prompt_optimizer(
+            run_id = await stack.registry.run_critic_dev_optimize(
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,
@@ -331,7 +331,7 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
             parent_run_id=None,
-            budget_usd=None,
+            budget_usd=5.0,
         )
 
         # Verify critic completed (it should complete even though push failed)

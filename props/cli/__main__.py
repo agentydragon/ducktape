@@ -19,22 +19,19 @@ from typer_di import TyperDI
 from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
 from props.agents.critic_dev.shared import TargetMetric
-from props.agents.runtime import get_current_agent_run
 from props.cli import common_options as opt
 from props.cli.cmd_db import db_app
 from props.cli.cmd_gt import gt_app
 from props.cli.cmd_snapshot import snapshot_app
 from props.cli.cmd_stats import stats_app
-from props.cli.shared import make_example_from_files
 from props.config import load_config_from_env
 from props.core.agent_types import AgentType
 from props.core.display import fmt_pct, short_sha
-from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.oci_utils import get_registry_proxy_config
 from props.core.splits import Split
 from props.db.database import Database
-from props.db.models import AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, ReportedIssue, Snapshot
+from props.db.models import AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, Snapshot
 from props.db.query_builders import query_recall_by_example
 
 # cmd_gepa imported lazily below (gepa is optional)
@@ -83,31 +80,6 @@ def _init_logging_and_db(
     ctx.obj = db
 
 
-@app.command("run-info")
-def run_info_cmd(ctx: typer.Context) -> None:
-    """Show current agent run information (works for any agent type).
-
-    Displays:
-    - agent_run_id: The unique identifier for this run
-    - agent_type: The type of agent (critic, grader, etc.)
-    - type_config: The full configuration for this agent run
-    """
-
-    db: Database = ctx.obj
-    with db.session() as session:
-        agent_run = get_current_agent_run(session)
-        typer.echo("Agent Run Info:")
-        typer.echo(f"  agent_run_id: {agent_run.agent_run_id}")
-        typer.echo(f"  image_digest: {agent_run.image_digest}")
-        typer.echo(f"  model: {agent_run.model}")
-        typer.echo(f"  status: {agent_run.status.value}")
-        if agent_run.parent_agent_run_id:
-            typer.echo(f"  parent_agent_run_id: {agent_run.parent_agent_run_id}")
-        typer.echo()
-        typer.echo("Type Config:")
-        typer.echo(agent_run.type_config.model_dump_json(indent=2))
-
-
 @app.command("prompt-optimize")
 @async_run
 async def prompt_optimize(
@@ -136,7 +108,7 @@ async def prompt_optimize(
         registry_config=get_registry_proxy_config(),
     )
     try:
-        run_id = await registry.run_prompt_optimizer(
+        run_id = await registry.run_critic_dev_optimize(
             budget=budget,
             optimizer_model=optimizer_model,
             critic_model=critic_model,
@@ -153,7 +125,7 @@ async def prompt_optimize(
 async def prompt_improve_cmd(
     ctx: typer.Context,
     n_examples: int = typer.Option(10, "--n-examples", "-n", help="Number of training examples to analyze"),
-    token_budget: int = typer.Option(200_000, "--token-budget", help="Maximum token budget"),
+    budget_usd: float = typer.Option(50.0, "--budget", "-b", help="Maximum USD budget"),
     improvement_model: str = opt.OPT_OPTIMIZER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
     out_dir: Path | None = opt.OPT_OUT_DIR,
@@ -330,7 +302,7 @@ async def prompt_improve_cmd(
     console.print("\n[bold]Running improvement agent[/bold]")
     console.print(f"  Improvement model: {improvement_model}")
     console.print(f"  Critic model: {critic_model}")
-    console.print(f"  Token budget: {token_budget:,}")
+    console.print(f"  Budget: ${budget_usd:.2f}")
     console.print(f"  Examples: {len(allowed_examples)}")
     console.print()
 
@@ -345,10 +317,10 @@ async def prompt_improve_cmd(
         registry_config=get_registry_proxy_config(),
     )
     try:
-        run_id = await registry.run_improvement_agent(
+        run_id = await registry.run_critic_dev_improve(
             examples=allowed_examples,
             baseline_image_digests=[definition_id],
-            token_budget=token_budget,
+            budget_usd=budget_usd,
             improvement_model=improvement_model,
             critic_model=critic_model,
             timeout_seconds=timeout_seconds,
@@ -381,95 +353,6 @@ except ImportError:
 
 # Stats command group
 app.add_typer(stats_app, name="stats")
-
-
-# ---------- Shared helpers for run ----------
-
-
-@app.command("run")
-@async_run
-async def cmd_run(
-    ctx: typer.Context,
-    # Scope (required)
-    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
-    # Definition ID (required)
-    definition_id: DefinitionId = opt.OPT_DEFINITION_ID,
-    # File filtering
-    files: list[str] | None = opt.OPT_FILES_FILTER,
-    # Common options
-    model: str = opt.OPT_MODEL,
-    timeout_seconds: int = opt.OPT_TIMEOUT_SECONDS,
-) -> None:
-    """Run critic agent on a snapshot with DB persistence.
-
-    Uses AgentHandle to load agent package from DB. The package's /init script
-    outputs the system prompt.
-
-    Example:
-        props run ducktape/2025-11-26-00 --definition-id critic
-    """
-    db: Database = ctx.obj
-    config = load_config_from_env()
-    docker_client = aiodocker.Docker()
-
-    registry = AgentRegistry(
-        docker_client,
-        db=db,
-        db_config=db.config,
-        backend_url=config.backend_url,
-        agent_base_env=config.agent_env,
-        registry_config=get_registry_proxy_config(),
-    )
-    try:
-        # Get available files from database (no hydration)
-        with db.session() as session:
-            snapshot_obj = session.query(Snapshot).filter_by(slug=snapshot).one()
-            available_files = snapshot_obj.files_with_issues()
-
-        # Create example spec from file filter
-        available_files_dict = dict.fromkeys(available_files)
-        example_spec = make_example_from_files(snapshot, available_files_dict, files)
-
-        # Run critic via registry
-        critic_run_id = await registry.run_critic(
-            image_ref=definition_id,  # definition_id is actually an image ref
-            example=example_spec,
-            model=model,
-            timeout_seconds=timeout_seconds,
-            parent_run_id=None,
-            budget_usd=None,
-        )
-
-        # Print results
-        typer.echo("\n=== Critique Complete ===")
-        typer.echo(f"Critic Run ID: {critic_run_id}")
-
-        with db.session() as session:
-            critic_run = session.get(AgentRun, critic_run_id)
-            if critic_run is None:
-                raise RuntimeError(f"Critic run {critic_run_id} not found in database")
-
-            if critic_run.status == AgentRunStatus.EXITED and critic_run.container_exit_code == 0:
-                issues = session.query(ReportedIssue).filter_by(agent_run_id=critic_run_id).all()
-                typer.echo(f"Issues found: {len(issues)}")
-                for issue in issues:
-                    typer.echo(f"\n[{issue.issue_id}] {issue.rationale}")
-                    for occ in issue.occurrences:
-                        for loc in occ.locations:
-                            loc_str = loc.file
-                            if loc.start_line:
-                                loc_str += f":{loc.start_line}"
-                                if loc.end_line and loc.end_line != loc.start_line:
-                                    loc_str += f"-{loc.end_line}"
-                            typer.echo(f"  - {loc_str}")
-            else:
-                typer.echo(
-                    f"Critic run ended with status: {critic_run.status.value}"
-                    f" (exit_code={critic_run.container_exit_code})",
-                    err=True,
-                )
-    finally:
-        await registry.close()
 
 
 if __name__ == "__main__":

@@ -32,67 +32,10 @@ See build_historical_gepa_state() implementation for complete warm-start logic.
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 
-from sqlalchemy import text
-
-from props.core.ids import SnapshotSlug
 from props.db.examples import Example
 
 logger = logging.getLogger(__name__)
-
-
-def _compute_pareto_frontier_from_sql(
-    session,
-    critic_model: str,
-    split: str,
-    valset_idx_by_key: dict[tuple[SnapshotSlug, str], int],
-    sha_to_prog_idx: dict[str, int],
-) -> tuple[dict[int, float], dict[int, set[int]]]:
-    """Query Pareto frontier from pareto_frontier_by_example view.
-
-    Args:
-        session: Database session
-        critic_model: Model name to filter
-        split: Split to filter (e.g., "valid")
-        valset_idx_by_key: Maps (snapshot_slug, scope_hash) to validation dataset index
-        sha_to_prog_idx: Maps prompt SHA to program index in checkpoint
-
-    Returns:
-        (pareto_front_valset, program_at_pareto_front_valset) tuple where:
-        - pareto_front_valset: Maps val_idx -> best_score
-        - program_at_pareto_front_valset: Maps val_idx -> set of program indices achieving best score
-    """
-    pareto_data = session.execute(
-        text("""
-            SELECT
-                snapshot_slug,
-                scope_hash,
-                best_recall,
-                winning_prompt_shas
-            FROM pareto_frontier_by_example
-            WHERE split = :split AND critic_model = :critic_model
-        """),
-        {"split": split, "critic_model": critic_model},
-    ).fetchall()
-
-    pareto_front_valset: dict[int, float] = {}
-    program_at_pareto_front_valset: dict[int, set[int]] = defaultdict(set)
-
-    for snapshot_slug, scope_hash, best_recall, winning_prompt_shas in pareto_data:
-        # Map (snapshot_slug, scope_hash) to valset index
-        val_idx = valset_idx_by_key.get((snapshot_slug, scope_hash))
-        if val_idx is None:
-            # Example not in current valset (e.g., split changed)
-            continue
-
-        pareto_front_valset[val_idx] = best_recall
-
-        # Map winning prompt SHAs to program indices
-        # All winning prompts must be in historical set (integrity check)
-        program_at_pareto_front_valset[val_idx] = {sha_to_prog_idx[sha] for sha in winning_prompt_shas}
-
-    return pareto_front_valset, program_at_pareto_front_valset
 
 
 def build_historical_gepa_state(valset: list[Example], critic_model: str, grader_model: str) -> dict | None:

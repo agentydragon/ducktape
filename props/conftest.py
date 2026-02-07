@@ -35,12 +35,12 @@ from props.testing.fixtures.e2e import make_openai_client, mock_snapshot_slug, n
 # Import e2e container fixture directly from its module
 from props.testing.fixtures.e2e_container import e2e_stack
 from props.testing.fixtures.e2e_infra import (
+    critic_dev_improve_image,
+    critic_dev_optimize_image,
     critic_image,
     e2e_registry,
     e2e_registry_url,
     grader_image,
-    improvement_image,
-    prompt_optimizer_image,
 )
 from props.testing.fixtures.ground_truth import (
     example_multi_tp_orm,

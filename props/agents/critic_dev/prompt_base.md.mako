@@ -42,19 +42,13 @@ Everything. A critic is any container that writes critique data to the database.
 
 **Remember:** You're building an agent, not just writing a prompt. Use all the tools at your disposal.
 
-## Source Code Inspection
-
-The `props` library is bundled in your container at `/app/critic.runfiles/_main/`. Key files:
-
-```bash
-cat /app/critic.runfiles/_main/props/agents/critic/main.py          # Critic entry point and tools
-cat /app/critic.runfiles/_main/props/agents/runtime.py              # Runtime helpers
-cat /app/critic.runfiles/_main/props/db/models.py                   # SQLAlchemy models
-cat /app/critic.runfiles/_main/agent_core/agent.py                  # Agent core loop
-cat /app/critic.runfiles/_main/props/agents/critic_dev/eval_client.py  # Eval client
-```
-
-For schema introspection (no DB connection needed), see the Schema Discovery section below.
+${source_inspection("critic", [
+    ("props/agents/critic/main.py", "Critic entry point and tools"),
+    ("props/agents/runtime.py", "Runtime helpers"),
+    ("props/db/models.py", "SQLAlchemy models"),
+    ("agent_core/agent.py", "Agent core loop"),
+    ("props/agents/critic_dev/eval_client.py", "Eval client"),
+])}
 Read source to understand tool argument schemas and agent loop behavior rather than guessing.
 
 ## Reference

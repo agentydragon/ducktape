@@ -18,7 +18,7 @@ Pants parses imports and infers deps automatically. But execution is still herme
 - You can **forbid** deps explicitly for layering:
 
 ```python
-# agent_pkg/runtime/BUILD
+# agent_pkg/BUILD
 python_sources(
     dependencies=["!//adgn/**"],  # Forbid imports from adgn
 )
@@ -74,7 +74,7 @@ Pants is a **build system**, not a dev environment manager. It assumes tools exi
 [python.dependency_rules]
 # agent_pkg.runtime must not import from adgn or agent_server
 [[python.dependency_rules]]
-path = "agent_pkg/runtime/**"
+path = "agent_pkg/**"
 deny = ["adgn/**", "agent_server/**"]
 
 # agent_server can import from agent_pkg but not adgn internals
@@ -271,7 +271,7 @@ mypy_test(
 Via visibility:
 
 ```python
-# agent_pkg/runtime/BUILD
+# agent_pkg/BUILD
 py_library(
     name = "runtime",
     srcs = glob(["**/*.py"]),

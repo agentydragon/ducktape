@@ -32,7 +32,7 @@ from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
 # Synthetic digests for DB-level tests (not real OCI images)
 FAKE_CRITIC_DIGEST = "sha256:" + "0" * 64
 FAKE_GRADER_DIGEST = "sha256:" + "1" * 64
-FAKE_PROMPT_OPTIMIZER_DIGEST = "sha256:" + "2" * 64
+FAKE_CRITIC_DEV_OPTIMIZE_DIGEST = "sha256:" + "2" * 64
 
 # Props-specific constants
 EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])
@@ -46,7 +46,7 @@ def ensure_fake_agent_definitions(session: Session) -> None:
     for digest, agent_type in [
         (FAKE_CRITIC_DIGEST, AgentType.CRITIC),
         (FAKE_GRADER_DIGEST, AgentType.GRADER),
-        (FAKE_PROMPT_OPTIMIZER_DIGEST, AgentType.PROMPT_OPTIMIZER),
+        (FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, AgentType.CRITIC_DEV_OPTIMIZE),
     ]:
         if session.query(AgentDefinition).filter_by(digest=digest).first() is None:
             session.add(AgentDefinition(digest=digest, agent_type=agent_type))
@@ -73,7 +73,12 @@ def make_fake_critic_run(
     type_config = CriticTypeConfig(example=example)
 
     return AgentRun(
-        agent_run_id=agent_run_id, image_digest=FAKE_CRITIC_DIGEST, model=model, status=status, type_config=type_config
+        agent_run_id=agent_run_id,
+        image_digest=FAKE_CRITIC_DIGEST,
+        model=model,
+        status=status,
+        type_config=type_config,
+        budget_usd=5.0,
     )
 
 
@@ -97,7 +102,12 @@ def make_fake_grader_run(
     type_config = GraderTypeConfig(snapshot_slug=snapshot_slug)
 
     return AgentRun(
-        agent_run_id=agent_run_id, image_digest=FAKE_GRADER_DIGEST, model=model, status=status, type_config=type_config
+        agent_run_id=agent_run_id,
+        image_digest=FAKE_GRADER_DIGEST,
+        model=model,
+        status=status,
+        type_config=type_config,
+        budget_usd=10_000.0,
     )
 
 
@@ -216,6 +226,42 @@ def make_fake_grader_run_with_credit(
     session.add(edge)
 
     return grader_run
+
+
+def make_critic_run_with_issues(db: Database, example: ExampleSpec, num_issues: int = 1) -> UUID:
+    """Create a committed critic run with ReportedIssue rows.
+
+    Returns the critic_run_id.
+    """
+    with db.session() as session:
+        critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.EXITED)
+        session.add(critic_run)
+        session.flush()
+
+        for i in range(1, num_issues + 1):
+            issue_id = f"input-{i:03d}"
+            session.add(
+                ReportedIssue(
+                    agent_run_id=critic_run.agent_run_id, issue_id=issue_id, rationale=f"Test input issue {i}"
+                )
+            )
+
+        session.commit()
+        return critic_run.agent_run_id
+
+
+def make_grader_run_for_critic(
+    db: Database, critic_run_id: UUID, status: AgentRunStatus = AgentRunStatus.EXITED
+) -> UUID:
+    """Create a grader run for a given critic run, deriving the snapshot from the critic config."""
+    with db.session() as session:
+        critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()
+        snapshot_slug = critic_run.critic_config().example.snapshot_slug
+
+        grader_run = make_fake_grader_run(session=session, snapshot_slug=snapshot_slug, status=status)
+        session.add(grader_run)
+        session.commit()
+        return grader_run.agent_run_id
 
 
 def _make_example_with_runs(slug: SnapshotSlug, credit: float, db: Database) -> tuple[ExampleSpec, AgentRun, AgentRun]:

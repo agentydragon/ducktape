@@ -22,11 +22,11 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
-from hamcrest import all_of, assert_that
+from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen
-from mcp_infra.exec.matchers import exited_successfully, stdout_contains
-from props.agents.critic_dev.testing.mocks import CriticDevMock
+from mcp_infra.exec.matchers import exited_successfully
+from props.agents.critic_dev.testing.mocks import CriticDevMock, make_cli_test_mock
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
@@ -94,16 +94,16 @@ chmod +x /workspace/improved/init""",
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
 async def test_prompt_improve_e2e_creates_package(
-    e2e_stack, subtract_file_example, improvement_image, critic_image, db: Database
+    e2e_stack, subtract_file_example, critic_dev_improve_image, critic_image, db: Database
 ):
     """Test improvement agent can create package directory in container."""
     mock = make_improvement_mock()
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[improvement_image, critic_image]) as stack:
-        result = await stack.registry.run_improvement_agent(
+    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
+        result = await stack.registry.run_critic_dev_improve(
             examples=[subtract_file_example],
             baseline_image_digests=[stack.image_digests["critic"]],
-            token_budget=100_000,
+            budget_usd=50.0,
             improvement_model=stack.model,
             critic_model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -114,15 +114,15 @@ async def test_prompt_improve_e2e_creates_package(
 
     with db.session() as session:
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result.run_id).one()
-        improvement_config = agent_run.improvement_config()
-        assert improvement_config.agent_type == "improvement"
+        improvement_config = agent_run.critic_dev_improve_config()
+        assert improvement_config.agent_type == "critic_dev_improve"
         assert improvement_config.allowed_examples is not None
 
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
 async def test_prompt_improve_e2e_multiple_examples(
-    e2e_stack, test_snapshot, improvement_image, critic_image, db: Database
+    e2e_stack, test_snapshot, critic_dev_improve_image, critic_image, db: Database
 ):
     """Test improvement agent with multiple training examples."""
     with db.session() as session:
@@ -132,11 +132,11 @@ async def test_prompt_improve_e2e_multiple_examples(
 
     mock = make_improvement_mock()
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[improvement_image, critic_image]) as stack:
-        result = await stack.registry.run_improvement_agent(
+    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
+        result = await stack.registry.run_critic_dev_improve(
             examples=allowed_examples,
             baseline_image_digests=[stack.image_digests["critic"]],
-            token_budget=100_000,
+            budget_usd=50.0,
             improvement_model=stack.model,
             critic_model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -156,22 +156,16 @@ async def test_prompt_improve_e2e_multiple_examples(
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
 async def test_cli_leaderboard_in_improvement_agent(
-    e2e_stack, subtract_file_example, test_train_example_with_runs, improvement_image, critic_image
+    e2e_stack, subtract_file_example, test_train_example_with_runs, critic_dev_improve_image, critic_image
 ):
     """Test that leaderboard CLI command works from improvement agent container."""
+    mock = make_cli_test_mock(["critic-dev", "leaderboard", "--limit", "5"], expected_output="76%")
 
-    @CriticDevMock.mock()
-    def mock(m: CriticDevMock) -> PlayGen:
-        yield None  # First request
-        result = yield from m.exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000)
-        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield m.report_failure("Leaderboard test completed")
-
-    async with e2e_stack({TEST_MODEL: mock}, images=[improvement_image, critic_image]) as stack:
-        result = await stack.registry.run_improvement_agent(
+    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
+        result = await stack.registry.run_critic_dev_improve(
             examples=[subtract_file_example],
             baseline_image_digests=[stack.image_digests["critic"]],
-            token_budget=100_000,
+            budget_usd=50.0,
             improvement_model=stack.model,
             critic_model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -183,22 +177,16 @@ async def test_cli_leaderboard_in_improvement_agent(
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
 async def test_cli_hard_examples_in_improvement_agent(
-    e2e_stack, subtract_file_example, test_train_example_with_runs, improvement_image, critic_image
+    e2e_stack, subtract_file_example, test_train_example_with_runs, critic_dev_improve_image, critic_image
 ):
     """Test that hard-examples CLI command works from improvement agent container."""
+    mock = make_cli_test_mock(["critic-dev", "hard-examples", "--limit", "5"], expected_output="76%")
 
-    @CriticDevMock.mock()
-    def mock(m: CriticDevMock) -> PlayGen:
-        yield None  # First request
-        result = yield from m.exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000)
-        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield m.report_failure("Hard examples test completed")
-
-    async with e2e_stack({TEST_MODEL: mock}, images=[improvement_image, critic_image]) as stack:
-        result = await stack.registry.run_improvement_agent(
+    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
+        result = await stack.registry.run_critic_dev_improve(
             examples=[subtract_file_example],
             baseline_image_digests=[stack.image_digests["critic"]],
-            token_budget=100_000,
+            budget_usd=50.0,
             improvement_model=stack.model,
             critic_model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
