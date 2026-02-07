@@ -305,7 +305,13 @@ def _get_local_registry_path() -> Path | None:
 
 
 def _write_bazel_config(settings: HookSettings) -> None:
-    """Write Bazel config to separate file for auth proxy integration."""
+    """Write Bazel config for auth proxy integration.
+
+    Writes to two locations:
+    1. The auth-proxy bazelrc (always written, used by --bazelrc= in wrapper)
+    2. ~/.bazelrc (only if it doesn't already exist, so non-wrapper bazel
+       invocations also pick up proxy config)
+    """
     truststore = settings.get_auth_proxy_truststore()
     combined_ca = settings.get_auth_proxy_combined_ca()
     proxy_rc = settings.get_auth_proxy_rc()
@@ -337,6 +343,17 @@ def _write_bazel_config(settings: HookSettings) -> None:
         local_registry_path=local_registry,
     )
     write_config(proxy_rc, result, "proxy bazelrc")
+
+    # Also write to ~/.bazelrc so that bazel invocations outside the wrapper
+    # (e.g. raw bazelisk calls) pick up proxy config. Skip if ~/.bazelrc
+    # already exists to avoid clobbering user configuration.
+    user_bazelrc = Path.home() / ".bazelrc"
+    if not user_bazelrc.exists():
+        header = "# Written by tools/claude_hooks session_start hook.\n# Delete this file to force regeneration.\n"
+        user_bazelrc.write_text(header + result)
+        logger.info("Wrote proxy bazelrc to %s", user_bazelrc)
+    else:
+        logger.debug("Skipping ~/.bazelrc (already exists)")
 
 
 def _create_combined_ca_bundle(settings: HookSettings) -> None:

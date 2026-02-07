@@ -58,7 +58,10 @@ def get_bazelisk_version(settings: HookSettings) -> str | None:
     bazelisk_path = settings.get_bazelisk_path()
     if not bazelisk_path.exists():
         return None
-    result = subprocess.run([bazelisk_path, "version"], capture_output=True, text=True, check=False)
+    # Use --version (a bazelisk flag) instead of "version" (a bazel subcommand).
+    # "bazel version" starts a Bazel server, which is expensive and may start
+    # without JVM proxy args if called outside the wrapper.
+    result = subprocess.run([bazelisk_path, "--version"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         return None
     # Return first line (e.g. "Bazelisk version: v1.25.0")
