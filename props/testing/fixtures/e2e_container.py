@@ -19,7 +19,7 @@ Usage:
     @pytest.mark.requires_docker
     async def test_critic_completes(e2e_stack, all_files_scope, critic_image):
         mock = make_critic_mock()
-        async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:
+        async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
             run_id = await stack.registry.run_critic(
                 image_ref=BUILTIN_TAG,
                 example=all_files_scope,
@@ -61,13 +61,11 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
+from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
 from test_util.oci import BazelImage, crane_push
 
 logger = logging.getLogger(__name__)
-
-# Default model name for tests
-TEST_MODEL = "test-model"
 
 # Hostname for containers to reach host services.
 # - Default "host.docker.internal" works with Docker bridge networking
@@ -194,6 +192,7 @@ async def _make_stack(
             config=PropsConfig(backend_url=backend_url, agent_env=agent_base_env),
             registry_proxy_config=registry_proxy_config,
             backend_url=backend_url,
+            extra_hosts=HOST_GATEWAY,
         )
 
         async with ensure_agent_network(async_docker_client), run_backend(deps, port=backend_port):
@@ -235,7 +234,7 @@ async def e2e_stack(
     Usage:
         async def test_something(e2e_stack, critic_image):
             mock = make_my_mock()
-            async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:
+            async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
                 run_id = await stack.registry.run_critic(...)
 
         # Multi-model
@@ -247,7 +246,7 @@ async def e2e_stack(
 
     @asynccontextmanager
     async def _factory(
-        mocks: Mapping[str, OpenAIModelProto], model: str = TEST_MODEL, *, images: Sequence[BazelImage] = ()
+        mocks: Mapping[str, OpenAIModelProto], model: str = DEFAULT_TEST_MODEL, *, images: Sequence[BazelImage] = ()
     ) -> AsyncIterator[E2EStack]:
         fake_openai = FakeOpenAIServer(dict(mocks), host="0.0.0.0", port=0)
         async with _make_stack(

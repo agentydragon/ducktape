@@ -139,6 +139,7 @@ docker_py_test(
         "//props/db:examples",
         "//props/db:models",
         "//props/orchestration:agent_credentials",
+        "//props/testing:constants",
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:runs",
         "@pypi//asyncpg",

@@ -23,6 +23,7 @@ from props.db import query_builders as qb
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
+from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
 
 pytestmark = [pytest.mark.integration]
@@ -247,7 +248,7 @@ class TestQueryBuilders:
             assert row.status is not None  # AgentRunStatus enum value
             assert row.created_at is not None
             # files_hash may be None for whole-snapshot examples, or a string for file-set examples
-            assert row.model == "test-model"
+            assert row.model == DEFAULT_TEST_MODEL
 
 
 class TestJsonbNullFiltering:

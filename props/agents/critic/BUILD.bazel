@@ -158,6 +158,7 @@ docker_py_test(
         "//props/core:oci_utils",
         "//props/db:database",
         "//props/db:models",
+        "//props/testing:constants",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

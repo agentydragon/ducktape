@@ -209,8 +209,10 @@ def check_termination_condition(
         if covered >= n_examples:
             if best_full is None or credit > best_full.total_credit:
                 best_full = _CandidateScore(row.agent_definition_id, credit, covered)
-        elif best_partial is None or covered > best_partial.coverage or (
-            covered == best_partial.coverage and credit > best_partial.total_credit
+        elif (
+            best_partial is None
+            or covered > best_partial.coverage
+            or (covered == best_partial.coverage and credit > best_partial.total_credit)
         ):
             best_partial = _CandidateScore(row.agent_definition_id, credit, covered)
 

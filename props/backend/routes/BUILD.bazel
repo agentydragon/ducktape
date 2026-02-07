@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 py_library(
@@ -40,6 +40,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//openai_utils:model",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/db:models",
@@ -102,10 +103,52 @@ docker_py_test(
         "//props/core/models:examples",
         "//props/db:database",
         "//props/db:models",
+        "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+docker_py_test(
+    name = "test_runs",
+    srcs = ["test_runs.py"],
+    imports = ["../../.."],
+    deps = [
+        ":runs",
+        "//props:conftest",
+        "//props/backend:auth",
+        "//props/backend:conftest",
+        "//props/backend:deps",
+        "//props/core:agent_types",
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/orchestration:agent_registry",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_registry_proxy",
+    srcs = ["test_registry_proxy.py"],
+    imports = ["../../.."],
+    deps = [
+        ":registry",
+        "//props:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
     ],
 )
 

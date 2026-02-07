@@ -43,7 +43,7 @@ from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge
-from props.testing.fixtures.e2e_container import TEST_MODEL
+from props.testing.constants import DEFAULT_TEST_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
         yield m.insert_occurrence("test-issue-001", "subtract.py", 1, 5)
         yield m.submit(issues_count=1, summary="Found 1 test issue")
 
-    async with e2e_stack({TEST_MODEL: critic_mock}, images=[critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: critic_mock}, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
             image_ref=stack.image_digests["critic"],
             example=example_spec,
@@ -111,10 +111,9 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
 @pytest.mark.requires_docker
 async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs, critic_dev_optimize_image):
     """Test that leaderboard CLI command shows actual recall values from database."""
-    example, _critic_run, _grader_run = test_train_example_with_runs
     mock = make_cli_test_mock(["critic-dev", "leaderboard", "--limit", "5"], expected_output="76%")
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
         await stack.registry.run_critic_dev_optimize(
             budget=1.0,
             optimizer_model=stack.model,
@@ -128,10 +127,9 @@ async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_r
 @pytest.mark.requires_docker
 async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs, critic_dev_optimize_image):
     """Test that hard-examples CLI command shows example metrics."""
-    example, _critic_run, _grader_run = test_train_example_with_runs
     mock = make_cli_test_mock(["critic-dev", "hard-examples", "--limit", "5"], expected_output="76%")
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
         await stack.registry.run_critic_dev_optimize(
             budget=1.0,
             optimizer_model=stack.model,
@@ -178,7 +176,7 @@ async def test_optimizer_orchestrates_critic(
         # Call run_critic tool (DirectToolProvider tool that calls REST API)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=5.0
+            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=1.0
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -270,14 +268,16 @@ async def test_optimizer_orchestrates_critic(
                 )
                 assert len(critic_runs) >= 1, "Expected at least one critic run spawned by optimizer"
 
+                # Collect IDs while session is open to avoid DetachedInstanceError
+                critic_run_ids = [cr.agent_run_id for cr in critic_runs]
                 for cr in critic_runs:
                     assert cr.status == AgentRunStatus.EXITED, f"Critic run {cr.agent_run_id} should be COMPLETED"
 
             # Verify grading edges were created (drift resolved)
             with synced_db.session() as session:
-                for cr in critic_runs:
-                    edges = session.query(GradingEdge).filter_by(critique_run_id=cr.agent_run_id).all()
-                    logger.info(f"Critic {cr.agent_run_id} has {len(edges)} grading edges")
+                for crid in critic_run_ids:
+                    edges = session.query(GradingEdge).filter_by(critique_run_id=crid).all()
+                    logger.info(f"Critic {crid} has {len(edges)} grading edges")
                     # The critic mock creates 1 issue, and fill_remaining creates edges for each GT occurrence
                     assert len(edges) >= 0, "Grading edges should be created"
 

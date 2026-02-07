@@ -42,6 +42,7 @@ from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
 from props.orchestration.agent_credentials import AgentCredentials
+from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, make_fake_critic_run
 
@@ -312,7 +313,7 @@ async def test_critic_dev_optimize_cannot_see_valid_split_llm_requests(
         # Add an LLM request for this run
         llm_request = LLMRequest(
             agent_run_id=valid_agent_run_id,
-            model="gpt-4o",
+            model=DEFAULT_TEST_MODEL,
             request_body={"messages": [{"role": "user", "content": "test"}]},
         )
         session.add(llm_request)
@@ -356,7 +357,7 @@ async def test_critic_dev_optimize_can_see_train_split_llm_requests(
         # Add an LLM request for this run
         llm_request = LLMRequest(
             agent_run_id=train_agent_run_id,
-            model="gpt-4o",
+            model=DEFAULT_TEST_MODEL,
             request_body={"messages": [{"role": "user", "content": "test"}]},
         )
         session.add(llm_request)
@@ -368,7 +369,7 @@ async def test_critic_dev_optimize_can_see_train_split_llm_requests(
     )
 
     assert len(train_requests) == 1, "critic-dev user should see train split llm_requests via RLS"
-    assert train_requests[0].model == "gpt-4o"
+    assert train_requests[0].model == DEFAULT_TEST_MODEL
 
 
 if __name__ == "__main__":

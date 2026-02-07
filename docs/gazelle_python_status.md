@@ -144,12 +144,6 @@ Removed aggregator target. Dependents updated to use specific targets:
 
 - `:fixtures`, `:responses`, `:steps`, `:openai_mock`, etc.
 
-### adgn (removed)
-
-Package has been removed. Submodules were extracted:
-- `agent_cli/` — agent CLI (moved from `adgn/agent/`)
-- `mcp_infra/seatbelt/` — sandbox model (moved from `adgn/seatbelt/`)
-
 ### props/backend ✅
 
 Removed aggregator. Created `props/backend/routes/BUILD.bazel` with per-file targets:

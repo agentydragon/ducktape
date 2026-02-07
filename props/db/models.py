@@ -962,6 +962,25 @@ class LLMRunCost(Base):
     request_count: Mapped[int] = mapped_column(nullable=True)
 
 
+class AgentRunBudgetStatus(Base):
+    """Per-agent-run budget status from agent_run_budget_status VIEW.
+
+    own_spent_usd: direct LLM costs for this agent only.
+    tree_spent_usd: recursive subtree costs (this agent + all descendants).
+    remaining_usd: budget_usd - tree_spent_usd.
+    """
+
+    __tablename__ = "agent_run_budget_status"
+    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
+    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+
+    agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    budget_usd: Mapped[float] = mapped_column(nullable=False)
+    own_spent_usd: Mapped[float] = mapped_column(nullable=False)
+    tree_spent_usd: Mapped[float] = mapped_column(nullable=False)
+    remaining_usd: Mapped[float] = mapped_column(nullable=False)
+
+
 class TpOccurrenceCredit(Base):
     """Per-(critique_run, tp, occurrence) credit from tp_occurrence_credits VIEW.
 
@@ -1320,9 +1339,7 @@ class LLMRequest(Base):
     agent_run_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False, index=True
     )
-    model: Mapped[str] = mapped_column(
-        String, ForeignKey("model_metadata.model_id"), nullable=False, index=True
-    )
+    model: Mapped[str] = mapped_column(String, ForeignKey("model_metadata.model_id"), nullable=False, index=True)
     request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

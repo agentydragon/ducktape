@@ -29,7 +29,7 @@ from props.agents.grader.testing.mocks import GraderMock
 from props.db.database import Database
 from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import DBLocationAnchor
-from props.testing.fixtures.e2e_container import TEST_MODEL
+from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import make_fake_critic_run
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
         # Signal that grading is done — sleep tool checks grading_pending is empty
         yield m.sleep("Graded all pending edges")
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[grader_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
         # Create drift BEFORE starting daemon so it finds drift on first check.
         # This avoids relying on pg_notify timing (which can be unreliable in Docker).
         critic_run_id = uuid4()

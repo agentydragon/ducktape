@@ -27,6 +27,7 @@ from props.db.models import (
     Snapshot,
 )
 from props.db.snapshots import DBLocationAnchor
+from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
 
 # Synthetic digests for DB-level tests (not real OCI images)
@@ -57,7 +58,7 @@ def make_fake_critic_run(
     *,
     session: Session,
     example: ExampleSpec,
-    model: str = "test-model",
+    model: str = DEFAULT_TEST_MODEL,
     status: AgentRunStatus = AgentRunStatus.EXITED,
     agent_run_id: UUID | None = None,
 ) -> AgentRun:
@@ -86,7 +87,7 @@ def make_fake_grader_run(
     *,
     session: Session,
     snapshot_slug: SnapshotSlug,
-    model: str = "test-model",
+    model: str = DEFAULT_TEST_MODEL,
     status: AgentRunStatus = AgentRunStatus.EXITED,
     agent_run_id: UUID | None = None,
 ) -> AgentRun:

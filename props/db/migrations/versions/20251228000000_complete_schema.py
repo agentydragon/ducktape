@@ -55,14 +55,10 @@ def upgrade() -> None:
     # (same as pg_dump does - references are validated at execution time instead)
     op.execute("SET check_function_bodies = false")
 
-    # =========================================================================
-    # 1. Extensions
-    # =========================================================================
+    # --- 1. Extensions ---
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public")
 
-    # =========================================================================
-    # 2. ENUMs
-    # =========================================================================
+    # --- 2. ENUMs ---
     op.execute("""
         CREATE TYPE agent_run_status_enum AS ENUM (
             'in_progress',
@@ -103,9 +99,7 @@ def upgrade() -> None:
         )
     """)
 
-    # =========================================================================
-    # 3. Composite types
-    # =========================================================================
+    # --- 3. Composite types ---
     op.execute("""
         CREATE TYPE stats_with_ci AS (
             n integer,
@@ -129,9 +123,7 @@ def upgrade() -> None:
 Returns NULL for lcb95/ucb95 when n < 2 (insufficient samples for CI).'
     """)
 
-    # =========================================================================
-    # 4. Functions (table-independent - can be created before tables)
-    # =========================================================================
+    # --- 4. Functions (table-independent - can be created before tables) ---
 
     # Helper: aggregate status counts into JSONB
     op.execute("""
@@ -147,12 +139,6 @@ Returns NULL for lcb95/ucb95 when n < 2 (insufficient samples for CI).'
                 GROUP BY s
             ) sub
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION agg_status_counts(agent_run_status_enum[]) IS
-        'Aggregates an array of status values into JSONB counts. Used by aggregate views.
-Example: agg_status_counts(array_agg(status)) -> {"exited": 5, "timed_out": 2}'
     """)
 
     # Helper: merge array of status count JSONBs (for re-aggregation)
@@ -175,12 +161,6 @@ Example: agg_status_counts(array_agg(status)) -> {"exited": 5, "timed_out": 2}'
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION agg_status_counts(jsonb[]) IS
-        'Merges an array of status count JSONBs by summing counts per status. Used by higher-level views.
-Example: agg_status_counts(ARRAY[''{"completed": 2}'', ''{"completed": 3}'']::jsonb[]) -> {"completed": 5}'
-    """)
-
     # Helper: compute statistics with confidence intervals
     op.execute("""
         CREATE FUNCTION compute_stats_with_ci(vals double precision[])
@@ -198,13 +178,6 @@ Example: agg_status_counts(ARRAY[''{"completed": 2}'', ''{"completed": 3}'']::js
             )::stats_with_ci
             FROM unnest(vals) AS v
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION compute_stats_with_ci(double precision[]) IS
-        'Computes n, mean, min, max, and 95% confidence bounds from an array of values.
-Usage: compute_stats_with_ci(array_agg(some_metric))
-Access fields: (compute_stats_with_ci(...)).mean, .min, .max, .lcb95, .ucb95, etc.'
     """)
 
     # Helper: scale stats_with_ci by a divisor (e.g., credit -> recall)
@@ -229,13 +202,6 @@ Access fields: (compute_stats_with_ci(...)).mean, .min, .max, .lcb95, .ucb95, et
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION scale_stats(stats_with_ci, double precision) IS
-        'Divides all values in a stats_with_ci by a divisor.
-Use to convert raw count stats to ratio stats (e.g., credit / recall_denominator for recall).
-Example: scale_stats(credit_stats, recall_denominator)'
-    """)
-
     # Helper: current_agent_run_id from session username
     op.execute("""
         CREATE FUNCTION current_agent_run_id() RETURNS uuid
@@ -251,8 +217,7 @@ Example: scale_stats(credit_stats, recall_denominator)'
 
     op.execute("""
         COMMENT ON FUNCTION current_agent_run_id() IS
-        'Extract agent_run_id from session username (NULL if not an agent).
-Uses session_user (not current_user) to work correctly when called from within SECURITY DEFINER functions.'
+        'Uses session_user (not current_user) so it works inside SECURITY DEFINER functions.'
     """)
 
     # Helper: get_agent_type_config (SECURITY DEFINER)
@@ -266,11 +231,6 @@ Uses session_user (not current_user) to work correctly when called from within S
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION get_agent_type_config(uuid) IS
-        'Returns type_config JSONB for given agent_run_id. SECURITY DEFINER to bypass RLS on agent_runs.'
-    """)
-
     # Helper: current_agent_type_config (SECURITY DEFINER)
     op.execute("""
         CREATE FUNCTION current_agent_type_config() RETURNS jsonb
@@ -282,12 +242,6 @@ Uses session_user (not current_user) to work correctly when called from within S
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION current_agent_type_config() IS
-        'Returns type_config JSONB for current agent. SECURITY DEFINER to bypass RLS on agent_runs.
-Returns NULL for non-agents.'
-    """)
-
     # Helper: current_agent_type (SECURITY DEFINER)
     op.execute("""
         CREATE FUNCTION current_agent_type() RETURNS text
@@ -295,11 +249,6 @@ Returns NULL for non-agents.'
         AS $$
             SELECT current_agent_type_config()->>'agent_type'
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION current_agent_type() IS
-        'Returns agent_type from current_agent_type_config(). SECURITY DEFINER for RLS policy use.'
     """)
 
     # Helper: get_graded_agent_run_id (SECURITY DEFINER)
@@ -313,11 +262,6 @@ Returns NULL for non-agents.'
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION get_graded_agent_run_id(uuid) IS
-        'Returns graded_agent_run_id from grader type_config. SECURITY DEFINER to bypass RLS.'
-    """)
-
     # Helper: current_graded_agent_run_id (SECURITY DEFINER)
     op.execute("""
         CREATE FUNCTION current_graded_agent_run_id() RETURNS uuid
@@ -325,11 +269,6 @@ Returns NULL for non-agents.'
         AS $$
             SELECT get_graded_agent_run_id(current_agent_run_id())
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION current_graded_agent_run_id() IS
-        'Returns graded_agent_run_id from current grader type_config. SECURITY DEFINER to bypass RLS.'
     """)
 
     # Helper: get_graded_snapshot_slug (SECURITY DEFINER)
@@ -355,11 +294,6 @@ Returns NULL for non-agents.'
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION derive_agent_password(uuid) IS
-        'Derive deterministic password for agent role (admin-only)'
-    """)
-
     # Helper: create_agent_role (SECURITY DEFINER)
     op.execute("""
         CREATE FUNCTION create_agent_role(run_id uuid) RETURNS void
@@ -375,11 +309,6 @@ Returns NULL for non-agents.'
             END IF;
         END
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION create_agent_role(uuid) IS
-        'Create LOGIN role for agent with deterministic password (admin-only)'
     """)
 
     # Digest validation functions
@@ -537,12 +466,6 @@ Returns NULL for non-agents.'
     """)
 
     op.execute("""
-        COMMENT ON FUNCTION get_improvement_allowed_agent_run_ids() IS
-        'Returns agent_run_ids for critic/grader runs that match current improvement agent allowed_examples.
-SECURITY DEFINER to bypass RLS.'
-    """)
-
-    op.execute("""
         CREATE FUNCTION get_agent_run_ids_for_train_snapshots() RETURNS SETOF uuid
         LANGUAGE sql STABLE SECURITY DEFINER
         AS $$
@@ -553,13 +476,6 @@ SECURITY DEFINER to bypass RLS.'
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION get_agent_run_ids_for_train_snapshots() IS
-        'Returns agent_run_ids for critic/grader runs on TRAIN snapshots. SECURITY DEFINER to bypass RLS.'
-    """)
-
-    # can_access_snapshot is defined later (section 8) after grader functions exist
-
     # DRY helper: is_own_run_as - check if run belongs to current agent with specific type
     op.execute("""
         CREATE FUNCTION is_own_run_as(p_run_id uuid, p_type text) RETURNS boolean
@@ -569,12 +485,6 @@ SECURITY DEFINER to bypass RLS.'
             RETURN p_run_id = current_agent_run_id() AND current_agent_type() = p_type;
         END;
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION is_own_run_as(uuid, text) IS
-        'Returns TRUE if the given run_id belongs to current agent AND agent is of the specified type.
-Used for critic/grader write policies.'
     """)
 
     # DRY helper: can_read_agent_run_data - shared predicate for reported_issues and occurrences
@@ -685,12 +595,6 @@ where graders can give credit.'
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION is_fp_relevant_for_scope(text, text, example_kind_enum, text) IS
-        'Returns TRUE if any relevant_file in any FP occurrence overlaps with the reviewed scope files.
-For whole-snapshot scope, always returns TRUE.'
-    """)
-
     # Trigger functions
     op.execute("""
         CREATE FUNCTION check_edge_credit_sum() RETURNS trigger
@@ -728,11 +632,6 @@ For whole-snapshot scope, always returns TRUE.'
     """)
 
     op.execute("""
-        COMMENT ON FUNCTION check_edge_credit_sum() IS
-        'Trigger function that validates credit sums per (critique_run, occurrence) do not exceed 1.0.'
-    """)
-
-    op.execute("""
         CREATE FUNCTION check_input_issue_exists() RETURNS trigger
         LANGUAGE plpgsql
         AS $$
@@ -759,11 +658,6 @@ For whole-snapshot scope, always returns TRUE.'
             RETURN NEW;
         END;
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION check_input_issue_exists() IS
-        'Validates that grading_edges.critique_issue_id exists in the graded critic run''s reported_issues'
     """)
 
     # Validation function (for legacy compatibility)
@@ -831,11 +725,6 @@ For whole-snapshot scope, always returns TRUE.'
             RETURN NEW;
         END;
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION check_grading_target_exists() IS
-        'Validates that grading_edges tp_id/fp_id references exist in ground truth'
     """)
 
     # SECURITY DEFINER function for validation aggregates (with access guard)
@@ -954,14 +843,10 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
 
     op.execute("""
         COMMENT ON FUNCTION validate_reported_issue_line_numbers() IS
-        'Validates reported issue line numbers against snapshot_files.line_count.
-Line numbers are 1-based: for a file with line_count=N, valid range is 1..N (inclusive).
-Raises exception if line numbers exceed file bounds or file not found in snapshot_files.'
+        'Line numbers are 1-based inclusive: for line_count=N, valid range is 1..N.'
     """)
 
-    # =========================================================================
-    # 5. Tables
-    # =========================================================================
+    # --- 5. Tables ---
 
     # Snapshots table
     op.create_table(
@@ -1243,9 +1128,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         comment="Individual occurrences of false positive patterns. Ranges stored in fp_occurrence_ranges.",
     )
 
-    # =========================================================================
-    # Normalized occurrence range tables
-    # =========================================================================
+    # --- Normalized occurrence range tables ---
     # These tables normalize the JSONB files column into proper relational tables
     # for better queryability, foreign key validation, and line number validation.
     # Uses exclusive arc pattern: exactly one of tp_id or fp_id must be set.
@@ -1352,8 +1235,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         $$ LANGUAGE plpgsql;
 
         COMMENT ON FUNCTION validate_range_line_numbers() IS
-        'Validates that line ranges do not exceed the actual file line count from snapshot_files. '
-        'This ensures ground truth references only valid line numbers within files.';
+        'Ensures end_line <= snapshot_files.line_count for ground truth ranges.';
     """)
 
     op.execute("""
@@ -1387,8 +1269,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         $$ LANGUAGE plpgsql;
 
         COMMENT ON FUNCTION validate_reported_issue_occ_basic_line_numbers() IS
-        'Validates basic line number constraints for reported_issue_occurrences: positive (>= 1) and end_line >= start_line.
-        Cross-table validation against snapshot_files.line_count is done by validate_reported_issue_line_numbers().';
+        'Basic checks (>= 1, end >= start). Cross-file validation in validate_reported_issue_line_numbers().';
     """)
 
     # Occurrence triggers - M:N linking occurrences to file sets
@@ -1599,13 +1480,9 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     )
 
     # FK: llm_requests.model → model_metadata.model_id (added after both tables exist)
-    op.create_foreign_key(
-        "fk_llm_requests_model", "llm_requests", "model_metadata", ["model"], ["model_id"]
-    )
+    op.create_foreign_key("fk_llm_requests_model", "llm_requests", "model_metadata", ["model"], ["model_id"])
 
-    # =========================================================================
-    # 6. Examples VIEW (auto-generated from snapshots + file_sets)
-    # =========================================================================
+    # --- 6. Examples VIEW (auto-generated from snapshots + file_sets) ---
     op.execute("""
         CREATE VIEW examples AS
         -- Whole-snapshot examples (one per snapshot)
@@ -1650,9 +1527,7 @@ Critics CAN find issues outside expected scopes, achieving >100%% recall.
 A diligent critic reviewing file.py might discover issues in bar.py it depends on.'
     """)
 
-    # ============================================================================
-    # 7. Helper functions for grader agent type
-    # ============================================================================
+    # --- 7. Helper functions for grader agent type ---
     op.execute("""
         CREATE FUNCTION current_grader_snapshot_slug() RETURNS TEXT
         LANGUAGE SQL STABLE SECURITY DEFINER AS $$
@@ -1661,12 +1536,6 @@ A diligent critic reviewing file.py might discover issues in bar.py it depends o
             WHERE agent_run_id = current_agent_run_id()
               AND (type_config->>'agent_type') = 'grader'
         $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION current_grader_snapshot_slug() IS
-        'Returns snapshot_slug for grader agents. NULL for other agent types.
-Used by RLS to scope snapshot-wide access for grader daemons.'
     """)
 
     op.execute("""
@@ -1681,15 +1550,7 @@ Used by RLS to scope snapshot-wide access for grader daemons.'
         $$
     """)
 
-    op.execute("""
-        COMMENT ON FUNCTION is_critique_on_grader_snapshot(UUID) IS
-        'Returns TRUE if the given critique run is on the current grader daemon''s snapshot.
-Used by RLS to allow daemon access to all critiques for its snapshot.'
-    """)
-
-    # ============================================================================
-    # 8. matchable_occurrences() function for sparse graph matching
-    # ============================================================================
+    # --- 8. matchable_occurrences() function for sparse graph matching ---
     op.execute("""
         CREATE FUNCTION matchable_occurrences(
             p_snapshot_slug VARCHAR,
@@ -1745,9 +1606,7 @@ Non-NULL = file-local (only critiques touching those files can match)'
     # Index for efficient file-local lookups
     op.create_index("idx_file_set_members_file_path", "file_set_members", ["snapshot_slug", "file_path"])
 
-    # ============================================================================
-    # 9. grading_pending view for drift detection
-    # ============================================================================
+    # --- 9. grading_pending view for drift detection ---
     op.execute("""
         CREATE VIEW grading_pending AS
         WITH critique_issues AS (
@@ -1813,11 +1672,7 @@ When this view returns no rows for a run, grading is complete for that run.
 recall_by_run.missing_grading_edges is derived from this view.'
     """)
 
-    # RLS policies for grading_edges, reported_issues, and agent_runs are in section 18
-
-    # ============================================================================
-    # 10. can_access_snapshot() for grader
-    # ============================================================================
+    # --- 10. can_access_snapshot() for grader ---
     op.execute("DROP FUNCTION IF EXISTS can_access_snapshot(VARCHAR)")
 
     op.execute("""
@@ -1841,9 +1696,7 @@ recall_by_run.missing_grading_edges is derived from this view.'
 - improvement: allowed snapshots from config'
     """)
 
-    # ============================================================================
-    # 11. pg_notify triggers for GT and critique changes (daemon wake-up)
-    # ============================================================================
+    # --- 11. pg_notify triggers for GT and critique changes (daemon wake-up) ---
     op.execute("""
         CREATE FUNCTION notify_gt_changed() RETURNS TRIGGER AS $$
         DECLARE
@@ -1877,34 +1730,16 @@ recall_by_run.missing_grading_edges is derived from this view.'
 
     op.execute("""
         COMMENT ON FUNCTION notify_gt_changed() IS
-        'Sends pg_notify when ground truth changes. Used to wake grader daemons.
-Fires on INSERT/DELETE of TPs/FPs (not UPDATE - minor wording fixes don''t need re-grade).'
+        'INSERT/DELETE only (not UPDATE — wording fixes don''t need re-grade).'
     """)
 
     # Triggers on TP/FP tables (INSERT/DELETE only)
-    op.execute("""
-        CREATE TRIGGER trg_notify_tp_changed
-        AFTER INSERT OR DELETE ON true_positives
-        FOR EACH ROW EXECUTE FUNCTION notify_gt_changed()
-    """)
-
-    op.execute("""
-        CREATE TRIGGER trg_notify_tp_occ_changed
-        AFTER INSERT OR DELETE ON true_positive_occurrences
-        FOR EACH ROW EXECUTE FUNCTION notify_gt_changed()
-    """)
-
-    op.execute("""
-        CREATE TRIGGER trg_notify_fp_changed
-        AFTER INSERT OR DELETE ON false_positives
-        FOR EACH ROW EXECUTE FUNCTION notify_gt_changed()
-    """)
-
-    op.execute("""
-        CREATE TRIGGER trg_notify_fp_occ_changed
-        AFTER INSERT OR DELETE ON false_positive_occurrences
-        FOR EACH ROW EXECUTE FUNCTION notify_gt_changed()
-    """)
+    for table in ["true_positives", "true_positive_occurrences", "false_positives", "false_positive_occurrences"]:
+        op.execute(f"""
+            CREATE TRIGGER trg_notify_{table}_changed
+            AFTER INSERT OR DELETE ON {table}
+            FOR EACH ROW EXECUTE FUNCTION notify_gt_changed()
+        """)
 
     # Critique change notification (for grader daemon wake-up when new critiques are reported)
     op.execute("""
@@ -1949,22 +1784,15 @@ Fires on INSERT/DELETE of TPs/FPs (not UPDATE - minor wording fixes don''t need 
 
     op.execute("""
         COMMENT ON FUNCTION notify_critique_changed() IS
-        'Sends pg_notify when new critiques are reported. Used to wake grader daemons.
-Fires on INSERT of reported_issues and reported_issue_occurrences.
-Looks up snapshot_slug from agent_run type_config since critique tables do not store it directly.'
+        'Looks up snapshot_slug from agent_run type_config (critique tables don''t store it directly).'
     """)
 
-    op.execute("""
-        CREATE TRIGGER trg_notify_reported_issue_changed
-        AFTER INSERT ON reported_issues
-        FOR EACH ROW EXECUTE FUNCTION notify_critique_changed()
-    """)
-
-    op.execute("""
-        CREATE TRIGGER trg_notify_reported_issue_occ_changed
-        AFTER INSERT ON reported_issue_occurrences
-        FOR EACH ROW EXECUTE FUNCTION notify_critique_changed()
-    """)
+    for table in ["reported_issues", "reported_issue_occurrences"]:
+        op.execute(f"""
+            CREATE TRIGGER trg_notify_{table}_changed
+            AFTER INSERT ON {table}
+            FOR EACH ROW EXECUTE FUNCTION notify_critique_changed()
+        """)
 
     # Snapshot creation notification (for backend daemon manager to spawn new daemons)
     op.execute("""
@@ -1980,19 +1808,12 @@ Looks up snapshot_slug from agent_run type_config since critique tables do not s
     """)
 
     op.execute("""
-        COMMENT ON FUNCTION notify_snapshot_created() IS
-        'Sends pg_notify when a snapshot is inserted. Used by backend daemon manager to spawn grader daemons for new snapshots.'
-    """)
-
-    op.execute("""
         CREATE TRIGGER trg_notify_snapshot_created
         AFTER INSERT ON snapshots
         FOR EACH ROW EXECUTE FUNCTION notify_snapshot_created()
     """)
 
-    # ============================================================================
-    # 12. Credit sum enforcement for grading_edges
-    # ============================================================================
+    # --- 12. Credit sum enforcement for grading_edges ---
     # View to aggregate credit sums per (critique_run, gt_occurrence)
     op.execute("""
         CREATE VIEW grading_edge_credit_sums AS
@@ -2005,12 +1826,6 @@ Looks up snapshot_slug from agent_run type_config since critique tables do not s
         GROUP BY critique_run_id, tp_id, tp_occurrence_id, fp_id, fp_occurrence_id
     """)
 
-    op.execute("""
-        COMMENT ON VIEW grading_edge_credit_sums IS
-        'Aggregate credit sums per (critique_run, occurrence) for enforcing credit <= 1.0 constraint.
-Used by check_edge_credit_sum trigger function.'
-    """)
-
     # Create trigger using the function defined earlier
     op.execute("""
         CREATE TRIGGER enforce_edge_credit_sum
@@ -2018,9 +1833,7 @@ Used by check_edge_credit_sum trigger function.'
         FOR EACH ROW EXECUTE FUNCTION check_edge_credit_sum()
     """)
 
-    # =========================================================================
-    # 13. Match filter scope enforcement for grading_edges
-    # =========================================================================
+    # --- 13. Match filter scope enforcement for grading_edges ---
     # Ensures that if a TP/FP occurrence has graders_match_only_if_reported_on set,
     # edges to it can only come from critique issues reported on files in that set.
     op.execute("""
@@ -2085,9 +1898,7 @@ a critique to an occurrence that could not have been found from those files.'
         FOR EACH ROW EXECUTE FUNCTION check_edge_matches_filter_scope()
     """)
 
-    # ============================================================================
-    # 14. tp_occurrence_credits and occurrence_statistics
-    # ============================================================================
+    # --- 14. tp_occurrence_credits and occurrence_statistics ---
     op.execute("""
         CREATE VIEW tp_occurrence_credits AS
         SELECT
@@ -2159,9 +1970,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
 - Identify occurrence patterns that need prompt improvements'
     """)
 
-    # ============================================================================
-    # 15. Recall views (using tp_occurrence_credits)
-    # ============================================================================
+    # --- 15. Recall views (using tp_occurrence_credits) ---
     op.execute("""
         CREATE VIEW recall_by_run AS
         WITH per_run AS (
@@ -2241,11 +2050,6 @@ Credit is preliminary until missing_grading_edges = 0.'
         FROM raw_stats
     """)
 
-    op.execute("""
-        COMMENT ON VIEW recall_by_definition_example IS
-        'Recall aggregated by (definition, example). Stats computed across critic runs.'
-    """)
-
     # recall_by_definition_split_kind view
     op.execute("""
         CREATE VIEW recall_by_definition_split_kind AS
@@ -2285,11 +2089,6 @@ Credit is preliminary until missing_grading_edges = 0.'
         JOIN example_counts ec USING (split, example_kind, critic_image_digest, critic_model)
     """)
 
-    op.execute("""
-        COMMENT ON VIEW recall_by_definition_split_kind IS
-        'Recall aggregated by (definition, split, example_kind).'
-    """)
-
     # recall_by_example view
     op.execute("""
         CREATE VIEW recall_by_example AS
@@ -2314,11 +2113,6 @@ Credit is preliminary until missing_grading_edges = 0.'
             recall_denominator, critic_model, n_runs, status_counts, credit_stats,
             scale_stats(credit_stats, recall_denominator) AS recall_stats
         FROM raw_stats
-    """)
-
-    op.execute("""
-        COMMENT ON VIEW recall_by_example IS
-        'Recall aggregated by example (across all definitions).'
     """)
 
     # pareto_frontier_by_example view
@@ -2359,11 +2153,6 @@ Credit is preliminary until missing_grading_edges = 0.'
         GROUP BY snapshot_slug, example_kind, files_hash, split, critic_model, best_mean_credit
     """)
 
-    op.execute("""
-        COMMENT ON VIEW pareto_frontier_by_example IS
-        'Best definitions per example.'
-    """)
-
     # validation_recall_by_definition view
     op.execute("""
         CREATE VIEW validation_recall_by_definition AS
@@ -2377,14 +2166,7 @@ Credit is preliminary until missing_grading_edges = 0.'
         GROUP BY critic_image_digest, critic_model
     """)
 
-    op.execute("""
-        COMMENT ON VIEW validation_recall_by_definition IS
-        'Aggregated validation recall by definition.'
-    """)
-
-    # =========================================================================
-    # 16. LLM request cost views
-    # =========================================================================
+    # --- 16. LLM request cost views ---
     op.execute("""
         CREATE VIEW llm_request_costs AS
         SELECT
@@ -2410,11 +2192,6 @@ Credit is preliminary until missing_grading_edges = 0.'
     """)
 
     op.execute("""
-        COMMENT ON VIEW llm_request_costs IS
-        'Per-request cost calculation. Joins llm_requests with model_metadata to compute cost_usd.'
-    """)
-
-    op.execute("""
         CREATE VIEW llm_run_costs AS
         SELECT
             agent_run_id,
@@ -2429,13 +2206,40 @@ Credit is preliminary until missing_grading_edges = 0.'
     """)
 
     op.execute("""
-        COMMENT ON VIEW llm_run_costs IS
-        'Aggregated costs per agent run, grouped by model.'
+        CREATE VIEW agent_run_budget_status AS
+        SELECT
+            ar.agent_run_id,
+            ar.budget_usd,
+            COALESCE(own.spent_usd, 0) AS own_spent_usd,
+            COALESCE(tree.spent_usd, 0) AS tree_spent_usd,
+            ar.budget_usd - COALESCE(tree.spent_usd, 0) AS remaining_usd
+        FROM agent_runs ar
+        LEFT JOIN LATERAL (
+            SELECT SUM(c.cost_usd) AS spent_usd
+            FROM llm_request_costs c
+            WHERE c.agent_run_id = ar.agent_run_id
+        ) own ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT SUM(c.cost_usd) AS spent_usd
+            FROM (
+                WITH RECURSIVE run_tree AS (
+                    SELECT ar.agent_run_id
+                    UNION ALL
+                    SELECT child.agent_run_id FROM agent_runs child
+                    JOIN run_tree rt ON child.parent_agent_run_id = rt.agent_run_id
+                )
+                SELECT rt.agent_run_id FROM run_tree rt
+            ) tree_nodes
+            JOIN llm_request_costs c ON c.agent_run_id = tree_nodes.agent_run_id
+        ) tree ON TRUE
     """)
 
-    # =========================================================================
-    # 17. Roles and Grants
-    # =========================================================================
+    op.execute("""
+        COMMENT ON VIEW agent_run_budget_status IS
+        'Per-agent-run budget status. own_spent_usd = direct LLM costs, tree_spent_usd = recursive subtree costs (including self). remaining_usd = budget - tree_spent.'
+    """)
+
+    # --- 17. Roles and Grants ---
 
     # Create agent_base role if not exists
     op.execute("""
@@ -2449,42 +2253,50 @@ Credit is preliminary until missing_grading_edges = 0.'
     """)
 
     op.execute("GRANT USAGE ON SCHEMA public TO agent_base")
+
+    # SELECT-only tables and views
+    for t in [
+        "agent_runs",
+        "agent_run_budget_status",
+        "critic_scopes_expected_to_recall",
+        "examples",
+        "false_positive_occurrences",
+        "false_positives",
+        "file_set_members",
+        "file_sets",
+        "grading_edge_credit_sums",
+        "grading_pending",
+        "llm_request_costs",
+        "llm_requests",
+        "llm_run_costs",
+        "occurrence_statistics",
+        "pareto_frontier_by_example",
+        "recall_by_definition_example",
+        "recall_by_definition_split_kind",
+        "recall_by_example",
+        "recall_by_run",
+        "snapshot_files",
+        "snapshots",
+        "tp_occurrence_credits",
+        "true_positive_occurrences",
+        "true_positives",
+        "validation_recall_by_definition",
+    ]:
+        op.execute(f"GRANT SELECT ON TABLE {t} TO agent_base")
+
+    # Tables with write access
     op.execute("GRANT SELECT,INSERT ON TABLE agent_definitions TO agent_base")
-    op.execute("GRANT SELECT ON TABLE agent_runs TO agent_base")
-    op.execute("GRANT SELECT ON TABLE examples TO agent_base")
-    op.execute("GRANT SELECT ON TABLE file_sets TO agent_base")
-    op.execute("GRANT SELECT ON TABLE file_set_members TO agent_base")
-    op.execute("GRANT SELECT ON TABLE critic_scopes_expected_to_recall TO agent_base")
-    op.execute("GRANT SELECT ON TABLE snapshot_files TO agent_base")
-    op.execute("GRANT SELECT ON TABLE true_positive_occurrences TO agent_base")
-    op.execute("GRANT SELECT ON TABLE false_positive_occurrences TO agent_base")
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE grading_edges TO agent_base")
-    op.execute("GRANT SELECT ON TABLE snapshots TO agent_base")
-    op.execute("GRANT SELECT ON TABLE recall_by_run TO agent_base")
-    op.execute("GRANT SELECT ON TABLE recall_by_definition_example TO agent_base")
-    op.execute("GRANT SELECT ON TABLE recall_by_definition_split_kind TO agent_base")
-    op.execute("GRANT SELECT ON TABLE recall_by_example TO agent_base")
-    op.execute("GRANT SELECT ON TABLE llm_requests TO agent_base")
-    op.execute("GRANT USAGE ON SEQUENCE llm_requests_id_seq TO agent_base")
-    op.execute("GRANT SELECT ON TABLE false_positives TO agent_base")
-    op.execute("GRANT SELECT ON TABLE grading_edge_credit_sums TO agent_base")
-    op.execute("GRANT SELECT ON TABLE grading_pending TO agent_base")
-    op.execute("GRANT USAGE ON SEQUENCE grading_edges_id_seq TO agent_base")
-    op.execute("GRANT SELECT ON TABLE true_positives TO agent_base")
-    op.execute("GRANT SELECT ON TABLE tp_occurrence_credits TO agent_base")
-    op.execute("GRANT SELECT ON TABLE occurrence_statistics TO agent_base")
-    op.execute("GRANT SELECT ON TABLE pareto_frontier_by_example TO agent_base")
-    op.execute("GRANT SELECT ON TABLE validation_recall_by_definition TO agent_base")
-    op.execute("GRANT SELECT ON TABLE llm_request_costs TO agent_base")
-    op.execute("GRANT SELECT ON TABLE llm_run_costs TO agent_base")
-    op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issue_occurrences TO agent_base")
-    op.execute("GRANT USAGE ON SEQUENCE reported_issue_occurrences_id_seq TO agent_base")
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issues TO agent_base")
+    op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issue_occurrences TO agent_base")
+
+    # Sequences
+    for seq in ["grading_edges_id_seq", "llm_requests_id_seq", "reported_issue_occurrences_id_seq"]:
+        op.execute(f"GRANT USAGE ON SEQUENCE {seq} TO agent_base")
+
     op.execute("GRANT EXECUTE ON FUNCTION matchable_occurrences(VARCHAR, VARCHAR[]) TO agent_base")
 
-    # =========================================================================
-    # 18. RLS Policies
-    # =========================================================================
+    # --- 18. RLS Policies ---
 
     # Enable RLS (postgres superuser has BYPASSRLS, so FORCE is unnecessary)
     for table in [
@@ -2511,11 +2323,6 @@ Credit is preliminary until missing_grading_edges = 0.'
         CREATE POLICY agent_definitions_insert ON agent_definitions FOR INSERT WITH CHECK (
             current_agent_run_id() IS NULL  -- Only admin/proxy can insert
         )
-    """)
-    op.execute("""
-        COMMENT ON POLICY agent_definitions_insert ON agent_definitions IS
-        'Only admin/proxy can insert agent_definitions. Agents cannot insert directly.
-The proxy intercepts manifest pushes and creates agent_definitions rows automatically.'
     """)
 
     # --- Agent runs ---

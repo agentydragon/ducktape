@@ -23,7 +23,7 @@ from agent_core.testing.responses import DecoratorMock, PlayGen
 from props.agents.critic.main import InsertIssueArgs, InsertOccurrenceArgs, SubmitArgs
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.testing.fixtures.e2e_container import TEST_MODEL
+from props.testing.constants import DEFAULT_TEST_MODEL
 
 # Test timeout (seconds) - applies to container execution
 TEST_TIMEOUT_SECONDS = 120
@@ -45,7 +45,7 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
     """Test critic successfully submits zero issues."""
     mock = make_critic_mock_zero_issues()
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
             image_ref=stack.image_digests["critic"],
             example=all_files_scope,
@@ -89,7 +89,7 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
     """Test critic submits an issue with occurrence."""
     mock = make_critic_mock_with_issues()
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
             image_ref=stack.image_digests["critic"],
             example=all_files_scope,

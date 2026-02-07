@@ -46,6 +46,7 @@ docker_py_test(
         "//props/db:examples",
         "//props/db:models",
         "//props/testing",
+        "//props/testing:constants",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

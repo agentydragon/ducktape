@@ -57,11 +57,22 @@ from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig, is_digest
 from props.db.config import DatabaseConfig
 from props.db.database import Database
-from props.db.models import AgentRun, AgentRunStatus, Snapshot
+from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, Snapshot
 from props.orchestration.agent_credentials import ensure_agent_role
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
 
 logger = logging.getLogger(__name__)
+
+
+# --- Exceptions ---
+
+
+class BudgetExceededError(Exception):
+    """Raised when a child agent's requested budget exceeds parent's remaining budget."""
+
+
+class ImageResolutionError(Exception):
+    """Raised when an image reference cannot be resolved or pulled."""
 
 
 # --- Container Result ---
@@ -143,14 +154,11 @@ class AgentRegistry:
             pass  # Not found locally, pull
         logger.info("Pulling image %s", full_ref)
         auth = {"username": self._db_config.user, "password": self._db_config.password}
-        try:
-            await self._docker_client.pull(full_ref, auth=auth)
-            info = await self._docker_client.images.inspect(full_ref)
-            image_id = info["Id"]
-            logger.info("Pulled image %s for %s", image_id[:19], full_ref)
-            return image_id
-        except Exception as e:
-            raise ValueError(f"Failed to pull image {full_ref}: {e}") from e
+        await self._docker_client.pull(full_ref, auth=auth)
+        info = await self._docker_client.images.inspect(full_ref)
+        image_id = info["Id"]
+        logger.info("Pulled image %s for %s", image_id[:19], full_ref)
+        return image_id
 
     async def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
         """Resolve image reference to digest via registry proxy.
@@ -161,7 +169,7 @@ class AgentRegistry:
             Digest (sha256:...) - either the provided digest or resolved from tag
 
         Raises:
-            ValueError: If tag doesn't exist or proxy returns error
+            ImageResolutionError: If tag doesn't exist or proxy returns error
         """
         if is_digest(ref):
             logger.debug(f"Reference {ref} is already a digest, returning as-is")
@@ -184,17 +192,17 @@ class AgentRegistry:
             async with httpx.AsyncClient() as client:
                 resp = await client.head(manifest_url, headers=headers, auth=auth, timeout=10)
         except httpx.HTTPError as e:
-            raise ValueError(f"Failed to resolve tag {repository}:{ref}: {e}")
+            raise ImageResolutionError(f"Failed to resolve tag {repository}:{ref}: {e}")
 
         if resp.status_code == 404:
-            raise ValueError(f"Image not found: {repository}:{ref}")
+            raise ImageResolutionError(f"Image not found: {repository}:{ref}")
 
         if resp.status_code != 200:
-            raise ValueError(f"Proxy returned error {resp.status_code} for {repository}:{ref}: {resp.text}")
+            raise ImageResolutionError(f"Proxy returned error {resp.status_code} for {repository}:{ref}: {resp.text}")
 
         digest = resp.headers.get("Docker-Content-Digest")
         if not digest:
-            raise ValueError(f"Proxy didn't return Docker-Content-Digest header for {repository}:{ref}")
+            raise ImageResolutionError(f"Proxy didn't return Docker-Content-Digest header for {repository}:{ref}")
 
         logger.info(f"Resolved {repository}:{ref} → {digest}")
         return str(digest)
@@ -313,35 +321,23 @@ class AgentRegistry:
     def _validate_spawn_budget(self, parent_run_id: UUID, child_budget_usd: float) -> None:
         """Validate that spawning a child with the given budget doesn't exceed parent's remaining budget.
 
-        Uses the llm_request_costs view to compute parent's spent amount (including all descendants).
+        Uses the agent_run_budget_status view which recursively sums descendant costs.
         """
-        from sqlalchemy import text  # avoids top-level import for rarely-used symbol
-
+        # TODO: This only checks the immediate parent's remaining budget. It should also:
+        # 1. Subtract the budgets of still-running child agents from remaining, not just
+        #    their actual spend so far — a running child could spend up to its full budget.
+        # 2. Walk up the parent chain and enforce budget constraints at every ancestor level,
+        #    not just the immediate parent.
         with self._db.session() as session:
-            parent = session.get(AgentRun, parent_run_id)
-            if parent is None:
-                raise ValueError(f"Parent run {parent_run_id} not found")
+            status = session.get(AgentRunBudgetStatus, parent_run_id)
+            if status is None:
+                raise BudgetExceededError(f"Parent run {parent_run_id} not found")
 
-            result = session.execute(
-                text("""
-                    WITH RECURSIVE run_tree AS (
-                        SELECT agent_run_id FROM agent_runs WHERE agent_run_id = :run_id
-                        UNION ALL
-                        SELECT ar.agent_run_id FROM agent_runs ar
-                        JOIN run_tree rt ON ar.parent_agent_run_id = rt.agent_run_id
-                    )
-                    SELECT COALESCE(SUM(c.cost_usd), 0) AS spent
-                    FROM llm_request_costs c
-                    JOIN run_tree rt ON c.agent_run_id = rt.agent_run_id
-                """),
-                {"run_id": parent_run_id},
-            )
-            spent = result.scalar_one()
-            remaining = parent.budget_usd - spent
-            if child_budget_usd > remaining:
-                raise ValueError(
+            if child_budget_usd > status.remaining_usd:
+                raise BudgetExceededError(
                     f"Cannot spawn child with ${child_budget_usd:.2f} budget: "
-                    f"parent has ${remaining:.2f} remaining (${spent:.2f} spent of ${parent.budget_usd:.2f})"
+                    f"parent has ${status.remaining_usd:.2f} remaining "
+                    f"(${status.tree_spent_usd:.2f} spent of ${status.budget_usd:.2f})"
                 )
 
     async def run_critic(

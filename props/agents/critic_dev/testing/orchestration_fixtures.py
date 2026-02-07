@@ -11,10 +11,12 @@ from props.agents.grader.testing.mocks import GraderMock
 
 logger = logging.getLogger(__name__)
 
-# Model names for multi-model routing
-ORCHESTRATION_OPTIMIZER_MODEL = "test-orchestration-optimizer"
-ORCHESTRATION_CRITIC_MODEL = "test-orchestration-critic"
-ORCHESTRATION_GRADER_MODEL = "test-orchestration-grader"
+# Model names for multi-model routing.
+# Must exist in synced model_metadata (llm_requests.model has FK to model_metadata.model_id).
+# Each must be DISTINCT so multi-model FakeOpenAIServer routes to the right mock.
+ORCHESTRATION_OPTIMIZER_MODEL = "gpt-4o"
+ORCHESTRATION_CRITIC_MODEL = "gpt-4o-mini"
+ORCHESTRATION_GRADER_MODEL = "gpt-4.1-mini"
 
 
 def make_orchestration_grader_mock() -> GraderMock:

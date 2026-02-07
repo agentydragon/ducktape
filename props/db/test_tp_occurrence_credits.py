@@ -8,6 +8,7 @@ from props.core.models.examples import ExampleKind, SingleFileSetExample
 from props.core.splits import Split
 from props.db.examples import Example
 from props.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
+from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import (
     FAKE_CRITIC_DIGEST,
     make_fake_critic_run,
@@ -176,7 +177,7 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
     graded_run = make_fake_critic_run(
         session=synced_test_session,
         example=example_subtract_orm.to_example_spec(),
-        model="test-model",
+        model=DEFAULT_TEST_MODEL,
         status=AgentRunStatus.EXITED,
     )
     synced_test_session.add(graded_run)
@@ -195,7 +196,7 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
 
     result = (
         synced_test_session.query(RecallByDefinitionSplitKind)
-        .filter_by(critic_image_digest=FAKE_CRITIC_DIGEST, split=Split.TRAIN, critic_model="test-model")
+        .filter_by(critic_image_digest=FAKE_CRITIC_DIGEST, split=Split.TRAIN, critic_model=DEFAULT_TEST_MODEL)
         .one()
     )
 
@@ -237,7 +238,7 @@ def test_aggregated_view_counts_by_status(synced_test_session: Session, example_
 
     result = (
         synced_test_session.query(RecallByDefinitionSplitKind)
-        .filter_by(critic_image_digest=FAKE_CRITIC_DIGEST, split=Split.TRAIN, critic_model="test-model")
+        .filter_by(critic_image_digest=FAKE_CRITIC_DIGEST, split=Split.TRAIN, critic_model=DEFAULT_TEST_MODEL)
         .one()
     )
 
@@ -263,7 +264,7 @@ def test_aggregated_view_status_counts_all_exited(synced_test_session: Session, 
 
     result = (
         synced_test_session.query(RecallByDefinitionSplitKind)
-        .filter_by(critic_image_digest=FAKE_CRITIC_DIGEST, split=Split.TRAIN, critic_model="test-model")
+        .filter_by(critic_image_digest=FAKE_CRITIC_DIGEST, split=Split.TRAIN, critic_model=DEFAULT_TEST_MODEL)
         .one()
     )
 
@@ -286,7 +287,7 @@ def test_aggregated_recall_by_example_has_correct_weighting(
     graded_run = make_fake_critic_run(
         session=synced_test_session,
         example=example_subtract_orm.to_example_spec(),
-        model="test-model",
+        model=DEFAULT_TEST_MODEL,
         status=AgentRunStatus.EXITED,
     )
     synced_test_session.add(graded_run)
@@ -331,7 +332,10 @@ def test_occurrence_statistics_has_correct_n_critic_runs(
 
     # Critic run 1: graded 1 time (credit 0.8)
     run1 = make_fake_critic_run(
-        session=synced_test_session, example=subtract_file_example, model="test-model", status=AgentRunStatus.EXITED
+        session=synced_test_session,
+        example=subtract_file_example,
+        model=DEFAULT_TEST_MODEL,
+        status=AgentRunStatus.EXITED,
     )
     synced_test_session.add(run1)
     synced_test_session.flush()
@@ -341,7 +345,10 @@ def test_occurrence_statistics_has_correct_n_critic_runs(
 
     # Critic run 2: graded 4 times (credits sum to 0.7, within check_edge_credit_sum <= 1.0)
     run2 = make_fake_critic_run(
-        session=synced_test_session, example=subtract_file_example, model="test-model", status=AgentRunStatus.EXITED
+        session=synced_test_session,
+        example=subtract_file_example,
+        model=DEFAULT_TEST_MODEL,
+        status=AgentRunStatus.EXITED,
     )
     synced_test_session.add(run2)
     synced_test_session.flush()

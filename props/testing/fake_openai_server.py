@@ -44,6 +44,7 @@ from openai_utils.model import (
     ResponsesResult,
     ResponseUsage,
 )
+from props.testing.constants import DEFAULT_TEST_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def _to_sdk_output_item(item: ResponseOutItem) -> _SDKOutputItem:
     raise ValueError(f"Unexpected output item type: {type(item)}")
 
 
-def result_to_sdk_response(result: ResponsesResult, *, model: str = "test-model") -> OpenAIResponse:
+def result_to_sdk_response(result: ResponsesResult, *, model: str = DEFAULT_TEST_MODEL) -> OpenAIResponse:
     """Convert ResponsesResult to SDK Response object."""
     usage = result.usage
     if usage is None:
@@ -181,8 +182,7 @@ class FakeOpenAIServer:
                 server_self._capture_error(e)
                 raise HTTPException(status_code=500, detail=f"Mock error: {e}")
 
-            request_model = body.get("model", "test-model")
-            sdk_response = result_to_sdk_response(result, model=request_model)
+            sdk_response = result_to_sdk_response(result, model=body["model"])
             return JSONResponse(content=sdk_response.model_dump(mode="json"))
 
         return app

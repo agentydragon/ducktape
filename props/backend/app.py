@@ -56,6 +56,7 @@ class BackendDeps:
     grader_model: str | None = None
     host: str = "127.0.0.1"
     port: int = 8000
+    extra_hosts: dict[str, str] | None = None
 
 
 def _make_lifespan(deps: BackendDeps):
@@ -75,6 +76,7 @@ def _make_lifespan(deps: BackendDeps):
             backend_url=deps.backend_url,
             agent_base_env=deps.config.agent_env,
             registry_config=deps.registry_proxy_config,
+            extra_hosts=deps.extra_hosts,
         )
 
         if deps.grader_model:

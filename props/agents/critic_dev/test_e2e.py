@@ -47,7 +47,7 @@ from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.testing.fixtures.e2e_container import TEST_MODEL
+from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_message_text
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         # Call run_critic tool (DirectToolProvider)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=5.0
+            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=1.0
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -227,7 +227,7 @@ AGENT_EOF
             definition_id=new_digest,  # Use the custom image!
             example=example,
             timeout_seconds=120,
-            budget_usd=5.0,
+            budget_usd=1.0,
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -324,7 +324,7 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
         # Submit zero issues (expected behavior: push failed, critic still completes)
         yield m.submit(issues_count=0, summary="Push attempt completed (expected to fail)")
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
         run_id = await stack.registry.run_critic(
             image_ref=stack.image_digests["critic"],
             example=all_files_scope,

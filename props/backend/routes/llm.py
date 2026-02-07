@@ -24,12 +24,12 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from openai_utils.model import ResponseUsage
 from props.backend.auth import Auth
 from props.backend.deps import AdminDb
-from props.db.models import AgentRun, AgentRunStatus, LLMRequest
+from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest
 
 logger = logging.getLogger(__name__)
 
@@ -52,28 +52,14 @@ def _upstream_base_url() -> str:
 def _check_budget(session: Session, agent_run_id: UUID, budget_usd: float) -> None:
     """Check if agent has exceeded its budget. Raises HTTPException(429) if over budget.
 
-    Sums cost_usd from llm_request_costs view for this agent run (and all descendant
-    runs via recursive CTE on parent_agent_run_id).
+    Uses the agent_run_budget_status view which recursively sums descendant costs.
     """
-    result = session.execute(
-        text("""
-            WITH RECURSIVE run_tree AS (
-                SELECT agent_run_id FROM agent_runs WHERE agent_run_id = :run_id
-                UNION ALL
-                SELECT ar.agent_run_id FROM agent_runs ar
-                JOIN run_tree rt ON ar.parent_agent_run_id = rt.agent_run_id
-            )
-            SELECT COALESCE(SUM(c.cost_usd), 0) AS total_cost
-            FROM llm_request_costs c
-            JOIN run_tree rt ON c.agent_run_id = rt.agent_run_id
-        """),
-        {"run_id": agent_run_id},
-    )
-    total_cost = result.scalar_one()
-    if total_cost >= budget_usd:
+    status = session.get(AgentRunBudgetStatus, agent_run_id)
+    if status is None:
+        raise HTTPException(status_code=500, detail=f"Agent run {agent_run_id} not found in budget view")
+    if status.tree_spent_usd >= budget_usd:
         raise HTTPException(
-            status_code=429,
-            detail=f"Budget exceeded: spent ${total_cost:.4f} of ${budget_usd:.2f} budget",
+            status_code=429, detail=f"Budget exceeded: spent ${status.tree_spent_usd:.4f} of ${budget_usd:.2f} budget"
         )
 
 
@@ -99,24 +85,6 @@ def require_llm_access(auth: Auth, admin_db: AdminDb) -> tuple[UUID, str, float]
         return auth.agent_run_id, agent_run.model, agent_run.budget_usd
 
 
-def _extract_token_usage(response_body: dict[str, Any] | None) -> tuple[int | None, int | None, int | None]:
-    """Extract token counts from OpenAI Responses API response.
-
-    Returns (input_tokens, cached_input_tokens, output_tokens).
-    """
-    if not response_body:
-        return None, None, None
-    usage = response_body.get("usage")
-    if not isinstance(usage, dict):
-        return None, None, None
-    input_tokens = usage.get("input_tokens")
-    output_tokens = usage.get("output_tokens")
-    # Cached tokens are nested under input_tokens_details in the Responses API
-    input_details = usage.get("input_tokens_details") or {}
-    cached_input_tokens = input_details.get("cached_tokens")
-    return input_tokens, cached_input_tokens, output_tokens
-
-
 def _log_request(
     session: Session,
     agent_run_id: UUID,
@@ -127,7 +95,14 @@ def _log_request(
     latency_ms: int,
 ) -> None:
     """Log LLM request to database with token usage extracted from response."""
-    input_tokens, cached_input_tokens, output_tokens = _extract_token_usage(response_body)
+    input_tokens = None
+    cached_input_tokens = None
+    output_tokens = None
+    if response_body is not None and error is None:
+        usage = ResponseUsage.model_validate(response_body["usage"])
+        input_tokens = usage.input_tokens
+        cached_input_tokens = usage.input_tokens_details.cached_tokens
+        output_tokens = usage.output_tokens
     llm_request = LLMRequest(
         agent_run_id=agent_run_id,
         model=model,

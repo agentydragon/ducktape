@@ -44,8 +44,7 @@ class RunCriticResponse(BaseModel):
     critic_run_id: UUID = Field(description="agent_run_id of the critic agent run")
     status: AgentRunStatus = Field(description="Final status of the critic run")
     container_exit_code: int | None = Field(
-        default=None,
-        description="Container exit code (0=success). Only present when status is EXITED.",
+        default=None, description="Container exit code (0=success). Only present when status is EXITED."
     )
 
 

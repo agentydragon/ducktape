@@ -49,7 +49,7 @@ from props.db.models import (
     LLMRunCost,
     Snapshot,
 )
-from props.orchestration.agent_registry import AgentRegistry
+from props.orchestration.agent_registry import AgentRegistry, BudgetExceededError, ImageResolutionError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -403,8 +403,7 @@ def list_runs(
         # Critic runs: type_config->'example'->>'snapshot_slug'
         # Grader runs: type_config->>'snapshot_slug'
         snapshot_slug_expr = func.coalesce(
-            AgentRun.type_config["example"]["snapshot_slug"].astext,
-            AgentRun.type_config["snapshot_slug"].astext,
+            AgentRun.type_config["example"]["snapshot_slug"].astext, AgentRun.type_config["snapshot_slug"].astext
         )
         query = query.outerjoin(Snapshot, snapshot_slug_expr == Snapshot.slug)
 
@@ -602,19 +601,18 @@ async def run_critic(
         )
     except CriticExecutionError as e:
         raise HTTPException(status_code=500, detail=f"Critic execution failed: {e}")
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except BudgetExceededError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except ImageResolutionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
-    # Get final status
+    # Get final status — read attributes inside session to avoid DetachedInstanceError
     with admin_db.session() as session:
         critic_run = session.get(AgentRun, critic_run_id)
         assert critic_run is not None
-
-    return RunCriticResponse(
-        critic_run_id=critic_run_id,
-        status=critic_run.status,
-        container_exit_code=critic_run.container_exit_code,
-    )
+        return RunCriticResponse(
+            critic_run_id=critic_run_id, status=critic_run.status, container_exit_code=critic_run.container_exit_code
+        )
 
 
 # --- Run Detail Endpoints ---

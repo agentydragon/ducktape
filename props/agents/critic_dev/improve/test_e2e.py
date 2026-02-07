@@ -30,7 +30,7 @@ from props.agents.critic_dev.testing.mocks import CriticDevMock, make_cli_test_m
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
-from props.testing.fixtures.e2e_container import TEST_MODEL
+from props.testing.constants import DEFAULT_TEST_MODEL
 
 pytestmark = [pytest.mark.integration]
 
@@ -99,7 +99,7 @@ async def test_prompt_improve_e2e_creates_package(
     """Test improvement agent can create package directory in container."""
     mock = make_improvement_mock()
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
         result = await stack.registry.run_critic_dev_improve(
             examples=[subtract_file_example],
             baseline_image_digests=[stack.image_digests["critic"]],
@@ -129,7 +129,7 @@ async def test_prompt_improve_e2e_multiple_examples(
 
     mock = make_improvement_mock()
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
         result = await stack.registry.run_critic_dev_improve(
             examples=allowed_examples,
             baseline_image_digests=[stack.image_digests["critic"]],
@@ -156,7 +156,7 @@ async def test_cli_leaderboard_in_improvement_agent(
     """Test that leaderboard CLI command works from improvement agent container."""
     mock = make_cli_test_mock(["critic-dev", "leaderboard", "--limit", "5"], expected_output="76%")
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
         result = await stack.registry.run_critic_dev_improve(
             examples=[subtract_file_example],
             baseline_image_digests=[stack.image_digests["critic"]],
@@ -177,7 +177,7 @@ async def test_cli_hard_examples_in_improvement_agent(
     """Test that hard-examples CLI command works from improvement agent container."""
     mock = make_cli_test_mock(["critic-dev", "hard-examples", "--limit", "5"], expected_output="76%")
 
-    async with e2e_stack({TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
         result = await stack.registry.run_critic_dev_improve(
             examples=[subtract_file_example],
             baseline_image_digests=[stack.image_digests["critic"]],

@@ -200,6 +200,7 @@ docker_py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
+        "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
