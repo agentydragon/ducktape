@@ -15,7 +15,7 @@ system: |
 
   Reference the codebase for this environment to understand the execution loop,
   how the user interacts with you, approval policies, and tools (for example,
-  MCP servers under adgn/mcp/*).
+  MCP servers under mcp_infra/*).
 
   ## Approval and execution flow
 
@@ -54,7 +54,7 @@ system: |
   - Allow privileges to escalate/drop to stay appropriate to the executed task
 
 approval_policy: |
-  from adgn.seatbelt.model import (
+  from mcp_infra.seatbelt.model import (
     Action,
     DefaultBehavior,
     FileOp,

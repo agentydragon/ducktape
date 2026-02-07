@@ -16,7 +16,7 @@ An **agent package** is a Docker image that runs a self-contained agent loop:
 - **mcp.py** — MCP client helpers for connecting to MCP servers from within containers
 - **output.py** — Output formatting (`print_section`, `run_command`, `print_file`, `render_doc`) and Mako template rendering
 
-Minimal dependencies (no workspace deps like `adgn`) since this is installed separately in container images.
+Minimal dependencies since this is installed separately in container images.
 
 ## Users
 

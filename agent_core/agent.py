@@ -1,7 +1,4 @@
-"""Agent on OpenAI Responses API with tool provider abstraction.
-
-For stateless reasoning/tool replay demo, see :/adgn/examples/openai_api/stateless_two_step_demo.py
-"""
+"""Agent on OpenAI Responses API with tool provider abstraction."""
 
 from __future__ import annotations
 

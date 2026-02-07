@@ -95,7 +95,6 @@ known-third-party = ["ansible", "docker"]
 # TODO: Auto-generate this list from Bazel once bazelized
 known-first-party = [
     "tools",
-    "adgn",
     "mcp_starter",
     "agent_core",
     "agent_pkg",
@@ -162,7 +161,7 @@ split-on-trailing-comma = false
 # Vendored third-party code - don't lint
 "**/third_party/**" = ["ALL"]
 "prompts/scans/scan_*.py" = ["N802"]
-# Lazy import for orchestration-only dependency (adgn.definition_builder not in container)
+# Lazy import for orchestration-only dependency (not available in container)
 "props/core/db/sync/sync.py" = ["PLC0415"]
 # sys.path manipulation must happen before pytest import
 "agent_server/tests/pytest_runner.py" = ["E402"]

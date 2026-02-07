@@ -1,4 +1,4 @@
-# Conversion candidates from adgn_instructions (prioritized)
+# Conversion candidates from STYLE.md instructions (prioritized)
 
 Criteria
 

@@ -34,7 +34,7 @@ system: |
 
 approval_policy: |
   # Validate seatbelt policies using the typed SBPL Pydantic models
-  from adgn.seatbelt.model import (
+  from mcp_infra.seatbelt.model import (
     Action,
     DefaultBehavior,
     EnvPassthroughMode,

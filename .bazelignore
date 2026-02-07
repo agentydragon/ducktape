@@ -16,7 +16,6 @@ venv
 .pre-commit-cache
 .cache
 # Nested (.bazelignore doesn't support ** globs, so list explicitly)
-adgn/.direnv
 cluster/.direnv
 wt/.direnv
 props/.direnv

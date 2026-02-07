@@ -1,6 +1,6 @@
 # SBPL Library TODO / Potential Extensions
 
-Status: living list of gaps and candidates for future work. Focus is on `adgn.seatbelt` (model/compile/validate/runner) and closely related tooling.
+Status: living list of gaps and candidates for future work. Focus is on `mcp_infra.seatbelt` (model/compile/validate/runner) and closely related tooling.
 
 ## Path Filters & Predicates
 
@@ -47,7 +47,7 @@ Status: living list of gaps and candidates for future work. Focus is on `adgn.se
 - [ ] Synchronous convenience wrapper around async APIs (ergonomics only).
 - [ ] Configurable artifacts directory and retention policy; consistent trace/unified‑log collection toggles.
 - [ ] Optional unified log harvest when exit!=0 (currently disabled by default) with safe time windows.
-- [ ] CLI (`python -m adgn.seatbelt`) with subcommands: `validate`, `compile`, `run` (thin wrapper around the library).
+- [ ] CLI (`python -m mcp_infra.seatbelt`) with subcommands: `validate`, `compile`, `run` (thin wrapper around the library).
 
 ## Presets / Builders
 

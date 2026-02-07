@@ -1,5 +1,4 @@
-# Extracted GNOME terminal profile switching functionality
-# Originally from adgn.gnome.switch_gnome_terminal_profile
+# GNOME terminal profile switching functionality
 
 import ast
 import subprocess

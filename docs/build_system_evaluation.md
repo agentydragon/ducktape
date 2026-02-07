@@ -20,7 +20,7 @@ Pants parses imports and infers deps automatically. But execution is still herme
 ```python
 # agent_pkg/BUILD
 python_sources(
-    dependencies=["!//adgn/**"],  # Forbid imports from adgn
+    dependencies=["!//agent_server/**"],  # Forbid imports from agent_server
 )
 ```
 
@@ -72,15 +72,15 @@ Pants is a **build system**, not a dev environment manager. It assumes tools exi
 ```toml
 # pants.toml
 [python.dependency_rules]
-# agent_pkg.runtime must not import from adgn or agent_server
+# agent_pkg must not import from agent_server
 [[python.dependency_rules]]
 path = "agent_pkg/**"
-deny = ["adgn/**", "agent_server/**"]
+deny = ["agent_server/**"]
 
-# agent_server can import from agent_pkg but not adgn internals
+# agent_server can import from agent_pkg but not props internals
 [[python.dependency_rules]]
 path = "agent_server/**"
-deny = ["props/**"]  # Example: props is a separate package
+deny = ["props/**"]
 ```
 
 Explicit, documented, enforced at build time.
@@ -276,10 +276,9 @@ py_library(
     name = "runtime",
     srcs = glob(["**/*.py"]),
     visibility = [
-        "//agent_pkg/host:__subpackages__",
+        "//editor_agent:__subpackages__",
         "//agent_server:__subpackages__",
     ],
-    # NOT visible to //adgn
 )
 ```
 
