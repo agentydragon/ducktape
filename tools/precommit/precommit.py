@@ -30,6 +30,7 @@ from python.runfiles import runfiles
 
 from tools.check_pytest_main import check_files_async
 from tools.env_utils import get_workspace_dir
+from tools.precommit.check_filename_conventions import check_filename_conventions
 from tools.precommit.check_terraform_centralization import find_violations
 
 _RUNFILES_OPT = runfiles.Create()
@@ -305,13 +306,24 @@ async def run_terraform_centralization_check(files: list[Path]) -> ValidationRes
 # (bridgecrewio/checkov, antonbabenko/pre-commit-terraform terraform_validate)
 
 
-async def run_validate(files: list[Path], repo_root: Path) -> list[ValidationResult]:
+async def run_filename_convention_check(repo: pygit2.Repository) -> ValidationResult:
+    """Check that new .py/.md files and directories use underscores, not dashes."""
+    name = "filename-conventions"
+    start = time.perf_counter()
+    violations = check_filename_conventions(repo)
+    elapsed = time.perf_counter() - start
+    output = "\n".join(violations) if violations else ""
+    return ValidationResult(name, elapsed, not violations, output)
+
+
+async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Repository) -> list[ValidationResult]:
     """Run all validations on files."""
     return list(
         await asyncio.gather(
             run_buildifier_lint(files),
             run_pytest_main_check(files, repo_root),
             run_terraform_centralization_check(files),
+            run_filename_convention_check(repo),
             run_subprocess_validation(
                 "kustomize-validate", "_main/cluster/scripts/validate_kustomizations", files, is_cluster_k8s
             ),
@@ -373,7 +385,7 @@ async def main_async() -> int:
 
     # Run validate
     print(f"\nValidating {len(files)} files...")
-    validate_results = await run_validate(files, repo_root)
+    validate_results = await run_validate(files, repo_root, repo)
 
     validate_failed = []
     for vresult in validate_results:

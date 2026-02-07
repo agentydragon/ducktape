@@ -9,7 +9,27 @@
 #   bazel run //tools/precommit -- [files...]
 #   bazel run //tools/precommit  # format and validate all tracked files
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "check_filename_conventions",
+    srcs = ["check_filename_conventions.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_test(
+    name = "test_check_filename_conventions",
+    srcs = ["test_check_filename_conventions.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_filename_conventions",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
 
 py_library(
     name = "check_terraform_centralization",
@@ -47,6 +67,7 @@ py_binary(
     },
     visibility = ["//visibility:public"],
     deps = [
+        ":check_filename_conventions",
         ":check_terraform_centralization",
         "//tools:check_pytest_main",
         "//tools:env_utils",
@@ -80,6 +101,7 @@ py_binary(
     main = "precommit.py",
     visibility = ["//visibility:public"],
     deps = [
+        ":check_filename_conventions",
         ":check_terraform_centralization",
         "//tools:check_pytest_main",
         "//tools:env_utils",
