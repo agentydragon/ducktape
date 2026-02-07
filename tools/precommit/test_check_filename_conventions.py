@@ -109,6 +109,26 @@ def test_no_staged_changes(repo: pygit2.Repository) -> None:
     assert check_filename_conventions(repo) == []
 
 
+def test_filename_conventions_ignored_attr(repo: pygit2.Repository, tmp_path: Path) -> None:
+    (tmp_path / ".gitattributes").write_text("bad-name.py filename-conventions-ignored=true\n")
+    repo.index.add(".gitattributes")
+    (tmp_path / "bad-name.py").write_text("# test")
+    repo.index.add("bad-name.py")
+    repo.index.write()
+    assert check_filename_conventions(repo) == []
+
+
+def test_rules_lint_ignored_attr(repo: pygit2.Repository, tmp_path: Path) -> None:
+    (tmp_path / ".gitattributes").write_text("ignored-dir/** rules-lint-ignored=true\n")
+    repo.index.add(".gitattributes")
+    ignored_dir = tmp_path / "ignored-dir"
+    ignored_dir.mkdir()
+    (ignored_dir / "bad-name.py").write_text("# test")
+    repo.index.add("ignored-dir/bad-name.py")
+    repo.index.write()
+    assert check_filename_conventions(repo) == []
+
+
 def test_both_filename_and_directory_violations(repo: pygit2.Repository, tmp_path: Path) -> None:
     new_dir = tmp_path / "bad-dir"
     new_dir.mkdir()

@@ -2,37 +2,21 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import PurePosixPath
 
 import pygit2
 
+_IGNORE_ATTRIBUTES = ("filename-conventions-ignored", "rules-lint-ignored")
 
-def _lint_excluded_paths(filepaths: list[str]) -> set[str]:
+
+def _lint_excluded_paths(repo: pygit2.Repository, filepaths: list[str]) -> set[str]:
     """Return filepaths excluded from filename convention checks.
 
     Checks for either:
     - filename-conventions-ignored=true (specific to this check)
     - rules-lint-ignored=true (general lint exclusion)
     """
-    if not filepaths:
-        return set()
-
-    excluded: set[str] = set()
-    for attr in ["filename-conventions-ignored", "rules-lint-ignored"]:
-        result = subprocess.run(
-            ["git", "check-attr", attr, "--stdin"],
-            check=False,
-            input="\n".join(filepaths),
-            capture_output=True,
-            text=True,
-        )
-        for line in result.stdout.splitlines():
-            # Format: "path: attr-name: true"
-            if ": true" in line:
-                path = line.split(f": {attr}:")[0]
-                excluded.add(path)
-    return excluded
+    return {f for f in filepaths if any(repo.get_attr(f, attr) in (True, "true") for attr in _IGNORE_ATTRIBUTES)}
 
 
 def check_filename_conventions(repo: pygit2.Repository) -> list[str]:
@@ -60,7 +44,7 @@ def check_filename_conventions(repo: pygit2.Repository) -> list[str]:
     if not new_files:
         return []
 
-    excluded = _lint_excluded_paths(new_files)
+    excluded = _lint_excluded_paths(repo, new_files)
 
     violations: list[str] = []
     checked_dirs: set[str] = set()
