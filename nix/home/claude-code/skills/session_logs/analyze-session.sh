@@ -9,7 +9,7 @@ set -euo pipefail
 if [ $# -eq 1 ]; then
   SESSION_FILE="$1"
 else
-  SESSION_FILE=$(~/.claude/skills/session-logs/find-current-session.sh)
+  SESSION_FILE=$(~/.claude/skills/session_logs/find-current-session.sh)
 fi
 
 if [ ! -f "$SESSION_FILE" ]; then

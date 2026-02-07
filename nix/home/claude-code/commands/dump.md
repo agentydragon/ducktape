@@ -25,7 +25,7 @@ Session continuity beyond Claude Code's built-in session restoration:
 
 ### Session Metadata
 
-- Session ID and file path (use session-logs skill to verify)
+- Session ID and file path (use session_logs skill to verify)
 - Date, working directory, git branch
 
 ### What Was Done
@@ -68,7 +68,7 @@ Keep concise — point to existing docs rather than repeating.
 
 ## Implementation Notes
 
-**Session analysis via session-logs skill:**
+**Session analysis via session_logs skill:**
 
 - Tool calls (Edit, Write, Bash) for modified files
 - User messages for "should", "TODO", "next" patterns

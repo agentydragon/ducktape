@@ -19,9 +19,9 @@ file and apply *very narrow* rules:
       (proprietary binaries not reproducible from public sources).
 
 Usage:
-    ./diff-manifests.py live.ndjson built.ndjson
-    ./diff-manifests.py live.ndjson built.ndjson --exclusions exclusions.yaml
-    ./diff-manifests.py live.ndjson built.ndjson -o report.md
+    ./diff_manifests.py live.ndjson built.ndjson
+    ./diff_manifests.py live.ndjson built.ndjson --exclusions exclusions.yaml
+    ./diff_manifests.py live.ndjson built.ndjson -o report.md
 """
 
 import argparse

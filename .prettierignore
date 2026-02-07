@@ -6,7 +6,7 @@ finance/worthy/worthy/index_tail.html
 claude/claude_hooks/testdata/claude_tools/**/*.md
 
 # OrcaSlicer config - machine-generated, should not be formatted
-nonrcm-dotfiles/config/OrcaSlicer/**
+nonrcm_dotfiles/config/OrcaSlicer/**
 
 # Jinja2 templates - prettier mangles block/variable tag formatting
 **/*.j2
@@ -26,8 +26,8 @@ tana/testdata/**/*.txt
 llm/instruct-logseq/**
 
 # Archived directories - complex formatting that doesn't survive prettier
-claude-commands-old/**
-k8s-old/**
+claude_commands_old/**
+k8s_old/**
 
 # Flux-generated GitOps manifests
 cluster/k8s/flux-system/**

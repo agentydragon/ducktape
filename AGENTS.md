@@ -47,7 +47,7 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 | `trilium/`         | Trilium Notes extensions  |
 | `inventree_utils/` | InventTree plugins        |
 | `website/`         | Personal website (Hakyll) |
-| `k8s-old/`         | legacy k3s cluster        |
+| `k8s_old/`         | legacy k3s cluster        |
 
 ## Dotfiles and Shell Configuration
 

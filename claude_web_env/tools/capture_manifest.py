@@ -12,8 +12,8 @@ Uses a thread pool to parallelize SHA256 hashing for ~3-5x speedup on
 I/O-heavy filesystems.
 
 Usage:
-    ./capture-manifest.py > manifest.ndjson
-    ./capture-manifest.py /some/root > manifest.ndjson
+    ./capture_manifest.py > manifest.ndjson
+    ./capture_manifest.py /some/root > manifest.ndjson
 """
 
 import grp

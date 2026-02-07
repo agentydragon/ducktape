@@ -8,11 +8,11 @@
 Run actions sequentially on a VM. Actions are executed in order.
 
 Examples:
-    ./vm-interact.py 110 --screenshot
-    ./vm-interact.py 110 --type "ip addr" --enter --screenshot
-    ./vm-interact.py 110 --sendkey ctrl-c --screenshot
-    ./vm-interact.py 110 --info
-    echo -e "type ip addr\\nenter\\nscreenshot" | ./vm-interact.py 110 --stdin
+    ./vm_interact.py 110 --screenshot
+    ./vm_interact.py 110 --type "ip addr" --enter --screenshot
+    ./vm_interact.py 110 --sendkey ctrl-c --screenshot
+    ./vm_interact.py 110 --info
+    echo -e "type ip addr\\nenter\\nscreenshot" | ./vm_interact.py 110 --stdin
 """
 
 import json
@@ -134,7 +134,7 @@ CHAR_TO_KEY = {
 
 
 def get_cache_dir(vmid: int) -> Path:
-    cache_dir = Path(platformdirs.user_cache_dir("proxmox-vm")) / f"vm{vmid}"
+    cache_dir = Path(platformdirs.user_cache_dir("proxmox_vm")) / f"vm{vmid}"
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 

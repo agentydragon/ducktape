@@ -1,5 +1,5 @@
 ---
-name: branch-splitter
+name: branch_splitter
 description: Split a large branch with many changes into independent, reviewable PRs. Use when preparing a messy development branch for code review, when asked to "split this into PRs", "make this reviewable", "break this up", or when a branch does too many unrelated things. Produces a DAG of branches/PRs that can be reviewed and merged independently.
 ---
 
@@ -143,7 +143,7 @@ Run validation in this order:
 
 1. **Establish baseline** on base branch (record pre-existing test/lint failures)
 2. **Individual PR validation** — launch validation subagents in parallel, one per branch. Each runs build+test and compares against baseline
-3. **DAG order validation** — run `validate-dag-split.py` to test all valid topological orderings (merges, tests, content invariant)
+3. **DAG order validation** — run `validate_dag_split.py` to test all valid topological orderings (merges, tests, content invariant)
 4. **Manual consistency checks** — dead code, orphaned deletions, docs matching behavior, tests accompanying implementation
 
 If validation fails, iterate (see Handling Validation Failures in the Cookbook).
@@ -154,7 +154,7 @@ Produce a summary: DAG diagram (mermaid), per-PR descriptions, validation result
 
 ## 5. Validation Script
 
-The split must be validated by `validate-dag-split.py` in this skill directory. Copy it to your repo and customize as needed.
+The split must be validated by `validate_dag_split.py` in this skill directory. Copy it to your repo and customize as needed.
 
 ### What It Validates
 
@@ -187,8 +187,8 @@ The split must be validated by `validate-dag-split.py` in this skill directory. 
 ### Running
 
 ```bash
-./validate-dag-split.py dag.json              # Full validation with tests
-./validate-dag-split.py dag.json --skip-tests # Just merges + content invariant
+./validate_dag_split.py dag.json              # Full validation with tests
+./validate_dag_split.py dag.json --skip-tests # Just merges + content invariant
 ```
 
 ### Content Invariant Failures

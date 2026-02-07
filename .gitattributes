@@ -27,7 +27,7 @@ claude_web_env/reference/** rules-lint-ignored=true
 claude_web_env/live-dpkg-versions.txt rules-lint-ignored=true
 
 # Archived/legacy code
-k8s-old/** rules-lint-ignored=true
+k8s_old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true

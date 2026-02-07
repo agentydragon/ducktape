@@ -4,7 +4,7 @@
 # gazelle:exclude ansible
 # gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
 # gazelle:exclude claude/claude_hooks  # complex internal imports
-# gazelle:exclude k8s-old  # legacy k8s configs, deps not in main requirements
+# gazelle:exclude k8s_old  # legacy k8s configs, deps not in main requirements
 
 # gazelle:python_root
 # gazelle:python_generation_mode file

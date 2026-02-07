@@ -1,5 +1,5 @@
 ---
-name: hetzner-vnc-screenshot
+name: hetzner_vnc_screenshot
 description: Take and view screenshots of Hetzner Cloud servers via WebSocket VNC console
 ---
 
@@ -16,7 +16,7 @@ When asked to take a screenshot or view the console of a Hetzner Cloud server:
 Requires `HCLOUD_TOKEN` environment variable:
 
 ```bash
-uv run ~/.claude/skills/hetzner-vnc-screenshot/vnc-screenshot.py my-server-name --output /tmp/screenshot.png
+uv run ~/.claude/skills/hetzner_vnc_screenshot/vnc_screenshot.py my-server-name --output /tmp/screenshot.png
 ```
 
 ### Option 2: With Explicit Credentials
@@ -24,7 +24,7 @@ uv run ~/.claude/skills/hetzner-vnc-screenshot/vnc-screenshot.py my-server-name 
 If you already have the WebSocket URL and password:
 
 ```bash
-uv run ~/.claude/skills/hetzner-vnc-screenshot/vnc-screenshot.py --url '<wss_url>' --password '<password>' --output /tmp/screenshot.png
+uv run ~/.claude/skills/hetzner_vnc_screenshot/vnc_screenshot.py --url '<wss_url>' --password '<password>' --output /tmp/screenshot.png
 ```
 
 ### Step 2: View Screenshot
@@ -37,7 +37,7 @@ Use the Read tool to view `/tmp/screenshot.png`
 
 ```bash
 # One command (uses HCLOUD_TOKEN from environment)
-uv run ~/.claude/skills/hetzner-vnc-screenshot/vnc-screenshot.py talos-vps-0 --output /tmp/talos-vps-0.png
+uv run ~/.claude/skills/hetzner_vnc_screenshot/vnc_screenshot.py talos-vps-0 --output /tmp/talos-vps-0.png
 ```
 
 Then use Read tool to view `/tmp/talos-vps-0.png`
@@ -45,7 +45,7 @@ Then use Read tool to view `/tmp/talos-vps-0.png`
 **With custom API token:**
 
 ```bash
-uv run ~/.claude/skills/hetzner-vnc-screenshot/vnc-screenshot.py talos-vps-0 --token <api-token> --output /tmp/screenshot.png
+uv run ~/.claude/skills/hetzner_vnc_screenshot/vnc_screenshot.py talos-vps-0 --token <api-token> --output /tmp/screenshot.png
 ```
 
 ## CLI Options

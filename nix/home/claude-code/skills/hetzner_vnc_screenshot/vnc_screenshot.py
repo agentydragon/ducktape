@@ -6,10 +6,10 @@ Connects to Hetzner's WebSocket-based VNC console and captures a screenshot.
 
 Usage:
     # With server name (requires HCLOUD_TOKEN env var):
-    ./vnc-screenshot.py my-server-name -v
+    ./vnc_screenshot.py my-server-name -v
 
     # With explicit credentials:
-    ./vnc-screenshot.py --url <wss_url> --password <password>
+    ./vnc_screenshot.py --url <wss_url> --password <password>
 
 References:
     - https://docs.hetzner.cloud/#server-actions-request-console-for-a-server

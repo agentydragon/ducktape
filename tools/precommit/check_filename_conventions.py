@@ -2,16 +2,38 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import PurePosixPath
 
 import pygit2
+
+
+def _lint_excluded_paths(filepaths: list[str]) -> set[str]:
+    """Return the subset of filepaths that have rules-lint-ignored=true in .gitattributes."""
+    if not filepaths:
+        return set()
+    result = subprocess.run(
+        ["git", "check-attr", "rules-lint-ignored", "--stdin"],
+        check=False,
+        input="\n".join(filepaths),
+        capture_output=True,
+        text=True,
+    )
+    excluded: set[str] = set()
+    for line in result.stdout.splitlines():
+        # Format: "path: rules-lint-ignored: true"
+        if ": true" in line:
+            path = line.split(": rules-lint-ignored:")[0]
+            excluded.add(path)
+    return excluded
 
 
 def check_filename_conventions(repo: pygit2.Repository) -> list[str]:
     """Check newly staged files for filename convention violations.
 
     Only flags files newly added to the index (not in HEAD),
-    so existing files with dashes are grandfathered in.
+    so existing files with dashes are grandfathered in. Skips files in
+    directories marked rules-lint-ignored in .gitattributes.
     """
     try:
         head_tree = repo.head.peel(pygit2.Tree)
@@ -31,10 +53,15 @@ def check_filename_conventions(repo: pygit2.Repository) -> list[str]:
     if not new_files:
         return []
 
+    excluded = _lint_excluded_paths(new_files)
+
     violations: list[str] = []
     checked_dirs: set[str] = set()
 
     for filepath in sorted(new_files):
+        if filepath in excluded:
+            continue
+
         path = PurePosixPath(filepath)
 
         if path.suffix in (".py", ".md") and "-" in path.stem:

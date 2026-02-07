@@ -15,48 +15,48 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Domain Strategy
 
-| Domain              | Purpose                    | Status                    |
-| ------------------- | -------------------------- | ------------------------- |
-| `allegedly.works`   | Test/staging cluster       | Registered, pending setup |
-| `agentydragon.com`  | Production (future cutover)| On ansible VPS            |
+| Domain             | Purpose                     | Status                    |
+| ------------------ | --------------------------- | ------------------------- |
+| `allegedly.works`  | Test/staging cluster        | Registered, pending setup |
+| `agentydragon.com` | Production (future cutover) | On ansible VPS            |
 
 ## Current Nodes
 
-| Node               | Location | Role          | IP           |
-| ------------------ | -------- | ------------- | ------------ |
-| talos-vps-cp-0     | Hetzner  | control-plane | (new on boot)|
-| talos-vps-cp-1     | Hetzner  | control-plane | (new on boot)|
-| talos-pve-cp-0     | Proxmox  | control-plane | 10.2.1.1     |
-| talos-pve-worker-0 | Proxmox  | worker        | 10.2.2.1     |
+| Node               | Location | Role          | IP            |
+| ------------------ | -------- | ------------- | ------------- |
+| talos-vps-cp-0     | Hetzner  | control-plane | (new on boot) |
+| talos-vps-cp-1     | Hetzner  | control-plane | (new on boot) |
+| talos-pve-cp-0     | Proxmox  | control-plane | 10.2.1.1      |
+| talos-pve-worker-0 | Proxmox  | worker        | 10.2.2.1      |
 
 ## Core Services (already configured)
 
-| Component              | Status | Notes                              |
-| ---------------------- | ------ | ---------------------------------- |
-| Flux CD                | ✅     | GitOps                             |
-| MetalLB                | ✅     | VIP 10.2.3.2 for ingress           |
-| ingress-nginx          | ✅     | hostNetwork on VPS nodes           |
-| cert-manager           | ✅     | DNS-01 via PowerDNS                |
-| PowerDNS               | ✅     | hostNetwork on VPS nodes           |
-| Vault                  | ✅     | With OIDC auth                     |
-| Authentik              | ✅     | SSO provider                       |
-| External Secrets       | ✅     | Vault integration                  |
-| Monitoring             | ✅     | Prometheus/Grafana/Loki            |
-| Proxmox CSI            | ✅     | Storage for home nodes             |
-| local-path-provisioner | ✅     | Storage for VPS nodes              |
-| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)   |
+| Component              | Status | Notes                            |
+| ---------------------- | ------ | -------------------------------- |
+| Flux CD                | ✅     | GitOps                           |
+| MetalLB                | ✅     | VIP 10.2.3.2 for ingress         |
+| ingress-nginx          | ✅     | hostNetwork on VPS nodes         |
+| cert-manager           | ✅     | DNS-01 via PowerDNS              |
+| PowerDNS               | ✅     | hostNetwork on VPS nodes         |
+| Vault                  | ✅     | With OIDC auth                   |
+| Authentik              | ✅     | SSO provider                     |
+| External Secrets       | ✅     | Vault integration                |
+| Monitoring             | ✅     | Prometheus/Grafana/Loki          |
+| Proxmox CSI            | ✅     | Storage for home nodes           |
+| local-path-provisioner | ✅     | Storage for VPS nodes            |
+| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services) |
 
 ## Applications (already configured)
 
-| App          | Purpose            | SSO |
-| ------------ | ------------------ | --- |
-| Harbor       | Container registry | ✅  |
-| Gitea        | Git hosting        | ✅  |
-| Matrix/Element| Chat              | ✅  |
-| Nix cache    | Binary cache       | -   |
-| BuildBuddy   | Remote build exec  | -   |
-| Headscale    | Tailscale control  | -   |
-| Website      | Static placeholder | -   |
+| App            | Purpose            | SSO |
+| -------------- | ------------------ | --- |
+| Harbor         | Container registry | ✅  |
+| Gitea          | Git hosting        | ✅  |
+| Matrix/Element | Chat               | ✅  |
+| Nix cache      | Binary cache       | -   |
+| BuildBuddy     | Remote build exec  | -   |
+| Headscale      | Tailscale control  | -   |
+| Website        | Static placeholder | -   |
 
 ---
 
@@ -70,7 +70,8 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 ingress-nginx and PowerDNS run with `hostNetwork: true`, binding directly to VPS node IPs.
 
 **Traffic flow**:
-```
+
+```text
 Internet → VPS public IP:443 → ingress-nginx pod (hostNetwork) → backend services
 Internet → VPS public IP:53  → PowerDNS pod (hostNetwork) → DNS responses
 ```
@@ -140,12 +141,12 @@ After cluster boots and new VPS IPs are assigned:
 
 At registrar (where `allegedly.works` is registered), set:
 
-| Record Type | Name                    | Value                          |
-| ----------- | ----------------------- | ------------------------------ |
-| NS          | allegedly.works         | ns1.allegedly.works            |
-| NS          | allegedly.works         | ns2.allegedly.works            |
-| A (glue)    | ns1.allegedly.works     | `<VPS-0 IP after boot>`        |
-| A (glue)    | ns2.allegedly.works     | `<VPS-1 IP after boot>`        |
+| Record Type | Name                | Value                   |
+| ----------- | ------------------- | ----------------------- |
+| NS          | allegedly.works     | ns1.allegedly.works     |
+| NS          | allegedly.works     | ns2.allegedly.works     |
+| A (glue)    | ns1.allegedly.works | `<VPS-0 IP after boot>` |
+| A (glue)    | ns2.allegedly.works | `<VPS-1 IP after boot>` |
 
 ### PowerDNS Zone
 
@@ -207,16 +208,16 @@ ESO reads stable value.
 
 **ESO Password generators to migrate**:
 
-| File | Secret | Notes |
-|------|--------|-------|
-| `k8s/powerdns/externalsecret-api-key.yaml` | PowerDNS API key | Breaks cert-manager webhook |
-| `k8s/authentik/postgres-external-secret.yaml` | PostgreSQL password | Init-time persistence |
-| `k8s/authentik/admin-password-external-secret.yaml` | Admin password | |
-| `k8s/authentik/secret-key-external-secret.yaml` | Secret key | |
-| `k8s/authentik-blueprint/users/password-secret.yaml` | User password | |
-| `k8s/applications/gitea/secrets.yaml` | Admin password | |
-| `k8s/applications/matrix/secrets.yaml` | 3 secrets (signing, registration, macaroon) | |
-| `k8s/monitoring-stack/admin-password-external-secret.yaml` | Grafana admin | |
+| File                                                       | Secret                                      | Notes                       |
+| ---------------------------------------------------------- | ------------------------------------------- | --------------------------- |
+| `k8s/powerdns/externalsecret-api-key.yaml`                 | PowerDNS API key                            | Breaks cert-manager webhook |
+| `k8s/authentik/postgres-external-secret.yaml`              | PostgreSQL password                         | Init-time persistence       |
+| `k8s/authentik/admin-password-external-secret.yaml`        | Admin password                              |                             |
+| `k8s/authentik/secret-key-external-secret.yaml`            | Secret key                                  |                             |
+| `k8s/authentik-blueprint/users/password-secret.yaml`       | User password                               |                             |
+| `k8s/applications/gitea/secrets.yaml`                      | Admin password                              |                             |
+| `k8s/applications/matrix/secrets.yaml`                     | 3 secrets (signing, registration, macaroon) |                             |
+| `k8s/monitoring-stack/admin-password-external-secret.yaml` | Grafana admin                               |                             |
 
 **Implementation**:
 
@@ -242,6 +243,7 @@ Deployments/StatefulSets/DaemonSets. Only Flux controllers can modify these reso
 Change to `Enforce` after validation in live cluster.
 
 **Excluded from policy**:
+
 - Flux controllers (kustomize-controller, helm-controller, source-controller)
 - System namespaces (kube-system, kyverno, flux-system)
 - Kyverno admission controller itself
@@ -260,16 +262,16 @@ Change to `Enforce` after validation in live cluster.
 
 **Recommended changes**:
 
-| Port | Service | Current | Should Be |
-|------|---------|---------|-----------|
-| 80, 443 | HTTP/HTTPS | 0.0.0.0/0 | ✅ Keep (public ingress) |
-| 53 | DNS | 0.0.0.0/0 | ✅ Keep (public DNS) |
-| 6443 | K8s API | 0.0.0.0/0 | Restrict to known IPs |
-| 50000-50001 | Talos API | 0.0.0.0/0 | Restrict to known IPs |
-| 51820 | KubeSpan | 0.0.0.0/0 | Restrict to VPS + Proxmox |
-| 8472 | Cilium VXLAN | 0.0.0.0/0 | Restrict to VPS + Proxmox |
-| 2379-2380 | etcd | 0.0.0.0/0 | Restrict to VPS + Proxmox |
-| 10250 | kubelet | 0.0.0.0/0 | Restrict to VPS + Proxmox |
+| Port        | Service      | Current   | Should Be                 |
+| ----------- | ------------ | --------- | ------------------------- |
+| 80, 443     | HTTP/HTTPS   | 0.0.0.0/0 | ✅ Keep (public ingress)  |
+| 53          | DNS          | 0.0.0.0/0 | ✅ Keep (public DNS)      |
+| 6443        | K8s API      | 0.0.0.0/0 | Restrict to known IPs     |
+| 50000-50001 | Talos API    | 0.0.0.0/0 | Restrict to known IPs     |
+| 51820       | KubeSpan     | 0.0.0.0/0 | Restrict to VPS + Proxmox |
+| 8472        | Cilium VXLAN | 0.0.0.0/0 | Restrict to VPS + Proxmox |
+| 2379-2380   | etcd         | 0.0.0.0/0 | Restrict to VPS + Proxmox |
+| 10250       | kubelet      | 0.0.0.0/0 | Restrict to VPS + Proxmox |
 
 **Implementation approach**:
 
@@ -400,11 +402,11 @@ Phone notification
      eventSeverity: error
      eventSources:
        - kind: Kustomization
-         name: '*'
+         name: "*"
        - kind: HelmRelease
-         name: '*'
+         name: "*"
        - kind: GitRepository
-         name: '*'
+         name: "*"
    ```
 
 4. Add to `k8s/flux-system/kustomization.yaml`

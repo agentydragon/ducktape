@@ -16,24 +16,24 @@ Surface all pending followups and verify session work is still on disk.
 - Provides distinct scope: "Verify these N files contain expected changes"
 
 **Accessing session history for delegation:**
-If delegating conversation analysis to subagent, use the `session-logs` skill for finding and analyzing Claude Code session logs.
+If delegating conversation analysis to subagent, use the `session_logs` skill for finding and analyzing Claude Code session logs.
 
-See: `~/.claude/skills/session-logs/SKILL.md` for complete documentation.
+See: `~/.claude/skills/session_logs/SKILL.md` for complete documentation.
 
 Quick reference:
 
 ```bash
 # Find current session file
-CURRENT_SESSION=$(~/.claude/skills/session-logs/find-current-session.sh)
+CURRENT_SESSION=$(~/.claude/skills/session_logs/find-current-session.sh)
 
 # Get session analysis and statistics
-~/.claude/skills/session-logs/analyze-session.sh
+~/.claude/skills/session_logs/analyze-session.sh
 
 # Or analyze specific session
-~/.claude/skills/session-logs/analyze-session.sh /path/to/session.jsonl
+~/.claude/skills/session_logs/analyze-session.sh /path/to/session.jsonl
 ```
 
-The session-logs skill provides:
+The session_logs skill provides:
 
 - Automatic current session discovery (scores by cwd, git branch, recency)
 - Session log format documentation (JSONL structure, field meanings)

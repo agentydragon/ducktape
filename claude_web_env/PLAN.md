@@ -91,7 +91,7 @@ Version-drift pins now match the live container for **30+ package families**:
   the util-linux pin group to resolve exact-version dependency conflicts.
 - **SHELL error visibility**: Build SHELL directive now dumps last 200 lines
   of build log on failure (saves fd 3 as original stderr, traps ERR).
-- **Per-pattern match counts**: `diff-manifests.py` now tracks and reports how
+- **Per-pattern match counts**: `diff_manifests.py` now tracks and reports how
   many files each exclusion pattern matched, enabling data-driven trimming.
 - **Manifest capture fix**: Built manifest must use `podman create` + `podman
 mount` (not raw VFS dir access) to get the properly merged container

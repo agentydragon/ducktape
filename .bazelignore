@@ -25,7 +25,7 @@ props/.direnv
 investigations
 
 # Legacy k8s cluster configs - deps not in main requirements
-k8s-old
+k8s_old
 
 # Trilium Notes extensions - deps not in main requirements
 trilium

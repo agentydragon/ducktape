@@ -1,5 +1,5 @@
 ---
-name: forensic-surgeon
+name: forensic_surgeon
 description: Deep forensic debugging that never stops until root cause is found or visibility limit is proven. Use when user wants to understand exactly why something is broken, not work around it. Activates on "why is this happening", "dig deeper", "don't work around it", "I want to understand", "find the root cause", "this seems suspicious", or when a problem suggests deeper breakage.
 ---
 

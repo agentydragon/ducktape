@@ -65,7 +65,7 @@ found/**
 ansible/**
 nix/**
 dotfiles/**
-k8s-old/**
+k8s_old/**
 # finance/worthy uses Go, not Bazelized for Go yet
 finance/worthy/**
 
@@ -119,7 +119,7 @@ flake.lock
 *.helmignore
 
 # === Legacy/Archived Directories ===
-nonrcm-dotfiles/**
+nonrcm_dotfiles/**
 terraform/**
 trilium/**
 

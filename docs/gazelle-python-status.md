@@ -38,7 +38,7 @@ bazel run //tools:gazelle_python_manifest.update
 
 3. **Directives** (in root `BUILD.bazel`):
    - `# gazelle:python_generation_mode file` - per-file targets
-   - `# gazelle:exclude` for ansible, homeassistant, claude_hooks, k8s-old
+   - `# gazelle:exclude` for ansible, homeassistant, claude_hooks, k8s_old
    - `# gazelle:resolve` for internal packages with non-standard paths
 
 ## BUILD File Conventions

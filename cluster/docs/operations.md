@@ -84,7 +84,7 @@ terraform apply
 
 ### Take VM Screenshots
 
-See `~/.claude/skills/proxmox-vm-screenshot/vm-screenshot.sh`
+See `~/.claude/skills/proxmox_vm/vm-screenshot.sh`
 
 ### Direct VM Console Access
 

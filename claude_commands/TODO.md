@@ -12,7 +12,7 @@ To deploy the commands:
 
 ```bash
 mkdir -p /code/.claude/commands
-ln -sf ~/code/ducktape/claude-commands/organize-code.md /code/.claude/commands/organize-code.md
+ln -sf ~/code/ducktape/claude_commands/organize_code.md /code/.claude/commands/organize_code.md
 ```
 
 ## TODO: Automate with Ansible
@@ -34,12 +34,12 @@ Example Ansible task structure:
 
 - name: Symlink Claude commands from ducktape
   ansible.builtin.file:
-    src: "{{ ansible_env.HOME }}/code/ducktape/claude-commands/{{ item }}"
+    src: "{{ ansible_env.HOME }}/code/ducktape/claude_commands/{{ item }}"
     dest: "/code/.claude/commands/{{ item }}"
     state: link
     force: true
   loop:
-    - organize-code.md
+    - organize_code.md
 ```
 
 ### Caveats
@@ -49,7 +49,7 @@ Example Ansible task structure:
 - **atlas** (Proxmox host): `/tank/code` (native ZFS mount)
 - **wyrm** (Pop!\_OS VM): `/code` (virtiofs mount of atlas's `/tank/code`)
 
-**Current issue**: The existing symlink at `/code/.claude/commands/organize-code.md` incorrectly points to `/home/agentydragon/code/ducktape/claude-commands/organize-code.md`, which is machine-specific.
+**Current issue**: The existing symlink at `/code/.claude/commands/organize_code.md` incorrectly points to `/home/agentydragon/code/ducktape/claude_commands/organize_code.md`, which is machine-specific.
 
 **Repository structure**:
 
@@ -65,7 +65,7 @@ Example Ansible task structure:
 **Solution**: Use **relative symlinks** that work regardless of mount point:
 
 ```bash
-ln -sf ../../gitlab.com/agentydragon/ducktape/claude-commands/organize-code.md organize-code.md
+ln -sf ../../gitlab.com/agentydragon/ducktape/claude_commands/organize_code.md organize_code.md
 ```
 
 Both create the same relative symlink in the shared filesystem, which resolves correctly from either mount point.
@@ -90,12 +90,12 @@ Both create the same relative symlink in the shared filesystem, which resolves c
 
 - name: Symlink Claude commands using relative paths
   ansible.builtin.command:
-    cmd: ln -sf ../../gitlab.com/agentydragon/ducktape/claude-commands/{{ item }} {{ item }}
+    cmd: ln -sf ../../gitlab.com/agentydragon/ducktape/claude_commands/{{ item }} {{ item }}
     chdir: "{{ shared_code_base }}/.claude/commands"
   args:
     creates: "{{ shared_code_base }}/.claude/commands/{{ item }}"
   loop:
-    - organize-code.md
+    - organize_code.md
   tags: [claude-code]
 ```
 

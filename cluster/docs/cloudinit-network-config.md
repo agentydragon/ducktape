@@ -59,7 +59,7 @@ Cleaned up duplicated Proxmox access configuration:
 - **Fixed SSH reference** in `terraform/00-persistent-auth/main.tf:56`:
   - Changed from `local.proxmox_host` to `local.proxmox_ssh_target`
 
-- **Updated cleanup script** `terraform/01-infrastructure/scripts/cleanup-proxmox-volumes.py:74-75`:
+- **Updated cleanup script** `terraform/01-infrastructure/scripts/cleanup_proxmox_volumes.py:74-75`:
   - Now accepts FQDN parameter
   - Derives SSH target as `root@{host}` (SSOT pattern)
 
@@ -83,7 +83,7 @@ git add terraform/00-persistent-auth/main.tf \
         terraform/01-infrastructure/cilium.tf \
         terraform/01-infrastructure/main.tf \
         terraform/01-infrastructure/proxmox-nodes.tf \
-        terraform/01-infrastructure/scripts/cleanup-proxmox-volumes.py \
+        terraform/01-infrastructure/scripts/cleanup_proxmox_volumes.py \
         terraform/01-infrastructure/variables.tf \
         terraform/01-infrastructure/wait-for-k8s-api.sh \
         terraform/main.tf terraform/modules/ \
@@ -97,7 +97,7 @@ git commit -m "feat: add cloud-init network config option for Proxmox nodes
 - Add dynamic initialization block for cloud-init CD
 - Delete old monolithic terraform structure (modules/*, main.tf)
 - Fix SSOT: use proxmox_api_host FQDN consistently
-- Update cleanup-proxmox-volumes.py to use FQDN parameter"
+- Update cleanup_proxmox_volumes.py to use FQDN parameter"
 ```
 
 ### Testing Required

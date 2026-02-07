@@ -1,5 +1,5 @@
 ---
-name: session-logs
+name: session_logs
 description: Discover and analyze Claude Code session logs from ~/.claude/projects, including finding the current session and extracting tool calls, user messages, and conversation history
 ---
 
@@ -51,7 +51,7 @@ done
 Use the helper script for convenience:
 
 ```bash
-~/.claude/skills/session-logs/find-current-session.sh
+~/.claude/skills/session_logs/find-current-session.sh
 ```
 
 ## Session Log Format
@@ -113,7 +113,7 @@ Use the helper script for convenience:
 ### Show recent Edit operations
 
 ```bash
-CURRENT_SESSION=$(~/.claude/skills/session-logs/find-current-session.sh | head -1)
+CURRENT_SESSION=$(~/.claude/skills/session_logs/find-current-session.sh | head -1)
 
 grep '"type":"tool_use"' "$CURRENT_SESSION" | \
   jq -r 'select(.message.content[0].name == "Edit") |

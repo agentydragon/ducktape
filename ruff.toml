@@ -15,7 +15,7 @@ target-version = "py313"
 # See README.md "Lint/Format Exclusions" section for details.
 exclude = [
     "**/third_party",
-    "k8s-old",
+    "k8s_old",
     "tana/export/references",
     "props/testing/fixtures/testdata",
     "claude/claude_hooks/testdata",

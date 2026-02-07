@@ -42,7 +42,7 @@
       - Auto-apply: {{ legacy_claude_mcp_auto_apply | ternary('Enabled', 'Disabled') }}
 
 - name: Check if MCP configuration changes are needed
-  ansible.builtin.command: "{{ role_path }}/files/apply-mcp-config.py --check --json-output"
+  ansible.builtin.command: "{{ role_path }}/files/apply_mcp_config.py --check --json-output"
   register: mcp_check_result
   failed_when: false
   changed_when: false
@@ -80,7 +80,7 @@
         mcp_apply_data: {}
 
     - name: Apply MCP configuration using Python script
-      ansible.builtin.command: "{{ role_path }}/files/apply-mcp-config.py --json-output"
+      ansible.builtin.command: "{{ role_path }}/files/apply_mcp_config.py --json-output"
       register: apply_result
       changed_when: (apply_result.stdout | from_json).changed | default(false)
 
@@ -104,7 +104,7 @@
       To skip only MCP check: ansible-playbook <hostname>.yaml --skip-tags mcp
 
       To configure manually, run:
-        {{ role_path }}/files/apply-mcp-config.py
+        {{ role_path }}/files/apply_mcp_config.py
 
       Or enable auto-apply by setting:
         legacy_claude_mcp_auto_apply: true

@@ -88,7 +88,7 @@ This will check if MCP servers are configured and fail if they're not.
 If you prefer to configure MCP servers manually:
 
 ```bash
-~/code/ducktape/ansible/roles/legacy_claude_mcp/files/apply-mcp-config.py
+~/code/ducktape/ansible/roles/legacy_claude_mcp/files/apply_mcp_config.py
 ```
 
 This script reads the server configuration from the Ansible role's `defaults/main.yml` file, ensuring there's a single source of truth for the MCP server definitions.

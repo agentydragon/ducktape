@@ -117,7 +117,7 @@ build_image() {
 # Capture live manifest
 capture_live_manifest() {
   log_info "Capturing live manifest..."
-  uv run --script tools/capture-manifest.py >live-manifest.ndjson
+  uv run --script tools/capture_manifest.py >live-manifest.ndjson
   log_info "Live manifest: $(wc -l <live-manifest.ndjson) entries"
 }
 
@@ -135,7 +135,7 @@ capture_built_manifest() {
   MOUNT_PATH=$(CONTAINERS_STORAGE_CONF="$STORAGE_CONF" podman mount "$CONTAINER_NAME")
   log_info "Mounted at: $MOUNT_PATH"
 
-  uv run --script tools/capture-manifest.py "$MOUNT_PATH" >built-manifest.ndjson
+  uv run --script tools/capture_manifest.py "$MOUNT_PATH" >built-manifest.ndjson
 
   # Cleanup
   CONTAINERS_STORAGE_CONF="$STORAGE_CONF" podman unmount "$CONTAINER_NAME"
@@ -147,7 +147,7 @@ capture_built_manifest() {
 # Generate diff report
 generate_diff_report() {
   log_info "Generating diff report..."
-  uv run --script tools/diff-manifests.py \
+  uv run --script tools/diff_manifests.py \
     live-manifest.ndjson built-manifest.ndjson \
     --exclusions exclusions.yaml -o diff-report.md
 

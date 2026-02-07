@@ -31,18 +31,18 @@ CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
     -t claude-code-web-recreated .
 
 # Capture live manifest (ground truth)
-uv run --script tools/capture-manifest.py > live-manifest.ndjson
+uv run --script tools/capture_manifest.py > live-manifest.ndjson
 
 # Capture built manifest (via podman mount — can't podman run under gVisor)
 CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
   podman create --name capture-tmp localhost/claude-code-web-recreated /bin/true
 MOUNT_PATH=$(CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman mount capture-tmp)
-uv run --script tools/capture-manifest.py "$MOUNT_PATH" > built-manifest.ndjson
+uv run --script tools/capture_manifest.py "$MOUNT_PATH" > built-manifest.ndjson
 CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman unmount capture-tmp
 CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman rm capture-tmp
 
 # Diff
-uv run --script tools/diff-manifests.py \
+uv run --script tools/diff_manifests.py \
   live-manifest.ndjson built-manifest.ndjson \
   --exclusions exclusions.yaml -o diff-report.md
 ```
@@ -78,7 +78,7 @@ Key constraints when building under gVisor (see <docs/sandbox-investigation.md>)
 | `Dockerfile`      | Full container build from Ubuntu 24.04                      |
 | `exclusions.yaml` | Diff-time exclusion rules (commented)                       |
 | `rootfs/`         | **Container content** — mirrors live filesystem structure   |
-| `tools/`          | Build/diff tooling (capture-manifest.py, diff-manifests.py) |
+| `tools/`          | Build/diff tooling (capture_manifest.py, diff_manifests.py) |
 | `reference/`      | Reference snapshots from live (not used in build)           |
 | `docs/`           | Container spec, sandbox investigation, skill definitions    |
 | `proxy-ca/`       | Build-time TLS certificates (from TLS-inspecting proxy)     |

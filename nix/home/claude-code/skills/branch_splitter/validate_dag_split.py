@@ -11,7 +11,7 @@ This script validates that a set of PR branches:
 3. Produce a final diff that exactly equals the original branch diff (content invariant)
 
 Usage:
-    ./validate-dag-split.py dag.json [--skip-tests] [--max-orderings N] [--verbose]
+    ./validate_dag_split.py dag.json [--skip-tests] [--max-orderings N] [--verbose]
 
 DAG JSON format:
 {

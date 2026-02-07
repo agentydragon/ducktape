@@ -3,23 +3,23 @@
 Check domain availability using RDAP (Registration Data Access Protocol).
 
 Usage:
-    python check-domains.py domain1.tld domain2.tld ...
-    python check-domains.py < domains.txt
-    python check-domains.py --file domains.txt
-    python check-domains.py --clear-cache  # Clear cached results
+    python check_domains.py domain1.tld domain2.tld ...
+    python check_domains.py < domains.txt
+    python check_domains.py --file domains.txt
+    python check_domains.py --clear-cache  # Clear cached results
 
 Results are cached in ~/.cache/domain-checker/cache.json
 """
 
-import sys
-import json
-import urllib.request
-import urllib.error
 import argparse
+import json
+import sys
 import time
-from pathlib import Path
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 # Cache settings
@@ -57,17 +57,68 @@ RDAP_SERVERS = {
     "club": "https://rdap.nic.club",
     "xyz": "https://rdap.nic.xyz",
     # Donuts TLDs (large registry for new gTLDs)
-    **{tld: "https://rdap.donuts.co/rdap" for tld in [
-        "systems", "services", "network", "technology", "agency", "solutions",
-        "zone", "host", "space", "world", "life", "live", "rocks", "wtf",
-        "lol", "fail", "computer", "partners", "capital", "land", "house",
-        "energy", "run", "digital", "company", "group", "team", "works",
-        "plus", "express", "media", "studio", "software", "engineering",
-        "center", "directory", "support", "tools", "domains", "email",
-        "academy", "training", "institute", "education", "school", "management",
-        "marketing", "consulting", "finance", "ventures", "holdings", "investments",
-        "enterprises", "industries", "international", "limited", "foundation",
-    ]},
+    **dict.fromkeys(
+        [
+            "systems",
+            "services",
+            "network",
+            "technology",
+            "agency",
+            "solutions",
+            "zone",
+            "host",
+            "space",
+            "world",
+            "life",
+            "live",
+            "rocks",
+            "wtf",
+            "lol",
+            "fail",
+            "computer",
+            "partners",
+            "capital",
+            "land",
+            "house",
+            "energy",
+            "run",
+            "digital",
+            "company",
+            "group",
+            "team",
+            "works",
+            "plus",
+            "express",
+            "media",
+            "studio",
+            "software",
+            "engineering",
+            "center",
+            "directory",
+            "support",
+            "tools",
+            "domains",
+            "email",
+            "academy",
+            "training",
+            "institute",
+            "education",
+            "school",
+            "management",
+            "marketing",
+            "consulting",
+            "finance",
+            "ventures",
+            "holdings",
+            "investments",
+            "enterprises",
+            "industries",
+            "international",
+            "limited",
+            "foundation",
+        ],
+        "https://rdap.donuts.co/rdap",
+    ),
 }
 
 
@@ -83,19 +134,13 @@ class DomainCache:
                 now = time.time()
                 for domain, entry in data.items():
                     if now - entry["timestamp"] < CACHE_TTL_SECONDS:
-                        self.cache[domain] = CacheEntry(
-                            status=entry["status"],
-                            timestamp=entry["timestamp"]
-                        )
+                        self.cache[domain] = CacheEntry(status=entry["status"], timestamp=entry["timestamp"])
             except (json.JSONDecodeError, KeyError):
                 self.cache = {}
 
     def save(self):
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        data = {
-            domain: {"status": entry.status, "timestamp": entry.timestamp}
-            for domain, entry in self.cache.items()
-        }
+        data = {domain: {"status": entry.status, "timestamp": entry.timestamp} for domain, entry in self.cache.items()}
         CACHE_FILE.write_text(json.dumps(data, indent=2))
 
     def get(self, domain: str) -> Status | None:
@@ -125,10 +170,7 @@ def check_domain_rdap(domain: str) -> Status:
 
     for url in urls:
         try:
-            req = urllib.request.Request(
-                url,
-                headers={"Accept": "application/rdap+json, application/json"}
-            )
+            req = urllib.request.Request(url, headers={"Accept": "application/rdap+json, application/json"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
                 if data.get("ldhName") or data.get("handle") or data.get("objectClassName"):
@@ -163,13 +205,13 @@ def check_domain(domain: str, cache: DomainCache) -> tuple[str, Status, bool]:
 def parse_domains_file(filepath: Path) -> list[str]:
     """Parse domain file, skipping comments and empty lines."""
     domains = []
-    for line in filepath.read_text().splitlines():
-        line = line.strip()
+    for raw_line in filepath.read_text().splitlines():
+        stripped = raw_line.strip()
         # Skip comments and empty lines
-        if not line or line.startswith("#"):
+        if not stripped or stripped.startswith("#"):
             continue
         # Handle inline comments and extra info
-        domain = line.split()[0].split("#")[0].strip()
+        domain = stripped.split()[0].split("#")[0].strip()
         if domain and "." in domain:
             domains.append(domain)
     return domains
@@ -196,21 +238,21 @@ def main():
     if args.file:
         domains.extend(parse_domains_file(args.file))
     if not sys.stdin.isatty():
-        for line in sys.stdin:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                domain = line.split()[0].split("#")[0].strip()
+        for raw_line in sys.stdin:
+            stripped = raw_line.strip()
+            if stripped and not stripped.startswith("#"):
+                domain = stripped.split()[0].split("#")[0].strip()
                 if domain and "." in domain:
                     domains.append(domain)
 
     # Deduplicate while preserving order
     seen = set()
     unique_domains = []
-    for d in domains:
-        d = d.lower().strip()
-        if d not in seen and d:
-            seen.add(d)
-            unique_domains.append(d)
+    for domain in domains:
+        normalized = domain.lower().strip()
+        if normalized not in seen and normalized:
+            seen.add(normalized)
+            unique_domains.append(normalized)
     domains = unique_domains
 
     if not domains:
@@ -251,9 +293,9 @@ def main():
         cache.save()
 
     # Summary
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"SUMMARY: {len(available)} available, {len(taken)} taken, {len(unknown)} unknown")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     if available:
         print(f"\n✓ AVAILABLE ({len(available)}):")
