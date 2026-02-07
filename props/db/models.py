@@ -1310,8 +1310,8 @@ class LLMRequest(Base):
     """LLM API request logged by the proxy.
 
     Records all requests made through the LLM proxy, including full request/response
-    payloads for debugging. Token counts are computed via llm_request_costs view
-    from response_body->'usage' for successful requests.
+    payloads for debugging. Token counts are extracted from the response at log time
+    and used by the llm_request_costs view for cost calculation.
     """
 
     __tablename__ = "llm_requests"
@@ -1320,10 +1320,15 @@ class LLMRequest(Base):
     agent_run_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False, index=True
     )
-    model: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    model: Mapped[str] = mapped_column(
+        String, ForeignKey("model_metadata.model_id"), nullable=False, index=True
+    )
     request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 

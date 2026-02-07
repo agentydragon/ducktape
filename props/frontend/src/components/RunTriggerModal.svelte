@@ -29,8 +29,11 @@
   let selectedSplit: Split = $state("valid");
   let selectedKind: ExampleKind = $state("whole_snapshot");
   let nSamples: number = $state(5);
+  let criticModel: string = $state("gpt-5.1-codex-mini");
+  let budgetUsd: number = $state(5.0);
   let loading = $state(false);
   let loadingDefinitions = $state(true);
+  let lastJobId: string | null = $state(null);
 
   // Load definitions on mount
   onMount(async () => {
@@ -61,6 +64,7 @@
     if (!selectedDefinition) return;
 
     loading = true;
+    lastJobId = null;
 
     try {
       const result = await triggerValidationRuns({
@@ -68,11 +72,11 @@
         split: selectedSplit,
         example_kind: selectedKind,
         n_samples: nSamples,
-        critic_model: "gpt-5.1-codex-mini",
-        budget_usd: 5.0,
+        critic_model: criticModel,
+        budget_usd: budgetUsd,
       });
-      toast.success(result.message);
-      onClose();
+      lastJobId = result.job_id;
+      toast.success(`${result.message} (job ${result.job_id.slice(0, 8)})`);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to trigger runs";
       toast.error(message);
@@ -163,6 +167,34 @@
             </select>
           </div>
 
+          <!-- Critic model -->
+          <div>
+            <label for="modal-model" class="block text-sm font-medium text-gray-700 mb-1"> Critic Model </label>
+            <input
+              id="modal-model"
+              type="text"
+              bind:value={criticModel}
+              class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              disabled={loading}
+            />
+          </div>
+
+          <!-- Budget -->
+          <div>
+            <label for="modal-budget" class="block text-sm font-medium text-gray-700 mb-1">
+              Budget per critic (USD)
+            </label>
+            <input
+              id="modal-budget"
+              type="number"
+              bind:value={budgetUsd}
+              min="0.01"
+              step="0.5"
+              class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              disabled={loading}
+            />
+          </div>
+
           <!-- Number of samples -->
           <div>
             <label for="modal-samples" class="block text-sm font-medium text-gray-700 mb-1">
@@ -180,6 +212,14 @@
           </div>
         </div>
 
+        <!-- Last job link -->
+        {#if lastJobId}
+          <p class="mt-3 text-sm text-green-700">
+            Job launched: <code class="bg-green-50 px-1 rounded">{lastJobId.slice(0, 8)}</code>
+            — check the Jobs panel for progress.
+          </p>
+        {/if}
+
         <!-- Buttons -->
         <div class="flex justify-end gap-3 mt-6">
           <button
@@ -188,12 +228,12 @@
             disabled={loading}
             class="px-4 py-2 text-sm border border-gray-300 text-gray-700 bg-white rounded hover:bg-gray-50 disabled:opacity-50"
           >
-            Cancel
+            {lastJobId ? "Close" : "Cancel"}
           </button>
           <button
             type="button"
             onclick={handleTrigger}
-            disabled={loading || !selectedDefinition}
+            disabled={loading || !selectedDefinition || budgetUsd <= 0}
             class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {loading ? "Running..." : "Run"}

@@ -1598,6 +1598,11 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.PrimaryKeyConstraint("model_id"),
     )
 
+    # FK: llm_requests.model → model_metadata.model_id (added after both tables exist)
+    op.create_foreign_key(
+        "fk_llm_requests_model", "llm_requests", "model_metadata", ["model"], ["model_id"]
+    )
+
     # =========================================================================
     # 6. Examples VIEW (auto-generated from snapshots + file_sets)
     # =========================================================================

@@ -183,8 +183,8 @@ class OtherRunSpecifics(BaseModel):
 RunSpecifics = Annotated[CriticRunSpecifics | GraderRunSpecifics | OtherRunSpecifics, Field(discriminator="agent_type")]
 
 
-class ModelCostStats(BaseModel):
-    """Per-model LLM cost breakdown."""
+class LLMCostStats(BaseModel):
+    """LLM cost stats — used both per-model and as aggregate totals."""
 
     requests: int
     input_tokens: int
@@ -192,16 +192,22 @@ class ModelCostStats(BaseModel):
     output_tokens: int
     cost_usd: float
 
+    @staticmethod
+    def aggregate(by_model: dict[str, LLMCostStats]) -> LLMCostStats:
+        return LLMCostStats(
+            requests=sum(s.requests for s in by_model.values()),
+            input_tokens=sum(s.input_tokens for s in by_model.values()),
+            cached_tokens=sum(s.cached_tokens for s in by_model.values()),
+            output_tokens=sum(s.output_tokens for s in by_model.values()),
+            cost_usd=sum(s.cost_usd for s in by_model.values()),
+        )
 
-class LLMCostStats(BaseModel):
-    """Aggregated LLM cost stats for an agent run."""
 
-    total_requests: int
-    total_input_tokens: int
-    total_cached_tokens: int
-    total_output_tokens: int
-    total_cost_usd: float
-    by_model: dict[str, ModelCostStats]
+class LLMCostSummary(BaseModel):
+    """Aggregated LLM cost summary for an agent run, with per-model breakdown."""
+
+    totals: LLMCostStats
+    by_model: dict[str, LLMCostStats]
 
 
 class AgentRunDetail(BaseModel):
@@ -226,7 +232,7 @@ class AgentRunDetail(BaseModel):
     container_stderr: str | None
 
     # LLM costs aggregated for this run
-    llm_costs: LLMCostStats | None
+    llm_costs: LLMCostSummary | None
 
     # Type-specific details (discriminated union)
     details: RunSpecifics
@@ -739,40 +745,19 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
         # Get LLM cost stats for this run
         llm_cost_rows = session.query(LLMRunCost).filter(LLMRunCost.agent_run_id == run_id).all()
 
-        llm_costs: LLMCostStats | None = None
+        llm_costs: LLMCostSummary | None = None
         if llm_cost_rows:
-            by_model: dict[str, ModelCostStats] = {}
-            total_requests = 0
-            total_input = 0
-            total_cached = 0
-            total_output = 0
-            total_cost = 0.0
-            for row in llm_cost_rows:
-                requests = row.request_count or 0
-                input_tokens = row.input_tokens or 0
-                cached = row.cached_input_tokens or 0
-                output_tokens = row.output_tokens or 0
-                cost = row.cost_usd or 0.0
-                by_model[row.model] = ModelCostStats(
-                    requests=requests,
-                    input_tokens=input_tokens,
-                    cached_tokens=cached,
-                    output_tokens=output_tokens,
-                    cost_usd=cost,
+            by_model: dict[str, LLMCostStats] = {
+                row.model: LLMCostStats(
+                    requests=row.request_count or 0,
+                    input_tokens=row.input_tokens or 0,
+                    cached_tokens=row.cached_input_tokens or 0,
+                    output_tokens=row.output_tokens or 0,
+                    cost_usd=row.cost_usd or 0.0,
                 )
-                total_requests += requests
-                total_input += input_tokens
-                total_cached += cached
-                total_output += output_tokens
-                total_cost += cost
-            llm_costs = LLMCostStats(
-                total_requests=total_requests,
-                total_input_tokens=total_input,
-                total_cached_tokens=total_cached,
-                total_output_tokens=total_output,
-                total_cost_usd=total_cost,
-                by_model=by_model,
-            )
+                for row in llm_cost_rows
+            }
+            llm_costs = LLMCostSummary(totals=LLMCostStats.aggregate(by_model), by_model=by_model)
 
         # Return unified AgentRunDetail with nested type-specific details
         return AgentRunDetail(

@@ -310,6 +310,40 @@ class AgentRegistry:
 
     # --- Execution Methods ---
 
+    def _validate_spawn_budget(self, parent_run_id: UUID, child_budget_usd: float) -> None:
+        """Validate that spawning a child with the given budget doesn't exceed parent's remaining budget.
+
+        Uses the llm_request_costs view to compute parent's spent amount (including all descendants).
+        """
+        from sqlalchemy import text  # avoids top-level import for rarely-used symbol
+
+        with self._db.session() as session:
+            parent = session.get(AgentRun, parent_run_id)
+            if parent is None:
+                raise ValueError(f"Parent run {parent_run_id} not found")
+
+            result = session.execute(
+                text("""
+                    WITH RECURSIVE run_tree AS (
+                        SELECT agent_run_id FROM agent_runs WHERE agent_run_id = :run_id
+                        UNION ALL
+                        SELECT ar.agent_run_id FROM agent_runs ar
+                        JOIN run_tree rt ON ar.parent_agent_run_id = rt.agent_run_id
+                    )
+                    SELECT COALESCE(SUM(c.cost_usd), 0) AS spent
+                    FROM llm_request_costs c
+                    JOIN run_tree rt ON c.agent_run_id = rt.agent_run_id
+                """),
+                {"run_id": parent_run_id},
+            )
+            spent = result.scalar_one()
+            remaining = parent.budget_usd - spent
+            if child_budget_usd > remaining:
+                raise ValueError(
+                    f"Cannot spawn child with ${child_budget_usd:.2f} budget: "
+                    f"parent has ${remaining:.2f} remaining (${spent:.2f} spent of ${parent.budget_usd:.2f})"
+                )
+
     async def run_critic(
         self,
         *,
@@ -321,6 +355,9 @@ class AgentRegistry:
         budget_usd: float,
     ) -> UUID:
         """Run a critic agent. Returns agent run ID (query DB for status)."""
+        if parent_run_id is not None:
+            self._validate_spawn_budget(parent_run_id, budget_usd)
+
         agent_run_id = uuid4()
         image_digest, image = await self._resolve_image(AgentType.CRITIC, image_ref)
 
