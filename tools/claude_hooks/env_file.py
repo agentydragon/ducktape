@@ -5,6 +5,7 @@ Centralizes all environment variable exports into a single file write.
 
 from __future__ import annotations
 
+import os
 import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -21,6 +22,31 @@ ENV_AUTH_PROXY_URL = "AUTH_PROXY_URL"
 ENV_AUTH_PROXY_BAZELRC = "AUTH_PROXY_BAZELRC"
 ENV_BAZELISK_PATH = "BAZELISK_PATH"
 ENV_BAZEL_REPO_ROOT = "BAZEL_REPO_ROOT"
+
+
+# NO_PROXY entries that break Go module downloads in the gVisor sandbox.
+# proxy.golang.org redirects zip downloads to storage.googleapis.com;
+# if that's in NO_PROXY, Go bypasses the egress proxy and DNS fails.
+_NO_PROXY_STRIP_PATTERNS = {"*.googleapis.com", "*.google.com"}
+
+
+def _strip_no_proxy_google() -> dict[str, str] | None:
+    """Strip *.googleapis.com and *.google.com from NO_PROXY/no_proxy.
+
+    Returns dict of env var overrides, or None if no change needed.
+    """
+    original = os.environ.get("NO_PROXY", "")
+    if not original:
+        return None
+
+    entries = [e.strip() for e in original.split(",")]
+    filtered = [e for e in entries if e not in _NO_PROXY_STRIP_PATTERNS]
+
+    if len(filtered) == len(entries):
+        return None  # Nothing to strip
+
+    cleaned = ",".join(filtered)
+    return {"NO_PROXY": cleaned, "no_proxy": cleaned}
 
 
 def _exports_from_dict(env_vars: Mapping[str, str | Path]) -> list[str]:
@@ -103,6 +129,17 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     # Anthropic sets these in the container with fresh JWT credentials.
     # Only the bazel wrapper overrides them for its subprocess.
     # See README.md "Our Design Principle" section.
+
+    # Fix NO_PROXY: Anthropic's container sets NO_PROXY with *.googleapis.com
+    # and *.google.com, which breaks Go module downloads. The Go module proxy
+    # (proxy.golang.org) redirects zip downloads to storage.googleapis.com;
+    # Go's net/http honors NO_PROXY, bypasses the egress proxy for that domain,
+    # and DNS fails (no direct internet in gVisor sandbox). Strip these entries
+    # so all external traffic goes through the proxy.
+    no_proxy_override = _strip_no_proxy_google()
+    if no_proxy_override is not None:
+        exports.extend(["", "# NO_PROXY fix: strip *.googleapis.com/*.google.com (breaks Go module downloads)"])
+        exports.extend(_exports_from_dict(no_proxy_override))
 
     # Docker/Podman configuration
     if vars.docker_host or vars.podman_env:

@@ -7,7 +7,8 @@ startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password
 
 # Pass proxy + TLS CA to repository rules (for Go modules in gazelle, etc.)
 # GONOPROXY=* forces all Go module downloads through HTTP proxy.
-# Explicitly NOT passing NO_PROXY since it excludes *.googleapis.com.
+# Explicitly NOT passing NO_PROXY since it excludes *.googleapis.com
+# (see also _strip_no_proxy_google in env_file.py which fixes this globally).
 common --repo_env=HTTP_PROXY
 common --repo_env=HTTPS_PROXY
 common --repo_env=http_proxy

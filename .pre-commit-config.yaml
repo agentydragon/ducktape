@@ -169,20 +169,35 @@ repos:
         args: ["--framework", "terraform", "--skip-check", "CKV_TF_1", "-f"]
         files: "^cluster/terraform/.*\\.tf$"
 
-  # TFLint - Terraform linter (uses antonbabenko wrapper which handles tflint --init)
+  # TFLint - Terraform linter (auto-installed via go install)
   # Config: cluster/.tflint.hcl; plugins cached in ~/.tflint.d/plugins
   # Wrapper groups changed files by directory and runs tflint --chdir=<dir> per directory
   # (tflint always lints the whole module, not individual files)
+  #
+  # Version pin: v0.56.0 is the latest tflint compatible with Go 1.24 (shipped in
+  # Claude Code web containers). v0.60.0+ requires Go >= 1.25.4. Bump when the
+  # container Go version is upgraded.
+  #
+  # Claude Code web: `go install` needs NO_PROXY to NOT include *.googleapis.com,
+  # because proxy.golang.org redirects zip downloads to storage.googleapis.com.
+  # If NO_PROXY bypasses the egress proxy for that domain, DNS fails (no direct
+  # internet in gVisor sandbox). The session-start hook should strip *.googleapis.com
+  # from NO_PROXY — see tools/claude_hooks/ proxy documentation.
+  - repo: local
+    hooks:
+      - id: tflint
+        name: tflint (cluster)
+        language: golang
+        additional_dependencies:
+          - github.com/terraform-linters/tflint@v0.56.0
+        entry: tools/precommit/run_tflint.sh
+        files: "^cluster/terraform/.*\\.tf$"
+
+  # tofu validate - runs tofu init -backend=false + tofu validate per directory
+  # Wrapper handles init with retry logic; discovers tofu via PCT_TFPATH or PATH
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.105.0
     hooks:
-      - id: terraform_tflint
-        args:
-          - --args=--config=__GIT_WORKING_DIR__/cluster/.tflint.hcl
-        files: "^cluster/terraform/.*\\.tf$"
-
-      # tofu validate - runs tofu init -backend=false + tofu validate per directory
-      # Wrapper handles init with retry logic; discovers tofu via PCT_TFPATH or PATH
       - id: terraform_validate
         files: "^cluster/terraform/.*\\.tf$"
 
