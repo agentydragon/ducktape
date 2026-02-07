@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 
 from props.agents.critic.exceptions import CriticExecutionError
 from props.backend.auth import (
@@ -86,7 +87,7 @@ class ValidationRunRequest(BaseModel):
     split: Split = Split.VALID
     n_samples: int = Field(ge=1, le=50, default=5)
     critic_model: str
-    budget_usd: float = Field(default=5.0, description="Max USD cost per critic agent")
+    budget_usd: float = Field(gt=0, description="Max USD cost per critic agent")
 
 
 class ValidationRunResponse(BaseModel):
@@ -182,6 +183,16 @@ class OtherRunSpecifics(BaseModel):
 RunSpecifics = Annotated[CriticRunSpecifics | GraderRunSpecifics | OtherRunSpecifics, Field(discriminator="agent_type")]
 
 
+class ModelCostStats(BaseModel):
+    """Per-model LLM cost breakdown."""
+
+    requests: int
+    input_tokens: int
+    cached_tokens: int
+    output_tokens: int
+    cost_usd: float
+
+
 class LLMCostStats(BaseModel):
     """Aggregated LLM cost stats for an agent run."""
 
@@ -190,9 +201,7 @@ class LLMCostStats(BaseModel):
     total_cached_tokens: int
     total_output_tokens: int
     total_cost_usd: float
-    by_model: dict[str, dict] = Field(
-        description="model -> {requests, input_tokens, cached_tokens, output_tokens, cost_usd}"
-    )
+    by_model: dict[str, ModelCostStats]
 
 
 class AgentRunDetail(BaseModel):
@@ -233,7 +242,6 @@ class RunInfo(BaseModel):
     status: AgentRunStatus
     created_at: datetime
     updated_at: datetime
-    # Split is only present for critic runs (derived from snapshot)
     split: Split | None = None
 
 
@@ -270,7 +278,6 @@ class LLMRequestsResponse(BaseModel):
     """Response for LLM requests list."""
 
     requests: list[LLMRequestInfo]
-    total_count: int
 
 
 # --- Job Tracking ---
@@ -386,9 +393,14 @@ def list_runs(
             # example_kind is at type_config->'example'->>'kind'
             query = query.filter(AgentRun.type_config["example"]["kind"].astext == example_kind)
 
-        # Join with snapshots to get split for critic runs
-        # For critic runs, snapshot_slug is at type_config->'example'->>'snapshot_slug'
-        query = query.outerjoin(Snapshot, AgentRun.type_config["example"]["snapshot_slug"].astext == Snapshot.slug)
+        # Join with snapshots to get split.
+        # Critic runs: type_config->'example'->>'snapshot_slug'
+        # Grader runs: type_config->>'snapshot_slug'
+        snapshot_slug_expr = func.coalesce(
+            AgentRun.type_config["example"]["snapshot_slug"].astext,
+            AgentRun.type_config["snapshot_slug"].astext,
+        )
+        query = query.outerjoin(Snapshot, snapshot_slug_expr == Snapshot.slug)
 
         if split:
             query = query.filter(Snapshot.split == split)
@@ -550,7 +562,7 @@ async def run_critic(
     - VALID split: restrictions depend on target_metric mode
     - TEST split: completely off-limits
 
-    Returns critic_run_id. Use GET /critic/{critic_run_id}/grading_status to poll for results.
+    Returns critic_run_id. Use wait_until_graded() to poll DB for grading completion.
     """
     _, parent_run_id = auth
     registry = get_registry(request)
@@ -591,9 +603,12 @@ async def run_critic(
     with admin_db.session() as session:
         critic_run = session.get(AgentRun, critic_run_id)
         assert critic_run is not None
-        status = critic_run.status
 
-    return RunCriticResponse(critic_run_id=critic_run_id, status=status)
+    return RunCriticResponse(
+        critic_run_id=critic_run_id,
+        status=critic_run.status,
+        container_exit_code=critic_run.container_exit_code,
+    )
 
 
 # --- Run Detail Endpoints ---
@@ -726,7 +741,7 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
 
         llm_costs: LLMCostStats | None = None
         if llm_cost_rows:
-            by_model: dict[str, dict] = {}
+            by_model: dict[str, ModelCostStats] = {}
             total_requests = 0
             total_input = 0
             total_cached = 0
@@ -738,13 +753,13 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
                 cached = row.cached_input_tokens or 0
                 output_tokens = row.output_tokens or 0
                 cost = row.cost_usd or 0.0
-                by_model[row.model] = {
-                    "requests": requests,
-                    "input_tokens": input_tokens,
-                    "cached_tokens": cached,
-                    "output_tokens": output_tokens,
-                    "cost_usd": cost,
-                }
+                by_model[row.model] = ModelCostStats(
+                    requests=requests,
+                    input_tokens=input_tokens,
+                    cached_tokens=cached,
+                    output_tokens=output_tokens,
+                    cost_usd=cost,
+                )
                 total_requests += requests
                 total_input += input_tokens
                 total_cached += cached
@@ -795,9 +810,7 @@ def get_run_llm_requests(run_id: UUID, agent_db: AgentDb) -> LLMRequestsResponse
             .all()
         )
 
-        return LLMRequestsResponse(
-            requests=[LLMRequestInfo.model_validate(req) for req in requests], total_count=len(requests)
-        )
+        return LLMRequestsResponse(requests=[LLMRequestInfo.model_validate(req) for req in requests])
 
 
 # --- WebSocket for Runs Feed (list updates) ---

@@ -8,48 +8,40 @@ High-level architecture and shared infrastructure for the props evaluation syste
 props/
 ├── .envrc                    # Devenv entry point for env vars
 ├── compose.yaml              # Docker Compose for postgres, registry, backend
-├── BUILD.bazel               # Bazel build file
-├── AGENTS.md                 # Agent instructions
-├── core/                     # Core Python library
-│   ├── agent_registry.py     # Agent execution registry
-│   ├── agent_types.py        # Agent type definitions
-│   ├── models/               # Data models
+├── core/                     # Core types and models
+│   ├── agent_types.py        # Agent type definitions and TypeConfig union
+│   ├── eval_api_models.py    # Request/response models for eval API
+│   ├── models/               # Data models (examples, true_positive, etc.)
 │   └── gepa/                 # GEPA prompt optimization
 ├── cli/                      # Command-line interface
-│   ├── __main__.py           # CLI entry point
-│   ├── cmd_db.py             # Database commands
-│   ├── cmd_snapshot.py       # Snapshot commands
-│   └── ...                   # Other command modules
+│   └── cmd_*.py              # Subcommand modules (db, stats, etc.)
 ├── db/                       # Database layer
-│   ├── models.py             # SQLAlchemy models
-│   ├── migrations/           # Alembic migrations
-│   └── sync/                 # Specimen sync utilities
+│   ├── models.py             # SQLAlchemy ORM models
+│   ├── migrations/           # Alembic migration (single complete_schema)
+│   └── sync/                 # Specimen sync from filesystem to DB
+├── orchestration/            # Agent execution
+│   ├── agent_registry.py     # Container lifecycle, image pull, role creation
+│   └── agent_credentials.py  # Per-agent PostgreSQL role management
 ├── backend/                  # Unified FastAPI server
-│   ├── app.py                # FastAPI app
-│   ├── auth.py               # Auth middleware (postgres creds)
+│   ├── app.py                # FastAPI app with lifespan
+│   ├── auth.py               # Auth middleware (postgres creds → RLS)
 │   └── routes/               # API endpoints
 │       ├── stats.py          # Dashboard stats API
-│       ├── runs.py           # Agent runs API
-│       ├── ground_truth.py   # Ground truth API
-│       ├── eval.py           # Eval API (for critic-dev agents)
-│       ├── llm.py            # LLM proxy (OpenAI API)
-│       └── registry.py       # Registry proxy (OCI Distribution API)
-├── frontend/                 # Svelte UI
-│   ├── package.json
-│   └── src/                  # Frontend source
-├── agents/                   # Agent definitions
-│   ├── critic/               # Critic agent
-│   ├── grader/               # Grader agent
-│   └── critic_dev/           # Development critic agents
-│       ├── improve/          # Improvement agent
-│       └── optimize/         # Optimization agent
-├── standards/                # Property definitions
-│   ├── python/               # Python-specific properties
-│   ├── markdown/             # Markdown-specific properties
-│   └── domain-types-and-units/
-├── testing/                  # Testing utilities
+│       ├── runs.py           # Agent runs + validation API
+│       ├── ground_truth.py   # Snapshot/issue browsing API
+│       ├── llm.py            # LLM proxy (OpenAI-compatible)
+│       └── registry.py       # OCI registry proxy
+├── frontend/                 # Svelte dashboard UI
+├── agents/                   # Agent implementations
+│   ├── critic/               # Critic agent (finds issues in code)
+│   ├── grader/               # Grader daemon (matches issues to ground truth)
+│   └── critic_dev/           # Meta-agents that develop critics
+│       ├── improve/          # Creates improved critic definitions
+│       └── optimize/         # Runs eval loops to select best critics
+├── standards/                # Property definitions (issue taxonomies)
+├── testing/                  # Shared test fixtures and utilities
 ├── docs/                     # Documentation
-└── prompts/                  # Prompt templates
+└── prompts/                  # Mako prompt templates
 ```
 
 ## Initial Setup
@@ -186,9 +178,9 @@ This:
 
 Grading is handled automatically by snapshot grader daemons. Use the frontend UI (`POST /api/runs/validation`) to trigger validation runs on specific definitions.
 
-### Specimen Inspection (for assistants)
+### Specimen Inspection
 
-**Note:** The `snapshot exec` command is currently disabled. Snapshot source code is now stored in PostgreSQL and fetched by agent init scripts at runtime. To inspect specimen files, query the database directly or use the sync'd specimens repository.
+Specimen source code is stored in PostgreSQL and fetched by agent init scripts at runtime. To inspect specimen files, query the database directly or use the sync'd specimens repository.
 
 ## GitHub Copilot Agent Setup
 

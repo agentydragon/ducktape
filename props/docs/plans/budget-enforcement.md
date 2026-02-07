@@ -219,14 +219,14 @@ No new `AgentRunStatus.BUDGET_EXCEEDED` - the natural failure mode is sufficient
 
 ### Migration Steps
 
-1. **Add view** `agent_budget_status`
-2. **Update AgentConfig** to require `budget_usd` parameter
-3. **Update agent_registry** to populate `budget_usd` column on launch
-4. **Update LLM proxy** to check budget before forwarding
-5. **Update eval endpoints** to require budget parameter
-6. **Update spawn validation** to check parent's remaining budget
-7. **Remove** `budget_limit` from `CriticDevOptimizeTypeConfig`
-8. **Backfill** existing critic-dev optimizer runs (copy from type_config)
+1. **Add view** `agent_budget_status` — not started
+2. ~~**Update AgentConfig** to require `budget_usd` parameter~~ — done (`budget_usd` is on `AgentRun` directly)
+3. ~~**Update agent_registry** to populate `budget_usd` column on launch~~ — done (all agent types populate it)
+4. **Update LLM proxy** to check budget before forwarding — not started
+5. ~~**Update eval endpoints** to require budget parameter~~ — done (`RunCriticRequest.budget_usd` is required)
+6. **Update spawn validation** to check parent's remaining budget — not started
+7. **Remove** `budget_limit` from `CriticDevOptimizeTypeConfig` — not started
+8. ~~**Backfill** existing critic-dev optimizer runs~~ — N/A (budget_usd is NOT NULL, always populated)
 
 ### Files to Modify
 
