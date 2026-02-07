@@ -2,7 +2,7 @@
 
 ## Context
 
-@../shared-context.md
+@../shared_context.md
 
 ## Pattern Description
 
