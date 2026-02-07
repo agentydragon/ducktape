@@ -36,8 +36,6 @@ py_library(
 # Subcommand modules
 # =============================================================================
 
-# Note: cmd_critic_dev and cmd_critic_dev_helpers moved to //props/critic_dev
-
 py_library(
     name = "cmd_db",
     srcs = ["cmd_db.py"],

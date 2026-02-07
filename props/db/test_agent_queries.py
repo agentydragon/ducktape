@@ -251,19 +251,5 @@ class TestQueryBuilders:
             assert row.model == DEFAULT_TEST_MODEL
 
 
-class TestJsonbNullFiltering:
-    """Test that queries properly filter out JSONB null values.
-
-    JSONB null is different from SQL NULL:
-    - SQL NULL: column value is not present (output IS NULL) - NOT possible in schema
-    - JSONB null: column contains the JSON literal `null` (output = 'null'::jsonb)
-
-    The database schema has output NOT NULL, so only JSONB null values are possible.
-    Queries must filter out JSONB null values to avoid null metrics in results.
-
-    Note: We use raw SQL to insert test data to precisely control JSONB content.
-    """
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

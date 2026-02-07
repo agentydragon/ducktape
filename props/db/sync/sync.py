@@ -1,8 +1,4 @@
-"""Sync snapshots, issues, and model metadata from filesystem to database.
-
-Replaces sync_specimens.py with new snapshot-based schema.
-Includes model metadata sync (previously in sync_model_metadata.py).
-"""
+"""Sync snapshots, issues, and model metadata from filesystem to database."""
 
 from __future__ import annotations
 
@@ -47,9 +43,6 @@ from props.db.sync.loader import discover_snapshots
 
 if TYPE_CHECKING:
     from props.core.models.true_positive import LineRange
-
-# Agent definitions are stored in the props package under agent_defs/
-AGENT_DEFS_PATH = Path(__file__).parent.parent.parent / "agent_defs"
 
 logger = logging.getLogger(__name__)
 
@@ -708,27 +701,7 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
 
 
-# ============================================================================
-# Model Metadata Sync (from MODEL_METADATA source of truth)
-# ============================================================================
-
-
-@dataclass
-class ModelMetadataSyncStats:
-    """Statistics from a model metadata sync operation."""
-
-    total: int
-    added: int
-    updated: int
-    deleted: int
-
-    @property
-    def summary_text(self) -> str:
-        """Format as human-readable summary."""
-        return f"{self.total} models (+{self.added}, ~{self.updated}, -{self.deleted})"
-
-
-def sync_model_metadata_with_session(session: Session) -> ModelMetadataSyncStats:
+def sync_model_metadata_with_session(session: Session) -> SyncStats:
     """Sync model_metadata table from MODEL_METADATA source using provided session.
 
     Ensures database exactly matches the source of truth.
@@ -743,7 +716,7 @@ def sync_model_metadata_with_session(session: Session) -> ModelMetadataSyncStats
     existing_count = session.query(ModelMetadata).count()
     if existing_count == len(MODEL_METADATA):
         logger.debug(f"Model metadata already synced ({existing_count} models)")
-        return ModelMetadataSyncStats(added=0, updated=0, deleted=0, total=existing_count)
+        return SyncStats(added=0, updated=0, deleted=0, total=existing_count)
 
     # Full sync: make DB exactly match source
     logger.info(f"Syncing model_metadata table (source: {len(MODEL_METADATA)} models, DB: {existing_count})...")
@@ -787,50 +760,22 @@ def sync_model_metadata_with_session(session: Session) -> ModelMetadataSyncStats
     logger.info(
         f"Model metadata synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={len(MODEL_METADATA)} total"
     )
-    return ModelMetadataSyncStats(added=added, updated=updated, deleted=deleted, total=len(MODEL_METADATA))
-
-
-# ============================================================================
-# Agent Definitions Sync (from repo-tracked agent_defs/)
-# ============================================================================
-
-
-# Detector definitions that inherit from critic (use critic agent_type)
-CRITIC_BASED_DETECTORS = {
-    "dead_code",
-    "flag_propagation",
-    "contract_truthfulness",
-    "high_recall_critic",
-    "verbose_docs",
-}
-
-
-# Agent definition sync removed - definitions are now OCI images managed via registry
-
-
-# ============================================================================
-# Full Sync (orchestrates all sync operations)
-# ============================================================================
+    return SyncStats(added=added, updated=updated, deleted=deleted, total=len(MODEL_METADATA))
 
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing snapshots, issues, files, file sets, and model metadata.
-
-    Note: Agent definitions are no longer synced - they are OCI images managed via registry.
-    """
+    """Combined result from syncing snapshots, issues, files, file sets, and model metadata."""
 
     snapshot_stats: SyncStats
     issue_stats: SyncStats
     snapshot_file_stats: SyncStats
     file_set_stats: SyncStats
-    model_metadata_stats: ModelMetadataSyncStats
+    model_metadata_stats: SyncStats
 
 
 def sync_all(session: Session, *, use_staged: bool = False, dry_run: bool = False) -> FullSyncResult:
     """Sync snapshots, issues, files, file sets, and model metadata.
-
-    Note: Agent definitions are no longer synced - they are OCI images managed via registry.
 
     Discovers snapshots once and passes data to all sync operations.
     All sync operations happen within the provided database session for consistency.
@@ -841,15 +786,6 @@ def sync_all(session: Session, *, use_staged: bool = False, dry_run: bool = Fals
     3. issues (depends on snapshots)
     4. file_sets (depends on snapshot_files and issues via FK)
     5. model_metadata (independent)
-    6. agent_definitions (independent)
-
-    Args:
-        session: Active database session
-        use_staged: If True, read agent definitions from staged files instead of HEAD.
-        dry_run: If True, rollback all changes instead of committing. Validates constraints.
-
-    Returns:
-        Combined results from all sync operations
     """
     specimens_dir = get_specimens_base_path()
 
@@ -883,8 +819,6 @@ def sync_all(session: Session, *, use_staged: bool = False, dry_run: bool = Fals
     print("Syncing model metadata...")
     model_metadata_stats = sync_model_metadata_with_session(session)
     print(f"  {model_metadata_stats.summary_text}")
-
-    # Note: Agent definitions no longer synced (OCI images managed via registry)
 
     if dry_run:
         logger.info("DRY-RUN: Rolling back all changes")

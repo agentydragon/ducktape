@@ -5,7 +5,6 @@ from __future__ import annotations
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
 from typing import Any
@@ -45,11 +44,6 @@ from props.db.query_builders import query_recall_by_example
 
 # Stats subcommand group
 stats_app = typer.Typer(help="Statistics and metrics commands")
-
-
-# ============================================================================
-# Formatting Helpers
-# ============================================================================
 
 
 def fmt_float(value: float | None, decimals: int = 2) -> str:
@@ -236,31 +230,6 @@ def _display_distribution(
     plt.simple_bar(bucket_labels, bucket_counts, width=50, title="")
     plt.show()
     console.print()
-
-
-@dataclass
-class SplitStats:
-    completed: int = 0  # Unique examples evaluated (with grader runs completed)
-    recalls: list[float] = None  # type: ignore[assignment]
-    total_available: int = 0  # Total training examples available in this split
-    critic_max_turns: int = 0  # Number of critic runs that exceeded max turns
-
-    def __post_init__(self) -> None:
-        if self.recalls is None:
-            self.recalls = []
-
-    @property
-    def mean_recall(self) -> float | None:
-        if not self.recalls:
-            return None
-        return statistics.mean(self.recalls)
-
-    @property
-    def zero_rate(self) -> float | None:
-        if not self.recalls:
-            return None
-        zeros = sum(1 for r in self.recalls if r == 0.0)
-        return 100.0 * zeros / len(self.recalls)
 
 
 def _display_split_analysis(
@@ -956,25 +925,4 @@ def cmd_stats(ctx: typer.Context) -> None:
             tp_counts_per_sample[split],
             total_available=split_total,
             show_all_prompts=show_all,
-        )
-
-    # Tool call count distributions (disabled - Event model not implemented)
-    # TODO: Re-enable when Event model is added to track agent events
-    critic_tool_calls: list[tuple[object, int]] = []
-    grader_tool_calls: list[tuple[object, int]] = []
-
-    # Display critic tool call distribution
-    if critic_tool_calls:
-        critic_counts = [count for _, count in critic_tool_calls]
-        critic_buckets = _generate_buckets(critic_counts, num_buckets=10, equal_width=True)
-        _display_distribution(
-            console, critic_counts, "Tool Calls per Successful Critic Run", critic_buckets, value_format="{:.0f}"
-        )
-
-    # Display grader tool call distribution
-    if grader_tool_calls:
-        grader_counts = [count for _, count in grader_tool_calls]
-        grader_buckets = _generate_buckets(grader_counts, num_buckets=10, equal_width=True)
-        _display_distribution(
-            console, grader_counts, "Tool Calls per Successful Grader Run", grader_buckets, value_format="{:.0f}"
         )

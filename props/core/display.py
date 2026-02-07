@@ -9,7 +9,6 @@ from typing import Any, Literal, Protocol, TypeVar
 from uuid import UUID
 
 from rich import box
-from rich.console import Console
 from rich.table import Table
 
 from props.db.models import AgentRunStatus, StatsWithCI
@@ -36,11 +35,6 @@ def short_sha(sha: str) -> str:
 def fmt_pct(value: float | None) -> str:
     """Format value as percentage (1 decimal place) or dash if None."""
     return f"{value:.1%}" if value is not None else "—"
-
-
-# ============================================================================
-# Status Count Columns
-# ============================================================================
 
 
 class HasStatusCounts(Protocol):
@@ -78,11 +72,6 @@ def build_status_columns() -> list[ColumnDef[HasStatusCounts, int]]:
     return [_make_status_column(status) for status in STATUS_DISPLAY]
 
 
-# ============================================================================
-# Recall Stats Columns (stats_with_ci)
-# ============================================================================
-
-
 class HasRecallStats(Protocol):
     """Row with recall_stats (StatsWithCI | None)."""
 
@@ -111,22 +100,6 @@ def build_recall_columns() -> list[ColumnDef[HasRecallStats, float | None]]:
         ColumnDef(name, accessor, fmt_pct, justify="right", width=7)
         for name, accessor in [("Recall", get_recall_mean), ("UCB", get_recall_ucb), ("LCB", get_recall_lcb)]
     ]
-
-
-def format_truncation_footer(total_count: int, displayed_count: int, item_name: str = "items") -> str:
-    """Return "... (N more {item_name})" or empty string if all shown."""
-    if total_count > displayed_count:
-        remaining = total_count - displayed_count
-        return f"... ({remaining} more {item_name})"
-    return ""
-
-
-def print_truncation_footer(
-    print_fn: Any, total_count: int, displayed_count: int, item_name: str = "items", prefix: str = "\n"
-) -> None:
-    """Print truncation footer via print_fn if items were truncated."""
-    if footer := format_truncation_footer(total_count, displayed_count, item_name):
-        print_fn(f"{prefix}{footer}")
 
 
 @dataclass
@@ -161,20 +134,3 @@ def build_table_from_schema[T](
         table.add_row(*values)
 
     return table
-
-
-def print_table_with_footer[T](
-    console: Console,
-    rows: Sequence[T],
-    columns: Sequence[ColumnDef[T, Any]],
-    *,
-    show_header: bool = True,
-    box_style: box.Box = box.SIMPLE,
-    total_count: int | None = None,
-    item_name: str = "items",
-) -> None:
-    """Build and print a table, appending truncation footer if total_count provided."""
-    table = build_table_from_schema(rows, columns, show_header=show_header, box_style=box_style)
-    console.print(table)
-    if total_count is not None:
-        print_truncation_footer(console.print, total_count, len(rows), item_name)

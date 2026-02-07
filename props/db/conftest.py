@@ -1,8 +1,4 @@
-"""Pytest configuration for props/core/db tests.
-
-Fixtures are provided via deps chain (//props/core:conftest -> //props/testing).
-This conftest only configures pytest-asyncio auto mode.
-"""
+"""Pytest configuration for props/db tests."""
 
 import pytest
 

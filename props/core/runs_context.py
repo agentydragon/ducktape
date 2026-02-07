@@ -1,10 +1,9 @@
-"""Specimens path derivation and timestamp formatting."""
+"""Specimens path derivation."""
 
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -45,17 +44,3 @@ def specimens_definitions_root() -> Path:
         )
 
     return specimens_root
-
-
-def format_timestamp_session(dt: datetime | None = None) -> str:
-    """Standard timestamp format for session/output directories: YYYYMMDD_HHMMSS.
-
-    Args:
-        dt: datetime to format (defaults to now)
-
-    Returns:
-        Formatted timestamp string (e.g., "20250127_153045")
-    """
-    if dt is None:
-        dt = datetime.now()
-    return dt.strftime("%Y%m%d_%H%M%S")

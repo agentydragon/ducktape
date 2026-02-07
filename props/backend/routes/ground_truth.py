@@ -128,23 +128,6 @@ def _get_critic_scopes_expected_to_recall_paths(occ: TruePositiveOccurrenceORM) 
     ]
 
 
-def _get_matchable_files(session, snapshot_slug: SnapshotSlug, files_hash: str | None) -> list[str] | None:
-    """Get graders_match_only_if_reported_on paths from hash.
-
-    NOTE: This function is retained for potential future use but is no longer called in hot paths.
-    The main endpoint pre-fetches all matchable files in bulk to avoid N+1 queries.
-    """
-    if not files_hash:
-        return None
-    members = (
-        session.query(FileSetMember.file_path)
-        .filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash)
-        .order_by(FileSetMember.file_path)
-        .all()
-    )
-    return [m.file_path for m in members]
-
-
 # --- Endpoints ---
 
 

@@ -17,7 +17,7 @@ def test_db_does_not_import_grader():
     and should not import from grader modules. Conversion between layers happens
     in grader.persistence.
     """
-    db_dir = Path(__file__).parent.parent.parent / "src" / "props_core" / "db"
+    db_dir = Path(__file__).parent
     db_files = list(db_dir.glob("*.py"))
 
     violations = []

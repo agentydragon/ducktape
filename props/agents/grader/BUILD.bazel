@@ -124,10 +124,6 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":notifications",
-        "//agent_core:handler",
-        "//agent_core:loop_control",
-        "//openai_utils:model",
         "//props/db:database",
         "//props/db:models",
         "@pypi//sqlalchemy",
