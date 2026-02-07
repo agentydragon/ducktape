@@ -2,7 +2,7 @@
 
 This document enumerates safe, practical surfaces that let the agent reflect on and (carefully) adjust its own scaffold at runtime. All mutating operations are gated by the policy middleware; read‑only surfaces are compact and structured for the model.
 
-See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md>, <mcp-runtime/resources.md>.
+See also: <vision.md>, <overview.md>, <policy_gateway.md>, <resources.md>.
 
 ## Principles
 
@@ -16,7 +16,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
 - Compositor with policy middleware (enforcement gate).
 - Resources server (`compositor/*` introspection, subscriptions).
 - Runtime container image `adgn-runtime` (includes Python + rg; code installed in image).
-- Optional Compositor HTTP on loopback with a bearer token for the container (<mcp-runtime/overview.md>).
+- Optional Compositor HTTP on loopback with a bearer token for the container (<overview.md>).
 - Split policy servers: policy_reader (resources + decide), policy_approver, policy_proposer.
 
 ## Read‑only introspection (P0)

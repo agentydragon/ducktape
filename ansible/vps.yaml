@@ -201,7 +201,7 @@
       block:
         - name: "Render and enable nginx websites"
           ansible.builtin.template:
-            src: nginx-sites/{{ item }}.j2
+            src: nginx_sites/{{ item }}.j2
             dest: /etc/nginx/sites-available/{{ item }}
             mode: "0644"
           loop: "{{ nginx_sites }}"
@@ -240,12 +240,12 @@
 
         - name: "Render nginx stream configuration from template"
           ansible.builtin.template:
-            src: nginx-streams/{{ item }}.j2
-            dest: /etc/nginx/streams-available/{{ item }}
+            src: nginx_streams/{{ item.template }}.j2
+            dest: /etc/nginx/streams-available/{{ item.name }}
             mode: "0644"
           loop:
-            - https-sni-router
-            - atlas-spice
+            - { template: https_sni_router, name: https-sni-router }
+            - { template: atlas_spice, name: atlas-spice }
           notify:
             - Reload nginx
 

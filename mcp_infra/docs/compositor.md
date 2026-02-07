@@ -111,4 +111,4 @@ Files:
 - `mcp_infra/src/mcp_infra/compositor/server.py` - Compositor class
 - `mcp_infra/src/mcp_infra/compositor/mount.py` - Mount class
 
-Reference: <fastmcp-lifecycle-analysis.md>
+Reference: <fastmcp_lifecycle_analysis.md>

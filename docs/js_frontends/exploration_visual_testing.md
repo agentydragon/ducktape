@@ -1,6 +1,6 @@
 # Visual Regression Testing Alternatives: Exploration
 
-**Context**: We have Svelte components (props/frontend) and want to generate PNG snapshots for visual regression testing. Current setup uses Storybook + Playwright, but Playwright has module identity issues in our Bazel + pnpm workspace setup (see [known-problems.md](known-problems.md)).
+**Context**: We have Svelte components (props/frontend) and want to generate PNG snapshots for visual regression testing. Current setup uses Storybook + Playwright, but Playwright has module identity issues in our Bazel + pnpm workspace setup (see [known_problems.md](known_problems.md)).
 
 **Goal**: Explore viable alternatives that can work with Bazel, pnpm workspaces, and Svelte components.
 

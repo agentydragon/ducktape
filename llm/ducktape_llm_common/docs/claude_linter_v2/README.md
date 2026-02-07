@@ -8,13 +8,13 @@ Claude Linter v2 is a unified code quality and permission management system for 
 
 - **[Design Document](design.md)** - Overall architecture and implementation phases
 - **[Configuration Guide](configuration.md)** - How to configure checks and rules
-- **[Test Scenarios](test-scenarios.md)** - Examples of how the linter behaves in different situations
+- **[Test Scenarios](test_scenarios.md)** - Examples of how the linter behaves in different situations
 
 ### Technical Deep Dives
 
-- **[Predicate Design](predicate-design.md)** - General predicate system for access control
-- **[Python Predicate Design](python-predicate-design.md)** - Python-specific predicate implementation
-- **[Diff Intelligence Report](diff-intelligence-report.md)** - Research on implementing diff-based violation detection
+- **[Predicate Design](predicate_design.md)** - General predicate system for access control
+- **[Python Predicate Design](python_predicate_design.md)** - Python-specific predicate implementation
+- **[Diff Intelligence Report](diff_intelligence_report.md)** - Research on implementing diff-based violation detection
 
 ## Quick Start
 

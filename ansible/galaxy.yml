@@ -22,4 +22,4 @@ build_ignore:
   - docs
   - inventree
   - tasker
-  - workspace-kb-shortcuts
+  - workspace_kb_shortcuts

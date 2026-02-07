@@ -729,7 +729,7 @@ in
       # Only initialize zoxide when NOT running in Claude Code to prevent function
       # definition conflicts. Claude Code filters out functions starting with '_' or '__',
       # breaking zoxide's __zoxide_z() function which cd() depends on.
-      # See: ../docs/claude-code-shell.md for details
+      # See: ../docs/claude_code_shell.md for details
       (lib.mkOrder 1400 ''
         if [[ -z "$CLAUDECODE" ]]; then
           eval "$(${lib.getExe pkgs.zoxide} init zsh --cmd cd)"

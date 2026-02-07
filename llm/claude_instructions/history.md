@@ -1,6 +1,6 @@
 # 2025-07-12
 
-`CLAUDE-2025-07-12.md`: grew extremely long. stopping.
+`CLAUDE_2025_07_12.md`: grew extremely long. stopping.
 
 what's good:
 

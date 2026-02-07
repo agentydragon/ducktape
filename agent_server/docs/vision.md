@@ -8,7 +8,7 @@ agent_server aims to provide a practical scaffold for an autonomous agent that c
 - Context matters: safety is often non‑trivial and depends on task, scope, and state.
 - Executable policy, not checklists: auto‑approval is driven by Python predicates that can run arbitrary checks against rich context.
   - Policy shape: `ApprovalPolicy.decide(ctx) -> (PolicyDecision, reason)` executed in a constrained container.
-  - See <mcp-runtime/policy-gateway.md> and <mcp-runtime/overview.md> for the proxy/middleware gate that enforces policy before tool execution.
+  - See <policy_gateway.md> and <overview.md> for the proxy/middleware gate that enforces policy before tool execution.
 
 ## Human‑in‑the‑loop, but code‑first
 
@@ -24,7 +24,7 @@ agent_server aims to provide a practical scaffold for an autonomous agent that c
   - programmatic use (call tools/resources), and
   - proposing edits that a human can approve.
 - Encourage emergent automation: rather than only “seatbelt tool has a templates function,” the agent can notice repeated workflows and write small Python within its container that invokes MCP tools (via the Compositor) to automate them.
-  - Compositor/mounts: see <mcp-runtime/overview.md>.
+  - Compositor/mounts: see <overview.md>.
 
 ## Runtime‑programmable scaffold
 
@@ -32,11 +32,11 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 
 - Policy as code
   - Policy runs out‑of‑process with a stable IO contract; hot‑swappable via proposals and approvals.
-  - See <mcp-runtime/policy-gateway.md> for decision mapping and evaluation.
+  - See <policy_gateway.md> for decision mapping and evaluation.
 
 - MCP servers
   - Allow requests to attach/detach servers at runtime (under policy). The agent can access MCP both via direct tool calls and by running Python inside its container that talks to the Compositor over loopback.
-  - Resources aggregation is provided by a dedicated server; see <mcp-runtime/resources.md>.
+  - Resources aggregation is provided by a dedicated server; see <resources.md>.
 
 - Agent state and conversation history
   - Prefer exposing state via MCP servers rather than raw mounts; however, read‑only SQLite mounts into the container may be used for power users.
@@ -53,8 +53,8 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
   - Example paths the agent can read:
     - Policy middleware and interface: <agent_server/src/agent_server/approvals.py>, <agent_server/src/agent_server/policy_eval/>
     - Compositor: <mcp_infra/src/mcp_infra/compositor/server.py>
-    - Loop control and server: <agent_core/src/agent_core/loop_control.py>, <mcp-runtime/control.md>
-    - Runtime/server wiring: <agent_server/src/agent_server/server/>, <mcp-runtime/overview.md>
+    - Loop control and server: <agent_core/src/agent_core/loop_control.py>, <control.md>
+    - Runtime/server wiring: <agent_server/src/agent_server/server/>, <overview.md>
 
 - Graduated autonomy
   - No binary “run everything” or “approve each thing” levers.
@@ -69,10 +69,10 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 
 ## How the vision maps to the runtime design
 
-- Compositor with policy middleware: enforces executable policy before tool execution; see <mcp-runtime/overview.md> and <mcp-runtime/policy-gateway.md>.
-- Resources server: centralized `resources/*` with persisted subscriptions; forwards raw notifications; see <mcp-runtime/resources.md>.
-- Loop control: neutral yield tool for turn control; see <mcp-runtime/control.md>.
-- Chat: initial V1 is out of scope; near‑term MCP‑native mode; see <mcp-runtime/ui-chat.md> and <mcp-runtime/matrix.md>.
+- Compositor with policy middleware: enforces executable policy before tool execution; see <overview.md> and <policy_gateway.md>.
+- Resources server: centralized `resources/*` with persisted subscriptions; forwards raw notifications; see <resources.md>.
+- Loop control: neutral yield tool for turn control; see <control.md>.
+- Chat: initial V1 is out of scope; near‑term MCP‑native mode; see <ui_chat.md> and <matrix.md>.
 
 ### Container interaction
 
@@ -101,7 +101,7 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 
 ### Integration roadmap
 
-- Align with migration stages in <mcp-runtime/overview.md>:
+- Align with migration stages in <overview.md>:
   1. Ensure FastMCP proxy mounts everywhere (done); transitional handler approvals allowed.
   2. Install policy middleware in Compositor; add dedicated Resources server; remove approval enforcement from handlers.
   3. Optional async inbox/tool‑state resources once sync path is rock‑solid.

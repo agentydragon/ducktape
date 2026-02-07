@@ -21,5 +21,5 @@ GitHub CI: DUCKTAPE_CI_READ_GITHUB_TOKEN is set (fine-grained PAT for agentydrag
   Write access: POST create works (issues, comments), but PATCH update returns 403. Writes cannot be reverted with this token.
   Note: GitHub API requests frequently get transient 401s from the TLS-inspecting egress proxy. Retry on 401 with backoff (sleep 2-5s between retries). Parse JSON defensively — a 401 returns an empty body.
 % endif
-BuildBuddy: API key in ~/.config/bazel/buildbuddy.bazelrc. See <docs/buildbuddy-api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
+BuildBuddy: API key in ~/.config/bazel/buildbuddy.bazelrc. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 Setup log: ${log_file}

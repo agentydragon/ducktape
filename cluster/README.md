@@ -154,7 +154,7 @@ cluster/
 
 Internet (443) → VPS nginx proxy → Tailscale VPN → MetalLB VIP (10.2.3.2:443) → NGINX Ingress → Apps
 
-- VPS: `~/code/ducktape/ansible/nginx-sites/allegedly.works.j2`
+- VPS: `~/code/ducktape/ansible/nginx_sites/allegedly.works.j2`
 - DNS:
   - Cluster PowerDNS (10.2.3.3) is primary authoritative server
   - VPS PowerDNS is secondary, replicates zone via AXFR over Tailscale
@@ -202,5 +202,5 @@ See: <https://letsencrypt.org/docs/rate-limits/>
 - VM hosting: Proxmox host `atlas` with SSH access
 - GitHub for Flux
 - VPS: nginx proxy and PowerDNS for external connectivity, configured in `~/code/ducktape` repo:
-  - nginx: `ansible/nginx-sites/`
+  - nginx: `ansible/nginx_sites/`
   - PowerDNS: `ansible/host_vars/vps/powerdns.yml`

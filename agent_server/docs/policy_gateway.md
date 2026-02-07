@@ -131,7 +131,7 @@ HTTP (optional)
 
 ## 7. Resources Management (out of scope)
 
-Policy middleware does not implement resources semantics. See `docs/mcp-runtime/resources.md` for the dedicated Resources server design and how active subscriptions are exposed to clients.
+Policy middleware does not implement resources semantics. See `docs/resources.md` for the dedicated Resources server design and how active subscriptions are exposed to clients.
 
 ---
 
@@ -220,7 +220,7 @@ Note: resource subscribe/unsubscribe error mapping belongs to the resources/comp
 3. Use the dedicated Resources server for `resources/*` operations; the Compositor mounts it.
 4. Mount Loop Control via Compositor; update prompts/instructions to use `loop_yield_turn`.
 5. Update container clients to call the Compositor loopback (host.docker.internal); do not expose upstream mounts directly.
-6. Optional: chat/inbox flows are documented in <ui-chat.md> and the overview; the policy middleware does not implement them.
+6. Optional: chat/inbox flows are documented in <ui_chat.md> and the overview; the policy middleware does not implement them.
 
 ---
 
