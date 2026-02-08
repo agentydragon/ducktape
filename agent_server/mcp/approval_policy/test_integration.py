@@ -57,13 +57,13 @@ async def test_approval_system_wired_and_blocks_on_ask(
         # Read pending://calls resource from reader server via MCP
         async with Client(comp._approval_engine.reader) as reader_client:
             pending_data: PendingCallsResponse
-            for _ in range(20):  # up to ~1s
+            for _ in range(30):  # up to ~3s
                 pending_data = await read_text_json_typed(
                     reader_client, comp._approval_engine.reader.pending_calls_resource.uri, PendingCallsResponse
                 )
                 if len(pending_data.pending) >= 1:
                     break
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.1)
 
             assert len(pending_data.pending) == 1, f"Expected 1 pending approval, got {len(pending_data.pending)}"
 

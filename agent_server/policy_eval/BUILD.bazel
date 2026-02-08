@@ -9,6 +9,7 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":constants",
+        "//agent_server:approvals",
         "//agent_server/policies:default_policy",
         "//agent_server/policies:policy_types",
         "//agent_server/policies:scaffold",
