@@ -45,7 +45,7 @@ py_test(
     srcs = ["test_integration_shell.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",

@@ -2,22 +2,22 @@
 set -euo pipefail
 
 echo "::demo::status-before"
-ember-python --status || true
+ember_python --status || true
 
 echo "::demo::persist-state"
-ember-python -c "x = 41"
-ember-python -c "x += 1"
-PERSISTED=$(ember-python -c "print(x)")
+ember_python -c "x = 41"
+ember_python -c "x += 1"
+PERSISTED=$(ember_python -c "print(x)")
 printf 'persisted_value=%s\n' "$PERSISTED"
 
 echo "::demo::restart"
-ember-python --restart
-POST_RESTART=$(ember-python -c "print(globals().get('x'))")
+ember_python --restart
+POST_RESTART=$(ember_python -c "print(globals().get('x'))")
 printf 'post_restart=%s\n' "$POST_RESTART"
 
 echo "::demo::heredoc"
 HEREDOC_OUTPUT=$(
-  ember-python <<'PY'
+  ember_python <<'PY'
 print("strings with 'quotes' and $variables stay literal")
 PY
 )
@@ -34,7 +34,7 @@ def changeable() -> str:
     return "first"
 PY
 
-MODULE_VALUE=$(ember-python -c "import helper; print(helper.hello()); print(helper.changeable())")
+MODULE_VALUE=$(ember_python -c "import helper; print(helper.hello()); print(helper.changeable())")
 printf 'module_value=%s\n' "$MODULE_VALUE"
 
 cat <<'PY' >"$WORKSPACE/helper.py"
@@ -45,10 +45,10 @@ def changeable() -> str:
     return "second"
 PY
 
-RELOADED=$(ember-python -c "import importlib, helper; importlib.reload(helper); print(helper.changeable())")
+RELOADED=$(ember_python -c "import importlib, helper; importlib.reload(helper); print(helper.changeable())")
 printf 'module_reloaded=%s\n' "$RELOADED"
 
 echo "::demo::status-after"
-ember-python --status || true
+ember_python --status || true
 
-ember-python --stop || true
+ember_python --stop || true

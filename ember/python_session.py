@@ -129,7 +129,7 @@ def cli_main(argv: list[str] | None = None) -> int:
     try:
         output = run_code(code)
     except Exception as exc:  # pragma: no cover - CLI convenience
-        print(f"ember-python: {exc}", file=sys.stderr)
+        print(f"ember_python: {exc}", file=sys.stderr)
         return 1
 
     if not args.quiet and output:

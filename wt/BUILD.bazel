@@ -21,7 +21,7 @@ py_library(
 )
 
 py_binary(
-    name = "wt-cli",
+    name = "wt_cli",
     srcs = ["__main__.py"],
     main = "__main__.py",
     visibility = ["//visibility:public"],

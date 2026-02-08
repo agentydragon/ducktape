@@ -27,16 +27,16 @@ py_binary(
     deps = ["@pypi//uvicorn"],
 )
 
-# TODO: ember-eval target disabled - src/ember/evals/runner.py does not exist
+# TODO: ember_eval target disabled - src/ember/evals/runner.py does not exist
 # py_binary(
-#     name = "ember-eval",
+#     name = "ember_eval",
 #     srcs = ["src/ember/evals/runner.py"],
 #     main = "src/ember/evals/runner.py",
 #     deps = [":ember"],
 # )
 
 py_binary(
-    name = "ember-python",
+    name = "ember_python",
     main_module = "ember.python_session",
     deps = [":python_session"],
 )

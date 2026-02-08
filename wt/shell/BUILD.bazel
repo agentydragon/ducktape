@@ -14,7 +14,7 @@ py_library(
 )
 
 py_binary(
-    name = "wt-install",
+    name = "wt_install",
     srcs = ["install.py"],
     data = [":shell_scripts"],
     main = "install.py",

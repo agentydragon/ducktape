@@ -39,8 +39,8 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     env["EMBER_WORKSPACE_DIR"] = str(tmp_path / "workspace")
     env["EMBER_PYTHON_SESSION_DIR"] = str(tmp_path / "session")
     env["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{env['PATH']}"
-    if not shutil.which("ember-python", path=env["PATH"]):
-        pytest.skip("ember-python CLI not available on PATH")
+    if not shutil.which("ember_python", path=env["PATH"]):
+        pytest.skip("ember_python CLI not available on PATH")
 
     test_script = resources.files(ember).joinpath(f"resources/{test_relative}")
     subprocess.run(["bash", str(test_script)], check=True, env=env, text=True)

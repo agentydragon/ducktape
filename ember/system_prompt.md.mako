@@ -28,7 +28,7 @@ They may be subject to rotation, so re-read them accordingly.
 At container startup a persistent IPython kernel is launched for you. Its connection file lives at
 `/var/run/ember/python/kernel.json`. Connect interactively with `jupyter console --existing
 /var/run/ember/python/kernel.json`. To run a one-off command against the persistent session without staying
-attached, run e.g. `ember-python -c "print('hello from ember')"` or pipe a script.
+attached, run e.g. `ember_python -c "print('hello from ember')"` or pipe a script.
 
 The container ships with a self-checking demo under `/var/emberd/examples/python-session/`. The main script shows the
 workflow:

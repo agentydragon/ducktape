@@ -543,15 +543,15 @@ def _apply_isolated_git_env(tmp_path: Path, monkeypatch):
 
 
 def _find_wt_cli_binary() -> str | None:
-    """Find the Bazel-built wt-cli binary if running under Bazel."""
+    """Find the Bazel-built wt_cli binary if running under Bazel."""
     # Check for Bazel runfiles environment
     runfiles_dir = os.environ.get("RUNFILES_DIR") or os.environ.get("TEST_SRCDIR")
     if not runfiles_dir:
         return None
 
-    # Try to find wt-cli in runfiles (it's in the same repo)
-    # The path structure is: runfiles/_main/wt/wt-cli
-    candidate = Path(runfiles_dir) / "_main" / "wt" / "wt-cli"
+    # Try to find wt_cli in runfiles (it's in the same repo)
+    # The path structure is: runfiles/_main/wt/wt_cli
+    candidate = Path(runfiles_dir) / "_main" / "wt" / "wt_cli"
     if candidate.exists():
         return str(candidate)
 
@@ -582,11 +582,11 @@ def shell_runner(tmp_path: Path):
             # Ensure env is a copy
             env = os.environ.copy() if env is None else env.copy()
 
-            # Find the Bazel-built wt-cli binary - tests require it for proper environment setup
+            # Find the Bazel-built wt_cli binary - tests require it for proper environment setup
             wt_cli_path = _find_wt_cli_binary()
             if not wt_cli_path:
                 raise RuntimeError(
-                    "wt-cli binary not found in runfiles. Ensure //wt:wt-cli is in the test's data dependencies."
+                    "wt_cli binary not found in runfiles. Ensure //wt:wt_cli is in the test's data dependencies."
                 )
             wt_fn = _generate_wt_function_for_binary(wt_cli_path)
 

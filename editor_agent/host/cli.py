@@ -55,7 +55,7 @@ async def edit(
 ) -> None:
     """Edit a file using an LLM agent in an isolated Docker container.
 
-    Usage: adgn-editor-docker FILE "PROMPT"
+    Usage: adgn_editor_docker FILE "PROMPT"
 
     The agent reads the file content via MCP resource, makes edits using
     docker exec, and submits the final content. On success, the file is

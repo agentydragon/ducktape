@@ -17,7 +17,7 @@ py_test(
     srcs = ["test_copy_dirty_state.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -31,7 +31,7 @@ py_test(
     srcs = ["test_github_pr_display_real.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -48,7 +48,7 @@ py_test(
     srcs = ["test_github_pr_display_variants.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -64,7 +64,7 @@ py_test(
     srcs = ["test_manual_delete_then_create.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -78,7 +78,7 @@ py_test(
     srcs = ["test_path_watcher_integration.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -95,7 +95,7 @@ py_test(
     srcs = ["test_post_creation_python_script.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -110,7 +110,7 @@ py_test(
     srcs = ["test_post_creation_script.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -125,7 +125,7 @@ py_test(
     srcs = ["test_post_creation_script_failure_streaming.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -139,7 +139,7 @@ py_test(
     srcs = ["test_real_integration.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -156,7 +156,7 @@ py_test(
     srcs = ["test_real_workflow.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -173,7 +173,7 @@ py_test(
     srcs = ["test_status_dynamic_index.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -189,7 +189,7 @@ py_test(
     srcs = ["test_status_output.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",
@@ -205,7 +205,7 @@ py_test(
     srcs = ["test_worktree_branches.py"],
     data = [
         "//third_party/gitstatusd",
-        "//wt:wt-cli",
+        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",

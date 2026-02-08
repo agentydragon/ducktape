@@ -36,7 +36,7 @@ py_library(
 )
 
 py_binary(
-    name = "sandbox-jupyter",
+    name = "sandbox_jupyter",
     srcs = ["wrapper.py"],
     main = "wrapper.py",
     deps = [
@@ -49,7 +49,7 @@ py_binary(
 )
 
 py_binary(
-    name = "sandboxed-jupyter",
+    name = "sandboxer",
     srcs = ["sandboxer.py"],
     main = "sandboxer.py",
     deps = [

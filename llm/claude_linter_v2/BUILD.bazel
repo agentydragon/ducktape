@@ -106,7 +106,7 @@ py_library(
 )
 
 py_binary(
-    name = "claude-linter-v2",
+    name = "claude_linter_v2",
     srcs = ["cli.py"],
     main = "cli.py",
     deps = [

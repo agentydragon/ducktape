@@ -54,7 +54,7 @@ py_library(
 )
 
 py_binary(
-    name = "claude-linter",
+    name = "claude_linter",
     srcs = ["cli.py"],
     main = "cli.py",
     deps = [

@@ -21,7 +21,7 @@ py_library(
 )
 
 py_binary(
-    name = "headscale-cleanup",
+    name = "headscale_cleanup",
     srcs = ["__main__.py"],
     main = "__main__.py",
     visibility = ["//:__subpackages__"],

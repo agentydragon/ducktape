@@ -21,7 +21,7 @@ Makes switching between git worktrees feel like `git switch` while adding copy-o
 See the repository root AGENTS.md for the standard Bazel workflow.
 
 ```bash
-bazel run //wt:wt-cli -- --help
+bazel run //wt:wt_cli -- --help
 bazel test //wt/...
 bazel build --config=check //wt/...  # lint + typecheck
 ```

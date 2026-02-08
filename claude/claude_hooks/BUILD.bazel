@@ -79,7 +79,7 @@ py_library(
 )
 
 py_binary(
-    name = "claude-autofixer",
+    name = "claude_autofixer",
     srcs = ["precommit_autofix.py"],
     imports = [".."],
     main = "precommit_autofix.py",

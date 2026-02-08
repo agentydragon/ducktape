@@ -56,7 +56,7 @@ py_library(
 # Each binary depends only on what it actually uses
 
 py_binary(
-    name = "adgn-agent-serve",
+    name = "adgn_agent_serve",
     srcs = ["cli.py"],
     main = "cli.py",
     visibility = ["//:__subpackages__"],
@@ -74,13 +74,13 @@ py_binary(
 )
 
 py_binary(
-    name = "agent-server-matrix-bot",
+    name = "agent_server_matrix_bot",
     main_module = "agent_server.matrix_bot",
     deps = [":matrix_bot"],
 )
 
 py_binary(
-    name = "agent-server-generate-frontend-code",
+    name = "agent_server_generate_frontend_code",
     srcs = ["scripts/generate_frontend_code.py"],
     main = "scripts/generate_frontend_code.py",
     deps = [

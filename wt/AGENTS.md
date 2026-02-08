@@ -15,7 +15,7 @@ Requirements: Bazel (via bazelisk), Python **3.13**+.
 
 ## Development Commands
 
-- Run the CLI entry point: `bazel run //wt:wt-cli -- --help`
+- Run the CLI entry point: `bazel run //wt:wt_cli -- --help`
 - Tests: `bazel test //wt/...`
 - Linting: `bazel build --config=lint //wt/...`
 - Type checking: `bazel build --config=typecheck //wt/...`
