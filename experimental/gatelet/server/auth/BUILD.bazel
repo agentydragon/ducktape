@@ -10,6 +10,7 @@ py_library(
     visibility = ["//experimental/gatelet:__subpackages__"],
     deps = [
         ":handlers",
+        "//experimental/gatelet/server:config",
         "//experimental/gatelet/server:database",
         "@pypi//fastapi",
     ],
@@ -23,9 +24,7 @@ py_library(
     deps = [
         ":key_auth",
         "//experimental/gatelet/server:config",
-        "//experimental/gatelet/server:database",
         "//experimental/gatelet/server:models",
-        "@pypi//fastapi",
         "@pypi//sqlalchemy",
     ],
 )

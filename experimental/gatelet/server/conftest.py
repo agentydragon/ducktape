@@ -39,9 +39,12 @@ from experimental.gatelet.server.config import (
 from experimental.gatelet.server.database import get_db_session
 from experimental.gatelet.server.endpoints.webhook_view import PayloadSummary
 from experimental.gatelet.server.models import AuthCRSession, AuthKey, Base
+from experimental.gatelet.server.security import hash_password
 from experimental.gatelet.server.tests.utils import persist
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+TEST_ADMIN_PASSWORD = "gatelet"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -128,11 +131,12 @@ def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
     """Override ``get_db_session`` globally for tests."""
 
     @asynccontextmanager
-    async def _override() -> AsyncGenerator[AsyncSession]:
+    async def _override(*_args, **_kwargs) -> AsyncGenerator[AsyncSession]:
         yield db_session
 
     monkeypatch.setattr("experimental.gatelet.server.database.get_db_session", _override)
     monkeypatch.setattr("experimental.gatelet.server.app.get_db_session", _override)
+    monkeypatch.setattr("experimental.gatelet.server.lifespan.get_db_session", _override)
 
 
 @pytest.fixture
@@ -151,9 +155,7 @@ def test_settings(tmp_path: Path, postgres_config: PostgresConfig) -> Settings:
         ),
         home_assistant=HomeAssistantSettings(api_url="http://test:8123", api_token="test-token"),
         webhook=WebhookSettings(),
-        admin=AdminSettings(
-            password_hash="$argon2id$v=19$m=65536,t=3,p=4$RCjF2HuPkbI2htBaK8X4/w$ZaY5qRPTqw/wMjAVnxaK9cneVhAsRBQ0Ru1oZW09Mx8"  # argon2 hash for "gatelet"
-        ),
+        admin=AdminSettings(password_hash=hash_password(TEST_ADMIN_PASSWORD)),
         security=SecuritySettings(csrf_secret="test-csrf-secret"),
     )
 

@@ -114,7 +114,10 @@ py_library(
     srcs = ["security.py"],
     imports = ["../../.."],
     visibility = ["//experimental/gatelet:__subpackages__"],
-    deps = ["@pypi//passlib"],
+    deps = [
+        "@pypi//argon2_cffi",
+        "@pypi//passlib",
+    ],
 )
 
 py_library(
@@ -136,6 +139,7 @@ py_library(
         ":config",
         ":database",
         ":models",
+        ":security",
         "//experimental/gatelet/server/endpoints:webhook_view",
         "//experimental/gatelet/server/tests:utils",
         "@pypi//asgi_lifespan",

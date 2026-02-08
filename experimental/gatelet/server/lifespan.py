@@ -6,10 +6,11 @@ Handles startup and shutdown of application-scoped resources (database engine, t
 import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi_csrf_protect import CsrfProtect
@@ -31,6 +32,12 @@ from experimental.gatelet.server.endpoints.webhook_view import get_latest_payloa
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent
+
+
+def _format_minutes(td: timedelta) -> str:
+    """Jinja2 filter: format a timedelta as minutes."""
+    total_seconds = td.total_seconds() if isinstance(td, timedelta) else float(td)
+    return f"{total_seconds / 60:.1f}m"
 
 
 class _CsrfSettings(BaseModel):
@@ -94,8 +101,10 @@ def _register_auth_routes(app: FastAPI, settings: Settings) -> None:
                 dependencies=[Depends(get_admin_auth_with_context)],
             )
 
-    # Handler for authenticated root
-    async def authenticated_root_handler(request, auth: Auth, settings: Settings = Depends(get_settings)):
+    # Handler for authenticated root — uses settings from the enclosing
+    # _register_auth_routes scope rather than Depends(get_settings), which
+    # would capture the wrong function reference when monkeypatched in tests.
+    async def authenticated_root_handler(request: Request, auth: Auth):
         """Shared handler for authenticated root endpoint."""
         async with get_db_session(request) as db_session:
             recent = await get_latest_payloads(db_session, limit=5)
@@ -163,6 +172,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
     # Add Python builtins needed by templates
     app.state.templates.env.globals.update({"max": max, "min": min})
+    # Add custom filters
+    app.state.templates.env.filters["minutes"] = _format_minutes
     logger.info("Templates initialized")
 
     yield

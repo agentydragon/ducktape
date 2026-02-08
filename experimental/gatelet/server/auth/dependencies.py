@@ -6,6 +6,7 @@ from fastapi import Cookie, Depends
 
 from experimental.gatelet.server import database
 from experimental.gatelet.server.auth.handlers import AuthContext, admin_auth, key_path_auth, session_auth
+from experimental.gatelet.server.config import Settings, get_settings
 
 
 class AuthDependency:
@@ -27,16 +28,16 @@ auth_dependency = AuthDependency()
 Auth = Annotated[AuthContext, Depends(auth_dependency)]
 
 
-async def get_key_path_auth_with_context(key: str) -> AuthContext:
+async def get_key_path_auth_with_context(key: str, settings: Settings = Depends(get_settings)) -> AuthContext:
     async with database.get_db_session() as session:
-        auth_context = await key_path_auth(key, session)
+        auth_context = await key_path_auth(key, session, settings)
         auth_dependency.set_context(auth_context)
         return auth_context
 
 
-async def get_session_auth_with_context(session_token: str) -> AuthContext:
+async def get_session_auth_with_context(session_token: str, settings: Settings = Depends(get_settings)) -> AuthContext:
     async with database.get_db_session() as session:
-        auth_context = await session_auth(session_token, session)
+        auth_context = await session_auth(session_token, session, settings)
         auth_dependency.set_context(auth_context)
         return auth_context
 

@@ -34,7 +34,7 @@ async def test_entities_page_admin_links(client: AsyncClient, db_session: AsyncS
     session_cookie = resp.cookies["admin_session"]
     resp = await client.get("/admin/ha/", cookies={"session_token": session_cookie})
     assert resp.status_code == HTTPStatus.OK
-    assert "homeassistant.local:8123" in resp.text
+    assert "test:8123" in resp.text
 
 
 if __name__ == "__main__":

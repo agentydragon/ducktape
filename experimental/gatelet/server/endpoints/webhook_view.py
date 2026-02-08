@@ -90,7 +90,10 @@ async def get_webhook_payloads(
     join_condition = WebhookPayload.integration_id == WebhookIntegration.id
     count_query = select(func.count()).select_from(WebhookPayload).join(WebhookIntegration, join_condition)
     payloads_query = (
-        select(WebhookPayload).join(WebhookIntegration, join_condition).order_by(WebhookPayload.received_at.desc())
+        select(WebhookPayload)
+        .join(WebhookIntegration, join_condition)
+        .options(selectinload(WebhookPayload.integration_config))
+        .order_by(WebhookPayload.received_at.desc())
     )
 
     # Apply filter if integration name provided
@@ -116,7 +119,7 @@ async def get_webhook_payloads(
     formatted_payloads = [
         {
             "id": payload.id,
-            "integration_name": payload.integration_name,
+            "integration_name": payload.integration_config.name,
             "received_at": payload.received_at,
             "payload_json": json_formatter.serialize(payload.payload),
         }

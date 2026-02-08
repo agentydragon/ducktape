@@ -7,13 +7,11 @@ from enum import StrEnum
 from typing import Protocol
 from urllib.parse import urlencode
 
-from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from experimental.gatelet.server.auth.key_auth import KeyAuthError, validate_key
-from experimental.gatelet.server.config import Settings, get_settings
-from experimental.gatelet.server.database import get_db_session
+from experimental.gatelet.server.config import Settings
 from experimental.gatelet.server.models import AdminSession, AuthCRSession, AuthKey
 
 logger = logging.getLogger(__name__)
@@ -144,9 +142,7 @@ class AdminAuthContext:
         return f"{base_url}?{urlencode(query_params)}"
 
 
-async def key_path_auth(
-    key: str, db_session: AsyncSession = Depends(get_db_session), settings: Settings = Depends(get_settings)
-) -> KeyPathAuthContext:
+async def key_path_auth(key: str, db_session: AsyncSession, settings: Settings) -> KeyPathAuthContext:
     """Authenticate using key in path."""
     logger.debug("key_path_auth called with key: %s...", key[:4])
 
@@ -160,9 +156,7 @@ async def key_path_auth(
         raise AuthHandlerError
 
 
-async def session_auth(
-    session_token: str, db_session: AsyncSession = Depends(get_db_session), settings: Settings = Depends(get_settings)
-) -> SessionAuthContext:
+async def session_auth(session_token: str, db_session: AsyncSession, settings: Settings) -> SessionAuthContext:
     """Authenticate using challenge-response session token."""
     # Find session
     query = select(AuthCRSession).where(AuthCRSession.session_token == session_token)
@@ -188,7 +182,7 @@ async def session_auth(
     return SessionAuthContext(session)
 
 
-async def admin_auth(session_token: str, db_session: AsyncSession = Depends(get_db_session)) -> AdminAuthContext:
+async def admin_auth(session_token: str, db_session: AsyncSession) -> AdminAuthContext:
     """Authenticate using admin session token."""
     query = select(AdminSession).where(AdminSession.session_token == session_token)
     admin_session = (await db_session.execute(query)).scalar_one_or_none()
