@@ -14,7 +14,7 @@ The container runs a daemon agent loop that:
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
@@ -22,10 +22,6 @@ exports_files(
     ["prompt.md.mako"],
     visibility = ["//props:__subpackages__"],
 )
-
-# =============================================================================
-# In-container agent loop
-# =============================================================================
 
 py_library(
     name = "tools",
@@ -35,31 +31,6 @@ py_library(
     deps = [
         "//openai_utils:pydantic_strict_mode",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "loop",
-    srcs = ["loop.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":drift_handler",
-        ":tools",
-        "//agent_core:agent",
-        "//agent_core:direct_provider",
-        "//agent_core:handler",
-        "//agent_core:logging_handler",
-        "//agent_core:loop_control",
-        "//mcp_infra/exec:models",
-        "//mcp_infra/exec:subprocess",
-        "//openai_utils:model",
-        "//props/agents:runtime",
-        "//props/core:ids",
-        "//props/db:database",
-        "//props/db:models",
-        "@pypi//openai",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -83,15 +54,26 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":drift_handler",
-        ":loop",
+        ":notification_handler",
         ":notifications",
+        ":tools",
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//agent_core:logging_handler",
+        "//agent_core:loop_control",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils:model",
         "//props/agents:runtime",
         "//props/core:ids",
-        "//props/db:config",
         "//props/db:database",
+        "//props/db:models",
         "//props/db:snapshot_io",
         "@pypi//asyncpg",
         "@pypi//asyncpg_stubs",
+        "@pypi//openai",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -131,6 +113,19 @@ py_library(
 )
 
 py_library(
+    name = "notification_handler",
+    srcs = ["notification_handler.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":notifications",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//openai_utils:model",
+    ],
+)
+
+py_library(
     name = "notifications",
     srcs = ["notifications.py"],
     imports = ["../../.."],
@@ -144,6 +139,19 @@ py_library(
 # =============================================================================
 # Tests
 # =============================================================================
+
+py_test(
+    name = "test_notification_handler",
+    srcs = ["test_notification_handler.py"],
+    imports = ["../../.."],
+    deps = [
+        ":notification_handler",
+        ":notifications",
+        "//openai_utils:text_extraction",
+        "//props/core:ids",
+        "@pypi//pytest_bazel",
+    ],
+)
 
 docker_py_test(
     name = "test_grading_edges_constraints",
@@ -190,6 +198,34 @@ docker_py_test(
     deps = [
         ":conftest",
         ":drift_handler",
+        "//agent_core/testing:responses",
+        "//props:conftest",
+        "//props/agents/grader/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+docker_py_test(
+    name = "test_e2e_sleep_wake",
+    srcs = ["test_e2e_sleep_wake.py"],
+    data = [
+        ":image",
+    ],
+    imports = ["../../.."],
+    tags = [
+        "e2e",
+    ],
+    deps = [
+        ":conftest",
+        ":drift_handler",
+        ":tools",
         "//agent_core/testing:responses",
         "//props:conftest",
         "//props/agents/grader/testing:mocks",
