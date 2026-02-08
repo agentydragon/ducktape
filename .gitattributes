@@ -26,8 +26,10 @@ claude_web_env/rootfs/** rules-lint-ignored=true
 claude_web_env/reference/** rules-lint-ignored=true
 claude_web_env/live-dpkg-versions.txt rules-lint-ignored=true
 
-# Kubernetes manifests - use kebab-case per k8s conventions
-cluster/k8s/** filename-conventions-ignored=true
+# Terraform/k8s - kebab-case is conventional in HCL and k8s manifests
+# TODO: Consider renaming cluster/terraform/01-infrastructure/ and terraform/nixos-dev-env/
+cluster/** filename-conventions-ignored=true
+terraform/** filename-conventions-ignored=true
 
 # Logseq page names - dashes are part of the page title
 llm/instruct_logseq/pages/** filename-conventions-ignored=true
