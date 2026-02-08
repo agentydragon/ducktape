@@ -19,38 +19,38 @@ ORCHESTRATION_CRITIC_MODEL = "gpt-4o-mini"
 ORCHESTRATION_GRADER_MODEL = "gpt-4.1-mini"
 
 
+_MAX_GRADER_ROUNDS = 5
+
+
 def make_orchestration_grader_mock() -> GraderMock:
     """Create grader mock that fills all pending edges with credit=0.
 
-    The grader daemon runs in DAEMON mode which has no submit tool.
-    It processes edges until the drift handler sees no pending drift and aborts.
+    The grader daemon waits for initial drift before starting the agent loop,
+    then loops: list_pending → fill → sleep, up to _MAX_GRADER_ROUNDS times.
     """
 
     @GraderMock.mock(check_consumed=False)  # Daemon may be aborted before consuming all
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request (system message)
 
-        # Get all pending edges
-        pending = yield from m.list_pending_roundtrip()
-        logger.info(f"Grader mock: got {len(pending)} pending edges")
+        for round_num in range(_MAX_GRADER_ROUNDS):
+            pending = yield from m.list_pending_roundtrip()
+            logger.info(f"Grader mock round {round_num + 1}: got {len(pending)} pending edges")
 
-        if not pending:
-            # No pending edges - shouldn't happen but handle gracefully
-            logger.warning("Grader mock: no pending edges to process")
-            return
+            if not pending:
+                yield m.sleep(f"Round {round_num + 1}: no pending edges, sleeping")
+                continue
 
-        # Group by (run, issue_id) to batch fill_remaining calls
-        by_issue: dict[tuple[UUID, str], int] = defaultdict(int)
-        for edge in pending:
-            key = (edge.critique_run_id, edge.critique_issue_id)
-            by_issue[key] += 1
+            # Group by (run, issue_id) to batch fill_remaining calls
+            by_issue: dict[tuple[UUID, str], int] = defaultdict(int)
+            for edge in pending:
+                key = (edge.critique_run_id, edge.critique_issue_id)
+                by_issue[key] += 1
 
-        # Fill each issue's remaining edges
-        for (run_id, issue_id), count in by_issue.items():
-            logger.info(f"Grader mock: filling {count} edges for {run_id}/{issue_id}")
-            yield from m.fill_remaining_roundtrip(run_id, issue_id, count, "Mock: no GT matches")
+            for (run_id, issue_id), count in by_issue.items():
+                logger.info(f"Grader mock: filling {count} edges for {run_id}/{issue_id}")
+                yield from m.fill_remaining_roundtrip(run_id, issue_id, count, "Mock: no GT matches")
 
-        # Signal that grading is done — sleep tool checks grading_pending is empty
-        yield m.sleep("All edges graded")
+            yield m.sleep(f"Round {round_num + 1}: all edges graded")
 
     return mock

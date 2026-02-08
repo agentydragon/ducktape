@@ -380,8 +380,10 @@ async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state
 async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Database) -> None:
     """Set up pg_notify listener and run the agent loop.
 
-    Only returns when report_failure is called (always a failure).
-    Normal operation is an infinite sleep/wake loop.
+    Waits for drift before starting the agent loop — avoids wasting an LLM
+    call when no grading work exists yet.  Only returns when report_failure
+    is called (always a failure).  Normal operation is an infinite sleep/wake
+    loop inside the agent.
     """
     state = DaemonState(snapshot_slug)
 
@@ -390,6 +392,17 @@ async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Datab
     logger.info(f"Listening on channel '{GRADING_PENDING_CHANNEL}' for {snapshot_slug}")
 
     try:
+        # Wait for initial drift before starting the (expensive) agent loop.
+        if not check_grading_pending(snapshot_slug, db):
+            logger.info("No pending drift yet — waiting for pg_notify")
+            while True:
+                state.wake_event.clear()
+                await state.wake_event.wait()
+                if check_grading_pending(snapshot_slug, db):
+                    break
+                logger.debug("Spurious wake — still no pending work")
+            logger.info("Initial drift detected, starting agent loop")
+
         await _run_agent_loop(system_prompt, snapshot_slug, state, db)
     finally:
         await listener_conn.remove_listener(GRADING_PENDING_CHANNEL, state.notification_callback)

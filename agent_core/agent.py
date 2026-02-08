@@ -371,8 +371,8 @@ def _sanitize_tool_result(result: ToolResult) -> ToolResult:
             # ImageContent passes through (binary data in base64)
             new_content.append(block)
 
-    # Sanitize structured_content if present
-    new_sc = sanitize(result.structured_content) if result.structured_content else None
+    # Sanitize structured_content if present (use `is not None` — empty list [] is valid)
+    new_sc = sanitize(result.structured_content) if result.structured_content is not None else None
 
     # Prepend warning if null bytes were removed
     if null_count > 0:
