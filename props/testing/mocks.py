@@ -4,7 +4,8 @@ from collections.abc import Generator
 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import tool_roundtrip
-from mcp_infra.exec.models import BaseExecResult, make_exec_input
+from mcp_infra.exec.models import BaseExecResult
+from mcp_infra.exec.subprocess import DirectExecArgs
 from openai_utils.model import FunctionCallItem, ResponsesRequest, SystemMessage
 
 
@@ -31,9 +32,9 @@ class SubprocessExecMock(MCPDecoratorMock):
     """
 
     def exec_roundtrip(
-        self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None
+        self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None, max_bytes: int = 100_000
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
         """Yield exec call for in-container subprocess, return typed result."""
-        exec_input = make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd)
-        call = self.tool_call("exec", exec_input)
+        exec_args = DirectExecArgs(cmd=cmd, timeout_ms=timeout_ms, cwd=cwd, max_bytes=max_bytes)
+        call = self.tool_call("exec", exec_args)
         return tool_roundtrip(call, BaseExecResult)

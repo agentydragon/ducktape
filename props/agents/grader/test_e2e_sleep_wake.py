@@ -10,7 +10,7 @@ Test flow:
 - Daemon grades issue with insert_edges (credit=0.1), sleeps
 - While sleeping, insert critic-2 (one issue) — triggers pg_notify
 - Daemon wakes, grades second issue with insert_edges (credit=0.2)
-- Poll for both GradingEdge records, then cancel daemon
+- Await explicit round-complete events, then verify edges
 """
 
 from __future__ import annotations
@@ -43,6 +43,13 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
     """Test that grader daemon sleeps after grading, wakes on new drift, grades again."""
 
+    # Explicit signals for when each round's edges have been committed.
+    # Set in the mock generator (which runs in-process via FakeOpenAIServer)
+    # just before yielding the sleep tool call — at that point all preceding
+    # tool calls (insert_edges, fill_remaining) have completed.
+    round_1_complete = asyncio.Event()
+    round_2_complete = asyncio.Event()
+
     @GraderMock.mock(check_consumed=False)
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request (system prompt)
@@ -64,7 +71,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             if fp_count > 0:
                 yield from m.fill_remaining_roundtrip(run_id, issue_id, fp_count, "No match round 1")
 
-        # Sleep — sleep tool verifies grading_pending is empty, then awaits pg_notify
+        round_1_complete.set()
         yield m.sleep("Round 1 complete")
 
         # === Round 2: woken by pg_notify, grade critic-2's issue with credit 0.2 ===
@@ -83,7 +90,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             if fp_count > 0:
                 yield from m.fill_remaining_roundtrip(run_id, issue_id, fp_count, "No match round 2")
 
-        # Sleep again (will be cancelled by test)
+        round_2_complete.set()
         yield m.sleep("Round 2 complete")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
@@ -116,36 +123,27 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="grader-daemon"
         )
 
-        # --- Wait for round 1 edges to appear ---
-        round_1_done = False
-        for _ in range(90):
-            await asyncio.sleep(1)
-            if daemon_task.done() and not daemon_task.cancelled():
+        # --- Wait for round 1 to complete via explicit signal ---
+        try:
+            await asyncio.wait_for(round_1_complete.wait(), timeout=90)
+        except TimeoutError:
+            if daemon_task.done():
                 exc = daemon_task.exception()
                 if exc:
                     raise RuntimeError(f"Grader daemon failed: {exc}") from exc
+            raise AssertionError("Round 1 did not complete within timeout")
 
-            with db.session() as session:
-                edge = (
-                    session.query(GradingEdge)
-                    .filter_by(critique_run_id=critic_1_id, critique_issue_id="issue-1")
-                    .first()
-                )
-                if edge:
-                    logger.info(f"Round 1 edge: credit={edge.credit}")
-                    assert edge.credit == pytest.approx(0.1)
-                    round_1_done = True
-                    break
-
-        assert round_1_done, "Round 1 GradingEdge not created within timeout"
-
-        # Wait briefly for daemon to reach sleep (it needs to call sleep tool
-        # and have the tool verify grading_pending is empty)
-        for _ in range(30):
-            await asyncio.sleep(1)
-            if check_grading_pending(test_snapshot, db) == 0:
-                break
-        assert check_grading_pending(test_snapshot, db) == 0, "Daemon didn't finish grading round 1"
+        # Verify round 1 TP edges
+        with db.session() as session:
+            tp_edge_1 = (
+                session.query(GradingEdge)
+                .filter_by(critique_run_id=critic_1_id, critique_issue_id="issue-1")
+                .filter(GradingEdge.credit > 0)
+                .first()
+            )
+            assert tp_edge_1 is not None, "No TP edge with credit>0 for round 1"
+            assert tp_edge_1.credit == pytest.approx(0.1)
+            logger.info(f"Round 1 TP edge verified: credit={tp_edge_1.credit}")
 
         # --- Insert critic-2 while daemon is sleeping (triggers pg_notify) ---
         critic_2_id = uuid4()
@@ -171,46 +169,39 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
 
         logger.info("Critic-2 inserted, waiting for daemon to wake and grade")
 
-        # --- Wait for round 2 edges to appear ---
-        round_2_done = False
-        for _ in range(90):
-            await asyncio.sleep(1)
-            if daemon_task.done() and not daemon_task.cancelled():
+        # --- Wait for round 2 to complete via explicit signal ---
+        try:
+            await asyncio.wait_for(round_2_complete.wait(), timeout=90)
+        except TimeoutError:
+            if daemon_task.done():
                 exc = daemon_task.exception()
                 if exc:
                     raise RuntimeError(f"Grader daemon failed: {exc}") from exc
-
-            with db.session() as session:
-                edge = (
-                    session.query(GradingEdge)
-                    .filter_by(critique_run_id=critic_2_id, critique_issue_id="issue-2")
-                    .first()
-                )
-                if edge:
-                    logger.info(f"Round 2 edge: credit={edge.credit}")
-                    assert edge.credit == pytest.approx(0.2)
-                    round_2_done = True
-                    break
+            raise AssertionError("Round 2 did not complete within timeout")
 
         # --- Cleanup ---
         daemon_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await daemon_task
 
-        assert round_2_done, "Round 2 GradingEdge not created within timeout"
-
         # Verify both edges exist with correct credits
         with db.session() as session:
-            edge_1 = (
-                session.query(GradingEdge).filter_by(critique_run_id=critic_1_id, critique_issue_id="issue-1").first()
+            tp_edge_1 = (
+                session.query(GradingEdge)
+                .filter_by(critique_run_id=critic_1_id, critique_issue_id="issue-1")
+                .filter(GradingEdge.credit > 0)
+                .first()
             )
-            edge_2 = (
-                session.query(GradingEdge).filter_by(critique_run_id=critic_2_id, critique_issue_id="issue-2").first()
+            tp_edge_2 = (
+                session.query(GradingEdge)
+                .filter_by(critique_run_id=critic_2_id, critique_issue_id="issue-2")
+                .filter(GradingEdge.credit > 0)
+                .first()
             )
-            assert edge_1 is not None
-            assert edge_2 is not None
-            assert edge_1.credit == pytest.approx(0.1)
-            assert edge_2.credit == pytest.approx(0.2)
+            assert tp_edge_1 is not None
+            assert tp_edge_2 is not None
+            assert tp_edge_1.credit == pytest.approx(0.1)
+            assert tp_edge_2.credit == pytest.approx(0.2)
             logger.info("Both edges verified: round 1 credit=0.1, round 2 credit=0.2")
 
 

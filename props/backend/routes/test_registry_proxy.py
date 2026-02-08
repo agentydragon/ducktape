@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import socket
 
 import httpx
 import pytest
@@ -28,22 +29,26 @@ DOCKER_ACCEPT_TYPES = [
 ]
 
 
+class _SignalingServer(uvicorn.Server):
+    """Server subclass that signals an event after startup completes."""
+
+    def __init__(self, config: uvicorn.Config) -> None:
+        super().__init__(config)
+        self.startup_event = asyncio.Event()
+
+    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+        await super().startup(sockets=sockets)
+        self.startup_event.set()
+
+
 @contextlib.asynccontextmanager
 async def _run_server(app: FastAPI):
     """Run a FastAPI app on an ephemeral port, yield the base URL."""
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning")
-    server = uvicorn.Server(config)
+    server = _SignalingServer(config)
 
-    started = asyncio.Event()
-    original_startup = server.startup
-
-    async def _startup_then_signal(**kwargs):
-        await original_startup(**kwargs)
-        started.set()
-
-    server.startup = _startup_then_signal
     task = asyncio.create_task(server.serve())
-    await asyncio.wait_for(started.wait(), timeout=5.0)
+    await asyncio.wait_for(server.startup_event.wait(), timeout=5.0)
 
     # Extract the bound port
     sock = server.servers[0].sockets[0]

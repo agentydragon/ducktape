@@ -13,6 +13,7 @@ py_library(
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
         "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
         "//openai_utils:model",
     ],
 )
