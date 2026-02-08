@@ -376,7 +376,7 @@ in
   config.home.packages = [ gmail-mcp-server ];
 
   # Deploy skills to ~/.claude/skills/
-  # Skills are stored in nix/home/claude-code/skills/ and symlinked for declarative management
+  # Skills are stored in nix/home/claude_code/skills/ and symlinked for declarative management
   config.home.file = {
     ".claude/statusline.py" = {
       source = ./statusline.py;

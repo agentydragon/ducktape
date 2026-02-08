@@ -16,7 +16,7 @@ Remaining dotfiles are managed with [rcm](https://github.com/thoughtbot/rcm), de
 
 Shell configs (`~/.bashrc`, `~/.zshrc`), aliases, environment variables, Powerlevel10k - all in `nix/home/home.nix`.
 
-See `docs/shell-configuration.md` for migration status and loading order.
+See `docs/shell_configuration.md` for migration status and loading order.
 
 ## Commands
 

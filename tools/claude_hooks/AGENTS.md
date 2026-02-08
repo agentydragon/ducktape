@@ -9,7 +9,7 @@
 
 ## Building Dockerfiles in gVisor
 
-@docs/gvisor-dockerfile-build.md
+@docs/gvisor_dockerfile_build.md
 
 ## Debugging Commands
 

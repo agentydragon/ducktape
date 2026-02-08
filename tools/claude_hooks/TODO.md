@@ -19,7 +19,7 @@
 
 ## gVisor Dockerfile Build as Claude Code Skill
 
-Consider turning <docs/gvisor-dockerfile-build.md> into a Claude Code skill (`.claude/skills/`) so Claude can automatically apply the `podman run`+`podman commit` workaround when asked to build a Dockerfile, rather than requiring the agent to read the docs first.
+Consider turning <docs/gvisor_dockerfile_build.md> into a Claude Code skill (`.claude/skills/`) so Claude can automatically apply the `podman run`+`podman commit` workaround when asked to build a Dockerfile, rather than requiring the agent to read the docs first.
 
 ## Supervisor Health Check Eventlistener
 

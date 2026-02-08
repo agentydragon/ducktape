@@ -32,6 +32,12 @@ cluster/k8s/** filename-conventions-ignored=true
 # Logseq page names - dashes are part of the page title
 llm/instruct_logseq/pages/** filename-conventions-ignored=true
 
+# Blog posts - filenames are published URLs (date-prefixed kebab-case)
+website/posts/** filename-conventions-ignored=true
+
+# GitHub convention filenames
+.github/copilot-instructions.md filename-conventions-ignored=true
+
 # Archived/legacy code
 k8s_old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager

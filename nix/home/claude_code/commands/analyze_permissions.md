@@ -11,7 +11,7 @@ Extract every Bash command Claude has executed, categorize systematically, and p
 1. Scan ALL session JSONL files in `~/.claude/projects/*/[session-id].jsonl`
 2. Extract every Bash command from `"name":"Bash"` entries
 3. De-duplicate and count frequencies
-4. Read current auto-allow patterns from `~/code/ducktape/nix/home/claude-code/default.nix`
+4. Read current auto-allow patterns from `~/code/ducktape/nix/home/claude_code/default.nix`
 5. Separate into **already covered** vs **needs analysis**
 
 Output summary table:

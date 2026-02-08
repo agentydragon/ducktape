@@ -100,7 +100,7 @@ in
     ./modules/solarized.nix
     ./scripts
     ./terminals
-    ./claude-code
+    ./claude_code
     ./modules/gnome-workspace-shortcuts.nix
     ./modules/flameshot-screenshots.nix
     ./modules/datetime-format.nix

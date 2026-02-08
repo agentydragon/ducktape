@@ -11,4 +11,4 @@
 
 ## Shell Configuration
 
-See `docs/shell-configuration.md` for migration status and loading order.
+See `docs/shell_configuration.md` for migration status and loading order.

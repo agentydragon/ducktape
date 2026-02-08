@@ -79,7 +79,7 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 - **Nix config**: `home-manager switch --flake ~/code/ducktape/nix/home#<hostname>`
 - **Remaining dotfiles**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
 
-See `dotfiles/docs/shell-configuration.md` for detailed loading order and migration status.
+See `dotfiles/docs/shell_configuration.md` for detailed loading order and migration status.
 
 ## Infrastructure Components
 

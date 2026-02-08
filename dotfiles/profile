@@ -7,7 +7,7 @@
 # that are difficult to express declaratively in Nix.
 #
 # For: PATH, pyenv, CUDA, lesspipe, machine-specific config, sources ~/.secret_env
-# See: ~/code/ducktape/dotfiles/docs/shell-configuration.md
+# See: ~/code/ducktape/dotfiles/docs/shell_configuration.md
 
 # prepend $1 to $PATH once (if dir exists)
 add_path() {

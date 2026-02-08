@@ -2,7 +2,7 @@
 #
 # Used by:
 #   - nix/nixos/modules/system-inspection-sudo.nix (passwordless sudo)
-#   - nix/home/claude-code/inspection-permissions.nix (Claude Code permissions)
+#   - nix/home/claude_code/inspection-permissions.nix (Claude Code permissions)
 #
 # The command lists below must be kept in sync with:
 #   ansible/roles/system_inspection_nopasswd/defaults/main.yml

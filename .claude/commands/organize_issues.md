@@ -5,17 +5,17 @@ Reorganize specimen issues to follow CLAUDE.md rules: group by logical problems,
 ## Usage
 
 ```bash
-/organize-issues [task description]
+/organize_issues [task description]
 ```
 
 **Default task (if no description provided):** "Apply CLAUDE.md rules to current specimen"
 
 **Examples:**
 
-- `/organize-issues` - Full reorganization of current specimen
-- `/organize-issues fix subjective phrasing in issues 010-020`
-- `/organize-issues split multi-problem issues into logical groups`
-- `/organize-issues merge duplicate issue types across files`
+- `/organize_issues` - Full reorganization of current specimen
+- `/organize_issues fix subjective phrasing in issues 010-020`
+- `/organize_issues split multi-problem issues into logical groups`
+- `/organize_issues merge duplicate issue types across files`
 
 ## What This Command Does
 
@@ -143,7 +143,7 @@ Each agent:
 ## Command Execution Flow
 
 ```
-User: /organize-issues [optional task]
+User: /organize_issues [optional task]
 ↓
 Claude: Read CLAUDE.md rules + scan specimen
 ↓
