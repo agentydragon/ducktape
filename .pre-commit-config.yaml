@@ -15,7 +15,7 @@ exclude: |
     tana/testdata/.*|
 
     # Generated content
-    llm/instruct-logseq/.*
+    llm/instruct_logseq/.*
   )$
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

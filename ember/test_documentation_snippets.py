@@ -29,7 +29,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     prompt = load_system_prompt()
     demo_relative = "examples/python-session/demo.sh"
     test_relative = "examples/python-session/test_demo.sh"
-    matrix_relative = "examples/matrix-client/quickstart.py"
+    matrix_relative = "examples/matrix_client/quickstart.py"
 
     assert _embedded_text(demo_relative) in prompt
     assert _embedded_text(test_relative) in prompt
@@ -72,7 +72,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
         "ember.matrix_client.MatrixClient.from_projected_secrets", lambda options=None: FakeMatrixClient()
     )
 
-    quickstart_path = resources.files(ember).joinpath("resources/examples/matrix-client/quickstart.py")
+    quickstart_path = resources.files(ember).joinpath("resources/examples/matrix_client/quickstart.py")
     runpy.run_path(str(quickstart_path), run_name="__main__")
 
     out = capsys.readouterr().out

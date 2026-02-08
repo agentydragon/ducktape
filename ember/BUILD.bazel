@@ -11,7 +11,7 @@ filegroup(
     srcs = [
         "docs/agent_ontology.md",
         "docs/pilot_plan.md",
-        "resources/examples/matrix-client/quickstart.py",
+        "resources/examples/matrix_client/quickstart.py",
         "resources/examples/python-session/demo.sh",
         "resources/examples/python-session/test_demo.sh",
         "system_prompt.md.mako",

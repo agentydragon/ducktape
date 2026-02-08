@@ -60,7 +60,7 @@ The script below shows how to obtain a Matrix client from projected secrets and 
 `MATRIX_ACCESS_TOKEN` (if not using the projected secret), and `EMBER_MATRIX_ROOM_ID` before running it.
 
 ```python
-${embed_package_file("examples/matrix-client/quickstart.py")}
+${embed_package_file("examples/matrix_client/quickstart.py")}
 ```
 
 ## Persistent workspace
