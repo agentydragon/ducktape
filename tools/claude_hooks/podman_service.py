@@ -70,14 +70,14 @@ async def install_podman() -> None:
     if process.returncode != 0:
         logger.warning("apt-get update failed: %s", stderr.decode())
 
-    # Install podman
+    # Install podman and crun (crun is needed by the crun-gvisor-wrapper)
     process = await asyncio.create_subprocess_exec(
-        "apt-get", "install", "-y", "podman", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        "apt-get", "install", "-y", "podman", "crun", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     _, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
     if process.returncode != 0:
-        raise PodmanInstallError(f"apt-get install podman failed: {stderr.decode()}")
-    logger.info("Podman installed successfully")
+        raise PodmanInstallError(f"apt-get install podman crun failed: {stderr.decode()}")
+    logger.info("Podman and crun installed successfully")
 
     # Verify installation
     if not is_podman_available():
