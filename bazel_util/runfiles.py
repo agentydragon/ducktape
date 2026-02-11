@@ -8,12 +8,17 @@ from __future__ import annotations
 from functools import cache
 from pathlib import Path
 
-from python.runfiles import runfiles
+try:
+    from python.runfiles import runfiles
+except ImportError:
+    runfiles = None  # type: ignore[assignment]  # Not available outside Bazel (e.g. wheel installs)
 
 
 @cache
 def _get_runfiles() -> runfiles.Runfiles:
     """Get runfiles instance (lazily initialized, cached)."""
+    if runfiles is None:
+        raise RuntimeError("python.runfiles not available - are you running via Bazel?")
     r = runfiles.Create()
     if r is None:
         raise RuntimeError("Could not create runfiles - are you running via Bazel?")

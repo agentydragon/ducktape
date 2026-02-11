@@ -296,6 +296,9 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # Start supervisor (required by proxy and podman)
     supervisor_task = asyncio.create_task(supervisor_setup.start(settings))
 
+    # Mount tmpfs (required by podman overlay and Bazel cache)
+    tmpfs_mount_task = asyncio.create_task(run_in_thread(tmpfs_setup.ensure_tmpfs_mounted))
+
     # Wrappers that depend on supervisor being ready
     # TODO: Handle upstream dependency failures more gracefully.
     # Currently, when supervisor_task fails, all downstream tasks (proxy, podman)
@@ -307,10 +310,20 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         supervisor_result = await supervisor_task
         return await proxy_setup.setup_auth_proxy(settings, supervisor_result.client)
 
-    async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
-        """Set up podman (depends on supervisor)."""
+    async def setup_podman_with_deps() -> podman_service.PodmanSetup:
+        """Set up podman (depends on supervisor + tmpfs mount)."""
         supervisor_result = await supervisor_task
-        return await podman_service.setup_podman(settings, supervisor_result.client)
+        # tmpfs failure is non-fatal — podman falls back to VFS on 9p
+        try:
+            tmpfs_root = await tmpfs_mount_task
+        except Exception:
+            tmpfs_root = None
+        return await podman_service.setup_podman(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
+
+    async def setup_bazel_on_tmpfs() -> tmpfs_setup.TmpfsSetup:
+        """Set up Bazel cache on tmpfs (depends on tmpfs mount)."""
+        tmpfs_root = await tmpfs_mount_task
+        return tmpfs_setup.setup_bazel_cache(tmpfs_root)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper as separate tasks.
@@ -335,15 +348,19 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=settings.secrets_dir)
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
+    # Dependency graph:
+    #   supervisor_task ──┬── setup_proxy_with_supervisor
+    #                     └── setup_podman_with_deps ←── tmpfs_mount_task
+    #   tmpfs_mount_task ──── setup_bazel_on_tmpfs
     logger.info("Starting parallel installations...")
     results = await asyncio.gather(
         setup_proxy_with_supervisor(),
-        setup_podman_with_supervisor(),
+        setup_podman_with_deps(),
         run_in_thread(precommit_setup.install_precommit, project_dir),
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
         run_in_thread(buildbuddy_setup.setup_buildbuddy, project_dir),
-        run_in_thread(tmpfs_setup.setup_tmpfs),
+        setup_bazel_on_tmpfs(),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy

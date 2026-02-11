@@ -5,6 +5,11 @@ Bazel: wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
 Podman: ${podman.status}, DOCKER_HOST=${podman.socket_url}. Use fully qualified image names (docker.io/library/...)
   `podman run` works (with --network=host). `podman build` works (gVisor workarounds are pre-configured).
   See tools/claude_hooks/docs/gvisor_dockerfile_build.md for details. Note: RUN steps producing >~3MB stdout may hit a buildah SIGPIPE bug — redirect output if needed.
+% if podman.storage_driver == "overlay":
+  Storage: overlay on tmpfs (layer caching works for <~50 layers). Use `--layers=false` for larger Dockerfiles.
+% else:
+  Storage: VFS on 9p (no layer caching). Use `--layers=false` for large builds.
+% endif
 % endif
 % if isinstance(precommit, PrecommitInstallingHooks):
 pre-commit: hook environments installing in background (pid ${precommit.pid}). First `git commit` may block briefly on pre-commit's flock until done. Log: ~/.cache/claude-hooks/pre-commit-install-hooks.log

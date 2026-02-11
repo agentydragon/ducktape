@@ -19,13 +19,19 @@ Typical builds (package installs, file copies, compilation) work without any spe
 | No new keyring      | Wrapper injects `--no-new-keyring` flag                | gVisor has ~60-70 keyring quota per session; prevents quota exhaustion in large Dockerfiles      |
 | Host user namespace | `userns = "host"` in `containers.conf`                 | Skips user namespace creation (gVisor restriction)                                               |
 
-## Disk space
+## Storage driver
 
-The VFS storage driver copies the full filesystem for every layer. For large images, use `--layers=false` (or `BUILDAH_LAYERS=false`) to disable layer caching and keep only one working copy:
+Podman uses **overlay on tmpfs** by default (configured by the session start hook). This enables layer caching — unchanged Dockerfile steps are skipped on rebuild.
+
+**Layer limit (~50):** The kernel limits `mount()` options to one page (4096 bytes). Each overlay layer adds ~70 characters to the `lowerdir` option. Tested: a 62-step Dockerfile failed at layer 50 with `invalid argument` during overlay mount. Builds with fewer than ~50 layers work fine.
+
+For Dockerfiles exceeding this limit, use `--layers=false` to disable layer caching:
 
 ```bash
 podman build --layers=false -t my-image .
 ```
+
+With `--layers=false`, only one working copy is maintained (no layer stacking). Slower (no cache reuse) but no layer limit.
 
 ### crun-gvisor-wrapper detail
 

@@ -1,7 +1,8 @@
 """Set up tmpfs-backed directories for better performance.
 
 gVisor's 9p root filesystem is slow (~30GB).  This module mounts a dedicated
-tmpfs and symlinks the Bazel cache there for faster I/O.
+tmpfs and symlinks the Bazel cache there for faster I/O.  Podman also uses
+this tmpfs for overlay storage (see ``podman_service.py``).
 
 We do NOT use /dev/shm because gVisor mounts it ``noexec``, which prevents
 Bazel's embedded JDK and external toolchain binaries from executing.  Instead
@@ -30,7 +31,7 @@ class TmpfsSetup:
     bazel_cache: Path | None
 
 
-def _ensure_tmpfs_mounted() -> Path:
+def ensure_tmpfs_mounted() -> Path:
     """Mount a dedicated exec-capable tmpfs at ``TMPFS_MOUNT``.
 
     Returns the tmpfs root path.  Idempotent — skips if already mounted.
@@ -52,63 +53,51 @@ def _ensure_tmpfs_mounted() -> Path:
     return TMPFS_MOUNT
 
 
-def setup_bazel_tmpfs() -> Path:
-    """Set up Bazel cache on a dedicated exec-capable tmpfs.
+def setup_bazel_cache(tmpfs_root: Path) -> TmpfsSetup:
+    """Set up Bazel cache on the already-mounted tmpfs.
 
-    Mounts a tmpfs at /mnt/bazel-tmpfs and symlinks ~/.cache/bazel to it.
-    If ~/.cache/bazel already exists and is not a symlink, moves its
+    Symlinks ``~/.cache/bazel`` to a directory on the tmpfs.
+    If ``~/.cache/bazel`` already exists and is not a symlink, moves its
     contents to tmpfs first.
-
-    Returns the tmpfs cache path.
-    """
-    tmpfs_root = _ensure_tmpfs_mounted()
-    tmpfs_cache = tmpfs_root / BAZEL_CACHE_NAME
-    local_cache = Path.home() / ".cache" / "bazel"
-
-    # Create tmpfs directory
-    tmpfs_cache.mkdir(parents=True, exist_ok=True)
-    logger.info("Created Bazel tmpfs cache at %s", tmpfs_cache)
-
-    # Handle existing local cache
-    if local_cache.is_symlink():
-        target = local_cache.resolve()
-        if target == tmpfs_cache:
-            logger.info("Bazel cache already symlinked to tmpfs")
-            return tmpfs_cache
-        # Remove old symlink
-        local_cache.unlink()
-        logger.info("Removed old symlink %s -> %s", local_cache, target)
-    elif local_cache.is_dir():
-        # Move existing cache contents to tmpfs
-        for item in local_cache.iterdir():
-            dest = tmpfs_cache / item.name
-            if not dest.exists():
-                shutil.move(str(item), str(dest))
-                logger.info("Moved %s to tmpfs", item.name)
-        # Remove now-empty directory
-        local_cache.rmdir()
-        logger.info("Moved existing Bazel cache to tmpfs")
-
-    # Ensure parent directory exists
-    local_cache.parent.mkdir(parents=True, exist_ok=True)
-
-    # Create symlink
-    local_cache.symlink_to(tmpfs_cache)
-    logger.info("Symlinked %s -> %s", local_cache, tmpfs_cache)
-
-    return tmpfs_cache
-
-
-def setup_tmpfs() -> TmpfsSetup:
-    """Set up all tmpfs-backed directories.
-
-    Currently sets up:
-    - Bazel cache (~/.cache/bazel -> /mnt/bazel-tmpfs/bazel-cache)
     """
     bazel_cache: Path | None = None
 
     try:
-        bazel_cache = setup_bazel_tmpfs()
+        tmpfs_cache = tmpfs_root / BAZEL_CACHE_NAME
+        local_cache = Path.home() / ".cache" / "bazel"
+
+        # Create tmpfs directory
+        tmpfs_cache.mkdir(parents=True, exist_ok=True)
+        logger.info("Created Bazel tmpfs cache at %s", tmpfs_cache)
+
+        # Handle existing local cache
+        if local_cache.is_symlink():
+            target = local_cache.resolve()
+            if target == tmpfs_cache:
+                logger.info("Bazel cache already symlinked to tmpfs")
+                return TmpfsSetup(bazel_cache=tmpfs_cache)
+            # Remove old symlink
+            local_cache.unlink()
+            logger.info("Removed old symlink %s -> %s", local_cache, target)
+        elif local_cache.is_dir():
+            # Move existing cache contents to tmpfs
+            for item in local_cache.iterdir():
+                dest = tmpfs_cache / item.name
+                if not dest.exists():
+                    shutil.move(str(item), str(dest))
+                    logger.info("Moved %s to tmpfs", item.name)
+            # Remove now-empty directory
+            local_cache.rmdir()
+            logger.info("Moved existing Bazel cache to tmpfs")
+
+        # Ensure parent directory exists
+        local_cache.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create symlink
+        local_cache.symlink_to(tmpfs_cache)
+        logger.info("Symlinked %s -> %s", local_cache, tmpfs_cache)
+
+        bazel_cache = tmpfs_cache
     except Exception as e:
         logger.warning("Failed to set up Bazel tmpfs cache: %s", e)
 

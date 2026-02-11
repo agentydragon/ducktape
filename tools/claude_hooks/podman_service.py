@@ -13,7 +13,6 @@ import logging
 import os
 import shutil
 import stat
-import textwrap
 from dataclasses import dataclass, field
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -40,6 +39,7 @@ class PodmanSetup:
 
     socket_url: str
     status: str
+    storage_driver: str = "vfs"
     env_vars: dict[str, str] = field(default_factory=dict)
 
 
@@ -106,20 +106,19 @@ def _render_containers_conf(podman_config: Traversable, wrapper_path: Path) -> s
     return template.format(crun_gvisor_wrapper_path=wrapper_path)
 
 
-def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
+def setup_podman_storage(settings: HookSettings, tmpfs_root: Path | None) -> tuple[dict[str, str], str]:
     """Configure podman for gVisor compatibility with isolated paths.
 
     Uses isolated configuration to avoid conflicts with system podman:
     - Config files: ~/.cache/claude-hooks/podman/
-    - Storage: ~/.cache/claude-hooks/podman/storage/
+    - Storage: overlay on tmpfs (preferred) or VFS on 9p (fallback)
     - policy.json: ~/.config/containers/policy.json (user-level, hardcoded lookup path)
 
     gVisor sandbox restrictions require:
-    1. VFS storage driver on 9p root (overlay fails: 9p lacks xattr).
-       However, native overlay DOES work on tmpfs (/dev/shm is 315 GB).
-       To use overlay with layer caching, mount a new exec-enabled tmpfs
-       and set CONTAINERS_STORAGE_CONF to a config with driver = "overlay"
-       and graphroot on that tmpfs. See claude_web_env/docs/sandbox-investigation.md.
+    1. Overlay on tmpfs (preferred): tmpfs supports xattr, enabling native
+       overlay with layer caching. Layer limit: ~50 layers per build
+       (kernel mount option page size). Builds exceeding this must use
+       ``--layers=false``. Falls back to VFS on 9p if tmpfs is unavailable.
     2. Host user namespace (userns = "host")
     3. run.oci.keep_original_groups=1 annotation
 
@@ -127,28 +126,32 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
     already has the exact content we want to write. Files with the canary
     marker are preserved; files without are overwritten.
 
-    Returns:
-        Dict of environment variables to export (CONTAINERS_CONF, etc.)
+    Args:
+        settings: Hook settings.
+        tmpfs_root: Path to exec-capable tmpfs mount. If provided, overlay
+            storage is placed here for faster I/O and layer caching.
     """
     podman_dir = settings.get_podman_dir()
     podman_dir.mkdir(parents=True, exist_ok=True)
 
     podman_config: Traversable = importlib.resources.files("tools.claude_hooks.config.podman")
 
-    # Storage paths (isolated from system podman)
-    storage_dir = podman_dir / "storage"
-    runroot_dir = podman_dir / "runroot"
+    # Choose storage driver and root based on tmpfs availability
+    if tmpfs_root is not None:
+        storage_root = tmpfs_root / "podman-overlay"
+        driver = "overlay"
+    else:
+        storage_root = podman_dir
+        driver = "vfs"
+    storage_dir = storage_root / "storage"
+    runroot_dir = storage_root / "run"
     storage_dir.mkdir(parents=True, exist_ok=True)
     runroot_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Using %s storage at %s", driver, storage_dir)
 
-    # Generate storage.conf with custom paths
+    # Generate storage.conf (TOML format — podman requires quoted string values)
     storage_conf_path = podman_dir / "storage.conf"
-    storage_conf_content = textwrap.dedent(f"""\
-        [storage]
-        driver = "vfs"
-        runroot = "{runroot_dir}"
-        graphroot = "{storage_dir}"
-    """)
+    storage_conf_content = f'[storage]\ndriver = "{driver}"\nrunroot = "{runroot_dir}"\ngraphroot = "{storage_dir}"\n'
     write_config(storage_conf_path, storage_conf_content, "storage.conf")
 
     # Install crun-gvisor-wrapper (injects keep_original_groups annotation for buildah)
@@ -172,10 +175,8 @@ def setup_podman_storage(settings: HookSettings) -> dict[str, str]:
     policy_json_content = podman_config.joinpath("policy.json").read_text()
     write_config(policy_json_path, policy_json_content, "policy.json", canary=False)
 
-    logger.info("Configured podman for gVisor: VFS storage at %s", storage_dir)
-
-    # Return env vars for podman to use our isolated config
-    return _get_podman_env_vars(settings)
+    # Return env vars for podman to use our isolated config, and the driver used
+    return _get_podman_env_vars(settings), driver
 
 
 def _get_socket_path(settings: HookSettings) -> Path:
@@ -203,11 +204,17 @@ async def _snapshot_podman_status(supervisor: SupervisorClient) -> str:
         return ProcessState.UNKNOWN
 
 
-async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> PodmanSetup:
+async def setup_podman(settings: HookSettings, supervisor: SupervisorClient, tmpfs_root: Path | None) -> PodmanSetup:
     """Set up podman storage and start service.
 
     If podman is not installed, attempts to install it via apt.
     Idempotent: if podman service is already running, returns immediately.
+
+    Args:
+        settings: Hook settings.
+        supervisor: Supervisor client for process management.
+        tmpfs_root: Path to exec-capable tmpfs. If provided, podman uses
+            overlay storage on tmpfs instead of VFS on 9p.
 
     Raises:
         SkipError: If install_podman is False in settings.
@@ -232,12 +239,12 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient) -> 
         await install_podman()
 
     logger.info("Configuring podman...")
-    env_vars = setup_podman_storage(settings)
+    env_vars, storage_driver = setup_podman_storage(settings, tmpfs_root=tmpfs_root)
     socket_url, service_env = await start_podman_service(settings, supervisor, env_vars)
     env_vars.update(service_env)
     logger.info("Podman service started: DOCKER_HOST=%s", socket_url)
     status = await _snapshot_podman_status(supervisor)
-    return PodmanSetup(socket_url=socket_url, status=status, env_vars=env_vars)
+    return PodmanSetup(socket_url=socket_url, status=status, storage_driver=storage_driver, env_vars=env_vars)
 
 
 def _get_podman_env_vars(settings: HookSettings) -> dict[str, str]:
