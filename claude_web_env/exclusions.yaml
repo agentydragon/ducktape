@@ -57,6 +57,18 @@ skip_paths:
   # Nix store (installed at runtime by session start hook, not part of base image)
   - /nix
 
+  # Bazel tmpfs and pnpm store (mounted at runtime by session hooks)
+  - /mnt
+
+  # Docker/containerd (installed at runtime, not in base image)
+  - /etc/docker
+  - /etc/containerd
+  - /etc/default/docker
+  - /etc/init.d/docker
+
+  # Debug symbol build IDs (libc6-dbg installs these — content depends on exact build)
+  - /usr/lib/debug/.build-id
+
 # ─── Volatile paths ──────────────────────────────────────────────────────
 # Non-deterministic tool installations where ANY difference is expected:
 # different file sets, different hashes, different permissions. These tools
@@ -147,7 +159,7 @@ only_in_live:
 
   # Claude Code runtime-generated config and state
   - /root/.claude.json
-  - /root/.claude.json.backup
+  - "/root/.claude.json.backup*"
   - /root/.claude/stats-cache.json
   - /root/.claude/stop-hook-git-check.sh
 
@@ -176,6 +188,31 @@ only_in_live:
   # APT source files: live has legacy sources.list format
   - /etc/apt/sources.list
   - /etc/apt/sources.list.d/ubuntu.sources
+
+  # Docker/containerd runtime (installed by session hooks, not in base image)
+  - /etc/apt/keyrings/docker.asc
+  - /etc/apt/sources.list.d/docker.list
+  - "/etc/rc*.d/*docker"
+  - "/etc/systemd/system/*/containerd.service"
+  - "/etc/systemd/system/*/docker.*"
+  - "/usr/share/doc/containerd.io"
+  - "/usr/share/doc/containerd.io/**"
+  - "/usr/share/doc/docker-*"
+  - "/usr/share/doc/docker-*/**"
+  - "/usr/lib/systemd/system/containerd.service"
+  - "/usr/lib/systemd/system/docker.*"
+  - "/usr/libexec/docker"
+  - "/usr/libexec/docker/**"
+  - /usr/bin/containerd
+  - /usr/bin/containerd-shim-runc-v2
+  - /usr/bin/ctr
+  - /usr/bin/docker
+  - /usr/bin/docker-proxy
+  - /usr/bin/dockerd
+  - /usr/bin/runc
+  - "/usr/share/bash-completion/completions/docker"
+  - "/usr/share/fish/**"
+  - "/usr/share/zsh/vendor-completions/_docker"
 
   # Container runtime config (created by podman at runtime)
   - /etc/containers/networks

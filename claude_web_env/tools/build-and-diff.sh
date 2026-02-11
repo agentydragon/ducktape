@@ -5,7 +5,7 @@
 #   1. Set up tmpfs storage (if not already mounted)
 #   2. Build the Dockerfile with VFS storage
 #   3. Capture manifests from live and built images
-#   4. Generate diff-report.md
+#   4. Generate diff_report.md
 #
 # Usage:
 #   ./tools/build-and-diff.sh              # Full build + diff
@@ -89,6 +89,7 @@ capture_proprietary_binaries() {
 setup_storage() {
   if ! mountpoint -q "$TMPFS_PATH" 2>/dev/null; then
     log_info "Setting up tmpfs storage at $TMPFS_PATH..."
+    mkdir -p "$TMPFS_PATH"
     mount -t tmpfs -o size=200G,exec tmpfs "$TMPFS_PATH"
   fi
   mkdir -p "$TMPFS_PATH/containers/"{storage,run}
@@ -149,14 +150,14 @@ generate_diff_report() {
   log_info "Generating diff report..."
   uv run --script tools/diff_manifests.py \
     live-manifest.ndjson built-manifest.ndjson \
-    --exclusions exclusions.yaml -o diff-report.md
+    --exclusions exclusions.yaml -o diff_report.md
 
   # Show summary
   echo ""
-  log_info "Diff report written to diff-report.md"
+  log_info "Diff report written to diff_report.md"
   echo ""
   echo "=== Summary ==="
-  head -50 diff-report.md | grep -E "^(#|##|\*\*|[0-9]+\.)" | head -20
+  head -50 diff_report.md | grep -E "^(#|##|\*\*|[0-9]+\.)" | head -20
 }
 
 # Main
@@ -182,11 +183,17 @@ main() {
     fi
   fi
 
+  # Capture version snapshot for future diffing
+  log_info "Capturing version snapshot..."
+  VERSIONS_FILE="reference/versions-$(date -u +%Y-%m-%d).yaml"
+  uv run --script tools/capture_versions.py >"$VERSIONS_FILE"
+  log_info "Version snapshot saved to $VERSIONS_FILE"
+
   capture_live_manifest
   capture_built_manifest
   generate_diff_report
 
-  log_info "Done! Review diff-report.md and commit if changes are expected."
+  log_info "Done! Review diff_report.md and commit if changes are expected."
 }
 
 main "$@"
