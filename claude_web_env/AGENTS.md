@@ -25,7 +25,7 @@ After making changes to the Dockerfile or `rootfs/` content, **always run a buil
 
 ```bash
 cd claude_web_env
-./tools/build-and-diff.sh
+./tools/build_and_diff.sh
 ```
 
 This script:
@@ -38,12 +38,12 @@ This script:
 If you only need to regenerate the diff (image already built):
 
 ```bash
-./tools/build-and-diff.sh --diff-only
+./tools/build_and_diff.sh --diff-only
 ```
 
 **Commit `diff_report.md`** along with your Dockerfile/rootfs changes. The diff report documents the current delta between built and live containers.
 
-> **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build-and-diff.sh`.
+> **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build_and_diff.sh`.
 
 ### Tool Availability
 
@@ -109,7 +109,7 @@ For `environment_discovery.md` specifically, check:
 #### 5. Rebuild and diff
 
 ```bash
-./tools/build-and-diff.sh
+./tools/build_and_diff.sh
 ```
 
 Review `diff_report.md` and update `PLAN.md` with the new diff summary.

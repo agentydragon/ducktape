@@ -1,55 +1,20 @@
 # Current Plan
 
-## Latest Build Results (2026-02-05, build v14, corrected capture; 2026-02-11 version update pending rebuild)
+## Build Status
 
-**Diff Summary**: 112 real differences
+**Diff Summary**: 0 real differences (build v17, 2026-02-11)
 
-| Category        | Count     |
-| --------------- | --------- |
-| Identical       | 120,576   |
-| Excluded        | 1,664,740 |
-| **Real diffs**  | **112**   |
-| Only in built   | 1         |
-| Content changed | 111       |
-
-Previous session reported 4,149 diffs — this was a **manifest capture bug**:
-the built manifest was captured from a raw VFS layer directory instead of a
-properly `podman mount`-ed container, missing ~8,000 entries (all of `/var/`,
-parts of `/usr/share/`). After recapture with `podman create` + `podman mount`,
-the actual diff is 112.
-
-### Remaining diff breakdown (112 files)
-
-**Python 3.13 from deadsnakes PPA (108 files):**
-
-- 97 `.py` source files, ~30 `.so` modules, 6 headers, 4 changelogs,
-  1 binary, 1 only-in-built (`module_docs.py` — new file in newer version)
-- Live: `3.13.11-1+noble1`, PPA now serves `3.13.12-1+noble1`
-- Root cause: deadsnakes PPA only keeps the latest version; no snapshot/archive
-  mechanism exists. The exact version in live has been superseded.
-
-**libpng (2 files):**
-
-- Live: `1.6.43-5ubuntu0.3` (security update), Built: `1.6.43-5build1`
-- The `.3` security update was released after the snapshot date (2025-12-01)
-  and has since been superseded by `.4`.
-
-**linux-libc-dev (1 file):**
-
-- Live: newer kernel headers, Built: snapshot version
-- Same pattern — security update released after snapshot date.
+| Category       | Count   |
+| -------------- | ------- |
+| Identical      | 121,052 |
+| Excluded       | 501,951 |
+| **Real diffs** | **0**   |
 
 ### Exclusion utilization
 
-109 patterns, 10 unused:
-
-- 1 `skip_paths`: `/nix` (defensive — Nix installed by session hooks at runtime)
-- 3 `volatile_paths`: `**/__pycache__`, `/var/lib/sgml-base/**`,
-  `/var/lib/systemd/**` (currently identical between sides, but genuinely
-  volatile across builds — keep as defensive)
-- 1 `only_in_live`: `/var/lib/dpkg/alternatives/python3` (currently identical
-  on both sides — keep as defensive)
-- 5 `session_hook_artifacts`: runtime-only, untestable from within container
+116 patterns, 25 unused. Unused patterns are defensive (volatile tools
+installed from HEAD, runtime-only artifacts, or session hook state that
+can't be tested from within the container).
 
 ### What could reduce the diff further
 
@@ -73,93 +38,10 @@ the actual diff is 112.
    - `/usr/bin/python3.13`. This would give 0 actionable diffs but at the
      cost of not tracking python3.13 content changes.
 
-### What's been pinned successfully
+## gVisor Build Notes
 
-Version-drift pins now match the live container for **30+ package families**:
-
-- System core: libc6, libssl, systemd, util-linux, gnupg, login, binutils,
-  libpam, bsdutils, linux-libc-dev (attempted)
-- Libraries: libxml2, libxslt, libsodium, libtasn1, libavahi, libcups, libheif,
-  libdrm, mesa, libboost, libldap, libapparmor, fonts-opensymbol
-- Runtimes: python3.12 (exact version), openjdk-21, python3-apt
-
-### Build infrastructure improvements
-
-- **HTTPS for snapshot**: Switched from HTTP to HTTPS for `snapshot.ubuntu.com`
-  to avoid 503 errors from the TLS-inspecting egress proxy.
-- **-dev package pins**: Added `libblkid-dev`, `libmount-dev`, `uuid-dev` to
-  the util-linux pin group to resolve exact-version dependency conflicts.
-- **SHELL error visibility**: Build SHELL directive now dumps last 200 lines
-  of build log on failure (saves fd 3 as original stderr, traps ERR).
-- **Per-pattern match counts**: `diff_manifests.py` now tracks and reports how
-  many files each exclusion pattern matched, enabling data-driven trimming.
-- **Manifest capture fix**: Built manifest must use `podman create` + `podman
-mount` (not raw VFS dir access) to get the properly merged container
-  filesystem.
-
-## 2026-02-11 Version Sync
-
-Updated Dockerfile and docs to match live container. Key changes:
-
-- Node.js: 20.20.0, 22.22.0 (was 20.19.6, 22.21.1)
-- npm: claude-code 2.1.38, eslint 10.0.0, pnpm 10.29.2, prettier 3.8.1, chromedriver 145
-- Bun: 1.3.9, golangci-lint: 2.5.0
-- environment-manager: staging-7c3cd5476 (new subcommands: poll, setup)
-- New env vars: `CLAUDE_CODE_BASE_REF`, `CLAUDE_CODE_DIAGNOSTICS_FILE`,
-  `CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES`, `CLAUDE_CODE_ENTRYPOINT`,
-  `CLAUDE_CODE_ENVIRONMENT_RUNNER_VERSION`, `MCP_CONNECTION_NONBLOCKING`
-- `CLAUDECODE` changed from `true` to `1`
-- `enableWeakerNestedSandbox` changed from `true` to `false`
-- Captured fresh proprietary binaries
-
-**Build status**: SIGPIPE (exit 141) hit on retry at step 14-15 (APT install).
-The buildah SIGPIPE race condition is triggering more frequently with the current
-proxy/network conditions. Diff report not yet regenerated with updated Dockerfile.
-
-**Added**: `capture_versions.py` for structured version capture/comparison.
-Saved `reference/versions-2026-02-11.yaml` as baseline.
-
-## Completed
-
-- ✅ Manifest capture bug found and fixed (VFS raw dir → `podman mount`)
-- ✅ Removed `/work` from `skip_paths` (was unused defensive pattern)
-- ✅ Per-pattern match count reporting in diff script
-- ✅ Exclusion pattern trimming (144 → 109 patterns, 35 unused removed)
-- ✅ SHELL directive error visibility (dumps last 200 lines on build failure)
-- ✅ Build script captures proprietary binaries
-- ✅ Documented exclusion minimization goal
-- ✅ Removed stripping step (was stripping `/usr/share/doc`, `/usr/include`, etc.)
-- ✅ Fixed `/process_api` structure (file, not directory)
-- ✅ Renamed `scripts/README` → `README.md`
-- ✅ Added `php8.4-sqlite3`, `age`, `python3-dev` packages
-- ✅ Added runtime exclusions (virtualenv, pnpm, .ssh, .bazelrc, projects, claude state)
-- ✅ Cleaned up APT preference files from built image
-- ✅ Diff reduced from 10,100 → 2,132 → 69 real differences
-- ✅ Version-drift-pin file pins 18 package families to live versions
-- ✅ Fixed `.gitconfig` (added `[core]` section, fixed indentation)
-- ✅ Fixed deadsnakes sources (trailing space on `Signed-By:`)
-- ✅ Removed `python3-doc` (not in live container)
-- ✅ Updated glib pin version (ubuntu3.5 → ubuntu3.7)
-- ✅ Debug SHELL shows last 100 lines on build failure
-
-## Session Notes
-
-### gVisor Limitations and Fixes
-
-1. **Kernel keyring quota**: ✅ **FIXED** — `crun-gvisor-wrapper` now injects
-   `--no-new-keyring` to prevent keyring creation. Tested with 70+ RUN steps.
-2. **Overlay layer limit**: ~47-50 layers per overlay stack.
-   - Kernel limit: 4096 bytes (1 page) for mount options string
-   - Per-layer: ~80 bytes (graphroot path + 26-char symlink + separator)
-   - Empirically verified: 90 layers at 4066 bytes succeeded, 91 at 4110 bytes failed
-   - containers/storage deduplicates layers across images, so effective limit varies
-3. **Overlay works on tmpfs**: Tested with 90-layer build — cache reuse confirmed.
-
-### Keyring Fix Details
-
-- **Root cause**: crun creates a session keyring for each container via
-  `keyctl(KEYCTL_JOIN_SESSION_KEYRING)` for credential isolation.
-- **gVisor limit**: ~60-70 keyrings per session, not recoverable.
-- **Solution**: `--no-new-keyring` flag tells crun to skip keyring creation.
-- **Implementation**: `tools/claude_hooks/config/podman/crun_gvisor_wrapper.py`
-  now injects this flag for all `crun create` and `crun run` commands.
+- **Kernel keyring quota**: `crun-gvisor-wrapper` injects `--no-new-keyring`
+  to prevent keyring exhaustion (~60-70 limit per session).
+- **Overlay layer limit**: ~47-50 layers per overlay stack (kernel 4096-byte
+  mount options string limit). Use `--layers=false` for large builds.
+- **Overlay works on tmpfs**: Cache reuse confirmed with 90-layer builds.

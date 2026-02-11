@@ -238,6 +238,28 @@ else
 fi
 
 echo ""
+echo "=================== Docker ==================="
+if command -v docker &> /dev/null; then
+    echo "✅ docker: $(docker --version)"
+else
+    echo "❌ docker: not found"
+    VALIDATION_FAILED=1
+fi
+
+if command -v dockerd &> /dev/null; then
+    echo "✅ dockerd: $(dockerd --version)"
+else
+    echo "❌ dockerd: not found"
+    VALIDATION_FAILED=1
+fi
+
+if docker compose version &> /dev/null; then
+    echo "✅ docker compose: $(docker compose version)"
+else
+    echo "❌ docker compose: not found"
+fi
+
+echo ""
 echo "=================== Other Utilities ==================="
 if command -v awk &> /dev/null; then
     echo "✅ awk: $(awk --version | head -1)"

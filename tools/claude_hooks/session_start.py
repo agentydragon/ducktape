@@ -316,7 +316,8 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         # tmpfs failure is non-fatal — podman falls back to VFS on 9p
         try:
             tmpfs_root = await tmpfs_mount_task
-        except Exception:
+        except Exception as e:
+            logger.warning("tmpfs mount failed, podman will use VFS on 9p: %s", e)
             tmpfs_root = None
         return await podman_service.setup_podman(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
 

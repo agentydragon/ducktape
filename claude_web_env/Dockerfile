@@ -21,7 +21,7 @@
 #
 # Prerequisites:
 #   Proprietary binaries must be captured first (run from within live container):
-#     ./tools/build-and-diff.sh --capture-binaries
+#     ./tools/build_and_diff.sh --capture-binaries
 #   This writes reference/environment-manager.gz and reference/process_api.gz
 #   which the Dockerfile COPYs and decompresses at build time.
 
@@ -128,7 +128,7 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
     libjs-jquery libjs-sphinxdoc libjs-underscore nftables libpython3-dev python3-dev \
     openjdk-21-jdk openjdk-21-jre ca-certificates-java \
     postgresql-16 postgresql-common postgresql-client-16 redis-server redis-tools \
-    libwayland-server0 libdrm2 libdrm-amdgpu1 libdrm-intel1 libdrm-common \
+    libdrm2 libdrm-amdgpu1 libdrm-intel1 libdrm-common \
     libxml2 libxml2-utils libfdisk1 libsmartcols1 libuuid1 \
     libxslt1.1 libsodium23 libtasn1-6 \
     libavahi-client3 libavahi-common3 libavahi-common-data \
@@ -156,6 +156,18 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
     php8.4-intl php8.4-mbstring php8.4-mysql php8.4-opcache \
     php8.4-pgsql php8.4-readline php8.4-sqlite3 php8.4-xml php8.4-zip \
     php8.4-igbinary php8.4-redis \
+    && rm -rf /var/lib/apt/lists/*
+
+# Layer 8b: Docker CE (from download.docker.com, not snapshot repos)
+COPY rootfs/etc/apt/keyrings/docker.asc /etc/apt/keyrings/docker.asc
+COPY rootfs/etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.list
+RUN apt-get update && \
+    apt-get install --allow-downgrades -y --no-install-recommends \
+    containerd.io=2.2.1-1~ubuntu.24.04~noble \
+    docker-ce=5:29.2.1-1~ubuntu.24.04~noble \
+    docker-ce-cli=5:29.2.1-1~ubuntu.24.04~noble \
+    docker-buildx-plugin=0.31.1-1~ubuntu.24.04~noble \
+    docker-compose-plugin=5.0.2-1~ubuntu.24.04~noble \
     && rm -rf /var/lib/apt/lists/*
 
 # =============================================================================
@@ -277,7 +289,7 @@ RUN ln -sf /root/.bun/bin/bun /usr/local/bin/bun && \
 # Layer 20: Profile scripts (all in one directory copy)
 COPY rootfs/etc/profile.d/ /etc/profile.d/
 
-# Layer 21: Helper scripts - use-python, use-node-*, use-ruby-*, create-venv-*, check-tools, use-php-8.4
+# Layer 21: Helper scripts
 COPY rootfs/usr/local/bin/use-python rootfs/usr/local/bin/use-node-20 rootfs/usr/local/bin/use-node-21 \
      rootfs/usr/local/bin/use-node-22 rootfs/usr/local/bin/use-ruby-3.1.6 rootfs/usr/local/bin/use-ruby-3.2.6 \
      rootfs/usr/local/bin/use-ruby-3.3.6 rootfs/usr/local/bin/create-venv-py3.10 rootfs/usr/local/bin/create-venv-py3.11 \

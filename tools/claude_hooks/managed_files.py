@@ -47,12 +47,17 @@ def write_config(path: Path, content: str, description: str, *, canary: bool = T
     """
     full_content = add_canary(content) if canary else content
     if path.exists():
-        if has_canary(path):
-            logger.debug("Skipping %s (canary marker present)", path)
-            return
         existing = path.read_text()
         if existing == full_content:
             logger.debug("Config %s already has expected content", path)
+            return
+        if has_canary(path):
+            # Canary means user (or previous hook run) owns this file.
+            # Warn if the desired content differs so drift is visible.
+            logger.warning(
+                "Skipping %s (canary marker present, but desired content differs — delete file to force regeneration)",
+                path,
+            )
             return
         # File exists without canary and different content — overwrite it.
         # No canary means it wasn't written by us (or was written before canary
