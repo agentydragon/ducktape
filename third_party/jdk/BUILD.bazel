@@ -1,0 +1,14 @@
+# Adoptium Temurin JDK 21 — hermetic keytool + cacerts for tests.
+# https://adoptium.net/temurin/releases/?version=21
+
+filegroup(
+    name = "keytool",
+    srcs = ["@adoptium_jdk21//:bin/keytool"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "cacerts",
+    srcs = ["@adoptium_jdk21//:lib/security/cacerts"],
+    visibility = ["//visibility:public"],
+)

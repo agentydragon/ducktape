@@ -302,7 +302,6 @@ def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
 class TestFullSessionStartHook:
     """E2E tests running the complete session start hook."""
 
-    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     def test_session_start_succeeds(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
         """Run full session start hook and verify it succeeds."""
         result = run_session_start_hook(isolated_dirs.project)
@@ -320,7 +319,6 @@ class TestFullSessionStartHook:
         supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
         assert (supervisor_dir / "supervisord.pid").exists(), "supervisor not started"
 
-    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not shutil.which("bazel") and not shutil.which("bazelisk"), reason="bazel/bazelisk required")
     def test_bazel_build_after_hook(
         self, isolated_dirs: IsolatedDirs, hook_env: None, mock_egress_proxy: MockEgressProxyFixture
@@ -359,7 +357,6 @@ class TestFullSessionStartHook:
             # Always collect logs - critical for debugging CI failures
             collect_supervisor_logs(supervisor_dir)
 
-    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
         """Verify hook recovers from stale supervisor socket."""
         # Create stale socket/pidfile
@@ -373,14 +370,12 @@ class TestFullSessionStartHook:
 
         assert result.returncode == 0, f"Hook failed with stale socket:\nstderr: {result.stderr}"
 
-    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     def test_resume_event(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
         """Test that resume events also work correctly."""
         result = run_session_start_hook(isolated_dirs.project, source=HookSource.RESUME)
 
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
 
-    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     def test_secrets_decrypted_into_env_file(
         self, monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, hook_env: None
     ) -> None:
@@ -447,7 +442,6 @@ class TestPodmanIntegration:
         """Set up environment for running session start hook WITH podman enabled."""
         _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, install_podman=True)
 
-    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
     def test_podman_service_starts(self, isolated_dirs: IsolatedDirs, podman_hook_env: None) -> None:
         """Verify podman service starts after session start hook."""
@@ -458,7 +452,6 @@ class TestPodmanIntegration:
         socket_path = _extract_docker_host_socket(isolated_dirs.env_file)
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
-    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
     def test_podman_can_run_container(
         self, isolated_dirs: IsolatedDirs, podman_hook_env: None, mock_egress_proxy: MockEgressProxyFixture

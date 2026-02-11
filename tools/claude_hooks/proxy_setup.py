@@ -30,6 +30,10 @@ from tools.claude_hooks.supervisor.client import SupervisorClient
 
 logger = logging.getLogger(__name__)
 
+# Env vars set by Bazel BUILD targets (rlocation keys for hermetic JDK files)
+_KEYTOOL_RLOCATION_ENV = "KEYTOOL_RLOCATION"
+_JAVA_CACERTS_RLOCATION_ENV = "JAVA_CACERTS_RLOCATION"
+
 # Auth proxy supervisor service name
 AUTH_PROXY_SERVICE = "auth-proxy"
 
@@ -60,6 +64,36 @@ SYSTEM_CA_BUNDLES = [
 SSL_CA_ENV_VARS = ["SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS"]
 
 
+def _resolve_rlocation(rlocation_path: str) -> Path | None:
+    """Resolve an rlocation path via Bazel runfiles, or None outside Bazel.
+
+    The lazy import avoids crashing when proxy_setup is loaded by the
+    bazel_wrapper subprocess (which runs outside Bazel runfiles).
+    """
+    try:
+        from bazel_util.runfiles import get_required_path  # noqa: PLC0415
+
+        return get_required_path(rlocation_path)
+    except RuntimeError:
+        return None
+
+
+def _find_keytool() -> str:
+    """Find keytool binary: Bazel rlocation, then JAVA_HOME, then PATH."""
+    if env_val := os.environ.get(_KEYTOOL_RLOCATION_ENV):
+        if resolved := _resolve_rlocation(env_val):
+            logger.debug("Resolved keytool via rlocation: %s", resolved)
+            return str(resolved)
+        logger.warning("KEYTOOL_RLOCATION=%r could not be resolved", env_val)
+
+    if java_home := os.environ.get("JAVA_HOME"):
+        keytool = Path(java_home) / "bin" / "keytool"
+        if keytool.exists():
+            return str(keytool)
+
+    return "keytool"
+
+
 @dataclass
 class ProxySetup:
     """Result of auth proxy setup.
@@ -83,14 +117,17 @@ def _find_system_file(candidates: list[Path], description: str) -> Path:
 
 
 def _get_java_cacerts_candidates() -> list[Path]:
-    """Get list of Java cacerts candidates, including JAVA_HOME if set.
+    """Get list of Java cacerts candidates.
 
-    JAVA_HOME is checked first because on CI (GitHub Actions with setup-java),
-    Java is installed to non-standard locations like /opt/hostedtoolcache/...
+    Resolution order: Bazel rlocation → JAVA_HOME → system locations.
     """
     candidates = []
 
-    # Check JAVA_HOME first (set by setup-java on GitHub Actions)
+    # Check Bazel-provided cacerts via rlocation (hermetic JDK)
+    if (env_val := os.environ.get(_JAVA_CACERTS_RLOCATION_ENV)) and (resolved := _resolve_rlocation(env_val)):
+        candidates.append(resolved)
+
+    # Check JAVA_HOME (set by setup-java on GitHub Actions or local installs)
     if java_home := os.environ.get("JAVA_HOME"):
         candidates.append(Path(java_home) / "lib" / "security" / "cacerts")
 
@@ -177,8 +214,9 @@ async def _create_java_truststore(settings: HookSettings) -> None:
         truststore.chmod(0o644)
 
         # Import the proxy CA using keytool
+        keytool = _find_keytool()
         process = await asyncio.create_subprocess_exec(
-            "keytool",
+            keytool,
             "-importcert",
             "-trustcacerts",
             "-alias",

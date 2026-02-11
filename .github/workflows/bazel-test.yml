@@ -1,17 +1,17 @@
 # Bazel test reusable workflow
 #
-# Runs all Bazel tests except those with dedicated workflows:
-# - //tools/claude_hooks/... - tested by claude-hooks-release.yml (requires Java, special flags)
+# Runs all Bazel tests. Java (keytool) is provided hermetically via
+# //third_party/jdk. E2E tests with local=True run locally (not on RBE).
 name: Bazel Test
 
 on:
   workflow_call:
     inputs:
       targets:
-        description: "Bazel targets to test (default excludes packages with dedicated workflows)"
+        description: "Bazel targets to test"
         required: false
         type: string
-        default: "//... - //tools/claude_hooks/..."
+        default: "//..."
       rbe_image:
         description: "Override RBE container image (optional)"
         required: false
@@ -24,10 +24,10 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: "Bazel targets to test (default excludes packages with dedicated workflows)"
+        description: "Bazel targets to test"
         required: false
         type: string
-        default: "//... - //tools/claude_hooks/..."
+        default: "//..."
 jobs:
   test:
     name: Test

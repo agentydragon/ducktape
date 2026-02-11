@@ -23,8 +23,9 @@ workflows:
     secrets: [BUILDBUDDY_API_KEY]
 
   bazel-test:
-    # claude_hooks tests are excluded — they run in claude-hooks-release.yml (needs Java)
-    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets except //tools/claude_hooks/...)' }
+    # Java (keytool) is provided hermetically via //third_party/jdk.
+    # E2E tests (local=True) run locally even when RBE is enabled.
+    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets)' }
     targets: true
     secrets: [BUILDBUDDY_API_KEY]
 

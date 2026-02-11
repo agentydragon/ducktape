@@ -130,6 +130,7 @@ py_library(
         ":managed_files",
         ":proxy_vars",
         ":settings",
+        "//bazel_util:runfiles",
         "//bazel_util:subprocess",
         "//net_util:net",
         "//tools/claude_hooks/supervisor:client",
@@ -323,9 +324,15 @@ py_test(
         "testdata/test_secrets/extra_context.md",
         "testdata/test_secrets/secrets.env.age",
         ":session_start",
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
         "//tools/claude_hooks/auth_proxy:run",
         "//tools/claude_hooks/testdata/test_workspace:workspace_files",
     ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
     # Inherit proxy env vars so MockEgressProxy can chain through real proxy
     env_inherit = [
         "HTTPS_PROXY",

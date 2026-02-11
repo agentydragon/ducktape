@@ -74,15 +74,6 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Setup Java (for keytool)
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "21"
-
-      - name: Verify keytool available
-        run: keytool -help >/dev/null
-
       - uses: ./.github/actions/setup-bazel
         id: bazel
         with:
@@ -96,7 +87,6 @@ jobs:
             --test_tag_filters=-e2e \
             --test_env=CI=true \
             --test_env=GITHUB_ACTIONS=true \
-            --test_env=JAVA_HOME \
             //tools/claude_hooks:all
 
       - name: Run e2e tests (no sandbox for podman)
@@ -109,7 +99,6 @@ jobs:
             --spawn_strategy=local \
             --test_env=CI=true \
             --test_env=GITHUB_ACTIONS=true \
-            --test_env=JAVA_HOME \
             --test_env=PATH \
             //tools/claude_hooks:all
 

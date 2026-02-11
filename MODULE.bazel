@@ -419,3 +419,18 @@ http_archive(
     sha256 = "9633816e7832109e530c9e2532b11a1edae08136d63aa7e40246c0339b7db304",
     urls = ["https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz"],
 )
+
+# Adoptium Temurin JDK 21 — provides keytool and cacerts for claude_hooks tests.
+# Build target: //third_party/jdk
+http_archive(
+    name = "adoptium_jdk21",
+    build_file_content = """\
+exports_files([
+    "bin/keytool",
+    "lib/security/cacerts",
+])
+""",
+    sha256 = "a2650fba422283fbed20d936ce5d2a52906a5414ec17b2f7676dddb87201dbae",
+    strip_prefix = "jdk-21.0.6+7",
+    urls = ["https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7/OpenJDK21U-jdk_x64_linux_hotspot_21.0.6_7.tar.gz"],
+)
