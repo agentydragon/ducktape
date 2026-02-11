@@ -2,7 +2,7 @@ My homepage. Everything is CC BY-NC-SA 3.0.
 
 Uses Haskell/Hakyll tooling.
 
-Hosted on my VPS. (Used to be on GitHub pages until ~2022-09-01.)
+Hosted on my VPS.
 
 # Important linked URLs
 

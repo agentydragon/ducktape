@@ -6,4 +6,3 @@ Probably should have:
 Maybe one day:
 
 - Public resume
-- Disqus

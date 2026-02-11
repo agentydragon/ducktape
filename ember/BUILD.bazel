@@ -11,7 +11,7 @@ filegroup(
     name = "data_files",
     srcs = [
         "docs/agent_ontology.md",
-        "docs/pilot_plan.md",
+        "plan/SPEC.md",
         "resources/examples/matrix_client/quickstart.py",
         "resources/examples/python-session/demo.sh",
         "resources/examples/python-session/test_demo.sh",

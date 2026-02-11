@@ -1,71 +1,30 @@
-# Ember (v0)
+# Ember
 
-This directory contains the minimal scaffolding for the containerised agent
-pilot described in `ember/docs/pilot_plan.md`.
+Containerised LLM agent (`emberd`) that watches Matrix rooms and responds via
+OpenAI tool calls. See <plan/SPEC.md> for the full specification and
+<docs/agent_ontology.md> for vocabulary.
 
-The pilot intentionally keeps the feature set extremely small:
+## Kubernetes
 
-- the agent loop runs inside a dedicated container (`emberd`)
-- the only integration is Matrix chat (accessed directly using a scoped token)
-- no policy gateway, approvals, or additional MCP tool surfaces
-- health, restart, and shutdown are exposed via a tiny HTTP API
-- OpenAI Responses API (`gpt-5`) is forced to call tools; encrypted reasoning
-  traces are stored alongside tool calls in the on-disk history
-- Reasoning replay follows the encrypted reasoning guidance in the OpenAI
-  Responses API docs
-- Container image ships the repository docs under `/opt/emberd/docs` so Ember can
-  read its own reference material at runtime.
-
-The code here is **not** production ready. It gives the agent a sandbox that can
-be iterated on while the surrounding control plane remains minimal.
-
-## Kubernetes integration
-
-The k3s deployment provisions Ember-specific credentials inside the `ember`
-namespace and projects them into the pod as a shared secrets directory. The
-Matrix bootstrap job still writes `matrix-ember-token`; the Gitea bootstrap job
-still writes `gitea-ember-token`; a sealed secret `openai-api` stores the OpenAI
-key. A projected volume merges them under `/var/run/ember/secrets` so Ember can
-reload credentials in-place without a restart.
-
-Reapply the charts whenever you need to rotate the credentials:
+Credentials are projected into `/var/run/ember/secrets/` (Matrix token, Gitea
+token, OpenAI key). Rotate by reapplying the Helm charts:
 
 ```bash
-# Matrix credentials
 helm upgrade matrix k8s/helm/matrix-stack -n matrix -f k8s/helm/matrix-stack/values.yaml
-
-# Gitea credentials
 helm upgrade gitea k8s/helm/gitea -n gitea --create-namespace
-
-# Ember chart
 helm upgrade ember k8s/helm/ember -n ember --create-namespace
 ```
 
-The Helm chart replicates the old namespace definition and PVC setup, so a
-plain `--create-namespace` is enough to bootstrap the space.
-
-Ember gets a persistent scratch workspace at `/var/lib/ember/workspace`
-(configurable via `EMBER_WORKSPACE_DIR`). The agent writes temporary scripts or
-other helper artifacts there between Matrix turns, so expect that directory to
-hold ad-hoc tooling and clean it up only when coordinating with the agent.
-
-To inspect the logs of the current pod without looking up its name first:
+Persistent workspace at `/var/lib/ember/workspace` (`EMBER_WORKSPACE_DIR`).
 
 ```bash
+# Tail logs
 kubectl logs -n ember $(kubectl get pods -n ember -l 'app.kubernetes.io/name=ember,app.kubernetes.io/component=agent' -o jsonpath='{.items[0].metadata.name}') -f
-```
 
-Drop `-f` to print once or add `--tail` to scope the output as needed.
-
-To roll the pod after updating manifests or secrets:
-
-```bash
+# Roll pod
 kubectl -n ember rollout restart deployment/ember
 kubectl -n ember rollout status deployment/ember
 ```
-
-Consult `docs/agent_ontology.md` for the vocabulary Ember uses to describe the
-runner, the LLM core, and the surrounding control loop.
 
 ## Running locally
 
