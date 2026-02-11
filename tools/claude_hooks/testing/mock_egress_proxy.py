@@ -610,10 +610,12 @@ class MockEgressProxy:
 
         def forward(src: ssl.SSLSocket, dst: ssl.SSLSocket, direction: str) -> None:
             nonlocal bytes_forwarded
+            clean_eof = False
             try:
                 while True:
                     data = src.recv(65536)
                     if not data:
+                        clean_eof = True
                         break
                     dst.sendall(data)
                     with lock:
@@ -621,9 +623,17 @@ class MockEgressProxy:
             except (OSError, ssl.SSLError) as e:
                 logger.debug("Forward %s finished for %s: %s", direction, target_host, e)
             finally:
-                # Shut down write side so the other direction's recv() returns empty
-                with contextlib.suppress(OSError):
-                    dst.shutdown(socket.SHUT_WR)
+                # Only half-close on clean EOF (source sent all data and closed
+                # gracefully). On TLS errors, shutdown(SHUT_WR) must NOT be
+                # called: it operates at the raw TCP level, sending a FIN that
+                # corrupts the TLS session state for the *other* forwarding
+                # thread still reading from the same SSL socket pair. This
+                # caused intermittent TLSV1_ALERT_DECODE_ERROR failures where
+                # the s2c thread couldn't deliver echo responses because c2s's
+                # cleanup destroyed the underlying transport.
+                if clean_eof:
+                    with contextlib.suppress(OSError):
+                        dst.shutdown(socket.SHUT_WR)
 
         # Both sockets stay in blocking mode (default)
         client_ssl.settimeout(30.0)
