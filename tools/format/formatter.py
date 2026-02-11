@@ -33,7 +33,7 @@ from pathlib import Path
 import pygit2
 from python.runfiles import runfiles
 
-from tools.env_utils import get_workspace_dir
+from bazel_util.workspace import get_build_workspace_directory
 
 _RUNFILES_OPT = runfiles.Create()
 if _RUNFILES_OPT is None:
@@ -202,7 +202,7 @@ async def run_formatter_async(formatter: str, files: list[Path], check_mode: boo
 async def main_async() -> int:
     check_mode = os.environ.get("FMT_CHECK", "").lower() in ("1", "true", "yes")
     # Workspace dir needed for: pygit2.Repository("."), relative file paths from pre-commit
-    os.chdir(get_workspace_dir())
+    os.chdir(get_build_workspace_directory())
 
     repo = pygit2.Repository(".")
 

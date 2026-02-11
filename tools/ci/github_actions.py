@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from tools.env_utils import get_required_env, get_required_env_path
+from env_utils.env_utils import get_required_env, get_required_env_path
 
 _logger = logging.getLogger(__name__)
 

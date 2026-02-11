@@ -2,7 +2,7 @@
 
 import pytest_bazel
 
-from tools.ci.generate_ci_lib import (
+from tools.ci.generate_ci import (
     WORKFLOWS_DIR,
     WORKFLOWS_YAML,
     OutOfDateError,

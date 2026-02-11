@@ -39,7 +39,7 @@ py_binary(
     ],
     deps = [
         ":runfiles_util",
-        "//tools:env_utils",
+        "//bazel_util:workspace",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -77,7 +77,7 @@ py_library(
     ],
     deps = [
         ":runfiles_util",
-        "//tools:env_utils",
+        "//bazel_util:workspace",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],

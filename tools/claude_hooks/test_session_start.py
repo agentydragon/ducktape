@@ -380,6 +380,30 @@ class TestFullSessionStartHook:
 
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
 
+    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
+    def test_secrets_decrypted_into_env_file(
+        self, monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, hook_env: None
+    ) -> None:
+        """Run hook with age key set, verify decrypted secret is visible in env file."""
+        # Test keypair (committed in testdata — NOT a real secret)
+        test_age_key = "AGE-SECRET-KEY-1DVR9RHP2MVZYD6HE46W4JNWMA673U8FYS00TCLX9VNXCFMQJX5ZQTUEP9E"
+        test_secrets_dir = Path(__file__).parent / "testdata" / "test_secrets"
+
+        monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_AGE_KEY", test_age_key)
+        monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_DIR", str(test_secrets_dir))
+
+        result = run_session_start_hook(isolated_dirs.project)
+        assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+
+        # Verify the secret is visible when sourcing the env file
+        shell_result = shell_helpers.run_with_env_file(
+            command="echo $TEST_SECRET_TOKEN", env_file=isolated_dirs.env_file, check=True
+        )
+        assert shell_result.stdout.strip() == "test-value-12345"
+
+        # Verify extra context appears in hook stdout
+        assert "Test secrets decrypted successfully." in result.stdout
+
 
 def _can_use_podman() -> bool:
     """Check if podman is available for use.

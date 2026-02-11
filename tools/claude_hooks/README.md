@@ -361,6 +361,48 @@ The BUILD.bazel target has `env_inherit = ["HTTPS_PROXY", ...]`. When tests run 
 
 This is correct behavior: it means the mock egress proxy chains through the auth proxy, which adds credentials and forwards to the real egress proxy. The full chain works.
 
+## Encrypted Secrets
+
+Secrets for Claude Code web sessions are stored as an age-encrypted shell script in `secrets/secrets.env.age`. When `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` is set (in Claude Code web environment), the session start hook decrypts the file and appends its contents to `CLAUDE_ENV_FILE`.
+
+Uses asymmetric X25519 encryption via [age](https://age-encryption.org/):
+
+- **Public key**: `secrets/recipients.txt` (anyone can encrypt)
+- **Private key**: `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` env var (only the decryptor needs this)
+- **Context**: `secrets/extra_context.md` is injected into the agent session context when secrets are present
+
+### Decrypting secrets
+
+```bash
+age -d -i <key_file> tools/claude_hooks/secrets/secrets.env.age
+```
+
+Or with the key on stdin:
+
+```bash
+echo "$DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY" | age -d -i - tools/claude_hooks/secrets/secrets.env.age
+```
+
+### Editing secrets
+
+```bash
+# Decrypt to a temp file
+age -d -i <key_file> tools/claude_hooks/secrets/secrets.env.age > /tmp/secrets.env
+
+# Edit the file (shell script format: export KEY=value, comments with #)
+$EDITOR /tmp/secrets.env
+
+# Re-encrypt
+age -e -R tools/claude_hooks/secrets/recipients.txt /tmp/secrets.env > tools/claude_hooks/secrets/secrets.env.age
+
+# Clean up
+rm /tmp/secrets.env
+```
+
+### Adding a new recipient
+
+Add their age public key (one per line) to `secrets/recipients.txt`, then re-encrypt.
+
 ## Development
 
 ```bash

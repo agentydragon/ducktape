@@ -85,6 +85,9 @@ class EnvVars:
     # Session metadata
     hook_timestamp: datetime
 
+    # Age-decrypted secrets (raw shell export lines, appended verbatim)
+    secrets_exports: str | None
+
 
 def write_env_file(env_file: Path, vars: EnvVars) -> None:
     """Write environment variables to file.
@@ -152,6 +155,11 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     # Session metadata
     exports.extend(["", "# Session metadata"])
     exports.extend(_exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
+
+    # Age-decrypted secrets (appended verbatim as shell export lines)
+    if vars.secrets_exports:
+        exports.extend(["", "# Decrypted secrets (from secrets.env.age)"])
+        exports.append(vars.secrets_exports)
 
     content = "\n".join(exports) + "\n"
     write_config(env_file, content, "session environment")

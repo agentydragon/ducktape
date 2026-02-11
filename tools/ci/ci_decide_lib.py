@@ -17,12 +17,12 @@ from pathlib import Path
 import pygit2
 from pydantic import BaseModel, Field
 
+from env_utils.env_utils import get_optional_env_path, get_required_existing_path
 from fmt_util.fmt_util import format_limited_list
 from tools.ci.bazel_query import filter_for_ci, query_with_targets
 from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
 from tools.ci.github_actions import CIEnvironment, PushStrategy
 from tools.ci.models import AlwaysTrigger, BazelQueryTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
-from tools.env_utils import get_optional_env_path, get_required_existing_path
 
 logger = logging.getLogger(__name__)
 
@@ -31,45 +31,68 @@ class CIDecision(BaseModel):
     """Result of CI decision computation."""
 
     targets: list[str] = Field(default_factory=list, description="Affected targets, or ['//...'] for all")
+    workflow_targets: dict[str, list[str]] = Field(
+        default_factory=dict, description="Per-workflow targets computed from workflow queries"
+    )
     workflows: set[str] = Field(default_factory=set)
     infra_changed: bool = False
 
     def to_outputs(self) -> dict[str, str | bool]:
-        """Format decision as GitHub Actions output dict."""
+        """Format decision as GitHub Actions output dict.
+
+        Per-workflow targets are written to artifact files (targets-<workflow>.txt),
+        not GHA outputs, because target lists can exceed output size limits.
+        """
         return {
             "targets": " ".join(self.targets),
             "workflows": json.dumps(sorted(self.workflows)),
             "infra_changed": self.infra_changed,
         }
 
-    def write_targets_file(self, targets_path: Path) -> None:
-        """Write targets to file for --target_pattern_file usage.
+    def write_targets_files(self, workspace: Path) -> None:
+        """Write target files for --target_pattern_file usage.
 
-        Writes one target per line.
-        This avoids shell argument length limits when passing many targets.
+        Writes a shared targets.txt (all targets) and per-workflow files
+        (targets-<workflow>.txt) for workflows with computed target sets.
         """
-        targets_path.write_text("\n".join(self.targets) + "\n" if self.targets else "")
+        workspace.joinpath("targets.txt").write_text("\n".join(self.targets) + "\n" if self.targets else "")
+        for workflow_name, wf_targets in self.workflow_targets.items():
+            path = workspace / f"targets-{workflow_name}.txt"
+            path.write_text("\n".join(wf_targets) + "\n" if wf_targets else "")
 
 
-def should_trigger(name: str, config: WorkflowConfig, targets: list[str], changed_files: set[str]) -> bool:
-    """Check if a workflow should be triggered."""
-    if f".github/workflows/{name}.yml" in changed_files:
+def should_trigger(
+    name: str, config: WorkflowConfig, targets: list[str], changed_files: set[str]
+) -> tuple[bool, list[str]]:
+    """Check if a workflow should be triggered.
+
+    Returns (triggered, workflow_targets). For BazelQueryTrigger workflows with
+    ``targets: true``, workflow_targets is the query result — the subset of
+    affected targets that match this workflow's query. This is used to pass
+    per-workflow target lists to downstream jobs.
+    """
+    workflow_file_changed = f".github/workflows/{name}.yml" in changed_files
+    if workflow_file_changed:
         logger.info("Workflow file changed -> triggers %s", name)
-        return True
 
     match config.trigger:
         case AlwaysTrigger():
-            return True
+            return True, targets
         case PathPatternTrigger(pattern=pattern):
             regex = re.compile(pattern)
-            if any(regex.match(f) for f in changed_files):
-                logger.info("Path pattern '%s' matched -> triggers %s", pattern, name)
-                return True
+            if any(regex.match(f) for f in changed_files) or workflow_file_changed:
+                if not workflow_file_changed:
+                    logger.info("Path pattern '%s' matched -> triggers %s", pattern, name)
+                return True, targets
         case BazelQueryTrigger(query=query):
-            if targets and query_with_targets(query, targets):
-                return True
+            if targets:
+                matched = query_with_targets(query, targets)
+                if matched or workflow_file_changed:
+                    return True, matched
+            elif workflow_file_changed:
+                return True, []
 
-    return False
+    return workflow_file_changed, []
 
 
 def _compute_affected_targets(
@@ -123,8 +146,17 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
 
     targets, infra_changed = _compute_affected_targets(repo, env, base_commit, changed_files)
 
-    triggered = {name for name, config in workflows.items() if should_trigger(name, config, targets, changed_files)}
-    return CIDecision(targets=targets, workflows=triggered, infra_changed=infra_changed)
+    triggered: set[str] = set()
+    workflow_targets: dict[str, list[str]] = {}
+    for name, config in workflows.items():
+        should_run, wf_targets = should_trigger(name, config, targets, changed_files)
+        if should_run:
+            triggered.add(name)
+            if config.targets:
+                workflow_targets[name] = wf_targets
+    return CIDecision(
+        targets=targets, workflow_targets=workflow_targets, workflows=triggered, infra_changed=infra_changed
+    )
 
 
 def main() -> None:
@@ -142,10 +174,10 @@ def main() -> None:
 
     env.write_outputs(decision.to_outputs())
 
-    # Write targets file for artifact upload (avoids shell argument length limits)
-    targets_file = env.workspace / "targets.txt"
-    decision.write_targets_file(targets_file)
-    logger.info("Wrote targets to %s", targets_file)
+    # Write target files for artifact upload. Per-workflow target files are used
+    # instead of GHA outputs because target lists can exceed output size limits.
+    decision.write_targets_files(env.workspace)
+    logger.info("Wrote targets.txt and %d per-workflow target files", len(decision.workflow_targets))
 
     logger.info("\nDecision: %d workflows to run", len(decision.workflows))
     for w in sorted(decision.workflows):

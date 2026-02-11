@@ -29,8 +29,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from bazel_util.workspace import get_build_workspace_directory
 from cluster.scripts.runfiles_util import resolve_path
-from tools.env_utils import get_workspace_dir
 
 logger = logging.getLogger(__name__)
 
@@ -683,7 +683,7 @@ async def main() -> int:
     parser.add_argument("--skip-dependencies", action="store_true", help="Skip dependency graph validation")
     args = parser.parse_args()
 
-    root = args.root or (get_workspace_dir() / "cluster" / "k8s")
+    root = args.root or (get_build_workspace_directory() / "cluster" / "k8s")
 
     # Parse all files once
     cluster = parse_cluster(root)

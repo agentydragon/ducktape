@@ -1,5 +1,5 @@
 # AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
-# Regenerate with: uv run tools/ci/generate_ci.py
+# Regenerate with: bazel run //tools/ci:generate_ci_bin
 name: headscale-cleanup Release
 "on":
   push:

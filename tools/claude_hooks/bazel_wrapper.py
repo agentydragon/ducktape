@@ -10,6 +10,7 @@ import os
 import sys
 from datetime import UTC, datetime
 
+from env_utils.env_utils import get_required_env, get_required_existing_path
 from tools.claude_hooks import proxy_setup
 from tools.claude_hooks.debug import log_entrypoint_debug
 from tools.claude_hooks.env_file import ENV_AUTH_PROXY_BAZELRC, ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH
@@ -18,7 +19,6 @@ from tools.claude_hooks.proxy_credentials import check_credential_expiry
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import SupervisorClient
-from tools.env_utils import get_required_env, get_required_existing_path
 
 logger = logging.getLogger(__name__)
 

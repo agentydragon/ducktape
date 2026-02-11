@@ -22,8 +22,8 @@ from typing import Literal
 from mako.template import Template
 from pydantic import BaseModel
 
+from env_utils import env_utils
 from fmt_util.fmt_util import format_limited_list
-from tools import env_utils
 from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import (
     bazelisk_setup,
@@ -33,6 +33,7 @@ from tools.claude_hooks import (
     podman_service,
     precommit_setup,
     proxy_setup,
+    secrets_setup,
     tmpfs_setup,
 )
 from tools.claude_hooks.debug import log_entrypoint_debug
@@ -213,6 +214,7 @@ def emit_session_context(
     auth_proxy: proxy_setup.ProxySetup,
     podman: podman_service.PodmanSetup | None,
     precommit: precommit_setup.PrecommitSetup | None,
+    secrets: secrets_setup.SecretsSetup | None,
 ) -> None:
     """Emit compact context summary for Claude Code transcript.
 
@@ -232,6 +234,7 @@ def emit_session_context(
         PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
         log_entries=collector.buffer,
         has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN")),
+        secrets=secrets,
         log_file=log_file,
     )
     print(result.rstrip("\n"))
@@ -367,6 +370,9 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             bazelisk_skipped=skipped,
         )
 
+    # Decrypt age-encrypted secrets (fast, local file I/O only)
+    secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=settings.secrets_dir)
+
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     logger.info("Starting parallel installations...")
     results = await asyncio.gather(
@@ -458,6 +464,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         docker_host=docker_host,
         podman_env=podman_env,
         hook_timestamp=hook_timestamp,
+        secrets_exports=secrets.env_exports if secrets else None,
     )
 
     # Write environment file ONCE
@@ -483,6 +490,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         auth_proxy=auth_proxy,
         podman=None if isinstance(podman, BaseException) else podman,
         precommit=None if isinstance(precommit, BaseException) else precommit,
+        secrets=secrets,
     )
 
 

@@ -77,6 +77,10 @@ class HookSettings(BaseSettings):
         default=None, description="Path to system bazel (used when install_bazelisk=False)"
     )
 
+    # Secrets
+    secrets_dir: Path | None = Field(default=None, description="Override secrets directory (for testing)")
+    secrets_age_key: str | None = Field(default=None, description="Age private key for decrypting secrets")
+
     # Test configuration
     use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
 

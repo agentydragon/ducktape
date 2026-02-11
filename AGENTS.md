@@ -167,8 +167,8 @@ bazel build //adgn:adgn
 
 **Adding dependencies:**
 
-1. Add to `requirements_bazel.txt`
-2. Run `bazel run //:requirements.update` to regenerate lockfile
+1. Add the constraint to `pyproject.toml` (the single source of truth for Python dependency constraints)
+2. Run `bazel run //:requirements.update` to regenerate the lockfile (`requirements_bazel.txt` — never edit manually)
 3. Use `@pypi//package_name` in BUILD.bazel deps
 
 ### Python BUILD.bazel Patterns (Gazelle-compatible)

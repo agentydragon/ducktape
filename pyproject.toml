@@ -156,6 +156,7 @@ dependencies = [
     "pyopenssl>=24.0",
     "pyjks>=20.0",
     "pyjwt>=2.8",
+    "pyrage>=1.0",
     "supervisor>=4.2",
 
     # claude_optimizer

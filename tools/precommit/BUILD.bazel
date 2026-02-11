@@ -67,8 +67,8 @@ py_binary(
     deps = [
         ":check_filename_conventions",
         ":check_terraform_centralization",
+        "//bazel_util:workspace",
         "//tools:check_pytest_main",
-        "//tools:env_utils",
         "@pypi//pygit2",
         "@rules_python//python/runfiles",
     ],
@@ -99,8 +99,8 @@ py_binary(
     deps = [
         ":check_filename_conventions",
         ":check_terraform_centralization",
+        "//bazel_util:workspace",
         "//tools:check_pytest_main",
-        "//tools:env_utils",
         "@pypi//pygit2",
         "@rules_python//python/runfiles",
     ],

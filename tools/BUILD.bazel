@@ -23,13 +23,6 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-# Shared utilities for environment variable handling
-py_library(
-    name = "env_utils",
-    srcs = ["env_utils.py"],
-    visibility = ["//visibility:public"],
-)
-
 # Library for checking pytest_bazel.main() calls (importable)
 py_library(
     name = "check_pytest_main",

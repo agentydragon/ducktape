@@ -28,8 +28,8 @@ from pathlib import Path
 import pygit2
 from python.runfiles import runfiles
 
+from bazel_util.workspace import get_build_workspace_directory
 from tools.check_pytest_main import check_files_async
-from tools.env_utils import get_workspace_dir
 from tools.precommit.check_filename_conventions import check_filename_conventions
 from tools.precommit.check_terraform_centralization import find_violations
 
@@ -359,7 +359,7 @@ async def main_async() -> int:
     t0 = time.perf_counter()
 
     # Workspace dir needed for: pygit2.Repository("."), relative file paths, cluster script execution
-    os.chdir(get_workspace_dir())
+    os.chdir(get_build_workspace_directory())
     repo_root = Path.cwd()
     repo = pygit2.Repository(".")
     t1 = time.perf_counter()

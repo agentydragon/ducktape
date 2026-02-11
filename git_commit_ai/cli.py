@@ -23,7 +23,7 @@ from pathlib import Path
 import pygit2
 import typer
 
-from bazel_util.workspace import get_workspace_root
+from bazel_util.workspace import get_build_workspace_directory
 from cli_util.decorators import async_run
 from git_commit_ai.agent_backend import generate_commit_message_agent
 from git_commit_ai.config import load_settings
@@ -135,7 +135,7 @@ async def commit(
     debug: bool = typer.Option(False, "--debug", help="Show logger output"),
 ):
     """Run the git-commit-ai process."""
-    repo = pygit2.Repository(get_workspace_root())
+    repo = pygit2.Repository(get_build_workspace_directory())
 
     _init_logging(repo, debug)
 
@@ -203,7 +203,7 @@ async def commit(
         cmd.append("--amend")
     if verbose:
         cmd.append("-v")
-    proc = await asyncio.create_subprocess_exec(*cmd, cwd=get_workspace_root())
+    proc = await asyncio.create_subprocess_exec(*cmd, cwd=get_build_workspace_directory())
     ret = await proc.wait()
     if ret:
         raise SystemExit(ret)

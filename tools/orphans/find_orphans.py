@@ -12,7 +12,6 @@ filesystem-discovered modules (excluding .terraform/ and modules/ subdirs).
 """
 
 import argparse
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -20,14 +19,7 @@ from pathlib import Path
 import pathspec
 import pygit2
 
-
-def get_repo_root() -> Path:
-    """Get repository root, handling both direct and bazel run invocations."""
-    # BUILD_WORKSPACE_DIRECTORY is set by `bazel run`
-    if workspace := os.environ.get("BUILD_WORKSPACE_DIRECTORY"):
-        return Path(workspace)
-    # Fallback for direct invocation
-    return Path(__file__).parent.parent.parent
+from bazel_util.workspace import get_build_workspace_directory
 
 
 def label_to_path(label: str) -> Path | None:
@@ -106,7 +98,7 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="Exit with code 1 if any orphans found")
     args = parser.parse_args()
 
-    repo_root = get_repo_root()
+    repo_root = get_build_workspace_directory()
     whitelist_path = args.whitelist or repo_root / "tools/orphans/whitelist.txt"
 
     orphans = find_orphans(repo_root, whitelist_path)

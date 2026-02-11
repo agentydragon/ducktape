@@ -16,7 +16,7 @@ py_library(
     name = "formatter",
     srcs = ["formatter.py"],
     deps = [
-        "//tools:env_utils",
+        "//bazel_util:workspace",
         "@pypi//pygit2",
         "@rules_python//python/runfiles",
     ],

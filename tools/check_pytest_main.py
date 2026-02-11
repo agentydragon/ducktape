@@ -43,7 +43,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple
 
-from bazel_util.workspace import get_workspace_root
+from bazel_util.workspace import get_build_workspace_directory
 
 # Pre-compiled regex patterns for performance
 _TEST_FUNC_PATTERN = re.compile(r"^\s*(async\s+)?def\s+test_\w+", re.MULTILINE)
@@ -228,7 +228,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # Determine files to check
-    workspace_root = get_workspace_root()
+    workspace_root = get_build_workspace_directory()
 
     if args.all:
         files = find_all_test_files(workspace_root)

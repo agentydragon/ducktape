@@ -408,6 +408,7 @@ manifest:
     pyowm: pyowm
     pyparsing: pyparsing
     pyperclip: pyperclip
+    pyrage: pyrage
     pytest: pytest
     pytest_asyncio: pytest_asyncio
     pytest_base_url: pytest_base_url
@@ -475,7 +476,7 @@ manifest:
     supervisor: supervisor
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     termcolor: termcolor
     terminado: terminado
@@ -578,4 +579,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: 65f370840a34a68e50f4593c4ed9370a57498e352a20e22882bbcd5c6a4faff0
+integrity: 8cb46052ddee2ef09193a5e2dd9977112b1b3e3d1a3beece6dc52afa9f1e21b2

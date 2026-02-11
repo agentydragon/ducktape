@@ -23,7 +23,8 @@ workflows:
     secrets: [BUILDBUDDY_API_KEY]
 
   bazel-test:
-    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets)' }
+    # claude_hooks tests are excluded — they run in claude-hooks-release.yml (needs Java)
+    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets except //tools/claude_hooks/...)' }
     targets: true
     secrets: [BUILDBUDDY_API_KEY]
 

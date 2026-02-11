@@ -161,6 +161,18 @@ py_library(
     ],
 )
 
+py_library(
+    name = "secrets_setup",
+    srcs = ["secrets_setup.py"],
+    data = [
+        "secrets/extra_context.md",
+        "secrets/secrets.env.age",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pyrage"],
+)
+
 # === Libraries for binary sources ===
 # py_library targets for source files that are also py_binary entry points.
 # py_package depends on these (not the py_binary targets) to avoid pulling in
@@ -178,7 +190,7 @@ py_library(
         ":proxy_setup",
         ":proxy_vars",
         ":settings",
-        "//tools:env_utils",
+        "//env_utils",
         "//tools/claude_hooks/supervisor:client",
     ],
 )
@@ -199,11 +211,12 @@ py_library(
         ":precommit_setup",
         ":proxy_credentials",
         ":proxy_setup",
+        ":secrets_setup",
         ":settings",
         ":tmpfs_setup",
+        "//env_utils",
         "//fmt_util",
         "//tools:build_info",
-        "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",
         "@pypi//mako",
         "@pypi//pydantic",
@@ -235,6 +248,7 @@ py_package(
     name = "claude_hooks_pkg",
     packages = [
         "bazel_util",
+        "env_utils",
         "fmt_util",
         "net_util",
         "tools",
@@ -255,6 +269,7 @@ py_package(
         ":proxy_credentials",
         ":proxy_setup",
         ":proxy_vars",
+        ":secrets_setup",
         ":session_start_lib",
         ":settings",
         ":streaming",
@@ -283,6 +298,7 @@ py_wheel(
         "pydantic",
         "pydantic-settings",
         "pyjwt",
+        "pyrage",
         "supervisor",
         "tenacity",
     ],
@@ -304,6 +320,8 @@ py_test(
     name = "test_session_start",
     srcs = ["test_session_start.py"],
     data = [
+        "testdata/test_secrets/extra_context.md",
+        "testdata/test_secrets/secrets.env.age",
         ":session_start",
         "//tools/claude_hooks/auth_proxy:run",
         "//tools/claude_hooks/testdata/test_workspace:workspace_files",
