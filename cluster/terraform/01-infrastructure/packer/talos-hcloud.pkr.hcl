@@ -22,7 +22,7 @@ variable "talos_image_url" {
 
 variable "talos_version" {
   type    = string
-  default = "v1.11.0"
+  default = "v1.12.3"
 }
 
 variable "schematic_id" {

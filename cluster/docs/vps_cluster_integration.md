@@ -15,7 +15,7 @@ Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
 **Implemented**:
 
 - 2x Hetzner CPX31 VPS nodes (`talos-vps-0`, `talos-vps-1`)
-- Both nodes are control-plane with Talos v1.9.5, Kubernetes v1.32.0
+- Both nodes are control-plane with Talos v1.12.3, Kubernetes v1.32.0
 - Cilium CNI with VXLAN tunnel mode (cross-node connectivity verified)
 - KubeSpan mesh working - WireGuard handshakes verified
 - Hetzner Cloud CSI for block storage

@@ -20,7 +20,7 @@ variable "cluster_domain" {
 variable "talos_version" {
   description = "Talos version for the cluster"
   type        = string
-  default     = "v1.11.0"
+  default     = "v1.12.3"
 }
 
 variable "kubernetes_version" {

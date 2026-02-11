@@ -13,5 +13,5 @@ variable "proxmox_ssh_host" {
 variable "talos_version" {
   description = "Talos Linux version for machine secrets generation"
   type        = string
-  default     = "v1.9.5"
+  default     = "v1.12.3"
 }

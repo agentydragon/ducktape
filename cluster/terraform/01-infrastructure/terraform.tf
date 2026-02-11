@@ -23,7 +23,7 @@ terraform {
     # Talos Linux for all nodes
     talos = {
       source  = "siderolabs/talos"
-      version = "~> 0.9.0"
+      version = "~> 0.10.0"
     }
     # Kubernetes access
     kubernetes = {
