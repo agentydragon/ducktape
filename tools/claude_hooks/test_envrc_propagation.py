@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from tools.claude_hooks.env_file import write_direnv_env_file
@@ -32,7 +33,7 @@ def test_write_direnv_env_file_no_static_exports(tmp_path: Path) -> None:
     # The only "export" should be inside the eval, not standalone export KEY=VALUE lines
     for line in content.splitlines():
         if line.startswith("export "):
-            pytest_bazel.fail(f"Found static export line: {line!r}")
+            pytest.fail(f"Found static export line: {line!r}")
 
 
 if __name__ == "__main__":

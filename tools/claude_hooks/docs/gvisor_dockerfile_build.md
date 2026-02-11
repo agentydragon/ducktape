@@ -17,6 +17,7 @@ Typical builds (package installs, file copies, compilation) work without any spe
 | Docker format       | `image_default_format = "docker"` in `containers.conf` | OCI image format doesn't support `SHELL` directive                                               |
 | crun-gvisor-wrapper | `runtime = "crun-gvisor"` in `containers.conf`         | gVisor lacks `/proc/self/setgroups`; wrapper injects `run.oci.keep_original_groups=1` annotation |
 | No new keyring      | Wrapper injects `--no-new-keyring` flag                | gVisor has ~60-70 keyring quota per session; prevents quota exhaustion in large Dockerfiles      |
+| Mock cgroup freezer | Wrapper creates mock `freezer.state` for `exec`        | gVisor lacks cgroup v1 freezer; crun exec needs it to pause container before exec'ing            |
 | Host user namespace | `userns = "host"` in `containers.conf`                 | Skips user namespace creation (gVisor restriction)                                               |
 
 ## Storage driver
@@ -86,6 +87,22 @@ RUN seq 1 1000000 > /dev/null 2>&1
 # Or redirect to a log file (preserve output in the image)
 RUN some-verbose-command > /tmp/build.log 2>&1
 ```
+
+## `podman exec` support (handled automatically)
+
+`podman exec` previously failed with:
+
+```
+crun-gvisor: error opening file `/sys/fs/cgroup/freezer/libpod_parent/libpod-<id>/freezer.state`: No such file or directory
+```
+
+crun's `exec` implementation freezes the container via the cgroup v1 freezer before
+exec'ing into it. gVisor doesn't provide the freezer subsystem, but `/sys/fs/cgroup`
+is a writable tmpfs. The `crun-gvisor-wrapper` detects `exec` commands, extracts the
+container ID, and creates a mock `freezer.state` file at the expected path. crun can
+then write `FROZEN`/`THAWED` to the regular file and proceed normally.
+
+**No action required** — the fix is applied automatically for all `podman exec` operations.
 
 ## Kernel keyring quota (handled automatically)
 
