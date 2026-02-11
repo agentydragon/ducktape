@@ -88,7 +88,7 @@ class ValidationRunRequest(BaseModel):
     split: Split = Split.VALID
     n_samples: int = Field(ge=1, le=50, default=5)
     critic_model: str
-    budget_usd: float = Field(gt=0, description="Max USD cost per critic agent")
+    budget_usd: float = Field(ge=0, description="Max USD cost per critic agent")
 
 
 class ValidationRunResponse(BaseModel):
@@ -556,7 +556,7 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
 
 class OptimizeRunRequest(BaseModel):
     target_metric: TargetMetric = Field(description="Validation metric mode: whole-repo or targeted")
-    budget_usd: float = Field(gt=0, description="Dollar budget for optimization")
+    budget_usd: float = Field(ge=0, description="Dollar budget for optimization")
     optimizer_model: str = Field(description="Model for the optimizer agent")
     critic_model: str = Field(description="Model for critic evaluations")
     timeout_seconds: int = Field(ge=60, le=86400, description="Container timeout in seconds")
@@ -582,7 +582,7 @@ async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> Op
 
 class ImproveRunRequest(BaseModel):
     n_examples: int = Field(default=10, ge=1, le=100, description="Number of Pareto-optimal training examples")
-    budget_usd: float = Field(gt=0, description="Dollar budget for improvement")
+    budget_usd: float = Field(ge=0, description="Dollar budget for improvement")
     improvement_model: str = Field(description="Model for the improvement agent")
     critic_model: str = Field(description="Model for critic evaluations")
     timeout_seconds: int = Field(ge=60, le=86400, description="Container timeout in seconds")

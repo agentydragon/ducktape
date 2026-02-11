@@ -99,10 +99,13 @@ def _check_budget(session: Session, agent_run_id: UUID, budget_usd: float) -> No
     """Check if agent has exceeded its budget. Raises HTTPException(429) if over budget.
 
     Uses the agent_run_budget_status view which recursively sums descendant costs.
+    Zero-cost calls (e.g. local models with $0 pricing) are always allowed.
     """
     status = session.get(AgentRunBudgetStatus, agent_run_id)
     if status is None:
         raise HTTPException(status_code=500, detail=f"Agent run {agent_run_id} not found in budget view")
+    if status.tree_spent_usd == 0 and budget_usd == 0:
+        return
     if status.tree_spent_usd >= budget_usd:
         raise HTTPException(
             status_code=429, detail=f"Budget exceeded: spent ${status.tree_spent_usd:.4f} of ${budget_usd:.2f} budget"
