@@ -800,6 +800,6 @@ for network stack diagrams and diagnostic checklist.
 
 - **Nodes**: 4 (2 VPS control-plane, 1 Proxmox control-plane, 1 Proxmox worker)
 - **Talos**: v1.12.3
-- **Kubernetes**: v1.32.0
+- **Kubernetes**: v1.35.1
 - **CNI**: Cilium (VXLAN tunnel mode)
 - **Monthly Cost**: ~€30 (2x CPX31 + backups)
