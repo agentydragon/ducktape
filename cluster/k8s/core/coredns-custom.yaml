@@ -34,8 +34,9 @@ data:
             fallthrough in-addr.arpa ip6.arpa
             ttl 30
         }
-        # Use public DNS instead of /etc/resolv.conf because Hetzner VPS nodes
-        # have link-local DNS (169.254.116.108) which is unreachable from pod network.
+        # Use public DNS instead of /etc/resolv.conf because Talos HostDNS writes
+        # 169.254.116.108 (its link-local listener) into resolv.conf, which is
+        # unreachable from non-hostNetwork pods through Cilium VXLAN.
         forward . 1.1.1.1 8.8.8.8 {
            max_concurrent 1000
         }

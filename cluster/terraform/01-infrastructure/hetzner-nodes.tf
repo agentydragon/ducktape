@@ -120,8 +120,9 @@ data "talos_machine_configuration" "vps" {
       machine = {
         network = {
           hostname = each.value.name
-          # Hetzner DHCP provides link-local DNS (169.254.116.108) which breaks
-          # when forwardKubeDNSToHost interacts with Cilium VXLAN. Use public DNS.
+          # Talos HostDNS writes 169.254.116.108 (its own link-local listener) into
+          # resolv.conf when forwardKubeDNSToHost is enabled. Use public DNS to
+          # ensure containerd and host-level resolution don't depend on it.
           nameservers = ["1.1.1.1", "8.8.8.8"]
           kubespan = {
             enabled             = true

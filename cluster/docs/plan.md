@@ -95,6 +95,19 @@ entries, MAC collision, timing issue, etc.).
 - **BuildBuddy executor** `Failed` — pinned to Proxmox nodes, may need resource adjustment
 - **Kyverno webhook timeouts** — may be cross-node networking transient
 
+### Next Action: Strip Cilium to Talos-Recommended Defaults
+
+See <../investigations/2026-02-11-bootstrap-cross-node-and-kyverno/recommendation-minimal-networking.md>
+for full analysis, proposed config, network stack diagrams, and diagnostic checklist.
+
+**Summary**: The current Cilium config has 10+ non-default options that Talos docs
+explicitly warn against with KubeSpan. The DNS failure and cross-node instability
+were consequences of these options, not inherent incompatibilities. Strip to the 7
+Talos-recommended values + `mtu: 1370` (for VXLAN+WireGuard double encapsulation)
+
+- hubble. Revert DNS workarounds (`forwardKubeDNSToHost`, explicit nameservers,
+  CoreDNS upstream) to defaults. Fallback plan ready if HostDNS still fails.
+
 ---
 
 ## 🎯 Target Architecture
@@ -670,15 +683,20 @@ See **DNS Architecture** section below for details.
 
 ### CNI: Cilium with VXLAN
 
-**Decision**: VXLAN tunnel mode (not native routing)
+**Decision**: VXLAN tunnel mode (not native routing), Talos-recommended defaults only
 
 **Rationale**:
 
 - Hetzner VPS nodes are not on same L2 network
 - Native routing fails: "gateway must be directly reachable"
 - VXLAN encapsulates pod traffic between nodes
+- KubeSpan docs warn non-default Cilium options cause "asymmetric routing"
+- MTU must be set to 1370 to avoid fragmentation (VXLAN 50 + WireGuard 80 = 130 byte overhead)
 
 **Firewall**: UDP 8472 required for VXLAN overlay
+
+See <../investigations/2026-02-11-bootstrap-cross-node-and-kyverno/recommendation-minimal-networking.md>
+for network stack diagrams and diagnostic checklist.
 
 ### KubePrism for Cluster Endpoint
 
@@ -781,7 +799,7 @@ See **DNS Architecture** section below for details.
 ## 📊 Cluster Specifications
 
 - **Nodes**: 4 (2 VPS control-plane, 1 Proxmox control-plane, 1 Proxmox worker)
-- **Talos**: v1.9.5
+- **Talos**: v1.11.0
 - **Kubernetes**: v1.32.0
 - **CNI**: Cilium (VXLAN tunnel mode)
 - **Monthly Cost**: ~€30 (2x CPX31 + backups)

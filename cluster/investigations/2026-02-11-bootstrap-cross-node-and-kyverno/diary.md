@@ -331,11 +331,11 @@ external DNS** — containerd image pulls fail with `lookup ghcr.io on 127.0.0.5
 
 **Three distinct DNS layers affected:**
 
-| Layer                 | Symptom                                                                                   | Root Cause                                                                                                                           |
-| --------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Host DNS (127.0.0.53) | containerd image pulls fail                                                               | `forwardKubeDNSToHost` intercepts kube-dns VIP queries via Talos host-dns proxy, but interaction with Cilium VXLAN breaks resolution |
-| CoreDNS pods          | `forward . /etc/resolv.conf` → 169.254.116.108 (link-local, unreachable from pod network) | Hetzner DHCP provides link-local DNS that's only reachable from host network                                                         |
-| Public DNS            | SERVFAIL for allegedly.works                                                              | PowerDNS zone not serving because operator can't pull image                                                                          |
+| Layer                 | Symptom                                                                                   | Root Cause                                                                                                                                                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Host DNS (127.0.0.53) | containerd image pulls fail                                                               | `forwardKubeDNSToHost` intercepts kube-dns VIP queries via Talos host-dns proxy, but interaction with Cilium VXLAN breaks resolution                                                                                     |
+| CoreDNS pods          | `forward . /etc/resolv.conf` → 169.254.116.108 (link-local, unreachable from pod network) | Talos HostDNS binds to `169.254.116.108` ([PR #9200](https://github.com/siderolabs/talos/pull/9200)) and writes it to resolv.conf; this link-local on `lo` is unreachable from non-hostNetwork pods through Cilium VXLAN |
+| Public DNS            | SERVFAIL for allegedly.works                                                              | PowerDNS zone not serving because operator can't pull image                                                                                                                                                              |
 
 **Fix 6 (committed `347c36d8`)**: CoreDNS Corefile — changed `forward . /etc/resolv.conf`
 to `forward . 1.1.1.1 8.8.8.8` in `k8s/core/coredns-custom.yaml`.
@@ -347,9 +347,21 @@ in `terraform/01-infrastructure/hetzner-nodes.tf`.
 **Why `forwardKubeDNSToHost = false`**: Even after patching nameservers to public
 DNS via live `talosctl` patch, host-dns at 127.0.0.53 still returned SERVFAIL.
 The feature intercepts pod DNS queries to the kube-dns ClusterIP and routes them
-through the host-dns proxy. On Hetzner VPS with Cilium VXLAN, this breaks in a
-way that's not fixed by upstream DNS changes alone. Disabling it lets pods use
-CoreDNS directly (which forwards to 1.1.1.1/8.8.8.8).
+through the host-dns proxy. With Cilium VXLAN, this breaks in a way that's not
+fixed by upstream DNS changes alone. Disabling it lets pods use CoreDNS directly
+(which forwards to 1.1.1.1/8.8.8.8).
+
+**Correction (post-investigation)**: The `169.254.116.108` address in resolv.conf
+was **not** provided by Hetzner DHCP. Hetzner's actual DNS resolvers are
+`213.133.100.100`, `213.133.99.99`, `213.133.98.98`. The `169.254.116.108`
+address is a [Talos-chosen constant](https://github.com/siderolabs/talos/pull/9200)
+for HostDNS (ASCII `116='t'`, `108='l'`), introduced in Talos 1.8 to replace the
+previous approach of allocating the 9th service CIDR IP. Talos writes this address
+into the node's resolv.conf when `forwardKubeDNSToHost` is enabled. The real issue
+is that this link-local address on `lo` is unreachable from non-hostNetwork pods
+through Cilium VXLAN tunnels — not a Hetzner-specific problem. See
+[issue #9196](https://github.com/siderolabs/talos/issues/9196) for the original
+bug report that prompted the link-local change.
 
 **Current state**: Fixes committed and pushed to `devel`. Full destroy → bootstrap
 needed to apply VPS machine config changes, but Proxmox is unreachable (not on
@@ -363,6 +375,27 @@ work but terraform state is locked from a previous apply.
   pull images either. Separate issue.
 - PowerDNS `extraSecretKeys` fix working — operator pod on pve-cp-0 (cached image)
   started successfully with both `powerdns_api_key` and `PDNS_API_KEY` keys.
+
+### Next Steps: Strip to Talos-Recommended Defaults
+
+See <recommendation-minimal-networking.md> for full analysis.
+
+**Key insight**: The DNS failure and KubeSpan instability were consequences of
+10+ non-default Cilium options. Talos docs and the Talos maintainer explicitly
+state that KubeSpan only works reliably with default Cilium configuration. The
+`bpf.hostLegacyRouting`, `forwardKubeDNSToHost=false`, and explicit `nameservers`
+were workarounds for problems caused by other non-default options (`endpointRoutes`,
+`hostServices`, `socketLB`, etc.) — not inherent incompatibilities.
+
+**Proposed**: Strip Cilium to the 7 settings Talos recommends + `mtu: 1370` (to
+prevent silent fragmentation from VXLAN+WireGuard double encapsulation) + hubble.
+Revert all DNS workarounds to defaults. Test with diagnostic checklist. Fallback
+plan ready if HostDNS still fails.
+
+**Also discovered**: Current config has no explicit MTU, meaning every cross-node
+pod packet >1370 bytes silently fragments at the KubeSpan WireGuard interface.
+This likely contributed to the intermittent TCP failures and slow convergence
+observed during bootstrap.
 
 ### Source Code References
 
