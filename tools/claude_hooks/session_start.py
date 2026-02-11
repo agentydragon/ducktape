@@ -7,7 +7,6 @@ CLI mode: Loads direnv environment.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import logging.handlers
 import os
@@ -23,7 +22,6 @@ from mako.template import Template
 from pydantic import BaseModel
 
 from env_utils import env_utils
-from fmt_util.fmt_util import format_limited_list
 from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import (
     bazelisk_setup,
@@ -37,7 +35,7 @@ from tools.claude_hooks import (
     tmpfs_setup,
 )
 from tools.claude_hooks.debug import log_entrypoint_debug
-from tools.claude_hooks.errors import DirenvError, SkipError
+from tools.claude_hooks.errors import SkipError
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor import setup as supervisor_setup
 
@@ -76,61 +74,24 @@ class HookInput(BaseModel):
 # ============================================================================
 
 
-def find_envrc(start_dir: Path) -> Path | None:
-    """Walk up from start_dir to find .envrc file."""
-    current = start_dir.resolve()
-    while current != current.parent:
-        envrc = current / ".envrc"
-        if envrc.exists():
-            return envrc
-        current = current.parent
-    return None
-
-
 async def run_cli_mode(hook_input: HookInput) -> None:
-    """CLI mode: load direnv environment."""
-    # Find .envrc (walk up from cwd)
-    envrc = find_envrc(hook_input.cwd)
-    if not envrc:
-        # Fallback to ducktape root
-        ducktape_envrc = Path.home() / "code" / "ducktape" / ".envrc"
-        if ducktape_envrc.exists():
-            envrc = ducktape_envrc
-        else:
-            return  # No .envrc to load
+    """CLI mode: write direnv eval into CLAUDE_ENV_FILE.
 
-    # Print direnv-style loading banner
-    print(f"direnv: loading {envrc}")
-
-    # Use direnv to export the environment as JSON
-    try:
-        result = await asyncio.create_subprocess_exec(
-            "direnv", "export", "json", cwd=envrc.parent, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=30)
-    except FileNotFoundError:
+    Writes a dynamic `eval "$(direnv export bash)"` snippet so that
+    every Bash tool call re-evaluates direnv. This means .envrc changes
+    mid-session are picked up automatically.
+    """
+    if not shutil.which("direnv"):
         print("direnv: not installed, skipping", file=sys.stderr)
         return
-    except TimeoutError as e:
-        raise DirenvError("direnv export timed out") from e
-
-    if result.returncode != 0:
-        raise DirenvError(f"direnv export failed: {stderr.decode()}")
-
-    stdout_str = stdout.decode()
 
     env_file_path = os.environ.get("CLAUDE_ENV_FILE")
     if not env_file_path:
         print("direnv: CLAUDE_ENV_FILE not available", file=sys.stderr)
         return
 
-    if stdout_str.strip():
-        env_vars: dict[str, str] = json.loads(stdout_str)
-        env_file.write_direnv_env_file(Path(env_file_path), env_vars)
-        # Print direnv-style export banner (summarize changes)
-        exports = [f"+{key}" for key in sorted(env_vars)]
-        if exports:
-            print(f"direnv: export {format_limited_list(exports, 5, separator=' ')}")
+    env_file.write_direnv_env_file(Path(env_file_path))
+    print("direnv: configured (eval on each Bash call)")
 
 
 # ============================================================================

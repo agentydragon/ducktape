@@ -41,9 +41,5 @@ class SkipError(Exception):
         self.component = component
 
 
-class DirenvError(Exception):
-    """Error running direnv."""
-
-
 class ProjectNotFoundError(Exception):
     """Could not detect project root directory."""

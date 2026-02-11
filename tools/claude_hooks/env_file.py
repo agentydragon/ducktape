@@ -165,12 +165,11 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     write_config(env_file, content, "session environment")
 
 
-def write_direnv_env_file(env_file_path: Path, env_vars: dict[str, str]) -> None:
-    """Write direnv-exported environment variables to CLAUDE_ENV_FILE.
+def write_direnv_env_file(env_file_path: Path) -> None:
+    """Write dynamic direnv eval to CLAUDE_ENV_FILE.
 
-    This is the CLI-mode counterpart to write_env_file. Both routes go
-    through write_config so the env file is always canary-protected.
+    Instead of static exports, writes an eval that re-runs direnv on each
+    Bash tool call, so .envrc changes mid-session are picked up.
     """
-    lines = [f"export {key}={shlex.quote(value)}" for key, value in sorted(env_vars.items())]
-    content = "\n".join(lines) + "\n"
+    content = 'eval "$(direnv export bash 2>/dev/null)"\n'
     write_config(env_file_path, content, "direnv environment")

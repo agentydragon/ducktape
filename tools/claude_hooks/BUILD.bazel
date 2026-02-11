@@ -216,7 +216,6 @@ py_library(
         ":settings",
         ":tmpfs_setup",
         "//env_utils",
-        "//fmt_util",
         "//tools:build_info",
         "//tools/claude_hooks/supervisor:setup",
         "@pypi//mako",
@@ -315,6 +314,18 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pytest"],
+)
+
+py_test(
+    name = "test_envrc_propagation",
+    srcs = ["test_envrc_propagation.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":env_file",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
