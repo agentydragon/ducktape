@@ -8,11 +8,11 @@ spec:
   # HA cluster with 3 replicas for failover
   # Bank-Vaults operator handles Raft cluster formation automatically
   size: 3
-  image: "hashicorp/vault:1.17.2"
+  image: "hashicorp/vault:1.21.2"
 
   # Bank-Vaults automatically handles initialization and unsealing
   # TODO: IPC_LOCK should not require particularly wide privileges - investigate capability restrictions
-  bankVaultsImage: "ghcr.io/bank-vaults/bank-vaults:v1.32.0"
+  bankVaultsImage: "ghcr.io/bank-vaults/bank-vaults:v1.32.1"
 
   # TLS certificate for internal pod-to-pod communication
   existingTlsSecretName: vault-internal-tls

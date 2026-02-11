@@ -18,7 +18,7 @@ spec:
   chart:
     spec:
       chart: matrix-synapse
-      version: "3.12.17"
+      version: "3.12.19"
       sourceRef:
         kind: HelmRepository
         name: ananace-charts
@@ -33,7 +33,7 @@ spec:
     # Synapse image configuration
     image:
       repository: matrixdotorg/synapse
-      tag: v1.120.2
+      tag: v1.147.0
       pullPolicy: IfNotPresent
 
     # Server name - this is the domain used in Matrix user IDs (@user:allegedly.works)

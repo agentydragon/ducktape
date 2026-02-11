@@ -119,11 +119,7 @@ data "talos_machine_configuration" "vps" {
     yamlencode({
       machine = {
         network = {
-          hostname = each.value.name
-          # Talos HostDNS writes 169.254.116.108 (its own link-local listener) into
-          # resolv.conf when forwardKubeDNSToHost is enabled. Use public DNS to
-          # ensure containerd and host-level resolution don't depend on it.
-          nameservers = ["1.1.1.1", "8.8.8.8"]
+          # KubeSpan config stays in machine.network (not deprecated in v1.12)
           kubespan = {
             enabled             = true
             allowDownPeerBypass = true
@@ -167,7 +163,22 @@ data "talos_machine_configuration" "vps" {
         }
         proxy = { disabled = true }
       }
-    })
+    }),
+    # Talos v1.12 multi-document config (replaces deprecated machine.network.hostname)
+    yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "HostnameConfig"
+      hostname   = each.value.name
+    }),
+    # Talos v1.12 multi-document config (replaces deprecated machine.network.nameservers)
+    # Talos HostDNS writes 169.254.116.108 (its own link-local listener) into
+    # resolv.conf when forwardKubeDNSToHost is enabled. Use public DNS to
+    # ensure containerd and host-level resolution don't depend on it.
+    yamlencode({
+      apiVersion  = "v1alpha1"
+      kind        = "ResolverConfig"
+      nameservers = [{ address = "1.1.1.1" }, { address = "8.8.8.8" }]
+    }),
   ]
 }
 

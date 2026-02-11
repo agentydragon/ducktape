@@ -27,7 +27,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: headscale
-          image: headscale/headscale:0.23.0
+          image: headscale/headscale:0.28.0
           args:
             - serve
           ports:

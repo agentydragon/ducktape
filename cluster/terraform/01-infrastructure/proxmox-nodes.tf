@@ -159,20 +159,16 @@ data "talos_machine_configuration" "proxmox" {
   examples           = false
   docs               = false
 
-  config_patches = [
+  config_patches = concat([
     # Common configuration for all nodes
     yamlencode({
       machine = {
         network = {
+          # KubeSpan config stays in machine.network (not deprecated in v1.12)
           kubespan = {
             enabled             = true
             allowDownPeerBypass = true
           }
-          # Disable DHCP for workers (controllers get it via VIP config)
-          interfaces = each.value.type == "worker" ? [{
-            interface = "eth0"
-            dhcp      = false
-          }] : null
         }
         nodeLabels = {
           "topology.kubernetes.io/region" = "proxmox"
@@ -210,8 +206,18 @@ data "talos_machine_configuration" "proxmox" {
         }
         proxy = { disabled = true }
       }
-    })
-  ]
+    }),
+  ],
+    # Talos v1.12: disable DHCP on eth0 for workers via LinkConfig
+    # (replaces deprecated machine.network.interfaces)
+    # Applying any LinkConfig implicitly disables default DHCP on that interface
+    each.value.type == "worker" ? [yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "LinkConfig"
+      name       = "eth0"
+      up         = true
+    })] : [],
+  )
 }
 
 # ============================================================================
