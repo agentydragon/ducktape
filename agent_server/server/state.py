@@ -113,18 +113,6 @@ def _find_last_tool_index(state: UiState, call_id: str) -> int | None:
     return None
 
 
-def update_tool_decision(state: UiState, call_id: str, decision: ApprovalKind | None) -> UiState:
-    idx = _find_last_tool_index(state, call_id)
-    if idx is None:
-        return state
-    it = state.items[idx]
-    assert isinstance(it, ToolItem)
-    updated = it.model_copy(update={"decision": decision})
-    items = list(state.items)
-    items[idx] = updated
-    return UiState(seq=state.seq + 1, items=items)
-
-
 def update_tool_exec_stream(
     state: UiState,
     call_id: str,
