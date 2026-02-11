@@ -51,10 +51,11 @@ Status: living list of gaps and candidates for future work. Focus is on `mcp_inf
 
 ## Presets / Builders
 
+- [ ] Absorb Codex's default seatbelt policy including all the knobs and switches.
 - [ ] Provide explicit builders for common scenarios (opt‑in):
   - [ ] Minimal Python runtime (dyld roots, venv/bin/lib, device basics, loopback net).
   - [ ] Jupyter kernel sandbox presets (tunable read/write mounts, loopback).
-  - [ ] “Echo smoke test” preset for environment validation.
+  - [ ] "Echo smoke test" preset for environment validation.
 
 ## Parsing & Interop
 
