@@ -1,6 +1,6 @@
 # Current Plan
 
-## Latest Build Results (2026-02-05, build v14, corrected capture)
+## Latest Build Results (2026-02-05, build v14, corrected capture; 2026-02-11 version update pending rebuild)
 
 **Diff Summary**: 112 real differences
 
@@ -96,6 +96,28 @@ Version-drift pins now match the live container for **30+ package families**:
 - **Manifest capture fix**: Built manifest must use `podman create` + `podman
 mount` (not raw VFS dir access) to get the properly merged container
   filesystem.
+
+## 2026-02-11 Version Sync
+
+Updated Dockerfile and docs to match live container. Key changes:
+
+- Node.js: 20.20.0, 22.22.0 (was 20.19.6, 22.21.1)
+- npm: claude-code 2.1.38, eslint 10.0.0, pnpm 10.29.2, prettier 3.8.1, chromedriver 145
+- Bun: 1.3.9, golangci-lint: 2.5.0
+- environment-manager: staging-7c3cd5476 (new subcommands: poll, setup)
+- New env vars: `CLAUDE_CODE_BASE_REF`, `CLAUDE_CODE_DIAGNOSTICS_FILE`,
+  `CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES`, `CLAUDE_CODE_ENTRYPOINT`,
+  `CLAUDE_CODE_ENVIRONMENT_RUNNER_VERSION`, `MCP_CONNECTION_NONBLOCKING`
+- `CLAUDECODE` changed from `true` to `1`
+- `enableWeakerNestedSandbox` changed from `true` to `false`
+- Captured fresh proprietary binaries
+
+**Build status**: SIGPIPE (exit 141) hit on retry at step 14-15 (APT install).
+The buildah SIGPIPE race condition is triggering more frequently with the current
+proxy/network conditions. Diff report not yet regenerated with updated Dockerfile.
+
+**Added**: `capture_versions.py` for structured version capture/comparison.
+Saved `reference/versions-2026-02-11.yaml` as baseline.
 
 ## Completed
 

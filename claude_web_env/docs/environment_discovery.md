@@ -132,14 +132,14 @@ From `/usr/local/bin/environment-manager print-sandbox-settings`:
     "denyWrite": [],
     "allowGitConfig": true
   },
-  "enableWeakerNestedSandbox": true
+  "enableWeakerNestedSandbox": false
 }
 ```
 
 ## Environment Runner
 
 Binary: `/usr/local/bin/environment-manager` (Go, ELF 64-bit)
-Version: `staging-29c451bde`
+Version: `staging-7c3cd5476`
 
 ### Overview
 
@@ -158,8 +158,14 @@ Available Commands:
   completion             Generate the autocompletion script for the specified shell
   help                   Help about any command
   orchestrator           Poll for session tasks and hand off for execution
+  poll                   Make a single poll request for work
   print-sandbox-settings Print the default sandbox runtime settings
+  setup                  Install dependencies for orchestrator mode
   task-run               Handles execution of a provided session
+
+Flags:
+  -h, --help      help for environment-runner
+  -v, --version   version for environment-runner
 ```
 
 ### task-run Subcommand
@@ -191,20 +197,23 @@ Provide a JSON object via stdin with the following structure:
 }
 
 Flags:
-      --allowed-tools string                    Comma-separated list of allowed tools
-      --claude-agent-version string             Target Claude Agent version (latest, current, stable, or specific)
-      --debug                                   Enable debug mode
-      --environment-id string                   Environment ID for API calls
+      --allowed-tools string                    Comma-separated list of allowed tools for Claude
+      --claude-agent-version string             Target Claude Agent version (latest, current, stable, or specific version)
+      --claude-path string                      Path to the Claude CLI executable or a wrapper binary
+      --debug                                   Enable debug mode when executing the Claude Agent
+      --environment-id string                   Environment ID for API calls (required for self-hosted)
       --input-format string                     Input format: 'v0' or 'v1' (default "v0")
-      --local-append-system-prompt string       Additional system prompt to append
-      --local-testing                           Disable WebSocket connections and git config
-      --log-level string                        Log level (default "info")
-      --organization-id string                  Organization ID for API calls
+      --local-append-system-prompt string       Additional system prompt content to append locally
+      --local-testing                           Disable Claude WebSocket connections and git configuration
+      --log-level string                        Log level (debug, info, warn, error) (default "info")
+      --organization-id string                  Organization ID for API calls (required for self-hosted)
+      --print-code-logs                         Print Claude Code logs to console when execution completes or fails
       --session string                          ID of the session to manage (required)
-      --session-mode string                     Mode: 'new', 'resume', 'resume-cached', 'setup-only' (default "new")
-      --upgrade-claude-code                     Upgrade Claude Agent to latest (default true)
-      --verbose-claude-logs                     Enable verbose logging
-      --working-directory string                Default working directory (default "/root")
+      --session-mode string                     Session mode: 'new', 'resume', 'resume-cached', 'setup-only' (default "new")
+      --skip-git-config                         Skip git configuration setup (use container's existing .gitconfig)
+      --upgrade-claude-code                     Deprecated: use --claude-agent-version instead (default true)
+      --verbose-claude-logs                     Enable verbose logging of Claude Agent output to console
+      --working-directory string                Default working directory for the session (default "/root")
 ```
 
 ### orchestrator Subcommand
@@ -213,34 +222,85 @@ For self-hosted environments that poll for work:
 
 ```
 $ environment-manager orchestrator --help
-The orchestrator command polls the API for session tasks and handing off work.
+The orchestrator command polls the API for session tasks and handing off work to be executed.
 
 It handles:
-- Discovering environment identity via /v1/environments/whoami
+- Discovering environment identity via the /v1/environments/whoami endpoint
 - Polling the environments API work/poll endpoint
-- Executing work (with sandbox-runtime or custom hook)
-- Running timeout hooks for periodic maintenance
+- Executing work:
+  - With --execute-hook: pipes JSON to hook via stdin and exits with hook's exit code
+  - Without --execute-hook: auto-invokes 'task-run --input-format=v1'
+    - With --sandbox-backend=sandbox-runtime (default): wraps execution in sandbox
+    - With --sandbox-backend=none: runs without sandbox (logs warning)
+- Running timeout hooks for periodic maintenance (e.g., monorepo updates)
 - Sleeping with jitter when queue is empty
 - Graceful shutdown on SIGTERM/SIGINT
 
 Required environment variable:
   ENVIRONMENT_SERVICE_KEY: Service key for the environment
 
+The environment ID and organization ID are discovered automatically via the whoami
+endpoint. You can optionally provide --environment-id and --organization-id flags
+to validate them against the token's identity.
+
 Flags:
       --api-url string                  API base URL (default "https://api.anthropic.com")
       --client-id string                Client ID (worker identifier, default: hostname)
-      --environment-id string           Environment ID
-      --execute-hook string             Command to run with session JSON via stdin
-      --execute-hook-timeout duration   Timeout for execute hook
+      --environment-id string           Environment ID (find at claude.ai/settings)
+      --execute-hook string             Command to run with session JSON via stdin when task received
+      --execute-hook-timeout duration   Timeout for execute hook (0 = no timeout)
+      --log-level string                Log level (debug, info, warn, error) (default "info")
       --loop-timeout duration           Loop timeout before triggering timeout hook (default 5m0s)
-      --max-poll-failures int           Maximum consecutive poll failures before exiting
-      --organization-id string          Organization ID
-      --poll-timeout duration           Poll request timeout (default 5m0s)
+      --max-poll-failures int           Maximum consecutive poll failures before exiting (0 = infinite)
+      --organization-id string          Organization ID (find at claude.ai/settings > Account)
+      --poll-hook string                Command to execute for polling instead of built-in Poller
+      --poll-hook-timeout duration      Timeout for poll hook execution (default 30s)
+      --poll-timeout duration           Poll request timeout duration (default 5m0s)
+      --reclaim-older-than-ms int       Reclaim unacknowledged work items older than this many ms (0 = API default)
       --sandbox-backend string          Sandbox backend: none, sandbox-runtime (default "sandbox-runtime")
-      --sandbox-settings string         Path to custom sandbox settings JSON
-      --service-key-file string         Path to environment service key file
-      --timeout-hook string             Command to run on loop timeout
-      --timeout-hook-timeout duration   Timeout for timeout hook (default 5m0s)
+      --sandbox-settings string         Path to custom sandbox-runtime settings JSON file
+      --service-key-file string         Path to file containing the environment service key
+      --skip-container-lock             Skip container-level lock (WARNING: allows multiple sessions)
+      --skip-git-config                 Skip git configuration setup
+      --timeout-hook string             Command to run on loop timeout (e.g., monorepo updates)
+      --timeout-hook-timeout duration   Timeout for timeout hook execution (default 5m0s)
+```
+
+### poll Subcommand
+
+For making a single non-blocking poll request:
+
+```
+$ environment-manager poll --help
+The poll command makes a single non-blocking request to the API for work.
+
+Flags:
+      --api-url string              API base URL (default "https://api.anthropic.com")
+      --environment-id string       Environment ID
+      --log-level string            Log level (debug, info, warn, error) (default "info")
+      --organization-id string      Organization ID
+      --reclaim-older-than-ms int   Reclaim unacknowledged work items older than this many ms (0 = API default)
+      --service-key-file string     Path to file containing the environment service key
+      --worker-id string            Unique worker identifier (defaults to hostname)
+```
+
+### setup Subcommand
+
+For pre-installing dependencies during container image build:
+
+```
+$ environment-manager setup --help
+The setup command pre-installs all required dependencies for orchestrator mode.
+Installs Claude Code and Sandbox Runtime via npm.
+
+Flags:
+      --api-url string                   API base URL for connectivity healthcheck (default "https://api.anthropic.com")
+      --claude-code-version string       Version of Claude Code to install (default "latest")
+      --log-level string                 Log level (debug, info, warn, error) (default "info")
+      --sandbox-runtime-version string   Version of sandbox-runtime to install (default "latest")
+      --service-key-file string          Path to environment service key file for API healthcheck
+      --skip-claude-code                 Skip Claude Code installation
+      --skip-sandbox-runtime             Skip sandbox-runtime installation
 ```
 
 ### Session Modes
@@ -799,6 +859,13 @@ if [[ -n "$current_branch" ]]; then
       echo "There are $unpushed unpushed commit(s) on branch '$current_branch'. Please push these changes to the remote repository." >&2
       exit 2
     fi
+  else
+    # Branch doesn't exist on remote - compare against default branch
+    unpushed=$(git rev-list "origin/HEAD..HEAD" --count 2>/dev/null) || unpushed=0
+    if [[ "$unpushed" -gt 0 ]]; then
+      echo "Branch '$current_branch' has $unpushed unpushed commit(s) and no remote branch. Please push these changes to the remote repository." >&2
+      exit 2
+    fi
   fi
 fi
 
@@ -813,26 +880,35 @@ Located at `~/.claude/skills/session-start-hook/SKILL.md`, teaches how to create
 
 ### Claude-Specific
 
-| Variable                                       | Description                             |
-| ---------------------------------------------- | --------------------------------------- |
-| `CLAUDECODE=true`                              | Indicates Claude Code environment       |
-| `CLAUDE_CODE_CONTAINER_ID`                     | Container identifier                    |
-| `CLAUDE_CODE_DEBUG=true`                       | Debug mode enabled                      |
-| `CLAUDE_CODE_REMOTE=true`                      | Running in remote/container environment |
-| `CLAUDE_CODE_SESSION_ID`                       | Current session identifier              |
-| `CLAUDE_CODE_VERSION`                          | Claude Code version                     |
-| `CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR=3` | FD for WebSocket auth                   |
-| `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=4`    | FD for OAuth token                      |
-| `CLAUDE_CODE_PROXY_RESOLVES_HOSTS=true`        | Git proxy configuration                 |
+| Variable                                       | Description                                  |
+| ---------------------------------------------- | -------------------------------------------- |
+| `CLAUDECODE=1`                                 | Indicates Claude Code environment            |
+| `CLAUDE_CODE_BASE_REF`                         | Base git ref for the session (e.g., `devel`) |
+| `CLAUDE_CODE_CONTAINER_ID`                     | Container identifier                         |
+| `CLAUDE_CODE_DEBUG=true`                       | Debug mode enabled                           |
+| `CLAUDE_CODE_DIAGNOSTICS_FILE`                 | Path to diagnostics log file                 |
+| `CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES=true`     | Emit tool use summaries in output            |
+| `CLAUDE_CODE_ENTRYPOINT=remote`                | Entry point mode (remote for web sessions)   |
+| `CLAUDE_CODE_ENVIRONMENT_RUNNER_VERSION`       | Version of environment-manager binary        |
+| `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=4`    | FD for OAuth token                           |
+| `CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2=true` | Use v2 session ingress POST endpoint         |
+| `CLAUDE_CODE_PROXY_RESOLVES_HOSTS=true`        | Git proxy configuration                      |
+| `CLAUDE_CODE_REMOTE=true`                      | Running in remote/container environment      |
+| `CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE`          | Environment type (e.g., `cloud_default`)     |
+| `CLAUDE_CODE_REMOTE_SESSION_ID`                | Remote session identifier                    |
+| `CLAUDE_CODE_SESSION_ID`                       | Current session identifier                   |
+| `CLAUDE_CODE_VERSION`                          | Claude Code version                          |
+| `CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR=3` | FD for WebSocket auth                        |
+| `CLAUDE_SESSION_INGRESS_TOKEN_FILE`            | Path to session ingress token file           |
 
 ### MCP-Specific
 
-| Variable                           | Description                  |
-| ---------------------------------- | ---------------------------- |
-| `CODESIGN_MCP_PORT`                | Port for codesign MCP server |
-| `CODESIGN_MCP_TOKEN`               | Auth token for codesign MCP  |
-| `MCP_TOOL_TIMEOUT`                 | Timeout for MCP tool calls   |
-| `ENABLE_EXPERIMENTAL_MCP_CLI=true` | Experimental MCP features    |
+| Variable                     | Description                      |
+| ---------------------------- | -------------------------------- |
+| `CODESIGN_MCP_PORT`          | Port for codesign MCP server     |
+| `CODESIGN_MCP_TOKEN`         | Auth token for codesign MCP      |
+| `MCP_CONNECTION_NONBLOCKING` | Use non-blocking MCP connections |
+| `MCP_TOOL_TIMEOUT`           | Timeout for MCP tool calls       |
 
 ### Proxy Configuration
 
@@ -960,7 +1036,9 @@ The proxy strictly validates:
 $ which -a claude node python uv
 /opt/node22/bin/claude
 /opt/node22/bin/node
-/usr/local/bin/python
+/usr/local/bin/node          # symlink to /opt/node20/bin/node
+/usr/local/bin/python        # symlink to /usr/bin/python3.11
+/usr/bin/python
 /root/.local/bin/uv
 
 $ ls /opt/

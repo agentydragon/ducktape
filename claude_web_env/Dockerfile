@@ -18,6 +18,12 @@
 #   CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
 #     podman build --layers=false --network=host --isolation=oci \
 #     --format=docker -t claude-code-web-recreated .
+#
+# Prerequisites:
+#   Proprietary binaries must be captured first (run from within live container):
+#     ./tools/build-and-diff.sh --capture-binaries
+#   This writes reference/environment-manager.gz and reference/process_api.gz
+#   which the Dockerfile COPYs and decompresses at build time.
 
 # Layer 1: Base image
 FROM docker.io/library/ubuntu:24.04
@@ -52,7 +58,7 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     printf '%s\n' 'Package: *' 'Pin: origin snapshot.ubuntu.com' 'Pin-Priority: 1001' \
       > /etc/apt/preferences.d/snapshot-pin && \
     printf '%s\n' 'Package: libglib2.0-* gir1.2-glib-2.0 libgirepository-2.0-0' \
-      'Pin: version 2.80.0-6ubuntu3.7' 'Pin-Priority: 1002' \
+      'Pin: version 2.80.0-6ubuntu3.8' 'Pin-Priority: 1002' \
       > /etc/apt/preferences.d/glib-pin && \
     printf '%s\n' \
       'Package: libreoffice-* fonts-opensymbol libuno-* uno-libs-private ure python3-uno libreoffice-style-* libreoffice-uiconfig-*' \
@@ -135,13 +141,13 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
 RUN apt-get install --allow-downgrades -y --no-install-recommends \
     python3.10 python3.10-dev python3.10-venv python3.10-distutils \
     python3.11 python3.11-dev python3.11-venv python3.11-distutils \
-    python3.12=3.12.3-1ubuntu0.10 python3.12-dev=3.12.3-1ubuntu0.10 \
-    python3.12-venv=3.12.3-1ubuntu0.10 python3.12-minimal=3.12.3-1ubuntu0.10 \
-    libpython3.12-minimal=3.12.3-1ubuntu0.10 libpython3.12-stdlib=3.12.3-1ubuntu0.10 \
-    libpython3.12-dev=3.12.3-1ubuntu0.10 libpython3.12t64=3.12.3-1ubuntu0.10 \
+    python3.12=3.12.3-1ubuntu0.11 python3.12-dev=3.12.3-1ubuntu0.11 \
+    python3.12-venv=3.12.3-1ubuntu0.11 python3.12-minimal=3.12.3-1ubuntu0.11 \
+    libpython3.12-minimal=3.12.3-1ubuntu0.11 libpython3.12-stdlib=3.12.3-1ubuntu0.11 \
+    libpython3.12-dev=3.12.3-1ubuntu0.11 libpython3.12t64=3.12.3-1ubuntu0.11 \
     python3.13 python3.13-dev python3.13-venv \
     python3-pip python3-setuptools python3-wheel \
-    python3-apt=2.7.7ubuntu5.1 python-apt-common=2.7.7ubuntu5.1
+    python3-apt=2.7.7ubuntu5.2 python-apt-common=2.7.7ubuntu5.2
 
 # Layer 8: PHP 8.4
 # NOTE: apt lists persist from Layer 5 (includes PHP PPA indexes)
@@ -158,12 +164,12 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
 
 # Layer 9: Node.js 20, 21, 22 + NVM
 RUN mkdir -p /opt && \
-    curl -fsSL https://nodejs.org/dist/v20.19.6/node-v20.19.6-linux-x64.tar.xz | \
-        tar -xJ -C /opt && mv /opt/node-v20.19.6-linux-x64 /opt/node20 && \
+    curl -fsSL https://nodejs.org/dist/v20.20.0/node-v20.20.0-linux-x64.tar.xz | \
+        tar -xJ -C /opt && mv /opt/node-v20.20.0-linux-x64 /opt/node20 && \
     curl -fsSL https://nodejs.org/dist/v21.7.3/node-v21.7.3-linux-x64.tar.xz | \
         tar -xJ -C /opt && mv /opt/node-v21.7.3-linux-x64 /opt/node21 && \
-    curl -fsSL https://nodejs.org/dist/v22.21.1/node-v22.21.1-linux-x64.tar.xz | \
-        tar -xJ -C /opt && mv /opt/node-v22.21.1-linux-x64 /opt/node22 && \
+    curl -fsSL https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz | \
+        tar -xJ -C /opt && mv /opt/node-v22.22.0-linux-x64 /opt/node22 && \
     mkdir -p /opt/nvm && \
     curl -fsSL https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.1.tar.gz | \
         tar -xz --strip-components=1 -C /opt/nvm
@@ -171,10 +177,10 @@ RUN mkdir -p /opt && \
 ENV PATH="/opt/node22/bin:$PATH"
 
 # Layer 10: npm global packages
-RUN npm install -g --ignore-scripts chromedriver@143.0.0 playwright@1.56.1 && \
+RUN npm install -g --ignore-scripts chromedriver@145.0.1 playwright@1.56.1 && \
     npm install -g \
-    @anthropic-ai/claude-code@2.0.59 eslint@9.39.1 http-server@14.1.1 \
-    nodemon@3.1.11 pnpm@10.25.0 prettier@3.7.4 serve@14.2.5 \
+    @anthropic-ai/claude-code@2.1.38 eslint@10.0.0 http-server@14.1.1 \
+    nodemon@3.1.11 pnpm@10.29.2 prettier@3.8.1 serve@14.2.5 \
     ts-node@10.9.2 typescript@5.9.3 yarn@1.22.22
 
 # Layer 11: rbenv + Ruby 3.1.6, 3.2.6, 3.3.6 + symlinks
@@ -206,7 +212,7 @@ RUN curl -fsSL https://go.dev/dl/go1.24.7.linux-amd64.tar.gz | tar -xz -C /usr/l
     printf '#!/bin/bash\nexport PATH="/usr/local/go1.24.7/bin:${PATH//\/usr\/local\/go[0-9]*/}"\necho "Switched to Go $(go version)"\n' > /usr/local/use-go-1.24.7.sh && \
     printf '#!/bin/bash\nexport PATH="/usr/local/go1.25.1/bin:${PATH//\/usr\/local\/go[0-9]*/}"\necho "Switched to Go $(go version)"\n' > /usr/local/use-go-1.25.1.sh && \
     chmod +x /usr/local/use-go-1.24.7.sh /usr/local/use-go-1.25.1.sh && \
-    curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v1.61.0
+    curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v2.5.0
 
 ENV PATH="$PATH:/usr/local/go1.25.1/bin"
 ENV GOPATH="/root/go"
@@ -216,7 +222,7 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --d
 ENV PATH="/root/.cargo/bin:$PATH"
 
 # Layer 15: Bun
-RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.4"
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.9"
 ENV BUN_INSTALL="/root/.bun"
 ENV PATH="$BUN_INSTALL/bin:$PATH"
 

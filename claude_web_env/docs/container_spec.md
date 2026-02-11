@@ -4,7 +4,7 @@ Runtime context for the Claude Code web environment. The reproducible container
 definition lives in the [Dockerfile](../Dockerfile); this file documents the
 parts that aren't captured there.
 
-**Captured**: 2026-01-26
+**Captured**: 2026-02-11
 
 ## Runtime Environment
 
