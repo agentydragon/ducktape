@@ -323,11 +323,6 @@ curl -s -X POST "http://localhost:8000/api/runs/grader" \
   }'
 ```
 
-## Current Status
-
-**In progress**: Backend + critic run. Using Ollama in this session (already
-downloaded), but future runs should prefer llama-server (24 MB vs 1.4 GB).
-
 ## Troubleshooting
 
 ### `no space left on device` During Image Pull
@@ -347,8 +342,8 @@ container and create the model from the local file.
 
 ### `budget must be greater than 0`
 
-Props validation required `budget_usd > 0` by default. The fix (in this branch)
-changes it to `ge=0` so free local models can use `budget_usd=0.0`.
+Props validation requires `budget_usd > 0` by default. For free local models,
+pass `budget_usd=0.0` (the validation accepts `ge=0`).
 
 ### Agent Container Can't Reach Services
 
