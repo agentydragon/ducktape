@@ -98,6 +98,10 @@ class OutputTextPart(BaseModel):
 
 class AssistantMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
+    # llama-server's /v1/responses requires type="message" to identify assistant
+    # items (server-common.cpp convert_responses_to_chatcmpl, line ~1186).
+    # OpenAI accepts it but doesn't require it.
+    type: Literal["message"] = "message"
     content: list[OutputTextPart] | None = None
     # When an assistant message follows a reasoning item, OpenAI requires id
     id: str | None = None
