@@ -82,7 +82,7 @@ class ImageResolutionError(Exception):
 
 @dataclass(frozen=True)
 class ResolvedImage:
-    """Pre-resolved OCI image reference. Use resolve_image() or try_resolve_image() to create."""
+    """Pre-resolved OCI image reference. Use resolve_image() to create."""
 
     digest: str
     oci_ref: str
@@ -252,13 +252,6 @@ class AgentRegistry:
         digest = await self._resolve_image_ref(agent_type, ref)
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
         return ResolvedImage(digest=digest, oci_ref=oci_ref)
-
-    async def try_resolve_image(self, agent_type: AgentType, ref: str) -> ResolvedImage | None:
-        """Resolve image tag/digest, returning None if unavailable."""
-        try:
-            return await self.resolve_image(agent_type, ref)
-        except ImageResolutionError:
-            return None
 
     async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
         """Run agent container, update DB status, return final status.

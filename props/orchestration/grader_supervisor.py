@@ -35,7 +35,7 @@ from props.db.notifications import (
     GraderDefinitionChangedNotification,
     SnapshotCreatedNotification,
 )
-from props.orchestration.agent_registry import ResolvedImage
+from props.orchestration.agent_registry import ImageResolutionError, ResolvedImage
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry, GraderHandle
@@ -139,7 +139,9 @@ class GraderSupervisor:
         if self._shutdown:
             return
 
-        if (resolved := await self._registry.try_resolve_image(AgentType.GRADER, BUILTIN_TAG)) is None:
+        try:
+            resolved = await self._registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
+        except ImageResolutionError:
             logger.warning("Grader image not available in registry — grader spawning disabled until image is pushed")
             return
 
@@ -178,7 +180,9 @@ class GraderSupervisor:
 
     async def _resolve_and_spawn_grader(self, snapshot_slug: SnapshotSlug) -> None:
         """Resolve grader image and spawn a grader. Used for notification-triggered single spawns."""
-        if (resolved := await self._registry.try_resolve_image(AgentType.GRADER, BUILTIN_TAG)) is None:
+        try:
+            resolved = await self._registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
+        except ImageResolutionError:
             logger.warning(f"Grader image not available for {snapshot_slug}")
             return
         await self._spawn_grader(snapshot_slug, image=resolved)
@@ -205,7 +209,9 @@ class GraderSupervisor:
         """Kill all graders and restart them (e.g. after image update)."""
         for slug in slugs:
             await self._kill_grader(slug)
-        if (resolved := await self._registry.try_resolve_image(AgentType.GRADER, BUILTIN_TAG)) is None:
+        try:
+            resolved = await self._registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
+        except ImageResolutionError:
             logger.warning("Grader image not available — skipping restart")
             return
         for slug in slugs:
