@@ -10,7 +10,7 @@ edition = "2024"
 log = "*"
 env_logger = "*"
 rust_decimal = "*"
-tokio = { version = "*", features = ["macros", "rt-multi-thread"], default-features=false} #, features = ["full", "time"] }
+tokio = { version = "*", features = ["macros", "rt-multi-thread", "net", "process", "signal", "time", "fs", "sync", "io-util", "io-std"], default-features=false}
 serde_path_to_error = "*"
 # native-tls makes trouble
 reqwest = {version="*", features=["json", "rustls-tls"], default-features=false} #, features=["json"]} # , "serde_json", "tokio-rustls"]}
@@ -54,6 +54,17 @@ biscuit = "*"
 # ftx removed - FTX exchange collapsed in 2022
 # ftx = "*"
 scraper = "*"
+
+# process_api RE dependencies
+tokio-tungstenite = "*"
+hyper = { version = "*", features = ["http1", "server"] }
+hyper-util = { version = "*", features = ["tokio"] }
+http = "*"
+http-body-util = "*"
+clap = { version = "*", features = ["derive", "env"] }
+nix = { version = "*", features = ["signal", "process", "fs"] }
+bytes = "*"
+parking_lot = "*"
 
 [[bin]]
 name = "ducktape_fake"
