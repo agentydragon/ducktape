@@ -15,6 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from props.backend.auth import AgentDb
+from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -26,7 +27,6 @@ from props.db.models import (
     FileSetMember,
     RecallByDefinitionExample,
     RecallByDefinitionSplitKind,
-    Snapshot,
     StatsWithCI,
     TpOccurrenceCredit,
 )
@@ -237,12 +237,7 @@ def get_example_detail(
                 status_code=404, detail=f"Example not found: {snapshot_slug}/{example_kind}/{files_hash or 'NULL'}"
             )
 
-        # Get split from snapshot
-        snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
-        if not snapshot:
-            raise HTTPException(status_code=404, detail=f"Snapshot not found: {snapshot_slug}")
-
-        split = snapshot.split
+        split = get_snapshot_or_404(session, snapshot_slug).split
 
         # Get file list for file_set examples
         files: list[str] | None = None

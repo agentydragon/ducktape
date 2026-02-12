@@ -133,7 +133,7 @@ def _get_critic_scopes_expected_to_recall_paths(occ: TruePositiveOccurrenceORM) 
 # --- Endpoints ---
 
 
-def _get_snapshot_or_404(session: Session, snapshot_slug: SnapshotSlug) -> Snapshot:
+def get_snapshot_or_404(session: Session, snapshot_slug: SnapshotSlug) -> Snapshot:
     """Get snapshot or raise 404."""
     snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
     if not snapshot:
@@ -181,7 +181,7 @@ def get_snapshot_detail(org: str, snapshot_date: str, admin_db: AdminDb) -> Snap
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get detailed snapshot info with all TPs and FPs."""
     with admin_db.session() as session:
-        snapshot = _get_snapshot_or_404(session, snapshot_slug)
+        snapshot = get_snapshot_or_404(session, snapshot_slug)
 
         # Get TPs with eager loading
         tps = (
@@ -307,7 +307,7 @@ def get_snapshot_tree(org: str, snapshot_date: str, admin_db: AdminDb) -> FileTr
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get directory tree with issue occurrence counts."""
     with admin_db.session() as session:
-        _get_snapshot_or_404(session, snapshot_slug)
+        get_snapshot_or_404(session, snapshot_slug)
 
         # Get all snapshot files
         snapshot_files_rows = (
@@ -421,7 +421,7 @@ def get_snapshot_file(org: str, snapshot_date: str, file_path: str, admin_db: Ad
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get file content from snapshot tar archive."""
     with admin_db.session() as session:
-        snapshot = _get_snapshot_or_404(session, snapshot_slug)
+        snapshot = get_snapshot_or_404(session, snapshot_slug)
 
         if not snapshot.content:
             raise HTTPException(status_code=404, detail=f"Snapshot has no content: {snapshot_slug}")
@@ -483,7 +483,7 @@ def list_clusters(org: str, snapshot_date: str, admin_db: AdminDb) -> ClustersLi
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """List all issue clusters for a snapshot with members."""
     with admin_db.session() as session:
-        _get_snapshot_or_404(session, snapshot_slug)
+        get_snapshot_or_404(session, snapshot_slug)
 
         clusters = (
             session.query(IssueCluster).filter_by(snapshot_slug=snapshot_slug).order_by(IssueCluster.cluster_id).all()

@@ -88,6 +88,7 @@ py_library(
         "//props/db:examples",
         "//props/db:models",
         "//props/db:query_builders",
+        "//props/db:snapshots",
         "//props/orchestration:agent_registry",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -179,6 +180,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props/backend:__subpackages__"],
     deps = [
+        ":ground_truth",
         "//props/backend:auth",
         "//props/core:agent_types",
         "//props/core:ids",

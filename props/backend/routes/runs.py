@@ -30,7 +30,7 @@ from props.backend.auth import (
     validate_postgres_credentials,
 )
 from props.backend.deps import AdminDb
-from props.backend.routes.ground_truth import FileLocationInfo
+from props.backend.routes.ground_truth import FileLocationInfo, get_snapshot_or_404
 from props.core.agent_types import AgentType, CriticTypeConfig, TargetMetric, TypeConfig
 from props.core.eval_api_models import RunCriticRequest, RunCriticResponse
 from props.core.models.examples import ExampleKind, ExampleSpec
@@ -51,6 +51,7 @@ from props.db.models import (
     Snapshot,
 )
 from props.db.query_builders import query_recall_by_example
+from props.db.snapshots import DBLocationAnchor
 from props.orchestration.agent_registry import AgentRegistry, BudgetExceededError, ImageResolutionError
 
 router = APIRouter()
@@ -77,6 +78,16 @@ class ActiveRunInfo(BaseModel):
     model: str
     status: AgentRunStatus
     created_at: datetime
+
+    @classmethod
+    def from_db(cls, run: AgentRun) -> ActiveRunInfo:
+        return cls(
+            agent_run_id=run.agent_run_id,
+            image_digest=run.image_digest,
+            model=run.model,
+            status=run.status,
+            created_at=run.created_at,
+        )
 
 
 class ActiveRunsResponse(BaseModel):
@@ -331,6 +342,25 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
     ]
 
 
+def group_locations_by_file(locations: list[DBLocationAnchor]) -> list[FileLocationInfo]:
+    """Group flat location anchors by file into FileLocationInfo structure."""
+    by_file: dict[str, list[LineRange]] = defaultdict(list)
+    for loc in locations:
+        file_path = loc.file
+        start_line = loc.start_line
+        end_line = loc.end_line
+        if start_line is not None:
+            by_file[file_path].append(
+                LineRange(start_line=start_line, end_line=end_line if end_line != start_line else None, note=None)
+            )
+        else:
+            by_file[file_path] = []
+    return [
+        FileLocationInfo(path=path, ranges=ranges_list if ranges_list else None)
+        for path, ranges_list in sorted(by_file.items())
+    ]
+
+
 # --- Endpoints ---
 
 
@@ -349,16 +379,7 @@ def list_active_runs(request: Request, agent_db: AgentDb) -> ActiveRunsResponse:
             .all()
         )
 
-        result = [
-            ActiveRunInfo(
-                agent_run_id=db_run.agent_run_id,
-                image_digest=db_run.image_digest,
-                model=db_run.model,
-                status=db_run.status,
-                created_at=db_run.created_at,
-            )
-            for db_run in db_runs
-        ]
+        result = [ActiveRunInfo.from_db(db_run) for db_run in db_runs]
 
     return ActiveRunsResponse(runs=result)
 
@@ -366,8 +387,7 @@ def list_active_runs(request: Request, agent_db: AgentDb) -> ActiveRunsResponse:
 @router.get("/jobs", dependencies=[Depends(require_admin_access)])
 def list_jobs() -> JobsResponse:
     """List all validation jobs."""
-    # JobInfo is a subset of ValidationJob fields - use model_validate for clarity
-    return JobsResponse(jobs=[JobInfo.model_validate(job, from_attributes=True) for job in _jobs.values()])
+    return JobsResponse(jobs=_get_active_jobs())
 
 
 @router.get("")
@@ -419,19 +439,7 @@ def list_runs(
         )
 
         return RunsListResponse(
-            runs=[
-                RunInfo(
-                    agent_run_id=r.agent_run_id,
-                    image_digest=r.image_digest,
-                    type_config=r.type_config,
-                    model=r.model,
-                    status=r.status,
-                    created_at=r.created_at,
-                    updated_at=r.updated_at,
-                    split=split,
-                )
-                for r, split in runs_with_split
-            ],
+            runs=[_build_run_info(r, split) for r, split in runs_with_split],
             total_count=total_count,
             offset=offset,
             limit=limit,
@@ -731,9 +739,7 @@ async def run_critic(
     # Validate snapshot and example
     with admin_db.session() as session:
         snapshot_slug = body.example.snapshot_slug
-        db_snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one_or_none()
-        if not db_snapshot:
-            raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_slug} not found")
+        db_snapshot = get_snapshot_or_404(session, snapshot_slug)
 
         if db_snapshot.split == Split.TEST:
             raise HTTPException(
@@ -852,34 +858,13 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
                     )
 
             # Get reported issues for critic runs
-            def _group_locations_by_file(locations: list) -> list[FileLocationInfo]:
-                """Group flat location anchors by file into FileLocationInfo structure."""
-                by_file: dict[str, list[LineRange]] = defaultdict(list)
-                for loc in locations:
-                    file_path = loc["file"]
-                    start_line = loc.get("start_line")
-                    end_line = loc.get("end_line")
-                    if start_line is not None:
-                        by_file[file_path].append(
-                            LineRange(
-                                start_line=start_line, end_line=end_line if end_line != start_line else None, note=None
-                            )
-                        )
-                    else:
-                        # Whole file
-                        by_file[file_path] = []
-                return [
-                    FileLocationInfo(path=path, ranges=ranges_list if ranges_list else None)
-                    for path, ranges_list in sorted(by_file.items())
-                ]
-
             reported_issues = [
                 ReportedIssueInfo(
                     issue_id=issue.issue_id,
                     rationale=issue.rationale,
                     occurrences=[
                         ReportedIssueOccurrenceInfo(
-                            occurrence_id=str(occ.id), note=None, files=_group_locations_by_file(occ.locations)
+                            occurrence_id=str(occ.id), note=None, files=group_locations_by_file(occ.locations)
                         )
                         for occ in issue.occurrences
                     ],
