@@ -38,7 +38,7 @@ from props.agents.runtime import (
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import FileSet, ReportedIssue, ReportedIssueOccurrence
-from props.db.snapshots import DBLocationAnchor
+from props.db.snapshots import LocationAnchor
 
 # --- Tool argument models ---
 
@@ -147,7 +147,7 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
             occurrence = ReportedIssueOccurrence(
                 agent_run_id=agent_run_id,
                 reported_issue_id=args.issue_id,
-                locations=[DBLocationAnchor(file=args.file, start_line=args.start_line, end_line=args.end_line)],
+                locations=[LocationAnchor(file=args.file, start_line=args.start_line, end_line=args.end_line)],
             )
             session.add(occurrence)
 
@@ -167,7 +167,7 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
                 agent_run_id=agent_run_id,
                 reported_issue_id=args.issue_id,
                 locations=[
-                    DBLocationAnchor(file=loc.file, start_line=loc.start_line, end_line=loc.end_line)
+                    LocationAnchor(file=loc.file, start_line=loc.start_line, end_line=loc.end_line)
                     for loc in args.locations
                 ],
             )

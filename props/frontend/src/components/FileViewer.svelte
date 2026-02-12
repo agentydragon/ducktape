@@ -11,13 +11,14 @@
     ReportedIssueInfo,
     ReportedIssueOccurrenceInfo,
   } from "../lib/api/client";
-  import type { IssueMarker, LineRange } from "../lib/types";
+  import type { IssueMarker, LocationAnchor } from "../lib/types";
   import IssueComment from "./IssueComment.svelte";
   import { detectLanguage } from "../lib/fileTypes";
   import { highlightLines } from "../lib/highlighting";
 
-  function getRangesForFile(marker: IssueMarker, filePath: string): LineRange[] | null {
-    return marker.allFiles.find((f) => f.path === filePath)?.ranges ?? null;
+  /** Get locations for a specific file from an issue marker. */
+  function getLocationsForFile(marker: IssueMarker, filePath: string): LocationAnchor[] {
+    return marker.allLocations.filter((loc) => loc.file === filePath);
   }
 
   interface Props {
@@ -55,14 +56,14 @@
 
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
-        if (occ.files.some((f) => f.path === file.path)) {
+        if (occ.locations.some((loc) => loc.file === file.path)) {
           result.push({
             kind: "tp",
             issueId: tp.tp_id,
             occurrenceId: occ.occurrence_id,
             rationale: tp.rationale,
             note: occ.note ?? undefined,
-            allFiles: occ.files,
+            allLocations: occ.locations,
           });
         }
       }
@@ -70,22 +71,22 @@
 
     for (const fp of fps) {
       for (const occ of fp.occurrences) {
-        if (occ.files.some((f) => f.path === file.path)) {
+        if (occ.locations.some((loc) => loc.file === file.path)) {
           result.push({
             kind: "fp",
             issueId: fp.fp_id,
             occurrenceId: occ.occurrence_id,
             rationale: fp.rationale,
             note: occ.note ?? undefined,
-            allFiles: occ.files,
+            allLocations: occ.locations,
           });
         }
       }
     }
 
     for (const issue of critiqueIssues) {
-      const issueAllFiles = issue.occurrences.flatMap((occ: ReportedIssueOccurrenceInfo) => occ.files);
-      if (issueAllFiles.some((f) => f.path === file.path)) {
+      const issueAllLocations = issue.occurrences.flatMap((occ: ReportedIssueOccurrenceInfo) => occ.locations);
+      if (issueAllLocations.some((loc) => loc.file === file.path)) {
         const edges = gradingEdges.filter((e) => e.critique_issue_id === issue.issue_id);
         const note = issue.occurrences[0]?.note ?? undefined;
         result.push({
@@ -93,7 +94,7 @@
           issueId: issue.issue_id,
           rationale: issue.rationale,
           note,
-          allFiles: issueAllFiles,
+          allLocations: issueAllLocations,
           gradingEdges: edges,
         });
       }
@@ -107,17 +108,18 @@
     const map = new SvelteMap<number, IssueMarker[]>();
 
     for (const issue of allIssues) {
-      const ranges = getRangesForFile(issue, file.path);
-      if (!ranges) {
+      const locs = getLocationsForFile(issue, file.path);
+      if (locs.length === 0 || locs.every((loc) => loc.start_line == null)) {
+        // Whole-file: mark every line
         for (let i = 0; i < lines.length; i++) {
           const existing = map.get(i) || [];
           map.set(i, [...existing, issue]);
         }
       } else {
-        for (const range of ranges) {
-          // Convert 1-based line numbers to 0-based array indices
-          const startIdx = range.start_line - 1;
-          const endIdx = (range.end_line ?? range.start_line) - 1;
+        for (const loc of locs) {
+          if (loc.start_line == null) continue;
+          const startIdx = loc.start_line - 1;
+          const endIdx = (loc.end_line ?? loc.start_line) - 1;
           for (let i = startIdx; i <= endIdx; i++) {
             const existing = map.get(i) || [];
             map.set(i, [...existing, issue]);
@@ -129,20 +131,17 @@
     return map;
   });
 
-  // Map line numbers to range notes (for ranges that end on that line)
-  const lineToRangeNotes = $derived.by<SvelteMap<number, Array<{ issue: IssueMarker; range: LineRange }>>>(() => {
-    const map = new SvelteMap<number, Array<{ issue: IssueMarker; range: LineRange }>>();
+  // Map line numbers to location notes (show after the last line of each location with a note)
+  const lineToLocationNotes = $derived.by<SvelteMap<number, Array<{ issue: IssueMarker; loc: LocationAnchor }>>>(() => {
+    const map = new SvelteMap<number, Array<{ issue: IssueMarker; loc: LocationAnchor }>>();
 
     for (const issue of allIssues) {
-      const ranges = getRangesForFile(issue, file.path);
-      if (ranges) {
-        for (const range of ranges) {
-          if (range.note) {
-            // Convert 1-based line number to 0-based array index
-            const endIdx = (range.end_line ?? range.start_line) - 1;
-            const existing = map.get(endIdx) || [];
-            map.set(endIdx, [...existing, { issue, range }]);
-          }
+      const locs = getLocationsForFile(issue, file.path);
+      for (const loc of locs) {
+        if (loc.note && loc.start_line != null) {
+          const endIdx = (loc.end_line ?? loc.start_line) - 1;
+          const existing = map.get(endIdx) || [];
+          map.set(endIdx, [...existing, { issue, loc }]);
         }
       }
     }
@@ -240,9 +239,11 @@
 
           <!-- Issue comment cards (show after the first line of each issue's range) -->
           {#each lineIssues as issue (getIssueKey(issue))}
-            {@const issueRanges = getRangesForFile(issue, file.path)}
+            {@const fileLocs = getLocationsForFile(issue, file.path)}
             {@const isFirstLine =
-              !issueRanges || issueRanges.length === 0 ? idx === 0 : issueRanges.some((r) => r.start_line === idx + 1)}
+              fileLocs.length === 0 || fileLocs.every((l) => l.start_line == null)
+                ? idx === 0
+                : fileLocs.some((l) => l.start_line === idx + 1)}
             {#if isFirstLine}
               {@const issueKey = getIssueKey(issue)}
               {@const isExpanded = expandedIssues.has(issueKey)}
@@ -259,7 +260,7 @@
                       issueId={issue.occurrenceId ? `${issue.issueId}/${issue.occurrenceId}` : issue.issueId}
                       rationale={issue.rationale}
                       note={issue.note}
-                      allFiles={issue.allFiles}
+                      allLocations={issue.allLocations}
                       expanded={isExpanded}
                       onToggle={() => toggleIssue(issueKey)}
                       gradingEdges={issue.gradingEdges}
@@ -272,13 +273,13 @@
             {/if}
           {/each}
 
-          <!-- Range notes (show after the last line of each range with a note) -->
-          {@const rangeNotes = lineToRangeNotes.get(idx) || []}
-          {#each rangeNotes as { range, issue } (`${getIssueKey(issue)}-${range.start_line}`)}
+          <!-- Location notes (show after the last line of each location with a note) -->
+          {@const locationNotes = lineToLocationNotes.get(idx) || []}
+          {#each locationNotes as { loc, issue } (`${getIssueKey(issue)}-${loc.start_line}`)}
             <tr>
               <td colspan="2" class="px-4 py-0.5">
                 <div class="text-xs italic text-gray-600 bg-gray-50 border-l-2 border-gray-300 px-2 py-1 rounded-r">
-                  {range.note}
+                  {loc.note}
                 </div>
               </td>
             </tr>

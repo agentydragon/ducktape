@@ -47,7 +47,7 @@ from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.models.snapshot import BundleFilter, Source
 from props.core.splits import Split
-from props.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
+from props.db.snapshots import DBKnownFalsePositive, DBTruePositiveIssue, LocationAnchor
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -788,8 +788,8 @@ class ReportedIssueOccurrence(Base):
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, server_default=FetchedValue())
     reported_issue_id: Mapped[str] = mapped_column(String, nullable=False)
 
-    locations: Mapped[list[DBLocationAnchor]] = mapped_column(
-        PydanticColumn(list[DBLocationAnchor]),
+    locations: Mapped[list[LocationAnchor]] = mapped_column(
+        PydanticColumn(list[LocationAnchor]),
         nullable=False,
         comment="1+ location anchors: {file, start_line?, end_line?}",
     )

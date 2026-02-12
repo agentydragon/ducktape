@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -30,11 +29,10 @@ from props.backend.auth import (
     validate_postgres_credentials,
 )
 from props.backend.deps import AdminDb
-from props.backend.routes.ground_truth import FileLocationInfo, get_snapshot_or_404
+from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType, CriticTypeConfig, TargetMetric, TypeConfig
 from props.core.eval_api_models import RunCriticRequest, RunCriticResponse
 from props.core.models.examples import ExampleKind, ExampleSpec
-from props.core.models.true_positive import LineRange
 from props.core.oci_utils import BUILTIN_TAG
 from props.core.splits import Split
 from props.db.database import Database
@@ -51,7 +49,7 @@ from props.db.models import (
     Snapshot,
 )
 from props.db.query_builders import query_recall_by_example
-from props.db.snapshots import DBLocationAnchor
+from props.db.snapshots import LocationAnchor
 from props.orchestration.agent_registry import AgentRegistry, BudgetExceededError, ImageResolutionError
 
 router = APIRouter()
@@ -155,9 +153,9 @@ class GradingEdgeInfo(BaseModel):
 class ReportedIssueOccurrenceInfo(BaseModel):
     """Occurrence of a reported issue."""
 
-    occurrence_id: str
+    occurrence_id: int
     note: str | None
-    files: list[FileLocationInfo]
+    locations: list[LocationAnchor]
 
 
 class ReportedIssueInfo(BaseModel):
@@ -339,25 +337,6 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
     return [
         GradingEdgeInfo(critique_issue_id=edge.critique_issue_id, target=edge.to_target(), rationale=edge.rationale)
         for edge in edges
-    ]
-
-
-def group_locations_by_file(locations: list[DBLocationAnchor]) -> list[FileLocationInfo]:
-    """Group flat location anchors by file into FileLocationInfo structure."""
-    by_file: dict[str, list[LineRange]] = defaultdict(list)
-    for loc in locations:
-        file_path = loc.file
-        start_line = loc.start_line
-        end_line = loc.end_line
-        if start_line is not None:
-            by_file[file_path].append(
-                LineRange(start_line=start_line, end_line=end_line if end_line != start_line else None, note=None)
-            )
-        else:
-            by_file[file_path] = []
-    return [
-        FileLocationInfo(path=path, ranges=ranges_list if ranges_list else None)
-        for path, ranges_list in sorted(by_file.items())
     ]
 
 
@@ -726,6 +705,8 @@ async def run_critic(
 ) -> RunCriticResponse:
     """Run critic agent using an agent package.
 
+    Uses admin_db: this is a privileged API that starts container workloads.
+
     Validates split-based access restrictions:
     - TRAIN split: all example types allowed
     - VALID split: restrictions depend on target_metric mode
@@ -863,9 +844,7 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
                     issue_id=issue.issue_id,
                     rationale=issue.rationale,
                     occurrences=[
-                        ReportedIssueOccurrenceInfo(
-                            occurrence_id=str(occ.id), note=None, files=group_locations_by_file(occ.locations)
-                        )
+                        ReportedIssueOccurrenceInfo(occurrence_id=occ.id, note=None, locations=occ.locations)
                         for occ in issue.occurrences
                     ],
                 )

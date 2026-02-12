@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session, selectinload
 from props.backend.auth import require_admin_access
 from props.backend.deps import AdminDb
 from props.core.ids import SnapshotSlug
-from props.core.models.true_positive import LineRange
 from props.core.splits import Split
 from props.db.models import (
     CriticScopeExpectedToRecall,
@@ -33,6 +32,7 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
+from props.db.snapshots import LocationAnchor
 
 router = APIRouter(dependencies=[Depends(require_admin_access)])
 
@@ -56,18 +56,11 @@ class SnapshotsListResponse(BaseModel):
     snapshots: list[SnapshotSummary]
 
 
-class FileLocationInfo(BaseModel):
-    """File with optional line ranges."""
-
-    path: str
-    ranges: list[LineRange] | None
-
-
 class OccurrenceInfo(BaseModel):
     """Unified occurrence info for both TPs and FPs."""
 
     occurrence_id: str
-    files: list[FileLocationInfo]
+    locations: list[LocationAnchor]
     note: str | None
     match_file_restriction: list[str] | None
     # TP-specific fields
@@ -107,18 +100,17 @@ class SnapshotDetailResponse(BaseModel):
 # --- Helper Functions ---
 
 
-def _build_file_locations_from_ranges(ranges: list[OccurrenceRangeORM]) -> list[FileLocationInfo]:
-    """Convert ORM ranges to FileLocationInfo list."""
-    by_file: dict[str, list[LineRange]] = defaultdict(list)
-    for range_orm in ranges:
-        by_file[str(range_orm.file_path)].append(
-            LineRange(
-                start_line=range_orm.start_line,
-                end_line=range_orm.end_line if range_orm.end_line != range_orm.start_line else None,
-                note=range_orm.note,
-            )
+def _ranges_to_locations(ranges: list[OccurrenceRangeORM]) -> list[LocationAnchor]:
+    """Convert ORM occurrence ranges to flat LocationAnchor list."""
+    return [
+        LocationAnchor(
+            file=str(r.file_path),
+            start_line=r.start_line,
+            end_line=r.end_line if r.end_line != r.start_line else None,
+            note=r.note,
         )
-    return [FileLocationInfo(path=path, ranges=ranges_list) for path, ranges_list in sorted(by_file.items())]
+        for r in ranges
+    ]
 
 
 def _get_critic_scopes_expected_to_recall_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
@@ -240,7 +232,7 @@ def get_snapshot_detail(org: str, snapshot_date: str, admin_db: AdminDb) -> Snap
                 tp_occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
-                        files=_build_file_locations_from_ranges(occ.ranges),
+                        locations=_ranges_to_locations(occ.ranges),
                         note=occ.note,
                         match_file_restriction=matchable_files,
                         critic_scopes_expected_to_recall=_get_critic_scopes_expected_to_recall_paths(occ),
@@ -263,7 +255,7 @@ def get_snapshot_detail(org: str, snapshot_date: str, admin_db: AdminDb) -> Snap
                 fp_occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=fp_occ.occurrence_id,
-                        files=_build_file_locations_from_ranges(fp_occ.ranges),
+                        locations=_ranges_to_locations(fp_occ.ranges),
                         note=fp_occ.note,
                         match_file_restriction=matchable_files,
                         relevant_files=sorted(str(rf.file_path) for rf in fp_occ.relevant_file_orms),

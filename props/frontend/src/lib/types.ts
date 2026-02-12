@@ -10,16 +10,13 @@ export type ExampleKind = components["schemas"]["ExampleKind"];
 export type AgentRunStatus = components["schemas"]["AgentRunStatus"];
 
 // Composed types from backend schema for file viewers
-export type LineRange = components["schemas"]["LineRange"];
-export type FileLocationInfo = components["schemas"]["FileLocationInfo"];
+export type LocationAnchor = components["schemas"]["LocationAnchor"];
 export type GradingEdgeInfo = components["schemas"]["GradingEdgeInfo"];
 
 /**
  * Unified marker for issues displayed in FileViewer.
- * Combines parent issue info (id, rationale) with occurrence info (files, note).
+ * Combines parent issue info (id, rationale) with occurrence-level locations.
  * Supports TPs, FPs, and optionally critique issues with grading edges.
- *
- * To get ranges for a specific file, use: allFiles.find(f => f.path === filePath)?.ranges
  */
 export interface IssueMarker {
   kind: "tp" | "fp" | "critique";
@@ -27,7 +24,7 @@ export interface IssueMarker {
   occurrenceId?: string;
   rationale: string;
   note?: string;
-  allFiles: FileLocationInfo[];
+  allLocations: LocationAnchor[];
   gradingEdges?: GradingEdgeInfo[];
 }
 

@@ -185,7 +185,7 @@ _CUSTOM_CRITIC_SCRIPT = textwrap.dedent("""\
     from props.agents.runtime import get_current_agent_run_id
     from props.db.database import Database
     from props.db.models import ReportedIssue, ReportedIssueOccurrence
-    from props.db.snapshots import DBLocationAnchor
+    from props.db.snapshots import LocationAnchor
 
 
     async def main() -> int:
@@ -209,7 +209,7 @@ _CUSTOM_CRITIC_SCRIPT = textwrap.dedent("""\
             occ = ReportedIssueOccurrence(
                 agent_run_id=agent_run_id,
                 reported_issue_id="custom-test-issue",
-                locations=[DBLocationAnchor(file="test.py", start_line=1, end_line=5)],
+                locations=[LocationAnchor(file="test.py", start_line=1, end_line=5)],
             )
             session.add(occ)
 

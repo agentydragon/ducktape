@@ -30,7 +30,7 @@ from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
 from props.db.database import Database
 from props.db.models import AgentRunStatus, GradingEdge, IssueCluster, ReportedIssue, ReportedIssueOccurrence
-from props.db.snapshots import DBLocationAnchor
+from props.db.snapshots import LocationAnchor
 from props.testing.assertions import assert_no_pending
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import make_fake_critic_run
@@ -100,7 +100,7 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
                 ReportedIssueOccurrence(
                     agent_run_id=critic_run_id,
                     reported_issue_id="test-issue-1",
-                    locations=[DBLocationAnchor(file="subtract.py", start_line=1, end_line=1)],
+                    locations=[LocationAnchor(file="subtract.py", start_line=1, end_line=1)],
                 )
             )
             session.commit()

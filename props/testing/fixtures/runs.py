@@ -26,7 +26,7 @@ from props.db.models import (
     ReportedIssueOccurrence,
     Snapshot,
 )
-from props.db.snapshots import DBLocationAnchor
+from props.db.snapshots import LocationAnchor
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
 
@@ -126,7 +126,7 @@ def make_reported_issues(
             occurrence = ReportedIssueOccurrence(
                 agent_run_id=agent_run_id,
                 reported_issue_id=issue_id,
-                locations=[DBLocationAnchor(file=location_file, start_line=1, end_line=1)],
+                locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
             )
             session.add(occurrence)
         issues.append(issue)
@@ -159,7 +159,7 @@ def make_fake_critic_and_grader_run(
                 occ = ReportedIssueOccurrence(
                     agent_run_id=critic_run.agent_run_id,
                     reported_issue_id=issue_id,
-                    locations=[DBLocationAnchor(file=location_file, start_line=1, end_line=1)],
+                    locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
                 )
                 session.add(occ)
 
@@ -203,7 +203,7 @@ def make_fake_grader_run_with_credit(
     occ = ReportedIssueOccurrence(
         agent_run_id=critic_run.agent_run_id,
         reported_issue_id=issue_id,
-        locations=[DBLocationAnchor(file="subtract.py", start_line=1, end_line=1)],
+        locations=[LocationAnchor(file="subtract.py", start_line=1, end_line=1)],
     )
     session.add(occ)
 

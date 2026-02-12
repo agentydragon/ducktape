@@ -26,18 +26,16 @@ class DBLineRange(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class DBLocationAnchor(BaseModel):
-    """Database representation of a location anchor for reported issues.
+class LocationAnchor(BaseModel):
+    """A specific location in a codebase snapshot.
 
-    Matches the YAML ground truth format:
-    - file: required file path
-    - start_line: optional line number (1-based)
-    - end_line: optional end line (inclusive)
+    Used in both database storage (JSONB) and API responses.
     """
 
     file: str = Field(description="File path (relative to snapshot root)")
     start_line: int | None = Field(default=None, ge=1, description="Optional start line (1-based)")
     end_line: int | None = Field(default=None, ge=1, description="Optional end line (inclusive)")
+    note: str | None = Field(default=None, description="Optional per-location note (e.g. 'definition site')")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

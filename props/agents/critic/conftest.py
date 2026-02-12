@@ -12,7 +12,7 @@ from sqlalchemy.engine import Engine
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRunStatus
-from props.db.snapshots import DBLocationAnchor
+from props.db.snapshots import LocationAnchor
 from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
 from props.testing.fixtures.runs import make_fake_critic_run
 
@@ -79,13 +79,13 @@ def insert_issue(conn: Connection, issue_id: str, rationale: str) -> None:
     )
 
 
-def insert_occurrence(conn: Connection, issue_id: str, locations: list[DBLocationAnchor]) -> None:
+def insert_occurrence(conn: Connection, issue_id: str, locations: list[LocationAnchor]) -> None:
     """Insert a reported issue occurrence using temp user credentials.
 
     Args:
         conn: Database connection (must be from temp user engine)
         issue_id: Issue ID this occurrence belongs to
-        locations: List of DBLocationAnchor objects specifying where the occurrence is
+        locations: List of LocationAnchor objects specifying where the occurrence is
     """
     locations_json = json.dumps([loc.model_dump(exclude_none=True) for loc in locations])
     conn.execute(

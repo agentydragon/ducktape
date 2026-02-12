@@ -1,8 +1,8 @@
 <script lang="ts">
   import { CheckCircle, XCircle, Link } from "lucide-svelte";
-  import type { GradingEdgeInfo, FileLocationInfo } from "../lib/api/client";
+  import type { GradingEdgeInfo, LocationAnchor } from "../lib/api/client";
   import { issueColors } from "../lib/colors";
-  import { formatFileLocation } from "../lib/formatters";
+  import { formatLocationAnchor } from "../lib/formatters";
   import OccurrenceLink from "../lib/OccurrenceLink.svelte";
   import CopyButton from "./CopyButton.svelte";
 
@@ -11,7 +11,7 @@
     issueId: string;
     rationale: string;
     note?: string;
-    allFiles?: FileLocationInfo[];
+    allLocations?: LocationAnchor[];
     expanded?: boolean;
     onToggle?: () => void;
     gradingEdges?: GradingEdgeInfo[]; // For critique issues - show what they matched
@@ -25,7 +25,7 @@
     issueId,
     rationale,
     note,
-    allFiles = [],
+    allLocations = [],
     expanded = false,
     onToggle,
     gradingEdges = [],
@@ -142,12 +142,15 @@
         </div>
       {/if}
 
-      {#if allFiles.length > 1}
+      {#if allLocations.length > 1}
         <div>
-          <div class="text-xs font-medium text-gray-600 mb-1">All affected files:</div>
-          {#each allFiles as file (file.path)}
+          <div class="text-xs font-medium text-gray-600 mb-1">All locations:</div>
+          {#each allLocations as loc (`${loc.file}-${loc.start_line}`)}
             <div class="font-mono text-xs text-gray-700">
-              {formatFileLocation(file)}
+              {formatLocationAnchor(loc)}
+              {#if loc.note}
+                <span class="italic text-gray-500 ml-1">({loc.note})</span>
+              {/if}
             </div>
           {/each}
         </div>

@@ -215,8 +215,7 @@ export type FpInfo = components["schemas"]["FpInfo"];
 export type OccurrenceInfo = components["schemas"]["OccurrenceInfo"];
 export type ReportedIssueInfo = components["schemas"]["ReportedIssueInfo"];
 export type ReportedIssueOccurrenceInfo = components["schemas"]["ReportedIssueOccurrenceInfo"];
-export type FileLocationInfo = components["schemas"]["FileLocationInfo"];
-export type LineRange = components["schemas"]["LineRange"];
+export type LocationAnchor = components["schemas"]["LocationAnchor"];
 
 // LLM request types
 export type LLMRequestInfo = components["schemas"]["LLMRequestInfo"];

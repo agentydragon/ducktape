@@ -18,7 +18,7 @@ from props.core.ids import SnapshotSlug
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import ReportedIssue, ReportedIssueOccurrence
-from props.db.snapshots import DBLocationAnchor
+from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
 pytestmark = [pytest.mark.integration]
@@ -53,7 +53,7 @@ def test_occurrence_single_location_valid(test_critic_run, db: Database):
         occ = ReportedIssueOccurrence(
             agent_run_id=test_critic_run,
             reported_issue_id="test-issue-1",
-            locations=[DBLocationAnchor(file="add.py", start_line=1, end_line=3)],
+            locations=[LocationAnchor(file="add.py", start_line=1, end_line=3)],
         )
         session.add(occ)
         session.commit()  # Should succeed
@@ -71,7 +71,7 @@ def test_occurrence_single_location_whole_file_valid(test_critic_run, db: Databa
         occ = ReportedIssueOccurrence(
             agent_run_id=test_critic_run,
             reported_issue_id="test-issue-2",
-            locations=[DBLocationAnchor(file="subtract.py")],
+            locations=[LocationAnchor(file="subtract.py")],
         )
         session.add(occ)
         session.commit()  # Should succeed
@@ -90,8 +90,8 @@ def test_occurrence_multiple_locations_valid(test_critic_run, db: Database):
             agent_run_id=test_critic_run,
             reported_issue_id="test-issue-3",
             locations=[
-                DBLocationAnchor(file="multiply.py", start_line=1, end_line=3),
-                DBLocationAnchor(file="divide.py", start_line=1, end_line=3),
+                LocationAnchor(file="multiply.py", start_line=1, end_line=3),
+                LocationAnchor(file="divide.py", start_line=1, end_line=3),
             ],
         )
         session.add(occ)
@@ -135,7 +135,7 @@ def test_line_range_start_line_zero_invalid(test_critic_run, db: Database):
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-6",
-                locations=[DBLocationAnchor(file="add.py", start_line=0)],
+                locations=[LocationAnchor(file="add.py", start_line=0)],
             )
 
 
@@ -152,7 +152,7 @@ def test_line_range_start_line_negative_invalid(test_critic_run, db: Database):
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-7",
-                locations=[DBLocationAnchor(file="add.py", start_line=-5)],
+                locations=[LocationAnchor(file="add.py", start_line=-5)],
             )
 
 
@@ -169,7 +169,7 @@ def test_line_range_end_line_zero_invalid(test_critic_run, db: Database):
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-8",
-                locations=[DBLocationAnchor(file="add.py", start_line=1, end_line=0)],
+                locations=[LocationAnchor(file="add.py", start_line=1, end_line=0)],
             )
 
 
@@ -185,7 +185,7 @@ def test_line_range_valid_single_line(test_critic_run, db: Database):
         occ = ReportedIssueOccurrence(
             agent_run_id=test_critic_run,
             reported_issue_id="test-issue-9",
-            locations=[DBLocationAnchor(file="add.py", start_line=1, end_line=1)],
+            locations=[LocationAnchor(file="add.py", start_line=1, end_line=1)],
         )
         session.add(occ)
         session.commit()  # Should succeed
@@ -223,7 +223,7 @@ def test_foreign_key_cascade_delete(test_critic_run, db: Database):
         session.flush()
 
         occ = ReportedIssueOccurrence(
-            agent_run_id=test_critic_run, reported_issue_id="cascade-test", locations=[DBLocationAnchor(file="add.py")]
+            agent_run_id=test_critic_run, reported_issue_id="cascade-test", locations=[LocationAnchor(file="add.py")]
         )
         session.add(occ)
         session.commit()

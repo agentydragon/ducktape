@@ -16,7 +16,7 @@ from props.core.ids import SnapshotSlug
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
-from props.db.snapshots import DBLocationAnchor
+from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
 pytestmark = [pytest.mark.integration]
@@ -80,7 +80,7 @@ async def test_insert_occurrence(test_critic_run, temp_engine, db: Database):
 
     with temp_engine.connect() as conn:
         insert_issue(conn, "test-issue", "Test rationale")
-        insert_occurrence(conn, "test-issue", [DBLocationAnchor(file="add.py", start_line=1, end_line=3)])
+        insert_occurrence(conn, "test-issue", [LocationAnchor(file="add.py", start_line=1, end_line=3)])
         conn.commit()
 
     with db.session() as session:
@@ -89,7 +89,7 @@ async def test_insert_occurrence(test_critic_run, temp_engine, db: Database):
             .filter_by(agent_run_id=test_critic_run, reported_issue_id="test-issue")
             .one()
         )
-        assert occ.locations == [DBLocationAnchor(file="add.py", start_line=1, end_line=3)]
+        assert occ.locations == [LocationAnchor(file="add.py", start_line=1, end_line=3)]
 
 
 async def test_insert_multi_location_occurrence(test_critic_run, temp_engine, db: Database):
@@ -101,8 +101,8 @@ async def test_insert_multi_location_occurrence(test_critic_run, temp_engine, db
             conn,
             "duplicated-enum",
             [
-                DBLocationAnchor(file="add.py", start_line=1, end_line=3),
-                DBLocationAnchor(file="subtract.py", start_line=1, end_line=3),
+                LocationAnchor(file="add.py", start_line=1, end_line=3),
+                LocationAnchor(file="subtract.py", start_line=1, end_line=3),
             ],
         )
         conn.commit()
@@ -114,8 +114,8 @@ async def test_insert_multi_location_occurrence(test_critic_run, temp_engine, db
             .one()
         )
         assert occ.locations == [
-            DBLocationAnchor(file="add.py", start_line=1, end_line=3),
-            DBLocationAnchor(file="subtract.py", start_line=1, end_line=3),
+            LocationAnchor(file="add.py", start_line=1, end_line=3),
+            LocationAnchor(file="subtract.py", start_line=1, end_line=3),
         ]
 
 

@@ -90,19 +90,30 @@ export function formatExample(run: RunInfo): string {
   return `files@${slug}/${formatFilesHash(example.files_hash)}`;
 }
 
-// --- File location formatting ---
+// --- Location anchor formatting ---
 
-/** Format a file location with optional line ranges. */
-export function formatFileLocation(file: {
-  path: string;
-  ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
+/** Format a location anchor as "file:line" or "file:start-end". */
+export function formatLocationAnchor(loc: {
+  file: string;
+  start_line?: number | null;
+  end_line?: number | null;
 }): string {
-  if (!file.ranges || file.ranges.length === 0) {
-    return file.path;
+  if (loc.start_line == null) return loc.file;
+  const endLine = loc.end_line ?? loc.start_line;
+  if (loc.start_line === endLine) return `${loc.file}:${loc.start_line}`;
+  return `${loc.file}:${loc.start_line}-${endLine}`;
+}
+
+/** Group flat location anchors by file path. */
+export function groupLocationsByFile<T extends { file: string }>(locations: T[]): Map<string, T[]> {
+  const byFile = new Map<string, T[]>();
+  for (const loc of locations) {
+    const existing = byFile.get(loc.file);
+    if (existing) {
+      existing.push(loc);
+    } else {
+      byFile.set(loc.file, [loc]);
+    }
   }
-  const rangeStrs = file.ranges.map((r) => {
-    const endLine = r.end_line ?? r.start_line;
-    return r.start_line === endLine ? `${r.start_line + 1}` : `${r.start_line + 1}-${endLine + 1}`;
-  });
-  return `${file.path}:${rangeStrs.join(",")}`;
+  return byFile;
 }

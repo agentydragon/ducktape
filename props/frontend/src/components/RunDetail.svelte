@@ -168,23 +168,23 @@
       // Files from critique issues
       const reportedIssues = getReportedIssues(criticRun);
       for (const issue of reportedIssues) {
-        for (const fileLocation of issue.occurrences.flatMap((o) => o.files)) {
-          allFilePaths.add(fileLocation.path);
+        for (const loc of issue.occurrences.flatMap((o) => o.locations)) {
+          allFilePaths.add(loc.file);
         }
       }
 
       // Files from ground truth
       for (const tp of snapshotDetail.true_positives) {
         for (const occ of tp.occurrences) {
-          for (const fileInfo of occ.files) {
-            allFilePaths.add(fileInfo.path);
+          for (const loc of occ.locations) {
+            allFilePaths.add(loc.file);
           }
         }
       }
       for (const fp of snapshotDetail.false_positives) {
         for (const occ of fp.occurrences) {
-          for (const fileInfo of occ.files) {
-            allFilePaths.add(fileInfo.path);
+          for (const loc of occ.locations) {
+            allFilePaths.add(loc.file);
           }
         }
       }

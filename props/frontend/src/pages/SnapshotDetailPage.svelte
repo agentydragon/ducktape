@@ -3,6 +3,7 @@
   import { pathname, resolve } from "$lib/router";
   import { toast } from "svelte-sonner";
   import { splitBadgeClass } from "$lib/colors";
+  import { formatLocationAnchor } from "$lib/formatters";
   import type { SnapshotDetailResponse, FileContentResponse, FileTreeResponse, ClusterResponse } from "$lib/api/client";
   import { fetchSnapshotDetail, fetchSnapshotTree, fetchSnapshotFile, fetchSnapshotClusters } from "$lib/api/client";
   import FileTree from "$components/FileTree.svelte";
@@ -120,20 +121,6 @@
     return items;
   });
 
-  function formatFileLocation(file: {
-    path: string;
-    ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
-  }): string {
-    if (!file.ranges || file.ranges.length === 0) {
-      return file.path;
-    }
-    const rangeStrs = file.ranges.map((r) => {
-      const endLine = r.end_line ?? r.start_line;
-      return r.start_line === endLine ? `${r.start_line}` : `${r.start_line}-${endLine}`;
-    });
-    return `${file.path}:${rangeStrs.join(",")}`;
-  }
-
   async function handleFileClick(path: string) {
     loadingFile = true;
     try {
@@ -164,9 +151,9 @@
         const issueIdMatch = "tp_id" in issue ? issue.tp_id === issueId : issue.fp_id === issueId;
         if (issueIdMatch) {
           const occ = issue.occurrences.find((o) => o.occurrence_id === occurrenceId);
-          if (occ?.files.length) {
+          if (occ?.locations.length) {
             // Use specified file or first file
-            const fileToLoad = filePath || occ.files[0].path;
+            const fileToLoad = filePath || occ.locations[0].file;
             handleFileClick(fileToLoad);
             expandedIssues.expand(issueId);
             activeTab = "files";
@@ -307,7 +294,7 @@
                                   snapshotSlug={snapshot.slug}
                                   issueId={tp.tp_id}
                                   occurrenceId={occ.occurrence_id}
-                                  filePath={occ.files[0]?.path}
+                                  filePath={occ.locations[0]?.file}
                                 />
                                 {#if occurrenceStatsMap.has(`${tp.tp_id}:${occ.occurrence_id}`)}
                                   {@const stats = occurrenceStatsMap.get(`${tp.tp_id}:${occ.occurrence_id}`)!}
@@ -315,13 +302,18 @@
                                 {/if}
                               </div>
                               <CopyButton
-                                text={getOccurrenceUrl(tp.tp_id, occ.occurrence_id, occ.files[0]?.path)}
+                                text={getOccurrenceUrl(tp.tp_id, occ.occurrence_id, occ.locations[0]?.file)}
                                 label="Copy URL"
                               />
                             </div>
                             <div class="mt-1">
-                              {#each occ.files as file (`${occ.occurrence_id}-${file.path}`)}
-                                <div class="text-sm font-mono">{formatFileLocation(file)}</div>
+                              {#each occ.locations as loc (`${occ.occurrence_id}-${loc.file}`)}
+                                <div class="text-sm font-mono">
+                                  {formatLocationAnchor(loc)}
+                                  {#if loc.note}
+                                    <span class="italic text-gray-500 ml-1">({loc.note})</span>
+                                  {/if}
+                                </div>
                               {/each}
                             </div>
                             {#if occ.note}
@@ -384,17 +376,22 @@
                                   snapshotSlug={snapshot.slug}
                                   issueId={fp.fp_id}
                                   occurrenceId={occ.occurrence_id}
-                                  filePath={occ.files[0]?.path}
+                                  filePath={occ.locations[0]?.file}
                                 />
                               </div>
                               <CopyButton
-                                text={getOccurrenceUrl(fp.fp_id, occ.occurrence_id, occ.files[0]?.path)}
+                                text={getOccurrenceUrl(fp.fp_id, occ.occurrence_id, occ.locations[0]?.file)}
                                 label="Copy URL"
                               />
                             </div>
                             <div class="mt-1">
-                              {#each occ.files as file (`${occ.occurrence_id}-${file.path}`)}
-                                <div class="text-sm font-mono">{formatFileLocation(file)}</div>
+                              {#each occ.locations as loc (`${occ.occurrence_id}-${loc.file}`)}
+                                <div class="text-sm font-mono">
+                                  {formatLocationAnchor(loc)}
+                                  {#if loc.note}
+                                    <span class="italic text-gray-500 ml-1">({loc.note})</span>
+                                  {/if}
+                                </div>
                               {/each}
                             </div>
                             {#if occ.note}
