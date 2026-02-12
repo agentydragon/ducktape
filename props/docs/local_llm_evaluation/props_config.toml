@@ -7,7 +7,7 @@ PGPORT = "5432"
 PGDATABASE = "eval_results"
 
 [upstreams.ollama]
-url = "http://127.0.0.1:11434"
+url = "http://127.0.0.1:11434/v1"
 api_key_env = "OLLAMA_DUMMY_KEY"
 
 # Change upstream_model to match your GGUF filename (from /v1/models).
