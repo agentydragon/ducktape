@@ -40,25 +40,35 @@ class OutputTokensDetails(BaseModel):
 
 
 class ResponseUsage(BaseModel):
-    """Response usage information (wrapped from OpenAI SDK)."""
+    """Response usage information (wrapped from OpenAI SDK).
+
+    input_tokens_details and output_tokens_details are optional because
+    non-OpenAI upstreams (e.g. llama-server) may omit them.
+    """
 
     input_tokens: int
     output_tokens: int
     total_tokens: int
-    input_tokens_details: InputTokensDetails
-    output_tokens_details: OutputTokensDetails
+    input_tokens_details: InputTokensDetails = Field(default_factory=lambda: InputTokensDetails(cached_tokens=0))
+    output_tokens_details: OutputTokensDetails = Field(default_factory=lambda: OutputTokensDetails(reasoning_tokens=0))
     model_config = ConfigDict(extra="allow")
 
     @classmethod
     def from_sdk(cls, sdk_usage: sdk_usage_types.ResponseUsage) -> Self:
-        """Convert OpenAI SDK ResponseUsage to our wrapped type."""
+        """Convert OpenAI SDK ResponseUsage to our wrapped type.
+
+        input_tokens_details and output_tokens_details may be None when using
+        non-OpenAI upstreams (e.g. llama-server).
+        """
+        input_details = sdk_usage.input_tokens_details
+        output_details = sdk_usage.output_tokens_details
         return cls(
             input_tokens=sdk_usage.input_tokens,
             output_tokens=sdk_usage.output_tokens,
             total_tokens=sdk_usage.total_tokens,
-            input_tokens_details=InputTokensDetails(cached_tokens=sdk_usage.input_tokens_details.cached_tokens),
+            input_tokens_details=InputTokensDetails(cached_tokens=input_details.cached_tokens if input_details else 0),
             output_tokens_details=OutputTokensDetails(
-                reasoning_tokens=sdk_usage.output_tokens_details.reasoning_tokens
+                reasoning_tokens=output_details.reasoning_tokens if output_details else 0
             ),
         )
 
