@@ -1,0 +1,24 @@
+backend_url = "http://127.0.0.1:8000"
+
+[agent_env]
+PGHOST = "127.0.0.1"
+PGPORT = "5432"
+PGDATABASE = "eval_results"
+
+[upstreams.ollama]
+url = "http://127.0.0.1:11434"
+api_key_env = "OLLAMA_DUMMY_KEY"
+
+# Change upstream_model to match your GGUF filename (from /v1/models).
+# Examples:
+#   Qwen3-8B:    "Qwen3-8B-Q4_K_M.gguf"
+#   gpt-oss-20b: "gpt-oss-20b-Q4_K_M.gguf"
+[[models]]
+name = "local-llm"
+upstream = "ollama"
+upstream_model = "Qwen3-8B-Q4_K_M.gguf"
+input_usd_per_1m_tokens = 0.0
+cached_input_usd_per_1m_tokens = 0.0
+output_usd_per_1m_tokens = 0.0
+context_window_tokens = 4096
+max_output_tokens = 4096
