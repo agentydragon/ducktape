@@ -71,6 +71,7 @@ py_library(
     deps = [
         ":app",
         "//cli_util:logging",
+        "@pypi//fastapi",
         "@pypi//typer_slim",
         "@pypi//uvicorn",
     ],
@@ -117,6 +118,21 @@ py_test(
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    imports = ["../.."],
+    deps = [
+        ":cli",
+        "//props:conftest",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
     ],
 )
 

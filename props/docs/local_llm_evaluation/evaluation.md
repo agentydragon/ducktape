@@ -179,9 +179,12 @@ cp props/docs/local_llm_evaluation/props_config.toml /tmp/props-ollama-config.to
 
 The config defines:
 
-1. **Upstream connection** (`[upstreams.ollama]`): llama-server on port 11434.
+1. **`grader_model`**: Tells the backend to start the `GraderSupervisor`, which
+   automatically runs a grader after each critic finishes. Without this, grading
+   must be triggered manually.
+2. **Upstream connection** (`[upstreams.ollama]`): llama-server on port 11434.
    `api_key_env` points to a dummy env var (llama-server ignores API keys).
-2. **Custom model** (`[[models]]`): Declares the local model with zero pricing
+3. **Custom model** (`[[models]]`): Declares the local model with zero pricing
    (inference is free). The `upstream_model` field must match the GGUF filename
    reported by `/v1/models`.
 
@@ -227,7 +230,7 @@ the same payload — base64 of `username:password`:
 The `Bearer` scheme is used for API calls (curl, OpenAI SDK). The `Basic`
 scheme is used by OCI/Docker tooling (crane, docker push/pull).
 
-## Step 9: Build and Push Critic Image
+## Step 9: Build and Push Agent Images
 
 Push through the backend's registry proxy (port 8000), not directly to the
 upstream registry (port 5000). The proxy records `agent_definitions` in the DB.
@@ -243,15 +246,15 @@ mkdir -p /tmp/crane-config
 echo "{\"auths\":{\"localhost:8000\":{\"auth\":\"$ADMIN_TOKEN\"}}}" \
   > /tmp/crane-config/config.json
 
+# Push critic image
 DOCKER_CONFIG=/tmp/crane-config \
   bazel run //props/agents/critic:push -- \
     --repository localhost:8000/critic --tag latest --insecure
-```
 
-Pre-pull the image in podman to avoid timeout issues:
-
-```bash
-TMPDIR=/dev/shm podman pull --tls-verify=false 127.0.0.1:5000/critic:latest
+# Push grader image
+DOCKER_CONFIG=/tmp/crane-config \
+  bazel run //props/agents/grader:push -- \
+    --repository localhost:8000/grader --tag latest --insecure
 ```
 
 ## Step 10: Run a Critic
@@ -274,22 +277,50 @@ curl -s -X POST "http://localhost:8000/api/runs/critic" \
 
 `budget_usd=0.0` — local models have zero cost, so no budget is needed.
 
-## Step 11: Run a Grader
+## Step 11: Wait for Grading
 
-After the critic run completes:
+The `GraderSupervisor` (enabled by `grader_model` in the config) automatically
+runs a grader after each critic finishes. No manual curl is needed.
+
+Monitor progress by querying the database:
 
 ```bash
-curl -s -X POST "http://localhost:8000/api/runs/grader" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "definition_id": "latest",
-    "example": {"kind": "whole_snapshot", "snapshot_slug": "wt/2025-01-03-00"},
-    "grader_model": "'"$MODEL_NAME"'",
-    "timeout_seconds": 1800,
-    "budget_usd": 0.0
-  }'
+PGPASSWORD="props-bench-dcfc0ef9506c6673" psql -h 127.0.0.1 -U postgres -d eval_results \
+  -c "SELECT agent_run_id, type_config->>'agent_type' AS type, model, status,
+             container_exit_code FROM agent_runs ORDER BY created_at"
 ```
+
+Wait until both the critic and grader runs show `status = 'exited'` with
+`container_exit_code = 0`.
+
+## Step 12: Export Results
+
+After each agent run completes, export the run results (excluding ground truth
+tables) to a SQL dump in the repo:
+
+```bash
+PGPASSWORD="props-bench-dcfc0ef9506c6673" pg_dump -h 127.0.0.1 -U postgres eval_results \
+  --data-only --no-owner --no-privileges \
+  --exclude-table=true_positives \
+  --exclude-table=true_positive_occurrences \
+  --exclude-table=false_positives \
+  --exclude-table=false_positive_occurrences \
+  --exclude-table=fp_occurrence_relevant_files \
+  --exclude-table=occurrence_ranges \
+  --exclude-table=critic_scopes_expected_to_recall \
+  --exclude-table=file_sets \
+  --exclude-table=file_set_members \
+  --exclude-table=snapshots \
+  --exclude-table=snapshot_files \
+  --exclude-table=model_metadata \
+  --exclude-table=agent_role_salt \
+  --exclude-table=alembic_version \
+  > props/docs/local_llm_evaluation/results.sql
+```
+
+This exports agent runs, reported issues, grading edges, LLM requests, and
+cluster data — everything needed to analyze evaluation results — while excluding
+ground truth labels, snapshot content, and infrastructure tables.
 
 ## Troubleshooting
 
