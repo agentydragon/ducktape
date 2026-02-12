@@ -42,10 +42,11 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
 )
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
-from props.core.agent_types import TargetMetric
+from props.core.agent_types import AgentType, TargetMetric
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
+from props.core.oci_utils import BUILTIN_TAG
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
 from props.testing.constants import DEFAULT_TEST_MODEL
@@ -135,14 +136,21 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
 
+        # Resolve images before starting tasks
+        grader_image_resolved = await stack.registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
+        opt_image = await stack.registry.resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
+
         # Start snapshot grader in background
         grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+            stack.registry.run_snapshot_grader(
+                image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
+            )
         )
 
         try:
             # Run critic-dev optimizer
             run_id = await stack.registry.run_critic_dev_optimize(
+                image=opt_image,
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,
@@ -317,12 +325,18 @@ async def test_po_creates_custom_critic_image(
     # No critic mock needed — custom critic bypasses the LLM entirely
     mocks = {ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock, ORCHESTRATION_GRADER_MODEL: grader_mock}
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
+        grader_image_resolved = await stack.registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
+        opt_image = await stack.registry.resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
+
         grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+            stack.registry.run_snapshot_grader(
+                image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
+            )
         )
 
         try:
             run_id = await stack.registry.run_critic_dev_optimize(
+                image=opt_image,
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,
@@ -382,8 +396,9 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
         yield m.submit(issues_count=0, summary="Push attempt completed (expected to fail)")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
+        critic_image_resolved = await stack.registry.resolve_image(AgentType.CRITIC, stack.image_digests["critic"])
         run_id = await stack.registry.run_critic(
-            image_ref=stack.image_digests["critic"],
+            image=critic_image_resolved,
             example=all_files_scope,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,

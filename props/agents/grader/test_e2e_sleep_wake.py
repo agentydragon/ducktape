@@ -27,6 +27,8 @@ from agent_core.testing.responses import PlayGen
 from props.agents.grader.drift_handler import get_drift
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import EdgeSpec, FPRef, TPRef
+from props.core.agent_types import AgentType
+from props.core.oci_utils import BUILTIN_TAG
 from props.db.database import Database
 from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import DBLocationAnchor
@@ -128,8 +130,12 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
         assert get_drift(test_snapshot, db).grading, "grading_pending should have rows"
 
         # --- Start snapshot grader ---
+        grader_image_resolved = await stack.registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
         grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="snapshot-grader"
+            stack.registry.run_snapshot_grader(
+                image=grader_image_resolved, snapshot_slug=test_snapshot, model=stack.model
+            ),
+            name="snapshot-grader",
         )
 
         # --- Wait for round 1 to complete via explicit signal ---

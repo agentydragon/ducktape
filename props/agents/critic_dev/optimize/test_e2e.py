@@ -40,6 +40,7 @@ from props.agents.grader.tools import ClusterMemberSpec
 from props.core.agent_types import AgentType, TargetMetric
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
+from props.core.oci_utils import BUILTIN_TAG
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge
@@ -83,8 +84,9 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
         yield m.submit(issues_count=1, summary="Found 1 test issue")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: critic_mock}, images=[critic_image]) as stack:
+        critic_resolved = await stack.registry.resolve_image(AgentType.CRITIC, stack.image_digests["critic"])
         critic_run_id = await stack.registry.run_critic(
-            image_ref=stack.image_digests["critic"],
+            image=critic_resolved,
             example=example_spec,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -212,7 +214,10 @@ async def test_optimizer_orchestrates_critic(
             """Run snapshot grader in background."""
             try:
                 logger.info(f"Starting snapshot grader for {snapshot_slug}")
-                await stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+                grader_image_resolved = await stack.registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
+                await stack.registry.run_snapshot_grader(
+                    image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
+                )
                 logger.info("Snapshot grader completed")
             except asyncio.CancelledError:
                 logger.info("Snapshot grader cancelled")
@@ -225,7 +230,9 @@ async def test_optimizer_orchestrates_critic(
         try:
             # Run critic-dev optimizer - this triggers the full orchestration
             # The snapshot grader running in background will process edges when critic completes
+            opt_image = await stack.registry.resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
             run_id = await stack.registry.run_critic_dev_optimize(
+                image=opt_image,
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,

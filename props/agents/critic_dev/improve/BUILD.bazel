@@ -43,6 +43,7 @@ docker_py_test(
         "//mcp_infra/exec:matchers",
         "//props:conftest",
         "//props/agents/critic_dev/testing:mocks",
+        "//props/core:agent_types",
         "//props/core:oci_utils",
         "//props/db:database",
         "//props/db:examples",

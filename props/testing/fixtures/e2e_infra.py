@@ -12,7 +12,8 @@ Usage in tests:
     @pytest.mark.requires_docker
     async def test_something(e2e_registry, grader_image, e2e_stack):
         async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
-            run_id = await stack.registry.run_snapshot_grader(...)
+            image = await stack.registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
+            run_id = await stack.registry.run_snapshot_grader(image=image, ...)
 """
 
 from __future__ import annotations

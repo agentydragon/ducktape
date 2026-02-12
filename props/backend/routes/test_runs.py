@@ -181,7 +181,7 @@ def test_run_critic_image_resolution_error_returns_422(run_critic_client) -> Non
     """POST /api/runs/critic returns 422 when image cannot be resolved."""
     client, mock_registry = run_critic_client
 
-    mock_registry.run_critic.side_effect = ImageResolutionError("Image not found: critic:nonexistent")
+    mock_registry.resolve_image.side_effect = ImageResolutionError("Image not found: critic:nonexistent")
 
     response = client.post(
         "/api/runs/critic",

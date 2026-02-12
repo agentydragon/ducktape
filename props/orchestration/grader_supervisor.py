@@ -35,7 +35,7 @@ from props.db.notifications import (
     GraderDefinitionChangedNotification,
     SnapshotCreatedNotification,
 )
-from props.orchestration.agent_registry import ImageResolutionError
+from props.orchestration.agent_registry import ResolvedImage
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry, GraderHandle
@@ -102,7 +102,7 @@ class GraderSupervisor:
             return
 
         logger.info(f"Snapshot created: {slug}, spawning grader")
-        self._launch_background(self._spawn_grader(slug), name=f"grader-spawn-{slug}")
+        self._launch_background(self._resolve_and_spawn_grader(slug), name=f"grader-spawn-{slug}")
 
     def _grader_definition_changed_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -139,7 +139,8 @@ class GraderSupervisor:
         if self._shutdown:
             return
 
-        if not await self._registry.is_image_available(AgentType.GRADER, BUILTIN_TAG):
+        resolved = await self._registry.try_resolve_image(AgentType.GRADER, BUILTIN_TAG)
+        if resolved is None:
             logger.warning("Grader image not available in registry — grader spawning disabled until image is pushed")
             return
 
@@ -150,7 +151,7 @@ class GraderSupervisor:
         if snapshot_slugs:
             logger.info(f"Starting graders for {len(snapshot_slugs)} existing snapshots")
             for slug in snapshot_slugs:
-                await self._spawn_grader(slug)
+                await self._spawn_grader(slug, image=resolved)
         else:
             logger.info("No existing snapshots, listening for new ones via pg_notify")
 
@@ -176,15 +177,23 @@ class GraderSupervisor:
                 logger.warning(f"Error closing listener connection: {e}")
             self._listener_conn = None
 
-    async def _spawn_grader(self, snapshot_slug: SnapshotSlug) -> None:
-        """Start a grader container for a snapshot."""
+    async def _resolve_and_spawn_grader(self, snapshot_slug: SnapshotSlug) -> None:
+        """Resolve grader image and spawn a grader. Used for notification-triggered single spawns."""
+        resolved = await self._registry.try_resolve_image(AgentType.GRADER, BUILTIN_TAG)
+        if resolved is None:
+            logger.warning(f"Grader image not available for {snapshot_slug}")
+            return
+        await self._spawn_grader(snapshot_slug, image=resolved)
+
+    async def _spawn_grader(self, snapshot_slug: SnapshotSlug, *, image: ResolvedImage) -> None:
+        """Start a grader container for a snapshot with a pre-resolved image."""
         try:
             logger.info(f"Starting grader for {snapshot_slug}")
-            handle = await self._registry.start_snapshot_grader(snapshot_slug=snapshot_slug, model=self._model)
+            handle = await self._registry.start_snapshot_grader(
+                image=image, snapshot_slug=snapshot_slug, model=self._model
+            )
             self._handles[snapshot_slug] = handle
             logger.info(f"Grader container {handle.container_name} running for {snapshot_slug}")
-        except ImageResolutionError as e:
-            logger.warning(f"Grader image not available for {snapshot_slug}: {e}")
         except Exception:
             logger.exception(f"Failed to start grader for {snapshot_slug}")
 
@@ -198,8 +207,12 @@ class GraderSupervisor:
         """Kill all graders and restart them (e.g. after image update)."""
         for slug in slugs:
             await self._kill_grader(slug)
+        resolved = await self._registry.try_resolve_image(AgentType.GRADER, BUILTIN_TAG)
+        if resolved is None:
+            logger.warning("Grader image not available — skipping restart")
+            return
         for slug in slugs:
-            await self._spawn_grader(slug)
+            await self._spawn_grader(slug, image=resolved)
         logger.info(f"Restarted {len(slugs)} graders after definition change")
 
     async def shutdown(self) -> None:

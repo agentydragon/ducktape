@@ -19,8 +19,9 @@ Usage:
         registry_config=RegistryProxyConfig(host="127.0.0.1", port=8000),
     )
     async with registry:
+        image = await registry.resolve_image(AgentType.CRITIC, BUILTIN_TAG)
         critic_run_id = await registry.run_critic(
-            image_ref=BUILTIN_TAG,
+            image=image,
             example=example,
             model="gpt-4o",
             timeout_seconds=3600,
@@ -54,7 +55,7 @@ from props.core.agent_types import (
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
-from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig, is_digest
+from props.core.oci_utils import RegistryProxyConfig, is_digest
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, Snapshot
@@ -73,6 +74,17 @@ class BudgetExceededError(Exception):
 
 class ImageResolutionError(Exception):
     """Raised when an image reference cannot be resolved or pulled."""
+
+
+# --- Resolved Image ---
+
+
+@dataclass(frozen=True)
+class ResolvedImage:
+    """Pre-resolved OCI image reference. Use resolve_image() or try_resolve_image() to create."""
+
+    digest: str
+    oci_ref: str
 
 
 # --- Container Result ---
@@ -230,37 +242,22 @@ class AgentRegistry:
         logger.info(f"Resolved {repository}:{ref} → {digest}")
         return str(digest)
 
-    async def _resolve_image(self, agent_type: AgentType, ref: str) -> tuple[str, str]:
-        """Resolve image ref to (digest, full OCI reference)."""
+    async def resolve_image(self, agent_type: AgentType, ref: str) -> ResolvedImage:
+        """Resolve image tag/digest to a ResolvedImage.
+
+        Raises:
+            ImageResolutionError: If the image cannot be resolved.
+        """
         digest = await self._resolve_image_ref(agent_type, ref)
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
-        return digest, oci_ref
+        return ResolvedImage(digest=digest, oci_ref=oci_ref)
 
-    async def is_image_available(self, agent_type: AgentType, ref: str) -> bool:
-        """Check whether an image tag can be resolved via the registry proxy.
-
-        Non-raising alternative to _resolve_image_ref for precondition checks.
-        """
-        if is_digest(ref):
-            return True
-
-        repository = str(agent_type)
-        proxy_url = self._registry_config.proxy_url
-        manifest_url = f"{proxy_url}/v2/{repository}/manifests/{ref}"
-        headers = {
-            "Accept": ", ".join(
-                ["application/vnd.docker.distribution.manifest.v2+json", "application/vnd.oci.image.manifest.v1+json"]
-            )
-        }
-        auth = httpx.BasicAuth(self._db_config.user, self._db_config.password)
-
+    async def try_resolve_image(self, agent_type: AgentType, ref: str) -> ResolvedImage | None:
+        """Resolve image tag/digest, returning None if unavailable."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.head(manifest_url, headers=headers, auth=auth, timeout=10)
-        except httpx.HTTPError:
-            return False
-
-        return resp.status_code == 200
+            return await self.resolve_image(agent_type, ref)
+        except ImageResolutionError:
+            return None
 
     async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
         """Run agent container, update DB status, return final status.
@@ -392,7 +389,7 @@ class AgentRegistry:
     async def run_critic(
         self,
         *,
-        image_ref: str,
+        image: ResolvedImage,
         example: ExampleSpec,
         model: str,
         timeout_seconds: int,
@@ -404,14 +401,13 @@ class AgentRegistry:
             self._validate_spawn_budget(parent_run_id, budget_usd)
 
         agent_run_id = uuid4()
-        image_digest, image = await self._resolve_image(AgentType.CRITIC, image_ref)
 
         with self._db.session() as session:
             session.query(Snapshot).filter_by(slug=example.snapshot_slug).one()
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,
-                image_digest=image_digest,
+                image_digest=image.digest,
                 parent_agent_run_id=parent_run_id,
                 model=model,
                 type_config=CriticTypeConfig(example=example),
@@ -421,12 +417,13 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
+        await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
         return agent_run_id
 
     async def run_critic_dev_optimize(
         self,
         *,
+        image: ResolvedImage,
         budget: float,
         optimizer_model: str,
         critic_model: str,
@@ -435,7 +432,6 @@ class AgentRegistry:
     ) -> UUID:
         """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
         agent_run_id = uuid4()
-        image_digest, image = await self._resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
 
         with self._db.session() as session:
             type_config = CriticDevOptimizeTypeConfig(
@@ -444,7 +440,7 @@ class AgentRegistry:
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,
-                image_digest=image_digest,
+                image_digest=image.digest,
                 model=optimizer_model,
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
@@ -453,12 +449,13 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
+        await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
         return agent_run_id
 
     async def run_critic_dev_improve(
         self,
         *,
+        image: ResolvedImage,
         examples: list[ExampleSpec],
         baseline_image_digests: list[str],
         budget_usd: float,
@@ -481,8 +478,6 @@ class AgentRegistry:
         output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        image_digest, image = await self._resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
-
         # Resolve baseline refs to digests (tags → sha256:...)
         resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
 
@@ -496,7 +491,7 @@ class AgentRegistry:
         with self._db.session() as session:
             agent_run = AgentRun(
                 agent_run_id=run_id,
-                image_digest=image_digest,
+                image_digest=image.digest,
                 model=improvement_model,
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
@@ -505,7 +500,7 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        await self._run_agent(run_id, image=image, timeout_seconds=timeout_seconds)
+        await self._run_agent(run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
         return run_id
 
     # --- State Tracking ---
@@ -583,17 +578,16 @@ class AgentRegistry:
         logger.info("Started container %s", name)
         return name
 
-    async def _create_grader_run(self, snapshot_slug: SnapshotSlug, model: str) -> tuple[UUID, str]:
-        """Create a grader agent_run record and resolve image. Returns (agent_run_id, image_ref)."""
+    async def _create_grader_run(self, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str) -> UUID:
+        """Create a grader agent_run record. Returns agent_run_id."""
         agent_run_id = uuid4()
-        image_digest, image = await self._resolve_image(AgentType.GRADER, BUILTIN_TAG)
 
         with self._db.session() as session:
             session.query(Snapshot).filter_by(slug=snapshot_slug).one()
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,
-                image_digest=image_digest,
+                image_digest=image.digest,
                 model=model,
                 type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
                 status=AgentRunStatus.IN_PROGRESS,
@@ -602,16 +596,18 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        return agent_run_id, image
-
-    async def run_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str) -> UUID:
-        """Run a snapshot grader. Blocks until it exits."""
-        agent_run_id, image = await self._create_grader_run(snapshot_slug, model)
-        await self._run_agent(agent_run_id, image=image)
         return agent_run_id
 
-    async def start_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str) -> GraderHandle:
+    async def run_snapshot_grader(self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str) -> UUID:
+        """Run a snapshot grader. Blocks until it exits."""
+        agent_run_id = await self._create_grader_run(image, snapshot_slug, model)
+        await self._run_agent(agent_run_id, image=image.oci_ref)
+        return agent_run_id
+
+    async def start_snapshot_grader(
+        self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str
+    ) -> GraderHandle:
         """Start a snapshot grader, returning a handle to kill it."""
-        agent_run_id, image = await self._create_grader_run(snapshot_slug, model)
-        container_name = await self._start_agent(agent_run_id, image=image)
+        agent_run_id = await self._create_grader_run(image, snapshot_slug, model)
+        container_name = await self._start_agent(agent_run_id, image=image.oci_ref)
         return GraderHandle(container_name=container_name, docker_client=self._docker_client)

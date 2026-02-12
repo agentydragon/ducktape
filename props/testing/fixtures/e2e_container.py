@@ -20,8 +20,9 @@ Usage:
     async def test_critic_completes(e2e_stack, all_files_scope, critic_image):
         mock = make_critic_mock()
         async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
+            image = await stack.registry.resolve_image(AgentType.CRITIC, BUILTIN_TAG)
             run_id = await stack.registry.run_critic(
-                image_ref=BUILTIN_TAG,
+                image=image,
                 example=all_files_scope,
                 model=stack.model,
                 timeout_seconds=60,

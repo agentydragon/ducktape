@@ -35,6 +35,7 @@ from props.core.agent_types import AgentType, CriticTypeConfig, TargetMetric, Ty
 from props.core.eval_api_models import RunCriticRequest, RunCriticResponse
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
+from props.core.oci_utils import BUILTIN_TAG
 from props.core.splits import Split
 from props.db.database import Database
 from props.db.examples import Example
@@ -500,13 +501,14 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
     timeout_seconds = 3600
 
     try:
+        image = await registry.resolve_image(AgentType.CRITIC, job.image_digest)
 
         async def run_one(example: ExampleSpec) -> bool:
             """Run critic for one example. Returns True on success."""
             try:
                 logger.info(f"[Job {job.job_id}] Running critic on {example.snapshot_slug}")
                 critic_run_id = await registry.run_critic(
-                    image_ref=job.image_digest,
+                    image=image,
                     example=example,
                     model=job.critic_model,
                     timeout_seconds=timeout_seconds,
@@ -570,7 +572,9 @@ class OptimizeRunResponse(BaseModel):
 async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> OptimizeRunResponse:
     """Launch a critic developer optimize agent."""
     registry = get_registry(request)
+    image = await registry.resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
     run_id = await registry.run_critic_dev_optimize(
+        image=image,
         budget=body.budget_usd,
         optimizer_model=body.optimizer_model,
         critic_model=body.critic_model,
@@ -686,7 +690,9 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
             )
             allowed_examples = [ex for ex, _ in sorted_examples[: body.n_examples]]
 
+    image = await registry.resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
     run_id = await registry.run_critic_dev_improve(
+        image=image,
         examples=allowed_examples,
         baseline_image_digests=body.baseline_image_digests or [definition_id],
         budget_usd=body.budget_usd,
@@ -739,10 +745,15 @@ async def run_critic(
         if not example:
             raise HTTPException(status_code=404, detail=f"Example not found: {body.example.model_dump()}")
 
-    # Execute critic run — registry resolves image ref and raises on errors
+    # Resolve image ref and execute critic run
+    try:
+        image = await registry.resolve_image(AgentType.CRITIC, body.definition_id)
+    except ImageResolutionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
     try:
         critic_run_id = await registry.run_critic(
-            image_ref=body.definition_id,
+            image=image,
             example=body.example,
             model=body.critic_model,
             timeout_seconds=body.timeout_seconds,
@@ -750,8 +761,6 @@ async def run_critic(
             budget_usd=body.budget_usd,
         )
     except BudgetExceededError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except ImageResolutionError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
     # Get final status — read attributes inside session to avoid DetachedInstanceError
