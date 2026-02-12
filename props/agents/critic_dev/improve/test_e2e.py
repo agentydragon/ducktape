@@ -27,8 +27,6 @@ from hamcrest import assert_that
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully
 from props.agents.critic_dev.testing.mocks import CriticDevMock
-from props.core.agent_types import AgentType
-from props.core.oci_utils import BUILTIN_TAG
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
@@ -102,9 +100,8 @@ async def test_prompt_improve_e2e_creates_package(
     mock = make_improvement_mock()
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
-        imp_image = await stack.registry.resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
         result = await stack.registry.run_critic_dev_improve(
-            image=imp_image,
+            image=stack.resolved_images["critic_dev_improve"],
             examples=[subtract_file_example],
             baseline_image_digests=[stack.image_digests["critic"]],
             budget_usd=50.0,
@@ -134,9 +131,8 @@ async def test_prompt_improve_e2e_multiple_examples(
     mock = make_improvement_mock()
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
-        imp_image = await stack.registry.resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
         result = await stack.registry.run_critic_dev_improve(
-            image=imp_image,
+            image=stack.resolved_images["critic_dev_improve"],
             examples=allowed_examples,
             baseline_image_digests=[stack.image_digests["critic"]],
             budget_usd=50.0,

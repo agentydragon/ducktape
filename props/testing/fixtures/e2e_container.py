@@ -57,10 +57,11 @@ from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import BackendDeps, create_app
 from props.config import PropsConfig
+from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
-from props.orchestration.agent_registry import AgentRegistry
+from props.orchestration.agent_registry import AgentRegistry, ResolvedImage
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
@@ -117,7 +118,12 @@ class E2EStack:
 
     registry: AgentRegistry
     model: str
-    image_digests: dict[str, str]  # repo_name → digest (sha256:...)
+    resolved_images: dict[str, ResolvedImage]  # repo_name → ResolvedImage
+
+    @property
+    def image_digests(self) -> dict[str, str]:
+        """repo_name → digest (sha256:...), for backward compatibility."""
+        return {name: img.digest for name, img in self.resolved_images.items()}
 
 
 def _build_agent_base_env(db_config: DatabaseConfig) -> dict[str, str]:
@@ -209,13 +215,14 @@ async def _make_stack(
 
             try:
                 proxy_url = f"localhost:{backend_port}"
-                digests: dict[str, str] = {}
+                resolved_images: dict[str, ResolvedImage] = {}
                 for image in images:
                     digest = await crane_push(
                         image, proxy_url, BUILTIN_TAG, username=db.config.user, password=db.config.password
                     )
-                    digests[image.repo_name] = digest
-                yield E2EStack(registry=registry, model=model, image_digests=digests)
+                    oci_ref = registry_proxy_config.build_oci_reference(AgentType(image.repo_name), digest)
+                    resolved_images[image.repo_name] = ResolvedImage(digest=digest, oci_ref=oci_ref)
+                yield E2EStack(registry=registry, model=model, resolved_images=resolved_images)
             finally:
                 await registry.close()
 
@@ -232,11 +239,16 @@ async def e2e_stack(
     Accepts a dict of mocks keyed by model name. Requests are routed
     to the mock matching the `model` field in the request body.
 
+    Images pushed during setup are pre-resolved and available via
+    stack.resolved_images["repo_name"].
+
     Usage:
         async def test_something(e2e_stack, critic_image):
             mock = make_my_mock()
             async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
-                run_id = await stack.registry.run_critic(...)
+                run_id = await stack.registry.run_critic(
+                    image=stack.resolved_images["critic"], ...
+                )
 
         # Multi-model
         async def test_orchestration(e2e_stack, ...):

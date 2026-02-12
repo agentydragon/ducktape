@@ -24,7 +24,6 @@ from agent_core.testing.responses import DecoratorMock, PlayGen
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.agents.critic.main import InsertIssueArgs, InsertOccurrenceArgs, SubmitArgs
 from props.agents.critic.testing.mocks import CriticMock
-from props.core.agent_types import AgentType
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
@@ -50,7 +49,7 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
     mock = make_critic_mock_zero_issues()
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
-        image = await stack.registry.resolve_image(AgentType.CRITIC, stack.image_digests["critic"])
+        image = stack.resolved_images["critic"]
         critic_run_id = await stack.registry.run_critic(
             image=image,
             example=all_files_scope,
@@ -95,7 +94,7 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
     mock = make_critic_mock_with_issues()
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
-        image = await stack.registry.resolve_image(AgentType.CRITIC, stack.image_digests["critic"])
+        image = stack.resolved_images["critic"]
         critic_run_id = await stack.registry.run_critic(
             image=image,
             example=all_files_scope,
@@ -158,7 +157,7 @@ async def test_python3_can_import_and_inspect_props(
         yield m.tool_call("submit", SubmitArgs(issues_count=0, summary="Source inspection test complete"))
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
-        image = await stack.registry.resolve_image(AgentType.CRITIC, stack.image_digests["critic"])
+        image = stack.resolved_images["critic"]
         run_id = await stack.registry.run_critic(
             image=image,
             example=all_files_scope,

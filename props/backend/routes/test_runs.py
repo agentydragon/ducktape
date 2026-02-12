@@ -21,9 +21,11 @@ from props.core.agent_types import CriticTypeConfig
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest
-from props.orchestration.agent_registry import BudgetExceededError, ImageResolutionError
+from props.orchestration.agent_registry import BudgetExceededError, ImageResolutionError, ResolvedImage
 from props.testing.constants import BUDGET_TEST_MODEL
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
+
+FAKE_RESOLVED = ResolvedImage(digest=FAKE_CRITIC_DIGEST, oci_ref=f"localhost:5000/critic@{FAKE_CRITIC_DIGEST}")
 
 pytestmark = [pytest.mark.integration]
 
@@ -157,6 +159,7 @@ def test_run_critic_budget_exceeded_returns_422(run_critic_client) -> None:
     """POST /api/runs/critic returns 422 when budget exceeds parent's remaining."""
     client, mock_registry = run_critic_client
 
+    mock_registry.resolve_image.return_value = FAKE_RESOLVED
     mock_registry.run_critic.side_effect = BudgetExceededError(
         "Cannot spawn child with $5.00 budget: parent has $0.75 remaining ($1.25 spent of $2.00)"
     )
@@ -175,6 +178,9 @@ def test_run_critic_budget_exceeded_returns_422(run_critic_client) -> None:
     assert response.status_code == 422
     assert "Cannot spawn child" in response.json()["detail"]
     assert "$5.00" in response.json()["detail"]
+    # Verify resolved image was passed to run_critic
+    mock_registry.run_critic.assert_called_once()
+    assert mock_registry.run_critic.call_args.kwargs["image"] is FAKE_RESOLVED
 
 
 def test_run_critic_image_resolution_error_returns_422(run_critic_client) -> None:
@@ -215,6 +221,8 @@ def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
+    # Snapshot validation happens before image resolution
+    mock_registry.resolve_image.assert_not_called()
     mock_registry.run_critic.assert_not_called()
 
 

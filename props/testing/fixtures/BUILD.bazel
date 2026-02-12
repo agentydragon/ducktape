@@ -49,6 +49,7 @@ py_library(
         "//openai_utils:model",
         "//props:config",
         "//props/backend:app",
+        "//props/core:agent_types",
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",

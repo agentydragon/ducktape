@@ -51,6 +51,7 @@ from props.core.agent_types import (
     CriticTypeConfig,
     GraderTypeConfig,
     TargetMetric,
+    TypeConfig,
 )
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
@@ -386,6 +387,35 @@ class AgentRegistry:
                     f"(${status.tree_spent_usd:.2f} spent of ${status.budget_usd:.2f})"
                 )
 
+    def _create_run(
+        self,
+        *,
+        image: ResolvedImage,
+        model: str,
+        type_config: TypeConfig,
+        budget_usd: float,
+        parent_run_id: UUID | None = None,
+        verify_snapshot: SnapshotSlug | None = None,
+    ) -> UUID:
+        """Create an agent_run DB record. Returns agent_run_id."""
+        agent_run_id = uuid4()
+        with self._db.session() as session:
+            if verify_snapshot is not None:
+                session.query(Snapshot).filter_by(slug=verify_snapshot).one()
+            session.add(
+                AgentRun(
+                    agent_run_id=agent_run_id,
+                    image_digest=image.digest,
+                    parent_agent_run_id=parent_run_id,
+                    model=model,
+                    type_config=type_config,
+                    status=AgentRunStatus.IN_PROGRESS,
+                    budget_usd=budget_usd,
+                )
+            )
+            session.commit()
+        return agent_run_id
+
     async def run_critic(
         self,
         *,
@@ -400,23 +430,14 @@ class AgentRegistry:
         if parent_run_id is not None:
             self._validate_spawn_budget(parent_run_id, budget_usd)
 
-        agent_run_id = uuid4()
-
-        with self._db.session() as session:
-            session.query(Snapshot).filter_by(slug=example.snapshot_slug).one()
-
-            agent_run = AgentRun(
-                agent_run_id=agent_run_id,
-                image_digest=image.digest,
-                parent_agent_run_id=parent_run_id,
-                model=model,
-                type_config=CriticTypeConfig(example=example),
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=budget_usd,
-            )
-            session.add(agent_run)
-            session.commit()
-
+        agent_run_id = self._create_run(
+            image=image,
+            model=model,
+            type_config=CriticTypeConfig(example=example),
+            budget_usd=budget_usd,
+            parent_run_id=parent_run_id,
+            verify_snapshot=example.snapshot_slug,
+        )
         await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
         return agent_run_id
 
@@ -431,24 +452,14 @@ class AgentRegistry:
         timeout_seconds: int,
     ) -> UUID:
         """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
-        agent_run_id = uuid4()
-
-        with self._db.session() as session:
-            type_config = CriticDevOptimizeTypeConfig(
+        agent_run_id = self._create_run(
+            image=image,
+            model=optimizer_model,
+            type_config=CriticDevOptimizeTypeConfig(
                 target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
-            )
-
-            agent_run = AgentRun(
-                agent_run_id=agent_run_id,
-                image_digest=image.digest,
-                model=optimizer_model,
-                type_config=type_config,
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=budget,
-            )
-            session.add(agent_run)
-            session.commit()
-
+            ),
+            budget_usd=budget,
+        )
         await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
         return agent_run_id
 
@@ -471,37 +482,27 @@ class AgentRegistry:
         if not examples:
             raise ValueError("examples must not be empty")
 
-        run_id = uuid4()
         if output_dir is None:
-            output_dir = Path(tempfile.mkdtemp(prefix=f"improve_agent_{str(run_id)[:8]}_"))
-
+            output_dir = Path(tempfile.mkdtemp(prefix="improve_agent_"))
         output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Resolve baseline refs to digests (tags → sha256:...)
         resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
 
-        type_config = CriticDevImproveTypeConfig(
-            baseline_image_digests=resolved_baselines,
-            allowed_examples=examples,
-            improvement_model=improvement_model,
-            critic_model=critic_model,
+        agent_run_id = self._create_run(
+            image=image,
+            model=improvement_model,
+            type_config=CriticDevImproveTypeConfig(
+                baseline_image_digests=resolved_baselines,
+                allowed_examples=examples,
+                improvement_model=improvement_model,
+                critic_model=critic_model,
+            ),
+            budget_usd=budget_usd,
         )
-
-        with self._db.session() as session:
-            agent_run = AgentRun(
-                agent_run_id=run_id,
-                image_digest=image.digest,
-                model=improvement_model,
-                type_config=type_config,
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=budget_usd,
-            )
-            session.add(agent_run)
-            session.commit()
-
-        await self._run_agent(run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
-        return run_id
+        await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
+        return agent_run_id
 
     # --- State Tracking ---
 
@@ -578,29 +579,15 @@ class AgentRegistry:
         logger.info("Started container %s", name)
         return name
 
-    async def _create_grader_run(self, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str) -> UUID:
-        """Create a grader agent_run record. Returns agent_run_id."""
-        agent_run_id = uuid4()
-
-        with self._db.session() as session:
-            session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-
-            agent_run = AgentRun(
-                agent_run_id=agent_run_id,
-                image_digest=image.digest,
-                model=model,
-                type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=10_000.0,
-            )
-            session.add(agent_run)
-            session.commit()
-
-        return agent_run_id
-
     async def run_snapshot_grader(self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str) -> UUID:
         """Run a snapshot grader. Blocks until it exits."""
-        agent_run_id = await self._create_grader_run(image, snapshot_slug, model)
+        agent_run_id = self._create_run(
+            image=image,
+            model=model,
+            type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
+            budget_usd=10_000.0,
+            verify_snapshot=snapshot_slug,
+        )
         await self._run_agent(agent_run_id, image=image.oci_ref)
         return agent_run_id
 
@@ -608,6 +595,12 @@ class AgentRegistry:
         self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str
     ) -> GraderHandle:
         """Start a snapshot grader, returning a handle to kill it."""
-        agent_run_id = await self._create_grader_run(image, snapshot_slug, model)
+        agent_run_id = self._create_run(
+            image=image,
+            model=model,
+            type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
+            budget_usd=10_000.0,
+            verify_snapshot=snapshot_slug,
+        )
         container_name = await self._start_agent(agent_run_id, image=image.oci_ref)
         return GraderHandle(container_name=container_name, docker_client=self._docker_client)

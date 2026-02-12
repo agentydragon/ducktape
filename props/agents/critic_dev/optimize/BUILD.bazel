@@ -52,7 +52,6 @@ docker_py_test(
         "//props/agents/grader/testing:mocks",
         "//props/core:agent_types",
         "//props/core:eval_api_models",
-        "//props/core:oci_utils",
         "//props/core/models:examples",
         "//props/db:config",
         "//props/db:database",
