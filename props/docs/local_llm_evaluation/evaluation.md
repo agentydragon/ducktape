@@ -9,8 +9,8 @@ See <benchmarks.md> for model performance data on this environment.
 
 - Claude Code web session with `claude_hooks` (provides podman, `/dev/shm`,
   insecure-registry entries, `DOCKER_HOST` env var)
-- Enough free RAM for the model (see table below) plus ~2 GiB for PostgreSQL,
-  registry, and backend containers
+- Enough free RAM for the model + KV cache (see memory estimates below) plus
+  ~2 GiB for PostgreSQL, registry, and backend containers
 
 ## Tested Models
 
@@ -22,6 +22,26 @@ See <benchmarks.md> for model performance data on this environment.
 **Recommendation**: Qwen3-8B fits comfortably in the 21 GiB environment and
 leaves headroom for all services. gpt-oss-20b is faster at generation but
 tight on RAM.
+
+## Memory Estimates (Qwen3-8B)
+
+Model weights: ~4.7 GB. Process overhead (compute buffers, allocator): ~3.5 GB.
+The remaining budget goes to the KV cache, whose size depends on context length
+and cache quantization (`-ctk`/`-ctv` flags).
+
+Qwen3-8B KV cache: 36 layers, 8 GQA heads, 128 head dim.
+
+| `--ctx-size` | KV (f16) | KV (q8_0) | KV (q4_0) | Total (q4_0) |
+| -----------: | -------: | --------: | --------: | -----------: |
+|         4096 |  0.56 GB |   0.28 GB |   0.14 GB |       8.3 GB |
+|         8192 |  1.12 GB |   0.56 GB |   0.28 GB |       8.5 GB |
+|        16384 |  2.25 GB |   1.12 GB |   0.56 GB |       8.8 GB |
+|        32768 |  4.50 GB |   2.25 GB |   1.12 GB |       9.3 GB |
+
+With q4_0 KV cache (`-ctk q4_0 -ctv q4_0`), 32K context fits comfortably
+under the 15 GB `process_api` kill threshold. The critic agent's system prompt
+and tool definitions consume ~2K tokens, so 4096 total context is too small
+for useful code analysis. **Use at least 16384.**
 
 ## Step 1: Download llama-server
 
@@ -64,7 +84,8 @@ LD_LIBRARY_PATH="/tmp/benchmark/llama-b7993" \
   nohup /tmp/benchmark/llama-b7993/llama-server \
     --model "$MODEL_FILE" \
     --host 127.0.0.1 --port 11434 \
-    --ctx-size 4096 --parallel 1 \
+    --ctx-size 16384 --parallel 1 \
+    -ctk q4_0 -ctv q4_0 \
     --jinja \
     --no-warmup --cache-ram 0 \
     > /dev/shm/llama.log 2>&1 &
@@ -74,6 +95,12 @@ Wait for the health endpoint: `curl -s http://127.0.0.1:11434/health`
 
 **Key flags**:
 
+- `--ctx-size 16384` — the critic agent's system prompt + tool definitions
+  consume ~2K tokens; 4096 is too small for useful code analysis. 16384 fits
+  comfortably in RAM with q4_0 KV cache (see memory estimates above).
+- `-ctk q4_0 -ctv q4_0` — quantize the KV cache to 4-bit. Reduces KV cache
+  memory by 4x vs the default f16, enabling larger context windows within the
+  RAM budget.
 - `--jinja` — enables chat template processing; required for tool calling
   (Qwen3-8B). Harmless for models that don't use it.
 - `--no-warmup --cache-ram 0` — skip KV cache pre-allocation to save RAM.

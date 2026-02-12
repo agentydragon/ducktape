@@ -89,6 +89,27 @@ Key observations:
 - At ~8-9 t/s text generation, a 500-token critic response takes ~55-60
   seconds. Usable for evaluation but slower than gpt-oss-20b.
 
+## Memory Estimates (Qwen3-8B Q4_K_M)
+
+Total RAM = model weights + process overhead + KV cache.
+
+- **Model weights**: ~4.7 GB (Q4_K_M, ~4.5 bits/param average)
+- **Process overhead**: ~3.5 GB (compute buffers, allocator, mmap overhead)
+- **KV cache**: depends on `--ctx-size` and cache quantization
+
+Qwen3-8B KV dimensions: 36 layers, 8 GQA heads, 128 head dim.
+
+| `--ctx-size` | KV (f16, default) | KV (q8_0) | KV (q4_0) | Total (q4_0) |
+| -----------: | ----------------: | --------: | --------: | -----------: |
+|         4096 |           0.56 GB |   0.28 GB |   0.14 GB |       8.3 GB |
+|         8192 |           1.12 GB |   0.56 GB |   0.28 GB |       8.5 GB |
+|        16384 |           2.25 GB |   1.12 GB |   0.56 GB |       8.8 GB |
+|        32768 |           4.50 GB |   2.25 GB |   1.12 GB |       9.3 GB |
+
+Use `-ctk q4_0 -ctv q4_0` to quantize the KV cache. This reduces KV memory
+by 4x vs the default f16. With q4_0, 32K context uses only ~9.3 GB total,
+well under the 15 GB `process_api` kill threshold in this environment.
+
 ## Terminology
 
 - `pp` = prompt processing (prefill speed)
