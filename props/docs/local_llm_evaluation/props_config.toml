@@ -20,5 +20,5 @@ upstream_model = "Qwen3-8B-Q4_K_M.gguf"
 input_usd_per_1m_tokens = 0.0
 cached_input_usd_per_1m_tokens = 0.0
 output_usd_per_1m_tokens = 0.0
-context_window_tokens = 16384
+context_window_tokens = 32768
 max_output_tokens = 4096
