@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING, Any
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
 
+from props.core.agent_types import AgentType
 from props.core.ids import SnapshotSlug
+from props.core.oci_utils import BUILTIN_TAG
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import Snapshot
@@ -33,6 +35,7 @@ from props.db.notifications import (
     GraderDefinitionChangedNotification,
     SnapshotCreatedNotification,
 )
+from props.orchestration.agent_registry import ImageResolutionError
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry, GraderHandle
@@ -136,6 +139,10 @@ class GraderSupervisor:
         if self._shutdown:
             return
 
+        if not await self._registry.is_image_available(AgentType.GRADER, BUILTIN_TAG):
+            logger.warning("Grader image not available in registry — grader spawning disabled until image is pushed")
+            return
+
         with self._db.session() as session:
             snapshots = session.query(Snapshot.slug).all()
             snapshot_slugs = [s.slug for s in snapshots]
@@ -176,6 +183,8 @@ class GraderSupervisor:
             handle = await self._registry.start_snapshot_grader(snapshot_slug=snapshot_slug, model=self._model)
             self._handles[snapshot_slug] = handle
             logger.info(f"Grader container {handle.container_name} running for {snapshot_slug}")
+        except ImageResolutionError as e:
+            logger.warning(f"Grader image not available for {snapshot_slug}: {e}")
         except Exception:
             logger.exception(f"Failed to start grader for {snapshot_slug}")
 

@@ -236,6 +236,32 @@ class AgentRegistry:
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
         return digest, oci_ref
 
+    async def is_image_available(self, agent_type: AgentType, ref: str) -> bool:
+        """Check whether an image tag can be resolved via the registry proxy.
+
+        Non-raising alternative to _resolve_image_ref for precondition checks.
+        """
+        if is_digest(ref):
+            return True
+
+        repository = str(agent_type)
+        proxy_url = self._registry_config.proxy_url
+        manifest_url = f"{proxy_url}/v2/{repository}/manifests/{ref}"
+        headers = {
+            "Accept": ", ".join(
+                ["application/vnd.docker.distribution.manifest.v2+json", "application/vnd.oci.image.manifest.v1+json"]
+            )
+        }
+        auth = httpx.BasicAuth(self._db_config.user, self._db_config.password)
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.head(manifest_url, headers=headers, auth=auth, timeout=10)
+        except httpx.HTTPError:
+            return False
+
+        return resp.status_code == 200
+
     async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
         """Run agent container, update DB status, return final status.
 

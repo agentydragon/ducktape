@@ -55,7 +55,9 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":agent_registry",
+        "//props/core:agent_types",
         "//props/core:ids",
+        "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
         "//props/db:models",
