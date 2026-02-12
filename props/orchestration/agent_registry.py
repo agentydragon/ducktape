@@ -140,6 +140,16 @@ class AgentRunView:
     status: AgentRunStatus
     created_at: datetime
 
+    @classmethod
+    def from_orm(cls, run: AgentRun) -> AgentRunView:
+        return cls(
+            agent_run_id=run.agent_run_id,
+            image_digest=run.image_digest,
+            model=run.model,
+            status=run.status,
+            created_at=run.created_at,
+        )
+
 
 class AgentRegistry:
     """Unified orchestration layer for agent runs using in-container architecture.
@@ -253,56 +263,59 @@ class AgentRegistry:
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
         return ResolvedImage(digest=digest, oci_ref=oci_ref)
 
-    async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
-        """Run agent container, update DB status, return final status.
-
-        Full lifecycle: resolve image → create DB role → start container →
-        wait for exit → capture logs → update agent_runs status.
-        timeout_seconds=None means no timeout (for long-running agents).
-        """
+    async def _create_container(
+        self, agent_run_id: UUID, *, image: str
+    ) -> tuple[aiodocker.containers.DockerContainer, str]:
+        """Pull image, create DB role, create and start an agent container."""
         image_id = await self._pull_image(image)
         logger.info("Using image %s from %s", image_id[:19], image)
 
         creds = await ensure_agent_role(self._db_config, agent_run_id)
         logger.info("Agent role ready: %s", creds.username)
 
-        container = None
+        name = f"agent-{short_uuid(agent_run_id)}"
+
+        # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
+        # accepts Bearer tokens containing base64-encoded username:password.
+        api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
+        env = {
+            **self._agent_base_env,
+            "PGUSER": creds.username,
+            "PGPASSWORD": creds.password,
+            "PROPS_BACKEND_URL": self._backend_url,
+            "OPENAI_BASE_URL": f"{self._backend_url}/v1",
+            "OPENAI_API_KEY": api_key,
+        }
+
+        host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
+        if self._extra_hosts:
+            host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
+
+        container_config = {
+            "Image": image_id,
+            "Env": [f"{k}={v}" for k, v in env.items()],
+            "HostConfig": host_config,
+            "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
+        }
+
+        container = await self._docker_client.containers.create(
+            container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
+            name=name,
+        )
+        logger.info("Created container %s", name)
+
+        await container.start()
+        logger.info("Started container %s", name)
+        return container, name
+
+    async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
+        """Run agent container, update DB status, return final status.
+
+        Full lifecycle: create container → wait for exit → capture logs → update status.
+        timeout_seconds=None means no timeout (for long-running agents).
+        """
+        container, name = await self._create_container(agent_run_id, image=image)
         try:
-            name = f"agent-{short_uuid(agent_run_id)}"
-
-            backend_url = self._backend_url
-            # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
-            # accepts Bearer tokens containing base64-encoded username:password.
-            api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
-            env = {
-                **self._agent_base_env,
-                "PGUSER": creds.username,
-                "PGPASSWORD": creds.password,
-                "PROPS_BACKEND_URL": backend_url,
-                "OPENAI_BASE_URL": f"{backend_url}/v1",
-                "OPENAI_API_KEY": api_key,
-            }
-
-            host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
-            if self._extra_hosts:
-                host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
-
-            container_config = {
-                "Image": image_id,
-                "Env": [f"{k}={v}" for k, v in env.items()],
-                "HostConfig": host_config,
-                "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
-            }
-
-            container = await self._docker_client.containers.create(
-                container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
-                name=name,
-            )
-            logger.info("Created container %s", name)
-
-            await container.start()
-            logger.info("Started container %s", name)
-
             # Wait for container to exit (with optional timeout)
             result: ContainerResult
             try:
@@ -336,12 +349,11 @@ class AgentRegistry:
                 logger.error("Container %s stderr:\n%s", name, result.stderr)
 
         finally:
-            if container is not None:
-                try:
-                    await container.delete(force=True)
-                    logger.info("Deleted container")
-                except Exception as e:
-                    logger.warning("Failed to delete container: %s", e)
+            try:
+                await container.delete(force=True)
+                logger.info("Deleted container")
+            except Exception as e:
+                logger.warning("Failed to delete container: %s", e)
 
         # Determine and persist status
         status = AgentRunStatus.TIMED_OUT if result.timed_out else AgentRunStatus.EXITED
@@ -504,72 +516,19 @@ class AgentRegistry:
             db_run = session.get(AgentRun, run_id)
             if not db_run:
                 return None
-            return AgentRunView(
-                agent_run_id=db_run.agent_run_id,
-                image_digest=db_run.image_digest,
-                model=db_run.model,
-                status=db_run.status,
-                created_at=db_run.created_at,
-            )
+            return AgentRunView.from_orm(db_run)
 
     def list_recent(self, limit: int = 50) -> list[AgentRunView]:
         with self._db.session() as session:
             runs = session.query(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit).all()
-            return [
-                AgentRunView(
-                    agent_run_id=r.agent_run_id,
-                    image_digest=r.image_digest,
-                    model=r.model,
-                    status=r.status,
-                    created_at=r.created_at,
-                )
-                for r in runs
-            ]
+            return [AgentRunView.from_orm(r) for r in runs]
 
     async def _start_agent(self, agent_run_id: UUID, *, image: str) -> str:
         """Create and start an agent container, returning the container name.
 
-        Handles image pull, role creation, and container startup. Does NOT
-        wait for the container to exit — caller manages the lifecycle.
+        Does NOT wait for the container to exit — caller manages the lifecycle.
         """
-        image_id = await self._pull_image(image)
-        logger.info("Using image %s from %s", image_id[:19], image)
-
-        creds = await ensure_agent_role(self._db_config, agent_run_id)
-        logger.info("Agent role ready: %s", creds.username)
-
-        name = f"agent-{short_uuid(agent_run_id)}"
-
-        backend_url = self._backend_url
-        api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
-        env = {
-            **self._agent_base_env,
-            "PGUSER": creds.username,
-            "PGPASSWORD": creds.password,
-            "PROPS_BACKEND_URL": backend_url,
-            "OPENAI_BASE_URL": f"{backend_url}/v1",
-            "OPENAI_API_KEY": api_key,
-        }
-
-        host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
-        if self._extra_hosts:
-            host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
-
-        container_config = {
-            "Image": image_id,
-            "Env": [f"{k}={v}" for k, v in env.items()],
-            "HostConfig": host_config,
-            "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
-        }
-
-        container = await self._docker_client.containers.create(
-            container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
-            name=name,
-        )
-        logger.info("Created container %s", name)
-
-        await container.start()
-        logger.info("Started container %s", name)
+        _, name = await self._create_container(agent_run_id, image=image)
         return name
 
     async def run_snapshot_grader(self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str) -> UUID:
