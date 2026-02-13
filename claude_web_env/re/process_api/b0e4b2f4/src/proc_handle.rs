@@ -94,6 +94,12 @@ impl ProcHandle {
 ///
 /// Kill a process and all its descendants, then wait for them to exit.
 /// Sends SIGKILL to the process group, then loops waitpid() until ECHILD.
+///
+/// String refs:
+///   "Error waiting for process group: "
+///   "Process group finished"
+///   "Timeout waiting for process group to finish"
+///   "Cgroup is not ready Waiting for process group to finish"
 pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
     let nix_pid = Pid::from_raw(pid as i32);
 
@@ -112,21 +118,48 @@ pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
         }
     }
 
-    // Wait for the process to exit
+    // Wait for the process group to finish (with timeout)
+    let wait_timeout = Duration::from_secs(30);
+    let wait_start = Instant::now();
+
     loop {
+        if wait_start.elapsed() >= wait_timeout {
+            log::debug!("[DEBUG] Timeout waiting for process group to finish (PID {pid})");
+            break;
+        }
+
+        // Check cgroup readiness if we have a cgroup path
+        if let Some(cp) = cgroup_path {
+            let procs_path = cp.join("cgroup.procs");
+            if procs_path.exists() {
+                match std::fs::read_to_string(&procs_path) {
+                    Ok(contents) => {
+                        if !contents.trim().is_empty() {
+                            log::debug!(
+                                "[DEBUG] Cgroup is not ready. Waiting for process group to finish (PID {pid})"
+                            );
+                        }
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+
         match waitpid(nix_pid, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) => {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
             Ok(_status) => {
+                log::debug!("[DEBUG] Process group finished (PID {pid})");
                 break;
             }
             Err(nix::errno::Errno::ECHILD) => {
                 // No more children to wait for
+                log::debug!("[DEBUG] Process group finished (PID {pid})");
                 break;
             }
             Err(e) => {
-                log::debug!("[DEBUG] waitpid({pid}) error: {e}");
+                log::debug!("[DEBUG] Error waiting for process group (PID {pid}): {e}");
                 break;
             }
         }

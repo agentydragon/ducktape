@@ -173,18 +173,17 @@ async fn main() {
     // Broadcast channel for shutdown signaling
     let (shutdown_tx, _) = broadcast::channel::<()>(16);
 
-    // Set up cgroup
-    let controller = match cgroup::setup_cgroup(cli.cgroupv2).await {
-        Ok(c) => {
-            log::debug!("[DEBUG] Cgroup setup successful: {:?}", c);
-            c
-        }
-        Err(e) => {
-            log::error!("Failed to create cgroup for process_api: {e}");
-            // Continue without cgroup support
-            cgroup::CgroupController {
-                version: cgroup::CgroupVersion::V2,
-                base_path: std::path::PathBuf::from("/sys/fs/cgroup/process_api"),
+    // Set up cgroup with retry loop
+    // Binary string: "Failed to create cgroup for process api: Sleeping for 10 seconds..."
+    let controller = loop {
+        match cgroup::setup_cgroup(cli.cgroupv2).await {
+            Ok(c) => {
+                log::debug!("[DEBUG] Cgroup setup successful: {:?}", c);
+                break c;
+            }
+            Err(e) => {
+                log::error!("Failed to create cgroup for process api: {e}. Sleeping for 10 seconds...");
+                tokio::time::sleep(Duration::from_secs(10)).await;
             }
         }
     };
@@ -204,6 +203,9 @@ async fn main() {
 
     // Create shared process map
     let proc_map = state::new_process_map();
+
+    // Create shared OOM channel registry
+    let oom_channels = oom_killer::new_oom_channel_map();
 
     // Start control server if configured
     if let Some(ref control_addr_str) = cli.control_server_addr {
@@ -268,6 +270,7 @@ async fn main() {
         let oom_controller = controller.clone();
         let oom_proc_map = proc_map.clone();
         let polling = Duration::from_millis(cli.oom_polling_period_ms);
+        let oom_channels_clone = oom_channels.clone();
 
         tokio::spawn(async move {
             oom_killer::container_oom_monitor(
@@ -276,7 +279,7 @@ async fn main() {
                 polling,
                 oom_proc_map,
                 oom_shutdown_rx,
-                std::collections::HashMap::new(),
+                oom_channels_clone,
             )
             .await;
         });
@@ -320,6 +323,7 @@ async fn main() {
                         let shutdown_tx = shutdown_tx.clone();
                         let memory_limit = cli.memory_limit_bytes;
                         let polling = Duration::from_millis(cli.oom_polling_period_ms);
+                        let oom_channels = oom_channels.clone();
 
                         tokio::spawn(async move {
                             match accept_async(stream).await {
@@ -333,6 +337,7 @@ async fn main() {
                                         polling,
                                         container_name,
                                         shutdown_tx,
+                                        oom_channels,
                                     )
                                     .await;
                                 }

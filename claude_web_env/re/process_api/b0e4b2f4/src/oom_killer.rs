@@ -12,14 +12,106 @@
 //!   0x1af21e: "container_oom_monitor: Received shutdown signal, exiting container_oom_killer"
 //!   0x1af5ed: "container_oom_monitor: Received shutdown signal during post-kill wait, exiting"
 //!   0x1af72a: "per_process_memory_monitor: Received shutdown signal, exiting per_process_memory_monitor"
+//!
+//! Additional string refs:
+//!   "[DEBUG] No channel available to send OOM notification for process_id , killing directly"
+//!   "[OOM_KILL] process_id= pid= memory_bytes= limit_bytes="
+//!   "[process_id=, pid=] killed by container OOM killer"
+//!   "reason=container_limit cmdline="
+//!   "/var/log/.process_api", "/oom_killed.log"
+//!   "[DEBUG] container_oom_monitor: Failed to create directory for OOM killed process "
+//!   "[DEBUG] container_oom_monitor: Failed to open OOM killed log for process "
+//!   "[DEBUG] container_oom_monitor: Failed to write to OOM killed log for process "
+//!   "[DEBUG] container_oom_monitor: Waiting for killed process ) to exit and memory to be reclaimed"
+//!   "[DEBUG] container_oom_monitor: Phase 1 timed out"
+//!   "[DEBUG] container_oom_monitor: Timed out 30s after killing"
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
+use parking_lot::Mutex;
 use tokio::sync::{broadcast, oneshot};
 
 use crate::cgroup::{self, CgroupController, CgroupVersion};
+use crate::pid_tree;
 use crate::state::ProcessMap;
+
+/// Shared registry of per-process OOM notification channels.
+/// The container OOM monitor and per-process monitors both access this
+/// to signal wait_for_child_to_exit when a process should be killed.
+pub type OomChannelMap = Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>;
+
+/// Create a new empty OOM channel map.
+pub fn new_oom_channel_map() -> OomChannelMap {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// Read the command line of a process from /proc/{pid}/cmdline.
+async fn read_cmdline(pid: u32) -> String {
+    match tokio::fs::read(format!("/proc/{pid}/cmdline")).await {
+        Ok(data) => {
+            // cmdline uses NUL bytes as separators
+            data.iter()
+                .map(|&b| if b == 0 { ' ' } else { b as char })
+                .collect::<String>()
+                .trim()
+                .to_string()
+        }
+        Err(_) => String::new(),
+    }
+}
+
+/// Write an OOM kill event to /var/log/.process_api/oom_killed.log.
+///
+/// String refs:
+///   "/var/log/.process_api", "/oom_killed.log"
+///   "[DEBUG] container_oom_monitor: Failed to create directory for OOM killed process "
+///   "[DEBUG] container_oom_monitor: Failed to open OOM killed log for process "
+///   "[DEBUG] container_oom_monitor: Failed to write to OOM killed log for process "
+async fn write_oom_kill_log(
+    process_id: &str,
+    pid: u32,
+    memory_bytes: u64,
+    limit_bytes: u64,
+    cmdline: &str,
+) {
+    let log_dir = std::path::Path::new("/var/log/.process_api");
+    if !log_dir.exists() {
+        if let Err(e) = tokio::fs::create_dir_all(log_dir).await {
+            log::debug!(
+                "[DEBUG] container_oom_monitor: Failed to create directory for OOM killed process {process_id}: {e}"
+            );
+            return;
+        }
+    }
+
+    let log_path = log_dir.join("oom_killed.log");
+    let entry = format!(
+        "[OOM_KILL] process_id={process_id} pid={pid} memory_bytes={memory_bytes} limit_bytes={limit_bytes} reason=container_limit cmdline={cmdline}\n"
+    );
+
+    match tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .await
+    {
+        Ok(mut file) => {
+            use tokio::io::AsyncWriteExt;
+            if let Err(e) = file.write_all(entry.as_bytes()).await {
+                log::debug!(
+                    "[DEBUG] container_oom_monitor: Failed to write to OOM killed log for process {process_id}: {e}"
+                );
+            }
+        }
+        Err(e) => {
+            log::debug!(
+                "[DEBUG] container_oom_monitor: Failed to open OOM killed log for process {process_id}: {e}"
+            );
+        }
+    }
+}
 
 /// Decompiled from 0x21c2b0..0x21c510  (608 bytes)
 /// Xrefs: "proc_handle", "oom_killed_rx"
@@ -32,13 +124,16 @@ use crate::state::ProcessMap;
 ///   "container_oom_monitor: Received shutdown signal, exiting"
 ///   "[OOM_KILL] Container memory limit exceeded"
 ///   "Killing process ... to free up memory"
+///   "[DEBUG] No channel available to send OOM notification for process_id , killing directly"
+///   "[DEBUG] container_oom_monitor: Waiting for killed process ) to exit and memory to be reclaimed"
+///   "container_oom_monitor: Received shutdown signal during post-kill wait, exiting"
 pub async fn container_oom_monitor(
     controller: CgroupController,
     container_memory_limit: u64,
     polling_period: Duration,
     proc_map: ProcessMap,
     mut shutdown_rx: broadcast::Receiver<()>,
-    oom_killed_txs: HashMap<String, oneshot::Sender<()>>,
+    oom_channels: OomChannelMap,
 ) {
     log::debug!("[DEBUG] container_oom_monitor: starting, limit={container_memory_limit} bytes, poll={polling_period:?}");
 
@@ -85,6 +180,7 @@ pub async fn container_oom_monitor(
         let mut largest_pid: Option<u32> = None;
         let mut largest_usage: u64 = 0;
         let mut largest_process_id: Option<String> = None;
+        let mut largest_cgroup_path: Option<std::path::PathBuf> = None;
 
         for (process_id, pid, cgroup_path) in &process_cgroups {
             if let Ok(proc_usage) =
@@ -94,23 +190,109 @@ pub async fn container_oom_monitor(
                     largest_usage = proc_usage;
                     largest_pid = Some(*pid);
                     largest_process_id = Some(process_id.clone());
+                    largest_cgroup_path = Some(cgroup_path.clone());
                 }
             }
         }
 
-        if let (Some(pid), Some(process_id)) = (largest_pid, largest_process_id) {
+        if let (Some(pid), Some(ref process_id)) = (largest_pid, &largest_process_id) {
             log::info!(
                 "[OOM_KILL] Killing process {process_id} (PID {pid}) using {largest_usage} bytes to free up memory"
             );
+            log::info!(
+                "[process_id={process_id}, pid={pid}] killed by container OOM killer"
+            );
 
-            // Signal the process's OOM channel
-            if let Some(_tx) = oom_killed_txs.get(&process_id) {
-                // Can't move out of HashMap reference, but the channel signals the process monitor
+            // Read cmdline for logging
+            let cmdline = read_cmdline(pid).await;
+
+            // Write OOM kill event to log file
+            write_oom_kill_log(process_id, pid, largest_usage, container_memory_limit, &cmdline).await;
+
+            // Signal the process's OOM channel (take ownership via remove)
+            let tx = {
+                let mut channels = oom_channels.lock();
+                channels.remove(process_id)
+            };
+
+            if let Some(tx) = tx {
                 log::debug!("[DEBUG] container_oom_monitor: signaling OOM for {process_id}");
+                let _ = tx.send(());
+            } else {
+                log::debug!(
+                    "[DEBUG] No channel available to send OOM notification for process_id {process_id}, killing directly"
+                );
+                crate::proc_handle::kill_and_wait(pid, largest_cgroup_path.as_ref()).await;
             }
 
-            // Kill the process
-            crate::proc_handle::kill_and_wait(pid, None).await;
+            // Post-kill wait: verify memory is reclaimed
+            // String refs: "Waiting for killed process ) to exit and memory to be reclaimed (max s)..."
+            //   "Phase 1 timed out", "Timed out 30s after killing"
+            //   "container_oom_monitor: Received shutdown signal during post-kill wait, exiting"
+            let max_wait = Duration::from_secs(30);
+            let start = std::time::Instant::now();
+            log::debug!(
+                "[DEBUG] container_oom_monitor: Waiting for killed process {process_id} (PID {pid}) to exit and memory to be reclaimed (max {}s)...",
+                max_wait.as_secs()
+            );
+
+            // Phase 1: wait for process to exit (disappear from /proc)
+            let phase1_timeout = Duration::from_secs(10);
+            loop {
+                if start.elapsed() >= phase1_timeout {
+                    log::debug!(
+                        "[DEBUG] container_oom_monitor: Phase 1 timed out: process {process_id} (PID {pid}) still in /proc after {:?}",
+                        start.elapsed()
+                    );
+                    break;
+                }
+
+                if !pid_tree::pid_exists(pid) {
+                    break;
+                }
+
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                    _ = shutdown_rx.recv() => {
+                        log::debug!("container_oom_monitor: Received shutdown signal during post-kill wait, exiting");
+                        return;
+                    }
+                }
+            }
+
+            // Phase 2: wait for memory to drop below limit
+            loop {
+                if start.elapsed() >= max_wait {
+                    log::debug!(
+                        "[DEBUG] container_oom_monitor: Timed out 30s after killing {process_id} (pid {pid}): memory may still be above limit"
+                    );
+                    break;
+                }
+
+                match cgroup::read_memory_usage(&controller.base_path, controller.version).await {
+                    Ok(current_usage) if current_usage <= container_memory_limit => {
+                        log::debug!(
+                            "[DEBUG] container_oom_monitor: Memory reclaimed after killing {process_id}: usage={current_usage}"
+                        );
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::debug!(
+                            "[DEBUG] container_oom_monitor: Failed to read memory during post-kill wait: {e}"
+                        );
+                        break;
+                    }
+                }
+
+                tokio::select! {
+                    _ = tokio::time::sleep(polling_period) => {}
+                    _ = shutdown_rx.recv() => {
+                        log::debug!("container_oom_monitor: Received shutdown signal during post-kill wait, exiting");
+                        return;
+                    }
+                }
+            }
         }
     }
 }
@@ -130,7 +312,7 @@ pub async fn per_process_memory_monitor(
     version: CgroupVersion,
     memory_limit: u64,
     polling_period: Duration,
-    oom_killed_tx: oneshot::Sender<()>,
+    oom_channels: OomChannelMap,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     log::debug!(
@@ -154,7 +336,14 @@ pub async fn per_process_memory_monitor(
                     "[OOM_KILL] Process {process_id} (PID {pid}) exceeded memory limit: \
                      usage={usage} > limit={memory_limit}"
                 );
-                let _ = oom_killed_tx.send(());
+                // Take OOM channel from shared map and signal
+                let tx = {
+                    let mut channels = oom_channels.lock();
+                    channels.remove(&process_id)
+                };
+                if let Some(tx) = tx {
+                    let _ = tx.send(());
+                }
                 return;
             }
             Ok(_) => {}

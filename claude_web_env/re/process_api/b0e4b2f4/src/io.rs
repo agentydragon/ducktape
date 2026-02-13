@@ -82,7 +82,7 @@ use tokio_tungstenite::WebSocketStream;
 
 use crate::cgroup::{self, CgroupController};
 use crate::control_server;
-use crate::oom_killer;
+use crate::oom_killer::{self, OomChannelMap};
 use crate::proc_handle::{self, ExitReason, ProcHandle};
 use crate::state::{self, ProcessMap, ProcessState};
 
@@ -217,6 +217,7 @@ pub async fn handle_ws_connection(
     oom_polling_period: Duration,
     container_name: Arc<Mutex<Option<String>>>,
     shutdown_tx: broadcast::Sender<()>,
+    oom_channels: OomChannelMap,
 ) {
     log::debug!("[DEBUG] New WebSocket connection from {remote_addr}");
 
@@ -272,6 +273,7 @@ pub async fn handle_ws_connection(
                 oom_polling_period,
                 container_name,
                 shutdown_tx,
+                oom_channels,
             )
             .await;
         }
@@ -310,6 +312,7 @@ async fn handle_create_process(
     oom_polling_period: Duration,
     _container_name: Arc<Mutex<Option<String>>>,
     shutdown_tx: broadcast::Sender<()>,
+    oom_channels: OomChannelMap,
 ) {
     // Generate a process ID (use name as the ID)
     let process_id = req.name.clone();
@@ -406,6 +409,13 @@ async fn handle_create_process(
     let (oom_tx, oom_rx) = oneshot::channel();
     let (stop_tx, stop_rx) = oneshot::channel();
 
+    // Register OOM channel in the shared map so both per-process and
+    // container OOM monitors can signal this process
+    {
+        let mut channels = oom_channels.lock();
+        channels.insert(process_id.clone(), oom_tx);
+    }
+
     // Create process handle with all fields populated
     let timeout = req.timeout.map(Duration::from_secs);
     let reattachable = req.reattachable.unwrap_or(false);
@@ -443,6 +453,7 @@ async fn handle_create_process(
     // Spawn per-process memory monitor if memory limit is set
     if let (Some(limit), Some(ref cp)) = (handle_memory_limit, &cgroup_path) {
         let oom_shutdown_rx = shutdown_tx.subscribe();
+        let oom_channels_clone = oom_channels.clone();
         tokio::spawn(oom_killer::per_process_memory_monitor(
             pid,
             process_id.clone(),
@@ -450,7 +461,7 @@ async fn handle_create_process(
             controller.version,
             limit,
             oom_polling_period,
-            oom_tx,
+            oom_channels_clone,
             oom_shutdown_rx,
         ));
     }

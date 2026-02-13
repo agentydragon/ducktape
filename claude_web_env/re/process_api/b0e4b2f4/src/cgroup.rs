@@ -11,6 +11,7 @@
 //!   read_memory_usage (async):   0x1328a0..0x132d66
 //!   read_memory_file (async):    0x132d70..0x1331a5
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use tokio::fs;
@@ -83,7 +84,9 @@ pub async fn create_process_cgroup(
 /// Xrefs: "[DEBUG] Detected cgroup version", "[DEBUG] Set process_api cgroup",
 ///   "[DEBUG] Enabled memory controller", "[DEBUG] Failed to enable controller",
 ///   "[DEBUG] memory controller already", "[DEBUG] root subtree_control",
-///   "[DEBUG] root current controller", "cgroup.subtree_control"
+///   "[DEBUG] root current controller", "cgroup.subtree_control",
+///   "[DEBUG] Set process_api/cgroup.procs permissions to 0o666",
+///   "[DEBUG] Moved current process (PID ) to "
 pub async fn setup_cgroup(
     forced_v2: bool,
 ) -> Result<CgroupController, String> {
@@ -120,6 +123,33 @@ pub async fn setup_cgroup(
         let pa_subtree = base_path.join("cgroup.subtree_control");
         if let Err(e) = fs::write(&pa_subtree, "+memory +pids").await {
             log::debug!("[DEBUG] Failed to enable controllers in process_api subtree: {e}");
+        }
+    }
+
+    // Set cgroup.procs permissions to 0o666 so unprivileged processes can be moved
+    let procs_path = base_path.join("cgroup.procs");
+    match std::fs::set_permissions(&procs_path, std::fs::Permissions::from_mode(0o666)) {
+        Ok(()) => {
+            log::debug!("[DEBUG] Set process_api/cgroup.procs permissions to 0o666");
+        }
+        Err(e) => {
+            log::debug!("[DEBUG] Failed to set permissions on process_api/cgroup.procs: {e}");
+        }
+    }
+
+    // Move current process (PID 1) into the cgroup
+    let my_pid = std::process::id();
+    match fs::write(&procs_path, my_pid.to_string()).await {
+        Ok(()) => {
+            log::debug!(
+                "[DEBUG] Moved current process (PID {my_pid}) to {}",
+                base_path.display()
+            );
+        }
+        Err(e) => {
+            log::debug!(
+                "[DEBUG] Failed to move current process (PID {my_pid}) to cgroup: {e}"
+            );
         }
     }
 
