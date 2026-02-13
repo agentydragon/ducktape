@@ -18,5 +18,7 @@ occurrences:
           - 101
         - - 121
           - 121
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mini_codex/agent.py
     critic_scopes_expected_to_recall:
       - - llm/adgn_llm/src/adgn_llm/mini_codex/agent.py

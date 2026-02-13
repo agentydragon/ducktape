@@ -14,5 +14,7 @@ occurrences:
         - [216, 217] # t1, t2 = asyncio.create_task(...)
         - [220, 231] # timeout: kills process, returns without awaiting t1/t2
         - [232, 235] # normal path: correctly awaits t1, t2
+    match_file_restriction:
+      - src/wt/server/worktree_service.py
     critic_scopes_expected_to_recall:
       - [src/wt/server/worktree_service.py]

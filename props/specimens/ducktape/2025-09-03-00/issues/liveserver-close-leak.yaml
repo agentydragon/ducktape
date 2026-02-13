@@ -8,5 +8,7 @@ occurrences:
     files:
       llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py:
         - [95, 101]
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py
     critic_scopes_expected_to_recall:
       - - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py

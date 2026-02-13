@@ -9,5 +9,7 @@ occurrences:
       gmail_archiver/event_classifier.py:
         - [78, 79]
     note: bare except returning None in cache get
+    match_file_restriction:
+      - gmail_archiver/event_classifier.py
     critic_scopes_expected_to_recall:
       - - gmail_archiver/event_classifier.py

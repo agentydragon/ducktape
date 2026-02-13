@@ -8,5 +8,7 @@ occurrences:
     files:
       src/wt/server/handlers/status_handler.py:
         - [29, 29]
+    match_file_restriction:
+      - src/wt/server/handlers/status_handler.py
     critic_scopes_expected_to_recall:
       - [src/wt/server/handlers/status_handler.py]

@@ -10,5 +10,7 @@ occurrences:
       gmail_archiver/planners/aliexpress.py:
         - [62, 77]
     note: STATUS_PATTERNS - regex overkill for case-insensitive substring checks
+    match_file_restriction:
+      - gmail_archiver/planners/aliexpress.py
     critic_scopes_expected_to_recall:
       - - gmail_archiver/planners/aliexpress.py

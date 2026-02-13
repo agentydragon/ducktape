@@ -12,5 +12,7 @@ occurrences:
         - [87, 91] # class RpcError(RuntimeError)
         - [513, 513] # raise RpcError(...)
         - [516, 522] # except clause that doesn't catch RpcError
+    match_file_restriction:
+      - src/wt/client/wt_client.py
     critic_scopes_expected_to_recall:
       - [src/wt/client/wt_client.py]

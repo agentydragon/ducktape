@@ -23,5 +23,7 @@ occurrences:
     files:
       gmail_archiver/core.py:
         - [120, 124]
+    match_file_restriction:
+      - gmail_archiver/core.py
     critic_scopes_expected_to_recall:
       - [gmail_archiver/core.py]

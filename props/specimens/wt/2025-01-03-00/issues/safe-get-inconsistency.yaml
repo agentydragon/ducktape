@@ -16,5 +16,7 @@ occurrences:
         - [330, 340] # _safe_get_commit_hash — no IndexError guard
         - [302, 310] # _safe_get_string — correctly catches IndexError (for contrast)
         - [343, 348] # _safe_get_repository_state — correctly catches IndexError (for contrast)
+    match_file_restriction:
+      - src/wt/server/gitstatusd_listener.py
     critic_scopes_expected_to_recall:
       - [src/wt/server/gitstatusd_listener.py]

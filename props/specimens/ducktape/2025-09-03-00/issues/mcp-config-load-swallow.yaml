@@ -15,5 +15,7 @@ occurrences:
     files:
       llm/adgn_llm/src/adgn_llm/mini_codex/cli.py:
         - [336, 346]
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mini_codex/cli.py
     critic_scopes_expected_to_recall:
       - - llm/adgn_llm/src/adgn_llm/mini_codex/cli.py
