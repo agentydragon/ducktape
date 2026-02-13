@@ -97,18 +97,28 @@ missing from the proposed set.
 The proof must let the user verify correctness by reading your output alone,
 without independent research.
 
-**For single-file issues** (one file in `files:`, local code pattern): the
-proof is mechanical — restrict to that file. Present these as a compact table.
+**CRITICAL: Do NOT assume that one file in `files:` means the restriction is
+that file.** The `files:` field records where the _problematic code_ is, but a
+valid critique could tag a _different_ file — a caller, consumer, duplicate, or
+the other side of a producer/consumer relationship. See the
+`dead-constants-runs-context` negative example in `only-matchable-labels.md`:
+`files:` has only `runs_context.py`, but a critic could validly tag the files
+with hardcoded strings instead.
 
-**For multi-file or cross-cutting issues**: grep the specimen's `code/`
-directory for the relevant symbol/pattern and show all matches. The user needs
-to see the search was thorough. Key questions:
+For **every** occurrence (regardless of how many files are in `files:`):
 
-1. Could a valid critique mention a file outside the proposed set?
-   (See negative examples in `only-matchable-labels.md` — dual-framing,
-   producer/consumer relationships, cross-file duplication)
-2. Are there other files in the specimen with the same pattern that should be
-   covered by some occurrence's restriction?
+1. **Understand what the issue complains about** — read the rationale and the
+   actual code at the referenced lines. Show a brief code snippet in the output.
+2. **Apply the validation test**: "Can you produce a valid critique phrasing
+   that accurately describes this issue but tags a file outside the proposed
+   set?" Consider:
+   - Dual framing (caller vs callee, producer vs consumer)
+   - Cross-file duplication (same pattern in other files)
+   - Import/usage sites that manifest the bug
+3. **Provide evidence**: Show the relevant code snippet(s) and explain _why_
+   the issue can only be validly reported on the proposed file(s). If other
+   files are involved (callers, consumers, duplicates), grep for them and show
+   the results.
 
 **When in doubt, include the file.** False negatives (missing a valid file) are
 worse than false positives (including an extra file). Flag uncertain cases with
@@ -119,17 +129,24 @@ worse than false positives (including an extra file). Flag uncertain cases with
 ```markdown
 #### `<issue_id>` / `<occurrence_id>`
 
-[YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/<slug>/issues/<issue_id>.yaml)
+**Issue:** <one-line summary of what the rationale complains about>
 
-**Issue:** <one-line summary>
-**Code location:** `<file>:<lines>`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/<slug>/issues/<issue_id>.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/<slug>/code/<file_path>#L<start>-L<end>)
+
+**Code snippet** (the relevant lines from the specimen):
+` `` `
+<brief code snippet showing the problematic pattern>
+` `` `
+
 **Proposed restriction:** `[<file1>, <file2>, ...]`
 
-**Proof:** <evidence — grep results, cross-references, or reasoning>
+**Validation test:** <explain why a valid critique cannot tag a file outside
+the proposed set — or flag NEEDS REVIEW if uncertain>
 ```
 
-Group single-file mechanical proposals into a compact table. Present multi-file
-proposals individually with full proof.
+Present each occurrence individually with its code snippet and validation
+reasoning. Do not use compact tables — every proposal needs the validation
+test applied explicitly.
 
 ### Summary
 
