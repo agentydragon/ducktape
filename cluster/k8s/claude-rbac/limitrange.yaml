@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: claude-sandbox-limits
+  namespace: claude-sandbox
+spec:
+  limits:
+    # Default limits for containers without specified limits
+    - max:
+        cpu: "2"
+        memory: 4Gi
+      min:
+        cpu: 10m
+        memory: 16Mi
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      type: Container
+    # Pod limits
+    - max:
+        cpu: "4"
+        memory: 8Gi
+      type: Pod

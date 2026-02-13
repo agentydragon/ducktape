@@ -27,6 +27,7 @@ from tools.claude_hooks import (
     bazelisk_setup,
     buildbuddy_setup,
     env_file,
+    kubeconfig_setup,
     mkcert_setup,
     nix_setup,
     podman_service,
@@ -380,6 +381,10 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # Decrypt age-encrypted secrets from .claude_hooks/secrets/ in the repo checkout.
     secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
     secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
+
+    # Setup kubeconfig if KUBECONFIG_B64 is in decrypted secrets
+    if secrets and "KUBECONFIG_B64" in secrets.env_vars:
+        kubeconfig_setup.setup_kubeconfig(cache_dir=settings.cache_dir, env_vars=secrets.env_vars)
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:

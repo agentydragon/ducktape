@@ -4,12 +4,22 @@ This directory configures RBAC for the Claude AI assistant to have read-only acc
 
 ## Permissions Granted
 
+**Cluster-wide (read-only):**
+
 - ✅ Read pod logs (`kubectl logs`)
 - ✅ Read cluster state (pods, deployments, services, configmaps, etc.)
 - ✅ Read Flux resources (kustomizations, gitrepositories)
 - ❌ **NO access to secrets**
 - ❌ **NO write permissions** (create, update, delete)
-- ❌ **NO exec access** (`kubectl exec`)
+- ❌ **NO exec access** cluster-wide
+
+**claude-sandbox namespace (full access):**
+
+- ✅ Create/delete pods, deployments, services, jobs
+- ✅ `kubectl exec` into pods
+- ✅ Attach to pods, view logs
+- ❌ **Still NO secrets access**
+- ⚠️ **Resource limits:** 4 CPU, 8Gi memory, 10 pods max (enforced by ResourceQuota)
 
 ## ServiceAccount
 

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: claude-sandbox
+  labels:
+    name: claude-sandbox
+    environment: development

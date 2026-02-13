@@ -1,0 +1,35 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claude-sandbox-admin
+  namespace: claude-sandbox
+rules:
+  # Full access within claude-sandbox namespace
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/exec
+      - pods/attach
+      - services
+      - configmaps
+      - persistentvolumeclaims
+      - events
+    verbs: ["*"]
+
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+    verbs: ["*"]
+
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["*"]
+
+  # Still NO access to secrets, even in sandbox
+  # Secrets are intentionally omitted
