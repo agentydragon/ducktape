@@ -405,8 +405,10 @@ def _create_combined_ca_bundle(settings: HookSettings) -> None:
     combined_ca = settings.get_auth_proxy_combined_ca()
     ca_file_path = settings.get_auth_proxy_ca_file()
 
-    # Prefer pre-installed Anthropic CA, fall back to extracted one
-    ca_file = ANTHROPIC_CA_PREINSTALLED if ANTHROPIC_CA_PREINSTALLED.exists() else ca_file_path
+    # Prefer extracted CA (written by _extract_proxy_ca) — it's always the validated,
+    # correct CA for this session. In tests, ANTHROPIC_CA_PATH overrides the CA;
+    # using the pre-installed file would bypass that override.
+    ca_file = ca_file_path if ca_file_path.exists() else ANTHROPIC_CA_PREINSTALLED
     if not ca_file.exists():
         raise CaBundleError("No CA file to add to bundle")
 

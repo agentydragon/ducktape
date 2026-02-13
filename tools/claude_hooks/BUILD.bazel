@@ -368,11 +368,12 @@ py_test(
     },
     # Inherit proxy env vars so MockEgressProxy can chain through real proxy
     env_inherit = [
+        "CURL_CA_BUNDLE",
         "HTTPS_PROXY",
         "https_proxy",
-        "SSL_CERT_FILE",
-        "REQUESTS_CA_BUNDLE",
         "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
     ],
     imports = ["../.."],
     # local: podman needs user namespaces (newuidmap), blocked by linux-sandbox

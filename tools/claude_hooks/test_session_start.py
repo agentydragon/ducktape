@@ -124,7 +124,15 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
 
 @pytest.fixture
 def system_bazel() -> str:
-    """Get system bazel/bazelisk path, failing if not found."""
+    """Get the real bazelisk binary path.
+
+    Prefers the actual binary at auth-proxy/bazelisk over bin/bazelisk,
+    which is a symlink to the wrapper script and would cause an infinite
+    loop when used as BAZELISK_PATH.
+    """
+    real = settings.HookSettings().get_bazelisk_path()
+    if real.exists():
+        return str(real)
     path = shutil.which("bazelisk") or shutil.which("bazel")
     if not path:
         pytest.fail("Neither bazelisk nor bazel found on PATH")

@@ -248,27 +248,21 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient, tmp
 
 
 def _get_podman_env_vars(settings: HookSettings) -> dict[str, str]:
-    """Get podman env vars for already-configured setup.
+    """Get podman config env vars for already-configured setup.
 
-    Includes container config paths and any proxy/SSL env vars from the
-    current environment. The podman daemon runs under supervisor which
-    doesn't inherit env vars implicitly — they must be passed explicitly.
-    Without proxy vars, the daemon can't pull images through a TLS proxy.
+    Returns only podman-specific config paths (CONTAINERS_*, BUILDAH_*).
+    Proxy/SSL env vars are NOT included here — they're merged separately
+    in start_podman_service() for the daemon, and the session env file's
+    auth proxy section sets SSL CA vars to the correct combined CA bundle.
     """
     podman_dir = settings.get_podman_dir()
-    env_vars: dict[str, str] = {
+    return {
         "CONTAINERS_STORAGE_CONF": str(podman_dir / "storage.conf"),
         "CONTAINERS_CONF": str(podman_dir / "containers.conf"),
         "CONTAINERS_REGISTRIES_CONF": str(podman_dir / "registries.conf"),
         # OCI isolation avoids read-only /dev/null from chroot mode's devtmpfs
         "BUILDAH_ISOLATION": "oci",
     }
-    # Pass proxy and SSL CA env vars so the daemon can pull images through
-    # the TLS-inspecting proxy (e.g., Anthropic's egress proxy)
-    for var in PROXY_ENV_VARS + SSL_CA_ENV_VARS:
-        if value := os.environ.get(var):
-            env_vars[var] = value
-    return env_vars
 
 
 async def _is_podman_service_healthy(supervisor: SupervisorClient, socket_path: Path) -> bool:
@@ -304,13 +298,24 @@ async def start_podman_service(
     socket_url = f"unix://{socket_path}"
     socket_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # The podman daemon runs under supervisor which doesn't inherit the
+    # container's env vars. Merge proxy/SSL vars from the current environment
+    # so the daemon can pull images through the TLS-inspecting egress proxy.
+    # These are NOT included in _get_podman_env_vars() because that dict is
+    # also exported to the session env file, where the auth proxy section
+    # already sets SSL CA vars to the correct combined CA bundle.
+    daemon_env = dict(env_vars)
+    for var in PROXY_ENV_VARS + SSL_CA_ENV_VARS:
+        if value := os.environ.get(var):
+            daemon_env[var] = value
+
     # Start podman system service (--time=0 means never timeout, keep running)
     # Pass config env vars so podman uses our isolated paths
     await supervisor.add_service(
         name=PODMAN_SERVICE,
         command=f"podman system service --time=0 {socket_url}",
         directory=Path.home(),
-        environment=env_vars,
+        environment=daemon_env,
     )
 
     # Wait for socket to be ready

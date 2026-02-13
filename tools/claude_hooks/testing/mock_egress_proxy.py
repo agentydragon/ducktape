@@ -62,7 +62,7 @@ class EgressProxyConfig:
         if not parsed.hostname:
             return None
 
-        # Get CA bundle for verifying upstream proxy's TLS
+        # Get CA bundle for verifying upstream proxy's TLS interception cert.
         ca_bundle = next((v for var in SSL_CA_ENV_VARS if (v := os.environ.get(var))), None)
 
         return cls(
