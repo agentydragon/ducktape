@@ -62,9 +62,11 @@ mod proc_handle;
 mod state;
 
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use parking_lot::Mutex;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio_tungstenite::accept_async;
@@ -196,8 +198,9 @@ async fn main() {
         }
     }
 
-    // Detect container name
-    let container_name = detect_container_name().await;
+    // Detect container name (shared between control server and WS connections)
+    let container_name: Arc<Mutex<Option<String>>> =
+        Arc::new(Mutex::new(detect_container_name().await));
 
     // Create shared process map
     let proc_map = state::new_process_map();
@@ -221,12 +224,14 @@ async fn main() {
         let shutdown_tx_clone = shutdown_tx.clone();
         let shutdown_rx = shutdown_tx.subscribe();
         let proc_map_clone = proc_map.clone();
+        let container_name_clone = container_name.clone();
 
         tokio::spawn(async move {
             control_server::start_control_server(
                 addr,
                 shutdown_tx_clone,
                 proc_map_clone,
+                container_name_clone,
                 shutdown_rx,
             )
             .await;

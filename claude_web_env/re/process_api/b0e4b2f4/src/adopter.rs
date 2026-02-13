@@ -35,7 +35,6 @@ use crate::pid_tree;
 use crate::state::ProcessMap;
 
 /// Tracked orphan zombie awaiting reaping.
-#[allow(dead_code)]
 struct TrackedZombie {
     pid: u32,
     first_seen: Instant,
@@ -46,11 +45,13 @@ struct TrackedZombie {
 /// Reconstructed from string evidence at binary file offset 0x1afc80:
 ///   "[DEBUG] monitor_orphans: Failed to adopt orphans:"
 ///   "[DEBUG] monitor_orphans: Received shutdown signal, exiting"
+///   "[DEBUG] Starting orphan monitor task"
 pub async fn monitor_orphans(
     controller: CgroupController,
     proc_map: ProcessMap,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
+    log::debug!("[DEBUG] Starting orphan monitor task");
     let mut tracked_zombies: HashMap<u32, TrackedZombie> = HashMap::new();
 
     loop {
@@ -61,6 +62,20 @@ pub async fn monitor_orphans(
                 return;
             }
         }
+
+        // Clean up tracked zombies that no longer exist
+        // Xrefs: "[DEBUG] Removed orphaned process ) because it no longer exists"
+        tracked_zombies.retain(|_, zombie| {
+            if !pid_tree::pid_exists(zombie.pid) {
+                log::debug!(
+                    "[DEBUG] Removed orphaned process (PID {}) because it no longer exists",
+                    zombie.pid
+                );
+                false
+            } else {
+                true
+            }
+        });
 
         // Reap any zombie children of PID 1
         reap_zombies(&mut tracked_zombies);
@@ -84,7 +99,8 @@ fn reap_zombies(tracked_zombies: &mut HashMap<u32, TrackedZombie>) {
                 let pid_u32 = pid.as_raw() as u32;
                 if let Some(zombie) = tracked_zombies.remove(&pid_u32) {
                     log::debug!(
-                        "[DEBUG] Reaping zombie PID {pid_u32} (first seen {:?} ago)",
+                        "[DEBUG] Reaping zombie PID {} (first seen {:?} ago)",
+                        zombie.pid,
                         zombie.first_seen.elapsed()
                     );
                 }

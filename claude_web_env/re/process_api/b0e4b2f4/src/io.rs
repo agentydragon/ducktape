@@ -25,7 +25,7 @@
 //!   "[DEBUG] Process already attached:"
 //!   "[DEBUG] Failed to get first message: Client closed connection"
 //!   "First message should be text json CreateProcess"
-//!   "[DEBUG] Restoring cgroup ownership for process id"
+//!   "[DEBUG] Restoring cgroup ownership for process id  process group PID"
 //!   "[DEBUG] New WebSocket connection from"
 //!   "[DEBUG] Successfully started stream for process"
 //!   "[DEBUG] process_ws_message returned:"
@@ -34,13 +34,16 @@
 //!   "[DEBUG] Detaching process:"
 //!   "[DEBUG] Reattachable process  is done, dropping handle"
 //!   "[DEBUG] Non-reattachable process, killing and removing from map:"
+//!   "stop_waiting_tx is already taken"
+//!   "exit_status_rx is already taken"
+//!   "[DEBUG] Received first request:"
+//!   " killed by process_api, removing from map"
 //!
 //! String refs at binary offset 0x2b8584 (io.rs stdout/stdin/ws messages):
 //!   "[DEBUG] started stdout pipe"
 //!   "[DEBUG] stdout done"
 //!   "[DEBUG] started stderr pipe"
 //!   "[DEBUG] stderr done"
-//!   "exit_status_rx is already taken"
 //!   "[DEBUG] forward_stdin: Starting stdin forwarding for process"
 //!   "[DEBUG] Received shutdown signal for process"
 //!   "[DEBUG] Stopping waiting for process"
@@ -68,6 +71,7 @@ use std::time::Duration;
 use futures::{SinkExt, StreamExt};
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -77,8 +81,10 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 use crate::cgroup::{self, CgroupController};
+use crate::control_server;
+use crate::oom_killer;
 use crate::proc_handle::{self, ExitReason, ProcHandle};
-use crate::state::{self, ProcessMap};
+use crate::state::{self, ProcessMap, ProcessState};
 
 // ---------------------------------------------------------------------------
 // Serde structs -- Decompiled from 0x233900..0x23567c and 0x1e38e0/0x1e38a0
@@ -117,7 +123,6 @@ pub struct CreateProcess {
 pub struct ProcessConnection {
     pub process_id: String,
     #[serde(default)]
-    #[allow(dead_code)]
     pub reattach: Option<bool>,
     #[serde(default)]
     pub expected_container_name: Option<String>,
@@ -210,7 +215,7 @@ pub async fn handle_ws_connection(
     controller: CgroupController,
     container_memory_limit: Option<u64>,
     oom_polling_period: Duration,
-    container_name: Option<String>,
+    container_name: Arc<Mutex<Option<String>>>,
     shutdown_tx: broadcast::Sender<()>,
 ) {
     log::debug!("[DEBUG] New WebSocket connection from {remote_addr}");
@@ -236,6 +241,8 @@ pub async fn handle_ws_connection(
             return;
         }
     };
+
+    log::debug!("[DEBUG] Received first request: {first_msg}");
 
     // Parse the first message
     let first: FirstMessage = match serde_json::from_str(&first_msg) {
@@ -291,6 +298,8 @@ pub async fn handle_ws_connection(
 ///   "[DEBUG] Spawning wait_for_child_to_exit for process"
 ///   "[DEBUG] stopping stdout and stderr for process"
 ///   "[DEBUG] Handling process cleanup for , pid:"
+///   "stop_waiting_tx is already taken"
+///   "exit_status_rx is already taken"
 async fn handle_create_process(
     req: CreateProcess,
     ws_tx: WsTx,
@@ -298,8 +307,8 @@ async fn handle_create_process(
     proc_map: ProcessMap,
     controller: CgroupController,
     _container_memory_limit: Option<u64>,
-    _oom_polling_period: Duration,
-    _container_name: Option<String>,
+    oom_polling_period: Duration,
+    _container_name: Arc<Mutex<Option<String>>>,
     shutdown_tx: broadcast::Sender<()>,
 ) {
     // Generate a process ID (use name as the ID)
@@ -392,21 +401,25 @@ async fn handle_create_process(
         None
     };
 
-    // Create process handle
+    // Create channels for inter-task communication
+    let (exit_status_tx, exit_status_rx) = oneshot::channel();
+    let (oom_tx, oom_rx) = oneshot::channel();
+    let (stop_tx, stop_rx) = oneshot::channel();
+
+    // Create process handle with all fields populated
     let timeout = req.timeout.map(Duration::from_secs);
-    let handle = ProcHandle::new(
-        pid,
-        req.reattachable.unwrap_or(false),
-        timeout,
-        req.memory_limit_bytes,
-    );
+    let reattachable = req.reattachable.unwrap_or(false);
+    let mut handle = ProcHandle::new(pid, reattachable, timeout, req.memory_limit_bytes);
+    handle.cgroup_path = cgroup_path.clone();
+    handle.stop_waiting_tx = Some(stop_tx);
+    handle.exit_status_rx = Some(exit_status_rx);
 
     // Insert into process map
     state::insert_process(
         &proc_map,
         process_id.clone(),
         pid,
-        req.reattachable.unwrap_or(false),
+        reattachable,
         handle,
     );
 
@@ -420,20 +433,39 @@ async fn handle_create_process(
     )
     .await;
 
-    // Set up OOM monitoring channel
-    let (_oom_tx, oom_rx) = oneshot::channel();
-    let (_stop_tx, stop_rx) = oneshot::channel();
+    // Read timeout and memory_limit_bytes from handle in the map
+    let (handle_timeout, handle_memory_limit) = {
+        let map = proc_map.lock();
+        let entry = map.get(&process_id).expect("just inserted");
+        (entry.handle.timeout, entry.handle.memory_limit_bytes)
+    };
+
+    // Spawn per-process memory monitor if memory limit is set
+    if let (Some(limit), Some(ref cp)) = (handle_memory_limit, &cgroup_path) {
+        let oom_shutdown_rx = shutdown_tx.subscribe();
+        tokio::spawn(oom_killer::per_process_memory_monitor(
+            pid,
+            process_id.clone(),
+            cp.clone(),
+            controller.version,
+            limit,
+            oom_polling_period,
+            oom_tx,
+            oom_shutdown_rx,
+        ));
+    }
 
     // Spawn wait_for_child_to_exit task
     log::debug!("[DEBUG] Spawning wait_for_child_to_exit for process {process_id}");
-    let wait_handle = tokio::spawn(proc_handle::wait_for_child_to_exit(
+    tokio::spawn(proc_handle::wait_for_child_to_exit(
         pid,
-        timeout,
-        req.memory_limit_bytes,
+        handle_timeout,
+        handle_memory_limit,
         cgroup_path.clone(),
         Some(controller.version),
         Some(oom_rx),
         Some(stop_rx),
+        exit_status_tx,
     ));
 
     // Forward stdout, stderr, and handle stdin
@@ -546,17 +578,47 @@ async fn handle_create_process(
         }
     }
 
-    // Wait for the child process to finish
+    // Wait for the child process to finish via exit_status_rx channel
     log::debug!("[DEBUG] stopping stdout and stderr for process {process_id}");
 
-    let exit_reason = match wait_handle.await {
-        Ok(reason) => reason,
-        Err(_) => ExitReason::KilledByProcessApi,
+    // Take exit_status_rx from handle to receive exit status
+    // Xrefs: "exit_status_rx is already taken"
+    let exit_rx = {
+        let mut map = proc_map.lock();
+        map.get_mut(&process_id)
+            .and_then(|entry| entry.handle.exit_status_rx.take())
     };
+
+    let exit_reason = match exit_rx {
+        Some(rx) => match rx.await {
+            Ok(reason) => reason,
+            Err(_) => ExitReason::KilledByProcessApi,
+        },
+        None => {
+            log::debug!("exit_status_rx is already taken");
+            ExitReason::KilledByProcessApi
+        }
+    };
+
     log::debug!("[DEBUG] Finished waiting for wait_for_child_to_exit");
 
-    // Send exit status message
-    let elapsed = proc_handle::format_exit_reason(pid, &exit_reason, 0.0);
+    // Read handle fields for exit formatting and cleanup
+    // Xrefs: "process_group_pid", "start_time", "killed_by_process_api"
+    let (entry_process_id, entry_reattachable, handle_pgid, elapsed_secs) = {
+        let map = proc_map.lock();
+        match map.get(&process_id) {
+            Some(entry) => (
+                entry.process_id.clone(),
+                entry.handle.reattachable,
+                entry.handle.process_group_pid,
+                entry.handle.start_time.elapsed().as_secs_f64(),
+            ),
+            None => (process_id.clone(), false, pid, 0.0),
+        }
+    };
+
+    // Send exit status message using actual elapsed time from handle.start_time
+    let elapsed = proc_handle::format_exit_reason(pid, &exit_reason, elapsed_secs);
     match &exit_reason {
         ExitReason::Exited { status } => {
             let _ = send_msg(
@@ -612,17 +674,10 @@ async fn handle_create_process(
 
     // Clean up process from map
     log::debug!(
-        "[DEBUG] Handling process cleanup for {process_id}, pid: {pid}"
+        "[DEBUG] Handling process cleanup for {entry_process_id}, pid: {pid}"
     );
 
-    let reattachable = {
-        let map = proc_map.lock();
-        map.get(&process_id)
-            .map(|e| e.reattachable)
-            .unwrap_or(false)
-    };
-
-    if reattachable {
+    if entry_reattachable {
         log::debug!("[DEBUG] Detaching process: {process_id}");
         if let Err(e) = state::detach_process(&proc_map, &process_id) {
             log::error!("[ERROR] Failed to detach process {process_id}: {e}");
@@ -633,11 +688,34 @@ async fn handle_create_process(
             "[DEBUG] Reattachable process {process_id} is done (stdout/stderr closed, process exited), dropping handle"
         );
     } else {
+        // Mark as killed_by_process_api before cleanup
+        {
+            let mut map = proc_map.lock();
+            if let Some(entry) = map.get_mut(&process_id) {
+                entry.handle.killed_by_process_api = true;
+            }
+        }
         log::debug!(
             "[DEBUG] Non-reattachable process, killing and removing from map: {process_id}"
         );
+        // Xrefs: "[DEBUG] Restoring cgroup ownership for process id  process group PID"
+        log::debug!(
+            "[DEBUG] Restoring cgroup ownership for process id {process_id} process group PID {handle_pgid}"
+        );
+        // Transition to Done before removal
+        let _ = state::transition_state(
+            &proc_map,
+            &process_id,
+            ProcessState::Attached,
+            ProcessState::Done,
+        );
         proc_handle::kill_and_wait(pid, cgroup_path.as_ref()).await;
-        state::remove_process(&proc_map, &process_id);
+        let removed = state::remove_process(&proc_map, &process_id);
+        if let Some(entry) = removed {
+            if entry.handle.killed_by_process_api {
+                log::debug!("{process_id} killed by process_api, removing from map");
+            }
+        }
     }
 
     log::debug!(
@@ -658,14 +736,17 @@ async fn handle_process_connection(
     ws_tx: WsTx,
     _ws_rx: futures::stream::SplitStream<WebSocketStream<TcpStream>>,
     proc_map: ProcessMap,
-    container_name: Option<String>,
+    container_name: Arc<Mutex<Option<String>>>,
 ) {
     let process_id = &req.process_id;
-    log::debug!("[DEBUG] Processing reattach request for process_id: {process_id}");
+    let should_reattach = req.reattach.unwrap_or(true);
+    log::debug!("[DEBUG] Processing reattach request for process_id: {process_id}, reattach: {should_reattach}");
 
     // Check container name if expected
+    // Read dynamic container name from shared state (updated by control server)
+    let actual_name = control_server::get_container_name(&container_name);
     if let Some(ref expected) = req.expected_container_name {
-        if let Some(ref actual) = container_name {
+        if let Some(ref actual) = actual_name {
             if expected != actual {
                 log::debug!(
                     "[DEBUG] Container name mismatch: expected '{expected}', actual '{actual}'"
@@ -684,6 +765,18 @@ async fn handle_process_connection(
         }
     }
 
+    if !should_reattach {
+        // Just query state without reattaching
+        let _ = send_msg(
+            &ws_tx,
+            &ServerMessage::ProcessNotRunning {
+                process_id: process_id.clone(),
+            },
+        )
+        .await;
+        return;
+    }
+
     // Look up the process state
     let state_result = state::lookup_process(&proc_map, process_id);
     match state_result {
@@ -697,7 +790,7 @@ async fn handle_process_connection(
             )
             .await;
         }
-        Ok(crate::state::ProcessState::Attached) => {
+        Ok(ProcessState::Attached) => {
             log::debug!("[DEBUG] Process already attached: {process_id}");
             let _ = send_msg(
                 &ws_tx,
@@ -707,10 +800,10 @@ async fn handle_process_connection(
             )
             .await;
         }
-        Ok(crate::state::ProcessState::Detached) => {
+        Ok(ProcessState::Detached) => {
             let pid = {
                 let map = proc_map.lock();
-                map.get(process_id).map(|e| e.pid).unwrap_or(0)
+                map.get(process_id).map(|e| e.handle.pid).unwrap_or(0)
             };
             log::debug!(
                 "[DEBUG] Reattaching to detached process: {process_id} with PID {pid}"
@@ -734,7 +827,7 @@ async fn handle_process_connection(
             )
             .await;
         }
-        Ok(crate::state::ProcessState::Done) => {
+        Ok(ProcessState::Done) => {
             let _ = send_msg(
                 &ws_tx,
                 &ServerMessage::ProcessNotRunning {

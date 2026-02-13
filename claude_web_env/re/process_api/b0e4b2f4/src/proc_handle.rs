@@ -46,9 +46,10 @@ pub enum ExitReason {
 
 /// Per-process handle tracking its lifecycle.
 /// Decompiled from struct layout at 0x21c970..0x21cb45 (469 bytes)
-/// Xrefs: "reattachable", "timeout", "memory_limit_bytes"
+/// Xrefs: "reattachable", "timeout", "memory_limit_bytes", "start_time",
+///   "process_group_pid", "killed_by_process_api", "stop_waiting_tx",
+///   "exit_status_rx", "exit_status_tx"
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct ProcHandle {
     pub pid: u32,
     pub process_group_pid: u32,
@@ -59,7 +60,11 @@ pub struct ProcHandle {
     pub cgroup_path: Option<PathBuf>,
     pub killed_by_process_api: bool,
     /// Sender to signal that the process should stop waiting.
+    /// Xrefs: "stop_waiting_tx is already taken"
     pub stop_waiting_tx: Option<oneshot::Sender<()>>,
+    /// Receiver for exit status from the wait task.
+    /// Xrefs: "exit_status_rx is already taken"
+    pub exit_status_rx: Option<oneshot::Receiver<ExitReason>>,
 }
 
 impl ProcHandle {
@@ -79,6 +84,7 @@ impl ProcHandle {
             cgroup_path: None,
             killed_by_process_api: false,
             stop_waiting_tx: None,
+            exit_status_rx: None,
         }
     }
 }
@@ -135,16 +141,17 @@ pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
 }
 
 /// Wait for a child process to exit, with optional timeout and memory monitoring.
+/// Sends the exit reason via `exit_status_tx` channel.
 ///
 /// String refs from binary offset 0x1b8598:
-///   "[DEBUG] forward_stdin: Starting stdin forwarding for process"
-///   "[DEBUG] Received shutdown signal for process"
-///   "[DEBUG] Stopping waiting for process"
-///   "process_ws_message: Shutting down, terminating"
-///   "signal: , core_dumped: , stopped_signal: , continued: "
-///   ") timed out after"
-///   "process_ws_message: Timeout"
-///   ") exceeded memory limit of  bytes"
+///   "[DEBUG] Starting wait_for_child_to_exit for process , start_time: , memory_limit_bytes:"
+///   "[DEBUG] Killed process tree for process"
+///   "[DEBUG] Failed to send exit status for process"
+///   "[DEBUG] Failed to send timeout status for process"
+///   "[DEBUG] Failed to send OOM killed status for process"
+///   "wait_for_child_to_exit received message to stop waiting for process"
+///   "[DEBUG] Exiting wait_for_child_to_exit for process"
+///   "[DEBUG] oom killed_rx closed for process"
 pub async fn wait_for_child_to_exit(
     pid: u32,
     timeout: Option<Duration>,
@@ -153,26 +160,31 @@ pub async fn wait_for_child_to_exit(
     cgroup_version: Option<CgroupVersion>,
     oom_killed_rx: Option<oneshot::Receiver<()>>,
     stop_rx: Option<oneshot::Receiver<()>>,
-) -> ExitReason {
+    exit_status_tx: oneshot::Sender<ExitReason>,
+) {
     let start = Instant::now();
     let nix_pid = Pid::from_raw(pid as i32);
 
-    // Pin the OOM receiver for select
+    log::debug!(
+        "[DEBUG] Starting wait_for_child_to_exit for process (PID {pid}), start_time: {:?}, memory_limit_bytes: {memory_limit_bytes:?}",
+        start
+    );
+
     let mut oom_rx = oom_killed_rx;
     let mut stop = stop_rx;
 
-    loop {
+    let exit_reason = loop {
         // Check if process has exited
         match waitpid(nix_pid, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::Exited(_, status)) => {
-                log::debug!("[DEBUG] Process {pid} exited with status {status}");
-                return ExitReason::Exited { status };
+                log::debug!("[DEBUG] wait_for_child_to_exit: Process {pid} exited with status {status}");
+                break ExitReason::Exited { status };
             }
             Ok(WaitStatus::Signaled(_, sig, core_dumped)) => {
                 log::debug!(
-                    "[DEBUG] Process {pid} killed by signal: {sig}, core_dumped: {core_dumped}"
+                    "[DEBUG] wait_for_child_to_exit: Process {pid} killed by signal: {sig}, core_dumped: {core_dumped}"
                 );
-                return ExitReason::Signaled {
+                break ExitReason::Signaled {
                     signal: sig as i32,
                     core_dumped,
                 };
@@ -180,20 +192,22 @@ pub async fn wait_for_child_to_exit(
             Ok(WaitStatus::StillAlive) => {}
             Ok(_) => {}
             Err(nix::errno::Errno::ECHILD) => {
-                return ExitReason::Exited { status: -1 };
+                break ExitReason::Exited { status: -1 };
             }
-            Err(_) => {}
+            Err(e) => {
+                log::debug!("[DEBUG] Failed to get status for process {pid}: {e}");
+            }
         }
 
         // Check timeout
         if let Some(timeout_dur) = timeout {
             if start.elapsed() >= timeout_dur {
                 log::debug!(
-                    "[DEBUG] Process {pid} timed out after {} seconds",
+                    "[DEBUG] Killed process tree for process (PID {pid}) exceeded timeout of {} seconds",
                     timeout_dur.as_secs()
                 );
                 kill_and_wait(pid, cgroup_path.as_ref()).await;
-                return ExitReason::TimedOut {
+                break ExitReason::TimedOut {
                     timeout_secs: timeout_dur.as_secs(),
                 };
             }
@@ -206,10 +220,10 @@ pub async fn wait_for_child_to_exit(
             if let Ok(usage) = cgroup::read_memory_usage(cp, version).await {
                 if usage > limit {
                     log::debug!(
-                        "[DEBUG] Process {pid} exceeded memory limit of {limit} bytes (usage: {usage})"
+                        "[DEBUG] Killed process tree for process (PID {pid}) exceeded memory limit of {limit} bytes (usage: {usage})"
                     );
                     kill_and_wait(pid, cgroup_path.as_ref()).await;
-                    return ExitReason::OutOfMemory {
+                    break ExitReason::OutOfMemory {
                         limit_bytes: limit,
                     };
                 }
@@ -218,26 +232,38 @@ pub async fn wait_for_child_to_exit(
 
         // Check for container-level OOM kill notification
         if let Some(ref mut rx) = oom_rx {
-            if rx.try_recv().is_ok() {
-                log::debug!("[DEBUG] Process {pid} received container OOM notification");
-                kill_and_wait(pid, cgroup_path.as_ref()).await;
-                return ExitReason::ContainerOom {
-                    limit_bytes: memory_limit_bytes.unwrap_or(0),
-                };
+            match rx.try_recv() {
+                Ok(()) => {
+                    log::debug!("[DEBUG] Process (PID {pid}) OOM killed");
+                    kill_and_wait(pid, cgroup_path.as_ref()).await;
+                    break ExitReason::ContainerOom {
+                        limit_bytes: memory_limit_bytes.unwrap_or(0),
+                    };
+                }
+                Err(oneshot::error::TryRecvError::Closed) => {
+                    log::debug!("[DEBUG] oom killed_rx closed for process (PID {pid})");
+                    oom_rx = None;
+                }
+                Err(oneshot::error::TryRecvError::Empty) => {}
             }
         }
 
         // Check for stop signal (shutdown)
         if let Some(ref mut rx) = stop {
             if rx.try_recv().is_ok() {
-                log::debug!("[DEBUG] Stopping waiting for process {pid}");
+                log::debug!("wait_for_child_to_exit received message to stop waiting for process (PID {pid})");
                 kill_and_wait(pid, cgroup_path.as_ref()).await;
-                return ExitReason::KilledByProcessApi;
+                break ExitReason::KilledByProcessApi;
             }
         }
 
         // Poll interval
         tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+
+    log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
+    if exit_status_tx.send(exit_reason).is_err() {
+        log::debug!("[DEBUG] Failed to send exit status for process (PID {pid})");
     }
 }
 

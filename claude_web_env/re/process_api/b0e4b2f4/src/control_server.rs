@@ -48,10 +48,13 @@ use tokio::sync::broadcast;
 
 use crate::state::ProcessMap;
 
+/// Shared container name type, updated by control server, read by WS connections.
+pub type SharedContainerName = Arc<Mutex<Option<String>>>;
+
 /// Shared state for the control server.
 struct ControlState {
     shutdown_tx: broadcast::Sender<()>,
-    container_name: Mutex<Option<String>>,
+    container_name: SharedContainerName,
     proc_map: ProcessMap,
 }
 
@@ -63,21 +66,22 @@ pub async fn start_control_server(
     addr: SocketAddr,
     shutdown_tx: broadcast::Sender<()>,
     proc_map: ProcessMap,
+    container_name: SharedContainerName,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     let state = Arc::new(ControlState {
         shutdown_tx,
-        container_name: Mutex::new(None),
+        container_name,
         proc_map,
     });
 
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => {
-            log::info!("Control server listening on {addr}");
+            log::info!("[CONTROL] Control server listening on {addr}");
             l
         }
         Err(e) => {
-            log::error!("Failed to bind control server to {addr}: {e}");
+            log::error!("[CONTROL] Failed to bind control server to {addr}: {e}");
             return;
         }
     };
@@ -98,12 +102,12 @@ pub async fn start_control_server(
                                 .serve_connection(io, service)
                                 .await
                             {
-                                log::debug!("[CONTROL] Connection error: {e}");
+                                log::debug!("[CONTROL] Error serving connection from client: {e}");
                             }
                         });
                     }
                     Err(e) => {
-                        log::debug!("[CONTROL] Accept error: {e}");
+                        log::debug!("[CONTROL] Failed to accept connection: {e}");
                     }
                 }
             }
@@ -131,6 +135,7 @@ async fn handle_request(
             log::info!("[CONTROL] Received shutdown request via HTTP");
 
             // Perform filesystem sync before shutdown
+            log::debug!("[CONTROL] Syncing filesystem...");
             match tokio::process::Command::new("sync").output().await {
                 Ok(output) => {
                     if output.status.success() {
@@ -221,8 +226,8 @@ async fn handle_request(
     }
 }
 
-/// Get the current container name (set by the control server).
-#[allow(dead_code)]
+/// Get the current container name from shared state.
+/// Xrefs: "[DEBUG] Using container name from control server:"
 pub fn get_container_name(state: &Mutex<Option<String>>) -> Option<String> {
     state.lock().clone()
 }
