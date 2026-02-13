@@ -115,12 +115,7 @@ const mockTps = [
       {
         occurrence_id: "occ-md5-usage",
         note: "Direct MD5 usage for password hashing",
-        files: [
-          {
-            path: "src/auth/login.py",
-            ranges: [{ start_line: 5, end_line: 7, note: "MD5 hash function" }],
-          },
-        ],
+        locations: [{ file: "src/auth/login.py", start_line: 5, end_line: 7, note: "MD5 hash function" }],
         critic_scopes_expected_to_recall: [["security", "cryptography"]],
       },
     ],
@@ -137,12 +132,7 @@ const mockFps = [
       {
         occurrence_id: "occ-expiry-value",
         note: "This is a reasonable default, not a magic number",
-        files: [
-          {
-            path: "src/auth/login.py",
-            ranges: [{ start_line: 19, end_line: 20 }],
-          },
-        ],
+        locations: [{ file: "src/auth/login.py", start_line: 19, end_line: 20 }],
         relevant_files: ["src/config/settings.py"],
       },
     ],
@@ -156,14 +146,9 @@ const mockCritiqueIssues = [
     rationale: "The code uses MD5 for password hashing which is insecure.",
     occurrences: [
       {
-        occurrence_id: "critique-occ-1",
+        occurrence_id: 1,
         note: "Found insecure hash algorithm",
-        files: [
-          {
-            path: "src/auth/login.py",
-            ranges: [{ start_line: 5, end_line: 7 }],
-          },
-        ],
+        locations: [{ file: "src/auth/login.py", start_line: 5, end_line: 7 }],
       },
     ],
   },
@@ -172,14 +157,9 @@ const mockCritiqueIssues = [
     rationale: "The verify_user function lacks rate limiting, enabling brute force attacks.",
     occurrences: [
       {
-        occurrence_id: "critique-occ-2",
+        occurrence_id: 2,
         note: "No rate limiting on login attempts",
-        files: [
-          {
-            path: "src/auth/login.py",
-            ranges: [{ start_line: 9, end_line: 15 }],
-          },
-        ],
+        locations: [{ file: "src/auth/login.py", start_line: 9, end_line: 15 }],
       },
     ],
   },
