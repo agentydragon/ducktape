@@ -123,6 +123,7 @@ pub async fn container_oom_monitor(
 ///
 /// String refs at binary offset 0x1af72a:
 ///   "per_process_memory_monitor: Received shutdown signal, exiting"
+#[allow(dead_code)]
 pub async fn per_process_memory_monitor(
     pid: u32,
     process_id: String,

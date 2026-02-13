@@ -123,6 +123,7 @@ pub struct CreateProcess {
 pub struct ProcessConnection {
     pub process_id: String,
     #[serde(default)]
+    #[allow(dead_code)]
     pub reattach: Option<bool>,
     #[serde(default)]
     pub expected_container_name: Option<String>,
