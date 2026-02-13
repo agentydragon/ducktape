@@ -449,6 +449,7 @@ class TruePositiveOccurrenceORM(Base):
     true_positive: Mapped[TruePositive] = relationship(back_populates="occurrences")
     critic_scopes_expected_to_recall: Mapped[list[CriticScopeExpectedToRecall]] = relationship(
         back_populates="occurrence",
+        cascade="all, delete-orphan",
         primaryjoin="and_(TruePositiveOccurrenceORM.snapshot_slug == foreign(CriticScopeExpectedToRecall.snapshot_slug), "
         "TruePositiveOccurrenceORM.tp_id == foreign(CriticScopeExpectedToRecall.tp_id), "
         "TruePositiveOccurrenceORM.occurrence_id == foreign(CriticScopeExpectedToRecall.occurrence_id))",

@@ -44,7 +44,7 @@ from props.db.sync.yaml_loader import SyncValidationError, load_yaml_issues
 
 if TYPE_CHECKING:
     from props.config import PropsConfig
-    from props.core.models.true_positive import LineRange
+    from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -368,8 +368,10 @@ def sync_issues_to_db(
                         logger.debug(f"Updating issue rationale: {key}")
                         needs_update = True
 
-                    # For now, always update occurrences if any change detected
-                    # TODO: Implement proper occurrence comparison
+                    if _tp_occurrences_changed(list(existing.occurrences), issue.occurrences):
+                        logger.debug(f"Updating issue occurrences: {key}")
+                        needs_update = True
+
                     if needs_update:
                         existing.rationale = issue.rationale
                         # Delete existing occurrences and re-add (cascade handles this)
@@ -433,8 +435,10 @@ def sync_issues_to_db(
                         logger.debug(f"Updating FP rationale: {fp_key}")
                         fp_needs_update = True
 
-                    # For now, always update occurrences if any change detected
-                    # TODO: Implement proper occurrence comparison
+                    if _fp_occurrences_changed(list(existing_fp.occurrences), fp.occurrences):
+                        logger.debug(f"Updating FP occurrences: {fp_key}")
+                        fp_needs_update = True
+
                     if fp_needs_update:
                         existing_fp.rationale = fp.rationale
                         # Delete existing occurrences and re-add (cascade handles this)
@@ -569,6 +573,51 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
+def _compute_restriction_hash(match_file_restriction: set[Path] | None) -> str | None:
+    """Compute the expected DB hash for a match_file_restriction from YAML."""
+    if match_file_restriction is None:
+        return None
+    return compute_files_hash([str(p) for p in match_file_restriction])
+
+
+def _tp_occurrences_changed(
+    existing_occs: list[TruePositiveOccurrenceORM], yaml_occs: list[TruePositiveOccurrence]
+) -> bool:
+    """Check if TP occurrence data differs between DB and YAML."""
+    existing_map = {o.occurrence_id: o for o in existing_occs}
+    yaml_map = {o.occurrence_id: o for o in yaml_occs}
+
+    if set(existing_map.keys()) != set(yaml_map.keys()):
+        return True
+
+    for occ_id, yaml_occ in yaml_map.items():
+        db_occ = existing_map[occ_id]
+        if db_occ.note != yaml_occ.note:
+            return True
+        if db_occ.match_file_restriction != _compute_restriction_hash(yaml_occ.match_file_restriction):
+            return True
+    return False
+
+
+def _fp_occurrences_changed(
+    existing_occs: list[FalsePositiveOccurrenceORM], yaml_occs: list[FalsePositiveOccurrence]
+) -> bool:
+    """Check if FP occurrence data differs between DB and YAML."""
+    existing_map = {o.occurrence_id: o for o in existing_occs}
+    yaml_map = {o.occurrence_id: o for o in yaml_occs}
+
+    if set(existing_map.keys()) != set(yaml_map.keys()):
+        return True
+
+    for occ_id, yaml_occ in yaml_map.items():
+        db_occ = existing_map[occ_id]
+        if db_occ.note != yaml_occ.note:
+            return True
+        if db_occ.match_file_restriction != _compute_restriction_hash(yaml_occ.match_file_restriction):
+            return True
+    return False
+
+
 def compute_files_hash(file_paths: list[str]) -> str:
     """Compute content-addressable hash for a file set.
 
@@ -627,7 +676,7 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     # Load canonical TPs from YAML to get critic_scopes_expected_to_recall
 
     for slug in slugs:
-        true_positives, _ = load_yaml_issues(slug, specimens_dir)
+        true_positives, false_positives = load_yaml_issues(slug, specimens_dir)
 
         for tp in true_positives:
             for occurrence in tp.occurrences:
@@ -639,6 +688,19 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
                     key = (slug, files_hash)
                     desired_file_sets.setdefault(key, file_paths)
                     desired_triggers.add((slug, tp.tp_id, occurrence.occurrence_id, files_hash))
+
+                # Also preserve file sets used by match_file_restriction
+                if occurrence.match_file_restriction is not None:
+                    restriction_paths = [str(f) for f in occurrence.match_file_restriction]
+                    restriction_hash = compute_files_hash(restriction_paths)
+                    desired_file_sets.setdefault((slug, restriction_hash), restriction_paths)
+
+        for fp in false_positives:
+            for fp_occ in fp.occurrences:
+                if fp_occ.match_file_restriction is not None:
+                    restriction_paths = [str(f) for f in fp_occ.match_file_restriction]
+                    restriction_hash = compute_files_hash(restriction_paths)
+                    desired_file_sets.setdefault((slug, restriction_hash), restriction_paths)
 
     # Current state from DB
     existing_file_sets: set[tuple[SnapshotSlug, str]] = {
