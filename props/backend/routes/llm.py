@@ -216,7 +216,7 @@ async def responses(
 
     # Forward request to upstream
     start_time = time.monotonic()
-    upstream_url = f"{upstream.url}/v1/responses"
+    upstream_url = f"{upstream.url}/responses"
 
     async with httpx.AsyncClient() as client:
         try:
