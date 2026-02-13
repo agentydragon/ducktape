@@ -101,10 +101,6 @@ class ClusterMemberSpec(OpenAIStrictModeBaseModel):
     rationale: str = Field(..., description="Why this issue belongs to this cluster")
 
 
-class ListClusteringPendingArgs(OpenAIStrictModeBaseModel):
-    run: UUID | None = Field(None, description="Filter to specific critic run ID")
-
-
 class ListClustersArgs(OpenAIStrictModeBaseModel):
     pass
 
@@ -146,13 +142,19 @@ class PendingEdge(BaseModel):
     gt_ref: GTRef
 
 
+class OccurrenceInfo(BaseModel):
+    """Locations for one occurrence of a critique issue."""
+
+    locations: list[LocationAnchor]
+
+
 class IssueDetails(BaseModel):
     """Details of a critique issue."""
 
     issue_id: str
     critique_run_id: UUID
     rationale: str
-    locations: list[LocationAnchor]
+    occurrences: list[OccurrenceInfo]
 
 
 class GTDetails(BaseModel):

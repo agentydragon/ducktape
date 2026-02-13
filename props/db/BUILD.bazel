@@ -1,4 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/deps:check.bzl", "assert_no_deps")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
@@ -173,14 +174,22 @@ py_library(
     deps = ["@pypi//pytest"],
 )
 
-# Static analysis test - no postgres needed
-py_test(
-    name = "test_layer_isolation",
-    srcs = ["test_layer_isolation.py"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        "@pypi//pytest_bazel",
+# db/ must not depend on agent code (container-only)
+assert_no_deps(
+    name = "test_no_grader_deps",
+    forbidden = ["//props/agents/grader"],
+    targets = [
+        "//props/db:config",
+        "//props/db:database",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/db:notifications",
+        "//props/db:queries",
+        "//props/db:query_builders",
+        "//props/db:session",
+        "//props/db:setup",
+        "//props/db:snapshot_io",
+        "//props/db:snapshots",
     ],
 )
 
