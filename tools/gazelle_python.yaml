@@ -101,6 +101,7 @@ manifest:
     docutils: docutils
     dotenv: python_dotenv
     dpath: dpath
+    durationpy: durationpy
     e2e-tests: splitwise
     email_reply_parser: email_reply_parser
     email_validator: email_validator
@@ -272,6 +273,7 @@ manifest:
     key_value.shared: py_key_value_shared
     keyring: keyring
     kiwisolver: kiwisolver
+    kubernetes: kubernetes
     kubernetes_asyncio: kubernetes_asyncio
     lark: lark
     license_expression: license_expression
@@ -579,4 +581,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: 8cb46052ddee2ef09193a5e2dd9977112b1b3e3d1a3beece6dc52afa9f1e21b2
+integrity: 8feed30cac5051ec6f1c978485f797d2200e3f00826a06a5a7fe8f0419e9e02b

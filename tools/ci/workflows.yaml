@@ -25,7 +25,9 @@ workflows:
   bazel-test:
     # Java (keytool) is provided hermetically via //third_party/jdk.
     # E2E tests (local=True) run locally even when RBE is enabled.
-    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets)' }
+    # Exclude manual-tagged tests: target lists are passed by file, bypassing
+    # Bazel's default wildcard exclusion of manual targets.
+    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets) except attr(tags, "manual", $targets)' }
     targets: true
     secrets: [BUILDBUDDY_API_KEY]
 

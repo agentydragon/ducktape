@@ -72,9 +72,9 @@ resource "proxmox_virtual_environment_download_file" "talos_disk_gpu" {
   content_type = "import"
   datastore_id = "local"
   node_name    = var.proxmox_node_name
-  url       = replace(replace(data.talos_image_factory_urls.proxmox_gpu.urls.disk_image, ".raw.xz", ".qcow2"), ".raw.zst", ".qcow2")
-  file_name = "talos-gpu-${talos_image_factory_schematic.proxmox_gpu.id}-amd64.qcow2"
-  overwrite = true
+  url          = replace(replace(data.talos_image_factory_urls.proxmox_gpu.urls.disk_image, ".raw.xz", ".qcow2"), ".raw.zst", ".qcow2")
+  file_name    = "talos-gpu-${talos_image_factory_schematic.proxmox_gpu.id}-amd64.qcow2"
+  overwrite    = true
 }
 
 # ============================================================================
@@ -86,11 +86,11 @@ resource "proxmox_virtual_environment_hardware_mapping_pci" "gpu0" {
   comment = "NVIDIA RTX 5090 #0 (ZOTAC)"
   map = [
     {
-      id               = "10de:2b85"
-      iommu_group      = 14
-      node             = var.proxmox_node_name
-      path             = "0000:01:00.0"
-      subsystem_id     = "19da:1761"
+      id           = "10de:2b85"
+      iommu_group  = 14
+      node         = var.proxmox_node_name
+      path         = "0000:01:00.0"
+      subsystem_id = "19da:1761"
     },
   ]
 }
@@ -100,11 +100,11 @@ resource "proxmox_virtual_environment_hardware_mapping_pci" "gpu1" {
   comment = "NVIDIA RTX 5090 #1 (Gigabyte)"
   map = [
     {
-      id               = "10de:2b85"
-      iommu_group      = 16
-      node             = var.proxmox_node_name
-      path             = "0000:03:00.0"
-      subsystem_id     = "1458:416f"
+      id           = "10de:2b85"
+      iommu_group  = 16
+      node         = var.proxmox_node_name
+      path         = "0000:03:00.0"
+      subsystem_id = "1458:416f"
     },
   ]
 }
@@ -316,9 +316,9 @@ locals {
     }
     cluster = {
       allowSchedulingOnControlPlanes = true
-      discovery = { enabled = true }
-      network   = { cni = { name = "none" } }
-      proxy     = { disabled = true }
+      discovery                      = { enabled = true }
+      network                        = { cni = { name = "none" } }
+      proxy                          = { disabled = true }
     }
   }
 

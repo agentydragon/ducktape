@@ -17,7 +17,7 @@ tf_providers_versions(
         "null": "hashicorp/null:~>3.2.0",
         "proxmox": "bpg/proxmox:~>0.91.0",
         "random": "hashicorp/random:~>3.7.0",
-        "talos": "siderolabs/talos:~>0.9.0",
+        "talos": "siderolabs/talos:~>0.10.0",
         "tls": "hashicorp/tls:~>4.1.0",
     },
     tf_version = "1.9.8",

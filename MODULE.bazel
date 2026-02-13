@@ -51,7 +51,7 @@ tf.download(
         "powerdns": "pan-net/powerdns:1.5.0",
         "proxmox": "bpg/proxmox:0.91.0",
         "random": "hashicorp/random:3.7.2",
-        "talos": "siderolabs/talos:0.9.0",
+        "talos": "siderolabs/talos:0.10.1",
         "tls": "hashicorp/tls:4.1.0",
         "vault": "hashicorp/vault:5.7.0",
     },
