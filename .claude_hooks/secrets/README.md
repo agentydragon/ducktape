@@ -91,19 +91,12 @@ The `kubeconfig_setup.py` module automatically:
 
 - Secrets are encrypted with age (X25519)
 - Decryption key is provided via `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` env var
-- Kubeconfig has read-only permissions (except in `claude-sandbox` namespace)
+- Kubeconfig provides access to `claude-sandbox` namespace only (by default)
 - Resource quotas limit what can be created in the sandbox
 
 ## Permissions
 
 The `claude-readonly` ServiceAccount has:
-
-**Cluster-wide (read-only):**
-
-- ✅ Read pods, deployments, services, logs
-- ✅ Read Flux resources
-- ❌ NO direct secrets access
-- ❌ NO write permissions
 
 **claude-sandbox namespace (full access):**
 
@@ -113,4 +106,4 @@ The `claude-readonly` ServiceAccount has:
 - ✅ View logs
 - Limited by ResourceQuota: 4 CPU, 8Gi memory, 10 pods max
 
-**Security note:** While direct `kubectl get secrets` is blocked cluster-wide, secrets may still be accessible through pod environment variables, mounted volumes (via `kubectl exec`), or logs. The sandbox provides full isolation for experimentation.
+**No cluster-wide access** by default. To grant cluster-wide read-only access, deploy the separate `claude-rbac-read-only` configuration.
