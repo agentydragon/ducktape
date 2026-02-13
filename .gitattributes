@@ -37,11 +37,9 @@ llm/instruct_logseq/pages/** filename-conventions-ignored=true
 # Blog posts - filenames are published URLs (date-prefixed kebab-case)
 website/posts/** filename-conventions-ignored=true
 
-# Dotdirs follow their own naming conventions
-.claude-hooks/** filename-conventions-ignored=true
-
-# GitHub convention filenames
-.github/copilot-instructions.md filename-conventions-ignored=true
+# Dotfiles/dotdirs follow their own naming conventions
+.* filename-conventions-ignored=true
+.*/** filename-conventions-ignored=true
 
 # Specimens — dashes in slugs/filenames are by convention (YYYY-MM-DD-NN, kebab-case issue names)
 props/specimens/** filename-conventions-ignored=true
