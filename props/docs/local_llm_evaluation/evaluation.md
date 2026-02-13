@@ -1,16 +1,16 @@
 # Running Props Evaluation with a Local LLM
 
-End-to-end procedure for running the props critic and grader against a committed
-specimen snapshot using a local open-weight LLM served via llama-server.
+End-to-end procedure for running the props critic and grader against committed
+specimen snapshots using a local open-weight LLM served via llama-server.
 
-See <benchmarks.md> for model performance data on this environment.
+See <benchmarks.md> for model performance data.
 
 ## Prerequisites
 
-- Claude Code web session with `claude_hooks` (provides podman, `/dev/shm`,
-  insecure-registry entries, `DOCKER_HOST` env var)
+- A running props stack: PostgreSQL, OCI registry, backend with agent images
+  pushed. The `/test_props setup` skill automates this.
 - Enough free RAM for the model + KV cache (see memory estimates below) plus
-  ~2 GiB for PostgreSQL, registry, and backend containers
+  ~2 GiB for the props stack containers
 
 ## Tested Models
 
@@ -44,11 +44,7 @@ The critic agent's system prompt and tool definitions consume ~2K tokens, so
 4096 total context is too small for useful code analysis. **Use 32768** (the
 model's full native context window).
 
-> **TODO**: Explore extending beyond 32K with RoPE scaling (`--rope-freq-scale`,
-> `--rope-freq-base`) or YaRN. Qwen3-8B may support longer contexts with
-> appropriate scaling, and the RAM budget allows it at q4_0.
-
-## Step 1: Download llama-server
+## Step 1: Download and Start llama-server
 
 ```bash
 mkdir -p /tmp/benchmark
@@ -59,8 +55,6 @@ curl -L -H "Accept: application/octet-stream" \
   -o /tmp/benchmark/llama-server.tar.gz "$ASSET_URL"
 tar -xzf /tmp/benchmark/llama-server.tar.gz -C /tmp/benchmark
 ```
-
-~24 MB download. The CPU-only build is sufficient for this environment.
 
 > **Note**: `curl -sL | tar` fails because GitHub redirects to a different
 > domain. Download to a file first, then extract.
@@ -96,168 +90,40 @@ LD_LIBRARY_PATH="/tmp/benchmark/llama-b7993" \
     > /dev/shm/llama.log 2>&1 &
 ```
 
-Wait for the health endpoint: `curl -s http://127.0.0.1:11434/health`
+Wait for health: `curl -s http://127.0.0.1:11434/health`
 
 **Key flags**:
 
-- `--ctx-size 32768` — Qwen3-8B's full native context window. The critic
-  agent's system prompt + tool definitions consume ~2K tokens; 4096 is too
-  small for useful code analysis. 32K fits in ~9.3 GB with q4_0 KV cache.
-- `-ctk q4_0 -ctv q4_0` — quantize the KV cache to 4-bit. Reduces KV cache
-  memory by 4x vs the default f16, enabling larger context windows within the
-  RAM budget.
-- `--jinja` — enables chat template processing; required for tool calling
-  (Qwen3-8B). Harmless for models that don't use it.
-- `--no-warmup --cache-ram 0` — skip KV cache pre-allocation to save RAM.
-- `--parallel 1` — single slot is sufficient since we run one request at a time.
+- `--ctx-size 32768` — full native context window (see memory estimates above)
+- `-ctk q4_0 -ctv q4_0` — 4-bit KV cache quantization (4x RAM savings)
+- `--jinja` — chat template processing; required for tool calling (Qwen3-8B)
+- `--no-warmup --cache-ram 0` — skip KV cache pre-allocation to save RAM
+- `--parallel 1` — single slot (one request at a time)
 
-Verify: `curl -s http://127.0.0.1:11434/v1/models`
+The model name reported by `/v1/models` is the GGUF filename (e.g.,
+`Qwen3-8B-Q4_K_M.gguf`). This must match `upstream_model` in the config.
 
-The model name reported by llama-server is the GGUF filename (e.g.,
-`Qwen3-8B-Q4_K_M.gguf`). This must match `upstream_model` in the config
-(Step 6).
+## Step 4: Configure the Props Backend for Local LLM
 
-`llama-server` exposes `/v1/chat/completions`, `/v1/responses`, and
-`/v1/models`. The props backend proxies `/v1/responses` (the OpenAI Responses
-API) to the upstream.
-
-## Step 4: Start PostgreSQL
-
-```bash
-mkdir -p /dev/shm/pgdata
-
-TMPDIR=/dev/shm podman run -d --name postgres --network=host \
-  -e POSTGRES_PASSWORD=props-bench-dcfc0ef9506c6673 \
-  -e POSTGRES_DB=eval_results \
-  -v /dev/shm/pgdata:/var/lib/postgresql/data \
-  docker.io/library/postgres:16
-```
-
-Data is on tmpfs — it won't survive reboots. For persistence, use a disk-backed
-path instead.
-
-## Step 5: Initialize Props Database
-
-```bash
-PGHOST=127.0.0.1 \
-PGPORT=5432 \
-PGUSER=postgres \
-PGPASSWORD="props-bench-dcfc0ef9506c6673" \
-PGDATABASE=eval_results \
-ADGN_PROPS_SPECIMENS_ROOT="$PWD/props/specimens" \
-  bazel run //props/cli -- db recreate --yes
-```
-
-This creates the schema, syncs snapshots from `props/specimens/` into the DB,
-and creates admin credentials. No manual model metadata insert is needed — the
-backend syncs custom models from the config file's `[[models]]` entries on
-startup.
-
-## Step 6: Start OCI Registry
-
-```bash
-TMPDIR=/dev/shm podman run -d --name registry --network=host \
-  docker.io/library/registry:2
-```
-
-Verify: `curl http://localhost:5000/v2/_catalog`
-
-The props backend includes a built-in OCI registry proxy (`/v2/*` routes) that
-records `agent_definitions` on push. The proxy forwards to this upstream
-`registry:2` on port 5000. Images are pushed to the **backend** (port 8000),
-not directly to the upstream registry.
-
-## Step 7: Create Props Config File
-
-Copy <props_config.toml> to `/tmp/props-ollama-config.toml` and edit the
-`upstream_model` to match your chosen GGUF filename:
+Copy <props_config.toml> and edit `upstream_model` to match your GGUF filename:
 
 ```bash
 cp props/docs/local_llm_evaluation/props_config.toml /tmp/props-ollama-config.toml
-# Edit upstream_model if using a different model than the default
 ```
 
 The config defines:
 
-1. **`grader_model`**: Tells the backend to start the `GraderSupervisor`, which
-   automatically runs a grader after each critic finishes. Without this, grading
-   must be triggered manually.
-2. **Upstream connection** (`[upstreams.ollama]`): llama-server on port 11434.
-   `api_key_env` points to a dummy env var (llama-server ignores API keys).
-3. **Custom model** (`[[models]]`): Declares the local model with zero pricing
-   (inference is free). The `upstream_model` field must match the GGUF filename
-   reported by `/v1/models`.
+1. **`grader_model`**: Enables the `GraderSupervisor` (auto-grades after each
+   critic finishes)
+2. **Upstream** (`[upstreams.ollama]`): llama-server on port 11434. `api_key_env`
+   points to a dummy env var (llama-server ignores API keys)
+3. **Custom model** (`[[models]]`): Zero pricing (local inference is free).
+   `upstream_model` must match the GGUF filename from `/v1/models`
 
-## Step 8: Start the Props Backend
+Pass `PROPS_CONFIG_FILE=/tmp/props-ollama-config.toml` and
+`OLLAMA_DUMMY_KEY=dummy` when starting the backend.
 
-```bash
-PROPS_CONFIG_FILE=/tmp/props-ollama-config.toml \
-OLLAMA_DUMMY_KEY=dummy \
-PGHOST=127.0.0.1 \
-PGPORT=5432 \
-PGUSER=postgres \
-PGPASSWORD="props-bench-dcfc0ef9506c6673" \
-PGDATABASE=eval_results \
-ADGN_PROPS_SPECIMENS_ROOT="$PWD/props/specimens" \
-DOCKER_HOST="unix:///tmp/claude-podman-*.sock" \
-PROPS_DOCKER_NETWORK=host \
-PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5000 \
-TMPDIR=/dev/shm \
-  bazel run //props/backend:backend_cli -- serve --host 127.0.0.1 --port 8000 &
-```
-
-**Critical env vars**:
-
-- `DOCKER_HOST` — points to the podman socket
-- `PROPS_DOCKER_NETWORK=host` — agent containers use host networking (required
-  for podman/gVisor where bridge networking isn't available)
-- `PROPS_REGISTRY_UPSTREAM_URL` — forwards to upstream `registry:2` on port 5000
-- `TMPDIR=/dev/shm` — prevents image layer downloads from filling root `/tmp`
-
-The backend logs an admin token on startup — a base64-encoded
-`username:password` string (e.g., `cG9zdGdyZXM6cHJvcHMt...`). This token is
-used for all authenticated API calls.
-
-**Auth format**: The backend accepts both `Bearer` and `Basic` schemes with
-the same payload — base64 of `username:password`:
-
-```bash
-# Both of these work:
--H "Authorization: Bearer $ADMIN_TOKEN"
--H "Authorization: Basic $ADMIN_TOKEN"
-```
-
-The `Bearer` scheme is used for API calls (curl, OpenAI SDK). The `Basic`
-scheme is used by OCI/Docker tooling (crane, docker push/pull).
-
-## Step 9: Build and Push Agent Images
-
-Push through the backend's registry proxy (port 8000), not directly to the
-upstream registry (port 5000). The proxy records `agent_definitions` in the DB.
-
-The push uses HTTP Basic auth. Set up a Docker config for crane:
-
-```bash
-export TMPDIR=/dev/shm
-ADMIN_TOKEN="<from backend startup logs>"
-
-# Create Docker config for crane auth
-mkdir -p /tmp/crane-config
-echo "{\"auths\":{\"localhost:8000\":{\"auth\":\"$ADMIN_TOKEN\"}}}" \
-  > /tmp/crane-config/config.json
-
-# Push critic image
-DOCKER_CONFIG=/tmp/crane-config \
-  bazel run //props/agents/critic:push -- \
-    --repository localhost:8000/critic --tag latest --insecure
-
-# Push grader image
-DOCKER_CONFIG=/tmp/crane-config \
-  bazel run //props/agents/grader:push -- \
-    --repository localhost:8000/grader --tag latest --insecure
-```
-
-## Step 10: Run a Critic
+## Step 5: Run a Critic
 
 ```bash
 ADMIN_TOKEN="<from backend logs>"
@@ -275,31 +141,19 @@ curl -s -X POST "http://localhost:8000/api/runs/critic" \
   }'
 ```
 
-`budget_usd=0.0` — local models have zero cost, so no budget is needed.
+`budget_usd=0.0` — local models have zero cost.
 
-## Step 11: Wait for Grading
+Monitor and wait for grading as described in
+<../openai_evaluation/evaluation.md> ("Running Critics" section).
 
-The `GraderSupervisor` (enabled by `grader_model` in the config) automatically
-runs a grader after each critic finishes. No manual curl is needed.
+## Exporting Results
 
-Monitor progress by querying the database:
-
-```bash
-PGPASSWORD="props-bench-dcfc0ef9506c6673" psql -h 127.0.0.1 -U postgres -d eval_results \
-  -c "SELECT agent_run_id, type_config->>'agent_type' AS type, model, status,
-             container_exit_code FROM agent_runs ORDER BY created_at"
-```
-
-Wait until both the critic and grader runs show `status = 'exited'` with
-`container_exit_code = 0`.
-
-## Step 12: Export Results
-
-After each agent run completes, export the run results (excluding ground truth
-tables) to a SQL dump in the repo:
+Same procedure as OpenAI evaluation — see
+<../openai_evaluation/evaluation.md> ("Exporting Results" section), adjusting
+the output path:
 
 ```bash
-PGPASSWORD="props-bench-dcfc0ef9506c6673" pg_dump -h 127.0.0.1 -U postgres eval_results \
+pg_dump -Fc eval_results \
   --data-only --no-owner --no-privileges \
   --exclude-table=true_positives \
   --exclude-table=true_positive_occurrences \
@@ -315,12 +169,8 @@ PGPASSWORD="props-bench-dcfc0ef9506c6673" pg_dump -h 127.0.0.1 -U postgres eval_
   --exclude-table=model_metadata \
   --exclude-table=agent_role_salt \
   --exclude-table=alembic_version \
-  > props/docs/local_llm_evaluation/results.sql
+  -f props/docs/local_llm_evaluation/results.dump
 ```
-
-This exports agent runs, reported issues, grading edges, LLM requests, and
-cluster data — everything needed to analyze evaluation results — while excluding
-ground truth labels, snapshot content, and infrastructure tables.
 
 ## Troubleshooting
 
@@ -330,24 +180,7 @@ Files on `/dev/shm` (tmpfs) are backed by RAM. When the process that mmapped
 the file exits, the kernel may reclaim the pages. Always store GGUF files on
 `/tmp` (disk-backed), not `/dev/shm`.
 
-### `no space left on device` during image pull
-
-Podman stores image layers in `TMPDIR` (defaults to `/tmp`). Set
-`TMPDIR=/dev/shm` before any podman operation to use tmpfs.
-
-### `http: server gave HTTP response to HTTPS client`
-
-The `claude_hooks` session start hook configures insecure registries. Verify
-`/root/.cache/claude-hooks/podman/registries.conf` contains entries for
-`localhost:5000` and `127.0.0.1:5000` with `insecure = true`.
-
-### Agent container can't reach services
-
-Set `PROPS_DOCKER_NETWORK=host` so agent containers share the host network
-namespace and can reach `127.0.0.1:*` services.
-
 ### llama-server download: `curl -sL | tar` fails
 
-GitHub release asset downloads redirect to a different domain. Piping `curl -sL`
-directly to `tar` can fail if the redirect returns an HTML error page. Download
-to a file first, then extract.
+GitHub release asset downloads redirect to a different domain. Download to a
+file first, then extract.

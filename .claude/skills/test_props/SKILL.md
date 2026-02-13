@@ -18,6 +18,13 @@ runs the backend, pushes agent images, and tests agent workflows.
 - `improver` - Test improver agent
 - `all` - Full setup + test all workflows
 
+## Background
+
+For evaluation workflow docs (model selection, file-set examples, export/import):
+
+- @props/docs/openai_evaluation/evaluation.md
+- @props/docs/local_llm_evaluation/evaluation.md
+
 ## Prerequisites
 
 - `OPENAI_API_KEY` must be in environment
