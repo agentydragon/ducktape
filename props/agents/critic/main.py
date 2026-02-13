@@ -82,14 +82,8 @@ class ReportFailureArgs(OpenAIStrictModeBaseModel):
 # --- Tool response models ---
 
 
-class LocationInfo(BaseModel):
-    file: str
-    start_line: int | None
-    end_line: int | None
-
-
 class OccurrenceInfo(BaseModel):
-    locations: list[LocationInfo]
+    locations: list[LocationAnchor]
 
 
 class IssueInfo(BaseModel):
@@ -198,15 +192,7 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
                     .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
                     .all()
                 )
-                occurrence_infos = [
-                    OccurrenceInfo(
-                        locations=[
-                            LocationInfo(file=loc.file, start_line=loc.start_line, end_line=loc.end_line)
-                            for loc in occ.locations
-                        ]
-                    )
-                    for occ in occurrences
-                ]
+                occurrence_infos = [OccurrenceInfo(locations=list(occ.locations)) for occ in occurrences]
                 issue_infos.append(
                     IssueInfo(issue_id=issue.issue_id, rationale=issue.rationale, occurrences=occurrence_infos)
                 )

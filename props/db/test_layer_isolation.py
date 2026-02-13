@@ -11,12 +11,7 @@ import pytest_bazel
 
 
 def test_db_does_not_import_grader():
-    """Verify that db/ modules do not import from grader.*.
-
-    The database layer uses db.snapshots (DBTruePositiveIssue, DBKnownFalsePositive)
-    and should not import from grader modules. Conversion between layers happens
-    in grader.persistence.
-    """
+    """Verify that db/ modules do not import from grader.*."""
     db_dir = Path(__file__).parent
     db_files = list(db_dir.glob("*.py"))
 
@@ -39,11 +34,8 @@ def test_db_does_not_import_grader():
                         violations.append(f"{file_path.name}: imports {alias.name}")
 
     if violations:
-        msg = (
-            "Database layer must not import from grader modules.\n"
-            "Use db.snapshots models instead (DBTruePositiveIssue, DBKnownFalsePositive).\n"
-            "Conversions should live in grader.persistence.\n\n"
-            "Violations found:\n" + "\n".join(f"  - {v}" for v in violations)
+        msg = "Database layer must not import from grader modules.\n\nViolations found:\n" + "\n".join(
+            f"  - {v}" for v in violations
         )
         raise AssertionError(msg)
 

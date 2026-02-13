@@ -20,7 +20,6 @@ from props.db.models import (
     AgentDefinition,
     AgentRun,
     AgentRunStatus,
-    CanonicalIssuesSnapshot,
     GradingEdge,
     ReportedIssue,
     ReportedIssueOccurrence,
@@ -34,9 +33,6 @@ from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
 FAKE_CRITIC_DIGEST = "sha256:" + "0" * 64
 FAKE_GRADER_DIGEST = "sha256:" + "1" * 64
 FAKE_CRITIC_DEV_OPTIMIZE_DIGEST = "sha256:" + "2" * 64
-
-# Props-specific constants
-EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])
 
 
 def ensure_fake_agent_definitions(session: Session) -> None:
