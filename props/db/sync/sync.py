@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug
 from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
+from props.core.models.true_positive import LineRange
 from props.core.runs_context import specimens_definitions_root
 from props.db.models import (
     CriticScopeExpectedToRecall,
@@ -44,7 +45,7 @@ from props.db.sync.yaml_loader import SyncValidationError, load_yaml_issues
 
 if TYPE_CHECKING:
     from props.config import PropsConfig
-    from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
+    from props.core.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -580,6 +581,30 @@ def _compute_restriction_hash(match_file_restriction: set[Path] | None) -> str |
     return compute_files_hash([str(p) for p in match_file_restriction])
 
 
+def _db_ranges_to_files(ranges: list[OccurrenceRangeORM]) -> dict[Path, list[LineRange]]:
+    """Reconstruct files dict from DB occurrence ranges."""
+    files: dict[Path, list[LineRange]] = {}
+    for r in sorted(ranges, key=lambda r: (str(r.file_path), r.range_id)):
+        path = Path(str(r.file_path))
+        files.setdefault(path, []).append(LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note))
+    return files
+
+
+def _yaml_files_to_comparable(files: dict[Path, list[LineRange] | None]) -> dict[Path, list[LineRange]]:
+    """Normalize YAML files dict for comparison (None ranges -> empty list)."""
+    return {p: (ranges if ranges is not None else []) for p, ranges in files.items()}
+
+
+def _db_critic_scopes_hashes(db_occ: TruePositiveOccurrenceORM) -> set[str]:
+    """Get set of files_hash values from DB critic_scopes_expected_to_recall."""
+    return {scope.files_hash for scope in db_occ.critic_scopes_expected_to_recall}
+
+
+def _yaml_critic_scopes_hashes(yaml_occ: TruePositiveOccurrence) -> set[str]:
+    """Compute files_hash values for YAML critic_scopes_expected_to_recall."""
+    return {compute_files_hash([str(p) for p in scope]) for scope in yaml_occ.critic_scopes_expected_to_recall}
+
+
 def _tp_occurrences_changed(
     existing_occs: list[TruePositiveOccurrenceORM], yaml_occs: list[TruePositiveOccurrence]
 ) -> bool:
@@ -595,6 +620,10 @@ def _tp_occurrences_changed(
         if db_occ.note != yaml_occ.note:
             return True
         if db_occ.match_file_restriction != _compute_restriction_hash(yaml_occ.match_file_restriction):
+            return True
+        if _db_ranges_to_files(list(db_occ.ranges)) != _yaml_files_to_comparable(yaml_occ.files):
+            return True
+        if _db_critic_scopes_hashes(db_occ) != _yaml_critic_scopes_hashes(yaml_occ):
             return True
     return False
 
@@ -614,6 +643,11 @@ def _fp_occurrences_changed(
         if db_occ.note != yaml_occ.note:
             return True
         if db_occ.match_file_restriction != _compute_restriction_hash(yaml_occ.match_file_restriction):
+            return True
+        if _db_ranges_to_files(list(db_occ.ranges)) != _yaml_files_to_comparable(yaml_occ.files):
+            return True
+        db_relevant = {Path(str(rf.file_path)) for rf in db_occ.relevant_file_orms}
+        if db_relevant != yaml_occ.relevant_files:
             return True
     return False
 
