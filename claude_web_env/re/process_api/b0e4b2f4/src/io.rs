@@ -117,6 +117,7 @@ pub struct CreateProcess {
 pub struct ProcessConnection {
     pub process_id: String,
     #[serde(default)]
+    #[allow(dead_code)]
     pub reattach: Option<bool>,
     #[serde(default)]
     pub expected_container_name: Option<String>,
@@ -336,14 +337,10 @@ async fn handle_create_process(
 
     // Set UID/GID if specified
     if let Some(uid) = req.uid {
-        unsafe {
-            cmd.uid(uid);
-        }
+        cmd.uid(uid);
     }
     if let Some(gid) = req.gid {
-        unsafe {
-            cmd.gid(gid);
-        }
+        cmd.gid(gid);
     }
 
     // Configure stdio
@@ -447,8 +444,8 @@ async fn handle_create_process(
     let mut shutdown_rx = shutdown_tx.subscribe();
 
     // Spawn stdout forwarder
-    /// Decompiled from 0x144970..0x145eb0  (5440 bytes)
-    /// Xrefs: "[DEBUG] started stdout pipe", "[DEBUG] stdout done"
+    // Decompiled from 0x144970..0x145eb0  (5440 bytes)
+    // Xrefs: "[DEBUG] started stdout pipe", "[DEBUG] stdout done"
     if let Some(mut stdout) = stdout {
         let ws_tx_clone = Arc::clone(&ws_tx);
         tokio::spawn(async move {
@@ -470,8 +467,8 @@ async fn handle_create_process(
     }
 
     // Spawn stderr forwarder
-    /// Decompiled from 0x141db0..0x1432f0  (5440 bytes)
-    /// Xrefs: "[DEBUG] started stderr pipe", "[DEBUG] stderr done"
+    // Decompiled from 0x141db0..0x1432f0  (5440 bytes)
+    // Xrefs: "[DEBUG] started stderr pipe", "[DEBUG] stderr done"
     if let Some(mut stderr) = stderr {
         let ws_tx_clone = Arc::clone(&ws_tx);
         tokio::spawn(async move {

@@ -35,6 +35,7 @@ use crate::pid_tree;
 use crate::state::ProcessMap;
 
 /// Tracked orphan zombie awaiting reaping.
+#[allow(dead_code)]
 struct TrackedZombie {
     pid: u32,
     first_seen: Instant,

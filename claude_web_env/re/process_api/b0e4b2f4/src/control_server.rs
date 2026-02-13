@@ -222,6 +222,7 @@ async fn handle_request(
 }
 
 /// Get the current container name (set by the control server).
+#[allow(dead_code)]
 pub fn get_container_name(state: &Mutex<Option<String>>) -> Option<String> {
     state.lock().clone()
 }

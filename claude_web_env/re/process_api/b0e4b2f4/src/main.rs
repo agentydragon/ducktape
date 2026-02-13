@@ -61,7 +61,7 @@ mod pid_tree;
 mod proc_handle;
 mod state;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use clap::Parser;
@@ -278,8 +278,8 @@ async fn main() {
     }
 
     // Bind the main WebSocket listener
-    /// Decompiled from 0x13f6a0..0x13faff  (1119 bytes)
-    /// Xrefs: "main.rsFailed to bind"
+    // Decompiled from 0x13f6a0..0x13faff  (1119 bytes)
+    // Xrefs: "main.rsFailed to bind"
     let listener = match TcpListener::bind(&cli.addr).await {
         Ok(l) => {
             log::info!("Listening on: {}", cli.addr);

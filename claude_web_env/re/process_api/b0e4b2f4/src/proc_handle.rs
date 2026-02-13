@@ -19,7 +19,7 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
 use tokio::sync::oneshot;
 
-use crate::cgroup::{self, CgroupController, CgroupVersion};
+use crate::cgroup::{self, CgroupVersion};
 use crate::pid_tree;
 
 /// Exit status of a managed process.
@@ -48,6 +48,7 @@ pub enum ExitReason {
 /// Decompiled from struct layout at 0x21c970..0x21cb45 (469 bytes)
 /// Xrefs: "reattachable", "timeout", "memory_limit_bytes"
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ProcHandle {
     pub pid: u32,
     pub process_group_pid: u32,

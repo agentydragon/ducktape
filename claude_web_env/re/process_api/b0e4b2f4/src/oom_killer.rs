@@ -14,13 +14,12 @@
 //!   0x1af72a: "per_process_memory_monitor: Received shutdown signal, exiting per_process_memory_monitor"
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::time::Duration;
 
 use tokio::sync::{broadcast, oneshot};
 
 use crate::cgroup::{self, CgroupController, CgroupVersion};
-use crate::state::{self, ProcessMap};
+use crate::state::ProcessMap;
 
 /// Decompiled from 0x21c2b0..0x21c510  (608 bytes)
 /// Xrefs: "proc_handle", "oom_killed_rx"
@@ -105,7 +104,7 @@ pub async fn container_oom_monitor(
             );
 
             // Signal the process's OOM channel
-            if let Some(tx) = oom_killed_txs.get(&process_id) {
+            if let Some(_tx) = oom_killed_txs.get(&process_id) {
                 // Can't move out of HashMap reference, but the channel signals the process monitor
                 log::debug!("[DEBUG] container_oom_monitor: signaling OOM for {process_id}");
             }
@@ -124,6 +123,7 @@ pub async fn container_oom_monitor(
 ///
 /// String refs at binary offset 0x1af72a:
 ///   "per_process_memory_monitor: Received shutdown signal, exiting"
+#[allow(dead_code)]
 pub async fn per_process_memory_monitor(
     pid: u32,
     process_id: String,
