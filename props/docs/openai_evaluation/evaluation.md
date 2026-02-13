@@ -90,7 +90,7 @@ Export run results (excluding ground truth and infrastructure tables) for
 another session to import:
 
 ```bash
-pg_dump -Fc eval_results \
+pg_dump eval_results \
   --data-only --no-owner --no-privileges \
   --exclude-table=true_positives \
   --exclude-table=true_positive_occurrences \
@@ -106,11 +106,14 @@ pg_dump -Fc eval_results \
   --exclude-table=model_metadata \
   --exclude-table=agent_role_salt \
   --exclude-table=alembic_version \
-  -f props/docs/openai_evaluation/results.dump
+  -f props/docs/openai_evaluation/results.sql \
+  && zstd --rm --ultra -22 props/docs/openai_evaluation/results.sql
 ```
 
-Uses custom archive format (`-Fc`) which is compressed and avoids the
-`\restrict` psql meta-commands that plain-text dumps emit since CVE-2025-8714.
+Uses plain SQL format piped through zstd. The `llm_requests` table stores full
+conversation transcripts that grow O(N^2) across agent turns — zstd compresses
+the cross-row redundancy far better than pg_dump's per-row gzip (197 KB vs
+6 MB for the same data).
 
 Exports: `agent_definitions`, `agent_runs`, `reported_issues`,
 `reported_issue_occurrences`, `grading_edges`, `issue_clusters`,
@@ -124,10 +127,9 @@ To continue from an exported dump in a new session:
 2. Import:
 
 ```bash
-pg_restore --disable-triggers -d eval_results \
-  props/docs/openai_evaluation/results.dump
+zstd -dc props/docs/openai_evaluation/results.sql.zst \
+  | psql --set ON_ERROR_STOP=on -d eval_results
 ```
 
 The circular FKs (`agent_runs` <-> `agent_definitions`) are `DEFERRABLE
-INITIALLY DEFERRED`, so insert order doesn't matter. `--disable-triggers`
-prevents RLS INSERT policy failures during restore.
+INITIALLY DEFERRED`, so insert order doesn't matter.

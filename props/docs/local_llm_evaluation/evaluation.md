@@ -153,7 +153,7 @@ Same procedure as OpenAI evaluation — see
 the output path:
 
 ```bash
-pg_dump -Fc eval_results \
+pg_dump eval_results \
   --data-only --no-owner --no-privileges \
   --exclude-table=true_positives \
   --exclude-table=true_positive_occurrences \
@@ -169,7 +169,8 @@ pg_dump -Fc eval_results \
   --exclude-table=model_metadata \
   --exclude-table=agent_role_salt \
   --exclude-table=alembic_version \
-  -f props/docs/local_llm_evaluation/results.dump
+  -f props/docs/local_llm_evaluation/results.sql \
+  && zstd --rm --ultra -22 props/docs/local_llm_evaluation/results.sql
 ```
 
 ## Troubleshooting

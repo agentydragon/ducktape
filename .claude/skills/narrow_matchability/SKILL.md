@@ -26,20 +26,6 @@ criterion: "Can you produce a valid critique phrasing that accurately describes
 this issue but tags a file outside the proposed set?" If yes, the set is too
 narrow.
 
-## Step 0: Ensure Database is Available
-
-This skill requires a running props database with synced specimen data. Before
-querying, verify the database is reachable:
-
-```bash
-psql -Atc "SELECT count(*) FROM true_positive_occurrences;" 2>&1
-```
-
-If the database is not available (connection refused, table doesn't exist, etc.),
-use the `test_props` skill with `setup` argument to start infrastructure and
-initialize the database. That skill handles starting PostgreSQL via podman,
-creating the schema, and syncing all specimen data.
-
 ## Step 1: Identify Unrestricted Occurrences
 
 Use `psql` (reads `PG*` env vars from the current shell automatically).
