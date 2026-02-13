@@ -38,6 +38,12 @@ const UPDATE_BASELINES = process.env.UPDATE_BASELINES === "1";
 // Output directory for test artifacts (diffs, actual screenshots)
 const OUTPUT_DIR = process.env.TEST_UNDECLARED_OUTPUTS_DIR || join(__dirname, "diffs");
 
+// Pixel diff tolerance: percentage of total pixels allowed to differ (at
+// pixelmatch threshold 0.3). With hermetic Inter font loading, remaining diffs
+// are sub-pixel rasterization differences between gVisor and native Linux (RBE).
+// Worst observed: 0.9% (DistributionChartRecall). 2% gives comfortable headroom.
+const PIXEL_DIFF_PERCENT = 2;
+
 // Page scenarios to test - focused on whole pages, not individual component states
 const scenarios = [
   // Definition detail page with stats table and CLI command
@@ -78,11 +84,15 @@ const CONTENT_TYPES = {
 };
 
 async function startServer(harnessDir) {
+  // Serve from tests/ (parent of harness/) so all paths resolve from one root:
+  //   /harness/index.html, /harness/test-fonts.css, /harness/dist/harness.js
+  //   /fonts/Inter.woff2 (CSS references ../fonts/ which resolves here)
+  const testsDir = dirname(harnessDir);
   const server = createServer(async (req, res) => {
     let urlPath = req.url.split("?")[0];
-    if (urlPath === "/") urlPath = "/index.html";
+    if (urlPath.endsWith("/")) urlPath += "index.html";
 
-    const filePath = join(harnessDir, urlPath);
+    const filePath = join(testsDir, urlPath);
 
     try {
       const content = await readFile(filePath);
@@ -151,13 +161,22 @@ function compareBaseline(name, screenshot) {
 
   const diff = new PNG({ width: baseline.width, height: baseline.height });
   const numDiffPixels = pixelmatch(baseline.data, actual.data, diff.data, baseline.width, baseline.height, {
-    threshold: 0.1,
+    threshold: 0.3,
   });
 
-  if (numDiffPixels > 0) {
+  const totalPixels = baseline.width * baseline.height;
+  const diffPercent = (numDiffPixels / totalPixels) * 100;
+
+  if (diffPercent > PIXEL_DIFF_PERCENT) {
     writeFileSync(join(OUTPUT_DIR, `${name}-diff.png`), PNG.sync.write(diff));
-    console.error(`  ✗ ${numDiffPixels} pixels differ`);
+    console.error(`  ✗ ${numDiffPixels} pixels differ (${diffPercent.toFixed(1)}% > ${PIXEL_DIFF_PERCENT}% tolerance)`);
     return { passed: false, reason: "pixels", diffCount: numDiffPixels };
+  }
+
+  if (numDiffPixels > 0) {
+    console.log(
+      `  ~ ${numDiffPixels} pixels differ (${diffPercent.toFixed(1)}% within ${PIXEL_DIFF_PERCENT}% tolerance)`
+    );
   }
 
   return { passed: true };
@@ -201,6 +220,7 @@ async function runVisualTests() {
       "--disable-partial-raster",
       "--disable-backing-store-limit",
       "--use-gl=swiftshader",
+      "--force-device-scale-factor=1",
       "--disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
       "--disable-accelerated-video-decode",
       "--disable-canvas-aa",
@@ -242,10 +262,21 @@ async function runVisualTests() {
       { name: "prefers-reduced-motion", value: "reduce" },
     ]);
 
+    // Verify Inter font loads (fail fast if font serving is broken)
+    {
+      await page.goto(`http://127.0.0.1:${port}/harness/`, { waitUntil: "networkidle0" });
+      const fontLoaded = await page.evaluate(() => document.fonts.check("16px Inter"));
+      if (!fontLoaded) {
+        console.error("FATAL: Inter font did not load — test would use fallback system font");
+        process.exit(1);
+      }
+      console.log("Inter font loaded successfully");
+    }
+
     for (const { page: pageName } of scenarios) {
       console.log(`Testing: ${pageName}`);
 
-      const url = `http://127.0.0.1:${port}/?page=${pageName}`;
+      const url = `http://127.0.0.1:${port}/harness/?page=${pageName}`;
       await page.goto(url, { waitUntil: "networkidle0" });
 
       // Wait for page to render

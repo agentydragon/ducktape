@@ -172,6 +172,7 @@ js_test(
         "tests/harness/index.html",
         "tests/harness/test-fonts.css",
         "tests/fonts/Inter.woff2",
+        "tests/fonts/fonts.conf",
         ":harness_bundle",
         ":harness_js",
         ":node_modules/pixelmatch",
@@ -186,6 +187,10 @@ js_test(
         "HARNESS_PATH": "$(rootpath :harness_js)",
         # Point Puppeteer to the Bazel-managed Chromium
         "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        # Hermetic fontconfig: normalize font rendering settings across environments
+        "FONTCONFIG_FILE": "$(rootpath tests/fonts/fonts.conf)",
+        # Disable CFF stem darkening in FreeType (affects glyph weight/width)
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
     tags = ["no-sandbox"],
 )
