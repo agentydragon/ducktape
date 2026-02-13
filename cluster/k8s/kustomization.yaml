@@ -6,6 +6,7 @@ resources:
   - sealed-secrets/flux-kustomization.yaml
   - tofu-controller/flux-kustomization.yaml
   - reloader/flux-kustomization.yaml
+  - claude-rbac/flux-kustomization.yaml
   - coredns-custom/flux-kustomization.yaml
   - kyverno-policies/flux-kustomization.yaml
   - proxmox-csi/flux-kustomization.yaml

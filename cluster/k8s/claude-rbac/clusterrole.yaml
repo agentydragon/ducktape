@@ -1,0 +1,61 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: claude-readonly
+rules:
+  # Read pod logs
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+
+  # Read cluster state (but not secrets)
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/status
+      - services
+      - endpoints
+      - persistentvolumeclaims
+      - configmaps
+      - events
+      - namespaces
+      - nodes
+    verbs: ["get", "list", "watch"]
+
+  # Read deployments, statefulsets, daemonsets, etc.
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+    verbs: ["get", "list", "watch"]
+
+  # Read ingresses, network policies
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+
+  # Read batch jobs
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+
+  # Read Flux resources
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources:
+      - kustomizations
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources:
+      - gitrepositories
+      - helmrepositories
+    verbs: ["get", "list", "watch"]
+
+  # Explicitly NO access to secrets
+  # Secrets are intentionally omitted from this ClusterRole
