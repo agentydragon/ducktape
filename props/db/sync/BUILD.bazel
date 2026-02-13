@@ -149,6 +149,24 @@ py_test(
 )
 
 docker_py_test(
+    name = "test_sync_occurrence_update",
+    srcs = ["test_sync_occurrence_update.py"],
+    imports = ["../../.."],
+    deps = [
+        ":sync",
+        ":yaml_loader",
+        "//props:conftest",
+        "//props/core:ids",
+        "//props/core/models:true_positive",
+        "//props/db:conftest",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+docker_py_test(
     name = "test_manifest_loading",
     srcs = ["test_manifest_loading.py"],
     imports = ["../../.."],
