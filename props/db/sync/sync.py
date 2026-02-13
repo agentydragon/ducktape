@@ -8,9 +8,10 @@ import logging
 import shutil
 import tarfile
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlunparse
 from urllib.request import urlopen
@@ -480,8 +481,14 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def _tp_occ_from_orm(db_occ: TruePositiveOccurrenceORM) -> TruePositiveOccurrence:
-    """Reconstruct a YAML-equivalent Pydantic model from an ORM occurrence."""
+_OccORM = TypeVar("_OccORM", TruePositiveOccurrenceORM, FalsePositiveOccurrenceORM)
+_OccPydantic = TypeVar("_OccPydantic", TruePositiveOccurrence, FalsePositiveOccurrence)
+
+
+def _reconstruct_occ_common(
+    db_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM,
+) -> tuple[dict[Path, list[LineRange]], set[Path] | None]:
+    """Reconstruct files dict and match_file_restriction from an ORM occurrence."""
     files: dict[Path, list[LineRange]] = {}
     for r in sorted(db_occ.ranges, key=lambda r: (str(r.file_path), r.range_id)):
         files.setdefault(Path(str(r.file_path)), []).append(
@@ -490,7 +497,6 @@ def _tp_occ_from_orm(db_occ: TruePositiveOccurrenceORM) -> TruePositiveOccurrenc
 
     restriction: set[Path] | None = None
     if db_occ.match_file_restriction is not None:
-        # Resolve hash → paths via file_set_members query on the same session
         session = Session.object_session(db_occ)
         assert session is not None
         members = (
@@ -500,6 +506,12 @@ def _tp_occ_from_orm(db_occ: TruePositiveOccurrenceORM) -> TruePositiveOccurrenc
         )
         restriction = {Path(m.file_path) for m in members}
 
+    return files, restriction
+
+
+def _tp_occ_from_orm(db_occ: TruePositiveOccurrenceORM) -> TruePositiveOccurrence:
+    """Reconstruct a YAML-equivalent Pydantic model from an ORM TP occurrence."""
+    files, restriction = _reconstruct_occ_common(db_occ)
     return TruePositiveOccurrence(
         occurrence_id=db_occ.occurrence_id,
         files=files,
@@ -511,23 +523,7 @@ def _tp_occ_from_orm(db_occ: TruePositiveOccurrenceORM) -> TruePositiveOccurrenc
 
 def _fp_occ_from_orm(db_occ: FalsePositiveOccurrenceORM) -> FalsePositiveOccurrence:
     """Reconstruct a YAML-equivalent Pydantic model from an ORM FP occurrence."""
-    files: dict[Path, list[LineRange]] = {}
-    for r in sorted(db_occ.ranges, key=lambda r: (str(r.file_path), r.range_id)):
-        files.setdefault(Path(str(r.file_path)), []).append(
-            LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note)
-        )
-
-    restriction: set[Path] | None = None
-    if db_occ.match_file_restriction is not None:
-        session = Session.object_session(db_occ)
-        assert session is not None
-        members = (
-            session.query(FileSetMember.file_path)
-            .filter_by(snapshot_slug=db_occ.snapshot_slug, files_hash=db_occ.match_file_restriction)
-            .all()
-        )
-        restriction = {Path(m.file_path) for m in members}
-
+    files, restriction = _reconstruct_occ_common(db_occ)
     return FalsePositiveOccurrence(
         occurrence_id=db_occ.occurrence_id,
         files=files,
@@ -537,64 +533,56 @@ def _fp_occ_from_orm(db_occ: FalsePositiveOccurrenceORM) -> FalsePositiveOccurre
     )
 
 
-def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: TruePositive_yaml) -> bool:
-    """Sync a TP issue, returning True if anything changed."""
+def _sync_occurrences(
+    session: Session,
+    db_occs: list[_OccORM],
+    yaml_occs: list[_OccPydantic],
+    from_orm: Callable[[_OccORM], _OccPydantic],
+    add_occ: Callable[[_OccPydantic], None],
+) -> bool:
+    """Diff occurrences by id; delete+re-add only changed ones. Returns True if anything changed."""
     changed = False
-    if existing.rationale != yaml_issue.rationale:
-        existing.rationale = yaml_issue.rationale
-        changed = True
+    db_map = {o.occurrence_id: o for o in db_occs}
+    yaml_map = {o.occurrence_id: o for o in yaml_occs}
 
-    db_map = {o.occurrence_id: o for o in existing.occurrences}
-    yaml_map = {o.occurrence_id: o for o in yaml_issue.occurrences}
-
-    # Removed occurrences
     for occ_id in set(db_map) - set(yaml_map):
         session.delete(db_map[occ_id])
         changed = True
 
     for occ_id, yaml_occ in yaml_map.items():
         if occ_id not in db_map:
-            # New occurrence
-            _add_tp_occurrence(session, yaml_issue.snapshot_slug, yaml_issue.tp_id, yaml_occ)
+            add_occ(yaml_occ)
             changed = True
-        else:
-            # Compare via Pydantic reconstruction
-            db_pydantic = _tp_occ_from_orm(db_map[occ_id])
-            if db_pydantic != yaml_occ:
-                session.delete(db_map[occ_id])
-                _add_tp_occurrence(session, yaml_issue.snapshot_slug, yaml_issue.tp_id, yaml_occ)
-                changed = True
+        elif from_orm(db_map[occ_id]) != yaml_occ:
+            session.delete(db_map[occ_id])
+            add_occ(yaml_occ)
+            changed = True
 
     return changed
+
+
+def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: TruePositive_yaml) -> bool:
+    """Sync a TP issue, returning True if anything changed."""
+    changed = existing.rationale != yaml_issue.rationale
+    if changed:
+        existing.rationale = yaml_issue.rationale
+
+    def add(occ: TruePositiveOccurrence) -> None:
+        _add_tp_occurrence(session, yaml_issue.snapshot_slug, yaml_issue.tp_id, occ)
+
+    return _sync_occurrences(session, existing.occurrences, yaml_issue.occurrences, _tp_occ_from_orm, add) or changed
 
 
 def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: FalsePositive_yaml) -> bool:
     """Sync an FP issue, returning True if anything changed."""
-    changed = False
-    if existing.rationale != yaml_fp.rationale:
+    changed = existing.rationale != yaml_fp.rationale
+    if changed:
         existing.rationale = yaml_fp.rationale
-        changed = True
 
-    db_map = {o.occurrence_id: o for o in existing.occurrences}
-    yaml_map = {o.occurrence_id: o for o in yaml_fp.occurrences}
+    def add(occ: FalsePositiveOccurrence) -> None:
+        _add_fp_occurrence(session, yaml_fp.snapshot_slug, yaml_fp.fp_id, occ)
 
-    # Removed occurrences
-    for occ_id in set(db_map) - set(yaml_map):
-        session.delete(db_map[occ_id])
-        changed = True
-
-    for occ_id, yaml_occ in yaml_map.items():
-        if occ_id not in db_map:
-            _add_fp_occurrence(session, yaml_fp.snapshot_slug, yaml_fp.fp_id, yaml_occ)
-            changed = True
-        else:
-            db_pydantic = _fp_occ_from_orm(db_map[occ_id])
-            if db_pydantic != yaml_occ:
-                session.delete(db_map[occ_id])
-                _add_fp_occurrence(session, yaml_fp.snapshot_slug, yaml_fp.fp_id, yaml_occ)
-                changed = True
-
-    return changed
+    return _sync_occurrences(session, existing.occurrences, yaml_fp.occurrences, _fp_occ_from_orm, add) or changed
 
 
 def _add_tp_occurrence(session: Session, snapshot_slug: SnapshotSlug, tp_id: str, occ: TruePositiveOccurrence) -> None:
@@ -612,17 +600,17 @@ def _add_tp_occurrence(session: Session, snapshot_slug: SnapshotSlug, tp_id: str
 
 def _add_fp_occurrence(session: Session, snapshot_slug: SnapshotSlug, fp_id: str, occ: FalsePositiveOccurrence) -> None:
     """Create an FP occurrence ORM row with all dependent rows."""
-    fp_orm_occ = FalsePositiveOccurrenceORM(
+    orm_occ = FalsePositiveOccurrenceORM(
         snapshot_slug=snapshot_slug,
         fp_id=fp_id,
         occurrence_id=occ.occurrence_id,
         note=occ.note,
         match_file_restriction=ensure_file_set(session, snapshot_slug, occ.match_file_restriction),
     )
-    session.add(fp_orm_occ)
-    _add_ranges_to_occurrence(fp_orm_occ, occ.files)
+    session.add(orm_occ)
+    _add_ranges_to_occurrence(orm_occ, occ.files)
     for relevant_file in occ.relevant_files:
-        fp_orm_occ.relevant_file_orms.append(
+        orm_occ.relevant_file_orms.append(
             FalsePositiveRelevantFileORM(
                 snapshot_slug=snapshot_slug, occurrence_id=occ.occurrence_id, file_path=relevant_file
             )
