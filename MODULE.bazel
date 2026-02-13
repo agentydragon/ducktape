@@ -111,7 +111,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "0.8.1",
 )
-use_repo(oci, "debian_slim_linux_amd64", "oci_crane_linux_amd64", "postgres_16_linux_amd64", "registry_2_linux_amd64", "ryuk_linux_amd64")
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "postgres_16", "postgres_16_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
 
 # Re-export crane binary with public visibility for py_test data deps
 crane = use_extension("//tools:crane_export.bzl", "crane_export")
