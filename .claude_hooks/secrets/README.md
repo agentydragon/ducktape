@@ -102,13 +102,15 @@ The `claude-readonly` ServiceAccount has:
 
 - ✅ Read pods, deployments, services, logs
 - ✅ Read Flux resources
-- ❌ NO secrets access
+- ❌ NO direct secrets access
 - ❌ NO write permissions
 
 **claude-sandbox namespace (full access):**
 
-- ✅ Create/delete pods, deployments, jobs
+- ✅ Create/delete pods, deployments, jobs, secrets
 - ✅ kubectl exec into pods
+- ✅ Full secrets access (create, read, update, delete)
 - ✅ View logs
-- ❌ Still NO secrets access
 - Limited by ResourceQuota: 4 CPU, 8Gi memory, 10 pods max
+
+**Security note:** While direct `kubectl get secrets` is blocked cluster-wide, secrets may still be accessible through pod environment variables, mounted volumes (via `kubectl exec`), or logs. The sandbox provides full isolation for experimentation.
