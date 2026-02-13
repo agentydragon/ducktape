@@ -79,7 +79,6 @@ class HookSettings(BaseSettings):
     )
 
     # Secrets
-    secrets_dir: Path | None = Field(default=None, description="Override secrets directory (for testing)")
     secrets_age_key: str | None = Field(default=None, description="Age private key for decrypting secrets")
 
     # Test configuration

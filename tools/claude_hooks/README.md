@@ -363,45 +363,41 @@ This is correct behavior: it means the mock egress proxy chains through the auth
 
 ## Encrypted Secrets
 
-Secrets for Claude Code web sessions are stored as an age-encrypted shell script in `secrets/secrets.env.age`. When `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` is set (in Claude Code web environment), the session start hook decrypts the file and appends its contents to `CLAUDE_ENV_FILE`.
+Secrets are stored as per-component age-encrypted JSON files in `.claude_hooks/secrets/` at the repo root — NOT inside the wheel. Each `.age` file decrypts to a JSON dict mapping env var names to values (e.g. `{"OLLAMA_API_KEY": "..."}"`).
+
+When `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` is set (in Claude Code web environment), the session start hook decrypts all `.age` files and exports the merged env vars to `CLAUDE_ENV_FILE`.
 
 Uses asymmetric X25519 encryption via [age](https://age-encryption.org/):
 
-- **Public key**: `secrets/recipients.txt` (anyone can encrypt)
+- **Public key**: `.claude_hooks/secrets/recipients.txt` (anyone can encrypt)
 - **Private key**: `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` env var (only the decryptor needs this)
-- **Context**: `secrets/extra_context.md` is injected into the agent session context when secrets are present
+- **Repo-specific context**: `.claude_hooks/templates/context.mako` is rendered and appended to the session context
 
-### Decrypting secrets
-
-```bash
-age -d -i <key_file> tools/claude_hooks/secrets/secrets.env.age
-```
-
-Or with the key on stdin:
+### Decrypting a component
 
 ```bash
-echo "$DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY" | age -d -i - tools/claude_hooks/secrets/secrets.env.age
+age -d -i <key_file> .claude_hooks/secrets/ollama.age
 ```
 
-### Editing secrets
+### Editing a component
 
 ```bash
 # Decrypt to a temp file
-age -d -i <key_file> tools/claude_hooks/secrets/secrets.env.age > /tmp/secrets.env
+age -d -i <key_file> .claude_hooks/secrets/ollama.age > /tmp/component.json
 
-# Edit the file (shell script format: export KEY=value, comments with #)
-$EDITOR /tmp/secrets.env
+# Edit the JSON dict
+$EDITOR /tmp/component.json
 
 # Re-encrypt
-age -e -R tools/claude_hooks/secrets/recipients.txt /tmp/secrets.env > tools/claude_hooks/secrets/secrets.env.age
+age -e -R .claude_hooks/secrets/recipients.txt /tmp/component.json > .claude_hooks/secrets/ollama.age
 
 # Clean up
-rm /tmp/secrets.env
+rm /tmp/component.json
 ```
 
 ### Adding a new recipient
 
-Add their age public key (one per line) to `secrets/recipients.txt`, then re-encrypt.
+Add their age public key (one per line) to `.claude_hooks/secrets/recipients.txt`, then re-encrypt all component files.
 
 ## Development
 

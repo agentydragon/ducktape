@@ -10,6 +10,9 @@ keys across files raise an error. Files that can't be decrypted because
 the provided key doesn't match ("No matching keys found") are silently
 skipped, enabling fine-grained access control by encrypting different
 components to different recipients.
+
+Secrets are loaded from the repo checkout (e.g. .claude_hooks/secrets/),
+NOT from the installed wheel — the caller must provide secrets_dir explicitly.
 """
 
 from __future__ import annotations
@@ -24,8 +27,6 @@ import pyrage
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SECRETS_DIR = Path(__file__).parent / "secrets"
-
 
 @dataclass
 class SecretsSetup:
@@ -39,15 +40,19 @@ class SecretsSetup:
         return "\n".join(f"export {k}={shlex.quote(v)}" for k, v in sorted(self.env_vars.items()))
 
 
-def setup_secrets(age_key: str | None, secrets_dir: Path | None = None) -> SecretsSetup | None:
+def setup_secrets(age_key: str | None, secrets_dir: Path) -> SecretsSetup | None:
     """Decrypt component secret files and merge into a single env var dict.
 
-    Returns None if age_key is not set.
+    Returns None if age_key is not set or secrets_dir doesn't exist.
     """
     if not age_key:
         return None
 
-    resolved_dir = secrets_dir or _DEFAULT_SECRETS_DIR
+    if not secrets_dir.is_dir():
+        logger.info("Secrets directory %s does not exist, skipping", secrets_dir)
+        return None
+
+    resolved_dir = secrets_dir
 
     identity = pyrage.x25519.Identity.from_str(age_key.strip())
 

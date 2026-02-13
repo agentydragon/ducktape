@@ -405,10 +405,14 @@ class TestFullSessionStartHook:
         """Run hook with age key set, verify decrypted secret is visible in env file."""
         # Test keypair (committed in testdata — NOT a real secret)
         test_age_key = "AGE-SECRET-KEY-1DVR9RHP2MVZYD6HE46W4JNWMA673U8FYS00TCLX9VNXCFMQJX5ZQTUEP9E"
-        test_secrets_dir = Path(__file__).parent / "testdata" / "test_secrets"
+
+        # Set up .claude_hooks/secrets/ in the test project dir (mirrors production layout)
+        dotdir_secrets = isolated_dirs.project / ".claude_hooks" / "secrets"
+        dotdir_secrets.mkdir(parents=True)
+        src_age = Path(__file__).parent / "testdata" / "test_secrets" / "test_component.age"
+        shutil.copy2(src_age, dotdir_secrets / "test_component.age")
 
         monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_AGE_KEY", test_age_key)
-        monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_DIR", str(test_secrets_dir))
 
         result = await run_session_start_hook(isolated_dirs.project)
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"

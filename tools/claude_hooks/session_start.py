@@ -44,6 +44,10 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
+# Per-repo config directory, resolved from CLAUDE_PROJECT_DIR at runtime.
+# Secrets and repo-specific templates live here, NOT in the wheel.
+_HOOKS_DOTDIR = ".claude_hooks"
+
 
 class HookSource(StrEnum):
     """Source of the SessionStart hook event."""
@@ -170,9 +174,22 @@ def format_environment_summary() -> str:
     return "\n".join(lines)
 
 
+def _render_extra_context(project_dir: Path, secrets: secrets_setup.SecretsSetup | None) -> str:
+    """Render repo-specific context from .claude_hooks/templates/context.mako if it exists."""
+    extra_template_path = project_dir / _HOOKS_DOTDIR / "templates" / "context.mako"
+    if not extra_template_path.exists():
+        return ""
+    template = Template(extra_template_path.read_text())
+    result: str = template.render(
+        secrets=secrets, has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"))
+    )
+    return result.rstrip("\n")
+
+
 def emit_session_context(
     collector: LogCollector,
     log_file: Path,
+    project_dir: Path,
     auth_proxy: proxy_setup.ProxySetup,
     podman: podman_service.PodmanSetup | None,
     precommit: precommit_setup.PrecommitSetup | None,
@@ -181,10 +198,13 @@ def emit_session_context(
 ) -> None:
     """Emit compact context summary for Claude Code transcript.
 
-    Renders config/session_context.mako with structured setup results.
-    Keep the template tight — every line costs agent context window.
+    Renders the generic session_context.mako (from the wheel) with structured
+    setup results, then appends repo-specific context from
+    .claude_hooks/templates/context.mako if it exists.
     """
     status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
+
+    extra_context = _render_extra_context(project_dir, secrets)
 
     template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
     result: str = template.render(
@@ -197,8 +217,8 @@ def emit_session_context(
         PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
         mkcert=mkcert,
         log_entries=collector.buffer,
-        has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN")),
         secrets=secrets,
+        extra_context=extra_context,
         log_file=log_file,
     )
     print(result.rstrip("\n"))
@@ -359,8 +379,9 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         combined_ca = settings.get_auth_proxy_combined_ca()
         return mkcert_setup.setup_mkcert(settings, combined_ca if combined_ca.exists() else None)
 
-    # Decrypt age-encrypted secrets (fast, local file I/O only)
-    secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=settings.secrets_dir)
+    # Decrypt age-encrypted secrets from .claude_hooks/secrets/ in the repo checkout.
+    secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
+    secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
@@ -498,6 +519,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     emit_session_context(
         collector=collector,
         log_file=log_file,
+        project_dir=project_dir,
         auth_proxy=auth_proxy,
         podman=None if isinstance(podman, BaseException) else podman,
         precommit=None if isinstance(precommit, BaseException) else precommit,

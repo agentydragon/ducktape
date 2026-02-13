@@ -22,24 +22,11 @@ pre-commit: hook environments installing in background (pid ${precommit.pid}). F
   ${record.levelname}: ${record.getMessage()}
 % endif
 % endfor
-% if has_github_token:
-GitHub CI: DUCKTAPE_CI_READ_GITHUB_TOKEN is set (fine-grained PAT for agentydragon/ducktape).
-  curl -s -H "Authorization: token $DUCKTAPE_CI_READ_GITHUB_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/...
-  Works: runs, jobs, artifacts, PRs, issues, commits, check-runs, branches, workflows, releases, contents. Job logs: /actions/jobs/{id}/logs (returns 302 redirect — use curl -L). Run logs zip: /actions/runs/{id}/logs (returns 404 while run is in_progress; returns 302 redirect to zip after run completes — use curl -L). Artifact download: /actions/artifacts/{id}/zip (returns 302 — use curl -L).
-  Write access: POST create works (issues, comments), but PATCH update returns 403. Writes cannot be reverted with this token.
-  Note: GitHub API requests frequently get transient 401s from the TLS-inspecting egress proxy. Retry on 401 with backoff (sleep 2-5s between retries). Parse JSON defensively — a 401 returns an empty body.
-% endif
 % if secrets:
-% if "GITHUB_TOKEN" in secrets.env_vars:
-`GITHUB_TOKEN`: GitHub PAT for `agentydragon-agent` bot. Used by `gh` CLI automatically. Supports all read/write operations including push, PR create/update, issue management.
-% endif
-% if "OLLAMA_API_KEY" in secrets.env_vars:
-Ollama: `OLLAMA_BASE_URL` and `OLLAMA_API_KEY` set. OpenAI-compatible LLM inference (2x RTX 5090).
-  Usage: `OpenAI(base_url=os.environ["OLLAMA_BASE_URL"], api_key=os.environ["OLLAMA_API_KEY"])`
-% endif
-% if "BUILDBUDDY_API_KEY" in secrets.env_vars:
-`BUILDBUDDY_API_KEY`: BuildBuddy remote cache/execution key (also configured in ~/.config/bazel/buildbuddy.bazelrc).
-% endif
+Secrets: ${len(secrets.env_vars)} env var(s) decrypted from age-encrypted component files.
 % endif
 BuildBuddy: API key in ~/.config/bazel/buildbuddy.bazelrc. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 Setup log: ${log_file}
+% if extra_context:
+${extra_context}
+% endif

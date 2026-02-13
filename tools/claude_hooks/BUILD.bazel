@@ -184,7 +184,6 @@ py_library(
 py_library(
     name = "secrets_setup",
     srcs = ["secrets_setup.py"],
-    data = glob(["secrets/*.age"]),
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pyrage"],
