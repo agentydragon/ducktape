@@ -22,14 +22,12 @@ pub enum ProcessState {
     /// Process is detached (reattachable, waiting for reconnect).
     Detached,
     /// Process has exited and its handle is being cleaned up.
-    #[allow(dead_code)]
     Done,
 }
 
 /// Entry in the process map, keyed by process_id (user-provided string).
 #[derive(Debug)]
 pub struct ProcessEntry {
-    #[allow(dead_code)]
     pub process_id: String,
     pub pid: u32,
     pub state: ProcessState,

@@ -50,7 +50,6 @@ pub enum ExitReason {
 ///   "process_group_pid", "killed_by_process_api", "stop_waiting_tx",
 ///   "exit_status_rx", "exit_status_tx"
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct ProcHandle {
     pub pid: u32,
     pub process_group_pid: u32,

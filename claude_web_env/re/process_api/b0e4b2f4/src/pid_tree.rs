@@ -55,7 +55,6 @@ pub async fn get_all_descendant_pids(pid: u32) -> std::io::Result<HashSet<u32>> 
 }
 
 /// Check if a PID exists by checking /proc/{pid}/status.
-#[allow(dead_code)]
 pub fn pid_exists(pid: u32) -> bool {
     Path::new(&format!("/proc/{pid}/status")).exists()
 }
