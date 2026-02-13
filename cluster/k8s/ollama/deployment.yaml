@@ -39,6 +39,10 @@ spec:
               value: 0.0.0.0:11434
             - name: NVIDIA_VISIBLE_DEVICES
               value: all
+            - name: OLLAMA_KV_CACHE_TYPE
+              value: q8_0
+            - name: OLLAMA_FLASH_ATTENTION
+              value: "1"
           resources:
             requests:
               nvidia.com/gpu: 2
