@@ -13,3 +13,5 @@ occurrences:
     note: execute_action() - unbatched individual calls, ignores non-INBOX label removals
     critic_scopes_expected_to_recall:
       - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py

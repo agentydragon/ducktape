@@ -15,3 +15,5 @@ occurrences:
         - [97, 100] # prune: counts add only
     critic_scopes_expected_to_recall:
       - [gmail_archiver/cli/labels.py]
+    match_file_restriction:
+      - gmail_archiver/cli/labels.py

@@ -11,3 +11,5 @@ occurrences:
     note: try/except ValueError around Plan.merge() - should just call unguarded
     critic_scopes_expected_to_recall:
       - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
