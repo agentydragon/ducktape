@@ -180,9 +180,7 @@ def _render_extra_context(project_dir: Path, secrets: secrets_setup.SecretsSetup
     if not extra_template_path.exists():
         return ""
     template = Template(extra_template_path.read_text())
-    result: str = template.render(
-        secrets=secrets, has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"))
-    )
+    result: str = template.render(secrets=secrets)
     return result.rstrip("\n")
 
 
