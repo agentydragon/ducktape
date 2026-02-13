@@ -40,6 +40,17 @@ struct TrackedZombie {
     first_seen: Instant,
 }
 
+/// One-shot orphan adoption pass, callable from outside the monitor loop.
+/// Used by the container OOM monitor to ensure accurate process tracking
+/// before scanning memory usage.
+pub async fn try_adopt_orphans(
+    controller: &CgroupController,
+    proc_map: &ProcessMap,
+) -> Result<(), String> {
+    let mut tracked_zombies = HashMap::new();
+    adopt_orphans(controller, proc_map, &mut tracked_zombies).await
+}
+
 /// Main orphan monitor loop. Runs as a spawned task.
 ///
 /// Reconstructed from string evidence at binary file offset 0x1afc80:

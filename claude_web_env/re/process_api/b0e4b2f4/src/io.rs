@@ -66,7 +66,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::{SinkExt, StreamExt};
 use nix::sys::signal::Signal;
@@ -197,6 +197,187 @@ async fn send_binary(ws_tx: &WsTx, data: Vec<u8>) -> Result<(), Box<dyn std::err
 }
 
 // ---------------------------------------------------------------------------
+// Stdin forwarding
+// ---------------------------------------------------------------------------
+
+/// Forward stdin data to the child process.
+/// Xrefs: "[DEBUG] forward_stdin: Starting stdin forwarding for process"
+async fn forward_stdin(
+    stdin_writer: &mut Option<tokio::process::ChildStdin>,
+    data: &[u8],
+    process_id: &str,
+) {
+    if let Some(ref mut stdin) = stdin_writer {
+        if let Err(e) = stdin.write_all(data).await {
+            log::debug!(
+                "[DEBUG] stdin write failed for process {process_id} (process likely exited): {e}"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket message processing loop (separate function per binary evidence)
+// ---------------------------------------------------------------------------
+
+/// Main WebSocket message processing loop for a process.
+///
+/// String refs at binary offset 0x2b8584:
+///   "[DEBUG] process_ws_message: Starting WebSocket message processing"
+///   "process_ws_message: Shutting down, terminating"
+///   "process_ws_message: Timeout"
+///   "process_ws_message: OOM"
+///   "process_ws_message: Container OOM"
+///   "Failed to receive message:"
+///   "Expected binary message after ExpectStdIn"
+///   "[DEBUG] Process stream is closed"
+///   "[DEBUG] Failed to send response:"
+async fn process_ws_message(
+    ws_tx: &WsTx,
+    mut ws_rx: futures::stream::SplitStream<WebSocketStream<TcpStream>>,
+    process_id: &str,
+    pid: u32,
+    mut stdin_writer: Option<tokio::process::ChildStdin>,
+    mut exit_status_rx: oneshot::Receiver<ExitReason>,
+    mut shutdown_rx: broadcast::Receiver<()>,
+    start_time: Instant,
+) -> Result<String, String> {
+    log::debug!(
+        "[DEBUG] process_ws_message: Starting WebSocket message processing for process {process_id}"
+    );
+
+    let mut expecting_stdin = false;
+    let mut stdin_started = false;
+
+    let result = loop {
+        tokio::select! {
+            msg = ws_rx.next() => {
+                match msg {
+                    Some(Ok(msg)) if msg.is_text() => {
+                        if expecting_stdin {
+                            log::debug!("Expected binary message after ExpectStdIn");
+                            expecting_stdin = false;
+                        }
+                        let text = msg.into_text().unwrap_or_default();
+                        match serde_json::from_str::<ClientMessage>(&text) {
+                            Ok(client_msg) => match client_msg {
+                                ClientMessage::SendSignal { signal } => {
+                                    handle_send_signal(pid, &signal, ws_tx).await;
+                                }
+                                ClientMessage::ExpectStdIn => {
+                                    if !stdin_started {
+                                        log::debug!(
+                                            "[DEBUG] forward_stdin: Starting stdin forwarding for process {process_id}"
+                                        );
+                                        stdin_started = true;
+                                    }
+                                    expecting_stdin = true;
+                                }
+                                ClientMessage::StdInEOF => {
+                                    stdin_writer = None;
+                                }
+                            },
+                            Err(_) => {}
+                        }
+                    }
+                    Some(Ok(msg)) if msg.is_binary() => {
+                        if !expecting_stdin {
+                            log::debug!("Expected binary message after ExpectStdIn");
+                        }
+                        expecting_stdin = false;
+                        forward_stdin(&mut stdin_writer, &msg.into_data(), process_id).await;
+                    }
+                    Some(Ok(msg)) if msg.is_close() => {
+                        log::debug!("[DEBUG] Process stream is closed");
+                        break Ok("process_ws_message: Client disconnected".to_string());
+                    }
+                    Some(Err(e)) => {
+                        log::debug!("Failed to receive message: {e}");
+                        break Err(format!("process_ws_message: {e}"));
+                    }
+                    None => {
+                        log::debug!("[DEBUG] Process stream is closed");
+                        break Ok("process_ws_message: Stream ended".to_string());
+                    }
+                    _ => {}
+                }
+            }
+            reason = &mut exit_status_rx => {
+                log::debug!("[DEBUG] Finished waiting for wait_for_child_to_exit");
+                let exit_reason = match reason {
+                    Ok(r) => r,
+                    Err(_) => ExitReason::KilledByProcessApi,
+                };
+
+                let elapsed_secs = start_time.elapsed().as_secs_f64();
+                let details = proc_handle::format_exit_reason(pid, &exit_reason, elapsed_secs);
+
+                let send_result = match &exit_reason {
+                    ExitReason::Exited { status } => {
+                        send_msg(ws_tx, &ServerMessage::ProcessExited {
+                            status: *status,
+                            details,
+                        }).await
+                    }
+                    ExitReason::Signaled { signal, .. } => {
+                        send_msg(ws_tx, &ServerMessage::ProcessExited {
+                            status: *signal,
+                            details,
+                        }).await
+                    }
+                    ExitReason::TimedOut { timeout_secs } => {
+                        send_msg(ws_tx, &ServerMessage::ProcessTimedOut {
+                            timeout_secs: *timeout_secs,
+                            details,
+                        }).await
+                    }
+                    ExitReason::OutOfMemory { limit_bytes } => {
+                        send_msg(ws_tx, &ServerMessage::ProcessOutOfMemory {
+                            limit_bytes: *limit_bytes,
+                            details,
+                        }).await
+                    }
+                    ExitReason::ContainerOom { limit_bytes } => {
+                        send_msg(ws_tx, &ServerMessage::ContainerOutOfMemory {
+                            limit_bytes: *limit_bytes,
+                            details,
+                        }).await
+                    }
+                    ExitReason::KilledByProcessApi => {
+                        send_msg(ws_tx, &ServerMessage::ProcessExited {
+                            status: -1,
+                            details,
+                        }).await
+                    }
+                };
+
+                if let Err(e) = send_result {
+                    log::debug!("[DEBUG] Failed to send response: {e}");
+                }
+
+                break match &exit_reason {
+                    ExitReason::TimedOut { .. } => Ok("process_ws_message: Timeout".to_string()),
+                    ExitReason::OutOfMemory { .. } => Ok("process_ws_message: OOM".to_string()),
+                    ExitReason::ContainerOom { .. } => Ok("process_ws_message: Container OOM".to_string()),
+                    ExitReason::KilledByProcessApi => Ok("process_ws_message: Killed".to_string()),
+                    _ => Ok("process_ws_message: Process exited".to_string()),
+                };
+            }
+            _ = shutdown_rx.recv() => {
+                log::debug!("[DEBUG] Received shutdown signal for process {process_id}");
+                if let Err(e) = send_msg(ws_tx, &ServerMessage::ShuttingDown).await {
+                    log::debug!("[DEBUG] Failed to send response: {e}");
+                }
+                break Ok("process_ws_message: Shutting down, terminating".to_string());
+            }
+        }
+    };
+
+    log::debug!("[DEBUG] Finished WebSocket message processing for process {process_id}");
+    result
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket connection handler
 // ---------------------------------------------------------------------------
 
@@ -305,7 +486,7 @@ pub async fn handle_ws_connection(
 async fn handle_create_process(
     req: CreateProcess,
     ws_tx: WsTx,
-    mut ws_rx: futures::stream::SplitStream<WebSocketStream<TcpStream>>,
+    ws_rx: futures::stream::SplitStream<WebSocketStream<TcpStream>>,
     proc_map: ProcessMap,
     controller: CgroupController,
     _container_memory_limit: Option<u64>,
@@ -422,7 +603,7 @@ async fn handle_create_process(
     let mut handle = ProcHandle::new(pid, reattachable, timeout, req.memory_limit_bytes);
     handle.cgroup_path = cgroup_path.clone();
     handle.stop_waiting_tx = Some(stop_tx);
-    handle.exit_status_rx = Some(exit_status_rx);
+    // exit_status_rx is passed directly to process_ws_message, not stored in handle
 
     // Insert into process map
     state::insert_process(
@@ -443,11 +624,11 @@ async fn handle_create_process(
     )
     .await;
 
-    // Read timeout and memory_limit_bytes from handle in the map
-    let (handle_timeout, handle_memory_limit) = {
+    // Read start_time, timeout and memory_limit_bytes from handle in the map
+    let (start_time, handle_timeout, handle_memory_limit) = {
         let map = proc_map.lock();
         let entry = map.get(&process_id).expect("just inserted");
-        (entry.handle.timeout, entry.handle.memory_limit_bytes)
+        (entry.handle.start_time, entry.handle.timeout, entry.handle.memory_limit_bytes)
     };
 
     // Spawn per-process memory monitor if memory limit is set
@@ -484,7 +665,7 @@ async fn handle_create_process(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    let mut shutdown_rx = shutdown_tx.subscribe();
+    let shutdown_rx = shutdown_tx.subscribe();
 
     // Spawn stdout forwarder
     // Decompiled from 0x144970..0x145eb0  (5440 bytes)
@@ -532,160 +713,50 @@ async fn handle_create_process(
         });
     }
 
-    // Main WebSocket message processing loop
-    log::debug!(
-        "[DEBUG] process_ws_message: Starting WebSocket message processing for process {process_id}"
-    );
+    // Run the WebSocket message processing loop (as separate function per binary evidence)
+    let result = process_ws_message(
+        &ws_tx,
+        ws_rx,
+        &process_id,
+        pid,
+        stdin,
+        exit_status_rx,
+        shutdown_rx,
+        start_time,
+    )
+    .await;
 
-    let mut stdin_writer = stdin;
+    match &result {
+        Ok(msg) => log::debug!("[DEBUG] process_ws_message returned: {msg}"),
+        Err(msg) => log::debug!("[DEBUG] process_ws_message failed: {msg}"),
+    }
 
-    loop {
-        tokio::select! {
-            msg = ws_rx.next() => {
-                match msg {
-                    Some(Ok(msg)) if msg.is_text() => {
-                        let text = msg.into_text().unwrap_or_default();
-                        if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
-                            match client_msg {
-                                ClientMessage::SendSignal { signal } => {
-                                    handle_send_signal(pid, &signal, &ws_tx).await;
-                                }
-                                ClientMessage::ExpectStdIn => {
-                                    // Next binary message is stdin data
-                                }
-                                ClientMessage::StdInEOF => {
-                                    // Close stdin
-                                    stdin_writer = None;
-                                }
-                            }
-                        }
-                    }
-                    Some(Ok(msg)) if msg.is_binary() => {
-                        let data = msg.into_data();
-                        // Write stdin data
-                        if let Some(ref mut stdin) = stdin_writer {
-                            if let Err(e) = stdin.write_all(&data).await {
-                                log::debug!(
-                                    "[DEBUG] stdin write failed for process {process_id} \
-                                     (process likely exited): {e}"
-                                );
-                            }
-                        }
-                    }
-                    Some(Ok(msg)) if msg.is_close() => {
-                        break;
-                    }
-                    None => {
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-            _ = shutdown_rx.recv() => {
-                log::debug!("[DEBUG] Received shutdown signal for process {process_id}");
-                let _ = send_msg(&ws_tx, &ServerMessage::ShuttingDown).await;
-                break;
-            }
+    // Close websocket
+    // Xrefs: "Closing websocket", "error closing websocket:"
+    log::debug!("Closing websocket");
+    {
+        let mut tx = ws_tx.lock().await;
+        if let Err(e) = tx.close().await {
+            log::debug!("error closing websocket: {e}");
         }
     }
 
-    // Wait for the child process to finish via exit_status_rx channel
+    // Process cleanup
     log::debug!("[DEBUG] stopping stdout and stderr for process {process_id}");
 
-    // Take exit_status_rx from handle to receive exit status
-    // Xrefs: "exit_status_rx is already taken"
-    let exit_rx = {
-        let mut map = proc_map.lock();
-        map.get_mut(&process_id)
-            .and_then(|entry| entry.handle.exit_status_rx.take())
-    };
-
-    let exit_reason = match exit_rx {
-        Some(rx) => match rx.await {
-            Ok(reason) => reason,
-            Err(_) => ExitReason::KilledByProcessApi,
-        },
-        None => {
-            log::debug!("exit_status_rx is already taken");
-            ExitReason::KilledByProcessApi
-        }
-    };
-
-    log::debug!("[DEBUG] Finished waiting for wait_for_child_to_exit");
-
-    // Read handle fields for exit formatting and cleanup
-    // Xrefs: "process_group_pid", "start_time", "killed_by_process_api"
-    let (entry_process_id, entry_reattachable, handle_pgid, elapsed_secs) = {
+    let (entry_reattachable, handle_pgid) = {
         let map = proc_map.lock();
         match map.get(&process_id) {
             Some(entry) => (
-                entry.process_id.clone(),
                 entry.handle.reattachable,
                 entry.handle.process_group_pid,
-                entry.handle.start_time.elapsed().as_secs_f64(),
             ),
-            None => (process_id.clone(), false, pid, 0.0),
+            None => (false, pid),
         }
     };
 
-    // Send exit status message using actual elapsed time from handle.start_time
-    let elapsed = proc_handle::format_exit_reason(pid, &exit_reason, elapsed_secs);
-    match &exit_reason {
-        ExitReason::Exited { status } => {
-            let _ = send_msg(
-                &ws_tx,
-                &ServerMessage::ProcessExited {
-                    status: *status,
-                    details: elapsed,
-                },
-            )
-            .await;
-        }
-        ExitReason::TimedOut { timeout_secs } => {
-            let _ = send_msg(
-                &ws_tx,
-                &ServerMessage::ProcessTimedOut {
-                    timeout_secs: *timeout_secs,
-                    details: elapsed,
-                },
-            )
-            .await;
-        }
-        ExitReason::OutOfMemory { limit_bytes } => {
-            let _ = send_msg(
-                &ws_tx,
-                &ServerMessage::ProcessOutOfMemory {
-                    limit_bytes: *limit_bytes,
-                    details: elapsed,
-                },
-            )
-            .await;
-        }
-        ExitReason::ContainerOom { limit_bytes } => {
-            let _ = send_msg(
-                &ws_tx,
-                &ServerMessage::ContainerOutOfMemory {
-                    limit_bytes: *limit_bytes,
-                    details: elapsed,
-                },
-            )
-            .await;
-        }
-        _ => {
-            let _ = send_msg(
-                &ws_tx,
-                &ServerMessage::ProcessExited {
-                    status: -1,
-                    details: elapsed,
-                },
-            )
-            .await;
-        }
-    }
-
-    // Clean up process from map
     log::debug!(
-        "[DEBUG] Handling process cleanup for {entry_process_id}, pid: {pid}"
+        "[DEBUG] Handling process cleanup for {process_id}, pid: {pid}"
     );
 
     if entry_reattachable {
@@ -696,20 +767,27 @@ async fn handle_create_process(
             log::debug!("[DEBUG] Successfully detached process {process_id}");
         }
         log::debug!(
-            "[DEBUG] Reattachable process {process_id} is done (stdout/stderr closed, process exited), dropping handle"
+            "[DEBUG] Reattachable process {process_id} is done, dropping handle"
         );
     } else {
-        // Mark as killed_by_process_api before cleanup
+        // Signal the wait task to stop and mark as killed
         {
             let mut map = proc_map.lock();
             if let Some(entry) = map.get_mut(&process_id) {
+                log::debug!("[DEBUG] Stopping waiting for process {process_id}");
+                if let Some(tx) = entry.handle.stop_waiting_tx.take() {
+                    if tx.send(()).is_err() {
+                        log::debug!(
+                            "[DEBUG] Failed to send stop signal for process {process_id})"
+                        );
+                    }
+                }
                 entry.handle.killed_by_process_api = true;
             }
         }
         log::debug!(
             "[DEBUG] Non-reattachable process, killing and removing from map: {process_id}"
         );
-        // Xrefs: "[DEBUG] Restoring cgroup ownership for process id  process group PID"
         log::debug!(
             "[DEBUG] Restoring cgroup ownership for process id {process_id} process group PID {handle_pgid}"
         );
@@ -729,9 +807,6 @@ async fn handle_create_process(
         }
     }
 
-    log::debug!(
-        "[DEBUG] Finished WebSocket message processing for process {process_id}"
-    );
     log::debug!("[DEBUG] After cleaning up process {process_id}, proc_map: {}", state::debug_process_map(&proc_map));
 }
 

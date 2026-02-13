@@ -36,7 +36,20 @@ pub struct CgroupController {
 pub async fn detect_cgroup_version() -> Result<CgroupVersion, String> {
     // Check for cgroup v2 by looking for cgroup.controllers
     if Path::new("/sys/fs/cgroup/cgroup.controllers").exists() {
-        return Ok(CgroupVersion::V2);
+        // Verify controllers are actually available
+        match fs::read_to_string("/sys/fs/cgroup/cgroup.controllers").await {
+            Ok(controllers) => {
+                if controllers.trim().is_empty() {
+                    return Err(
+                        "Cgroup v2 detected but not enabled. Please use --cgroupv2 flag or ensure controllers are available".to_string()
+                    );
+                }
+                return Ok(CgroupVersion::V2);
+            }
+            Err(_) => {
+                return Ok(CgroupVersion::V2);
+            }
+        }
     }
 
     // Fall back to cgroup v1 by looking for memory controller
@@ -47,19 +60,72 @@ pub async fn detect_cgroup_version() -> Result<CgroupVersion, String> {
     Err("Could not detect cgroup version".to_string())
 }
 
+/// Read the current cgroup path from /proc/self/cgroup for v2 nested detection.
+/// Xrefs: "/proc/self/cgroup", "/core"
+async fn detect_v2_cgroup_self_path() -> Option<PathBuf> {
+    let contents = fs::read_to_string("/proc/self/cgroup").await.ok()?;
+    // v2 format: "0::/path/to/cgroup"
+    for line in contents.lines() {
+        if line.starts_with("0::") {
+            let cgroup_path = line.strip_prefix("0::")?;
+            let trimmed = cgroup_path.trim();
+            if trimmed != "/" {
+                return Some(PathBuf::from("/sys/fs/cgroup").join(trimmed.trim_start_matches('/')));
+            }
+        }
+    }
+    None
+}
+
 /// Decompiled from 0x1b50e0..0x1b54b5
 /// Xrefs: "/sys/fs/cgroup/memory/process_api", "/sys/fs/cgroup/process_api"
+///   "Direct creation succeeded", "Direct creation failed: mkdir-p",
+///   "Failed to create directory: "
 pub async fn setup_cgroup_path(version: CgroupVersion) -> Result<PathBuf, String> {
-    let path = match version {
-        CgroupVersion::V1 => PathBuf::from("/sys/fs/cgroup/memory/process_api"),
-        CgroupVersion::V2 => PathBuf::from("/sys/fs/cgroup/process_api"),
+    let base = match version {
+        CgroupVersion::V1 => PathBuf::from("/sys/fs/cgroup/memory"),
+        CgroupVersion::V2 => {
+            // Check for nested cgroup v2 (e.g., in systemd-managed containers)
+            if let Some(self_path) = detect_v2_cgroup_self_path().await {
+                self_path
+            } else {
+                PathBuf::from("/sys/fs/cgroup")
+            }
+        }
     };
+
+    let path = base.join("process_api");
 
     // Create the cgroup directory if it doesn't exist
     if !path.exists() {
-        fs::create_dir_all(&path)
-            .await
-            .map_err(|e| format!("Failed to create cgroup directory {}: {e}", path.display()))?;
+        // Try direct creation first
+        match fs::create_dir_all(&path).await {
+            Ok(()) => {
+                log::debug!("Direct creation succeeded: {}", path.display());
+            }
+            Err(e) => {
+                // Fallback: try mkdir -p via subprocess
+                log::debug!("Direct creation failed: mkdir-p: {}", path.display());
+                let output = tokio::process::Command::new("mkdir")
+                    .arg("-p")
+                    .arg(path.as_os_str())
+                    .output()
+                    .await
+                    .map_err(|e2| {
+                        format!(
+                            "Failed to create directory: {} (direct: {e}, mkdir: {e2})",
+                            path.display()
+                        )
+                    })?;
+                if !output.status.success() {
+                    return Err(format!(
+                        "Failed to create directory: {} (direct: {e}, mkdir exit: {})",
+                        path.display(),
+                        output.status
+                    ));
+                }
+            }
+        }
     }
 
     Ok(path)
@@ -78,6 +144,35 @@ pub async fn create_process_cgroup(
         .map_err(|e| format!("Failed to create process cgroup {}: {e}", cgroup_path.display()))?;
 
     Ok(cgroup_path)
+}
+
+/// Helper to enable a controller in a cgroup's subtree_control.
+/// Xrefs: "controller already enabled in root cgroup",
+///   "controller in root cgroup"
+async fn enable_controller_in_subtree(
+    subtree_path: &Path,
+    controller: &str,
+    label: &str,
+) -> Result<(), String> {
+    if let Ok(current) = fs::read_to_string(subtree_path).await {
+        log::debug!("[DEBUG] {label}: current_controllers: {}", current.trim());
+        if current.contains(controller) {
+            log::debug!("[DEBUG] {controller} controller already enabled in {label}");
+            return Ok(());
+        }
+    }
+
+    let enable_str = format!("+{controller}");
+    match fs::write(subtree_path, &enable_str).await {
+        Ok(()) => {
+            log::debug!("[DEBUG] Enabled {controller} controller in {label}");
+            Ok(())
+        }
+        Err(e) => {
+            log::debug!("[DEBUG] Failed to enable {controller} controller in {label}: {e}");
+            Err(format!("Failed to enable {controller} in {label}: {e}"))
+        }
+    }
 }
 
 /// Decompiled from 0x1b5df0..0x1b729c
@@ -105,24 +200,22 @@ pub async fn setup_cgroup(
     if version == CgroupVersion::V2 {
         // Enable memory controller in the root cgroup's subtree_control
         let root_subtree = PathBuf::from("/sys/fs/cgroup/cgroup.subtree_control");
-        if let Ok(current) = fs::read_to_string(&root_subtree).await {
-            log::debug!("[DEBUG] root current controller: {current}");
-            if !current.contains("memory") {
-                log::debug!("[DEBUG] root subtree_control: enabling memory controller");
-                if let Err(e) = fs::write(&root_subtree, "+memory").await {
-                    log::debug!("[DEBUG] Failed to enable controller: {e}");
-                } else {
-                    log::debug!("[DEBUG] Enabled memory controller");
-                }
-            } else {
-                log::debug!("[DEBUG] memory controller already enabled");
-            }
-        }
+        let _ = enable_controller_in_subtree(&root_subtree, "memory", "root cgroup").await;
 
         // Enable controllers in the process_api subtree
         let pa_subtree = base_path.join("cgroup.subtree_control");
-        if let Err(e) = fs::write(&pa_subtree, "+memory +pids").await {
-            log::debug!("[DEBUG] Failed to enable controllers in process_api subtree: {e}");
+        if let Ok(current) = fs::read_to_string(&pa_subtree).await {
+            log::debug!("[DEBUG] process_api: current_controllers: {}", current.trim());
+        }
+
+        // Enable memory in process_api subtree
+        match fs::write(&pa_subtree, "+memory +pids").await {
+            Ok(()) => {
+                log::debug!("[DEBUG] Enabled memory controller in process_api cgroup");
+            }
+            Err(e) => {
+                log::debug!("[DEBUG] Failed to enable memory controller in process_api cgroup: {e}");
+            }
         }
     }
 
@@ -187,6 +280,7 @@ pub async fn set_memory_limit(
 }
 
 /// Set CPU shares/weight for a cgroup.
+/// Xrefs: "cpu.cfs_period_us", "/sys/fs/cgroup/cpu,cpuacct"
 pub async fn set_cpu_shares(
     cgroup_path: &Path,
     version: CgroupVersion,
@@ -194,8 +288,13 @@ pub async fn set_cpu_shares(
 ) -> Result<(), String> {
     let cpu_file = match version {
         CgroupVersion::V1 => {
-            // v1 uses cpu.shares in a separate cpu controller
-            PathBuf::from("/sys/fs/cgroup/cpu/cpu.shares")
+            // v1: try cpu,cpuacct combined controller first, then cpu
+            let combined = PathBuf::from("/sys/fs/cgroup/cpu,cpuacct/cpu.shares");
+            if combined.exists() {
+                combined
+            } else {
+                PathBuf::from("/sys/fs/cgroup/cpu/cpu.shares")
+            }
         }
         CgroupVersion::V2 => cgroup_path.join("cpu.weight"),
     };
@@ -227,10 +326,18 @@ pub async fn read_memory_usage(
 }
 
 /// Remove a process cgroup directory.
+/// Xrefs: "Removed cgroup directory", "Failed to remove cgroup directory: "
 pub async fn remove_process_cgroup(cgroup_path: &Path) -> Result<(), String> {
-    fs::remove_dir(cgroup_path)
-        .await
-        .map_err(|e| format!("Failed to remove cgroup {}: {e}", cgroup_path.display()))
+    match fs::remove_dir(cgroup_path).await {
+        Ok(()) => {
+            log::debug!("Removed cgroup directory: {}", cgroup_path.display());
+            Ok(())
+        }
+        Err(e) => {
+            log::debug!("Failed to remove cgroup directory: {}: {e}", cgroup_path.display());
+            Err(format!("Failed to remove cgroup {}: {e}", cgroup_path.display()))
+        }
+    }
 }
 
 /// List all process cgroup directories under the base path.

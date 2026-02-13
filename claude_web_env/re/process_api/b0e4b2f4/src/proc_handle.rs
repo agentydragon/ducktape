@@ -240,9 +240,14 @@ pub async fn wait_for_child_to_exit(
                     timeout_dur.as_secs()
                 );
                 kill_and_wait(pid, cgroup_path.as_ref()).await;
-                break ExitReason::TimedOut {
+                let reason = ExitReason::TimedOut {
                     timeout_secs: timeout_dur.as_secs(),
                 };
+                log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
+                if exit_status_tx.send(reason).is_err() {
+                    log::debug!("[DEBUG] Failed to send timeout status for process (PID {pid})");
+                }
+                return;
             }
         }
 
@@ -253,12 +258,17 @@ pub async fn wait_for_child_to_exit(
             if let Ok(usage) = cgroup::read_memory_usage(cp, version).await {
                 if usage > limit {
                     log::debug!(
-                        "[DEBUG] Killed process tree for process (PID {pid}) exceeded memory limit of {limit} bytes (usage: {usage})"
+                        "[DEBUG] Killing process tree OOM killed process (PID {pid}) exceeded memory limit of {limit} bytes (usage: {usage})"
                     );
                     kill_and_wait(pid, cgroup_path.as_ref()).await;
-                    break ExitReason::OutOfMemory {
+                    let reason = ExitReason::OutOfMemory {
                         limit_bytes: limit,
                     };
+                    log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
+                    if exit_status_tx.send(reason).is_err() {
+                        log::debug!("[DEBUG] Failed to send OOM killed status for process (PID {pid})");
+                    }
+                    return;
                 }
             }
         }
@@ -267,11 +277,16 @@ pub async fn wait_for_child_to_exit(
         if let Some(ref mut rx) = oom_rx {
             match rx.try_recv() {
                 Ok(()) => {
-                    log::debug!("[DEBUG] Process (PID {pid}) OOM killed");
+                    log::debug!("[DEBUG] Killing process tree OOM killed process (PID {pid})");
                     kill_and_wait(pid, cgroup_path.as_ref()).await;
-                    break ExitReason::ContainerOom {
+                    let reason = ExitReason::ContainerOom {
                         limit_bytes: memory_limit_bytes.unwrap_or(0),
                     };
+                    log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
+                    if exit_status_tx.send(reason).is_err() {
+                        log::debug!("[DEBUG] Failed to send OOM killed status for process (PID {pid})");
+                    }
+                    return;
                 }
                 Err(oneshot::error::TryRecvError::Closed) => {
                     log::debug!("[DEBUG] oom killed_rx closed for process (PID {pid})");

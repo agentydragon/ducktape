@@ -36,6 +36,7 @@ use tokio::sync::{broadcast, oneshot};
 use crate::cgroup::{self, CgroupController, CgroupVersion};
 use crate::pid_tree;
 use crate::state::ProcessMap;
+use crate::adopter;
 
 /// Shared registry of per-process OOM notification channels.
 /// The container OOM monitor and per-process monitors both access this
@@ -141,7 +142,7 @@ pub async fn container_oom_monitor(
         tokio::select! {
             _ = tokio::time::sleep(polling_period) => {}
             _ = shutdown_rx.recv() => {
-                log::debug!("[DEBUG] container_oom_monitor: Received shutdown signal, exiting");
+                log::debug!("[DEBUG] container_oom_monitor: Received shutdown signal, exiting container_oom_killer");
                 return;
             }
         }
@@ -150,7 +151,7 @@ pub async fn container_oom_monitor(
         let usage = match cgroup::read_memory_usage(&controller.base_path, controller.version).await {
             Ok(u) => u,
             Err(e) => {
-                log::debug!("[DEBUG] container_oom_monitor: failed to read memory usage: {e}");
+                log::debug!("[DEBUG] Error getting container memory usage: {e}");
                 continue;
             }
         };
@@ -159,10 +160,19 @@ pub async fn container_oom_monitor(
             continue;
         }
 
-        // Container memory limit exceeded - find and kill the largest process
+        // Container memory limit exceeded
         log::info!(
-            "[OOM_KILL] Container memory limit exceeded: usage={usage} > limit={container_memory_limit}"
+            "[DEBUG] container_oom_monitor: Container memory usage {usage} exceeds limit {container_memory_limit}"
         );
+
+        // Adopt orphans before memory scan to ensure accurate process tracking
+        log::debug!("[DEBUG] container_oom_monitor: Adopting orphans before memory scan...");
+        if let Err(e) = adopter::try_adopt_orphans(&controller, &proc_map).await {
+            log::debug!("[DEBUG] container_oom_monitor: Failed to adopt orphans: {e}");
+        }
+
+        // Read fresh memory usage for ALL tracked processes to find the largest
+        log::debug!("[DEBUG] container_oom_monitor: Reading fresh memory usage for ALL processes to find largest...");
 
         // Collect process info while holding the lock, then release it
         let process_cgroups: Vec<(String, u32, std::path::PathBuf)> = {
@@ -197,7 +207,7 @@ pub async fn container_oom_monitor(
 
         if let (Some(pid), Some(ref process_id)) = (largest_pid, &largest_process_id) {
             log::info!(
-                "[OOM_KILL] Killing process {process_id} (PID {pid}) using {largest_usage} bytes to free up memory"
+                "[DEBUG] container_oom_monitor: Killing process {process_id} (PID {pid}) with memory usage {largest_usage} to free up memory"
             );
             log::info!(
                 "[process_id={process_id}, pid={pid}] killed by container OOM killer"
@@ -209,6 +219,8 @@ pub async fn container_oom_monitor(
             // Write OOM kill event to log file
             write_oom_kill_log(process_id, pid, largest_usage, container_memory_limit, &cmdline).await;
 
+            let kill_start = std::time::Instant::now();
+
             // Signal the process's OOM channel (take ownership via remove)
             let tx = {
                 let mut channels = oom_channels.lock();
@@ -217,7 +229,11 @@ pub async fn container_oom_monitor(
 
             if let Some(tx) = tx {
                 log::debug!("[DEBUG] container_oom_monitor: signaling OOM for {process_id}");
-                let _ = tx.send(());
+                if tx.send(()).is_err() {
+                    log::debug!(
+                        "[DEBUG] container_oom_monitor: Failed to notify kill for process {process_id}"
+                    );
+                }
             } else {
                 log::debug!(
                     "[DEBUG] No channel available to send OOM notification for process_id {process_id}, killing directly"
@@ -248,6 +264,11 @@ pub async fn container_oom_monitor(
                 }
 
                 if !pid_tree::pid_exists(pid) {
+                    let elapsed = kill_start.elapsed();
+                    log::debug!(
+                        "[DEBUG] container_oom_monitor: Killed process {process_id} (PID {pid}) exited after {:.1}s",
+                        elapsed.as_secs_f64()
+                    );
                     break;
                 }
 
@@ -271,8 +292,10 @@ pub async fn container_oom_monitor(
 
                 match cgroup::read_memory_usage(&controller.base_path, controller.version).await {
                     Ok(current_usage) if current_usage <= container_memory_limit => {
+                        let elapsed = kill_start.elapsed();
                         log::debug!(
-                            "[DEBUG] container_oom_monitor: Memory reclaimed after killing {process_id}: usage={current_usage}"
+                            "[DEBUG] container_oom_monitor: Memory reclaimed to {current_usage}) {:.1}s after kill",
+                            elapsed.as_secs_f64()
                         );
                         break;
                     }

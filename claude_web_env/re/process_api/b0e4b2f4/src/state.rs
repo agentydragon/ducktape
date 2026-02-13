@@ -55,7 +55,7 @@ pub fn lookup_process(
     let map = proc_map.lock();
     match map.get(process_id) {
         Some(entry) => Ok(entry.state.clone()),
-        None => Err(format!("Process not found: {process_id}")),
+        None => Err(format!("process not found: {process_id}")),
     }
 }
 
@@ -72,7 +72,7 @@ pub fn transition_state(
 ) -> Result<(), String> {
     let mut map = proc_map.lock();
     let entry = map.get_mut(process_id).ok_or_else(|| {
-        format!("Process not found: {process_id}")
+        format!("process not found: {process_id}")
     })?;
 
     if entry.state != expected_state {

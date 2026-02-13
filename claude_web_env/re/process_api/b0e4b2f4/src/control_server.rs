@@ -90,7 +90,14 @@ pub async fn start_control_server(
         tokio::select! {
             accept = listener.accept() => {
                 match accept {
-                    Ok((stream, _remote_addr)) => {
+                    Ok((stream, remote_addr)) => {
+                        // Security: reject connections from local IPs
+                        if crate::is_local_ip(&remote_addr.ip()) {
+                            log::warn!(
+                                "[CONTROL] [SECURITY] Rejected connection from local IP {remote_addr}"
+                            );
+                            continue;
+                        }
                         let state = Arc::clone(&state);
                         tokio::spawn(async move {
                             let io = TokioIo::new(stream);
@@ -113,6 +120,7 @@ pub async fn start_control_server(
             }
             _ = shutdown_rx.recv() => {
                 log::debug!("[CONTROL] Control server shutting down");
+                log::debug!("[CONTROL] Control server shutdown complete");
                 return;
             }
         }
@@ -211,10 +219,52 @@ async fn handle_request(
 
         (Method::GET, "/healthcheck") => {
             let diag = crate::state::debug_process_map(&state.proc_map);
+
+            // Read process limits from /proc/self/limits
+            let proc_limits = match tokio::fs::read_to_string("/proc/self/limits").await {
+                Ok(contents) => {
+                    let mut soft = String::from("unknown");
+                    let mut hard = String::from("unknown");
+                    for line in contents.lines() {
+                        if line.starts_with("Max processes") {
+                            let parts: Vec<&str> = line.split_whitespace().collect();
+                            if parts.len() >= 4 {
+                                soft = parts[2].to_string();
+                                hard = parts[3].to_string();
+                            }
+                        }
+                    }
+                    format!("Process limit (soft/hard): {soft}/{hard}")
+                }
+                Err(_) => "Process limit (soft/hard): unknown".to_string(),
+            };
+
+            // Count total system processes from /proc
+            let total_procs = match tokio::fs::read_dir("/proc").await {
+                Ok(mut entries) => {
+                    let mut count = 0u32;
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        if let Some(name) = entry.file_name().to_str() {
+                            if name.chars().all(|c| c.is_ascii_digit()) {
+                                count += 1;
+                            }
+                        }
+                    }
+                    count
+                }
+                Err(_) => 0,
+            };
+
+            // Read PID max from /proc/sys/kernel/pid_max
+            let pid_max = match tokio::fs::read_to_string("/proc/sys/kernel/pid_max").await {
+                Ok(s) => s.trim().to_string(),
+                Err(_) => "unknown".to_string(),
+            };
+
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Full::new(Bytes::from(format!(
-                    "Diagnostic info: [OK]\n{diag}\n"
+                    "Diagnostic info: [OK]\n{diag}\n{proc_limits}\nTotal system processes: {total_procs}\nSystem PID max: {pid_max}\n"
                 ))))
                 .unwrap())
         }

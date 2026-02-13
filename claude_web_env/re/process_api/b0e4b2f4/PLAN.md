@@ -328,20 +328,20 @@ Build the WebSocket test harness and run against both binaries.
   - [x] `io.rs`
 - [x] Full build compiles
 - [x] String differential analysis run (2026-02-13)
-- [ ] Remediation:
-  - [ ] Phase A: Fix format strings (~20 items)
-  - [ ] Phase B: Add missing log messages (~10 items)
-  - [ ] Phase C: Add missing code paths (~30 items)
-    - [ ] C1: `io.rs` restructuring
-    - [ ] C2: `cgroup.rs` enrichment
-    - [ ] C3: `control_server.rs` enrichment
-    - [ ] C4: `oom_killer.rs` enrichment
-    - [ ] C5: `main.rs` enrichment
-    - [ ] C6: `state.rs` / `adopter.rs` / `proc_handle.rs`
-    - [ ] C7: Structural type enrichment (deferred)
-  - [ ] Phase D: Re-run string differential (target: clean diff)
+- [x] Remediation (2026-02-13):
+  - [x] Phase A: Fix format strings (~20 items)
+  - [x] Phase B: Add missing log messages (~10 items)
+  - [x] Phase C: Add missing code paths (~30 items)
+    - [x] C1: `io.rs` restructuring — extracted `process_ws_message`, `forward_stdin`; added ExpectStdIn protocol, explicit WS close, exit_status_rx in select! loop
+    - [x] C2: `cgroup.rs` enrichment — v2 nested detection via /proc/self/cgroup, mkdir -p fallback, cpu,cpuacct v1, controller enable helper
+    - [x] C3: `control_server.rs` enrichment — local IP rejection, healthcheck /proc readings (process limits, PID count, PID max), shutdown complete log
+    - [x] C4: `oom_killer.rs` enrichment — orphan adoption before scan, post-kill timing, failed notify log, error handling
+    - [x] C5: `main.rs` enrichment — format fixes (release:/version: colons), SIGINT message, graceful shutdown messages, blocked IPs log, WS buffer size log
+    - [x] C6: `state.rs` / `adopter.rs` / `proc_handle.rs` — lowercase "process not found", "Killing process tree OOM killed process" log, timeout/OOM send failure logs, `try_adopt_orphans` public function
+    - [ ] C7: Structural type enrichment (deferred — low priority, high effort)
+  - [x] Phase D: Re-run string differential — all application-level strings now present (library noise from dep version differences accepted)
 - [ ] Verification:
-  - [ ] String coverage diff passes
+  - [x] String coverage diff passes (application-level strings)
   - [ ] Behavioral test harness written
   - [ ] Behavioral tests pass against both binaries
   - [x] Every function has `Decompiled from 0x...` annotation
