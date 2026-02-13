@@ -18,5 +18,7 @@ occurrences:
         - [129, 143] # watchdog callbacks that call trigger_refresh
       src/wt/server/gitstatus_refresh.py:
         - [69, 84] # correct pattern: call_soon_threadsafe
+    match_file_restriction:
+      - src/wt/server/github_refresh.py
     critic_scopes_expected_to_recall:
       - [src/wt/server/github_refresh.py, src/wt/server/gitstatus_refresh.py]

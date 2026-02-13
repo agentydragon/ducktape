@@ -10,5 +10,7 @@ occurrences:
         - [42, 59]
         - [99, 116]
     note: "CommitInfo and StatusResult duplicated in test_list_worktrees_with_data and test_status_command_with_pr_flag"
+    match_file_restriction:
+      - tests/cli/test_cli_click_integration.py
     critic_scopes_expected_to_recall:
       - [tests/cli/test_cli_click_integration.py]

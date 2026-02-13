@@ -8,5 +8,7 @@ occurrences:
       gmail_archiver/__main__.py:
         - [330, 344]
     note: link parsing in download_email() - extract to parse_gmail_link() or similar
+    match_file_restriction:
+      - gmail_archiver/__main__.py
     critic_scopes_expected_to_recall:
       - - gmail_archiver/__main__.py

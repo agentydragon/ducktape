@@ -11,5 +11,7 @@ occurrences:
       gmail_archiver/filter_sync.py:
         - [76, 87]
     note: "add_labels and remove_labels built as set() then converted - could use frozenset comprehension"
+    match_file_restriction:
+      - gmail_archiver/filter_sync.py
     critic_scopes_expected_to_recall:
       - - gmail_archiver/filter_sync.py

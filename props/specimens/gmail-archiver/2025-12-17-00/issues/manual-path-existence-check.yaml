@@ -12,5 +12,7 @@ occurrences:
         - - 414
           - 416
     note: eml_file argument in classify_event() - should use exists=True in typer.Argument
+    match_file_restriction:
+      - gmail_archiver/__main__.py
     critic_scopes_expected_to_recall:
       - - gmail_archiver/__main__.py

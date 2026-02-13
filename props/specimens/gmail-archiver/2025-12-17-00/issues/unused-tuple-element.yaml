@@ -1,7 +1,10 @@
 rationale: |
-  Tuple element is stored but never used. unparseable is typed as
-  list[tuple[GmailMessage, str]] and stores the error string, but when
-  iterated it's ignored with _error. Should just be list[GmailMessage].
+  `unparseable` is typed as `list[tuple[GmailMessage, str]]` and stores
+  error strings alongside messages, but when iterated the error is discarded
+  with `_error`. The error information is captured but never surfaced — not
+  logged, not reported, not returned. Either the errors should be used
+  (e.g., logged or included in output) or the type should be simplified to
+  `list[GmailMessage]` to reflect what is actually consumed.
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
@@ -10,6 +13,8 @@ occurrences:
         - [171, 171]
         - [179, 179]
         - [186, 186]
-    note: unparseable stores error string that is never used
+    note: unparseable stores error string that is captured but never surfaced
+    match_file_restriction:
+      - gmail_archiver/planners/aliexpress.py
     critic_scopes_expected_to_recall:
       - - gmail_archiver/planners/aliexpress.py

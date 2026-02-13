@@ -23,5 +23,7 @@ occurrences:
     files:
       gmail_archiver/planners/dbsa.py:
         - [26, 32]
+    match_file_restriction:
+      - gmail_archiver/planners/dbsa.py
     critic_scopes_expected_to_recall:
       - [gmail_archiver/planners/dbsa.py]

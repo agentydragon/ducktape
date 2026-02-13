@@ -8,5 +8,7 @@ occurrences:
       gmail_archiver/planners/aliexpress.py:
         - [189, 189]
     note: "for _order_id, order_emails in by_order.items() - should use .values()"
+    match_file_restriction:
+      - gmail_archiver/planners/aliexpress.py
     critic_scopes_expected_to_recall:
       - - gmail_archiver/planners/aliexpress.py
