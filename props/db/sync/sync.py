@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug
 from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
-from props.core.models.true_positive import LineRange
+from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.core.runs_context import specimens_definitions_root
 from props.db.models import (
     CriticScopeExpectedToRecall,
@@ -41,11 +41,15 @@ from props.db.models import (
 from props.db.sync.loader import discover_snapshots
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.stats import SyncStats
-from props.db.sync.yaml_loader import SyncValidationError, load_yaml_issues
+from props.db.sync.yaml_loader import (
+    FalsePositive as FalsePositive_yaml,
+    SyncValidationError,
+    TruePositive as TruePositive_yaml,
+    load_yaml_issues,
+)
 
 if TYPE_CHECKING:
     from props.config import PropsConfig
-    from props.core.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -338,62 +342,20 @@ def sync_issues_to_db(
                 seen_issue_keys.add(key)
 
                 if key not in existing_issues:
-                    # New issue - create ORM instance and occurrences
                     logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.tp_id}")
                     orm_issue = TruePositive(
                         snapshot_slug=issue.snapshot_slug, tp_id=issue.tp_id, rationale=issue.rationale
                     )
                     session.add(orm_issue)
-                    # Note: critic_scopes_expected_to_recall is stored in M:N table, not as column
-                    # Note: files/line ranges are stored in tp_occurrence_ranges table, not as column
                     for occ in issue.occurrences:
-                        orm_occ = TruePositiveOccurrenceORM(
-                            snapshot_slug=issue.snapshot_slug,
-                            tp_id=issue.tp_id,
-                            occurrence_id=occ.occurrence_id,
-                            note=occ.note,
-                            match_file_restriction=ensure_file_set(
-                                session, issue.snapshot_slug, occ.match_file_restriction
-                            ),
-                        )
-                        session.add(orm_occ)
-                        _add_ranges_to_occurrence(orm_occ, occ.files)
+                        _add_tp_occurrence(session, issue.snapshot_slug, issue.tp_id, occ)
                     added += 1
                     total += 1
                 else:
-                    # Existing issue - check if update needed
                     existing = existing_issues[key]
-                    needs_update = False
-
-                    if existing.rationale != issue.rationale:
-                        logger.debug(f"Updating issue rationale: {key}")
-                        needs_update = True
-
-                    if _tp_occurrences_changed(list(existing.occurrences), issue.occurrences):
-                        logger.debug(f"Updating issue occurrences: {key}")
-                        needs_update = True
-
-                    if needs_update:
-                        existing.rationale = issue.rationale
-                        # Delete existing occurrences and re-add (cascade handles this)
-                        for occ_orm in list(existing.occurrences):
-                            session.delete(occ_orm)
-                        for occ in issue.occurrences:
-                            orm_occ = TruePositiveOccurrenceORM(
-                                snapshot_slug=issue.snapshot_slug,
-                                tp_id=issue.tp_id,
-                                occurrence_id=occ.occurrence_id,
-                                note=occ.note,
-                                match_file_restriction=ensure_file_set(
-                                    session, issue.snapshot_slug, occ.match_file_restriction
-                                ),
-                            )
-                            session.add(orm_occ)
-                            _add_ranges_to_occurrence(orm_occ, occ.files)
+                    if _sync_tp_issue(session, existing, issue):
                         updated += 1
-                        total += 1
-                    else:
-                        total += 1
+                    total += 1
 
             # Sync false positives
             for fp in false_positives:
@@ -401,74 +363,18 @@ def sync_issues_to_db(
                 seen_fp_keys.add(fp_key)
 
                 if fp_key not in existing_fps:
-                    # New FP - create ORM instance and occurrences
                     logger.debug(f"Adding false positive: {fp.snapshot_slug}/{fp.fp_id}")
                     orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
                     session.add(orm_fp)
                     for fp_occ in fp.occurrences:
-                        fp_orm_occ = FalsePositiveOccurrenceORM(
-                            snapshot_slug=fp.snapshot_slug,
-                            fp_id=fp.fp_id,
-                            occurrence_id=fp_occ.occurrence_id,
-                            note=fp_occ.note,
-                            match_file_restriction=ensure_file_set(
-                                session, fp.snapshot_slug, fp_occ.match_file_restriction
-                            ),
-                        )
-                        session.add(fp_orm_occ)
-                        _add_ranges_to_occurrence(fp_orm_occ, fp_occ.files)
-                        for relevant_file in fp_occ.relevant_files:
-                            fp_orm_occ.relevant_file_orms.append(
-                                FalsePositiveRelevantFileORM(
-                                    snapshot_slug=fp.snapshot_slug,
-                                    occurrence_id=fp_occ.occurrence_id,
-                                    file_path=relevant_file,
-                                )
-                            )
+                        _add_fp_occurrence(session, fp.snapshot_slug, fp.fp_id, fp_occ)
                     added += 1
                     total += 1
                 else:
-                    # Existing FP - check if update needed
                     existing_fp = existing_fps[fp_key]
-                    fp_needs_update = False
-
-                    if existing_fp.rationale != fp.rationale:
-                        logger.debug(f"Updating FP rationale: {fp_key}")
-                        fp_needs_update = True
-
-                    if _fp_occurrences_changed(list(existing_fp.occurrences), fp.occurrences):
-                        logger.debug(f"Updating FP occurrences: {fp_key}")
-                        fp_needs_update = True
-
-                    if fp_needs_update:
-                        existing_fp.rationale = fp.rationale
-                        # Delete existing occurrences and re-add (cascade handles this)
-                        for fp_occ_orm in list(existing_fp.occurrences):
-                            session.delete(fp_occ_orm)
-                        for fp_occ in fp.occurrences:
-                            fp_orm_occ = FalsePositiveOccurrenceORM(
-                                snapshot_slug=fp.snapshot_slug,
-                                fp_id=fp.fp_id,
-                                occurrence_id=fp_occ.occurrence_id,
-                                note=fp_occ.note,
-                                match_file_restriction=ensure_file_set(
-                                    session, fp.snapshot_slug, fp_occ.match_file_restriction
-                                ),
-                            )
-                            session.add(fp_orm_occ)
-                            _add_ranges_to_occurrence(fp_orm_occ, fp_occ.files)
-                            for relevant_file in fp_occ.relevant_files:
-                                fp_orm_occ.relevant_file_orms.append(
-                                    FalsePositiveRelevantFileORM(
-                                        snapshot_slug=fp.snapshot_slug,
-                                        occurrence_id=fp_occ.occurrence_id,
-                                        file_path=relevant_file,
-                                    )
-                                )
+                    if _sync_fp_issue(session, existing_fp, fp):
                         updated += 1
-                        total += 1
-                    else:
-                        total += 1
+                    total += 1
 
             session.flush()
         except Exception as e:
@@ -574,82 +480,153 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def _compute_restriction_hash(match_file_restriction: set[Path] | None) -> str | None:
-    """Compute the expected DB hash for a match_file_restriction from YAML."""
-    if match_file_restriction is None:
-        return None
-    return compute_files_hash([str(p) for p in match_file_restriction])
-
-
-def _db_ranges_to_files(ranges: list[OccurrenceRangeORM]) -> dict[Path, list[LineRange]]:
-    """Reconstruct files dict from DB occurrence ranges."""
+def _tp_occ_from_orm(db_occ: TruePositiveOccurrenceORM) -> TruePositiveOccurrence:
+    """Reconstruct a YAML-equivalent Pydantic model from an ORM occurrence."""
     files: dict[Path, list[LineRange]] = {}
-    for r in sorted(ranges, key=lambda r: (str(r.file_path), r.range_id)):
-        path = Path(str(r.file_path))
-        files.setdefault(path, []).append(LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note))
-    return files
+    for r in sorted(db_occ.ranges, key=lambda r: (str(r.file_path), r.range_id)):
+        files.setdefault(Path(str(r.file_path)), []).append(
+            LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note)
+        )
+
+    restriction: set[Path] | None = None
+    if db_occ.match_file_restriction is not None:
+        # Resolve hash → paths via file_set_members query on the same session
+        session = Session.object_session(db_occ)
+        assert session is not None
+        members = (
+            session.query(FileSetMember.file_path)
+            .filter_by(snapshot_slug=db_occ.snapshot_slug, files_hash=db_occ.match_file_restriction)
+            .all()
+        )
+        restriction = {Path(m.file_path) for m in members}
+
+    return TruePositiveOccurrence(
+        occurrence_id=db_occ.occurrence_id,
+        files=files,
+        note=db_occ.note,
+        critic_scopes_expected_to_recall=db_occ.critic_scopes_expected_to_recall_set,
+        match_file_restriction=restriction,
+    )
 
 
-def _yaml_files_to_comparable(files: dict[Path, list[LineRange] | None]) -> dict[Path, list[LineRange]]:
-    """Normalize YAML files dict for comparison (None ranges -> empty list)."""
-    return {p: (ranges if ranges is not None else []) for p, ranges in files.items()}
+def _fp_occ_from_orm(db_occ: FalsePositiveOccurrenceORM) -> FalsePositiveOccurrence:
+    """Reconstruct a YAML-equivalent Pydantic model from an ORM FP occurrence."""
+    files: dict[Path, list[LineRange]] = {}
+    for r in sorted(db_occ.ranges, key=lambda r: (str(r.file_path), r.range_id)):
+        files.setdefault(Path(str(r.file_path)), []).append(
+            LineRange(start_line=r.start_line, end_line=r.end_line, note=r.note)
+        )
+
+    restriction: set[Path] | None = None
+    if db_occ.match_file_restriction is not None:
+        session = Session.object_session(db_occ)
+        assert session is not None
+        members = (
+            session.query(FileSetMember.file_path)
+            .filter_by(snapshot_slug=db_occ.snapshot_slug, files_hash=db_occ.match_file_restriction)
+            .all()
+        )
+        restriction = {Path(m.file_path) for m in members}
+
+    return FalsePositiveOccurrence(
+        occurrence_id=db_occ.occurrence_id,
+        files=files,
+        note=db_occ.note,
+        relevant_files={Path(str(rf.file_path)) for rf in db_occ.relevant_file_orms},
+        match_file_restriction=restriction,
+    )
 
 
-def _db_critic_scopes_hashes(db_occ: TruePositiveOccurrenceORM) -> set[str]:
-    """Get set of files_hash values from DB critic_scopes_expected_to_recall."""
-    return {scope.files_hash for scope in db_occ.critic_scopes_expected_to_recall}
+def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: TruePositive_yaml) -> bool:
+    """Sync a TP issue, returning True if anything changed."""
+    changed = False
+    if existing.rationale != yaml_issue.rationale:
+        existing.rationale = yaml_issue.rationale
+        changed = True
 
+    db_map = {o.occurrence_id: o for o in existing.occurrences}
+    yaml_map = {o.occurrence_id: o for o in yaml_issue.occurrences}
 
-def _yaml_critic_scopes_hashes(yaml_occ: TruePositiveOccurrence) -> set[str]:
-    """Compute files_hash values for YAML critic_scopes_expected_to_recall."""
-    return {compute_files_hash([str(p) for p in scope]) for scope in yaml_occ.critic_scopes_expected_to_recall}
-
-
-def _tp_occurrences_changed(
-    existing_occs: list[TruePositiveOccurrenceORM], yaml_occs: list[TruePositiveOccurrence]
-) -> bool:
-    """Check if TP occurrence data differs between DB and YAML."""
-    existing_map = {o.occurrence_id: o for o in existing_occs}
-    yaml_map = {o.occurrence_id: o for o in yaml_occs}
-
-    if set(existing_map.keys()) != set(yaml_map.keys()):
-        return True
+    # Removed occurrences
+    for occ_id in set(db_map) - set(yaml_map):
+        session.delete(db_map[occ_id])
+        changed = True
 
     for occ_id, yaml_occ in yaml_map.items():
-        db_occ = existing_map[occ_id]
-        if db_occ.note != yaml_occ.note:
-            return True
-        if db_occ.match_file_restriction != _compute_restriction_hash(yaml_occ.match_file_restriction):
-            return True
-        if _db_ranges_to_files(list(db_occ.ranges)) != _yaml_files_to_comparable(yaml_occ.files):
-            return True
-        if _db_critic_scopes_hashes(db_occ) != _yaml_critic_scopes_hashes(yaml_occ):
-            return True
-    return False
+        if occ_id not in db_map:
+            # New occurrence
+            _add_tp_occurrence(session, yaml_issue.snapshot_slug, yaml_issue.tp_id, yaml_occ)
+            changed = True
+        else:
+            # Compare via Pydantic reconstruction
+            db_pydantic = _tp_occ_from_orm(db_map[occ_id])
+            if db_pydantic != yaml_occ:
+                session.delete(db_map[occ_id])
+                _add_tp_occurrence(session, yaml_issue.snapshot_slug, yaml_issue.tp_id, yaml_occ)
+                changed = True
+
+    return changed
 
 
-def _fp_occurrences_changed(
-    existing_occs: list[FalsePositiveOccurrenceORM], yaml_occs: list[FalsePositiveOccurrence]
-) -> bool:
-    """Check if FP occurrence data differs between DB and YAML."""
-    existing_map = {o.occurrence_id: o for o in existing_occs}
-    yaml_map = {o.occurrence_id: o for o in yaml_occs}
+def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: FalsePositive_yaml) -> bool:
+    """Sync an FP issue, returning True if anything changed."""
+    changed = False
+    if existing.rationale != yaml_fp.rationale:
+        existing.rationale = yaml_fp.rationale
+        changed = True
 
-    if set(existing_map.keys()) != set(yaml_map.keys()):
-        return True
+    db_map = {o.occurrence_id: o for o in existing.occurrences}
+    yaml_map = {o.occurrence_id: o for o in yaml_fp.occurrences}
+
+    # Removed occurrences
+    for occ_id in set(db_map) - set(yaml_map):
+        session.delete(db_map[occ_id])
+        changed = True
 
     for occ_id, yaml_occ in yaml_map.items():
-        db_occ = existing_map[occ_id]
-        if db_occ.note != yaml_occ.note:
-            return True
-        if db_occ.match_file_restriction != _compute_restriction_hash(yaml_occ.match_file_restriction):
-            return True
-        if _db_ranges_to_files(list(db_occ.ranges)) != _yaml_files_to_comparable(yaml_occ.files):
-            return True
-        db_relevant = {Path(str(rf.file_path)) for rf in db_occ.relevant_file_orms}
-        if db_relevant != yaml_occ.relevant_files:
-            return True
-    return False
+        if occ_id not in db_map:
+            _add_fp_occurrence(session, yaml_fp.snapshot_slug, yaml_fp.fp_id, yaml_occ)
+            changed = True
+        else:
+            db_pydantic = _fp_occ_from_orm(db_map[occ_id])
+            if db_pydantic != yaml_occ:
+                session.delete(db_map[occ_id])
+                _add_fp_occurrence(session, yaml_fp.snapshot_slug, yaml_fp.fp_id, yaml_occ)
+                changed = True
+
+    return changed
+
+
+def _add_tp_occurrence(session: Session, snapshot_slug: SnapshotSlug, tp_id: str, occ: TruePositiveOccurrence) -> None:
+    """Create a TP occurrence ORM row with all dependent rows."""
+    orm_occ = TruePositiveOccurrenceORM(
+        snapshot_slug=snapshot_slug,
+        tp_id=tp_id,
+        occurrence_id=occ.occurrence_id,
+        note=occ.note,
+        match_file_restriction=ensure_file_set(session, snapshot_slug, occ.match_file_restriction),
+    )
+    session.add(orm_occ)
+    _add_ranges_to_occurrence(orm_occ, occ.files)
+
+
+def _add_fp_occurrence(session: Session, snapshot_slug: SnapshotSlug, fp_id: str, occ: FalsePositiveOccurrence) -> None:
+    """Create an FP occurrence ORM row with all dependent rows."""
+    fp_orm_occ = FalsePositiveOccurrenceORM(
+        snapshot_slug=snapshot_slug,
+        fp_id=fp_id,
+        occurrence_id=occ.occurrence_id,
+        note=occ.note,
+        match_file_restriction=ensure_file_set(session, snapshot_slug, occ.match_file_restriction),
+    )
+    session.add(fp_orm_occ)
+    _add_ranges_to_occurrence(fp_orm_occ, occ.files)
+    for relevant_file in occ.relevant_files:
+        fp_orm_occ.relevant_file_orms.append(
+            FalsePositiveRelevantFileORM(
+                snapshot_slug=snapshot_slug, occurrence_id=occ.occurrence_id, file_path=relevant_file
+            )
+        )
 
 
 def compute_files_hash(file_paths: list[str]) -> str:
