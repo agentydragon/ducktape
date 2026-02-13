@@ -11,7 +11,7 @@ import os
 import shutil
 import signal
 import time
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,8 +73,8 @@ def hook_settings(isolated_dirs: IsolatedSupervisorDirs) -> HookSettings:
     return HookSettings()
 
 
-@pytest.fixture(scope="module")
-def mock_egress_proxy() -> Generator[MockEgressProxyFixture]:
+@pytest.fixture
+async def mock_egress_proxy() -> AsyncGenerator[MockEgressProxyFixture]:
     """Mock of Anthropic's TLS-inspecting egress proxy that chains through upstream if available.
 
     Works in gVisor environments by detecting HTTPS_PROXY and chaining through it.
@@ -93,7 +93,7 @@ def mock_egress_proxy() -> Generator[MockEgressProxyFixture]:
     proxy_logger.addHandler(handler)
 
     try:
-        with MockEgressProxy(
+        async with MockEgressProxy(
             listen_port=0, username="proxy_user", password="test_jwt_token", upstream_proxy=EgressProxyConfig.from_env()
         ) as proxy:
             yield MockEgressProxyFixture(proxy=proxy, log_file=log_file)

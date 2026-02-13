@@ -10,16 +10,15 @@ Used for e2e testing of the session_start hook and auth proxy infrastructure.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import logging
 import os
-import socket
 import ssl
 import tempfile
-import threading
 import urllib.parse
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -220,24 +219,19 @@ class ConnectionStats:
     failed_connections: int = 0
     bytes_forwarded: int = 0
     errors: list[str] = field(default_factory=list)
-    lock: threading.Lock = field(default_factory=threading.Lock)
 
     def record_success(self, bytes_count: int = 0) -> None:
-        with self.lock:
-            self.successful_connections += 1
-            self.bytes_forwarded += bytes_count
+        self.successful_connections += 1
+        self.bytes_forwarded += bytes_count
 
     def record_failure(self, error: str) -> None:
-        with self.lock:
-            self.failed_connections += 1
-            self.errors.append(error)
-            # Keep only last 100 errors
-            if len(self.errors) > 100:
-                self.errors = self.errors[-100:]
+        self.failed_connections += 1
+        self.errors.append(error)
+        if len(self.errors) > 100:
+            self.errors = self.errors[-100:]
 
     def record_connection(self) -> None:
-        with self.lock:
-            self.total_connections += 1
+        self.total_connections += 1
 
 
 class MockEgressProxy:
@@ -257,100 +251,63 @@ class MockEgressProxy:
         listen_port: int = 0,
         username: str = "testuser",
         password: str = "testpass",
-        temp_dir: Path | None = None,
-        max_workers: int = 100,
+        max_concurrent_outbound: int = 20,
         verify_target_certs: bool = True,
     ):
         self.listen_port = listen_port
         self.username = username
         self.password = password
-        self.temp_dir = temp_dir
-        self.max_workers = max_workers
         self.upstream_proxy = upstream_proxy
         self.verify_target_certs = verify_target_certs
 
-        self.server_socket: socket.socket | None = None
+        self._server: asyncio.Server | None = None
         self.port: int = 0
-        self._running = False
-        self._thread: threading.Thread | None = None
-        self._executor: ThreadPoolExecutor | None = None
-        self._connections: list[socket.socket] = []
+        self._tasks: set[asyncio.Task[None]] = set()
 
-        # CA cert/key for TLS interception
-        self._ca_cert_pem: bytes = b""
-        self._ca_key_pem: bytes = b""
+        self._ca_cert_pem, self._ca_key_pem = generate_mock_ca()
 
         # Cache for generated server certs (hostname -> (cert_pem, key_pem))
         self._server_certs: dict[str, tuple[bytes, bytes]] = {}
-        self._cert_lock = threading.Lock()
 
-        # Connection statistics for debugging
         self.stats = ConnectionStats()
-
-        # Semaphore to limit concurrent outbound connections
-        # This prevents overwhelming target servers when many parallel connections come in
-        self._outbound_semaphore = threading.Semaphore(20)
+        self._outbound_semaphore = asyncio.Semaphore(max_concurrent_outbound)
 
     @property
     def ca_cert_pem(self) -> bytes:
-        """Get the CA certificate PEM."""
         return self._ca_cert_pem
 
     @property
     def url(self) -> str:
-        """Get the proxy URL with credentials."""
         return f"http://{self.username}:{self.password}@127.0.0.1:{self.port}"
 
-    def __enter__(self) -> MockEgressProxy:
-        """Start proxy and return self for context manager use."""
-        self.start()
-        return self
+    async def __aenter__(self) -> MockEgressProxy:
+        self._server = await asyncio.start_server(self._on_connection, "127.0.0.1", self.listen_port)
+        addrs = self._server.sockets
+        assert addrs, "Server has no sockets"
+        self.port = addrs[0].getsockname()[1]
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
-        """Stop proxy on context exit."""
-        self.stop()
-
-    def start(self) -> None:
-        """Start the proxy server."""
-        # Generate CA cert
-        self._ca_cert_pem, self._ca_key_pem = generate_mock_ca()
-
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind(("127.0.0.1", self.listen_port))
-        self.port = self.server_socket.getsockname()[1]
-        self.server_socket.listen(50)  # Increased backlog for concurrent connections
-        self.server_socket.settimeout(0.5)
-
-        self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="mock-proxy")
-        self._running = True
-        self._thread = threading.Thread(target=self._serve, daemon=True)
-        self._thread.start()
         if self.upstream_proxy:
             logger.info(
-                "MockEgressProxy started on port %d (chaining through upstream %s:%d, max_workers=%d)",
+                "MockEgressProxy started on port %d (chaining through upstream %s:%d)",
                 self.port,
                 self.upstream_proxy.host,
                 self.upstream_proxy.port,
-                self.max_workers,
             )
         else:
-            logger.info(
-                "MockEgressProxy started on port %d (direct connections, max_workers=%d)", self.port, self.max_workers
-            )
+            logger.info("MockEgressProxy started on port %d (direct connections)", self.port)
+        return self
 
-    def stop(self) -> None:
-        """Stop the proxy server."""
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=2)
-        if self._executor:
-            self._executor.shutdown(wait=False, cancel_futures=True)
-        for conn in self._connections:
-            with contextlib.suppress(OSError):
-                conn.close()
-        if self.server_socket:
-            self.server_socket.close()
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object
+    ) -> None:
+        if self._server:
+            self._server.close()
+            await self._server.wait_closed()
+        for task in self._tasks:
+            task.cancel()
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks.clear()
         logger.info(
             "MockEgressProxy stopped. Stats: %d total, %d success, %d failed, %d bytes",
             self.stats.total_connections,
@@ -361,47 +318,46 @@ class MockEgressProxy:
         if self.stats.errors:
             logger.info("Recent errors: %s", self.stats.errors[-5:])
 
-    def _serve(self) -> None:
-        """Main server loop."""
-        while self._running:
-            try:
-                client_sock, _addr = self.server_socket.accept()  # type: ignore[union-attr]
-                self._connections.append(client_sock)
-                self.stats.record_connection()
-                # Use thread pool instead of spawning unlimited threads
-                self._executor.submit(self._handle_client, client_sock)  # type: ignore[union-attr]
-            except TimeoutError:
-                continue
-            except OSError:
-                break
+    async def _on_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Callback for asyncio.start_server — wraps _handle_client in a tracked task."""
+        self.stats.record_connection()
+        task = asyncio.current_task()
+        assert task is not None
+        self._tasks.add(task)
+        try:
+            await self._handle_client(reader, writer)
+        finally:
+            self._tasks.discard(task)
 
     def _get_server_cert(self, hostname: str) -> tuple[bytes, bytes]:
-        """Get or generate a server certificate for the hostname."""
-        with self._cert_lock:
-            if hostname not in self._server_certs:
-                self._server_certs[hostname] = generate_server_cert(self._ca_cert_pem, self._ca_key_pem, hostname)
-            return self._server_certs[hostname]
+        if hostname not in self._server_certs:
+            self._server_certs[hostname] = generate_server_cert(self._ca_cert_pem, self._ca_key_pem, hostname)
+        return self._server_certs[hostname]
 
-    def _connect_to_target(self, target_host: str, target_port: int) -> ssl.SSLSocket:
-        """Connect to target server, optionally through upstream proxy.
+    async def _send_error(self, writer: asyncio.StreamWriter, response: bytes, error: str) -> None:
+        writer.write(response)
+        await writer.drain()
+        self.stats.record_failure(error)
 
-        Returns an SSL-wrapped socket connected to the target.
-        """
+    async def _connect_to_target(
+        self, target_host: str, target_port: int
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         if self.upstream_proxy:
-            return self._connect_via_upstream(target_host, target_port)
-        return self._connect_direct(target_host, target_port)
+            return await self._connect_via_upstream(target_host, target_port)
+        return await self._connect_direct(target_host, target_port)
 
-    def _connect_direct(self, target_host: str, target_port: int) -> ssl.SSLSocket:
-        """Connect directly to target server."""
-        server_sock = socket.create_connection((target_host, target_port), timeout=60)
-        server_sock.settimeout(60)
+    async def _connect_direct(
+        self, target_host: str, target_port: int
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         server_ctx = ssl.create_default_context()
         if not self.verify_target_certs:
             server_ctx.check_hostname = False
             server_ctx.verify_mode = ssl.CERT_NONE
-        return server_ctx.wrap_socket(server_sock, server_hostname=target_host)
+        return await asyncio.open_connection(target_host, target_port, ssl=server_ctx)
 
-    def _connect_via_upstream(self, target_host: str, target_port: int) -> ssl.SSLSocket:
+    async def _connect_via_upstream(
+        self, target_host: str, target_port: int
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """Connect to target through upstream proxy.
 
         The upstream proxy (e.g., Anthropic's TLS-inspecting proxy) will:
@@ -424,229 +380,200 @@ class MockEgressProxy:
             upstream.ca_bundle,
         )
 
-        # Connect to upstream proxy
-        proxy_sock = socket.create_connection((upstream.host, upstream.port), timeout=60)
-        proxy_sock.settimeout(60)
+        proxy_reader, proxy_writer = await asyncio.open_connection(upstream.host, upstream.port)
+        try:
+            # Build and send CONNECT request
+            connect_req = f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
+            connect_req += f"Host: {target_host}:{target_port}\r\n"
+            if upstream.username and upstream.password:
+                creds = f"{upstream.username}:{upstream.password}"
+                encoded = base64.b64encode(creds.encode()).decode()
+                connect_req += f"Proxy-Authorization: Basic {encoded}\r\n"
+            connect_req += "\r\n"
+            proxy_writer.write(connect_req.encode())
+            await proxy_writer.drain()
 
-        # Build CONNECT request
-        connect_req = f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
-        connect_req += f"Host: {target_host}:{target_port}\r\n"
+            # Read response headers
+            try:
+                response = await proxy_reader.readuntil(b"\r\n\r\n")
+            except asyncio.IncompleteReadError as e:
+                raise ConnectionError("Upstream proxy closed connection") from e
 
-        # Add auth if configured
-        if upstream.username and upstream.password:
-            creds = f"{upstream.username}:{upstream.password}"
-            encoded = base64.b64encode(creds.encode()).decode()
-            connect_req += f"Proxy-Authorization: Basic {encoded}\r\n"
+            status_line = response.split(b"\r\n")[0].decode()
+            if " 200 " not in status_line and " 2" not in status_line.split()[1]:
+                raise ConnectionError(f"Upstream proxy rejected CONNECT: {status_line}")
 
-        connect_req += "\r\n"
-        proxy_sock.sendall(connect_req.encode())
+            logger.debug("Upstream proxy tunnel established to %s:%d", target_host, target_port)
 
-        # Read response
-        response = b""
-        while b"\r\n\r\n" not in response:
-            chunk = proxy_sock.recv(4096)
-            if not chunk:
-                raise ConnectionError("Upstream proxy closed connection")
-            response += chunk
+            # Upgrade to TLS (client side — we're connecting to the target through the tunnel)
+            server_ctx = ssl.create_default_context()
+            if upstream.ca_bundle and Path(upstream.ca_bundle).exists():
+                server_ctx.load_verify_locations(upstream.ca_bundle)
+            else:
+                logger.debug("No CA bundle for upstream proxy, disabling certificate verification")
+                server_ctx.check_hostname = False
+                server_ctx.verify_mode = ssl.CERT_NONE
 
-        # Check for success (2xx status)
-        status_line = response.split(b"\r\n")[0].decode()
-        if " 200 " not in status_line and " 2" not in status_line.split()[1]:
-            raise ConnectionError(f"Upstream proxy rejected CONNECT: {status_line}")
+            await proxy_writer.start_tls(server_ctx, server_hostname=target_host)
+            return proxy_reader, proxy_writer
+        except BaseException:
+            proxy_writer.close()
+            raise
 
-        logger.debug("Upstream proxy tunnel established to %s:%d", target_host, target_port)
-
-        # Wrap with TLS to target (upstream proxy does MITM, we trust its CA)
-        server_ctx = ssl.create_default_context()
-        if upstream.ca_bundle and Path(upstream.ca_bundle).exists():
-            server_ctx.load_verify_locations(upstream.ca_bundle)
-        else:
-            # No CA bundle available - disable verification for test proxy
-            # This happens in CI when HTTPS_PROXY is set but SSL_CERT_FILE is not
-            logger.debug("No CA bundle for upstream proxy, disabling certificate verification")
-            server_ctx.check_hostname = False
-            server_ctx.verify_mode = ssl.CERT_NONE
-        return server_ctx.wrap_socket(proxy_sock, server_hostname=target_host)
-
-    def _handle_client(self, client_sock: socket.socket) -> None:
-        """Handle a single client connection."""
-        client_ssl: ssl.SSLSocket | None = None
-        server_ssl: ssl.SSLSocket | None = None
-        target_host: str = "<unknown>"
-        target_port: int = 0
-        bytes_forwarded: int = 0
+    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        target_host = "<unknown>"
+        target_port = 0
 
         try:
-            # Set socket timeout for initial handshake
-            client_sock.settimeout(60)
-
-            # Read CONNECT request
-            request = b""
-            while b"\r\n\r\n" not in request:
-                chunk = client_sock.recv(4096)
-                if not chunk:
-                    return
-                request += chunk
-
-            request_line = request.split(b"\r\n", 1)[0].decode()
-            if not request_line.startswith("CONNECT "):
-                client_sock.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                self.stats.record_failure(f"Non-CONNECT request: {request_line[:50]}")
-                return
-
-            # Parse target host:port
-            parts = request_line.split()
-            if len(parts) < 2:
-                client_sock.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                self.stats.record_failure("Malformed CONNECT request")
-                return
-
-            target = parts[1]
-            if ":" in target:
-                target_host, port_str = target.rsplit(":", 1)
-                target_port = int(port_str)
-            else:
-                target_host = target
-                target_port = 443
-
-            conn_id = self.stats.total_connections
-            logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
-
-            # Check auth header (always required, matching real egress proxy)
-            auth_ok = False
-            for line in request.split(b"\r\n"):
-                if line.lower().startswith(b"proxy-authorization: basic "):
-                    encoded = line.split(b" ", 2)[2]
-                    decoded = base64.b64decode(encoded).decode()
-                    if ":" in decoded:
-                        user, passwd = decoded.split(":", 1)
-                        if user == self.username and passwd == self.password:
-                            auth_ok = True
-                    break
-
-            if not auth_ok:
-                client_sock.sendall(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
-                self.stats.record_failure(f"Auth failed for {target_host}:{target_port}")
-                return
-
-            # Connect to real target BEFORE sending 200 (so we can return error if connection fails)
-            # Use semaphore to limit concurrent outbound connections and prevent overwhelming targets
-            logger.info("[conn %d] Waiting for outbound slot for %s:%d", conn_id, target_host, target_port)
-            with self._outbound_semaphore:
-                logger.info("[conn %d] Connecting to target %s:%d", conn_id, target_host, target_port)
+            async with _close_writer(writer):
+                # Read CONNECT request
                 try:
-                    server_ssl = self._connect_to_target(target_host, target_port)
-                    logger.info("[conn %d] Connected to target %s:%d", conn_id, target_host, target_port)
-                except Exception as e:
-                    error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
-                    logger.warning("[conn %d] %s", conn_id, error_msg)
-                    self.stats.record_failure(error_msg)
-                    client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+                    request = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=60)
+                except (TimeoutError, asyncio.IncompleteReadError):
                     return
 
-            # Send 200 Connection Established (only after successful connection to target)
-            logger.info("[conn %d] Sending 200 to client for %s:%d", conn_id, target_host, target_port)
-            client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                request_line = request.split(b"\r\n", 1)[0].decode()
+                if not request_line.startswith("CONNECT "):
+                    await self._send_error(
+                        writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", f"Non-CONNECT request: {request_line[:50]}"
+                    )
+                    return
 
-            # Generate server cert for this hostname and wrap client connection
-            # Include CA cert in chain so clients can extract it via get_unverified_chain()
-            server_cert_pem, server_key_pem = self._get_server_cert(target_host)
+                # Parse target host:port
+                parts = request_line.split()
+                if len(parts) < 2:
+                    await self._send_error(writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", "Malformed CONNECT request")
+                    return
 
-            client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem, self._ca_cert_pem)
-            client_ssl = client_ctx.wrap_socket(client_sock, server_side=True)
+                target = parts[1]
+                if ":" in target:
+                    target_host, port_str = target.rsplit(":", 1)
+                    target_port = int(port_str)
+                else:
+                    target_host = target
+                    target_port = 443
 
-            # Bidirectional forward
-            bytes_forwarded = self._forward_bidirectional(client_ssl, server_ssl, target_host)
-            self.stats.record_success(bytes_forwarded)
-            logger.info(
-                "[conn %d] Completed %s:%d, %d bytes forwarded", conn_id, target_host, target_port, bytes_forwarded
-            )
+                conn_id = self.stats.total_connections
+                logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
 
-        except TimeoutError as e:
-            error_msg = f"Timeout connecting to {target_host}:{target_port}: {e}"
-            logger.warning(error_msg)
-            self.stats.record_failure(error_msg)
-        except ssl.SSLError as e:
-            error_msg = f"SSL error for {target_host}:{target_port}: {e}"
-            logger.warning(error_msg)
-            self.stats.record_failure(error_msg)
-        except OSError as e:
-            error_msg = f"OS error for {target_host}:{target_port}: {e}"
-            logger.warning(error_msg)
-            self.stats.record_failure(error_msg)
-        except ValueError as e:
-            error_msg = f"Value error for {target_host}:{target_port}: {e}"
-            logger.warning(error_msg)
-            self.stats.record_failure(error_msg)
-        finally:
-            # Close SSL sockets first (they close underlying sockets too)
-            if server_ssl:
-                with contextlib.suppress(OSError):
-                    server_ssl.close()
-            if client_ssl:
-                with contextlib.suppress(OSError):
-                    client_ssl.close()
-            elif client_sock:
-                # Only close raw socket if SSL wrapping didn't happen
-                with contextlib.suppress(OSError):
-                    client_sock.close()
-            # Remove from connections list to allow garbage collection
-            with contextlib.suppress(ValueError):
-                self._connections.remove(client_sock)
+                # Check auth header (always required, matching real egress proxy)
+                auth_ok = False
+                for line in request.split(b"\r\n"):
+                    if line.lower().startswith(b"proxy-authorization: basic "):
+                        encoded = line.split(b" ", 2)[2]
+                        decoded = base64.b64decode(encoded).decode()
+                        if ":" in decoded:
+                            user, passwd = decoded.split(":", 1)
+                            if user == self.username and passwd == self.password:
+                                auth_ok = True
+                        break
 
-    def _forward_bidirectional(self, client_ssl: ssl.SSLSocket, server_ssl: ssl.SSLSocket, target_host: str) -> int:
+                if not auth_ok:
+                    await self._send_error(
+                        writer,
+                        b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
+                        f"Auth failed for {target_host}:{target_port}",
+                    )
+                    return
+
+                # Connect to target (with concurrency limit)
+                async with self._outbound_semaphore:
+                    logger.info("[conn %d] Connecting to target %s:%d", conn_id, target_host, target_port)
+                    try:
+                        server_reader, server_writer = await asyncio.wait_for(
+                            self._connect_to_target(target_host, target_port), timeout=60
+                        )
+                        logger.info("[conn %d] Connected to target %s:%d", conn_id, target_host, target_port)
+                    except Exception as e:
+                        error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
+                        logger.warning("[conn %d] %s", conn_id, error_msg)
+                        await self._send_error(writer, b"HTTP/1.1 502 Bad Gateway\r\n\r\n", error_msg)
+                        return
+
+                async with _close_writer(server_writer):
+                    # Send 200 Connection Established (only after successful target connection)
+                    logger.info("[conn %d] Sending 200 to client for %s:%d", conn_id, target_host, target_port)
+                    writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                    await writer.drain()
+
+                    # Generate server cert and upgrade client connection to TLS (server-side)
+                    server_cert_pem, server_key_pem = self._get_server_cert(target_host)
+                    client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem, self._ca_cert_pem)
+                    # server_side is auto-detected from the protocol (client_connected_cb is set
+                    # for connections from asyncio.start_server), so no need to pass it explicitly.
+                    await writer.start_tls(client_ctx)
+
+                    bytes_forwarded = await self._forward_bidirectional(
+                        reader, writer, server_reader, server_writer, target_host
+                    )
+                    self.stats.record_success(bytes_forwarded)
+                    logger.info(
+                        "[conn %d] Completed %s:%d, %d bytes forwarded",
+                        conn_id,
+                        target_host,
+                        target_port,
+                        bytes_forwarded,
+                    )
+
+        except asyncio.CancelledError:
+            raise
+        except (TimeoutError, ssl.SSLError, OSError, ValueError) as e:
+            self.stats.record_failure(f"{target_host}:{target_port}: {e}")
+
+    async def _forward_bidirectional(
+        self,
+        client_reader: asyncio.StreamReader,
+        client_writer: asyncio.StreamWriter,
+        server_reader: asyncio.StreamReader,
+        server_writer: asyncio.StreamWriter,
+        target_host: str,
+    ) -> int:
         """Forward data bidirectionally between client and server.
 
-        Uses a thread per direction with blocking sockets. A previous
-        non-blocking select() implementation silently dropped data when
-        sendall() raised SSLWantWriteError, corrupting the TLS record
-        stream and causing BAD_LENGTH errors on large transfers.
-
-        Returns total bytes forwarded.
+        Uses two asyncio tasks, one per direction. When either direction
+        completes (EOF or error), the other is cancelled.
         """
         bytes_forwarded = 0
-        lock = threading.Lock()
 
-        def forward(src: ssl.SSLSocket, dst: ssl.SSLSocket, direction: str) -> None:
-            nonlocal bytes_forwarded
-            clean_eof = False
+        async def forward(src: asyncio.StreamReader, dst: asyncio.StreamWriter, direction: str) -> int:
+            count = 0
             try:
                 while True:
-                    data = src.recv(65536)
+                    data = await src.read(65536)
                     if not data:
-                        clean_eof = True
                         break
-                    dst.sendall(data)
-                    with lock:
-                        bytes_forwarded += len(data)
-            except (OSError, ssl.SSLError) as e:
+                    dst.write(data)
+                    await dst.drain()
+                    count += len(data)
+            except (OSError, ssl.SSLError, ConnectionError) as e:
                 logger.debug("Forward %s finished for %s: %s", direction, target_host, e)
-            finally:
-                # Only half-close on clean EOF (source sent all data and closed
-                # gracefully). On TLS errors, shutdown(SHUT_WR) must NOT be
-                # called: it operates at the raw TCP level, sending a FIN that
-                # corrupts the TLS session state for the *other* forwarding
-                # thread still reading from the same SSL socket pair. This
-                # caused intermittent TLSV1_ALERT_DECODE_ERROR failures where
-                # the s2c thread couldn't deliver echo responses because c2s's
-                # cleanup destroyed the underlying transport.
-                if clean_eof:
-                    with contextlib.suppress(OSError):
-                        dst.shutdown(socket.SHUT_WR)
+            return count
 
-        # Both sockets stay in blocking mode (default)
-        client_ssl.settimeout(30.0)
-        server_ssl.settimeout(30.0)
+        c2s = asyncio.create_task(forward(client_reader, server_writer, "c2s"))
+        s2c = asyncio.create_task(forward(server_reader, client_writer, "s2c"))
 
-        t_c2s = threading.Thread(target=forward, args=(client_ssl, server_ssl, "c2s"), daemon=True)
-        t_s2c = threading.Thread(target=forward, args=(server_ssl, client_ssl, "s2c"), daemon=True)
-        t_c2s.start()
-        t_s2c.start()
-        t_c2s.join(timeout=120)
-        t_s2c.join(timeout=120)
+        done, pending = await asyncio.wait([c2s, s2c], return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+        for task in done:
+            if not task.cancelled() and task.exception() is None:
+                bytes_forwarded += task.result()
 
         return bytes_forwarded
+
+
+@contextlib.asynccontextmanager
+async def _close_writer(writer: asyncio.StreamWriter) -> AsyncGenerator[None]:
+    try:
+        yield
+    finally:
+        writer.close()
+        with contextlib.suppress(OSError, ssl.SSLError):
+            await writer.wait_closed()
 
 
 def _load_cert_chain_from_bytes(

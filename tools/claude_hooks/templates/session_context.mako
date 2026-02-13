@@ -11,6 +11,9 @@ Podman: ${podman.status}, DOCKER_HOST=${podman.socket_url}. Use fully qualified 
   Storage: VFS on 9p (no layer caching). Use `--layers=false` for large builds.
 % endif
 % endif
+% if mkcert:
+Localhost TLS: $MKCERT_CERT / $MKCERT_KEY (auto-trusted). Use for HTTPS dev servers.
+% endif
 % if isinstance(precommit, PrecommitInstallingHooks):
 pre-commit: hook environments installing in background (pid ${precommit.pid}). First `git commit` may block briefly on pre-commit's flock until done. Log: ~/.cache/claude-hooks/pre-commit-install-hooks.log
 % endif

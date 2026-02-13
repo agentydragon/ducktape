@@ -85,6 +85,10 @@ class EnvVars:
     # Session metadata
     hook_timestamp: datetime
 
+    # mkcert localhost TLS certificate
+    mkcert_cert: Path | None
+    mkcert_key: Path | None
+
     # Age-decrypted secrets (raw shell export lines, appended verbatim)
     secrets_exports: str | None
 
@@ -151,6 +155,11 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
             exports.extend(_exports_from_dict({"DOCKER_HOST": vars.docker_host}))
         if vars.podman_env:
             exports.extend(_exports_from_dict(vars.podman_env))
+
+    # mkcert localhost TLS certificate
+    if vars.mkcert_cert and vars.mkcert_key:
+        exports.extend(["", "# Localhost TLS certificate (mkcert)"])
+        exports.extend(_exports_from_dict({"MKCERT_CERT": vars.mkcert_cert, "MKCERT_KEY": vars.mkcert_key}))
 
     # Session metadata
     exports.extend(["", "# Session metadata"])

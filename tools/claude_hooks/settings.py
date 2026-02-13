@@ -72,6 +72,7 @@ class HookSettings(BaseSettings):
     # Feature flags (enable/disable installations)
     install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
     install_nix: bool = Field(default=False, description="Install nix package manager")
+    install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
     install_podman: bool = Field(default=True, description="Set up podman container runtime")
     system_bazel: Path | None = Field(
         default=None, description="Path to system bazel (used when install_bazelisk=False)"

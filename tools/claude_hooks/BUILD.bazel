@@ -95,8 +95,27 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":platform_utils",
         ":settings",
         "//bazel_util:subprocess",
+    ],
+)
+
+py_library(
+    name = "platform_utils",
+    srcs = ["platform_utils.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "mkcert_setup",
+    srcs = ["mkcert_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":platform_utils",
+        ":settings",
     ],
 )
 
@@ -207,6 +226,7 @@ py_library(
         ":debug",
         ":env_file",
         ":errors",
+        ":mkcert_setup",
         ":nix_setup",
         ":podman_service",
         ":precommit_setup",
@@ -263,7 +283,9 @@ py_package(
         ":env_file",
         ":errors",
         ":managed_files",
+        ":mkcert_setup",
         ":nix_setup",
+        ":platform_utils",
         ":podman_service",
         ":precommit_setup",
         ":proxy_credentials",

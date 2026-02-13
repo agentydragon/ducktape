@@ -27,6 +27,7 @@ from tools.claude_hooks import (
     bazelisk_setup,
     buildbuddy_setup,
     env_file,
+    mkcert_setup,
     nix_setup,
     podman_service,
     precommit_setup,
@@ -176,6 +177,7 @@ def emit_session_context(
     podman: podman_service.PodmanSetup | None,
     precommit: precommit_setup.PrecommitSetup | None,
     secrets: secrets_setup.SecretsSetup | None,
+    mkcert: mkcert_setup.MkcertSetup | None = None,
 ) -> None:
     """Emit compact context summary for Claude Code transcript.
 
@@ -193,6 +195,7 @@ def emit_session_context(
         podman=podman,
         precommit=precommit,
         PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
+        mkcert=mkcert,
         log_entries=collector.buffer,
         has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN")),
         secrets=secrets,
@@ -345,23 +348,35 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             bazelisk_skipped=skipped,
         )
 
+    # Create a shared proxy task so both mkcert and other code can depend on it
+    proxy_task = asyncio.create_task(setup_proxy_with_supervisor())
+
+    async def setup_mkcert_with_proxy() -> mkcert_setup.MkcertSetup:
+        """Set up mkcert (depends on proxy for the combined CA bundle)."""
+        if not settings.install_mkcert:
+            raise SkipError("mkcert disabled (install_mkcert=False)")
+        await proxy_task
+        combined_ca = settings.get_auth_proxy_combined_ca()
+        return mkcert_setup.setup_mkcert(settings, combined_ca if combined_ca.exists() else None)
+
     # Decrypt age-encrypted secrets (fast, local file I/O only)
     secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=settings.secrets_dir)
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
-    #   supervisor_task ──┬── setup_proxy_with_supervisor
+    #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
     #                     └── setup_podman_with_deps ←── tmpfs_mount_task
     #   tmpfs_mount_task ──── setup_bazel_on_tmpfs
     logger.info("Starting parallel installations...")
     results = await asyncio.gather(
-        setup_proxy_with_supervisor(),
+        proxy_task,
         setup_podman_with_deps(),
         run_in_thread(precommit_setup.install_precommit, project_dir),
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
         run_in_thread(buildbuddy_setup.setup_buildbuddy, project_dir),
         setup_bazel_on_tmpfs(),
+        setup_mkcert_with_proxy(),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
@@ -372,6 +387,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
     buildbuddy: buildbuddy_setup.BuildbuddySetup | BaseException = results[5]
     tmpfs: tmpfs_setup.TmpfsSetup | BaseException = results[6]
+    mkcert: mkcert_setup.MkcertSetup | BaseException = results[7]
 
     # Log non-critical failures
     if isinstance(precommit, BaseException):
@@ -382,6 +398,10 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         logger.warning("Failed to configure BuildBuddy: %s", buildbuddy)
     if isinstance(tmpfs, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs)
+    if isinstance(mkcert, SkipError):
+        logger.info("mkcert setup skipped: %s", mkcert)
+    elif isinstance(mkcert, BaseException):
+        logger.warning("Failed to set up mkcert: %s", mkcert)
 
     # Handle nix result
     if isinstance(nix, SkipError):
@@ -431,6 +451,12 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     else:
         bazelisk_path = settings.get_bazelisk_path()
 
+    mkcert_cert: Path | None = None
+    mkcert_key: Path | None = None
+    if isinstance(mkcert, mkcert_setup.MkcertSetup):
+        mkcert_cert = mkcert.cert_path
+        mkcert_key = mkcert.key_path
+
     env_vars = env_file.EnvVars(
         proxy_port=settings.get_auth_proxy_port(),
         supervisor_port=settings.get_supervisor_port(),
@@ -444,6 +470,8 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         podman_env=podman_env,
         hook_timestamp=hook_timestamp,
         secrets_exports=secrets.env_exports if secrets else None,
+        mkcert_cert=mkcert_cert,
+        mkcert_key=mkcert_key,
     )
 
     # Write environment file ONCE
@@ -470,6 +498,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         podman=None if isinstance(podman, BaseException) else podman,
         precommit=None if isinstance(precommit, BaseException) else precommit,
         secrets=secrets,
+        mkcert=None if isinstance(mkcert, BaseException) else mkcert,
     )
 
 

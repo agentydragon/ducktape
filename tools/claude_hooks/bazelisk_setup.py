@@ -10,7 +10,6 @@ TODO: Eventually unify tool installation via direnv/devenv instead of
 from __future__ import annotations
 
 import logging
-import platform
 import shutil
 import stat
 import subprocess
@@ -19,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bazel_util.subprocess import write_shell_wrapper
+from tools.claude_hooks.platform_utils import get_platform
 from tools.claude_hooks.settings import HookSettings
 
 logger = logging.getLogger(__name__)
@@ -70,21 +70,8 @@ def get_bazelisk_version(settings: HookSettings) -> str | None:
 
 def get_bazelisk_url() -> str:
     """Get the appropriate Bazelisk download URL for this platform."""
-    system = platform.system().lower()
-    machine = platform.machine().lower()
-
-    # Normalize architecture names
-    if machine in ("x86_64", "amd64"):
-        arch = "amd64"
-    elif machine in ("aarch64", "arm64"):
-        arch = "arm64"
-    else:
-        raise RuntimeError(f"Unsupported architecture: {machine}")
-
-    if system not in ("linux", "darwin"):
-        raise RuntimeError(f"Unsupported OS: {system}")
-
-    binary = f"bazelisk-{system}-{arch}"
+    p = get_platform()
+    binary = f"bazelisk-{p.system}-{p.arch}"
     return f"https://github.com/bazelbuild/bazelisk/releases/download/v{BAZELISK_VERSION}/{binary}"
 
 

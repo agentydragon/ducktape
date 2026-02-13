@@ -9,14 +9,15 @@ Tests cover:
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import contextlib
 import hashlib
 import os
-import socket
 import ssl
 import tempfile
-import threading
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -30,213 +31,129 @@ pytest_plugins = ["tools.claude_hooks.testing.fixtures"]
 
 
 # ---------------------------------------------------------------------------
-# Helpers: local TLS echo/send server driven entirely by the test
+# Helpers: local TLS test servers using asyncio
 # ---------------------------------------------------------------------------
 
+_Handler = Callable[[asyncio.StreamReader, asyncio.StreamWriter], Awaitable[None]]
 
-class _TLSEchoServer:
-    """Minimal TLS server that echoes data back to the client.
 
-    Runs in a background thread so tests can drive both sides.
-    """
+@dataclass
+class _TLSServer:
+    """A running TLS test server."""
 
-    def __init__(self, host: str = "127.0.0.1") -> None:
-        self.host = host
-        self.port: int = 0
-        self._server_socket: socket.socket | None = None
-        self._ctx: ssl.SSLContext | None = None
-        self._thread: threading.Thread | None = None
-        self._running = False
-        self.ca_cert_pem: bytes = b""
+    host: str
+    port: int
+    ca_cert_pem: bytes
+    _server: asyncio.Server
 
-    def start(self) -> None:
-        ca_cert_pem, ca_key_pem = generate_mock_ca()
-        self.ca_cert_pem = ca_cert_pem
-        cert_pem, key_pem = generate_server_cert(ca_cert_pem, ca_key_pem, self.host)
 
-        self._tmpdir = tempfile.mkdtemp()
-        cert_path = Path(self._tmpdir) / "cert.pem"
-        key_path = Path(self._tmpdir) / "key.pem"
+@contextlib.asynccontextmanager
+async def _tls_server(handler: _Handler, host: str = "127.0.0.1") -> AsyncGenerator[_TLSServer]:
+    """Start a TLS server with a self-signed cert, yield it, then shut down."""
+    ca_cert_pem, ca_key_pem = generate_mock_ca()
+    cert_pem, key_pem = generate_server_cert(ca_cert_pem, ca_key_pem, host)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cert_path = Path(tmpdir) / "cert.pem"
+        key_path = Path(tmpdir) / "key.pem"
         cert_path.write_bytes(cert_pem)
         key_path.write_bytes(key_pem)
 
-        self._ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        self._ctx.load_cert_chain(str(cert_path), str(key_path))
+        ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_ctx.load_cert_chain(str(cert_path), str(key_path))
 
-        self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_socket.bind((self.host, 0))
-        self.port = self._server_socket.getsockname()[1]
-        self._server_socket.listen(10)
-        self._server_socket.settimeout(1.0)
-
-        self._running = True
-        self._thread = threading.Thread(target=self._serve, daemon=True)
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=5)
-        if self._server_socket:
-            self._server_socket.close()
-
-    def __enter__(self) -> _TLSEchoServer:
-        self.start()
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.stop()
-
-    def _serve(self) -> None:
-        while self._running:
-            try:
-                raw_sock, _ = self._server_socket.accept()  # type: ignore[union-attr]
-            except TimeoutError:
-                continue
-            except OSError:
-                break
-            threading.Thread(target=self._handle, args=(raw_sock,), daemon=True).start()
-
-    def _handle(self, raw_sock: socket.socket) -> None:
+        server = await asyncio.start_server(handler, host, 0, ssl=ssl_ctx)
+        addrs = server.sockets
+        assert addrs
+        port = addrs[0].getsockname()[1]
         try:
-            conn = self._ctx.wrap_socket(raw_sock, server_side=True)  # type: ignore[union-attr]
-            conn.settimeout(10)
-            while True:
-                data = conn.recv(65536)
-                if not data:
-                    break
-                conn.sendall(data)
-        except (OSError, ssl.SSLError):
-            pass
+            yield _TLSServer(host=host, port=port, ca_cert_pem=ca_cert_pem, _server=server)
         finally:
-            raw_sock.close()
+            server.close()
+            await server.wait_closed()
 
 
-class _TLSSendServer:
-    """TLS server that sends a fixed payload then closes (no reading).
+async def _echo_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    """Echo data back to the client."""
+    try:
+        while data := await reader.read(65536):
+            writer.write(data)
+            await writer.drain()
+    except (OSError, ssl.SSLError):
+        pass
+    finally:
+        writer.close()
 
-    Simulates a download endpoint like releases.bazel.build.
-    """
 
-    def __init__(self, payload: bytes, host: str = "127.0.0.1") -> None:
-        self.host = host
-        self.port: int = 0
-        self.payload = payload
-        self._server_socket: socket.socket | None = None
-        self._ctx: ssl.SSLContext | None = None
-        self._thread: threading.Thread | None = None
-        self._running = False
-        self.ca_cert_pem: bytes = b""
+def _send_handler(payload: bytes) -> _Handler:
+    """Return a handler that sends a fixed payload then closes."""
 
-    def start(self) -> None:
-        ca_cert_pem, ca_key_pem = generate_mock_ca()
-        self.ca_cert_pem = ca_cert_pem
-        cert_pem, key_pem = generate_server_cert(ca_cert_pem, ca_key_pem, self.host)
-
-        self._tmpdir = tempfile.mkdtemp()
-        cert_path = Path(self._tmpdir) / "cert.pem"
-        key_path = Path(self._tmpdir) / "key.pem"
-        cert_path.write_bytes(cert_pem)
-        key_path.write_bytes(key_pem)
-
-        self._ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        self._ctx.load_cert_chain(str(cert_path), str(key_path))
-
-        self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_socket.bind((self.host, 0))
-        self.port = self._server_socket.getsockname()[1]
-        self._server_socket.listen(10)
-        self._server_socket.settimeout(1.0)
-
-        self._running = True
-        self._thread = threading.Thread(target=self._serve, daemon=True)
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=5)
-        if self._server_socket:
-            self._server_socket.close()
-
-    def __enter__(self) -> _TLSSendServer:
-        self.start()
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.stop()
-
-    def _serve(self) -> None:
-        while self._running:
-            try:
-                raw_sock, _ = self._server_socket.accept()  # type: ignore[union-attr]
-            except TimeoutError:
-                continue
-            except OSError:
-                break
-            threading.Thread(target=self._handle, args=(raw_sock,), daemon=True).start()
-
-    def _handle(self, raw_sock: socket.socket) -> None:
+    async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            conn = self._ctx.wrap_socket(raw_sock, server_side=True)  # type: ignore[union-attr]
-            conn.settimeout(10)
-            conn.sendall(self.payload)
-            conn.shutdown(socket.SHUT_WR)
-            # Drain any client data before closing
-            while conn.recv(4096):
+            writer.write(payload)
+            await writer.drain()
+            if writer.can_write_eof():
+                writer.write_eof()
+            else:
+                return  # can't write EOF; finally closes the writer
+            while await reader.read(4096):
                 pass
         except (OSError, ssl.SSLError):
             pass
         finally:
-            raw_sock.close()
+            writer.close()
+
+    return handler
 
 
-def _recv_exact(sock: ssl.SSLSocket, length: int) -> bytes:
-    """Read exactly `length` bytes from an SSL socket."""
+async def _recv_exact(reader: asyncio.StreamReader, length: int) -> bytes:
+    """Read exactly `length` bytes from an asyncio stream."""
     received = b""
     while len(received) < length:
-        chunk = sock.recv(min(65536, length - len(received)))
+        chunk = await reader.read(min(65536, length - len(received)))
         if not chunk:
             break
         received += chunk
     return received
 
 
-def _connect_through_proxy(proxy: MockEgressProxy, target_host: str, target_port: int) -> ssl.SSLSocket:
+@contextlib.asynccontextmanager
+async def _connect_through_proxy(
+    proxy: MockEgressProxy, target_host: str, target_port: int
+) -> AsyncGenerator[tuple[asyncio.StreamReader, asyncio.StreamWriter]]:
     """Open a TLS connection to target_host:target_port through the proxy.
 
-    Performs CONNECT handshake with auth, then wraps in TLS.
+    Performs CONNECT handshake with auth, upgrades to TLS, and closes the
+    writer on exit.
     """
-    sock = socket.create_connection(("127.0.0.1", proxy.port), timeout=10)
-    sock.settimeout(10)
+    reader, writer = await asyncio.open_connection("127.0.0.1", proxy.port)
+    try:
+        creds = base64.b64encode(f"{proxy.username}:{proxy.password}".encode()).decode()
+        connect = (
+            f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
+            f"Host: {target_host}:{target_port}\r\n"
+            f"Proxy-Authorization: Basic {creds}\r\n"
+            f"\r\n"
+        )
+        writer.write(connect.encode())
+        await writer.drain()
 
-    creds = base64.b64encode(f"{proxy.username}:{proxy.password}".encode()).decode()
-    connect = (
-        f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
-        f"Host: {target_host}:{target_port}\r\n"
-        f"Proxy-Authorization: Basic {creds}\r\n"
-        f"\r\n"
-    )
-    sock.sendall(connect.encode())
+        try:
+            response = await reader.readuntil(b"\r\n\r\n")
+        except asyncio.IncompleteReadError as e:
+            raise ConnectionError("Proxy closed during CONNECT") from e
 
-    # Read 200
-    response = b""
-    while b"\r\n\r\n" not in response:
-        chunk = sock.recv(4096)
-        if not chunk:
-            raise ConnectionError("Proxy closed during CONNECT")
-        response += chunk
+        if b"200" not in response.split(b"\r\n")[0]:
+            raise ConnectionError(f"CONNECT failed: {response!r}")
 
-    if b"200" not in response.split(b"\r\n")[0]:
-        raise ConnectionError(f"CONNECT failed: {response!r}")
-
-    # Wrap in TLS trusting the proxy CA (MITM cert)
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx.wrap_socket(sock, server_hostname=target_host)
+        # Upgrade to TLS trusting the proxy CA (MITM cert)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        await writer.start_tls(ctx, server_hostname=target_host)
+        yield reader, writer
+    finally:
+        writer.close()
 
 
 # ---------------------------------------------------------------------------
@@ -245,22 +162,24 @@ def _connect_through_proxy(proxy: MockEgressProxy, target_host: str, target_port
 
 
 @pytest.fixture
-def proxy_socket(mock_egress_proxy: MockEgressProxyFixture) -> Generator[socket.socket]:
-    """Socket connected to the mock proxy."""
-    sock = socket.create_connection(("127.0.0.1", mock_egress_proxy.proxy.port), timeout=5)
+async def proxy_connection(
+    mock_egress_proxy: MockEgressProxyFixture,
+) -> AsyncGenerator[tuple[asyncio.StreamReader, asyncio.StreamWriter]]:
+    """Reader/writer connected to the mock proxy (plain TCP, no TLS upgrade)."""
+    reader, writer = await asyncio.open_connection("127.0.0.1", mock_egress_proxy.proxy.port)
     try:
-        yield sock
+        yield reader, writer
     finally:
-        sock.close()
+        writer.close()
 
 
 @pytest.fixture
-def forwarding_proxy() -> Generator[MockEgressProxy]:
+async def forwarding_proxy() -> AsyncGenerator[MockEgressProxy]:
     """Standalone proxy for forwarding tests (no upstream).
 
     Disables target cert verification since test TLS servers use self-signed certs.
     """
-    with MockEgressProxy(upstream_proxy=None, listen_port=0, verify_target_certs=False) as proxy:
+    async with MockEgressProxy(upstream_proxy=None, listen_port=0, verify_target_certs=False) as proxy:
         yield proxy
 
 
@@ -269,30 +188,34 @@ def forwarding_proxy() -> Generator[MockEgressProxy]:
 # ---------------------------------------------------------------------------
 
 
-def test_proxy_starts_and_stops() -> None:
-    """Test basic proxy lifecycle via context manager."""
-    with MockEgressProxy(upstream_proxy=None, listen_port=0) as proxy:
+async def test_proxy_starts_and_stops() -> None:
+    """Test basic proxy lifecycle via async context manager."""
+    async with MockEgressProxy(upstream_proxy=None, listen_port=0) as proxy:
         assert proxy.port > 0
         assert proxy.ca_cert_pem
 
 
-def test_proxy_requires_auth(proxy_socket: socket.socket) -> None:
+async def test_proxy_requires_auth(proxy_connection: tuple[asyncio.StreamReader, asyncio.StreamWriter]) -> None:
     """Test that proxy rejects unauthenticated requests."""
-    proxy_socket.sendall(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
-    response = proxy_socket.recv(1024)
+    reader, writer = proxy_connection
+    writer.write(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+    await writer.drain()
+    response = await reader.read(1024)
     assert b"407" in response, f"Expected 407, got: {response!r}"
 
 
-def test_proxy_accepts_auth(proxy_socket: socket.socket) -> None:
+async def test_proxy_accepts_auth(proxy_connection: tuple[asyncio.StreamReader, asyncio.StreamWriter]) -> None:
     """Test that proxy does not reject valid credentials (407).
 
     The proxy may return 502 if it can't reach the target (e.g., in a sandbox).
     The key assertion: it does NOT return 407 (auth rejected).
     """
+    _reader, writer = proxy_connection
     creds = base64.b64encode(b"proxy_user:test_jwt_token").decode()
     request = f"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Basic {creds}\r\n\r\n"
-    proxy_socket.sendall(request.encode())
-    response = proxy_socket.recv(1024)
+    writer.write(request.encode())
+    await writer.drain()
+    response = await _reader.read(1024)
     assert b"407" not in response, f"Auth should have been accepted, got: {response!r}"
 
 
@@ -308,36 +231,34 @@ class TestBidirectionalForwarding:
     auth, and verifies data integrity on both sides.
     """
 
-    def test_small_echo(self, forwarding_proxy: MockEgressProxy) -> None:
+    async def test_small_echo(self, forwarding_proxy: MockEgressProxy) -> None:
         """Small payload round-trips correctly."""
-        with _TLSEchoServer() as echo:
-            conn = _connect_through_proxy(forwarding_proxy, echo.host, echo.port)
-            try:
-                msg = b"hello proxy world"
-                conn.sendall(msg)
-                # Read exactly the expected number of bytes (SSL lacks TCP-style half-close,
-                # so shutdown(SHUT_WR) would trigger close_notify and break the session)
-                received = _recv_exact(conn, len(msg))
-                assert received == msg
-            finally:
-                conn.close()
+        async with (
+            _tls_server(_echo_handler) as echo,
+            _connect_through_proxy(forwarding_proxy, echo.host, echo.port) as (reader, writer),
+        ):
+            msg = b"hello proxy world"
+            writer.write(msg)
+            await writer.drain()
+            received = await _recv_exact(reader, len(msg))
+            assert received == msg
 
-    def test_large_echo(self, forwarding_proxy: MockEgressProxy) -> None:
+    async def test_large_echo(self, forwarding_proxy: MockEgressProxy) -> None:
         """1 MB payload round-trips without data loss or corruption."""
         payload = os.urandom(1024 * 1024)
         expected_hash = hashlib.sha256(payload).hexdigest()
 
-        with _TLSEchoServer() as echo:
-            conn = _connect_through_proxy(forwarding_proxy, echo.host, echo.port)
-            try:
-                conn.sendall(payload)
-                received = _recv_exact(conn, len(payload))
-                assert len(received) == len(payload)
-                assert hashlib.sha256(received).hexdigest() == expected_hash
-            finally:
-                conn.close()
+        async with (
+            _tls_server(_echo_handler) as echo,
+            _connect_through_proxy(forwarding_proxy, echo.host, echo.port) as (reader, writer),
+        ):
+            writer.write(payload)
+            await writer.drain()
+            received = await _recv_exact(reader, len(payload))
+            assert len(received) == len(payload)
+            assert hashlib.sha256(received).hexdigest() == expected_hash
 
-    def test_large_download(self, forwarding_proxy: MockEgressProxy) -> None:
+    async def test_large_download(self, forwarding_proxy: MockEgressProxy) -> None:
         """~8 MB server-initiated send (simulates bazelisk download).
 
         The original bug dropped data during large one-directional TLS
@@ -347,68 +268,62 @@ class TestBidirectionalForwarding:
         payload = os.urandom(size)
         expected_hash = hashlib.sha256(payload).hexdigest()
 
-        with _TLSSendServer(payload) as server:
-            conn = _connect_through_proxy(forwarding_proxy, server.host, server.port)
-            try:
-                received = b""
-                while chunk := conn.recv(65536):
-                    received += chunk
-                assert len(received) == size, f"Expected {size} bytes, got {len(received)}"
-                assert hashlib.sha256(received).hexdigest() == expected_hash
-            finally:
-                conn.close()
+        async with (
+            _tls_server(_send_handler(payload)) as server,
+            _connect_through_proxy(forwarding_proxy, server.host, server.port) as (reader, _writer),
+        ):
+            received = b""
+            while chunk := await reader.read(65536):
+                received += chunk
+            assert len(received) == size, f"Expected {size} bytes, got {len(received)}"
+            assert hashlib.sha256(received).hexdigest() == expected_hash
 
-    def test_multiple_messages(self, forwarding_proxy: MockEgressProxy) -> None:
+    async def test_multiple_messages(self, forwarding_proxy: MockEgressProxy) -> None:
         """Multiple send/recv cycles on the same connection."""
-        with _TLSEchoServer() as echo:
-            conn = _connect_through_proxy(forwarding_proxy, echo.host, echo.port)
-            try:
-                for i in range(10):
-                    msg = f"message {i} ".encode() * 100
-                    conn.sendall(msg)
-                    received = _recv_exact(conn, len(msg))
-                    assert received == msg, f"Mismatch on message {i}"
-            finally:
-                conn.close()
+        async with (
+            _tls_server(_echo_handler) as echo,
+            _connect_through_proxy(forwarding_proxy, echo.host, echo.port) as (reader, writer),
+        ):
+            for i in range(10):
+                msg = f"message {i} ".encode() * 100
+                writer.write(msg)
+                await writer.drain()
+                received = await _recv_exact(reader, len(msg))
+                assert received == msg, f"Mismatch on message {i}"
 
-    def test_concurrent_connections(self, forwarding_proxy: MockEgressProxy) -> None:
+    async def test_concurrent_connections(self, forwarding_proxy: MockEgressProxy) -> None:
         """Multiple simultaneous connections each transfer data correctly."""
         results: dict[int, bool] = {}
         errors: list[str] = []
 
-        def worker(worker_id: int) -> None:
+        async def worker(worker_id: int) -> None:
             try:
-                with _TLSEchoServer() as echo:
-                    conn = _connect_through_proxy(forwarding_proxy, echo.host, echo.port)
-                    try:
-                        payload = os.urandom(64 * 1024)
-                        conn.sendall(payload)
-                        received = _recv_exact(conn, len(payload))
-                        results[worker_id] = received == payload
-                    finally:
-                        conn.close()
+                async with (
+                    _tls_server(_echo_handler) as echo,
+                    _connect_through_proxy(forwarding_proxy, echo.host, echo.port) as (reader, writer),
+                ):
+                    payload = os.urandom(64 * 1024)
+                    writer.write(payload)
+                    await writer.drain()
+                    received = await _recv_exact(reader, len(payload))
+                    results[worker_id] = received == payload
             except Exception as e:
                 errors.append(f"worker {worker_id}: {e}")
                 results[worker_id] = False
 
-        threads = [threading.Thread(target=worker, args=(i,)) for i in range(5)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=30)
+        await asyncio.gather(*(worker(i) for i in range(5)))
 
         assert not errors, f"Worker errors: {errors}"
         assert all(results.values()), f"Failed workers: {[k for k, v in results.items() if not v]}"
 
-    def test_server_closes_immediately(self, forwarding_proxy: MockEgressProxy) -> None:
+    async def test_server_closes_immediately(self, forwarding_proxy: MockEgressProxy) -> None:
         """Proxy handles server closing right after TLS handshake."""
-        with _TLSSendServer(b"") as server:
-            conn = _connect_through_proxy(forwarding_proxy, server.host, server.port)
-            try:
-                received = conn.recv(4096)
-                assert received == b""
-            finally:
-                conn.close()
+        async with (
+            _tls_server(_send_handler(b"")) as server,
+            _connect_through_proxy(forwarding_proxy, server.host, server.port) as (reader, _writer),
+        ):
+            received = await reader.read(4096)
+            assert received == b""
 
 
 if __name__ == "__main__":

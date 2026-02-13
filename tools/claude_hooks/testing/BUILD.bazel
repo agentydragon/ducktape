@@ -13,14 +13,26 @@ py_library(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+    deps = ["@pypi//pytest"],
+)
+
 py_test(
     name = "test_mock_egress_proxy",
     srcs = ["test_mock_egress_proxy.py"],
+    args = ["--asyncio-mode=auto"],
     imports = ["../../.."],
     deps = [
+        ":conftest",
         ":fixtures",
         ":mock_egress_proxy",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

@@ -7,6 +7,7 @@ Includes:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import os
@@ -256,10 +257,10 @@ def _write_output_log(name: str, content: str) -> Path:
     return log_path
 
 
-def run_session_start_hook(
+async def run_session_start_hook(
     project_dir: Path, source: HookSource = HookSource.STARTUP
 ) -> subprocess.CompletedProcess[str]:
-    """Run the session start hook (inherits environment from os.environ via monkeypatch).
+    """Run the session start hook as an async subprocess.
 
     By default, runs via `python -m tools.claude_hooks.session_start` for Bazel tests.
     Set DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-session-start` console
@@ -271,7 +272,7 @@ def run_session_start_hook(
 
     use_wheel = os.environ.get(settings.ENV_USE_WHEEL) == "1"
 
-    cmd = "claude-session-start" if use_wheel else str(get_required_path(shell_helpers.SESSION_START))
+    cmd: str | Path = "claude-session-start" if use_wheel else get_required_path(shell_helpers.SESSION_START)
 
     env = dict(os.environ)
     if use_wheel:
@@ -281,7 +282,21 @@ def run_session_start_hook(
         # requires list. Clear it so only the wheel venv's packages are visible.
         env.pop("PYTHONPATH", None)
 
-    result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, timeout=300, env=env)
+    proc = await asyncio.create_subprocess_exec(
+        cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+    )
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(input=hook_input.encode()), timeout=300)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise subprocess.TimeoutExpired(cmd=[cmd], timeout=300)
+    result = subprocess.CompletedProcess(
+        args=[cmd],
+        returncode=proc.returncode or 0,
+        stdout=stdout_bytes.decode() if stdout_bytes else "",
+        stderr=stderr_bytes.decode() if stderr_bytes else "",
+    )
 
     # Write hook output to log files for debugging (collected as CI artifacts)
     stdout_log = _write_output_log("hook-stdout.log", result.stdout)
@@ -302,9 +317,9 @@ def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
 class TestFullSessionStartHook:
     """E2E tests running the complete session start hook."""
 
-    def test_session_start_succeeds(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
+    async def test_session_start_succeeds(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
         """Run full session start hook and verify it succeeds."""
-        result = run_session_start_hook(isolated_dirs.project)
+        result = await run_session_start_hook(isolated_dirs.project)
 
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
@@ -320,11 +335,11 @@ class TestFullSessionStartHook:
         assert (supervisor_dir / "supervisord.pid").exists(), "supervisor not started"
 
     @pytest.mark.skipif(not shutil.which("bazel") and not shutil.which("bazelisk"), reason="bazel/bazelisk required")
-    def test_bazel_build_after_hook(
+    async def test_bazel_build_after_hook(
         self, isolated_dirs: IsolatedDirs, hook_env: None, mock_egress_proxy: MockEgressProxyFixture
     ) -> None:
         """Run hook, then verify bazel can build through the proxy."""
-        result = run_session_start_hook(isolated_dirs.project)
+        result = await run_session_start_hook(isolated_dirs.project)
         assert result.returncode == 0, f"Hook failed: {result.stderr}"
 
         # Copy testdata workspace to test location
@@ -346,18 +361,18 @@ class TestFullSessionStartHook:
         # --output_base isolates this Bazel from the test-running Bazel.
         supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
         try:
-            shell_helpers.run_with_env_file(
-                command=f"bazel --output_base={output_base} build //:hello",
-                env_file=isolated_dirs.env_file,
-                cwd=workspace,
-                check=True,
-                timeout=60,
-            )
+            async with asyncio.timeout(60):
+                await shell_helpers.run_with_env_file(
+                    command=f"bazel --output_base={output_base} build //:hello",
+                    env_file=isolated_dirs.env_file,
+                    cwd=workspace,
+                    check=True,
+                )
         finally:
             # Always collect logs - critical for debugging CI failures
             collect_supervisor_logs(supervisor_dir)
 
-    def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
+    async def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
         """Verify hook recovers from stale supervisor socket."""
         # Create stale socket/pidfile
         # platformdirs respects XDG_CONFIG_HOME
@@ -366,17 +381,17 @@ class TestFullSessionStartHook:
         (supervisor_dir / "supervisor.sock").touch()
         (supervisor_dir / "supervisord.pid").write_text("99999")  # Non-existent PID
 
-        result = run_session_start_hook(isolated_dirs.project)
+        result = await run_session_start_hook(isolated_dirs.project)
 
         assert result.returncode == 0, f"Hook failed with stale socket:\nstderr: {result.stderr}"
 
-    def test_resume_event(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
+    async def test_resume_event(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
         """Test that resume events also work correctly."""
-        result = run_session_start_hook(isolated_dirs.project, source=HookSource.RESUME)
+        result = await run_session_start_hook(isolated_dirs.project, source=HookSource.RESUME)
 
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
 
-    def test_secrets_decrypted_into_env_file(
+    async def test_secrets_decrypted_into_env_file(
         self, monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, hook_env: None
     ) -> None:
         """Run hook with age key set, verify decrypted secret is visible in env file."""
@@ -387,11 +402,11 @@ class TestFullSessionStartHook:
         monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_AGE_KEY", test_age_key)
         monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_DIR", str(test_secrets_dir))
 
-        result = run_session_start_hook(isolated_dirs.project)
+        result = await run_session_start_hook(isolated_dirs.project)
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
         # Verify the secret is visible when sourcing the env file
-        shell_result = shell_helpers.run_with_env_file(
+        shell_result = await shell_helpers.run_with_env_file(
             command="echo $TEST_SECRET_TOKEN", env_file=isolated_dirs.env_file, check=True
         )
         assert shell_result.stdout.strip() == "test-value-12345"
@@ -443,25 +458,15 @@ class TestPodmanIntegration:
         _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, install_podman=True)
 
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
-    def test_podman_service_starts(self, isolated_dirs: IsolatedDirs, podman_hook_env: None) -> None:
-        """Verify podman service starts after session start hook."""
-        result = run_session_start_hook(isolated_dirs.project)
-
-        assert result.returncode == 0, "Hook failed with non-zero exit code"
-
-        socket_path = _extract_docker_host_socket(isolated_dirs.env_file)
-        assert socket_path.exists(), f"Podman socket not created at {socket_path}"
-
-    @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
-    def test_podman_can_run_container(
+    async def test_podman_can_run_container(
         self, isolated_dirs: IsolatedDirs, podman_hook_env: None, mock_egress_proxy: MockEgressProxyFixture
     ) -> None:
-        """Verify podman can run a container after session start hook.
+        """Verify podman service starts and can run a container after session start hook.
 
         Runs podman through the MockEgressProxy to verify the full proxy chain works,
         including CA certificate configuration for container registry pulls.
         """
-        result = run_session_start_hook(isolated_dirs.project)
+        result = await run_session_start_hook(isolated_dirs.project)
 
         assert result.returncode == 0, "Hook failed with non-zero exit code"
 
@@ -475,13 +480,13 @@ class TestPodmanIntegration:
         # Verify we can run podman hello-world through the proxy
         # The gVisor annotation is auto-applied via containers.conf
         # Run through env file to pick up SSL_CERT_FILE for TLS proxy CA
-        podman_result = shell_helpers.run_with_env_file(
-            command="podman run --rm docker.io/library/hello-world",
-            env_file=isolated_dirs.env_file,
-            cwd=isolated_dirs.project,
-            check=False,
-            timeout=120,
-        )
+        async with asyncio.timeout(120):
+            podman_result = await shell_helpers.run_with_env_file(
+                command="podman run --rm docker.io/library/hello-world",
+                env_file=isolated_dirs.env_file,
+                cwd=isolated_dirs.project,
+                check=False,
+            )
 
         # Include proxy stats in failure message for debugging
         proxy = mock_egress_proxy.proxy
