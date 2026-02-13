@@ -26,13 +26,14 @@ pub enum ProcessState {
 }
 
 /// Entry in the process map, keyed by process_id (user-provided string).
+/// Binary field refs: "process_info", "internal_state", "proc_handle"
 #[derive(Debug)]
 pub struct ProcessEntry {
     pub process_id: String,
     pub pid: u32,
-    pub state: ProcessState,
+    pub internal_state: ProcessState,
     pub reattachable: bool,
-    pub handle: ProcHandle,
+    pub proc_handle: ProcHandle,
 }
 
 /// Shared process map: maps process_id → ProcessEntry.
@@ -54,7 +55,7 @@ pub fn lookup_process(
 ) -> Result<ProcessState, String> {
     let map = proc_map.lock();
     match map.get(process_id) {
-        Some(entry) => Ok(entry.state.clone()),
+        Some(entry) => Ok(entry.internal_state.clone()),
         None => Err(format!("process not found: {process_id}")),
     }
 }
@@ -75,14 +76,14 @@ pub fn transition_state(
         format!("process not found: {process_id}")
     })?;
 
-    if entry.state != expected_state {
+    if entry.internal_state != expected_state {
         return Err(format!(
             "src/state.rs: {process_id} is in an inconsistent state: expected {expected_state:?}, got {:?}",
-            entry.state
+            entry.internal_state
         ));
     }
 
-    entry.state = new_state;
+    entry.internal_state = new_state;
     Ok(())
 }
 
@@ -118,9 +119,9 @@ pub fn insert_process(
         ProcessEntry {
             process_id,
             pid,
-            state: ProcessState::Attached,
+            internal_state: ProcessState::Attached,
             reattachable,
-            handle,
+            proc_handle: handle,
         },
     );
 }
@@ -150,9 +151,12 @@ pub fn debug_process_map(
 ) -> String {
     let map = proc_map.lock();
     let entries: Vec<String> = map
-        .iter()
-        .map(|(id, entry)| {
-            format!("  {id}: pid={}, state={:?}, reattachable={}", entry.pid, entry.state, entry.reattachable)
+        .values()
+        .map(|entry| {
+            format!(
+                "  {}: pid={}, state={:?}, reattachable={}",
+                entry.process_id, entry.pid, entry.internal_state, entry.reattachable
+            )
         })
         .collect();
     format!("Currently tracked processes: {}\n{}", map.len(), entries.join("\n"))

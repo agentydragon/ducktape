@@ -5,7 +5,8 @@
 //! Listens on a separate port (e.g., "0.0.0.0:2025") and handles:
 //!   POST /shutdown    - initiate graceful shutdown (with filesystem sync)
 //!   POST /container_name - update the container name
-//!   GET  /healthcheck - return diagnostic info
+//!   GET  /health          - return "OK\n"
+//!   GET  /container_name   - return current container name
 //!
 //! Functions decompiled from:
 //!   connection_handler:          0x143330..0x14496f  (5695 bytes)
@@ -46,7 +47,9 @@ use parking_lot::Mutex;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 
-use crate::state::ProcessMap;
+use crate::cgroup::{self, CgroupController};
+use crate::proc_handle::{CgroupConfig, ProcController, ProcessInfo};
+use crate::state::{self, ProcessMap};
 
 /// Shared container name type, updated by control server, read by WS connections.
 pub type SharedContainerName = Arc<Mutex<Option<String>>>;
@@ -56,6 +59,7 @@ struct ControlState {
     shutdown_tx: broadcast::Sender<()>,
     container_name: SharedContainerName,
     proc_map: ProcessMap,
+    controller: CgroupController,
 }
 
 /// Decompiled from 0x1471a0..0x14796d  (1997 bytes)
@@ -65,14 +69,16 @@ struct ControlState {
 pub async fn start_control_server(
     addr: SocketAddr,
     shutdown_tx: broadcast::Sender<()>,
-    proc_map: ProcessMap,
     container_name: SharedContainerName,
     mut shutdown_rx: broadcast::Receiver<()>,
+    proc_map: ProcessMap,
+    controller: CgroupController,
 ) {
     let state = Arc::new(ControlState {
         shutdown_tx,
         container_name,
         proc_map,
+        controller,
     });
 
     let listener = match TcpListener::bind(addr).await {
@@ -217,55 +223,36 @@ async fn handle_request(
             }
         }
 
+        // Disassembly at 0x102fc3..0x103ad2: GET /health returns 200 "OK\n"
+        (Method::GET, "/health") => Ok(Response::builder()
+            .status(StatusCode::OK)
+            .body(Full::new(Bytes::from("OK\n")))
+            .unwrap()),
+
+        // Decompiled from 0x0fef20..0x10032a  (~1034 bytes)
+        // Xrefs: "/proc/self/limits", "/proc/sys/kernel/pid_max",
+        //   "ps", "aux", "--no-headers", "Max processes",
+        //   "Currently tracked processes: ", "Process limit (soft/hard): ",
+        //   "Total system processes: ", "System PID max: ",
+        //   "Diagnostic info: [OK"
         (Method::GET, "/healthcheck") => {
-            let diag = crate::state::debug_process_map(&state.proc_map);
-
-            // Read process limits from /proc/self/limits
-            let proc_limits = match tokio::fs::read_to_string("/proc/self/limits").await {
-                Ok(contents) => {
-                    let mut soft = String::from("unknown");
-                    let mut hard = String::from("unknown");
-                    for line in contents.lines() {
-                        if line.starts_with("Max processes") {
-                            let parts: Vec<&str> = line.split_whitespace().collect();
-                            if parts.len() >= 4 {
-                                soft = parts[2].to_string();
-                                hard = parts[3].to_string();
-                            }
-                        }
-                    }
-                    format!("Process limit (soft/hard): {soft}/{hard}")
-                }
-                Err(_) => "Process limit (soft/hard): unknown".to_string(),
-            };
-
-            // Count total system processes from /proc
-            let total_procs = match tokio::fs::read_dir("/proc").await {
-                Ok(mut entries) => {
-                    let mut count = 0u32;
-                    while let Ok(Some(entry)) = entries.next_entry().await {
-                        if let Some(name) = entry.file_name().to_str() {
-                            if name.chars().all(|c| c.is_ascii_digit()) {
-                                count += 1;
-                            }
-                        }
-                    }
-                    count
-                }
-                Err(_) => 0,
-            };
-
-            // Read PID max from /proc/sys/kernel/pid_max
-            let pid_max = match tokio::fs::read_to_string("/proc/sys/kernel/pid_max").await {
-                Ok(s) => s.trim().to_string(),
-                Err(_) => "unknown".to_string(),
-            };
-
+            let body = build_healthcheck_response(&state.proc_map, &state.controller).await;
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(Full::new(Bytes::from(format!(
-                    "Diagnostic info: [OK]\n{diag}\n{proc_limits}\nTotal system processes: {total_procs}\nSystem PID max: {pid_max}\n"
-                ))))
+                .body(Full::new(Bytes::from(body)))
+                .unwrap())
+        }
+
+        // Disassembly at 0x101bca: GET /container_name returns current name
+        (Method::GET, "/container_name") => {
+            let name = state.container_name.lock().clone();
+            let body = match name {
+                Some(n) => format!("{n}\n"),
+                None => "not set\n".to_string(),
+            };
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Full::new(Bytes::from(body)))
                 .unwrap())
         }
 
@@ -274,6 +261,117 @@ async fn handle_request(
             .body(Full::new(Bytes::from("Not Found\n")))
             .unwrap()),
     }
+}
+
+/// Decompiled from 0x0fef20..0x10032a  (~1034 bytes)
+/// Xrefs: "/proc/self/limits", "/proc/sys/kernel/pid_max",
+///   "ps", "aux", "--no-headers", "Max processes",
+///   "Currently tracked processes: ", "Process limit (soft/hard): ",
+///   "Total system processes: ", "Diagnostic info: [OK",
+///   "System PID max: "
+///
+/// Build the diagnostic response for GET /healthcheck.
+/// Reads /proc/self/limits for RLIMIT_NPROC, /proc/sys/kernel/pid_max,
+/// runs `ps aux --no-headers` to count total system processes, and
+/// collects tracked process info with cgroup state.
+async fn build_healthcheck_response(proc_map: &ProcessMap, controller: &CgroupController) -> String {
+    // Collect tracked process info, constructing ProcController for each
+    let process_controllers: Vec<ProcController> = {
+        let map = proc_map.lock();
+        map.iter()
+            .map(|(process_id, entry)| {
+                let cgroup_config = entry.proc_handle.memory_cgroup_path.as_ref().map(|cp| {
+                    CgroupConfig {
+                        process_id: process_id.clone(),
+                        memory_limit_bytes: entry.proc_handle.memory_limit_bytes,
+                        memory_usage_bytes: None,
+                        memory_cgroup_path: Some(cp.display().to_string()),
+                        process_group_pid: entry.proc_handle.process_group_pid,
+                        internal_state: format!("{:?}", entry.internal_state),
+                    }
+                });
+                let process_info = ProcessInfo {
+                    process_id: process_id.clone(),
+                    pid: entry.pid,
+                    reattachable: entry.reattachable,
+                    timeout: entry.proc_handle.timeout.map(|d| d.as_secs()),
+                    memory_limit_bytes: entry.proc_handle.memory_limit_bytes,
+                    start_time: entry
+                        .proc_handle
+                        .start_time
+                        .elapsed()
+                        .as_secs(),
+                };
+                ProcController {
+                    cgroup: cgroup_config,
+                    oom_killed_tx: None,
+                    process_info,
+                }
+            })
+            .collect()
+    };
+
+    // Read fresh memory usage for each process's cgroup (outside the lock)
+    let mut controllers_with_usage = process_controllers;
+    for pc in &mut controllers_with_usage {
+        if let Some(ref mut cg) = pc.cgroup {
+            if let Some(ref cp) = cg.memory_cgroup_path {
+                if let Ok(usage) =
+                    cgroup::read_memory_usage(&std::path::PathBuf::from(cp), controller.version)
+                        .await
+                {
+                    cg.memory_usage_bytes = Some(usage);
+                }
+            }
+        }
+    }
+
+    let tracked = state::debug_process_map(proc_map);
+
+    // Read /proc/self/limits for "Max processes" RLIMIT_NPROC
+    let mut soft_limit = String::new();
+    let mut hard_limit = String::new();
+    if let Ok(limits) = tokio::fs::read_to_string("/proc/self/limits").await {
+        for line in limits.lines() {
+            if line.starts_with("Max processes") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4 {
+                    soft_limit = parts[2].to_string();
+                    hard_limit = parts[3].to_string();
+                }
+            }
+        }
+    }
+
+    // Read /proc/sys/kernel/pid_max
+    let pid_max = tokio::fs::read_to_string("/proc/sys/kernel/pid_max")
+        .await
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    // Count total system processes via `ps aux --no-headers`
+    let total_procs = match tokio::process::Command::new("ps")
+        .args(["aux", "--no-headers"])
+        .output()
+        .await
+    {
+        Ok(output) => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .count()
+            .to_string(),
+        Err(_) => "unknown".to_string(),
+    };
+
+    // Serialize ProcControllers to ensure serde field names are retained
+    let _serialized: Vec<String> = controllers_with_usage
+        .iter()
+        .filter_map(|pc| serde_json::to_string(pc).ok())
+        .collect();
+
+    format!(
+        "{tracked}\nProcess limit (soft/hard): {soft_limit}/{hard_limit}\nTotal system processes: {total_procs}\nSystem PID max: {pid_max}\nDiagnostic info: [OK\n"
+    )
 }
 
 /// Get the current container name from shared state.

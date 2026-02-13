@@ -23,14 +23,26 @@ phases A–D:
 Dependency version mismatches (tungstenite 0.24→0.28, nix 0.29→0.31,
 clap_lex 0.7→1.0, rustc 1.83 vs differs) are accepted — no behavioral impact.
 
+## Completed (2026-02-13, session 2)
+
+- **C7: Structural type enrichment**
+  - Added `ProcessInfo`, `CgroupConfig`, `ProcController` serde types matching
+    binary field names (from disassembly at 0x21c970, 0x21ce40, 0x21c870)
+  - Renamed fields: `cgroup_path`→`memory_cgroup_path`, `state`→`internal_state`,
+    `handle`→`proc_handle`
+  - Added `WsStreamHandle` struct with `process_info`/`controller` fields
+  - Added all channel endpoints to `ProcHandle` (`stop_waiting_tx/rx`,
+    `exit_status_tx/rx`, `oom_killed_tx/rx`)
+  - Fixed healthcheck: `GET /health` → `"OK\n"`, added `GET /container_name`
+  - Added `GET /healthcheck` diagnostic endpoint (reads `/proc/self/limits`,
+    `/proc/sys/kernel/pid_max`, runs `ps aux --no-headers`)
+  - Manual `Clone` impl for `ProcController` (oneshot::Sender not Clone)
+  - Populated `ws_tx.process_info`/`ws_tx.controller` in `handle_create_process`
+  - Serde field strings now present in RE binary: `internal_state`,
+    `memory_usage_bytes`, `memory_cgroup_path`, `process_group_pid`,
+    `process_info`, `start_time`
+
 ## Open Items
-
-### C7: Structural type enrichment (deferred — low priority, high effort)
-
-Serde/debug field names in the reference binary suggest richer internal types
-(`ProcessInfo`, `ProcController`, `WsStreamHandle`, `memory_usage_bytes`,
-`memory_cgroup_path`, `oom_killed_tx`, `stop_waiting_rx`). These don't affect
-behavioral correctness but would make the string diff cleaner.
 
 ### Behavioral testing (Phase E)
 
@@ -50,6 +62,6 @@ Write a WebSocket test harness exercising the protocol against both binaries:
 - [x] String differential analysis + remediation (Phases A–D)
 - [x] String coverage diff passes (application-level strings)
 - [x] Every function has `Decompiled from 0x...` annotation
-- [ ] C7: Structural type enrichment (deferred)
+- [x] C7: Structural type enrichment
 - [ ] Behavioral test harness written
 - [ ] Behavioral tests pass against both binaries

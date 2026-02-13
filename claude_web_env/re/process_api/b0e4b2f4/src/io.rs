@@ -83,7 +83,7 @@ use tokio_tungstenite::WebSocketStream;
 use crate::cgroup::{self, CgroupController};
 use crate::control_server;
 use crate::oom_killer::{self, OomChannelMap};
-use crate::proc_handle::{self, ExitReason, ProcHandle};
+use crate::proc_handle::{self, ExitReason, ProcController, ProcHandle, ProcessInfo};
 use crate::state::{self, ProcessMap, ProcessState};
 
 // ---------------------------------------------------------------------------
@@ -178,20 +178,31 @@ pub enum FirstMessage {
     Connect(ProcessConnection),
 }
 
-/// Shared WebSocket sender type, wrapped in Arc<Mutex> for multi-task access.
-type WsTx = Arc<TokioMutex<futures::stream::SplitSink<WebSocketStream<TcpStream>, Message>>>;
+/// Per-connection state wrapping WebSocket sender + process state.
+/// Serde visitor at 0x21c2b0..0x21c510 (608 bytes).
+/// Fields from disassembly: process_info, proc_handle, controller,
+///   stop_waiting_rx, stop_waiting_tx, exit_status_rx, exit_status_tx,
+///   oom_killed_rx
+#[derive(Debug, Clone)]
+pub struct WsStreamHandle {
+    tx: Arc<TokioMutex<futures::stream::SplitSink<WebSocketStream<TcpStream>, Message>>>,
+    /// Per-connection process info snapshot (populated after CreateProcess).
+    pub process_info: Option<ProcessInfo>,
+    /// Controller wrapping cgroup + OOM channel.
+    pub controller: Option<ProcController>,
+}
 
 /// Helper to send a ServerMessage as JSON text over the shared WebSocket sender.
-async fn send_msg(ws_tx: &WsTx, msg: &ServerMessage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn send_msg(ws_tx: &WsStreamHandle, msg: &ServerMessage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let json = serde_json::to_string(msg)?;
-    let mut tx = ws_tx.lock().await;
+    let mut tx = ws_tx.tx.lock().await;
     tx.send(Message::text(json)).await?;
     Ok(())
 }
 
 /// Helper to send raw binary data over the shared WebSocket sender.
-async fn send_binary(ws_tx: &WsTx, data: Vec<u8>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut tx = ws_tx.lock().await;
+async fn send_binary(ws_tx: &WsStreamHandle, data: Vec<u8>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut tx = ws_tx.tx.lock().await;
     tx.send(Message::binary(data)).await?;
     Ok(())
 }
@@ -233,7 +244,7 @@ async fn forward_stdin(
 ///   "[DEBUG] Process stream is closed"
 ///   "[DEBUG] Failed to send response:"
 async fn process_ws_message(
-    ws_tx: &WsTx,
+    ws_tx: &WsStreamHandle,
     mut ws_rx: futures::stream::SplitStream<WebSocketStream<TcpStream>>,
     process_id: &str,
     pid: u32,
@@ -403,7 +414,11 @@ pub async fn handle_ws_connection(
     log::debug!("[DEBUG] New WebSocket connection from {remote_addr}");
 
     let (ws_sink, mut ws_rx) = ws_stream.split();
-    let ws_tx: WsTx = Arc::new(TokioMutex::new(ws_sink));
+    let ws_tx = WsStreamHandle {
+        tx: Arc::new(TokioMutex::new(ws_sink)),
+        process_info: None,
+        controller: None,
+    };
 
     // Read first message to determine if this is CreateProcess or ProcessConnection
     let first_msg = match ws_rx.next().await {
@@ -485,7 +500,7 @@ pub async fn handle_ws_connection(
 ///   "exit_status_rx is already taken"
 async fn handle_create_process(
     req: CreateProcess,
-    ws_tx: WsTx,
+    mut ws_tx: WsStreamHandle,
     ws_rx: futures::stream::SplitStream<WebSocketStream<TcpStream>>,
     proc_map: ProcessMap,
     controller: CgroupController,
@@ -587,23 +602,20 @@ async fn handle_create_process(
 
     // Create channels for inter-task communication
     let (exit_status_tx, exit_status_rx) = oneshot::channel();
-    let (oom_tx, oom_rx) = oneshot::channel();
-    let (stop_tx, stop_rx) = oneshot::channel();
+    let (oom_killed_tx, oom_killed_rx) = oneshot::channel();
+    let (stop_waiting_tx, stop_waiting_rx) = oneshot::channel();
 
-    // Register OOM channel in the shared map so both per-process and
-    // container OOM monitors can signal this process
-    {
-        let mut channels = oom_channels.lock();
-        channels.insert(process_id.clone(), oom_tx);
-    }
-
-    // Create process handle with all fields populated
+    // Create process handle with all channel endpoints stored
     let timeout = req.timeout.map(Duration::from_secs);
     let reattachable = req.reattachable.unwrap_or(false);
     let mut handle = ProcHandle::new(pid, reattachable, timeout, req.memory_limit_bytes);
-    handle.cgroup_path = cgroup_path.clone();
-    handle.stop_waiting_tx = Some(stop_tx);
-    // exit_status_rx is passed directly to process_ws_message, not stored in handle
+    handle.memory_cgroup_path = cgroup_path.clone();
+    handle.stop_waiting_tx = Some(stop_waiting_tx);
+    handle.stop_waiting_rx = Some(stop_waiting_rx);
+    handle.exit_status_rx = Some(exit_status_rx);
+    handle.exit_status_tx = Some(exit_status_tx);
+    handle.oom_killed_tx = Some(oom_killed_tx);
+    handle.oom_killed_rx = Some(oom_killed_rx);
 
     // Insert into process map
     state::insert_process(
@@ -624,12 +636,56 @@ async fn handle_create_process(
     )
     .await;
 
-    // Read start_time, timeout and memory_limit_bytes from handle in the map
-    let (start_time, handle_timeout, handle_memory_limit) = {
-        let map = proc_map.lock();
-        let entry = map.get(&process_id).expect("just inserted");
-        (entry.handle.start_time, entry.handle.timeout, entry.handle.memory_limit_bytes)
+    // Populate per-connection process info and controller on WsStreamHandle
+    let process_info = ProcessInfo {
+        process_id: process_id.clone(),
+        pid,
+        reattachable,
+        timeout: req.timeout,
+        memory_limit_bytes: req.memory_limit_bytes,
+        start_time: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
     };
+    let cgroup_config = cgroup_path.as_ref().map(|cp| {
+        proc_handle::CgroupConfig {
+            process_id: process_id.clone(),
+            memory_limit_bytes: req.memory_limit_bytes,
+            memory_usage_bytes: None,
+            memory_cgroup_path: Some(cp.display().to_string()),
+            process_group_pid: pid,
+            internal_state: "Attached".to_string(),
+        }
+    });
+    ws_tx.process_info = Some(process_info.clone());
+    ws_tx.controller = Some(ProcController {
+        cgroup: cgroup_config,
+        oom_killed_tx: None,
+        process_info,
+    });
+
+    // Take channels and config from the handle in the map
+    let (start_time, handle_timeout, handle_memory_limit, exit_status_tx, oom_killed_tx, oom_killed_rx, stop_waiting_rx) = {
+        let mut map = proc_map.lock();
+        let entry = map.get_mut(&process_id).expect("just inserted");
+        (
+            entry.proc_handle.start_time,
+            entry.proc_handle.timeout,
+            entry.proc_handle.memory_limit_bytes,
+            entry.proc_handle.exit_status_tx.take().expect("exit_status_tx is already taken"),
+            entry.proc_handle.oom_killed_tx.take(),
+            entry.proc_handle.oom_killed_rx.take(),
+            entry.proc_handle.stop_waiting_rx.take(),
+        )
+    };
+
+    // Register OOM channel in the shared map so both per-process and
+    // container OOM monitors can signal this process
+    if let Some(oom_killed_tx) = oom_killed_tx {
+        let mut channels = oom_channels.lock();
+        channels.insert(process_id.clone(), oom_killed_tx);
+    }
 
     // Spawn per-process memory monitor if memory limit is set
     if let (Some(limit), Some(ref cp)) = (handle_memory_limit, &cgroup_path) {
@@ -655,8 +711,8 @@ async fn handle_create_process(
         handle_memory_limit,
         cgroup_path.clone(),
         Some(controller.version),
-        Some(oom_rx),
-        Some(stop_rx),
+        oom_killed_rx,
+        stop_waiting_rx,
         exit_status_tx,
     ));
 
@@ -671,7 +727,7 @@ async fn handle_create_process(
     // Decompiled from 0x144970..0x145eb0  (5440 bytes)
     // Xrefs: "[DEBUG] started stdout pipe", "[DEBUG] stdout done"
     if let Some(mut stdout) = stdout {
-        let ws_tx_clone = Arc::clone(&ws_tx);
+        let ws_tx_clone = ws_tx.clone();
         tokio::spawn(async move {
             log::debug!("[DEBUG] started stdout pipe");
             let mut buf = vec![0u8; 65536];
@@ -694,7 +750,7 @@ async fn handle_create_process(
     // Decompiled from 0x141db0..0x1432f0  (5440 bytes)
     // Xrefs: "[DEBUG] started stderr pipe", "[DEBUG] stderr done"
     if let Some(mut stderr) = stderr {
-        let ws_tx_clone = Arc::clone(&ws_tx);
+        let ws_tx_clone = ws_tx.clone();
         tokio::spawn(async move {
             log::debug!("[DEBUG] started stderr pipe");
             let mut buf = vec![0u8; 65536];
@@ -712,6 +768,18 @@ async fn handle_create_process(
             log::debug!("[DEBUG] stderr done");
         });
     }
+
+    // Take exit_status_rx from the handle in the map.
+    // Xrefs: "exit_status_rx is already taken"
+    let exit_status_rx = {
+        let mut map = proc_map.lock();
+        let entry = map.get_mut(&process_id).expect("just inserted");
+        entry
+            .proc_handle
+            .exit_status_rx
+            .take()
+            .expect("exit_status_rx is already taken")
+    };
 
     // Run the WebSocket message processing loop (as separate function per binary evidence)
     let result = process_ws_message(
@@ -735,7 +803,7 @@ async fn handle_create_process(
     // Xrefs: "Closing websocket", "error closing websocket:"
     log::debug!("Closing websocket");
     {
-        let mut tx = ws_tx.lock().await;
+        let mut tx = ws_tx.tx.lock().await;
         if let Err(e) = tx.close().await {
             log::debug!("error closing websocket: {e}");
         }
@@ -748,8 +816,8 @@ async fn handle_create_process(
         let map = proc_map.lock();
         match map.get(&process_id) {
             Some(entry) => (
-                entry.handle.reattachable,
-                entry.handle.process_group_pid,
+                entry.proc_handle.reattachable,
+                entry.proc_handle.process_group_pid,
             ),
             None => (false, pid),
         }
@@ -775,14 +843,19 @@ async fn handle_create_process(
             let mut map = proc_map.lock();
             if let Some(entry) = map.get_mut(&process_id) {
                 log::debug!("[DEBUG] Stopping waiting for process {process_id}");
-                if let Some(tx) = entry.handle.stop_waiting_tx.take() {
-                    if tx.send(()).is_err() {
-                        log::debug!(
-                            "[DEBUG] Failed to send stop signal for process {process_id})"
-                        );
+                match entry.proc_handle.stop_waiting_tx.take() {
+                    Some(tx) => {
+                        if tx.send(()).is_err() {
+                            log::debug!(
+                                "[DEBUG] Failed to send stop signal for process {process_id})"
+                            );
+                        }
+                    }
+                    None => {
+                        log::debug!("stop_waiting_tx is already taken");
                     }
                 }
-                entry.handle.killed_by_process_api = true;
+                entry.proc_handle.killed_by_process_api = true;
             }
         }
         log::debug!(
@@ -801,7 +874,7 @@ async fn handle_create_process(
         proc_handle::kill_and_wait(pid, cgroup_path.as_ref()).await;
         let removed = state::remove_process(&proc_map, &process_id);
         if let Some(entry) = removed {
-            if entry.handle.killed_by_process_api {
+            if entry.proc_handle.killed_by_process_api {
                 log::debug!("{process_id} killed by process_api, removing from map");
             }
         }
@@ -819,7 +892,7 @@ async fn handle_create_process(
 ///   "[DEBUG] Process already attached:"
 async fn handle_process_connection(
     req: ProcessConnection,
-    ws_tx: WsTx,
+    ws_tx: WsStreamHandle,
     _ws_rx: futures::stream::SplitStream<WebSocketStream<TcpStream>>,
     proc_map: ProcessMap,
     container_name: Arc<Mutex<Option<String>>>,
@@ -889,7 +962,7 @@ async fn handle_process_connection(
         Ok(ProcessState::Detached) => {
             let pid = {
                 let map = proc_map.lock();
-                map.get(process_id).map(|e| e.handle.pid).unwrap_or(0)
+                map.get(process_id).map(|e| e.proc_handle.pid).unwrap_or(0)
             };
             log::debug!(
                 "[DEBUG] Reattaching to detached process: {process_id} with PID {pid}"
@@ -929,7 +1002,7 @@ async fn handle_process_connection(
 ///
 /// String refs at binary offset 0x2b8584:
 ///   "[DEBUG] Failed to send stop signal for process ), error:"
-async fn handle_send_signal(pid: u32, signal_str: &str, ws_tx: &WsTx) {
+async fn handle_send_signal(pid: u32, signal_str: &str, ws_tx: &WsStreamHandle) {
     let signal = match parse_signal(signal_str) {
         Some(s) => s,
         None => {

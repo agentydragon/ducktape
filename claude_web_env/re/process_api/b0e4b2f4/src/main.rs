@@ -225,16 +225,18 @@ async fn main() {
 
         let shutdown_tx_clone = shutdown_tx.clone();
         let shutdown_rx = shutdown_tx.subscribe();
-        let proc_map_clone = proc_map.clone();
         let container_name_clone = container_name.clone();
+        let proc_map_clone = proc_map.clone();
+        let controller_clone = controller.clone();
 
         tokio::spawn(async move {
             control_server::start_control_server(
                 addr,
                 shutdown_tx_clone,
-                proc_map_clone,
                 container_name_clone,
                 shutdown_rx,
+                proc_map_clone,
+                controller_clone,
             )
             .await;
         });

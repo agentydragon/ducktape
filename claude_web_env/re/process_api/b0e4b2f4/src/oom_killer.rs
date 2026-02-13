@@ -179,7 +179,7 @@ pub async fn container_oom_monitor(
             let map = proc_map.lock();
             map.iter()
                 .filter_map(|(process_id, entry)| {
-                    entry.handle.cgroup_path.as_ref().map(|path| {
+                    entry.proc_handle.memory_cgroup_path.as_ref().map(|path| {
                         (process_id.clone(), entry.pid, path.clone())
                     })
                 })

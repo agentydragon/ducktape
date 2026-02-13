@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use nix::sys::signal::{self, Signal};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
+use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use crate::cgroup::{self, CgroupVersion};
@@ -57,14 +58,22 @@ pub struct ProcHandle {
     pub timeout: Option<Duration>,
     pub memory_limit_bytes: Option<u64>,
     pub start_time: Instant,
-    pub cgroup_path: Option<PathBuf>,
+    pub memory_cgroup_path: Option<PathBuf>,
     pub killed_by_process_api: bool,
     /// Sender to signal that the process should stop waiting.
     /// Xrefs: "stop_waiting_tx is already taken"
     pub stop_waiting_tx: Option<oneshot::Sender<()>>,
+    /// Receiver for the stop-waiting signal (passed to wait_for_child_to_exit).
+    pub stop_waiting_rx: Option<oneshot::Receiver<()>>,
     /// Receiver for exit status from the wait task.
     /// Xrefs: "exit_status_rx is already taken"
     pub exit_status_rx: Option<oneshot::Receiver<ExitReason>>,
+    /// Sender for exit status (passed to wait_for_child_to_exit).
+    pub exit_status_tx: Option<oneshot::Sender<ExitReason>>,
+    /// Sender for OOM kill notification (moved to OomChannelMap on registration).
+    pub oom_killed_tx: Option<oneshot::Sender<()>>,
+    /// Receiver for OOM kill notification (passed to wait_for_child_to_exit).
+    pub oom_killed_rx: Option<oneshot::Receiver<()>>,
 }
 
 impl ProcHandle {
@@ -81,10 +90,65 @@ impl ProcHandle {
             timeout,
             memory_limit_bytes,
             start_time: Instant::now(),
-            cgroup_path: None,
+            memory_cgroup_path: None,
             killed_by_process_api: false,
             stop_waiting_tx: None,
+            stop_waiting_rx: None,
             exit_status_rx: None,
+            exit_status_tx: None,
+            oom_killed_tx: None,
+            oom_killed_rx: None,
+        }
+    }
+}
+
+/// Static process configuration.
+/// Serde visitor at 0x21c970..0x21cb45 (469 bytes), variant visitor at
+/// 0x21d560..0x21d732 (466 bytes).
+/// Fields from disassembly: process_id, pid, reattachable, timeout,
+///   memory_limit_bytes, start_time
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessInfo {
+    pub process_id: String,
+    pub pid: u32,
+    pub reattachable: bool,
+    pub timeout: Option<u64>,
+    pub memory_limit_bytes: Option<u64>,
+    pub start_time: u64,
+}
+
+/// Cgroup state for a managed process.
+/// Serde visitor at 0x21ce40..0x21d015 (469 bytes).
+/// Fields from disassembly: process_id, memory_limit_bytes,
+///   memory_usage_bytes, memory_cgroup_path, process_group_pid,
+///   internal_state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CgroupConfig {
+    pub process_id: String,
+    pub memory_limit_bytes: Option<u64>,
+    pub memory_usage_bytes: Option<u64>,
+    pub memory_cgroup_path: Option<String>,
+    pub process_group_pid: u32,
+    pub internal_state: String,
+}
+
+/// Wraps CgroupConfig, OOM channel, and ProcessInfo for a managed process.
+/// Serde visitor at 0x21c870..0x21c96b (251 bytes).
+/// Fields from disassembly: cgroup, oom_killed_tx, process_info
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProcController {
+    pub cgroup: Option<CgroupConfig>,
+    #[serde(skip)]
+    pub oom_killed_tx: Option<oneshot::Sender<()>>,
+    pub process_info: ProcessInfo,
+}
+
+impl Clone for ProcController {
+    fn clone(&self) -> Self {
+        ProcController {
+            cgroup: self.cgroup.clone(),
+            oom_killed_tx: None, // oneshot::Sender cannot be cloned
+            process_info: self.process_info.clone(),
         }
     }
 }
