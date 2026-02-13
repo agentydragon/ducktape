@@ -406,9 +406,9 @@ class TestFullSessionStartHook:
         # Test keypair (committed in testdata — NOT a real secret)
         test_age_key = "AGE-SECRET-KEY-1DVR9RHP2MVZYD6HE46W4JNWMA673U8FYS00TCLX9VNXCFMQJX5ZQTUEP9E"
 
-        # Copy .claude_hooks/ from testdata into the test project dir
+        # Symlink .claude_hooks/ from testdata into the test project dir (read-only, no copy needed)
         test_secrets_src = Path(__file__).parent / "testdata" / "test_secrets" / ".claude_hooks"
-        shutil.copytree(test_secrets_src, isolated_dirs.project / ".claude_hooks")
+        (isolated_dirs.project / ".claude_hooks").symlink_to(test_secrets_src)
 
         monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_AGE_KEY", test_age_key)
 
