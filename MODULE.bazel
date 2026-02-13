@@ -113,10 +113,6 @@ oci.pull(
 )
 use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "postgres_16", "postgres_16_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
 
-# Re-export crane binary with public visibility for py_test data deps
-crane = use_extension("//tools:crane_export.bzl", "crane_export")
-use_repo(crane, "crane")
-
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.3")
@@ -433,4 +429,14 @@ exports_files([
     sha256 = "a2650fba422283fbed20d936ce5d2a52906a5414ec17b2f7676dddb87201dbae",
     strip_prefix = "jdk-21.0.6+7",
     urls = ["https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7/OpenJDK21U-jdk_x64_linux_hotspot_21.0.6_7.tar.gz"],
+)
+
+# Crane binary for OCI image push/pull in agent containers and tests.
+# Downloaded directly instead of re-exporting from rules_oci's internal
+# oci_crane_linux_amd64 repo, which isn't visible to the main module in bzlmod.
+http_archive(
+    name = "crane",
+    build_file_content = 'exports_files(["crane"], visibility = ["//visibility:public"])\n',
+    sha256 = "cdf4d426d965d9a8ba613d7ebf3addf93101aa2e853a3f08fbfdaed2823918f3",
+    urls = ["https://github.com/google/go-containerregistry/releases/download/v0.18.0/go-containerregistry_Linux_x86_64.tar.gz"],
 )
