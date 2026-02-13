@@ -21,3 +21,5 @@ occurrences:
         - [78, 103]
     critic_scopes_expected_to_recall:
       - [gmail_archiver/inbox.py]
+    match_file_restriction:
+      - gmail_archiver/inbox.py

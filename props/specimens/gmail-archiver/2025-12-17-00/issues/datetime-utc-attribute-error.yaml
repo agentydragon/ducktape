@@ -17,3 +17,5 @@ occurrences:
         - [74, 74] # datetime.now(datetime.UTC) — AttributeError at runtime
     critic_scopes_expected_to_recall:
       - [gmail_archiver/gmail_client.py]
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py

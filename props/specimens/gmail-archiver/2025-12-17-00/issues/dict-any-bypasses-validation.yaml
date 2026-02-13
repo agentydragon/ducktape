@@ -22,3 +22,5 @@ occurrences:
           - 65
     critic_scopes_expected_to_recall:
       - - gmail_archiver/gmail_yaml_filters_models.py
+    match_file_restriction:
+      - gmail_archiver/gmail_yaml_filters_models.py

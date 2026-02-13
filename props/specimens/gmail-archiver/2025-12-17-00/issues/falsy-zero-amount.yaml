@@ -12,3 +12,5 @@ occurrences:
         - [112, 112]
     critic_scopes_expected_to_recall:
       - [gmail_archiver/planners/square.py]
+    match_file_restriction:
+      - gmail_archiver/planners/square.py

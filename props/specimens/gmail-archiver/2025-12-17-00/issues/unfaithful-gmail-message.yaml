@@ -13,6 +13,9 @@ occurrences:
     note: GmailMessage.body is single str field, loses MIME structure
     critic_scopes_expected_to_recall:
       - - gmail_archiver/models.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+      - gmail_archiver/models.py
   - occurrence_id: occ-1
     files:
       gmail_archiver/gmail_client.py:
@@ -20,6 +23,9 @@ occurrences:
     note: get_messages_batch() plaintext extraction (no HTML fallback)
     critic_scopes_expected_to_recall:
       - - gmail_archiver/gmail_client.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+      - gmail_archiver/models.py
   - occurrence_id: occ-2
     files:
       gmail_archiver/gmail_client.py:
@@ -27,3 +33,6 @@ occurrences:
     note: get_message() plaintext extraction (no HTML fallback)
     critic_scopes_expected_to_recall:
       - - gmail_archiver/gmail_client.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+      - gmail_archiver/models.py
