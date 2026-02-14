@@ -137,7 +137,6 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			if err != nil {
 				return fmt.Errorf("failed to parse session mode: %w", err)
 			}
-			_ = sessionMode // TODO(re): should be passed to session/manager config
 
 			// 0xb78fb6-0xb78fc7: Check if --input-format flag was explicitly set
 			inputFormatFlags := cmd.Flags()
@@ -356,6 +355,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				SessionID:     sessionID,
 				APIBaseURL:    apiURL,
 				SessionConfig: parsedCtx,
+				SessionMode:   string(sessionMode),
 			}
 			managerErr := mgr.Run(context.Background(), slogger)
 

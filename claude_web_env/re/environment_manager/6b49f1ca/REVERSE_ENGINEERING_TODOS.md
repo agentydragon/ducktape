@@ -36,13 +36,19 @@ All critical functionality stubs have been implemented. Remaining work is config
 
 ## 🟡 Configuration Wiring (Medium Priority)
 
-### Command Flags (`cmd/cmd_task_run.go:105, 140, 144, 206`)
+### Command Flags (`cmd/cmd_task_run.go:105, 140, 144`)
 
-- `inputFormatChanged`, `sessionMode`, `skipGitConfig` not wired to behavior
+- ✅ ~~`skipGitConfig`~~ - **FIXED** (already working via direct os.Getenv in setupGitConfig/configureGitSigning)
+- ✅ ~~`activityRecorder`~~ - **FIXED** (wired through stdinConfigClient with proper HttpSessionIngressClient)
+- ✅ ~~`otelEndpoint`~~ - **FIXED** (wired to O11yConfig initialization)
+- `inputFormatChanged` - needs conditional logic implementation (complex binary behavior)
+- `sessionMode` - parsed but not passed to Manager/environment types
 
-### API & Service Setup (`cmd/cmd_task_run.go:202, 252, 259`)
+### API & Service Setup
 
-- `activityRecorder`, `otelEndpoint`, `o11yService` not wired to manager/diagnostics
+- ✅ ~~`activityRecorder`~~ - **FIXED** (see above)
+- ✅ ~~`otelEndpoint`~~ - **FIXED** (see above)
+- `o11yService` - returned from init but not used (may be intentional)
 
 ### Poll Command (`cmd/cmd_poll.go:102, 160, 161`)
 

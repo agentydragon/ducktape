@@ -42,6 +42,7 @@ type Manager struct {
 	SessionID     string
 	APIBaseURL    string
 	SessionConfig interface{} // Session config passed to tunnel client
+	SessionMode   string      // Session mode (e.g., "agent", "code_review") passed to environment types
 }
 
 // TunnelInfo holds tunnel client data used during registration.
@@ -134,9 +135,13 @@ func (m *Manager) configureEnvironment(ctx context.Context, logger *slog.Logger)
 	)
 
 	// Step 4: Set session mode if supported
-	// Binary: typeAssert.6 dispatch
+	// Binary: typeAssert.6 dispatch at 0xb6e983
+	// TODO(re): Call SetSessionMode on environment type with m.SessionMode
+	// Requires understanding how environment type is stored/accessed in Manager
+	// (likely through m.Config or a hidden field at offset 0x00)
 	m.Logger.Info("Set session mode for environment",
 		"session_id", "",
+		"session_mode", m.SessionMode,
 	)
 
 	// Step 5: Configure git signing (unless local testing mode)
