@@ -20,15 +20,17 @@ import (
 	"time"
 )
 
-// FileEntry represents a file to be deployed, with its path, SHA hash, and size.
-// Based on binary analysis, struct layout (5 fields × 8 bytes = 40 bytes total):
+// FileEntry represents a file to be deployed, with its path, SHA hash, size, and content.
+// Based on binary analysis, struct layout includes:
 // - Path (string): ptr + len (16 bytes)
 // - SHA (string): ptr + len (16 bytes)
+// - Content ([]byte): ptr + len + cap (24 bytes)
 // - Size (int64): 8 bytes
 type FileEntry struct {
-	Path string
-	SHA  string
-	Size int64
+	Path    string
+	SHA     string
+	Content []byte
+	Size    int64
 }
 
 // VercelClient handles communication with the Vercel API for deployments.
