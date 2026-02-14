@@ -141,21 +141,6 @@ nonrcm_dotfiles/**
 terraform/**
 trilium/**
 
-# === Partially Bazelized - specific orphan files ===
-# ember/ - most Python Bazelized, these remain outside BUILD
-ember/__init__.py
-ember/integrations/__init__.py
-ember/integrations/gitea.py
-ember/resources/examples/matrix-client/quickstart.py
-ember/runtime/__init__.py
-ember/runtime/python_session.py
-
-# llm/ - mostly bazelized, these specific files are examples/scripts
-llm/ducktape_llm_common/examples/complex_predicate.py
-llm/ducktape_llm_common/scripts/notification_test_manual.py
-llm/mcp/habitify/api_reference/collect_references.py
-llm/mcp/habitify/examples/install_to_claude.py
-
 # Local registry patches
 tools/local_registry/**
 
@@ -188,41 +173,11 @@ TODO
 **/todo-*
 **/pytest-todo
 
-# finance/reconcile - partially Bazelized, one file remains
-finance/reconcile/external_expense.py
-
-# agent_pkg examples (not part of the library)
-agent_pkg/examples/mcp_discover.py
-
-# cluster scripts (standalone utilities)
-cluster/scripts/check-authentik-login.py
+# Shared terraform provider template (not a module itself)
 cluster/terraform.tf
-
-# experimental - ad-hoc scripts not yet Bazelized
-experimental/domains/check_domains.py
-experimental/ember_evals/**
-experimental/flake8_early_bailout/setup.py
-
-# inop/docker - Docker build script
-inop/docker/build.py
-
-# inventree_utils - plugins not yet Bazelized
-inventree_utils/labels/mixin.py
-inventree_utils/rai_plugin/plugin.py
-
-# openai_utils examples
-openai_utils/openai_api_examples/stateless_two_step_demo.py
 
 # gatelet Makefile (not Python, but tracked here)
 experimental/gatelet/Makefile
-
-# cluster/ - terraform modules without BUILD files (not yet Bazelized)
-cluster/terraform/gitops/authentik-passwords/**
-cluster/terraform/gitops/gitea-admin/**
-cluster/terraform/gitops/grafana-admin/**
-cluster/terraform/gitops/matrix-secrets/**
-cluster/terraform/gitops/ollama-api-key/**
-cluster/terraform/gitops/user-passwords/**
 
 # Extensionless scripts and misc non-code files
 *.service
