@@ -26,9 +26,7 @@ message WsOpen {
   int32 port = 2;
   string url = 3;
   string connection_id = 4;
-  // Note: headers field is implemented as map<string, []string> in Go code
-  // but protobuf doesn't support repeated values in maps, so this is handled
-  // via custom serialization in the Go code.
+  repeated Header headers = 5;
 }
 
 // WsMessage represents a WebSocket message forwarded through the tunnel.
@@ -75,6 +73,18 @@ message HttpError {
   int32 status_code = 2;
 }
 
+// HTTPTunnelRequest represents an HTTP request forwarded through the tunnel.
+// Binary: github.com/anthropics/anthropic/api-go/gen/proto/anthropic/sessions/tunnel/v1alpha.HTTPTunnelRequest
+message HTTPTunnelRequest {
+  string request_id = 1;
+  int32 port = 2;
+  string method = 3;
+  string path = 4;
+  repeated Header headers = 5;
+  bytes body = 6;
+  string url = 7;
+}
+
 // TunnelRequest is the top-level message received from the tunnel server.
 // It uses a oneof for the different request payload types.
 message TunnelRequest {
@@ -86,12 +96,10 @@ message TunnelRequest {
   int32 port = 6;
   string content_type = 7;
   bytes body = 8;
-  // Note: headers field is implemented as map<string, []string> in Go code
-  // but protobuf doesn't support repeated values in maps, so this is handled
-  // via custom serialization in the Go code.
+  repeated Header headers = 9;
 
   oneof payload {
-    TunnelRequest http_request = 10;
+    HTTPTunnelRequest http_request = 10;
     HttpCancel http_cancel = 11;
     WsOpen ws_open = 12;
     WsMessage ws_message = 13;
