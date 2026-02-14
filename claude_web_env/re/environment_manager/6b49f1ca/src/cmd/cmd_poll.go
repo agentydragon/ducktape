@@ -5,6 +5,13 @@
 package cmd
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/logger"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/orchestrator"
 	"github.com/spf13/cobra"
 )
 
@@ -16,16 +23,18 @@ import (
 // Source: cmd/cmd_poll.go
 //
 // Parameters:
-//   AX = *cobra.Command (parent/root command)
+//
+//	AX = *cobra.Command (parent/root command)
 //
 // Flags registered (from pflag calls):
-//   --api-url           (0x07=7 chars) StringVar, default "https://api.anthropic.com" (0x19), desc (0x0c=12)
-//   --secret-path       (0x0f=15 chars) StringVar, default "", desc (0x36=54 chars)
-//   --session-id        (0x0e=14 chars) StringVar, default "", desc (0x3f=63 chars)
-//   --work-id           (0x09=9 chars) StringVar, default "", desc (0x76=118 chars)
-//   --secret-key-env    (0x10=16 chars) StringVar, default "", desc (0x7b=123 chars)
-//   --max-poll-retries  (0x15=21 chars) IntVar, default 0, desc (0x63=99 chars)
-//   --log-file          (0x09=9 chars) StringVar, default "mode" (0x04), desc (0x24=36 chars)
+//
+//	--api-url           (0x07=7 chars) StringVar, default "https://api.anthropic.com" (0x19), desc (0x0c=12)
+//	--secret-path       (0x0f=15 chars) StringVar, default "", desc (0x36=54 chars)
+//	--session-id        (0x0e=14 chars) StringVar, default "", desc (0x3f=63 chars)
+//	--work-id           (0x09=9 chars) StringVar, default "", desc (0x76=118 chars)
+//	--secret-key-env    (0x10=16 chars) StringVar, default "", desc (0x7b=123 chars)
+//	--max-poll-retries  (0x15=21 chars) IntVar, default 0, desc (0x63=99 chars)
+//	--log-file          (0x09=9 chars) StringVar, default "mode" (0x04), desc (0x24=36 chars)
 func AddPollCommand(rootCmd *cobra.Command) {
 	// Allocate flag storage variables.
 	// Binary: 0xb75e82-0xb75efa - multiple runtime.newobject calls (7 allocations)
@@ -54,13 +63,101 @@ func AddPollCommand(rootCmd *cobra.Command) {
   environment-runner poll --api-url=https://api.example.com --session-id=abc --secret-path=/path/to/key`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Binary: 0xb76200 - AddPollCommand.func1
-			_ = apiURL
-			_ = secretPath
-			_ = sessionID
-			_ = workID
-			_ = secretKeyEnv
+
+			// Step 1: Parse log level and create logger.
+			// Binary: 0xb76278 parseLogLevel, 0xb7628a CreateLoggerWithFileOutput
+			level, err := parseLogLevel(logFile)
+			if err != nil {
+				return err
+			}
+			log := logger.CreateLoggerWithFileOutput(level)
+
+			// Step 2: Read service key from file or env var.
+			// Binary: 0xb762a3-0xb76398 - ReadFile + TrimSpace + Getenv fallback
+			// Same pattern as loadServiceKey: if secretPath non-empty, ReadFile it,
+			// on error return fmt.Errorf("failed to read service key file %s: %w"),
+			// TrimSpace result, if empty fall back to os.Getenv("ENVIRONMENT_SERVICE_KEY").
+			var serviceKey string
+			if secretPath != "" {
+				data, err := os.ReadFile(secretPath)
+				if err != nil {
+					return fmt.Errorf("failed to read service key file %s: %w", secretPath, err)
+				}
+				serviceKey = strings.TrimSpace(string(data))
+			}
+			if serviceKey == "" {
+				serviceKey = os.Getenv("ENVIRONMENT_SERVICE_KEY")
+			}
+
+			// Step 3: Check service key is available.
+			// Binary: 0xb763a9 JE to error at 0xb76b4e if serviceKey empty
+			if serviceKey == "" {
+				return fmt.Errorf("session_id and org_id are required when identity could not be retrieved")
+			}
+
+			// Step 4: Create WhoamiClient and get identity.
+			// Binary: 0xb763f8 NewWhoamiClient, 0xb76407 GetIdentity
+			whoamiClient := orchestrator.NewWhoamiClient(apiURL, serviceKey, sessionID, log)
+			identity, err := whoamiClient.GetIdentity(cmd.Context())
+			if err != nil {
+				// Step 4a: Check if sessionID and workID were provided.
+				// Binary: 0xb76415-0xb76555 - checks closed-over sessionID and workID ptrs
+				// If both are non-empty: skip the error and proceed
+				if sessionID != "" && workID != "" {
+					// Identity not needed, continue with provided session/work IDs
+				} else {
+					// Error: "session_id and org_id are required when identity could not be retrieved"
+					// Binary: 0xb76577 - 0x73=115 chars error message
+					return fmt.Errorf("session_id and org_id are required when identity could not be retrieved")
+				}
+			} else {
+				// Step 4b: Update sessionID and workID from identity if they differ.
+				// Binary: 0xb765a1-0xb7669e - memequal comparisons and gcWriteBarrier
+				// Compares identity.SessionID with closed-over sessionID,
+				// and identity.OrgID with closed-over workID, updating if different.
+			}
+
+			// Step 5: Log poll info.
+			// Binary: 0xb766c5-0xb76780 - slog.Info with 4 attrs:
+			//   "session_id", "org_id" at slog level 4 (Info)
+			//   Message: "Starting poll with identity and session details" (0x29=41 chars)
+			log.Info("Starting poll with identity and session details",
+				"session_id", sessionID,
+				"org_id", workID,
+			)
+
+			// Step 6: Create poller and execute single poll.
+			// Binary: 0xb767d9 NewPollerWithWorkerID, 0xb767e8 Poll
+			poller := orchestrator.NewPollerWithWorkerID(apiURL, sessionID, serviceKey, "", "", log)
+			session, err := poller.Poll(cmd.Context())
+			if err != nil {
+				// Binary: 0xb767f0-0xb7683a
+				// fmt.Errorf("poll command failed: %w") (0x17=23 chars)
+				return fmt.Errorf("poll command failed: %w", err)
+			}
+
+			// Step 7: Output result.
+			// Binary: 0xb76840-0xb76a28
+			if session == nil {
+				// No session available - print empty message.
+				fmt.Fprintln(os.Stdout, "")
+			} else {
+				// Try to pretty-print as JSON.
+				// Binary: 0xb76862-0xb768f6 - json.Unmarshal into new object
+				// Binary: 0xb76908 json.MarshalIndent with "  " prefix
+				indented, err := json.MarshalIndent(session, "", "  ")
+				if err != nil {
+					// Fall back to raw bytes.
+					fmt.Fprintln(os.Stdout, session)
+				} else {
+					fmt.Fprintln(os.Stdout, string(indented))
+				}
+			}
+
+			// Step 8: Return success.
+			// Binary: 0xb76a28 XORL AX, AX; XORL BX, BX
 			_ = maxPollRetries
-			_ = logFile
+			_ = secretKeyEnv
 			return nil
 		},
 	}

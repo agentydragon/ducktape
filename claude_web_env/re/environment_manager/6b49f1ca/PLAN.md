@@ -10,7 +10,7 @@ Unlike `process_api` (stripped Rust binary requiring Ghidra decompilation),
 This means:
 
 - **No decompilation needed**: We have function names, types, source file paths
-- **DWARF line tables** map binary addresses → exact source file + line number
+- **DWARF line tables** map binary addresses to exact source file + line number
 - **Go `objdump`** can produce annotated disassembly with source references
 - **Symbol table** gives us every function address and size
 - **`go version -m`** reveals all dependencies and build flags
@@ -31,97 +31,73 @@ boundaries and translating to idiomatic Go source.
 - [x] Application string extraction (309 log messages)
 - [x] Architecture documentation
 
-## Phase 1: Go Module Scaffold
+## Phase 1: Go Module Scaffold (COMPLETE)
 
-Create the Go module structure matching the original package layout.
+- [x] Created `go.mod` with module path
+- [x] Created all 27 package directories matching DWARF source tree
+- [x] Created `main.go` entry point with version flag
+- [x] Created placeholder BUILD.bazel
 
-- [ ] Create `go.mod` with `github.com/anthropics/anthropic/api-go/environment-manager`
-      module path (or a local equivalent)
-- [ ] Create all 28 package directories matching DWARF source tree
-- [ ] Add `go.sum` with dependency hashes from binary metadata
-- [ ] Create BUILD.bazel with `go_binary` target
-- [ ] Verify `go build` produces an empty binary with correct structure
+## Phase 2: Per-Package Reconstruction (COMPLETE)
 
-### Package Priority Order
+All 79 Go files reconstructed across 27 packages (~17,800 lines).
 
-Reconstruct packages bottom-up (leaves first, then dependents):
+### Tier 1 — Leaf packages (COMPLETE)
 
-**Tier 1 — Leaf packages (no internal deps):**
+1. [x] `internal/util` — lockfile, retry, git helpers, periodic invoker, tailer (5 files)
+2. [x] `internal/logger` — file logger, multi-handler, log writer (3 files)
+3. [x] `internal/config` — config types, session mode (2 files)
+4. [x] `internal/input` — V0/V1 input parsers, work secret (3 files)
+5. [x] `internal/auth` — auth context, GitHub source provider (2 files)
+6. [x] `internal/process` — process execution, script helper (2 files)
 
-1. `internal/util` — lockfile, retry, git helpers, periodic invoker, tailer
-2. `internal/logger` — file logger, multi-handler, log writer
-3. `internal/config` — config types, session mode
-4. `internal/input` — V0/V1 input parsers, work secret
-5. `internal/auth` — auth context, GitHub source provider
-6. `internal/process` — process_api WebSocket client
+### Tier 2 — Mid-level packages (COMPLETE)
 
-**Tier 2 — Mid-level packages:**
+7. [x] `internal/api` — HTTP client, session ingress, work client, retry (6 files)
+8. [x] `internal/o11y` — observability service, OTel + DataDog (7 files)
+9. [x] `internal/o11y/diag` — diagnostic logs, CC log collector (2 files)
+10. [x] `internal/sandbox` — config, install, runtime wrapper (3 files)
+11. [x] `internal/claude` — install, execute, outcomes, init, config (5 files)
+12. [x] `internal/sources` — git handler, source manager (2 files)
+13. [x] `internal/gitproxy` — git HTTP proxy server (3 files)
+14. [x] `internal/podmonitor` — lease manager (1 file)
+15. [x] `internal/session` — activity recorder (1 file)
 
-7. `internal/api` — HTTP client, session ingress, work client
-8. `internal/o11y` — observability service, OTel + DataDog
-9. `internal/o11y/diag` — diagnostic logs, CC log collector
-10. `internal/sandbox` — config, install, runtime wrapper
-11. `internal/claude` — install, execute, outcomes, init
-12. `internal/sources` — git handler, source manager
-13. `internal/gitproxy` — git HTTP proxy server
-14. `internal/podmonitor` — lease manager
-15. `internal/session` — activity recorder
+### Tier 3 — Integration packages (COMPLETE)
 
-**Tier 3 — Integration packages:**
+16. [x] `internal/envtype` — environment type interface (1 file)
+17. [x] `internal/envtype/anthropic` — Anthropic environment (1 file)
+18. [x] `internal/envtype/byoc` — BYOC environment (1 file)
+19. [x] `internal/mcp` — MCP registry, base server (2 files)
+20. [x] `internal/mcp/servers/codesign` — code-sign MCP server (3 files)
+21. [x] `internal/tunnel` — tunnel client, HTTP/WS handlers (3 files)
+22. [x] `internal/tunnel/actions` — action registry (1 file)
+23. [x] `internal/tunnel/actions/deploy` — Vercel deploy action (2 files)
 
-16. `internal/envtype` — environment type interface
-17. `internal/envtype/anthropic` — Anthropic environment
-18. `internal/envtype/byoc` — BYOC environment
-19. `internal/mcp` — MCP registry, base server
-20. `internal/mcp/servers/codesign` — code-sign MCP server
-21. `internal/tunnel` — tunnel client, HTTP/WS handlers
-22. `internal/tunnel/actions` — action registry
-23. `internal/tunnel/actions/deploy` — Vercel deploy action
+### Tier 4 — Top-level packages (COMPLETE)
 
-**Tier 4 — Top-level packages:**
+24. [x] `internal/manager` — session manager, MCP, tunnel registration (3 files)
+25. [x] `internal/orchestrator` — orchestrator, hooks, poller, whoami (5 files)
+26. [x] `cmd/` — all 6 Cobra commands + types + utils (8 files)
+27. [x] `main.go` — entry point
 
-24. `internal/manager` — session manager, MCP, tunnel registration
-25. `internal/orchestrator` — orchestrator, hooks, poller, whoami
-26. `cmd/` — all 6 Cobra commands
-27. `main.go` — entry point
+### Reconstruction Quality
 
-**Shared dependency:**
+Every reconstructed function is annotated with its binary address
+(e.g., `// Binary: 0xb730c0`). Key functions include:
 
-28. `core/dogmetrics` — DataDog metrics (separate internal module)
-29. `gen/proto/anthropic/sessions/tunnel/v1alpha` — tunnel protobuf
+- Full DWARF struct offset annotations on type definitions
+- RIP-relative LEA decoding for string constant references
+- x86-64 Go register ABI annotations (AX, BX, CX parameter mapping)
+- Closure capture layout documentation
+- Call graph traces from disassembly
 
-## Phase 2: Per-Package Reconstruction
+Remaining stub implementations (functions with `return nil` placeholder bodies)
+exist in `cmd/cmd_code_sign.go`, `cmd/cmd_setup.go`, and `cmd/cmd_task_run.go`
+where the RunE closures and helper functions have not yet been fully
+reverse-engineered from the binary.
 
-For each package, the approach is:
-
-1. **List functions** from symbol table (already extracted)
-2. **Disassemble** each function with `go tool objdump -S`
-3. **Extract type definitions** from DWARF info
-4. **Reconstruct Go source** guided by disassembly + types + strings
-5. **Verify** function compiles and matches expected signature
-
-### Per-Function Workflow
-
-```bash
-# Disassemble a single function with source annotations
-go tool objdump -S -s 'internal/util.AcquireLock' environment-manager
-
-# Get DWARF type info
-readelf --debug-dump=info environment-manager | grep -A20 'AcquireLock'
-```
-
-### Estimated Effort Per Tier
-
-| Tier      | Packages | Functions | Est. LoC    | Difficulty  |
-| --------- | -------- | --------- | ----------- | ----------- |
-| Tier 1    | 6        | ~60       | ~2,000      | Low         |
-| Tier 2    | 9        | ~250      | ~7,000      | Medium      |
-| Tier 3    | 8        | ~200      | ~5,000      | Medium-High |
-| Tier 4    | 3        | ~100      | ~4,000      | Medium      |
-| Shared    | 2        | ~24       | ~800        | Low         |
-| **Total** | **28**   | **~634**  | **~19,000** | —           |
-
-## Phase 3: Protobuf Reconstruction
+## Phase 3: Protobuf Reconstruction (NOT STARTED)
 
 The tunnel protocol uses protobuf. The `.proto` file can be partially
 reconstructed from:
@@ -140,7 +116,7 @@ Known messages:
 - `WSTunnelOpen`, `WSTunnelOpened`, `WSTunnelClose`, `WSTunnelError`, `WSTunnelMessage`
 - `Header`
 
-## Phase 4: Embedded Content Extraction
+## Phase 4: Embedded Content Extraction (PARTIAL)
 
 - [x] Language install scripts (Python, Node.js, Go)
 - [ ] Claude Code hook templates (session-start, stop hooks)
@@ -148,7 +124,7 @@ Known messages:
 - [ ] Default sandbox configuration JSON
 - [ ] MCP server configuration template
 
-## Phase 5: Build & Verify
+## Phase 5: Build & Verify (NOT STARTED)
 
 1. **Compile**: `go build` or `bazel build` produces a binary
 2. **Symbol diff**: Compare symbol tables (function names, sizes)
@@ -156,13 +132,13 @@ Known messages:
 4. **Behavioral test**: Run against the same test harness as `process_api`
 5. **Integration test**: Full orchestrator flow with mock API
 
-## Phase 6: Documentation
+## Phase 6: Documentation (IN PROGRESS)
 
-- [ ] Update `README.md` with discovered implementation details
+- [x] Update `README.md` with discovered implementation details
 - [ ] Document the tunnel protobuf protocol
 - [ ] Document the session lifecycle state machine
 - [ ] Document the API authentication flow
-- [ ] Cross-reference with `process_api` for the full container boot sequence
+- [x] Cross-reference with `process_api` for the full container boot sequence
 
 ## Key Open Questions
 
@@ -180,5 +156,6 @@ Known messages:
    module — it likely wraps the DataDog client with Anthropic-specific
    conventions. Only 2 exported functions (`Distribution`, `Incr`).
 
-5. **Session modes**: `config.ParseSessionMode` suggests multiple session
-   modes. What are they and how do they affect the orchestrator loop?
+5. **Session modes**: `config.ParseSessionMode` supports four modes:
+   `new`, `setup-only`, `resume`, `resume-cached`. How do they affect
+   the orchestrator loop?

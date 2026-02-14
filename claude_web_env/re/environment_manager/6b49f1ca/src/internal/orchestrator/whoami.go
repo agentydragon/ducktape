@@ -6,9 +6,15 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
+
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/util"
 )
 
 // WhoamiClient calls the /v1/environments/whoami endpoint to discover the
@@ -18,61 +24,59 @@ import (
 type WhoamiClient struct {
 	// Field layout (reconstructed from NewWhoamiClient at 0xa90f40):
 	// Offset 0x00: apiBaseURL string (ptr + len)
-	// Offset 0x10: sessionID string ptr
-	// Offset 0x18: sessionID string len
-	// Offset 0x20: inner HTTP client (*WhoamiHTTPClient)
-	// Offset 0x28: timeout time.Duration (default 30s = 0x6fc23ac00)
+	// Offset 0x10: sessionID string (ptr + len)
+	// Offset 0x20: httpClient *http.Client
+	// Offset 0x28: logger *slog.Logger
 	APIBaseURL string
 	SessionID  string
-	HTTPClient *WhoamiHTTPClient
-	Timeout    time.Duration
-}
-
-// WhoamiHTTPClient holds the HTTP client state for whoami requests.
-type WhoamiHTTPClient struct {
-	// Contains HTTP client, timeout config, etc.
+	HTTPClient *http.Client
+	Logger     *slog.Logger
 }
 
 // WhoamiResponse is the response from the whoami endpoint.
+// Contains identity information for the service key.
+//
+// Field layout (from GetIdentity disassembly at 0xa917bb-0xa91c94):
+// Offset 0x10: session_id string
+// Offset 0x20: org_id string
 type WhoamiResponse struct {
-	// Binary symbol: *orchestrator.WhoamiResponse
-	// Contains identity information for the service key
+	SessionID       string `json:"session_id"`
+	OrgID           string `json:"org_id"`
+	EnvironmentType string `json:"environment_type"`
 }
 
 // NewWhoamiClient creates a new WhoamiClient configured with the given API
-// base URL, session ID, and logger. It normalizes the API URL and sets up
-// an HTTP client with appropriate timeouts.
+// base URL, API key, session ID, and logger. It normalizes the API URL and
+// sets up an HTTP client with appropriate timeouts.
 //
 // Binary: 0xa90f40 - orchestrator.NewWhoamiClient
 // Source: orchestrator/whoami.go
 //
 // Parameters (register ABI):
-//   AX = apiBaseURL string ptr
-//   BX = apiBaseURL string len
-//   CX = sessionID string len
-//   DI = apiKey string ptr
-//   SI = logger *slog.Logger
+//
+//	AX = apiBaseURL string ptr
+//	BX = apiBaseURL string len
+//	CX = sessionID string len
+//	DI = apiKey string ptr
+//	SI = logger *slog.Logger
 //
 // Returns:
-//   AX = *WhoamiClient
+//
+//	AX = *WhoamiClient
 func NewWhoamiClient(
 	apiBaseURL string,
-	sessionID string,
 	apiKey string,
+	sessionID string,
 	logger *slog.Logger,
 ) *WhoamiClient {
 	// Validate/normalize API base URL.
 	// Binary: 0xa90f77-0xa91005
-	// Same pattern as NewPollerWithWorkerID: checks for "http://" (7 chars)
-	// and "https://" (8 chars), prepends "https://" if neither.
 	if !strings.HasPrefix(apiBaseURL, "http://") && !strings.HasPrefix(apiBaseURL, "https://") {
 		apiBaseURL = "https://" + apiBaseURL
 	}
 
 	// Create logger with whoami attributes.
 	// Binary: 0xa91014-0xa9108b
-	// slog.(*Logger).With with 1 attr:
-	//   "component" (0x09=9 chars) = "whoami_client" (0x0d=13 chars)
 	whoamiLogger := logger.With(
 		slog.String("component", "whoami_client"),
 	)
@@ -82,30 +86,82 @@ func NewWhoamiClient(
 	client := &WhoamiClient{
 		APIBaseURL: apiBaseURL,
 		SessionID:  sessionID,
+		Logger:     whoamiLogger,
+		HTTPClient: &http.Client{
+			Timeout: 30 * time.Second, // 0x6fc23ac00 ns
+		},
 	}
 
-	// Allocate inner HTTP client with 30-second timeout.
-	// Binary: 0xa91100 runtime.newobject (second allocation)
-	// Timeout: 0x6fc23ac00 = 30,000,000,000 ns = 30 seconds
-	client.HTTPClient = &WhoamiHTTPClient{}
-	client.Timeout = 30 * time.Second // 0x6fc23ac00
-
-	// Set logger reference.
-	_ = whoamiLogger
+	_ = apiKey
 
 	return client
 }
 
 // GetIdentity calls the /v1/environments/whoami endpoint and returns the
-// identity response. It uses deferred cleanup for timing metrics.
+// identity response. It creates an HTTP GET request with appropriate headers,
+// executes it, and parses the JSON response.
 //
 // Binary: 0xa911a0 - (*WhoamiClient).GetIdentity
 // Source: orchestrator/whoami.go
 //
-// deferwrap1 at 0xa91d40 handles deferred metric recording.
+// Assembly flow:
+//  1. Build URL: fmt.Sprintf("%s/v1/environments/whoami", w.APIBaseURL)
+//     URL format string: 0x19=25 chars "%s/v1/environments/whoami"
+//  2. Log "Calling whoami endpoint" (0x17=23 chars) at Info level with 1 attr
+//  3. http.NewRequestWithContext("GET", url, nil) at 0xa91348
+//     If error: fmt.Errorf("failed to create whoami request: %w") (0x23=35 chars)
+//  4. Set headers: Authorization (Bearer), Content-Type (application/json),
+//     X-Environment-Manager-Version (util.Version)
+//  5. Execute HTTP request via w.HTTPClient.Do at 0xa916cb
+//     If error: fmt.Errorf("whoami request failed: %w") (0x19=25 chars)
+//  6. defer resp.Body.Close (deferwrap1 at 0xa91d40)
+//  7. io.ReadAll at 0xa917c0
+//     If error: fmt.Errorf("failed to read whoami response body: %w") (0x27=39 chars)
+//  8. Check status code, parse JSON into WhoamiResponse
 func (w *WhoamiClient) GetIdentity(ctx context.Context) (*WhoamiResponse, error) {
-	// Makes HTTP GET request to <apiBaseURL>/v1/environments/whoami
-	// Records timing via deferred cleanup (deferwrap1 at 0xa91d40)
-	// Returns parsed response or error
-	return nil, nil
+	// Step 1: Build whoami URL.
+	url := fmt.Sprintf("%s/v1/environments/whoami", w.APIBaseURL)
+
+	// Step 2: Log the request.
+	w.Logger.Info("Calling whoami endpoint",
+		"url", url,
+	)
+
+	// Step 3: Create HTTP GET request.
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create whoami request: %w", err)
+	}
+
+	// Step 4: Set request headers.
+	authValue := fmt.Sprintf("Bearer %s", w.SessionID)
+	req.Header.Set("Authorization", authValue)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Environment-Manager-Version", util.Version)
+
+	// Step 5: Execute HTTP request.
+	resp, err := w.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("whoami request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Step 6: Read response body.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read whoami response body: %w", err)
+	}
+
+	// Step 7: Check status code.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("whoami returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Step 8: Parse response JSON.
+	var whoamiResp WhoamiResponse
+	if err := json.Unmarshal(body, &whoamiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse whoami response: %w", err)
+	}
+
+	return &whoamiResp, nil
 }

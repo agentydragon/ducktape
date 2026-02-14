@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"time"
 
+	"context"
+
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/api"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/auth"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/claude"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
@@ -13,10 +16,24 @@ import (
 )
 
 // V1Parser parses V1-format input using the work response protocol.
+//
+// Binary: type:.eq at 0xb0c860
+// Struct fields accessed in buildSessionResult (offsets 0x00, 0x18, 0x20, 0x30, 0x48, 0x50, 0x58):
+//   0x00: Logger        *slog.Logger
+//   0x08: SessionID     string (0x08 data, 0x10 len)
+//   0x18: APIUrl        string (0x18 data, 0x20 len)
+//   0x28: SecretKey     string (0x28 data, 0x30 len)
+//   0x38: O11y          o11y.O11yService (interface: 0x38 itab, 0x40 data)
+//   0x48: SecretPath    string (0x48 data, 0x50 len)
+//   0x58: ConfigClient  *api.SessionsClient (0x58)
 type V1Parser struct {
-	Logger *slog.Logger
-	SessionID string
-	O11y   o11y.O11yService
+	Logger       *slog.Logger
+	SessionID    string
+	APIUrl       string
+	SecretKey    string
+	O11y         o11y.O11yService
+	SecretPath   string
+	ConfigClient *api.SessionsClient
 }
 
 // Parse parses V1-format input data and returns a ParsedContext.
@@ -83,7 +100,7 @@ func (p *V1Parser) buildSessionResult(workResp *V1WorkResponse, authCtx *auth.Au
 		"content_preview", workResp.Data.Type,
 	)
 
-	sessionCtx, err := p.fetchSessionContext(workResp)
+	sessionCtx, err := p.fetchSessionContext(workResp, authCtx, context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch session context: %w", err)
 	}
@@ -125,12 +142,65 @@ type sessionContext struct {
 	McpConfigFile     *config.McpConfigFile    `json:"mcp_config_file"`
 }
 
-// fetchSessionContext retrieves and parses the session context from a work response.
-func (p *V1Parser) fetchSessionContext(workResp *V1WorkResponse) (*sessionContext, error) {
-	// The session context is fetched from the API or embedded in the work response
-	var ctx sessionContext
-	// Implementation would involve an API call or decoding from work response fields
-	return &ctx, nil
+// fetchSessionContext retrieves the session context from the Anthropic API.
+//
+// Binary: inlined into buildSessionResult at 0xb0b1cd-0xb0b2b6
+//
+// Reconstructed flow from disassembly:
+//  1. Loads workResp.Data.SessionID (offsets 0x18, 0x20 of V1Parser param SI)
+//     and p.Logger (offset 0x00 of V1Parser at AX) for api.NewHttpClient call
+//  2. At 0xb0b1ea: calls api.NewHttpClient(sessionID_string, p.Logger, nil)
+//     where the sessionID is used as the base URL. In practice the API URL
+//     is stored elsewhere and the binary dereferences through the WorkSecret
+//     and AuthContext structs to get the actual API key and endpoint.
+//  3. At 0xb0b209-0xb0b22a: constructs a SessionsClient on the stack at
+//     0xd8(SP) with fields:
+//       - 0xd8: HttpClient    (from NewHttpClient return)
+//       - 0xe0: ApiKey.ptr    (from authCtx[0x00] = sessionIngressToken ptr)
+//       - 0xe8: ApiKey.len    (from authCtx[0x08] = sessionIngressToken len)
+//       - 0xf0: Logger        (p.Logger)
+//  4. At 0xb0b232-0xb0b25a: loads workResp.Data.SessionID (offsets 0x50, 0x58
+//     of workResp) and calls GetSessionContext(ctx, sessionID)
+//  5. On error (BX != nil at 0xb0b260): wraps with
+//     "failed to fetch session context: %w" and returns
+//  6. On success: returns the *api.SessionContext directly (the sessionContext
+//     local type mirrors the API response structure)
+func (p *V1Parser) fetchSessionContext(workResp *V1WorkResponse, authCtx *auth.AuthContext, ctx context.Context) (*sessionContext, error) {
+	// Create HTTP client using the parser's API URL and logger.
+	// Binary: 0xb0b1ea calls api.NewHttpClient
+	httpClient := api.NewHttpClient(p.APIUrl, p.Logger, nil)
+
+	// Construct a SessionsClient with the HTTP client and session ingress token.
+	// Binary: struct built at 0xd8(SP) in buildSessionResult
+	// The API key comes from authCtx's first field (sessionIngressToken).
+	sessionsClient := &api.SessionsClient{
+		Client: httpClient,
+		ApiKey: authCtx.GetSessionIngressToken(),
+		Logger: p.Logger,
+	}
+
+	// Fetch the session context from the API.
+	// Binary: 0xb0b25a calls GetSessionContext with the session ID
+	// extracted from workResp.Data.SessionID (offsets 0x50, 0x58 of workResp).
+	sessionID := workResp.GetSessionID()
+	resp, err := sessionsClient.GetSessionContext(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert the API response to our local sessionContext type.
+	// The API SessionContext and local sessionContext share the same JSON structure.
+	respData, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal session context response: %w", err)
+	}
+
+	var sessCtx sessionContext
+	if err := json.Unmarshal(respData, &sessCtx); err != nil {
+		return nil, fmt.Errorf("failed to parse session context: %w", err)
+	}
+
+	return &sessCtx, nil
 }
 
 // buildStartupContext parses startup context from session context and merges with work secret sources.

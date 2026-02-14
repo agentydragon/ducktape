@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -100,11 +101,12 @@ func NewClient(
 		writeTimeout: 30 * time.Second, // 0x6fc23ac00 ns
 	}
 
+	// Binary: 0xb60592-0xb60628 - allocates httpClientWrapper, creates http.Client
+	// with *net/http.Transport as RoundTripper (itab at 0xb605dc)
 	httpWrapper := &httpClientWrapper{
-		baseURL: logger.String(), // placeholder - uses logger's string repr
+		baseURL: endpoint,
 	}
-	httpWrapper.baseURL = endpoint
-	httpWrapper.httpClient = newHTTPClientWithTransport(httpWrapper)
+	httpWrapper.httpClient = newHTTPClientWithTransport()
 
 	reqMap := make(map[string]interface{})
 
@@ -132,13 +134,25 @@ func NewClient(
 	return c
 }
 
-func newHTTPClientWithTransport(wrapper *httpClientWrapper) interface{} {
-	// Creates an *http.Client with a custom RoundTripper
-	return nil // placeholder
+// newHTTPClientWithTransport creates an *http.Client with a standard
+// net/http.Transport as the RoundTripper.
+//
+// Binary: inlined into NewClient at 0xb605d0-0xb60628
+// Evidence: go:itab.*net/http.Transport,net/http.RoundTripper at 0xb605dc
+func newHTTPClientWithTransport() interface{} {
+	return &http.Client{
+		Transport: &http.Transport{},
+	}
 }
 
+// newWSHandler creates a WSHandler for handling WebSocket tunnel connections.
+//
+// Binary: inlined into NewClient at 0xb60696-0xb6075c
 func newWSHandler(logger *slog.Logger, wrapper *httpClientWrapper, handler *Handler) *WSHandler {
-	return &WSHandler{} // placeholder
+	return &WSHandler{
+		logger:      logger,
+		connections: make(map[string]*wsConnection),
+	}
 }
 
 // Connect establishes a WebSocket connection to the tunnel server.

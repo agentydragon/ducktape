@@ -5,8 +5,20 @@
 package cmd
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 	"time"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/logger"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/orchestrator"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/sandbox"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -16,54 +28,25 @@ import (
 //
 // Binary: 0xb730c0 - cmd.AddOrchestratorCommand
 // Source: cmd/cmd_orchestrator.go
-//
-// Parameters:
-//   AX = *cobra.Command (parent/root command)
-//
-// Flags registered (from pflag calls in disassembly):
-//   --api-url           (0x07=7 chars) StringVar, default "https://api.anthropic.com" (0x19=25), desc (0x0c=12)
-//   --secret-path       (0x0f=15 chars) StringVar, default "", desc (0x36=54 chars)
-//   --session-id        (0x0e=14 chars) StringVar, default "", desc (0x3f=63 chars)
-//   --work-id           (0x09=9 chars) StringVar, default "", desc (0x30=48 chars)
-//   --poll-interval     (0x0c=12 chars) DurationVar, default 5min, desc (0x1d=29 chars)
-//   --hook-timeout      (0x0c=12 chars) DurationVar, default 5min, desc (0x2b=43 chars)
-//   --max-poll-retries  (0x11=17 chars) IntVar, default 0, desc (0x3f=63 chars)
-//   --max-hook-retries  (0x15=21 chars) IntVar, default 0, desc (0x63=99 chars)
-//   --hook-command      (0x0c=12 chars) StringVar, default "", desc (0x37=55 chars)
-//   --task-command      (0x0c=12 chars) StringVar, default "", desc (0xc3=195 chars - long)
-//   --session-timeout   (0x14=20 chars) DurationVar, default 5min, desc (0x3b=59 chars)
-//   --session-backoff   (0x14=20 chars) StringVar, default "", desc longer
-//   --sandbox-backend   (0x0f=15 chars) StringVar
-//   --log-file          StringVar
-//   --mode              StringVar
 func AddOrchestratorCommand(rootCmd *cobra.Command) {
-	// Allocate flag storage variables.
-	// Binary: 0xb730e5-0xb73240 - many runtime.newobject + mallocgc calls
-	// Creates ~15 flag variable pointers for string, int, duration, bool types
-	var apiURL string          // offset 0xf8
-	var secretPath string      // offset 0xc0
-	var sessionID string       // offset 0xe8
-	var workID string          // offset 0xf0
-	var pollInterval time.Duration // offset 0x70 (mallocgc 16 bytes)
-	var hookTimeout time.Duration  // offset 0xc8 (via DurationVar)
-	var maxPollRetries int     // offset 0x68 (mallocgc 16 bytes)
-	var maxHookRetries int     // offset 0xb0 (via IntVar)
-	var hookCommand string     // offset 0x80
-	var taskCommand string     // offset 0xe0
-	var sessionTimeout time.Duration // offset 0x60 (mallocgc 16 bytes)
-	var sessionBackoff time.Duration // offset 0x58 (mallocgc 8 bytes)
-	var sandboxBackend string  // offset 0xd0
-	var logFile string         // offset 0xa8
-	var mode string            // offset 0xa0
+	var apiURL string
+	var secretPath string
+	var sessionID string
+	var workID string
+	var pollInterval time.Duration
+	var hookTimeout time.Duration
+	var maxPollRetries int
+	var maxHookRetries int
+	var hookCommand string
+	var taskCommand string
+	var sessionTimeout time.Duration
+	var sessionBackoff time.Duration
+	var sandboxBackend string
+	var logFile string
+	var mode string
 	var sandboxEnabled bool
-	var logLevel string        // offset 0x98
+	var logLevel string
 
-	// Create the cobra.Command.
-	// Binary: 0xb73240-0xb73298
-	// Use: "orchestrator" (0x0c=12 chars)
-	// Short: 0x31=49 chars
-	// Long: 0x3fc=1020 chars
-	// Example: 0x34c=844 chars
 	orchCmd := &cobra.Command{
 		Use:   "orchestrator",
 		Short: "Run the session orchestrator polling loop",
@@ -77,25 +60,135 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
   # Basic usage with sandbox (recommended - identity discovered via whoami)
   environment-runner orchestrator --api-url=https://api.example.com --secret-path=/path/to/key --session-id=abc --sandbox-backend=bubblewrap`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Binary: 0xb73960 - AddOrchestratorCommand.func1
-			// func1.1 at 0xb75e00 is an inner closure
-			_ = apiURL
-			_ = secretPath
-			_ = sessionID
-			_ = workID
-			_ = pollInterval
-			_ = hookTimeout
-			_ = maxPollRetries
-			_ = maxHookRetries
-			_ = hookCommand
-			_ = taskCommand
-			_ = sessionTimeout
-			_ = sessionBackoff
-			_ = sandboxBackend
-			_ = logFile
-			_ = mode
-			_ = sandboxEnabled
-			_ = logLevel
+			// Binary: 0xb73960 - AddOrchestratorCommand.func1 (1577 lines of asm)
+
+			// Step 1: Parse log level and create logger.
+			// Binary: 0xb73a95 parseLogLevel, 0xb73ab4 CreateLoggerWithFileOutput
+			level, err := parseLogLevel(logLevel)
+			if err != nil {
+				return err
+			}
+			log := logger.CreateLoggerWithFileOutput(level)
+
+			// Step 2: Log all configuration values.
+			// Binary: 0xb73ad0-0xb73dd4 — builds 7 slog.Attr key-value pairs and calls log.Info
+			log.Info("Starting orchestrator",
+				"api-url", apiURL,
+				"secret-path", secretPath,
+				"session-id", sessionID,
+				"work-id", workID,
+				"sandbox-backend", sandboxBackend,
+				"poll-interval", pollInterval,
+				"sandbox-enabled", sandboxEnabled,
+			)
+
+			// Step 3: If sandbox enabled, log long sandbox info message.
+			// Binary: 0xb73e1f CMPB sandbox_enabled, 0xb73e55 log call with 0xd6-length string
+			if sandboxEnabled {
+				log.Info("Sandbox mode enabled. The orchestrator will wrap task execution in a sandboxed environment. This provides isolation for running untrusted code. The sandbox backend determines the isolation technology used (e.g., bubblewrap for Linux namespaces).")
+			}
+
+			// Step 4: Acquire container-level lock.
+			// Binary: 0xb73e86 AcquireContainerLock
+			cleanup, err := util.AcquireContainerLock(context.Background(), "orchestrator", sessionID)
+			if err != nil {
+				return fmt.Errorf("failed to acquire container lock: %w", err)
+			}
+			defer cleanup()
+
+			// Step 5: Read secret from file or env var.
+			// Binary: 0xb73f60 os.ReadFile, 0xb74065 TrimSpace, 0xb74080 os.Getenv
+			var secret string
+			if secretPath != "" {
+				data, err := os.ReadFile(secretPath)
+				if err != nil {
+					return fmt.Errorf("failed to read secret file: %w", err)
+				}
+				secret = strings.TrimSpace(string(data))
+			} else {
+				secret = os.Getenv("ENVIRONMENT_SERVICE_KEY")
+			}
+
+			// Step 6: Discover identity via whoami.
+			// Binary: 0xb740c0 NewWhoamiClient, 0xb740e4 GetIdentity
+			whoamiClient := orchestrator.NewWhoamiClient(log, apiURL, secret)
+			identity, err := whoamiClient.GetIdentity(context.Background())
+			if err != nil {
+				log.Warn("Failed to get identity via whoami",
+					"error", err,
+				)
+				return fmt.Errorf("failed to get identity: %w", err)
+			}
+
+			log.Info("Discovered orchestrator identity",
+				"identity", identity,
+			)
+
+			// Step 7: Create poll hook and poller.
+			// Binary: 0xb7470a NewPollHook, 0xb7476c NewPollerWithWorkerID
+			pollHook := orchestrator.NewPollHook(log, hookCommand, taskCommand, hookTimeout, sandboxBackend)
+			poller := orchestrator.NewPollerWithWorkerID(log, apiURL, secret, pollInterval, pollHook, identity)
+
+			// Step 8: Install sandbox runtime if configured.
+			// Binary: 0xb74ac0 os.Getenv, 0xb74af0 InstallSandboxRuntime
+			if sandboxBackend != "" {
+				log.Info("Installing sandbox runtime",
+					"backend", sandboxBackend,
+				)
+				if err := sandbox.InstallSandboxRuntime(context.Background(), log, sandboxBackend); err != nil {
+					return fmt.Errorf("failed to install sandbox runtime: %w", err)
+				}
+			}
+
+			// Step 9: Get working directory.
+			// Binary: 0xb74e03 os.Getwd
+			workDir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get working directory: %w", err)
+			}
+
+			log.Info("Orchestrator configured",
+				"work_dir", workDir,
+			)
+
+			// Step 10: Create orchestrator.
+			// Binary: 0xb75421 NewOrchestrator
+			orch, err := orchestrator.NewOrchestrator(log, poller, maxPollRetries, maxHookRetries, sessionTimeout, sessionBackoff, mode)
+			if err != nil {
+				return fmt.Errorf("failed to create orchestrator: %w", err)
+			}
+
+			// Step 11: Set up signal handling for graceful shutdown.
+			// Binary: 0xb754d4 context.WithCancel, 0xb75564 signal.Notify
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+			go func() {
+				sig := <-sigCh
+				log.Info("Received shutdown signal",
+					"signal", sig,
+				)
+				cancel()
+			}()
+
+			// Step 12: Run the orchestrator loop.
+			// Binary: 0xb75917 time.NewTimer for session timeout
+			err = orch.Run(ctx)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					log.Info("Orchestrator stopped due to cancellation")
+					return nil
+				}
+				log.Warn("Orchestrator exited with error",
+					"error", err,
+				)
+				return fmt.Errorf("orchestrator failed: %w", err)
+			}
+
+			log.Info("Orchestrator exited cleanly")
 			return nil
 		},
 	}
@@ -113,12 +206,12 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 	orchCmd.Flags().StringVar(&hookCommand, "hook-command", "", "Command to run when a session is received from polling")
 	orchCmd.Flags().StringVar(&taskCommand, "task-command", "", "Command to run with session JSON via stdin when task received. If not provided, defaults to self-invoking 'task-run --stdin --input-format=v1' (with or without sandbox based on --sandbox-backend)")
 	orchCmd.Flags().DurationVar(&sessionTimeout, "session-timeout", 5*time.Minute, "Maximum time to wait for a session before timing out")
-	orchCmd.Flags().StringVar(&sessionBackoff, "session-backoff", "", "Backoff strategy for session polling")
+	orchCmd.Flags().DurationVar(&sessionBackoff, "session-backoff", 0, "Backoff duration between session polling cycles")
 	orchCmd.Flags().StringVar(&sandboxBackend, "sandbox-backend", "", "Sandbox backend to use for task execution (e.g., bubblewrap)")
 	orchCmd.Flags().StringVar(&logFile, "log-file", "", "Path to log file for diagnostic output")
 	orchCmd.Flags().StringVar(&mode, "mode", "", "Operating mode")
+	orchCmd.Flags().BoolVar(&sandboxEnabled, "sandbox-enabled", false, "Enable sandbox mode for task execution")
 	orchCmd.Flags().StringVar(&logLevel, "log-level", "", "Log level (debug, info, warn, error)")
 
-	// Add to root command.
 	rootCmd.AddCommand(orchCmd)
 }

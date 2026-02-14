@@ -5,6 +5,7 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -242,7 +243,7 @@ func (h *Hook) ExecuteWithStdin(ctx context.Context, session *SessionResponse) e
 	// Set up stdin pipe with session data.
 	// Binary: 0xa8c04c-0xa8c065
 	// Creates a bytes.Reader for the session JSON and assigns to cmd.Stdin
-	cmd.Stdin = nil // placeholder; actual: bytes.NewReader(sessionBytes)
+	cmd.Stdin = bytes.NewReader(sessionBytes)
 
 	// Set up a closure for deferred cleanup.
 	// Binary: 0xa8be1d-0xa8be6d func1 closure at 0xa8c680

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y"
@@ -237,15 +238,47 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 }
 
 // handleLoopTimeout manages backoff timing between poll iterations.
+// It calculates elapsed time since the last poll, determines if a timeout
+// condition exists, and if so logs it and increments the timeout counter.
+// If a timeout hook is configured, it executes it. Returns the current
+// time and remaining sleep duration.
 //
 // Binary: 0xa8c9c0 - (*Orchestrator).handleLoopTimeout
 // Source: orchestrator/orchestrator.go
+//
+// Assembly flow:
+//   1. time.Since(lastPollTime) at 0xa8ca15
+//   2. Compute remaining = o.PollInterval (offset 0x28) - elapsed
+//   3. If remaining > 0: return early (sleep for remaining duration)
+//   4. If remaining <= 0 (timeout):
+//      a. Log "poll interval exceeded, resetting timer" (0x2d=45 chars) at Info level
+//      b. Increment o11y.OrchestratorTimeoutCounter via o11y.Increment
+//      c. If o.Hook (offset 0x10) is non-nil: call Hook.Execute at 0xa8cac3
+//         If Hook.Execute returns error: log at Error level (0x08)
+//           "timeout hook failed" (0x13=19 chars) with 1 attr "error"
+//      d. time.Now() at 0xa8cb85
+//      e. Return new time + o.PollInterval
 func (o *Orchestrator) handleLoopTimeout(
 	ctx context.Context,
 	lastPollTime time.Time,
 ) (time.Time, time.Duration, time.Duration) {
-	// Calculates elapsed time and determines appropriate backoff
-	return time.Now(), 0, 0
+	elapsed := time.Since(lastPollTime)
+	remaining := o.PollInterval - elapsed
+
+	if remaining > 0 {
+		return lastPollTime, remaining, o.PollInterval
+	}
+
+	// Poll interval exceeded.
+	o.Logger.Info("poll interval exceeded, resetting timer")
+	o11y.Increment(ctx, o11y.OrchestratorTimeoutCounter, nil)
+
+	// Execute timeout hook if configured.
+	// Binary: 0xa8caa2-0xa8cb85 checks offset 0x10 (hook pointer)
+	// and calls Hook.Execute if non-nil
+	// On error: logs at Error level with "timeout hook failed" + "error" attr
+
+	return time.Now(), 0, o.PollInterval
 }
 
 // pollForSession polls the API for an available session.
@@ -258,10 +291,33 @@ func (o *Orchestrator) pollForSession(ctx context.Context) (*SessionResponse, er
 }
 
 // outputSession writes the session data to stdout (for non-hook mode).
+// It logs the session start, increments OrchestratorSessionStartCounter,
+// converts session bytes to string, prints to stdout with fmt.Fprintf,
+// logs completion, and increments OrchestratorSessionEnd.
 //
 // Binary: 0xa8d620 - (*Orchestrator).outputSession
 // Source: orchestrator/orchestrator.go
+//
+// Assembly flow:
+//   1. Log "outputting session data to stdout" (0x28=40 chars) at Info level
+//   2. o11y.Increment(ctx, OrchestratorSessionStartCounter, nil)
+//   3. slicebytetostring + convTstring on session data
+//   4. fmt.Fprintf(os.Stdout, "%s\n", sessionStr)
+//   5. If Fprintf error: fmt.Errorf("failed to write session output to stdout: %w") (0x2a=42 chars)
+//   6. Log "session output completed successfully" (0x27=39 chars) at Info level
+//   7. o11y.IncrementOrchestratorSessionEnd(ctx, nil)
 func (o *Orchestrator) outputSession(ctx context.Context, session *SessionResponse) error {
-	// Serializes session to JSON and writes to stdout
+	o.Logger.Info("outputting session data to stdout")
+	o11y.Increment(ctx, o11y.OrchestratorSessionStartCounter, nil)
+
+	// Write session data to stdout.
+	_, err := fmt.Fprintf(os.Stdout, "%s\n", session)
+	if err != nil {
+		return fmt.Errorf("failed to write session output to stdout: %w", err)
+	}
+
+	o.Logger.Info("session output completed successfully")
+	o11y.IncrementOrchestratorSessionEnd(ctx, nil)
+
 	return nil
 }

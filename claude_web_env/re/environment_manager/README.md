@@ -7,21 +7,21 @@ and symbols**, making reconstruction significantly more tractable.
 
 ## Target Binary
 
-| Property           | Value                                                     |
-| ------------------ | --------------------------------------------------------- |
-| **ELF Build ID**   | `6b49f1ca37d9bf02f0b899a4a845ce551dcbcf14`                |
-| **Reference file** | `claude_web_env/reference/environment-manager.gz`         |
-| **Language**       | Go                                                        |
-| **Go version**     | `go1.25.6`                                                |
-| **Version string** | `staging-7c3cd5476` (via `-ldflags -X main.Version`)      |
-| **Compiler**       | `gc` (standard Go compiler)                               |
-| **CGO**            | Enabled                                                   |
-| **Stripped**       | No (full DWARF debug info, symbol table)                  |
-| **Binary size**    | 26 MB (uncompressed), 13 MB (gzipped)                     |
-| **Symbols**        | 28,272 total, 808 Anthropic application                   |
-| **Source files**   | 78 application Go files across 28 packages                |
-| **Dynamic deps**   | Only `libc.so.6`                                          |
-| **Build env**      | GitHub Actions (`/home/runner/work/anthropic/anthropic/`) |
+| Property           | Value                                                         |
+| ------------------ | ------------------------------------------------------------- |
+| **ELF Build ID**   | `6b49f1ca37d9bf02f0b899a4a845ce551dcbcf14`                    |
+| **Reference file** | `claude_web_env/reference/environment-manager.gz`             |
+| **Language**       | Go                                                            |
+| **Go version**     | `go1.25.6`                                                    |
+| **Version string** | `staging-7c3cd5476` (via `-ldflags -X main.Version`)          |
+| **Compiler**       | `gc` (standard Go compiler)                                   |
+| **CGO**            | Enabled                                                       |
+| **Stripped**       | No (full DWARF debug info, symbol table)                      |
+| **Binary size**    | 26 MB (uncompressed), 13 MB (gzipped)                         |
+| **Symbols**        | 28,272 total, 808 Anthropic application                       |
+| **Source files**   | 78 application Go files across 28 packages (79 reconstructed) |
+| **Dynamic deps**   | Only `libc.so.6`                                              |
+| **Build env**      | GitHub Actions (`/home/runner/work/anthropic/anthropic/`)     |
 
 Reconstructed source lives under `6b49f1ca/` (Build ID prefix).
 
@@ -465,6 +465,18 @@ Intermediate analysis artifacts in `6b49f1ca/artifacts/`:
 | Debug info   | Stripped             | Full DWARF + symbols                 |
 | Functions    | 29 application       | 808 Anthropic, 624 env-manager       |
 | Source files | 9 files (decompiled) | 78 files (DWARF-extracted)           |
-| Complexity   | ~3,500 LoC           | Estimated ~15,000-20,000 LoC         |
+| Complexity   | ~3,500 LoC           | ~17,800 LoC (79 files reconstructed) |
 | RE approach  | Ghidra decompilation | Symbol analysis + DWARF + Go tooling |
 | Build system | Bazel rust_binary    | TBD (Bazel go_binary or native Go)   |
+
+## Reconstruction Status
+
+**79 Go source files** reconstructed across **27 packages** totaling
+**~17,800 lines** of annotated Go code. Every function is annotated with
+its binary address. Key cmd functions (`orchestrator RunE`, `initDiagLogging`)
+are fully traced from 1000+ line disassembly. Some cmd helper stubs remain
+(code-sign MCP operations, setup install functions) pending further
+disassembly.
+
+Source lives under `6b49f1ca/src/`. See `6b49f1ca/PLAN.md` for detailed
+per-package status.
