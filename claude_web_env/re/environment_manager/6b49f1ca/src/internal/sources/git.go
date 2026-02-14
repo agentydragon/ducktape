@@ -171,7 +171,7 @@ func (h *GitHandler) CanHandle(source config.Source) bool {
 func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source config.Source) error {
 	// Binary 0xaea783: time.Now()
 	startTime := time.Now()
-	_ = startTime
+	_ = startTime // TODO(re): should compute elapsed for o11y/diag metrics
 
 	// Binary 0xaea790-0xaea7c2: type assertion to GitRepositorySource
 	gitSource, ok := source.(config.GitRepositorySource)
@@ -311,7 +311,7 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 		"duration_ms", time.Since(startTime).Milliseconds(),
 	)
 
-	_ = activityMsg
+	_ = activityMsg // TODO(re): should be sent to activityRecorder
 	return nil
 }
 
@@ -396,7 +396,7 @@ func (h *GitHandler) ValidateRepositoryAccess(
 	// Binary: diag.LogEnvManagerNoPII(ctx, "repository_access_validation_failed", nil)
 	diag.LogEnvManagerNoPII(ctx, "repository_access_validation_failed", nil)
 
-	_ = startTime
+	_ = startTime // TODO(re): should compute elapsed for o11y metric
 	return fmt.Errorf("git proxy validation failed after %d attempts: %w", 3, lastErr)
 }
 
@@ -715,7 +715,7 @@ func (h *GitHandler) runGitFetchWithRetry(
 	}
 
 	elapsed := time.Since(startTime)
-	_ = elapsed
+	_ = elapsed // TODO(re): should be recorded as o11y metric
 
 	logger.Error("Git fetch failed after all retries",
 		"error", lastErr,

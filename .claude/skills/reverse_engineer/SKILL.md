@@ -210,7 +210,37 @@ Write the function with:
 After writing each function, update the string checklist. Flag any strings you
 couldn't place — they indicate missing code paths.
 
-### 3.5 No dead code
+### 3.5 Mark incomplete reconstructions
+
+Not every function can be fully reconstructed in a single pass. When you cannot
+fully recover a function body, closure, type, or control flow path, you MUST
+mark it with a `TODO(re):` comment so it's greppable and clearly incomplete.
+
+**Required markers (use exactly `// TODO(re):` or `# TODO(re):` prefix):**
+
+- **Stub function bodies**: `// TODO(re): stub — <what the function should do>`
+- **Empty goroutine/closure bodies**: `// TODO(re): stub — <describe the closure's purpose from binary evidence>`
+- **Placeholder types** (`interface{}`, `any`, `object` where concrete type
+  exists): `// TODO(re): concrete type not recovered — likely <best guess>`
+- **Discarded values** (`_ = expr` where the value is clearly used by the real
+  binary): `// TODO(re): should be <how the value is consumed>`
+- **Commented-out code** standing in for unrecovered logic:
+  `// TODO(re): not reconstructed — <brief description of what binary does>`
+- **Hardcoded placeholders** (zero values, empty strings, dummy data where the
+  binary has real logic): `// TODO(re): placeholder — <what should be here>`
+- **Incomplete error handling** (errors swallowed or ignored where the binary
+  handles them): `// TODO(re): error handling not reconstructed`
+
+**Every `TODO(re):` must include a brief description** of what the correct
+implementation should do, based on binary evidence. Bare `// TODO` without
+context is not acceptable.
+
+**Do not leave unmarked stubs.** A function that returns `nil` where the binary
+has real logic, a closure with an empty body, or a variable discarded with
+`_ =` where the binary consumes it — all of these are reconstruction bugs if
+left unmarked. The marker makes the gap visible and searchable.
+
+### 3.6 No dead code
 
 Dead code does not exist in an optimized compiled binary. If you wrote code
 that nothing calls, your reconstruction is wrong — find the caller.
@@ -272,6 +302,36 @@ readelf -S "$YOUR_BINARY" | grep -E '\.text|\.rodata|\.data' > /tmp/my_sections.
 diff /tmp/ref_sections.txt /tmp/my_sections.txt
 ```
 
+### 4.5 Stub scan (mandatory before completion)
+
+Before declaring reconstruction complete, scan for remaining incomplete work:
+
+```bash
+# Find all TODO(re) markers — every one is an acknowledged gap
+grep -rn 'TODO(re)' src/ | tee /tmp/todo_re.txt
+wc -l /tmp/todo_re.txt
+
+# Find potential unmarked stubs
+grep -rn '_ = ' src/ | grep -v 'TODO' | tee /tmp/unmarked_discards.txt
+grep -rn 'interface{}' src/ | grep -v 'TODO' | tee /tmp/unmarked_interfaces.txt
+grep -rn '// Stub' src/ | grep -v 'TODO' | tee /tmp/unmarked_stubs.txt
+```
+
+**Resolution requirements:**
+
+- Every `_ = expr` that discards a meaningful value must either be fixed
+  (value consumed correctly) or marked with `TODO(re):`.
+- Every `interface{}` that stands in for a concrete type must either be
+  replaced with the correct type or marked with `TODO(re):`.
+- Every function/closure with a stub body must be either reconstructed or
+  marked with `TODO(re):`.
+- The `TODO(re)` count should be documented in the README or inventory so
+  the scope of remaining work is visible.
+
+This scan catches gaps that slipped through Phase 3 without markers. It is
+non-negotiable — unmarked stubs are worse than marked ones because they look
+like intentional implementations.
+
 ## Principles
 
 - **Binary is ground truth.** If the binary says it, the source must say it.
@@ -287,3 +347,8 @@ diff /tmp/ref_sections.txt /tmp/my_sections.txt
   The output binary must match the reference in strings, symbols, and behavior.
 - **Iterate.** Phase 4 will find gaps. Return to Phase 3 and fill them.
   Repeat until the string diff is clean.
+- **Mark what you can't finish.** Use `// TODO(re): <description>` for any
+  stub, placeholder type, discarded value, or unrecovered logic. Unmarked
+  stubs masquerade as correct implementations and are worse than acknowledged
+  gaps. The `TODO(re):` prefix is greppable and distinguishes reconstruction
+  gaps from normal development TODOs.

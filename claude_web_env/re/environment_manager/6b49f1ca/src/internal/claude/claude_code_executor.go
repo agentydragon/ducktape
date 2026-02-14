@@ -47,6 +47,10 @@ type Executor interface {
 //   Offset 0x90: ClaudePath2  string len          (field 18, at 0x90)
 //
 // Total struct size: ~0x98 (152 bytes, from runtime.newobject type descriptor)
+// TODO(re): many fields typed as interface{} — concrete types not yet recovered from binary.
+// Known candidates from constructor (NewClaudeCodeExecutor) parameter analysis:
+//   Ctx → context.Context, Config → *config.ClaudeConfig, GatewayConfig → *GatewayConfig,
+//   SessionIngress → *api.HttpSessionIngressClient, ConfigExtra/OutcomesExtra/ExtraField → unknown
 type ClaudeCodeExecutor struct {
 	Logger          *slog.Logger // offset 0x00
 	LoggerName      string       // offset 0x08 (string, len at 0x10)
@@ -271,9 +275,8 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 		"claudeConfig", e.Config,
 	)
 
-	// 0xad9540: GetClaudeEnvironmentVariables — get env vars for the process
-	// This function is defined elsewhere in the codebase (internal/config package)
-	// envVars := GetClaudeEnvironmentVariables(...)
+	// TODO(re): env var setup not reconstructed — should call GetClaudeEnvironmentVariables(...)
+	// and set cmd.Env. Binary at 0xad9540.
 
 	// Build command arguments
 	// 0xad9620-0xad96e0: start building args slice
@@ -330,11 +333,8 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 		}
 	}()
 
-	// Register func3 closure: deferred pipe write-end cleanup
-	// 0xadf1c0: closes a single file, logs error at WARN
-
-	// Register func4 closure: output writer
-	// 0xadf0a0: writes captured output to file, logs error at WARN
+	// TODO(re): func3 closure (pipe write-end cleanup at 0xadf1c0) not reconstructed
+	// TODO(re): func4 closure (output writer at 0xadf0a0) not reconstructed
 
 	// 0xada000-0xadb000: wait for process completion
 	waitErr := cmd.Wait()
@@ -376,7 +376,7 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 // Binary address: 0xadf6c0 - 0xadfe96
 func (e *ClaudeCodeExecutor) buildArgsFromGatewayConfig(ctx context.Context) ([]string, error) {
 	config := e.Config
-	_ = config
+	_ = config // TODO(re): config should be accessed as *config.ClaudeConfig to read fields
 
 	// 0xadf709-0xadf718: read ClaudeCodeArgs from config (offset 0xc0)
 	// 0xadf738-0xadf743: check McpConfig != nil (offset 0xc8)
@@ -426,7 +426,7 @@ func (e *ClaudeCodeExecutor) buildArgsFromGatewayConfig(ctx context.Context) ([]
 // Binary address: 0xadfee0 - 0xae01c1
 func (e *ClaudeCodeExecutor) writeMCPConfigFileFromGateway(ctx context.Context) error {
 	config := e.Config
-	_ = config
+	_ = config // TODO(re): config should be accessed as *config.ClaudeConfig to read fields
 
 	// 0xadff0e: read McpConfig (offset 0xc8 of gateway config)
 	// 0xadff3b-0xadff4a: base64.StdEncoding.DecodeString

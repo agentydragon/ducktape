@@ -34,7 +34,7 @@ type Manager struct {
 	// Offset 0x28: ...
 	// Offset 0x48: tunnelClient (may be nil, checked at runtime)
 	Logger     *slog.Logger
-	Config     interface{} // environment config client
+	Config     interface{} // TODO(re): concrete type not recovered — likely environment config client interface
 	TunnelInfo *TunnelInfo
 }
 
@@ -76,7 +76,7 @@ func (m *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 	// Binary: call at ~0xb6a600+ to createTunnelClient
 	m.createTunnelClient(ctx, logger)
 
-	_ = startTime
+	_ = startTime // TODO(re): should compute elapsed for o11y metric recording
 	return nil
 }
 
@@ -258,6 +258,10 @@ func (m *Manager) configureGitSigning() {
 // Parameters beyond ctx/logger come from the Run/configureEnvironment flow
 // as interface-dispatched results from the environment type.
 func (m *Manager) applyEnvironmentConfig(ctx context.Context, logger *slog.Logger) {
+	// TODO(re): function body is a stub — only logs. Should dispatch to env type's
+	// GetClaudeEnvironmentVariables via vtable, iterate returned map, and call GetCWD
+	// via typeAssert.7 to set working directory. Binary: 0xb6f860-0xb6faad.
+
 	// Get environment variables from environment type via interface dispatch
 	// Binary: 0xb6f8b1 CALL CX (GetClaudeEnvironmentVariables)
 	// Returns a map[string]string
@@ -425,6 +429,10 @@ func (m *Manager) addOfficialPluginMarketplaceAsync(ctx context.Context, logger 
 //   SI = tunnel info interface data
 //   R8 = session config pointer
 func (m *Manager) createTunnelClient(ctx context.Context, logger *slog.Logger) {
+	// TODO(re): function body is a stub — only logs. Should parse API URL, convert http→ws/https→wss,
+	// check env sub type for "baku", create action registry with DeployAction, and call NewTunnelClient.
+	// Binary: 0xb6dae0-0xb6e028 (~1.3KB of machine code).
+
 	// Parse API base URL and convert scheme for WebSocket
 	// Binary: 0xb6db2b net/url.Parse
 	// "http" -> "ws", "https" -> "wss"
@@ -456,8 +464,8 @@ func (m *Manager) registerMCPServersAsync(ctx context.Context, logger *slog.Logg
 	m.Logger.Info("registering MCP servers async")
 
 	registeredServers, errors := m.registerMCPServers(ctx, logger)
-	_ = registeredServers
-	_ = errors
+	_ = registeredServers // TODO(re): should be logged/used — contains list of registered MCP server names
+	_ = errors // TODO(re): should be checked/logged — contains registration errors
 
 	elapsed := time.Since(startTime)
 	m.Logger.Info("MCP server registration complete", "duration_ms", elapsed.Milliseconds())

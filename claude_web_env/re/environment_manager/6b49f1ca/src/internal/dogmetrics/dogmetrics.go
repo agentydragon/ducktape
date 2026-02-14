@@ -11,5 +11,5 @@ package dogmetrics
 // Incr increments a named counter metric with the given key prefix and name.
 // Binary: uses DataDog statsd client under the hood.
 func Incr(key string, name string) {
-	// Stub: actual implementation sends to DataDog agent via statsd.
+	// TODO(re): stub — should send counter increment to DataDog agent via statsd client
 }

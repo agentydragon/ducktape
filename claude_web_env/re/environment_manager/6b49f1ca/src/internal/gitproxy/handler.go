@@ -234,14 +234,17 @@ func (h *handler) forwardRequest(
 	)
 
 	// Build upstream URL
-	// Use configured upstream URL or fall back to session ingress URL
+	// TODO(re): URL construction incomplete — upstreamURL param is accepted but never
+	// used in targetURL. The format string has 5 verbs but only 4 args. Binary at
+	// 0xae6660 likely uses upstreamURL as baseURL when non-empty, and includes
+	// session_id as a 5th path component.
 	baseURL := h.server.sessionIngressURL
 	if upstreamURL != "" {
-		baseURL = strings.TrimRight(baseURL, "/")
+		baseURL = strings.TrimRight(upstreamURL, "/")
 	}
 
 	// URL-encode path components
-	targetURL := fmt.Sprintf("%s/%s/%s/%s/%s",
+	targetURL := fmt.Sprintf("%s/%s/%s/%s",
 		baseURL,
 		owner,
 		repo,

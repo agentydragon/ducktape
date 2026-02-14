@@ -102,7 +102,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			// 0xb78d20-0xb78d31: Check if --input-format flag was changed
 			flags := cmd.Flags()
 			inputFormatChanged := flags.Changed("input-format")
-			_ = inputFormatChanged
+			_ = inputFormatChanged // TODO(re): should gate input format behavior
 
 			// 0xb78d8a-0xb78da0: Validate mutually exclusive flags
 			// "--upgrade-claude-code and --claude-agent-version are mutually exclusive"
@@ -130,18 +130,18 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			if err != nil {
 				return fmt.Errorf("failed to acquire lock: %w", err)
 			}
-			_ = lockRelease
+			defer lockRelease()
 
 			// 0xb78f26: Parse session mode
 			sessionMode, err := config.ParseSessionMode(mode)
 			if err != nil {
 				return fmt.Errorf("failed to parse session mode: %w", err)
 			}
-			_ = sessionMode
+			_ = sessionMode // TODO(re): should be passed to session/manager config
 
 			// 0xb78fb6-0xb78fc7: Check if --input-format flag was explicitly set
 			inputFormatFlags := cmd.Flags()
-			_ = inputFormatFlags.Changed("input-format")
+			_ = inputFormatFlags.Changed("input-format") // TODO(re): duplicate check — reconcile with inputFormatChanged above
 
 			// 0xb78fd0: Record stdin read start time
 			stdinStartTime := time.Now()
@@ -195,15 +195,15 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb79260: Measure stdin parse duration
 			stdinParseDuration := time.Since(stdinStartTime)
-			_ = stdinParseDuration
+			_ = stdinParseDuration // TODO(re): should be logged or recorded as o11y metric
 
 			// 0xb79583: Create activity recorder
 			activityRecorder := session.NewActivityRecorder(nil, slogger, sessionID)
-			_ = activityRecorder
+			_ = activityRecorder // TODO(re): should be passed to manager/environment setup
 
 			// 0xb795a0: Get SKIP_GIT_CONFIG env var
 			skipGitConfig := os.Getenv("SKIP_GIT_CONFIG")
-			_ = skipGitConfig
+			_ = skipGitConfig // TODO(re): should be passed to environment config or set as env var
 
 			// 0xb79654-0xb79672: Log custom executable path if set
 			if scriptPath != "" {
@@ -222,7 +222,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				_, err = claude.InstallOrUpdateClaudeCode(slogger, installCtx, "", "", nil, nil)
 				installCancel()
 				installDuration := time.Since(installStart)
-				_ = installDuration
+				_ = installDuration // TODO(re): should be logged or recorded as o11y metric
 
 				if err != nil {
 					return fmt.Errorf("failed to ensure Claude Code is available: %w", err)
@@ -249,14 +249,14 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb79996: Get OTEL endpoint from env (for telemetry)
 			otelEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-			_ = otelEndpoint
+			_ = otelEndpoint // TODO(re): should be passed to o11y.NewO11yService config
 
 			// 0xb79a5a: Initialize observability service
 			o11yService, err := o11y.NewO11yService(context.Background(), nil)
 			if err != nil {
 				return fmt.Errorf("failed to initialize observability service: %w", err)
 			}
-			_ = o11yService
+			_ = o11yService // TODO(re): should be wired into manager/diagnostics
 
 			// 0xb79bc0: Increment start counter
 			o11y.Increment(context.Background(), nil, nil)
@@ -289,7 +289,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				slogger.Info("Running healthcheck")
 				slogger.Info("Executing healthcheck")
 				healthcheckDuration := time.Since(startTime)
-				_ = healthcheckDuration
+				_ = healthcheckDuration // TODO(re): should be logged or recorded as metric
 				slogger.Info("Healthcheck completed successfully",
 					"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 				)
@@ -320,9 +320,9 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb7a761-0xb7a7a0: Compute durations
 			totalParseTime := time.Since(stdinStartTime)
-			_ = totalParseTime
+			_ = totalParseTime // TODO(re): should be logged or recorded as o11y metric
 			totalSetupTime := time.Since(startTime)
-			_ = totalSetupTime
+			_ = totalSetupTime // TODO(re): should be logged or recorded as o11y metric
 
 			// 0xb7a881-0xb7a8a0: Log "Setup completed, starting manager execution"
 			slogger.Info("Setup completed, starting manager execution",
@@ -337,7 +337,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			managerErr := mgr.Run(context.Background(), slogger)
 
 			managerDuration := time.Since(startTime)
-			_ = managerDuration
+			_ = managerDuration // TODO(re): should be logged or recorded as o11y metric
 
 			if managerErr != nil {
 				// 0xb7a9d9-0xb7aaa7: Manager execution failed
@@ -795,10 +795,10 @@ func initDiagLogging(
 		return nil, nil, nil
 	}
 
-	_ = api.NewHttpClient(apiURL, secretPath, secretKey, nil)
+	httpClient := api.NewHttpClient(apiURL, secretPath, secretKey, nil)
 
 	flusher := &diag.SessionIngressLogFlusher{
-		Client:    nil,
+		Client:    httpClient, // TODO(re): was nil — httpClient was created above but discarded
 		SessionID: sessionID,
 		AuthToken: secretKey,
 	}

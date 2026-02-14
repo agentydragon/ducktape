@@ -88,6 +88,7 @@ func (s *BaseServer) GetName() (string, int) {
 //   XOR BX, BX
 //   MOV BX, CX
 //   RET
+// TODO(re): return type should be ([]mcpserver.ServerTool, int, int) or similar — interface{} is a placeholder
 func (s *BaseServer) GetTools() (interface{}, int, int) {
 	return nil, 0, 0
 }
@@ -138,9 +139,7 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 	// Create MCP server
 	mcpSrv := mcpserver.NewMCPServer(s.name, s.version)
 
-	// Add tools (provided by concrete implementation)
-	// tools := s.GetTools()
-	// mcpSrv.AddTools(tools...)
+	// TODO(re): tool registration is stubbed — should call s.GetTools() and mcpSrv.AddTools(tools...)
 	_ = mcpSrv
 
 	// Create streamable HTTP server with options
@@ -191,12 +190,12 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 	// Start serving in background goroutine (func1 at 0xad13e0)
 	s.stopCh = make(chan struct{})
 	go func() {
-		// s.httpServer.Serve(listener)
+		// TODO(re): stub — should call s.httpServer.Serve(listener) and handle errors
 	}()
 
 	// Start heartbeat goroutine (func2 at 0xad0d00)
 	go func() {
-		// Periodic heartbeat loop
+		// TODO(re): stub — heartbeat loop body not reconstructed (binary func2 at 0xad0d00, ~1.5KB)
 	}()
 
 	return s.port, nil
@@ -236,7 +235,7 @@ func (s *BaseServer) Stop() bool {
 
 	// Call cleanup on streamable server if present
 	if s.streamableServer != nil {
-		// streamable server cleanup
+		// TODO(re): streamable server cleanup not reconstructed
 	}
 
 	// Close stop channel to signal goroutines

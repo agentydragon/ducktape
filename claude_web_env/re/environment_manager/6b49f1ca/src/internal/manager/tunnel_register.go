@@ -61,7 +61,7 @@ func defaultNewTunnelClient(opts ...interface{}) TunnelClient {
 	//
 	// tunnel.NewClient signature (from binary):
 	//   func NewClient(opts ...ClientOption) *Client
-	return nil // Stub: actual implementation delegates to tunnel.NewClient
+	return nil // TODO(re): stub — should forward params to tunnel.NewClient and return the result
 }
 
 // mcp import is used for GetMCPRegistrations in the registerMCPServers flow.
