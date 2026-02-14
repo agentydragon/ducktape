@@ -36,31 +36,35 @@ type sizeResult struct {
 
 // GitHandler handles git repository sources.
 //
-// Struct layout (from NewGitHandler field stores and Process field accesses):
+// Struct layout (from NewGitHandler field stores at 0xaea603-0xaea665
+// and field accesses in Process, setupBranchFromOutcomes, setupLocalGitProxy):
 //
 //	offset 0x00: logger *slog.Logger
-//	offset 0x08: baseDir string (ptr + len at 0x10)
-//	offset 0x18: sessionID string (ptr + len at 0x20)
-//	offset 0x28: gitProxyManager interface{} (itab + data at 0x30) — stored from NewGitHandler R8/R9
-//	offset 0x38: authProvider auth.SourceAuthProvider (itab + data at 0x40) — set by createSourceAuthProvider in Process
-//	offset 0x48: activityRecorder interface{} (itab + data at 0x50) — stored from NewGitHandler R10/R11
-//	offset 0x58: processMode string (ptr + len at 0x60) — "fresh", "allow-prefetched", "resume", etc.
-//	offset 0x68: gitProxyManager gitproxy.Manager (itab + data at 0x70) — used in setupLocalGitProxy; set after construction
+//	offset 0x08: baseDir string (ptr at 0x08, len at 0x10)
+//	offset 0x18: sessionID string (ptr at 0x18, len at 0x20)
+//	offset 0x28: gitProxyConfig interface{} (8 bytes — single pointer, stored from R8 in NewGitHandler)
+//	offset 0x30: outcomes map[string][]string (8 bytes — map pointer, stored from R9 in NewGitHandler)
+//	               used in setupBranchFromOutcomes via mapaccess2_faststr and in cloneRepository BYOC logic
+//	offset 0x38: authProvider auth.SourceAuthProvider (itab at 0x38, data at 0x40) — set by createSourceAuthProvider in Process
+//	offset 0x48: activityRecorder interface{} (itab at 0x48, data at 0x50) — stored from R10/R11 in NewGitHandler
+//	offset 0x58: processMode string (ptr at 0x58, len at 0x60) — "fresh", "allow-prefetched", "resume", etc.
+//	offset 0x68: gitProxyManager gitproxy.Manager (itab at 0x68, data at 0x70) — set post-construction
 //	offset 0x78: isResume bool
-//	offset 0x80: postCloneHookPath string (ptr + len at 0x88) — from POST_CLONE_HOOK_PATH env var
+//	offset 0x80: postCloneHookPath string (ptr at 0x80, len at 0x88) — from POST_CLONE_HOOK_PATH env var
 //
 // Implements: SourceHandler (itab at 0xf61188)
 type GitHandler struct {
-	logger           *slog.Logger            // offset 0x00
-	baseDir          string                  // offset 0x08
-	sessionID        string                  // offset 0x18
-	gitProxyConfig   interface{}             // offset 0x28 — original proxy config interface from constructor
-	authProvider     auth.SourceAuthProvider  // offset 0x38 — set per-source in Process via createSourceAuthProvider
-	activityRecorder interface{}             // offset 0x48
-	processMode      string                  // offset 0x58 — e.g. "fresh", "allow-prefetched", "resume"
-	gitProxyManager  gitproxy.Manager        // offset 0x68 — concrete Manager interface, set post-construction
-	isResume         bool                    // offset 0x78
-	postCloneHookPath string                 // offset 0x80
+	logger            *slog.Logger            // offset 0x00
+	baseDir           string                  // offset 0x08
+	sessionID         string                  // offset 0x18
+	gitProxyConfig    interface{}             // offset 0x28 — single pointer to proxy config
+	outcomes          map[string][]string     // offset 0x30 — branch outcomes keyed by repo name
+	authProvider      auth.SourceAuthProvider  // offset 0x38 — set per-source in Process via createSourceAuthProvider
+	activityRecorder  interface{}             // offset 0x48
+	processMode       string                  // offset 0x58 — e.g. "fresh", "allow-prefetched", "resume"
+	gitProxyManager   gitproxy.Manager        // offset 0x68 — concrete Manager interface, set post-construction
+	isResume          bool                    // offset 0x78
+	postCloneHookPath string                  // offset 0x80
 }
 
 // NewGitHandler creates a new GitHandler.
@@ -72,13 +76,32 @@ type GitHandler struct {
 // Parameters (register ABI):
 //
 //	AX: logger, BX+CX: baseDir, DI+SI: sessionID,
-//	R8+R9: gitProxyConfig (interface{}), R10+R11: activityRecorder (interface{}),
+//	R8: gitProxyConfig (pointer), R9: outcomes (map pointer),
+//	R10+R11: activityRecorder (interface{}),
 //	stack[0]+stack[1]: processMode string, stack[2]: isResume bool
+//
+// Field stores (write barrier path at 0xaea5a7-0xaea5ff, fast path at 0xaea603-0xaea665):
+//
+//	0(AX)  = logger           (from original AX)
+//	0x08   = baseDir.ptr      (from original BX)
+//	0x10   = baseDir.len      (from original CX)
+//	0x18   = sessionID.ptr    (from original DI)
+//	0x20   = sessionID.len    (from original SI)
+//	0x28   = gitProxyConfig   (from original R8)
+//	0x30   = outcomes          (from original R9)
+//	0x48   = activityRecorder.itab (from original R10)
+//	0x50   = activityRecorder.data (from original R11)
+//	0x58   = processMode.ptr  (from stack[0])
+//	0x60   = processMode.len  (from stack[1])
+//	0x78   = isResume          (from stack[2])
+//	0x80   = postCloneHookPath.ptr (from Getenv)
+//	0x88   = postCloneHookPath.len (from Getenv)
 func NewGitHandler(
 	logger *slog.Logger,
 	baseDir string,
 	sessionID string,
 	gitProxyConfig interface{},
+	outcomes map[string][]string,
 	activityRecorder interface{},
 	processMode string,
 	isResume bool,
@@ -99,6 +122,7 @@ func NewGitHandler(
 		baseDir:           baseDir,           // 0x08
 		sessionID:         sessionID,         // 0x18
 		gitProxyConfig:    gitProxyConfig,    // 0x28
+		outcomes:          outcomes,          // 0x30
 		activityRecorder:  activityRecorder,  // 0x48
 		processMode:       processMode,       // 0x58
 		isResume:          isResume,           // 0x78
@@ -255,38 +279,22 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 
 	// Binary 0xaeb56e-0xaeb5b4: getAuthenticatedURL
 	// Passes ctx, repoURL, authProvider, permission="read"
-	authenticatedURL := h.getAuthenticatedURL(ctx, repoURL, h.authProvider, "read")
-
-	// Binary 0xaeb5d1-0xaeb5e6: check h.isResume (offset 0x78) and h.processMode == "allow-prefetched"
-	if h.isResume && h.processMode == "allow-prefetched" {
-		// Binary 0xaeb616-...: allow-prefetched resume path
-		if _, statErr := os.Stat(repoDir); statErr == nil {
-			// Repository exists, use existing clone
-			logger.Info("Repository already exists in allow-prefetched mode, using existing clone")
-		}
+	// Returns (authenticatedURL string, applied bool)
+	authenticatedURL, _ := h.getAuthenticatedURL(ctx, repoURL, h.authProvider, "read")
+	if authenticatedURL == "" {
+		authenticatedURL = repoURL
 	}
 
 	// Binary: clone/fetch the repository
 	cloneErr := h.cloneRepository(ctx, logger, gitSource, authenticatedURL, repoDir, repoURL, h.processMode)
+	if cloneErr != nil {
+		return cloneErr
+	}
 
 	// Binary: setup branch from outcomes
-	branchErr := h.setupBranchFromOutcomes(ctx, logger, gitSource, repoDir, authenticatedURL, h.authProvider)
-
-	if cloneErr != nil && branchErr != nil {
-		if h.isResume {
-			return fmt.Errorf("failed to setup branch from outcomes (clone also failed: %w): %w", cloneErr, branchErr)
-		}
-		return fmt.Errorf("failed to clone repository: %w", cloneErr)
-	}
-
-	if cloneErr != nil && branchErr == nil {
-		if h.isResume {
-			logger.Warn("Repository branch setup succeeded but clone/fetch had errors",
-				"error", cloneErr,
-			)
-		}
-	}
-
+	// Note: setupBranchFromOutcomes uses h.outcomes (offset 0x30) internally
+	// and checks against the repo name from the source
+	branchErr := h.setupBranchFromOutcomes(ctx, logger, repoDir, "", h.authProvider, authenticatedURL, gitSource.GitInfo.Repo)
 	if branchErr != nil {
 		return fmt.Errorf("failed to setup branch from outcomes: %w", branchErr)
 	}
@@ -400,20 +408,31 @@ func (h *GitHandler) ValidateRepositoryAccess(
 //
 // Closures:
 //
-//	func1 at 0xaf2200 — goroutine for computing pack size
-//	func2 at 0xaf1fc0 — goroutine for logging
-//	func3 at 0xaf1ee0 — goroutine for resetting origin URL
+//	func1 at 0xaf2200 — goroutine that calls runGitCommand (the actual git fetch/clone)
+//	func2 at 0xaf1fc0 — goroutine for activity recorder logging
+//	func3 at 0xaf1ee0 — goroutine that calls packSize and sends result over channel
 //
-// Key behaviors:
-//   - Logs "Cloning repository" with source details
-//   - Records "git_clone_started" via diag
-//   - In allow-prefetched mode with existing repo: logs and returns early
-//   - Runs git clone with --no-checkout if needed
-//   - Handles resume mode: fetches latest HEAD, continues with existing state
-//   - Disables auto gc: "git config gc.auto 0"
-//   - Handles empty repositories (no commits)
-//   - Calculates pack size after clone
-//   - Records "git_clone_completed" via diag with duration_ms, repo_size_bytes, pack_size_duration_ms
+// Key behaviors from disassembly:
+//   - 0xaef0d8-0xaef123: compares authenticatedURL with repoURL to set isCustomURL flag
+//   - 0xaef268: logs "Cloning repository" with attrs: repo, url, is_custom_url + more
+//   - 0xaef2c6: diag.LogEnvManagerNoPII(ctx, "git_clone_started", nil)
+//   - 0xaef2f3: sets up func1 closure (runGitCommand goroutine)
+//   - 0xaef3ba: sets up func2 closure (activity recorder goroutine)
+//   - 0xaef449: checks h.processMode length == 16 (allow-prefetched)
+//   - 0xaef454-0xaef476: checks h.processMode == "allow-prefetched"
+//   - If allow-prefetched with dir exists (0xaef4d1-0xaef5a3):
+//     logs "Repository already exists in allow-prefetched mode, using existing clone"
+//     then checks source.GitInfo.Ref for BYOC branch logic
+//   - 0xaef640: checks h.processMode == "fresh" (5 chars)
+//   - Fresh mode: calls runGitCommand("init", repoDir) then runGitCommand("remote", "add", "origin", URL)
+//     then runGitCommand("config", "gc.auto", "0")
+//     then runGitCommand("fetch", "--no-progress", "--depth", "50") with more args
+//   - Default mode: similar init+remote add+config+fetch pattern
+//   - After clone/fetch: checks source.GitInfo.Ref for BYOC branch checkout logic
+//   - BYOC: calls branchExistsOnRemote, fetchAndCheckoutRemoteBranch, createLocalBranch
+//   - Logs "Fetching specific ref" when Ref is set
+//   - Calculates pack size via goroutine (func3) sending sizeResult over channel
+//   - Logs completion and records diag "git_clone_completed"
 func (h *GitHandler) cloneRepository(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -423,86 +442,175 @@ func (h *GitHandler) cloneRepository(
 	repoURL string,
 	processMode string,
 ) error {
+	// Binary 0xaef0d8-0xaef123: compare authenticatedURL with repoURL
 	isCustomURL := authenticatedURL != repoURL
 
+	// Binary 0xaef268-0xaef286: slog.Logger.log "Cloning repository"
+	// with attrs: repo, url, is_custom_url, + more context attrs
 	logger.Info("Cloning repository",
 		"repo", source.GitInfo.Repo,
-		"url", source.GitInfo.Repo,
+		"url", repoURL,
 		"is_custom_url", isCustomURL,
 	)
 
 	startTime := time.Now()
 
-	// Binary: diag.LogEnvManagerNoPII(ctx, "git_clone_started", nil)
+	// Binary 0xaef2c6: diag.LogEnvManagerNoPII(ctx, "git_clone_started", nil)
 	diag.LogEnvManagerNoPII(ctx, "git_clone_started", nil)
 
-	// Check for allow-prefetched mode with existing repo
+	// Binary 0xaef449-0xaef476: check h.processMode == "allow-prefetched" (16 chars)
 	if processMode == "allow-prefetched" {
+		// Binary 0xaef4d1-0xaef4e6: filepath.Join(repoDir) then os.Stat to check existence
 		if _, err := os.Stat(repoDir); err == nil {
+			// Binary 0xaef585: log "Repository already exists in allow-prefetched mode, using existing clone"
 			logger.Info("Repository already exists in allow-prefetched mode, using existing clone")
-			// Disable auto gc
-			_, gcErr := h.runGitCommand(ctx, logger, repoDir, "config", "gc.auto", "0")
-			if gcErr != nil {
-				logger.Warn("Failed to disable auto gc")
+
+			// Binary: check source.GitInfo.Ref for BYOC branch logic within allow-prefetched
+			if source.GitInfo.Ref != nil && *source.GitInfo.Ref != "" {
+				branch := *source.GitInfo.Ref
+
+				// Binary 0xaf01de: log "BYOC resume: checking if task branch exists on remote"
+				logger.Info("BYOC resume: checking if task branch exists on remote",
+					"branch", branch,
+					"repo", source.GitInfo.Repo,
+					"url", repoURL,
+				)
+
+				if h.branchExistsOnRemote(ctx, logger, repoDir, authenticatedURL, branch) {
+					// Binary 0xaf02e3: log "BYOC resume: task branch exists on remote, fetching it"
+					logger.Info("BYOC resume: task branch exists on remote, fetching it",
+						"branch", branch,
+					)
+
+					err := h.fetchAndCheckoutRemoteBranch(ctx, logger, repoDir, authenticatedURL, branch)
+					if err != nil {
+						// Binary 0xaf03aa: fmt.Errorf("failed to fetch/checkout task branch: %w", err)
+						return fmt.Errorf("failed to fetch/checkout task branch: %w", err)
+					}
+
+					// Binary 0xaf0526: log "Repository resumed successfully with task branch"
+					// with 6 attrs: repo, url, branch, + more
+					logger.Info("Repository resumed successfully with task branch",
+						"repo", source.GitInfo.Repo,
+						"url", repoURL,
+						"branch", branch,
+					)
+					return nil
+				}
+
+				// Binary 0xaf065f: log "BYOC resume: task branch not found on remote, falling back to original ref"
+				logger.Info("BYOC resume: task branch not found on remote, falling back to original ref",
+					"branch", branch,
+					"repo", source.GitInfo.Repo,
+					"url", repoURL,
+				)
 			}
+
+			// Binary: log "Fetching specific ref" then do fetch
+			logger.Info("Fetching specific ref",
+				"repo", source.GitInfo.Repo,
+			)
+
 			return nil
 		}
-		logger.Info("Repository directory does not exist in allow-prefetched mode, will fall back to fresh clone")
 	}
 
-	// Check for resume mode
-	if h.isResume {
-		if _, err := os.Stat(repoDir); err == nil {
-			// Fetch latest HEAD for resume
-			logger.Info("Fetching latest HEAD for resume")
-			_, fetchErr := h.runGitCommand(ctx, logger, repoDir, "fetch", "origin")
-			if fetchErr != nil {
-				logger.Warn("Failed to fetch latest HEAD, continuing with existing state")
-			} else {
-				logger.Info("Successfully fetched latest HEAD")
-			}
-			return nil
+	// Binary 0xaef640-0xaef660: check h.processMode == "fresh" (5 chars: "fresh")
+	// Fresh mode: git init + git remote add origin
+	// Default mode: same pattern
+
+	// Binary 0xaef666-0xaef6ee: for "fresh" mode:
+	//   runGitCommand(ctx, logger, "", "init", repoDir)
+	if processMode == "fresh" {
+		_, err := h.runGitCommand(ctx, logger, "", "init", repoDir)
+		if err != nil {
+			return fmt.Errorf("failed to init repository: %w", err)
 		}
 	}
 
-	// Clone the repository
-	if source.GitInfo.Ref != nil && *source.GitInfo.Ref != "" {
-		// Clone with specific ref
-		logger.Info("Fetching specific ref")
-	}
-
-	// Default clone
-	logger.Info("Cloning default branch")
-
-	args := []string{"clone"}
-	if processMode != "test-file" {
-		args = append(args, "--no-checkout")
-	}
-	args = append(args, authenticatedURL, repoDir)
-
-	_, err := h.runGitCommand(ctx, logger, "", args[0], args[1:]...)
+	// Binary 0xaef700-0xaef7f7: runGitCommand(ctx, logger, repoDir, "remote", "add", "origin", authenticatedURL)
+	_, err := h.runGitCommand(ctx, logger, repoDir, "remote", "add", "origin", authenticatedURL)
 	if err != nil {
-		logger.Error("Failed to clone repository",
+		logger.Warn("Failed to add remote origin",
 			"error", err,
 		)
-		// Binary: diag.LogEnvManagerNoPII(ctx, "git_clone_failed", nil)
-		diag.LogEnvManagerNoPII(ctx, "git_clone_failed", nil)
-		return fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	// Check if repository is empty
-	empty, _ := h.isEmptyRepository(ctx, logger, repoDir, authenticatedURL)
-	if empty {
-		logger.Info("Repository is empty (no commits), skipping checkout")
-	}
-
-	// Disable auto gc
+	// Binary 0xaef895-0xaef9a9: runGitCommand(ctx, logger, repoDir, "config", "gc.auto", "0")
 	_, gcErr := h.runGitCommand(ctx, logger, repoDir, "config", "gc.auto", "0")
 	if gcErr != nil {
 		logger.Warn("Failed to disable auto gc")
 	}
 
-	// Calculate pack size
+	// Binary 0xaef9ae onwards: build fetch args with "--depth", "50", "--no-progress"
+	// and additional args depending on Ref
+	fetchArgs := []string{"fetch", "--depth", "50", "--no-progress"}
+	if source.GitInfo.Ref != nil && *source.GitInfo.Ref != "" {
+		fetchArgs = append(fetchArgs, "origin", *source.GitInfo.Ref)
+	} else {
+		fetchArgs = append(fetchArgs, "origin")
+	}
+
+	_, fetchErr := h.runGitCommand(ctx, logger, repoDir, fetchArgs[0], fetchArgs[1:]...)
+	if fetchErr != nil {
+		logger.Error("Failed to fetch repository",
+			"error", fetchErr,
+		)
+		return fmt.Errorf("failed to fetch repository: %w", fetchErr)
+	}
+
+	// Binary: check source.GitInfo.Ref for post-fetch BYOC branch setup
+	if source.GitInfo.Ref != nil && *source.GitInfo.Ref != "" {
+		branch := *source.GitInfo.Ref
+
+		// Check if processMode is "allow-prefetched" for BYOC logic
+		if processMode == "allow-prefetched" && isCustomURL {
+			// Binary 0xaf00c9-0xaf0685: BYOC branch setup using outcomes map
+			// Accesses h.outcomes map to check if branch setup is needed
+			if h.outcomes != nil {
+				if branchList, ok := h.outcomes[source.GitInfo.Repo]; ok && len(branchList) > 0 {
+					targetBranch := branchList[0]
+
+					logger.Info("BYOC resume: checking if task branch exists on remote",
+						"branch", targetBranch,
+						"repo", source.GitInfo.Repo,
+						"url", repoURL,
+					)
+
+					if h.branchExistsOnRemote(ctx, logger, repoDir, authenticatedURL, targetBranch) {
+						logger.Info("BYOC resume: task branch exists on remote, fetching it",
+							"branch", targetBranch,
+						)
+
+						err := h.fetchAndCheckoutRemoteBranch(ctx, logger, repoDir, authenticatedURL, targetBranch)
+						if err != nil {
+							return fmt.Errorf("failed to fetch/checkout task branch: %w", err)
+						}
+
+						logger.Info("Repository resumed successfully with task branch",
+							"repo", source.GitInfo.Repo,
+							"url", repoURL,
+							"branch", targetBranch,
+						)
+						return nil
+					}
+
+					logger.Info("BYOC resume: task branch not found on remote, falling back to original ref",
+						"branch", targetBranch,
+						"repo", source.GitInfo.Repo,
+						"url", repoURL,
+					)
+				}
+			}
+		}
+
+		// Standard ref checkout: "Fetching specific ref"
+		logger.Info("Fetching specific ref",
+			"repo", source.GitInfo.Repo,
+		)
+	}
+
+	// Binary func3 (0xaf1ee0): goroutine that calculates pack size and sends over channel
 	packSizeStart := time.Now()
 	repoSize, packErr := packSize(repoDir)
 	packDuration := time.Since(packSizeStart)
@@ -525,15 +633,6 @@ func (h *GitHandler) cloneRepository(
 		"repo_size_bytes":       repoSize,
 		"pack_size_duration_ms": packDuration.Milliseconds(),
 	})
-
-	// Reset origin URL to non-authenticated URL
-	logger.Info("Resetting origin URL to non-authenticated URL")
-	_, resetErr := h.runGitCommand(ctx, logger, repoDir, "remote", "set-url", "origin", repoURL)
-	if resetErr != nil {
-		logger.Warn("Failed to reset origin URL",
-			"error", resetErr,
-		)
-	}
 
 	return nil
 }
@@ -1067,78 +1166,104 @@ func (h *GitHandler) runPostCloneHook(
 }
 
 // setupBranchFromOutcomes sets up the branch for the repository
-// based on the outcomes configuration.
+// based on the outcomes map stored at h.outcomes (offset 0x30).
 //
 // Binary address: 0xaf4740
 // Source file: git.go
 //
-// Key behaviors:
-//   - Checks if outcomes map has an entry for the repo
-//   - Logs "Processing branch from outcomes"
-//   - In resume mode: may create local branch directly
-//     logs "Resume mode: creating local branch directly"
-//     returns "failed to create local branch %s: %w" on failure
-//   - Calls checkoutBranch for the target branch
-//   - May skip if already on target branch:
-//     logs "Already on target branch, skipping checkout"
-//   - On success: logs "Successfully processed branch"
+// Parameters (register ABI):
+//
+//	AX: self, BX+CX: logger, DI+SI: repoDir string,
+//	R8+R9: branch string, R10+R11: authProvider (interface),
+//	stack: authenticatedURL string, repo name string
+//
+// Key behaviors from disassembly:
+//   - 0xaf4785: loads h.outcomes (self+0x30), nil check → return nil if nil
+//   - 0xaf47f4: mapaccess2_faststr on outcomes with repo name key
+//   - 0xaf4808: if key not found or value empty → return nil
+//   - 0xaf49e0: runs "git branch --show-current" to get current branch
+//   - 0xaf4a40-0xaf4a67: compares current branch with target → if equal, logs
+//     "Already on target branch, skipping checkout" and returns nil
+//   - 0xaf4a7f-0xaf4aa0: checks h.processMode == "resume" (6 chars)
+//   - If resume: logs "Resume mode: creating local branch directly" (0xaf4b29),
+//     calls createLocalBranch, returns "failed to create local branch %s: %w" on error
+//   - If not resume: calls checkoutBranch (0xaf4ca0),
+//     returns "failed to checkout branch %s: %w" on error
+//   - On success: logs "Successfully processed branch" (0xaf4d37)
 func (h *GitHandler) setupBranchFromOutcomes(
 	ctx context.Context,
 	logger *slog.Logger,
-	source config.GitRepositorySource,
 	repoDir string,
-	authenticatedURL string,
+	branch string,
 	authProvider auth.SourceAuthProvider,
+	authenticatedURL string,
+	repoName string,
 ) error {
-	// Binary: outcomes is at offset 0x68 (nil initially, set externally)
-	// NOTE: The outcomes field is not currently in the struct at a known offset.
-	// Based on binary analysis, it may be passed via a different mechanism.
-	// For now, we use the authProvider for branch setup decisions.
-
-	// The actual branch info comes from the source's Ref field
-	if source.GitInfo.Ref == nil || *source.GitInfo.Ref == "" {
+	// Binary 0xaf4785: load h.outcomes (self+0x30), nil check
+	if h.outcomes == nil {
 		return nil
 	}
 
-	branch := *source.GitInfo.Ref
+	// Binary 0xaf47f4: mapaccess2_faststr — look up repo name in outcomes
+	branches, ok := h.outcomes[repoName]
+	if !ok || len(branches) == 0 {
+		return nil
+	}
 
+	targetBranch := branches[0]
+
+	// Binary 0xaf4942-0xaf4962: log "Processing branch from outcomes" with 6 attrs
+	// Attrs: repo, branch, process_mode (and 3 more from slog internals)
 	logger.Info("Processing branch from outcomes",
-		"branch", branch,
-		"repo", source.GitInfo.Repo,
+		"repo", repoName,
+		"branch", targetBranch,
+		"process_mode", h.processMode,
 	)
 
-	// Check if resume mode with BYOC
-	if h.isResume {
-		// Check if task branch exists on remote
-		logger.Info("BYOC resume: checking if task branch exists on remote")
-		if h.branchExistsOnRemote(ctx, logger, repoDir, authenticatedURL, branch) {
-			logger.Info("BYOC resume: task branch exists on remote, fetching it")
-			err := h.fetchAndCheckoutRemoteBranch(ctx, logger, repoDir, authenticatedURL, branch)
-			if err != nil {
-				return fmt.Errorf("failed to fetch/checkout task branch: %w", err)
-			}
-			logger.Info("Repository resumed successfully with task branch")
+	// Binary 0xaf49bf-0xaf4a20: exec.CommandContext("git", "branch", "--show-current")
+	// with Dir set to repoDir
+	cmd := exec.CommandContext(ctx, "git", "branch", "--show-current")
+	cmd.Dir = repoDir
+	cmd.Env = os.Environ()
+	currentBranchOutput, err := cmd.Output()
+
+	// Binary 0xaf4a34-0xaf4a67: if no error, trim and compare with target branch
+	if err == nil {
+		currentBranch := strings.TrimSpace(string(currentBranchOutput))
+		if currentBranch == targetBranch {
+			// Binary 0xaf4e10-0xaf4eb7: log "Already on target branch, skipping checkout"
+			logger.Info("Already on target branch, skipping checkout",
+				"branch", targetBranch,
+			)
 			return nil
-		}
-
-		logger.Info("BYOC resume: task branch not found on remote, falling back to original ref")
-
-		// Create local branch directly
-		logger.Info("Resume mode: creating local branch directly")
-		_, err := h.runGitCommand(ctx, logger, repoDir, "checkout", "-b", branch)
-		if err != nil {
-			return fmt.Errorf("failed to create local branch %s: %w", branch, err)
-		}
-	} else {
-		// Normal mode: checkout or create branch
-		err := h.checkoutBranch(ctx, logger, repoDir, authenticatedURL, branch)
-		if err != nil {
-			return err
 		}
 	}
 
+	// Binary 0xaf4a7f-0xaf4aa0: check h.processMode == "resume" (6 chars, 0x75736572 + 0x656d)
+	if h.processMode == "resume" {
+		// Binary 0xaf4b29: log "Resume mode: creating local branch directly"
+		logger.Info("Resume mode: creating local branch directly",
+			"branch", targetBranch,
+		)
+
+		// Binary 0xaf4b80: call createLocalBranch
+		err := h.createLocalBranch(ctx, logger, repoDir, targetBranch)
+		if err != nil {
+			// Binary 0xaf4c0a: fmt.Errorf("failed to create local branch %s: %w", ...)
+			return fmt.Errorf("failed to create local branch %s: %w", targetBranch, err)
+		}
+	} else {
+		// Binary 0xaf4ca0: call checkoutBranch
+		err := h.checkoutBranch(ctx, logger, repoDir, authenticatedURL, targetBranch)
+		if err != nil {
+			// Binary 0xaf4de6: fmt.Errorf("failed to checkout branch %s: %w", ...)
+			return fmt.Errorf("failed to checkout branch %s: %w", targetBranch, err)
+		}
+	}
+
+	// Binary 0xaf4d37: log "Successfully processed branch"
 	logger.Info("Successfully processed branch",
-		"branch", branch,
+		"branch", targetBranch,
 	)
 
 	return nil
