@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -111,7 +110,7 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 
 			// Step 6: Discover identity via whoami.
 			// Binary: 0xb740c0 NewWhoamiClient, 0xb740e4 GetIdentity
-			whoamiClient := orchestrator.NewWhoamiClient(log, apiURL, secret)
+			whoamiClient := orchestrator.NewWhoamiClient(apiURL, secret, sessionID, log)
 			identity, err := whoamiClient.GetIdentity(context.Background())
 			if err != nil {
 				log.Warn("Failed to get identity via whoami",
@@ -126,8 +125,8 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 
 			// Step 7: Create poll hook and poller.
 			// Binary: 0xb7470a NewPollHook, 0xb7476c NewPollerWithWorkerID
-			pollHook := orchestrator.NewPollHook(log, hookCommand, taskCommand, hookTimeout, sandboxBackend)
-			poller := orchestrator.NewPollerWithWorkerID(log, apiURL, secret, pollInterval, pollHook, identity)
+			_ = orchestrator.NewPollHook(nil, hookCommand, hookTimeout, nil, sandboxEnabled, sandboxBackend, nil, log)
+			poller := orchestrator.NewPollerWithWorkerID(apiURL, sessionID, secret, secretPath, workID, log)
 
 			// Step 8: Install sandbox runtime if configured.
 			// Binary: 0xb74ac0 os.Getenv, 0xb74af0 InstallSandboxRuntime
@@ -135,7 +134,7 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 				log.Info("Installing sandbox runtime",
 					"backend", sandboxBackend,
 				)
-				if err := sandbox.InstallSandboxRuntime(context.Background(), log, sandboxBackend); err != nil {
+				if err := sandbox.InstallSandboxRuntime(log, context.Background(), sandboxBackend); err != nil {
 					return fmt.Errorf("failed to install sandbox runtime: %w", err)
 				}
 			}
@@ -153,7 +152,7 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 
 			// Step 10: Create orchestrator.
 			// Binary: 0xb75421 NewOrchestrator
-			orch, err := orchestrator.NewOrchestrator(log, poller, maxPollRetries, maxHookRetries, sessionTimeout, sessionBackoff, mode)
+			orch, err := orchestrator.NewOrchestrator(poller, sessionID, sessionTimeout, sessionBackoff, mode, log)
 			if err != nil {
 				return fmt.Errorf("failed to create orchestrator: %w", err)
 			}

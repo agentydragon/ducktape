@@ -85,25 +85,6 @@ func getSandboxSettings() interface{} {
 	}
 }
 
-// noopActivityRecorder is a no-op implementation of the activity recorder
-// interface, used when activity recording is disabled.
-type noopActivityRecorder struct{}
-
-// RecordActivity is a no-op.
-//
-// Binary: 0xb76ea0 - (*noopActivityRecorder).RecordActivity
-func (n *noopActivityRecorder) RecordActivity() {}
-
-// RecordLongRunningActivity is a no-op.
-//
-// Binary: 0xb76ec0 - (*noopActivityRecorder).RecordLongRunningActivity
-func (n *noopActivityRecorder) RecordLongRunningActivity() {}
-
-// RecordFailureResult is a no-op.
-//
-// Binary: 0xb76ee0 - (*noopActivityRecorder).RecordFailureResult
-func (n *noopActivityRecorder) RecordFailureResult() {}
-
 // noopStopper is a no-op implementation of a stopper interface.
 type noopStopper struct{}
 

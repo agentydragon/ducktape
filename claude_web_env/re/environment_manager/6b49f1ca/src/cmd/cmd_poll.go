@@ -99,6 +99,7 @@ func AddPollCommand(rootCmd *cobra.Command) {
 			// Binary: 0xb763f8 NewWhoamiClient, 0xb76407 GetIdentity
 			whoamiClient := orchestrator.NewWhoamiClient(apiURL, serviceKey, sessionID, log)
 			identity, err := whoamiClient.GetIdentity(cmd.Context())
+			_ = identity
 			if err != nil {
 				// Step 4a: Check if sessionID and workID were provided.
 				// Binary: 0xb76415-0xb76555 - checks closed-over sessionID and workID ptrs

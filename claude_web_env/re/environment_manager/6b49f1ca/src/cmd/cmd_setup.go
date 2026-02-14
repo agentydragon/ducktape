@@ -12,11 +12,13 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/api"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/claude"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/logger"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/orchestrator"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/sandbox"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/session"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -26,9 +28,13 @@ import (
 // Binary: itab at 0xf630f0
 type noopActivityRecorder struct{}
 
-func (n *noopActivityRecorder) RecordActivity(_ string, _ ...any) {}
-func (n *noopActivityRecorder) RecordLongRunningActivity(_ string, _ ...any) {}
-func (n *noopActivityRecorder) RecordFailureResult(_ string, _ ...any) {}
+func (n *noopActivityRecorder) RecordActivity(_ api.LogCategory, _ string) error { return nil }
+func (n *noopActivityRecorder) RecordFailureResult(_ api.LogCategory, _ string, _ string) error {
+	return nil
+}
+func (n *noopActivityRecorder) RecordLongRunningActivity(_ api.LogCategory, _ string) *util.PeriodicInvoker {
+	return nil
+}
 
 // Compile-time check that noopActivityRecorder implements session.ActivityRecorder.
 var _ session.ActivityRecorder = (*noopActivityRecorder)(nil)
@@ -290,7 +296,7 @@ func runAPIHealthcheck(ctx context.Context, log *slog.Logger, apiURL string, ser
 	log.Info("Running API connectivity healthcheck")
 
 	// Binary: 0xb77547 - NewWhoamiClient
-	client := orchestrator.NewWhoamiClient(apiURL, serviceKey, log)
+	client := orchestrator.NewWhoamiClient(apiURL, serviceKey, "", log)
 
 	// Binary: 0xb77560 - GetIdentity
 	identity, err := client.GetIdentity(ctx)
@@ -301,8 +307,8 @@ func runAPIHealthcheck(ctx context.Context, log *slog.Logger, apiURL string, ser
 
 	// Binary: 0xb775b3-0xb776b4 - slog.Info with identity fields
 	log.Info("API connectivity verified",
-		"environment_id", identity.EnvironmentID,
-		"organization_uuid", identity.OrganizationUUID,
+		"environment_id", identity.SessionID,
+		"organization_uuid", identity.OrgID,
 	)
 
 	// Binary: 0xb776b9-0xb776c5 - return nil
@@ -410,7 +416,7 @@ func installClaudeCode(ctx context.Context, log *slog.Logger, claudeCodeVersion 
 
 	// Binary: 0xb78078 - claude.InstallOrUpdateClaudeCode
 	// Uses a noopActivityRecorder (itab at 0xf630f0)
-	err := claude.InstallOrUpdateClaudeCode(ctx, claudeCodeVersion, claudeDefaultPath, &noopActivityRecorder{})
+	_, err := claude.InstallOrUpdateClaudeCode(log, ctx, claudeCodeVersion, claudeDefaultPath, &noopActivityRecorder{}, nil)
 	if err != nil {
 		// Binary: 0xb78085-0xb780c0 - fmt.Errorf
 		return fmt.Errorf("failed to install Claude Code: %w", err)
@@ -445,7 +451,7 @@ func installSandboxRuntime(ctx context.Context, log *slog.Logger, sandboxRuntime
 	log.Info("Installing sandbox-runtime", "version", sandboxRuntimeVersion)
 
 	// Binary: 0xb78258 - sandbox.InstallSandboxRuntime
-	err := sandbox.InstallSandboxRuntime(ctx, sandboxRuntimeVersion, log)
+	err := sandbox.InstallSandboxRuntime(log, ctx, sandboxRuntimeVersion)
 	if err != nil {
 		// Binary: 0xb78265-0xb782a0 - fmt.Errorf
 		return fmt.Errorf("failed to install sandbox-runtime: %w", err)

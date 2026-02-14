@@ -126,7 +126,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			}
 
 			// 0xb78e8a: Acquire container-level lock
-			lockRelease, err := util.AcquireLock(slogger)
+			lockRelease, err := util.AcquireLock(cmd.Context(), "task-run", sessionID)
 			if err != nil {
 				return fmt.Errorf("failed to acquire lock: %w", err)
 			}
@@ -198,7 +198,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			_ = stdinParseDuration
 
 			// 0xb79583: Create activity recorder
-			activityRecorder := session.NewActivityRecorder(slogger)
+			activityRecorder := session.NewActivityRecorder(nil, slogger, sessionID)
 			_ = activityRecorder
 
 			// 0xb795a0: Get SKIP_GIT_CONFIG env var
@@ -219,7 +219,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				// 0xb79720-0xb79799: Install or update Claude Code with timeout
 				installStart := time.Now()
 				installCtx, installCancel := context.WithTimeout(context.Background(), 10*time.Minute)
-				err = claude.InstallOrUpdateClaudeCode(installCtx, slogger)
+				_, err = claude.InstallOrUpdateClaudeCode(slogger, installCtx, "", "", nil, nil)
 				installCancel()
 				installDuration := time.Since(installStart)
 				_ = installDuration
@@ -245,7 +245,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			}
 
 			// 0xb79969: Log env manager start event (no PII)
-			diag.LogEnvManagerNoPII(diagService, "start_task_run")
+			diag.LogEnvManagerNoPII(diagService, "start_task_run", nil)
 
 			// 0xb79996: Get OTEL endpoint from env (for telemetry)
 			otelEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -259,10 +259,10 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			_ = o11yService
 
 			// 0xb79bc0: Increment start counter
-			o11y.Increment("env_manager.start.count")
+			o11y.Increment(context.Background(), nil, nil)
 
 			// 0xb79d38: Record startup duration metric
-			o11y.RecordDuration("env_manager.startup.total", startTime)
+			o11y.RecordDuration("env_manager.startup.total", nil, nil, float64(time.Since(startTime).Milliseconds()))
 
 			// 0xb79d91: Validate session configuration
 			if err := sess.Validate(); err != nil {
@@ -345,14 +345,14 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 					"error", managerErr,
 					"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 				)
-				o11y.IncrementEnvManagerEnd("failure")
-				diag.LogEnvManagerNoPII(diagService, "end_task_run_failure")
+				o11y.IncrementEnvManagerEnd("failure", nil, "", "", "", nil, nil)
+				diag.LogEnvManagerNoPII(diagService, "end_task_run_failure", nil)
 				return fmt.Errorf("environment manager failed: %w", managerErr)
 			}
 
 			// 0xb7ab03-0xb7abea: Manager completed successfully
-			o11y.IncrementEnvManagerEnd("success")
-			diag.LogEnvManagerNoPII(diagService, "end_task_run")
+			o11y.IncrementEnvManagerEnd("success", nil, "", "", "", nil, nil)
+			diag.LogEnvManagerNoPII(diagService, "end_task_run", nil)
 
 			slogger.Info("Environment manager completed successfully",
 				"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
@@ -795,15 +795,15 @@ func initDiagLogging(
 		return nil, nil, nil
 	}
 
-	httpClient := api.NewHttpClient(apiURL, secretPath, secretKey, nil)
+	_ = api.NewHttpClient(apiURL, secretPath, secretKey, nil)
 
 	flusher := &diag.SessionIngressLogFlusher{
-		Client:     httpClient,
-		SecretPath: secretPath,
-		SecretKey:  secretKey,
+		Client:    nil,
+		SessionID: sessionID,
+		AuthToken: secretKey,
 	}
 
-	diagService, err := diag.NewDiagService(slogger, sessionID, flusher)
+	diagService, err, _ := diag.NewDiagService(context.Background(), sessionID, context.Background(), flusher)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize diagnostic logging service: %w", err)
 	}
@@ -819,9 +819,7 @@ func initDiagLogging(
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		if err := diagService.Shutdown(ctx); err != nil {
-			slogger.Error("Failed to shutdown diagnostic logging service", "error", err)
-		}
+		diagService.Shutdown(ctx, sessionID)
 	}
 
 	return diagService, cleanup, nil
