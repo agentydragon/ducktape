@@ -31,8 +31,9 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, model_validator
 
 from openai_utils.model_metadata import ModelMetadata as BaseModelMetadata
 
@@ -74,6 +75,29 @@ class CustomModelConfig(BaseModelMetadata):
     upstream_model: str
 
 
+class DockerExecutorConfig(BaseModel):
+    """Configuration for the Docker container executor."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["docker"] = "docker"
+    extra_hosts: dict[str, str] = Field(default_factory=dict)
+
+
+class KubernetesExecutorConfig(BaseModel):
+    """Configuration for the Kubernetes container executor."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: Literal["kubernetes"] = "kubernetes"
+    namespace: str
+    kubeconfig: str | None = None
+    image_pull_secret: str | None = None
+
+
+ExecutorConfig = Annotated[DockerExecutorConfig | KubernetesExecutorConfig, Discriminator("type")]
+
+
 class PropsConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -82,6 +106,7 @@ class PropsConfig(BaseModel):
     agent_env: dict[str, str]
     upstreams: dict[str, UpstreamConfig] = {}
     models: list[CustomModelConfig] = []
+    executor: ExecutorConfig = Field(default_factory=DockerExecutorConfig)
 
 
 def load_config(path: Path) -> PropsConfig:

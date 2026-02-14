@@ -1,7 +1,7 @@
 """Agent registry - unified orchestration layer for agent runs.
 
 AgentRegistry is THE entry point for running agents. It owns shared resources
-(Docker client, database config).
+(container executor, database config).
 
 In-container architecture:
 - Container runs its own agent loop (CMD entrypoint)
@@ -11,8 +11,11 @@ In-container architecture:
 - Host scaffold: creates temp DB user, starts container, waits for exit
 
 Usage:
+    from props.orchestration.docker_executor import DockerExecutor
+
+    executor = DockerExecutor(docker_client, network_name="props-agents")
     registry = AgentRegistry(
-        docker_client=docker_client,
+        executor=executor,
         db=db,
         backend_url="http://props-backend:8000",
         agent_base_env=config.agent_env,
@@ -32,7 +35,6 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -41,7 +43,6 @@ from pathlib import Path
 from types import TracebackType
 from uuid import UUID, uuid4
 
-import aiodocker
 import httpx
 
 from props.core.agent_types import (
@@ -61,7 +62,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, Snapshot
 from props.orchestration.agent_credentials import ensure_agent_role
-from props.orchestration.docker_env import PROPS_NETWORK_NAME
+from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult
 
 logger = logging.getLogger(__name__)
 
@@ -88,46 +89,7 @@ class ResolvedImage:
     oci_ref: str
 
 
-# --- Container Result ---
-
-
-@dataclass(frozen=True)
-class ContainerResult:
-    """Result of running an agent container. exit_code is None if the container timed out."""
-
-    stdout: str
-    stderr: str
-    exit_code: int | None
-
-    @property
-    def timed_out(self) -> bool:
-        return self.exit_code is None
-
-
 # --- Agent Run View ---
-
-
-class GraderHandle:
-    """Handle for a running grader container. Call kill() to stop it."""
-
-    def __init__(self, container_name: str, docker_client: aiodocker.Docker) -> None:
-        self.container_name = container_name
-        self._docker_client = docker_client
-
-    async def kill(self) -> None:
-        """Kill and remove the container."""
-        try:
-            container = await self._docker_client.containers.get(self.container_name)
-            await container.kill()
-            logger.info("Killed container %s", self.container_name)
-        except Exception as e:
-            logger.warning("Failed to kill container %s: %s", self.container_name, e)
-        try:
-            container = await self._docker_client.containers.get(self.container_name)
-            await container.delete(force=True)
-            logger.info("Deleted container %s", self.container_name)
-        except Exception as e:
-            logger.warning("Failed to delete container %s: %s", self.container_name, e)
 
 
 @dataclass
@@ -155,28 +117,27 @@ class AgentRegistry:
     """Unified orchestration layer for agent runs using in-container architecture.
 
     Owns shared resources and provides the single entry point for execution.
+    Container lifecycle is delegated to a ContainerExecutor (Docker, Kubernetes, etc.).
     """
 
     def __init__(
         self,
-        docker_client: aiodocker.Docker,
+        executor: ContainerExecutor,
         db: Database,
         db_config: DatabaseConfig,
         backend_url: str,
         agent_base_env: dict[str, str],
         registry_config: RegistryProxyConfig,
-        extra_hosts: dict[str, str] | None = None,
     ) -> None:
-        self._docker_client = docker_client
+        self._executor = executor
         self._db = db
         self._db_config = db_config
         self._backend_url = backend_url
         self._agent_base_env = agent_base_env
         self._registry_config = registry_config
-        self._extra_hosts = extra_hosts
 
     async def close(self) -> None:
-        await self._docker_client.close()
+        await self._executor.close()
 
     async def __aenter__(self) -> AgentRegistry:
         return self
@@ -189,22 +150,9 @@ class AgentRegistry:
     # --- Image Resolution ---
 
     async def _pull_image(self, image: str) -> str:
-        """Pull an OCI image to the local Docker daemon, returning its image ID."""
+        """Ensure image is available to the executor, returning a runtime-specific image ID."""
         full_ref = self._registry_config.normalize_image_ref(image)
-        try:
-            info = await self._docker_client.images.inspect(full_ref)
-            image_id: str = info["Id"]
-            logger.info("Using cached image %s for %s", image_id[:19], full_ref)
-            return image_id
-        except Exception:
-            pass  # Not found locally, pull
-        logger.info("Pulling image %s", full_ref)
-        auth = {"username": self._db_config.user, "password": self._db_config.password}
-        await self._docker_client.pull(full_ref, auth=auth)
-        info = await self._docker_client.images.inspect(full_ref)
-        image_id = info["Id"]
-        logger.info("Pulled image %s for %s", image_id[:19], full_ref)
-        return image_id
+        return await self._executor.ensure_image(full_ref)
 
     async def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
         """Resolve image reference to digest via registry proxy.
@@ -263,10 +211,8 @@ class AgentRegistry:
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
         return ResolvedImage(digest=digest, oci_ref=oci_ref)
 
-    async def _create_container(
-        self, agent_run_id: UUID, *, image: str
-    ) -> tuple[aiodocker.containers.DockerContainer, str]:
-        """Pull image, create DB role, create and start an agent container."""
+    async def _create_container(self, agent_run_id: UUID, *, image: str) -> ContainerHandle:
+        """Ensure image, create DB role, create and start an agent container."""
         image_id = await self._pull_image(image)
         logger.info("Using image %s from %s", image_id[:19], image)
 
@@ -287,26 +233,12 @@ class AgentRegistry:
             "OPENAI_API_KEY": api_key,
         }
 
-        host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
-        if self._extra_hosts:
-            host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
-
-        container_config = {
-            "Image": image_id,
-            "Env": [f"{k}={v}" for k, v in env.items()],
-            "HostConfig": host_config,
-            "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
-        }
-
-        container = await self._docker_client.containers.create(
-            container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
+        return await self._executor.run_container(
             name=name,
+            image_id=image_id,
+            env=env,
+            labels={"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
         )
-        logger.info("Created container %s", name)
-
-        await container.start()
-        logger.info("Started container %s", name)
-        return container, name
 
     async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
         """Run agent container, update DB status, return final status.
@@ -314,43 +246,22 @@ class AgentRegistry:
         Full lifecycle: create container → wait for exit → capture logs → update status.
         timeout_seconds=None means no timeout (for long-running agents).
         """
-        container, name = await self._create_container(agent_run_id, image=image)
+        handle = await self._create_container(agent_run_id, image=image)
         try:
-            # Wait for container to exit (with optional timeout)
-            result: ContainerResult
-            try:
-                if timeout_seconds is not None:
-                    exit_info = await asyncio.wait_for(container.wait(), timeout=timeout_seconds)
-                else:
-                    exit_info = await container.wait()
-
-                stdout = "".join(await container.log(stdout=True, stderr=False))
-                stderr = "".join(await container.log(stdout=False, stderr=True))
-                exit_code = exit_info.get("StatusCode", 1)
-                result = ContainerResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
-                logger.info("Container %s exited with code %d", name, exit_code)
-            except TimeoutError:
-                logger.error("Container %s timed out after %d seconds", name, timeout_seconds)
-                try:
-                    await container.kill()
-                except Exception as e:
-                    logger.warning("Failed to kill timed-out container: %s", e)
-                stdout = "".join(await container.log(stdout=True, stderr=False))
-                stderr = "".join(await container.log(stdout=False, stderr=True))
-                result = ContainerResult(stdout=stdout, stderr=stderr, exit_code=None)
+            result: ContainerResult = await handle.wait(timeout_seconds=timeout_seconds)
 
             # Log container output
             if result.exit_code == 0:
-                logger.info("Container %s stdout:\n%s", name, result.stdout)
+                logger.info("Container %s stdout:\n%s", handle.name, result.stdout)
                 if result.stderr:
-                    logger.info("Container %s stderr:\n%s", name, result.stderr)
+                    logger.info("Container %s stderr:\n%s", handle.name, result.stderr)
             else:
-                logger.error("Container %s stdout:\n%s", name, result.stdout)
-                logger.error("Container %s stderr:\n%s", name, result.stderr)
+                logger.error("Container %s stdout:\n%s", handle.name, result.stdout)
+                logger.error("Container %s stderr:\n%s", handle.name, result.stderr)
 
         finally:
             try:
-                await container.delete(force=True)
+                await handle.kill_and_delete()
                 logger.info("Deleted container")
             except Exception as e:
                 logger.warning("Failed to delete container: %s", e)
@@ -523,14 +434,6 @@ class AgentRegistry:
             runs = session.query(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit).all()
             return [AgentRunView.from_orm(r) for r in runs]
 
-    async def _start_agent(self, agent_run_id: UUID, *, image: str) -> str:
-        """Create and start an agent container, returning the container name.
-
-        Does NOT wait for the container to exit — caller manages the lifecycle.
-        """
-        _, name = await self._create_container(agent_run_id, image=image)
-        return name
-
     async def run_snapshot_grader(self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str) -> UUID:
         """Run a snapshot grader. Blocks until it exits."""
         agent_run_id = self._create_run(
@@ -545,7 +448,7 @@ class AgentRegistry:
 
     async def start_snapshot_grader(
         self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str
-    ) -> GraderHandle:
+    ) -> ContainerHandle:
         """Start a snapshot grader, returning a handle to kill it."""
         agent_run_id = self._create_run(
             image=image,
@@ -554,5 +457,4 @@ class AgentRegistry:
             budget_usd=10_000.0,
             verify_snapshot=snapshot_slug,
         )
-        container_name = await self._start_agent(agent_run_id, image=image.oci_ref)
-        return GraderHandle(container_name=container_name, docker_client=self._docker_client)
+        return await self._create_container(agent_run_id, image=image.oci_ref)

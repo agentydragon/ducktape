@@ -20,7 +20,6 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-import aiodocker
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -34,6 +33,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.orchestration.agent_registry import AgentRegistry
+from props.orchestration.executor_factory import create_executor
 from props.orchestration.grader_supervisor import GraderSupervisor
 
 # Configure logging on module import
@@ -57,7 +57,6 @@ class BackendDeps:
     grader_model: str | None = None
     host: str = "127.0.0.1"
     port: int = 8000
-    extra_hosts: dict[str, str] | None = None
 
 
 def _make_lifespan(deps: BackendDeps):
@@ -65,7 +64,6 @@ def _make_lifespan(deps: BackendDeps):
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Starting props backend...")
 
-        docker_client = aiodocker.Docker()
         db_config = DatabaseConfig()
         db = Database(db_config)
         app.state.admin_db = db
@@ -77,14 +75,15 @@ def _make_lifespan(deps: BackendDeps):
             if stats.added or stats.deleted:
                 logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
 
+        executor = await create_executor(deps.config.executor, db_config)
+        logger.info("Using %s executor", deps.config.executor.type)
         app.state.registry = AgentRegistry(
-            docker_client=docker_client,
+            executor=executor,
             db=db,
             db_config=db_config,
             backend_url=deps.backend_url,
             agent_base_env=deps.config.agent_env,
             registry_config=deps.registry_proxy_config,
-            extra_hosts=deps.extra_hosts,
         )
 
         if deps.grader_model:

@@ -56,13 +56,14 @@ import uvicorn
 from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import BackendDeps, create_app
-from props.config import PropsConfig
+from props.config import DockerExecutorConfig, PropsConfig
 from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry, ResolvedImage
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
+from props.orchestration.docker_executor import DockerExecutor
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
 from test_util.oci import BazelImage, crane_push
@@ -196,21 +197,29 @@ async def _make_stack(
         agent_base_env = _build_agent_base_env(db.config)
 
         deps = BackendDeps(
-            config=PropsConfig(backend_url=backend_url, agent_env=agent_base_env),
+            config=PropsConfig(
+                backend_url=backend_url,
+                agent_env=agent_base_env,
+                executor=DockerExecutorConfig(extra_hosts=HOST_GATEWAY),
+            ),
             registry_proxy_config=registry_proxy_config,
             backend_url=backend_url,
-            extra_hosts=HOST_GATEWAY,
         )
 
         async with ensure_agent_network(async_docker_client), run_backend(deps, port=backend_port):
+            executor = DockerExecutor(
+                async_docker_client,
+                network_name=PROPS_NETWORK_NAME,
+                extra_hosts=HOST_GATEWAY,
+                pull_auth={"username": db.config.user, "password": db.config.password},
+            )
             registry = AgentRegistry(
-                docker_client=async_docker_client,
+                executor=executor,
                 db=db,
                 db_config=db.config,
                 backend_url=backend_url,
                 agent_base_env=agent_base_env,
                 registry_config=registry_proxy_config,
-                extra_hosts=HOST_GATEWAY,
             )
 
             try:

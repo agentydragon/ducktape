@@ -55,6 +55,7 @@ py_library(
         "//props/db:database",
         "//props/orchestration:agent_registry",
         "//props/orchestration:docker_env",
+        "//props/orchestration:docker_executor",
         "//props/testing:constants",
         "//props/testing:fake_openai_server",
         "//test_util:oci",

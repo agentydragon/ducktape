@@ -37,9 +37,10 @@ from props.db.notifications import (
     SnapshotCreatedNotification,
 )
 from props.orchestration.agent_registry import ImageResolutionError, ResolvedImage
+from props.orchestration.executor import ContainerHandle
 
 if TYPE_CHECKING:
-    from props.orchestration.agent_registry import AgentRegistry, GraderHandle
+    from props.orchestration.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ class GraderSupervisor:
         self._db_config = db_config
         self._model = model
         self._db = db
-        self._handles: dict[SnapshotSlug, GraderHandle] = {}
+        self._handles: dict[SnapshotSlug, ContainerHandle] = {}
         self._listener_conn: asyncpg.Connection[Any] | None = None
         self._shutdown = False
         self._background_tasks: set[asyncio.Task[None]] = set()
@@ -195,14 +196,14 @@ class GraderSupervisor:
                 image=image, snapshot_slug=snapshot_slug, model=self._model
             )
             self._handles[snapshot_slug] = handle
-            logger.info(f"Grader container {handle.container_name} running for {snapshot_slug}")
+            logger.info(f"Grader container {handle.name} running for {snapshot_slug}")
         except Exception:
             logger.exception(f"Failed to start grader for {snapshot_slug}")
 
     async def _kill_grader(self, snapshot_slug: SnapshotSlug) -> None:
         handle = self._handles.pop(snapshot_slug, None)
         if handle:
-            await handle.kill()
+            await handle.kill_and_delete()
 
     async def shutdown(self) -> None:
         """Kill all grader containers and stop listeners."""
