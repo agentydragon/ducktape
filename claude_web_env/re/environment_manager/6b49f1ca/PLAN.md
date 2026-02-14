@@ -40,7 +40,7 @@ boundaries and translating to idiomatic Go source.
 
 ## Phase 2: Per-Package Reconstruction (COMPLETE)
 
-All 79 Go files reconstructed across 27 packages (~17,800 lines).
+All 81 Go files reconstructed across 28 packages (~20,800 lines).
 
 ### Tier 1 — Leaf packages (COMPLETE)
 

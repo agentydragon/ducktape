@@ -28,18 +28,21 @@ type SourceHandler interface {
 
 // SourceHandlerManager manages source handlers and orchestrates source processing.
 //
-// Struct layout (from NewSourceHandlerManager field access patterns):
-//   offset 0x00: logger *slog.Logger
-//   offset 0x08: handlers []SourceHandler (ptr + len + cap at 0x08, 0x10, 0x18)
-//   offset 0x20: baseDir string (ptr + len)
-//   offset 0x28: sessionID string (ptr + len)
-//   offset 0x30: activityRecorder (interface: itab + data at 0x30, 0x38)
-//   offset 0x40: isResume bool
+// Struct layout (from NewSourceHandlerManager field stores at 0xaf6872-0xaf68ea):
+//
+//	offset 0x00: logger *slog.Logger (from AX, stored via DX at 0xaf6872)
+//	offset 0x08: handlers []SourceHandler (ptr at 0x08, len at 0x10, cap at 0x18)
+//	              — initialized to static empty slice, populated by append after NewGitHandler
+//	offset 0x20: baseDir string (ptr at 0x20 from BX, len at 0x28 from CX)
+//	offset 0x30: activityRecorder interface{} (itab at 0x30 from R10, data at 0x38 from R11)
+//	offset 0x40: isResume bool (from stack at 0x90(SP))
+//
+// NOTE: sessionID, gitProxyConfig, outcomes, and processMode are NOT stored on this struct.
+// They are passed through to NewGitHandler only.
 type SourceHandlerManager struct {
 	logger           *slog.Logger    // offset 0x00
 	handlers         []SourceHandler // offset 0x08
 	baseDir          string          // offset 0x20
-	sessionID        string          // offset 0x28
 	activityRecorder interface{}     // offset 0x30 (activity recorder interface)
 	isResume         bool            // offset 0x40
 }
@@ -50,40 +53,55 @@ type SourceHandlerManager struct {
 // Binary address: 0xaf67c0
 // Source file: sources.go
 //
-// Parameters (register-based):
-//   AX: logger *slog.Logger
-//   BX: baseDir string ptr
-//   CX: sessionID string ptr (checked for nil -> error)
-//   DI: (git handler param)
-//   SI: (git handler param)
-//   R8: (git handler param)
-//   R9: (git handler param)
-//   R10: activityRecorder itab
-//   R11: activityRecorder data
+// Parameters (register ABI):
+//
+//	AX: logger *slog.Logger
+//	BX+CX: baseDir string (ptr+len)
+//	DI+SI: sessionID string (ptr+len) — CX checked for nil at 0xaf67f2 → error
+//	R8: gitProxyConfig (pointer) — passed through to NewGitHandler
+//	R9: outcomes map[string][]string — passed through to NewGitHandler
+//	R10+R11: activityRecorder interface{} — stored in struct AND passed to NewGitHandler
+//	stack[0]+stack[1]: processMode string — passed through to NewGitHandler
+//	stack[2]: isResume bool — stored in struct AND passed to NewGitHandler
+//
+// Key behaviors from disassembly:
+//   - 0xaf67f2: TESTQ CX, CX — nil check on baseDir.len (Go register order: BX=ptr, CX=len)
+//   - 0xaf6843-0xaf684a: runtime.newobject for SourceHandlerManager
+//   - 0xaf6872-0xaf68ea: store fields into struct (logger, baseDir, activityRecorder, isResume)
+//   - 0xaf690c-0xaf6932: pass all params through to NewGitHandler
+//   - 0xaf6937-0xaf69d1: append returned *GitHandler to handlers slice as SourceHandler
+//   - 0xaf69d4-0xaf69dd: return (mgr, nil, nil) — success
+//   - 0xaf69de-0xaf6a03: error path: fmt.Errorf("base directory cannot be empty")
 func NewSourceHandlerManager(
 	logger *slog.Logger,
 	baseDir string,
 	sessionID string,
-	gitProxyManager interface{},
+	gitProxyConfig interface{},
+	outcomes map[string][]string,
 	activityRecorder interface{},
+	processMode string,
 	isResume bool,
 ) (*SourceHandlerManager, error) {
-	if sessionID == "" {
+	// Binary 0xaf67f2: TESTQ CX,CX — nil check (baseDir.len register)
+	if baseDir == "" {
 		return nil, fmt.Errorf("base directory cannot be empty")
 	}
 
+	// Binary 0xaf6843-0xaf68ea: allocate and populate struct
 	mgr := &SourceHandlerManager{
 		logger:           logger,
 		baseDir:          baseDir,
-		sessionID:        sessionID,
 		activityRecorder: activityRecorder,
 		isResume:         isResume,
 	}
 
-	// Create and register the git handler
-	gitHandler := NewGitHandler(logger, baseDir, sessionID, gitProxyManager, activityRecorder, isResume)
+	// Binary 0xaf690c-0xaf6932: call NewGitHandler with all params passed through
+	// AX=logger, BX+CX=baseDir, DI+SI=sessionID, R8=gitProxyConfig, R9=outcomes,
+	// R10+R11=activityRecorder, stack=processMode+isResume
+	gitHandler := NewGitHandler(logger, baseDir, sessionID, gitProxyConfig, outcomes, activityRecorder, processMode, isResume)
 
-	// Append GitHandler as a SourceHandler
+	// Binary 0xaf6937-0xaf69d1: append gitHandler to handlers slice
+	// with SourceHandler itab at go:itab.*GitHandler,SourceHandler (0xaf69a4)
 	mgr.handlers = append(mgr.handlers, gitHandler)
 
 	return mgr, nil
@@ -112,8 +130,8 @@ func (m *SourceHandlerManager) ProcessSources(
 		return result, nil
 	}
 
-	// Record o11y metric
-	deferredMetric := o11y.RecordFunctionDeferred(logger, ctx, o11y.SourcesProcessingMetric, nil, nil)
+	// Binary 0xaf6af4-0xaf6b1b: o11y.RecordFunctionDeferred(ctx, SourcesProcessingMetric, ...)
+	deferredMetric := o11y.RecordFunctionDeferred(ctx, o11y.SourcesProcessingMetric, nil, nil)
 	defer deferredMetric()
 
 	startTime := time.Now()
@@ -125,7 +143,7 @@ func (m *SourceHandlerManager) ProcessSources(
 
 	// Create results map and log diagnostic
 	sourceCountVal := len(sources)
-	diag.LogEnvManagerNoPII(logger, ctx, "sources_processing_started", map[string]interface{}{
+	diag.LogEnvManagerNoPII(ctx, "sources_processing_started", map[string]interface{}{
 		"count": sourceCountVal,
 	})
 
@@ -164,7 +182,6 @@ func (m *SourceHandlerManager) ProcessSources(
 		err := handler.Process(ctx, logger, source)
 		if err != nil {
 			elapsed := time.Since(sourceStartTime)
-			errMsg := fmt.Sprintf("Failed to process source type %s: %v", sourceType, err)
 			logger.Error("Failed to process source",
 				"source_type", sourceType,
 				"error", err,
@@ -189,7 +206,7 @@ func (m *SourceHandlerManager) ProcessSources(
 		"duration_ms", elapsed.Milliseconds(),
 	)
 
-	diag.LogEnvManagerNoPII(logger, ctx, "sources_processing_completed", map[string]interface{}{
+	diag.LogEnvManagerNoPII(ctx, "sources_processing_completed", map[string]interface{}{
 		"source_count":  len(sources),
 		"success_count": successCount,
 	})
@@ -249,7 +266,7 @@ func (m *SourceHandlerManager) UpdateRemoteURLs(
 				"source_type", sourceType,
 				"error", err,
 			)
-			diag.LogEnvManagerNoPII(logger, ctx, "remote_url_update_failed_nonfatal", nil)
+			diag.LogEnvManagerNoPII(ctx, "remote_url_update_failed_nonfatal", nil)
 			continue
 		}
 

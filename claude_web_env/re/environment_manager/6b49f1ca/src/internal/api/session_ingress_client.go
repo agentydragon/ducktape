@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"time"
 
 	"go.opentelemetry.io/otel/propagation"
 

@@ -22,6 +22,22 @@ import (
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/api"
 )
 
+// diagServiceContextKeyType is a private type used as a context key for storing
+// the *DiagService in a context.Context. This allows LogEnvManagerNoPII to be
+// called with just a context, extracting the service automatically.
+//
+// Binary: type at rodata, key variable at 0xc69ea0
+type diagServiceContextKeyType struct{}
+
+// diagServiceContextKey is the context key used to store/retrieve a *DiagService.
+var diagServiceContextKey = diagServiceContextKeyType{}
+
+// WithDiagService returns a new context with the DiagService stored as a value.
+// This is used so that LogEnvManagerNoPII can extract the service from any context.
+func WithDiagService(ctx context.Context, svc *DiagService) context.Context {
+	return context.WithValue(ctx, diagServiceContextKey, svc)
+}
+
 // maxLogEntries is the maximum number of log entries to retain in memory.
 const maxLogEntries = 5000
 
@@ -241,22 +257,58 @@ func (d *DiagService) Shutdown(ctx context.Context, sessionID string) {
 }
 
 // LogEnvManagerNoPII is the package-level function for logging env-manager
-// entries without PII. It delegates to (*DiagService).logEnvManagerNoPII
-// if the service is non-nil.
+// diagnostic entries without PII. It extracts a *DiagService from the context
+// via ctx.Value and delegates to logEnvManagerNoPII if found.
 //
 // Binary address: 0x834ac0
-func LogEnvManagerNoPII(svc *DiagService, sessionID string, level slog.Level, msg string, args ...interface{}) {
-	if svc == nil {
+// Source file: diag_logs.go
+//
+// Parameters (register ABI):
+//
+//	AX+BX: ctx (context.Context interface: itab+data)
+//	CX+DI: event string (ptr+len)
+//	SI: data (map[string]interface{} pointer, may be nil)
+//
+// Key behaviors from disassembly:
+//   - 0x834ae7: MOVQ 0x30(AX), DX — loads ctx.Value method from itab (4th method)
+//   - 0x834aeb-0x834af5: calls ctx.Value(diagServiceKey) with static key
+//   - 0x834afe-0x834b08: type-checks returned value against *DiagService
+//   - If not *DiagService: returns (no-op)
+//   - If *DiagService: delegates to logEnvManagerNoPII with all original params
+func LogEnvManagerNoPII(ctx context.Context, event string, data map[string]interface{}) {
+	// Binary 0x834ae7-0x834afc: ctx.Value(diagServiceKey)
+	val := ctx.Value(diagServiceContextKey)
+	svc, ok := val.(*DiagService)
+	if !ok || svc == nil {
 		return
 	}
-	svc.logEnvManagerNoPII(svc, sessionID, level, msg, args...)
+
+	// Binary 0x834b26: delegate to logEnvManagerNoPII
+	svc.logEnvManagerNoPII(ctx, event, data)
 }
 
-// logEnvManagerNoPII creates a DiagLogEntry from the given log parameters
-// and appends it to the env-manager log buffer.
+// logEnvManagerNoPII creates a DiagLogEntry from the event name and optional
+// data map, then appends it to the env-manager log buffer.
 //
 // Binary address: 0x834b80
-func (d *DiagService) logEnvManagerNoPII(svc *DiagService, sessionID string, level slog.Level, msg string, args ...interface{}) {
+// Source file: diag_logs.go
+//
+// Parameters (register ABI):
+//
+//	AX: self (*DiagService)
+//	BX+CX: ctx (context.Context interface)
+//	DI+SI: event string (ptr+len)
+//	R8: data (map[string]interface{} pointer)
+//
+// Key behaviors from disassembly:
+//   - 0x834be1-0x834bf5: mutex lock via LOCK CMPXCHGL (offset 0x00)
+//   - 0x834c5b: checks d.shutdown (offset 0x38)
+//   - 0x834c66: time.Now() for timestamp
+//   - 0x834cf6: runtime.makemap_small — creates Fields map
+//   - Stores "source" → "env-manager", "message" → event in Fields
+//   - If data != nil, merges data entries into Fields
+//   - Appends DiagLogEntry to d.envManagerLogs
+func (d *DiagService) logEnvManagerNoPII(ctx context.Context, event string, data map[string]interface{}) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -269,16 +321,13 @@ func (d *DiagService) logEnvManagerNoPII(svc *DiagService, sessionID string, lev
 		Timestamp: time.Now(),
 		Fields: map[string]interface{}{
 			"source":  "env-manager",
-			"level":   level.String(),
-			"message": msg,
+			"message": event,
 		},
 	}
 
-	// Add extra key-value pairs from args
-	for i := 0; i+1 < len(args); i += 2 {
-		if key, ok := args[i].(string); ok {
-			entry.Fields[key] = args[i+1]
-		}
+	// Merge additional data from the provided map
+	for k, v := range data {
+		entry.Fields[k] = v
 	}
 
 	d.envManagerLogs = append(d.envManagerLogs, entry)

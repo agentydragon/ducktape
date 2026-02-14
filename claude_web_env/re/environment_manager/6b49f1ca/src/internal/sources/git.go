@@ -244,7 +244,7 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 
 	// Binary 0xaeaf0b-0xaeaf53: get repo directory
 	// Loads h.baseDir, copies source to stack, calls GetDirectory
-	repoDir := gitSource.GetDirectory()
+	repoDir := gitSource.GetDirectory(h.baseDir)
 	if repoDir == "" {
 		// Binary 0xaec5c5: error when directory is empty
 		return fmt.Errorf("could not determine repository directory for repo: %s", gitSource.GitInfo.Repo)
@@ -1318,7 +1318,7 @@ func (h *GitHandler) UpdateRemoteURL(
 		return nil
 	}
 
-	repoDir := gitSource.GetDirectory()
+	repoDir := gitSource.GetDirectory(h.baseDir)
 	if repoDir == "" {
 		return nil
 	}
@@ -1396,7 +1396,7 @@ func (h *GitHandler) SetupGitProxyAfterSourcesProcessed(
 			continue
 		}
 
-		repoDir := gitSource.GetDirectory()
+		repoDir := gitSource.GetDirectory(h.baseDir)
 		if repoDir == "" {
 			logger.Warn("Could not determine repo path for proxy setup",
 				"repo", gitSource.GitInfo.Repo,

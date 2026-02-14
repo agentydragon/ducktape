@@ -62,9 +62,14 @@ type GitInfo struct {
 	AllowUnrestrictedGitPush bool `json:"allow_unrestricted_git_push,omitempty"`
 }
 
-// AuthConfig is a type alias for json.RawMessage used by GitInfo.
-// The raw JSON is parsed into auth.AuthConfig by the auth package at runtime.
-type AuthConfig = json.RawMessage
+// AuthConfig holds source-level authentication configuration.
+// Reconstructed from binary: createSourceAuthProvider at 0xaec840 accesses
+// Auth+0x00/0x08 as Type string and Auth+0x10/0x18 as Token string.
+// This matches auth.AuthConfig's layout (Type string, Token string).
+type AuthConfig struct {
+	Type  string `json:"type"`
+	Token string `json:"token"`
+}
 
 // GitRepositorySource represents a git repository source.
 // Reconstructed from: config.GitRepositorySource (DWARF struct)
