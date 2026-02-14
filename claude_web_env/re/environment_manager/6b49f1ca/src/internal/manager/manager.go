@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y/diag"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions"
@@ -37,12 +39,12 @@ type Manager struct {
 	// Offset 0x28: ...
 	// Offset 0x48: tunnelClient (may be nil, checked at runtime)
 	Logger        *slog.Logger
-	Config        interface{} // TODO(re): concrete type not recovered — likely environment config client interface
+	Config        interface{} // Environment config client interface (implements envtype.EnvironmentType methods)
 	TunnelInfo    *TunnelInfo
 	SessionID     string
 	APIBaseURL    string
 	SessionConfig interface{} // Session config passed to tunnel client
-	SessionMode   string      // Session mode (e.g., "agent", "code_review") passed to environment types
+	SessionMode   string      // Session mode (e.g., "new", "resume") passed to environment types
 }
 
 // TunnelInfo holds tunnel client data used during registration.
@@ -136,13 +138,19 @@ func (m *Manager) configureEnvironment(ctx context.Context, logger *slog.Logger)
 
 	// Step 4: Set session mode if supported
 	// Binary: typeAssert.6 dispatch at 0xb6e983
-	// TODO(re): Call SetSessionMode on environment type with m.SessionMode
-	// Requires understanding how environment type is stored/accessed in Manager
-	// (likely through m.Config or a hidden field at offset 0x00)
-	m.Logger.Info("Set session mode for environment",
-		"session_id", "",
-		"session_mode", m.SessionMode,
-	)
+	if m.Config != nil && m.SessionMode != "" {
+		// Type assert to EnvironmentType interface to call SetSessionMode
+		if envType, ok := m.Config.(envtype.EnvironmentType); ok {
+			// Parse session mode string to config.SessionMode type
+			sessionMode := config.SessionMode(m.SessionMode)
+			envType.SetSessionMode(sessionMode)
+
+			m.Logger.Info("Set session mode for environment",
+				"session_id", m.SessionID,
+				"session_mode", m.SessionMode,
+			)
+		}
+	}
 
 	// Step 5: Configure git signing (unless local testing mode)
 	// Binary: checks offset 0x48 -> 0x58 of Manager struct for bool flag
