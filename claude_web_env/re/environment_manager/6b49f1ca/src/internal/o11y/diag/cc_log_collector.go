@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/api"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/util"
 )
 
@@ -28,7 +29,7 @@ import (
 type ccLogCollector struct {
 	mu      sync.Mutex
 	tailer  *util.Tailer
-	entries []DiagLogEntry
+	entries []api.DiagLogEntry
 	wg      sync.WaitGroup
 }
 
@@ -62,7 +63,7 @@ func newCCLogCollector(ctx context.Context, logPath string) (*ccLogCollector, er
 // This is safe to call concurrently.
 //
 // Binary address: 0x8332c0
-func (c *ccLogCollector) Drain() ([]DiagLogEntry, int, int) {
+func (c *ccLogCollector) Drain() ([]api.DiagLogEntry, int, int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -125,7 +126,7 @@ func (c *ccLogCollector) collect() {
 		// Set source to "claude"
 		parsed["source"] = "claude"
 
-		entry := DiagLogEntry{
+		entry := api.DiagLogEntry{
 			Timestamp: ts,
 			Fields:    parsed,
 		}

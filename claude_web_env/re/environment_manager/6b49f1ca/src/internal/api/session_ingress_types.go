@@ -63,9 +63,10 @@ type AssistantMessage struct {
 
 // DiagLogEntry represents a single diagnostic log entry for forwarding.
 // Used in slices.SortFunc (binary has pdqsort/insertionSort specializations for this type).
+// Binary signature: struct { Timestamp time.Time; Fields map[string]interface {} }
 type DiagLogEntry struct {
-	Timestamp time.Time         // offset 0x00 (Time is 3 words: wall, ext, loc)
-	Fields    map[string]string // offset 0x18
+	Timestamp time.Time              // offset 0x00 (Time is 3 words: wall, ext, loc)
+	Fields    map[string]interface{} // offset 0x18
 }
 
 // SessionIngressEvent is the top-level event structure sent to the session ingress API.

@@ -207,17 +207,14 @@ func (c *HttpSessionIngressClient) PostSessionIngressEvent(
 // Content-Type: "diag_logs" (9 = 0x09 bytes).
 //
 // Binary address: 0x830de0
-// TODO(re): logs param is interface{} because caller passes []diag.DiagLogEntry (different package)
-// which has map[string]interface{} fields, incompatible with this package's []api.DiagLogEntry
 func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	ctx context.Context,
 	sessionID string,
-	logs interface{},
+	logs []DiagLogEntry,
 ) error {
 	endpoint := c.sessionEndpoint(sessionID, "diag_logs")
 
-	// TODO(re): should assert/convert logs to proper type and call diagLogsToWireFormat
-	wireEntries := logs
+	wireEntries := diagLogsToWireFormat(logs, len(logs))
 
 	payload := make(map[string]interface{})
 	payload["items"] = wireEntries
@@ -227,7 +224,7 @@ func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	c.Logger.Warn("forwarding diag logs",
 		"endpoint", endpoint,
 		"session_id", sessionID,
-		"num_logs", 0, // TODO(re): should use len(logs) after proper typing
+		"num_logs", len(logs),
 	)
 
 	err := c.postJSON(ctx, endpoint, payload, "diag_logs")
@@ -238,7 +235,7 @@ func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	// Log at Warn level on success fallthrough.
 	c.Logger.Warn("posted diag logs with nil error",
 		"session_id", sessionID,
-		"num_logs", 0, // TODO(re): should use len(logs) after proper typing
+		"num_logs", len(logs),
 	)
 
 	return nil
