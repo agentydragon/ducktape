@@ -464,9 +464,27 @@ func (m *Manager) registerMCPServersAsync(ctx context.Context, logger *slog.Logg
 	m.Logger.Info("registering MCP servers async")
 
 	registeredServers, errors := m.registerMCPServers(ctx, logger)
-	_ = registeredServers // TODO(re): should be logged/used — contains list of registered MCP server names
-	_ = errors // TODO(re): should be checked/logged — contains registration errors
+
+	// Log registration results
+	if len(registeredServers) > 0 {
+		m.Logger.Info("MCP servers registered successfully",
+			"count", len(registeredServers),
+			"servers", registeredServers,
+		)
+	}
+
+	// Log any registration errors
+	if len(errors) > 0 {
+		m.Logger.Warn("MCP server registration errors",
+			"error_count", len(errors),
+			"errors", errors,
+		)
+	}
 
 	elapsed := time.Since(startTime)
-	m.Logger.Info("MCP server registration complete", "duration_ms", elapsed.Milliseconds())
+	m.Logger.Info("MCP server registration complete",
+		"duration_ms", elapsed.Milliseconds(),
+		"successful", len(registeredServers),
+		"failed", len(errors),
+	)
 }
