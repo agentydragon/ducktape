@@ -133,12 +133,15 @@ pub struct CgroupConfig {
 }
 
 /// Wraps CgroupConfig, OOM channel, and ProcessInfo for a managed process.
-/// Serde visitor at 0x21c870..0x21c96b (251 bytes).
+/// Debug impl at 0x21c870..0x21c96b (251 bytes).
 /// Fields from disassembly: cgroup, oom_killed_tx, process_info
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProcController {
     pub cgroup: Option<CgroupConfig>,
+    /// Present in the original binary's struct layout (confirmed by Debug impl
+    /// at 0x21c870) but never read outside of Debug formatting — always None.
     #[serde(skip)]
+    #[allow(dead_code)]
     pub oom_killed_tx: Option<oneshot::Sender<()>>,
     pub process_info: ProcessInfo,
 }
