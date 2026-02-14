@@ -109,6 +109,13 @@ py_library(
 )
 
 py_library(
+    name = "kubeconfig_setup",
+    srcs = ["kubeconfig_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "mkcert_setup",
     srcs = ["mkcert_setup.py"],
     imports = ["../.."],
@@ -222,6 +229,7 @@ py_library(
         ":debug",
         ":env_file",
         ":errors",
+        ":kubeconfig_setup",
         ":mkcert_setup",
         ":nix_setup",
         ":podman_service",
@@ -278,6 +286,7 @@ py_package(
         ":buildbuddy_setup",
         ":env_file",
         ":errors",
+        ":kubeconfig_setup",
         ":managed_files",
         ":mkcert_setup",
         ":nix_setup",
