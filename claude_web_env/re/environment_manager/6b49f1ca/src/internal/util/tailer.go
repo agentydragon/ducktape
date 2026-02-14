@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,8 +9,6 @@ import (
 	"os"
 	"sync"
 	"time"
-
-	"internal/bytealg"
 )
 
 // Reconstructed from symbol: internal/util.Version
@@ -20,10 +19,10 @@ var ErrAlreadyStarted = errors.New("tailer already started")
 
 // Reconstructed from symbol: internal/util.Line
 //
-// Line represents a line read from a tailed file.
+// Line represents a line read from a tailed file, carrying either
+// the text content or an error encountered during reading.
 type Line struct {
 	Text string
-	Num  int64
 	Err  error
 }
 
@@ -35,7 +34,7 @@ type Line struct {
 type Tailer struct {
 	path         string
 	pollInterval time.Duration
-	linesCh      chan string
+	linesCh      chan Line
 	stopCh       chan struct{}
 	wg           sync.WaitGroup
 	once         sync.Once
@@ -63,7 +62,7 @@ func NewTailer(path string, pollInterval time.Duration) (*Tailer, error) {
 		return nil, fmt.Errorf("failed to stat file %s: %w", path, err)
 	}
 
-	linesCh := make(chan string, 100)
+	linesCh := make(chan Line, 100)
 	stopCh := make(chan struct{})
 
 	if pollInterval == 0 {
@@ -81,7 +80,7 @@ func NewTailer(path string, pollInterval time.Duration) (*Tailer, error) {
 // Reconstructed from symbol: internal/util.(*Tailer).Lines
 //
 // Lines returns the channel on which tailed lines are sent.
-func (t *Tailer) Lines() <-chan string {
+func (t *Tailer) Lines() <-chan Line {
 	return t.linesCh
 }
 
@@ -180,9 +179,10 @@ func (t *Tailer) run(ctx context.Context, file *os.File) {
 //
 // readLines reads from the file into a temporary buffer, appends to the
 // accumulator, and extracts complete newline-delimited lines. Each line
-// (up to 2048 bytes) is sent on the lines channel. If the buffer exceeds
-// 2048 bytes without a newline, it is truncated. Returns true to continue
-// polling, false to stop (on non-EOF read error or when stopCh is signaled).
+// (up to 2048 bytes) is sent as a Line on the lines channel. If the buffer
+// exceeds 2048 bytes without a newline, it is truncated and the next partial
+// line is discarded. On non-EOF read errors, sends a Line with the error and
+// returns false. Returns true to continue polling, false to stop.
 func (t *Tailer) readLines(file *os.File, buf *[]byte, truncated *bool) bool {
 	var tmp [readBufSize]byte
 
@@ -197,7 +197,7 @@ func (t *Tailer) readLines(file *os.File, buf *[]byte, truncated *bool) bool {
 			if err == io.EOF {
 				// Process any complete lines in the buffer
 				for {
-					idx := bytealg.IndexByte(*buf, '\n')
+					idx := bytes.IndexByte(*buf, '\n')
 					if idx == -1 {
 						// No complete line; check for buffer overflow
 						if len(*buf) > maxLineLength {
@@ -221,7 +221,7 @@ func (t *Tailer) readLines(file *os.File, buf *[]byte, truncated *bool) bool {
 
 					lineStr := string(line)
 					select {
-					case t.linesCh <- lineStr:
+					case t.linesCh <- Line{Text: lineStr}:
 					case <-t.stopCh:
 						return false
 					}
@@ -230,14 +230,11 @@ func (t *Tailer) readLines(file *os.File, buf *[]byte, truncated *bool) bool {
 
 			// Non-EOF error: send on channel and stop
 			select {
-			case t.linesCh <- err.Error():
+			case t.linesCh <- Line{Err: err}:
 			case <-t.stopCh:
 			}
 			return false
 		}
 
-		if n == 0 {
-			continue
-		}
 	}
 }
