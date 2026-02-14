@@ -9,6 +9,8 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 **Recently Completed** (2024-02-14):
 
 - **Claude Executor Wiring**: Added ClaudeCodeExecutor creation and execution after manager.Run() in cmd_task_run.go. Binary now properly creates executor via NewClaudeCodeExecutor and calls Execute() method. Basic environment variable setup added (os.Environ()).
+- **SessionMode Wiring**: Implemented SetSessionMode call in Manager.configureEnvironment() with type assertion to envtype.EnvironmentType (binary at 0xb6e983).
+- **Executor Config Access**: Fixed ClaudeCodeExecutor config field access in buildArgsFromGatewayConfig and writeMCPConfigFileFromGateway using type assertion to \*config.StartupContext. Properly reads ClaudeCodeArgs map and McpConfigFile fields.
 
 **Previously Completed** (2024-02):
 
@@ -21,11 +23,11 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 
 ### CLI Flags - Task Run Command
 
-**`sessionMode`** (`cmd/cmd_task_run.go:136`) - **Partial**
+**`sessionMode`** (`cmd/cmd_task_run.go:136`) - **✅ FIXED**
 
-- Status: Field added to Manager, passed from CLI, logged in configureEnvironment
-- Remaining: Call `SetSessionMode` on environment type (requires understanding environment type storage in Manager struct - likely at offset 0x00 or through Config interface)
-- Binary evidence: typeAssert.6 at 0xb6e983
+- ✅ Field added to Manager, passed from CLI
+- ✅ SetSessionMode called on environment type via type assertion to envtype.EnvironmentType
+- ✅ Binary evidence: typeAssert.6 at 0xb6e983 properly implemented
 
 **`inputFormatChanged`** (`cmd/cmd_task_run.go:104`)
 
@@ -66,13 +68,14 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 
 ### Claude Executor
 
-**`internal/claude/claude_code_executor.go:50`** - **PARTIALLY FIXED**
+**`internal/claude/claude_code_executor.go:50`** - **MOSTLY FIXED**
 
 - ✅ Executor creation and execution wired in cmd_task_run.go (after manager.Run())
 - ✅ Basic environment variable setup added (os.Environ() passed to cmd.Env)
-- ❌ Config type remains `interface{}` - should be `*config.ClaudeConfig` (type not yet defined)
+- ✅ Config access patterns fixed via type assertion to \*config.StartupContext
+- ✅ ClaudeCodeArgs iteration implemented in buildArgsFromGatewayConfig
+- ✅ McpConfigFile access implemented in writeMCPConfigFileFromGateway
 - ❌ Pipe cleanup closures not reconstructed (lines 336, 337)
-- ❌ Config access patterns incomplete (lines 379, 429)
 
 ### Session Ingress
 
