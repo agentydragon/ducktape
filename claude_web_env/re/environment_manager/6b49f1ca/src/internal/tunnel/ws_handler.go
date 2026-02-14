@@ -14,7 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	tunnelpb "github.com/anthropics/anthropic/api-go/gen/proto/anthropic/sessions/tunnel/v1alpha"
+	tunnelpb "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/tunnelpb"
 )
 
 // wsConnection represents a single WebSocket tunnel connection.

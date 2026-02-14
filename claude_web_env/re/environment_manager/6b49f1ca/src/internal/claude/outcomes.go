@@ -33,12 +33,15 @@ type OutcomeEntry struct {
 // NOTE: NewOutcomes does NOT appear in the nm symbol table, meaning it may
 // be inlined or constructed directly at call sites. The Outcomes struct is
 // allocated via runtime.newobject in callers.
+func NewOutcomes() *Outcomes {
+	return &Outcomes{}
+}
 
 // Add adds an outcome entry (key, value) for the given repository.
 // If the internal map is nil, it is lazily initialized via makemap_small.
 //
 // Binary address: 0xae2f40 - 0xae30d9
-func (o *Outcomes) Add(repo string, key string, value string) {
+func (o *Outcomes) Add(repo string, branch string) {
 	// 0xae2f6b: CMPQ 0(AX), $0x0 — check if o.data == nil
 	if o.data == nil {
 		// 0xae2f71: runtime.makemap_small
@@ -46,11 +49,11 @@ func (o *Outcomes) Add(repo string, key string, value string) {
 		o.data = &m
 	}
 
-	// 0xae2fb4: TESTQ SI, SI — check if value == ""
-	// If value is empty, uses a different OutcomeEntry representation
+	// 0xae2fb4: TESTQ SI, SI — check if branch == ""
+	// If branch is empty, uses a different OutcomeEntry representation
 	entry := OutcomeEntry{
-		Key:   key,
-		Value: value,
+		Key:   repo,
+		Value: branch,
 	}
 
 	// 0xae2ff8-0xae3050: mapassign_faststr — append entry to the slice for repo

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	isync "internal/sync"
+	isync "sync"
 
-	tunnelpb "github.com/anthropics/anthropic/api-go/gen/proto/anthropic/sessions/tunnel/v1alpha"
+	tunnelpb "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/tunnelpb"
 )
 
 // Action defines the interface that all tunnel actions must implement.

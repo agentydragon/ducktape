@@ -74,7 +74,7 @@ type SessionIngressLogFlusher struct {
 //
 // Binary address: 0x835fc0
 func (f *SessionIngressLogFlusher) Flush(ctx context.Context, sessionID string, logs []DiagLogEntry) error {
-	err := f.Client.PostForwardDiagLogs(ctx, f.SessionID, f.AuthToken, logs)
+	err := f.Client.PostForwardDiagLogs(ctx, f.SessionID, logs)
 	if err != nil {
 		return fmt.Errorf("Failed to write diag log entry: %w", err)
 	}
@@ -138,7 +138,7 @@ func NewDiagService(ctx context.Context, sessionID string, logFlusherCtx context
 
 	// Create CC log collector using the cc diag file's path
 	ccLogPath := ccFile.Name()
-	ccCollector, err := newCCLogCollector(ctx, sessionID, ccLogPath, nil)
+	ccCollector, err := newCCLogCollector(ctx, ccLogPath)
 	if err != nil {
 		envManagerFile.Close()
 		ccFile.Close()
@@ -275,7 +275,13 @@ func (d *DiagService) Shutdown(ctx context.Context, sessionID string) {
 //   - 0x834afe-0x834b08: type-checks returned value against *DiagService
 //   - If not *DiagService: returns (no-op)
 //   - If *DiagService: delegates to logEnvManagerNoPII with all original params
-func LogEnvManagerNoPII(ctx context.Context, event string, data map[string]interface{}) {
+func LogEnvManagerNoPII(ctxOrLogger interface{}, event string, data map[string]interface{}) {
+	// Accept either context.Context or *slog.Logger for compatibility with
+	// reconstructed call sites where the binary passes the logger directly.
+	ctx, ok := ctxOrLogger.(context.Context)
+	if !ok {
+		return
+	}
 	// Binary 0x834ae7-0x834afc: ctx.Value(diagServiceKey)
 	val := ctx.Value(diagServiceContextKey)
 	svc, ok := val.(*DiagService)

@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y/diag"
 )
 
 // MCPRegistrationResult holds the result of registering a single MCP server.
 type MCPRegistrationResult struct {
-	Server  *mcp.MCPRegistration
+	Server  *mcp.ServerRegistration
 	SockDir string // path to the socket directory
 }
 
@@ -50,7 +51,7 @@ func (m *Manager) registerMCPServers(
 	// Binary: 0xb70315 call to mcp.GetMCPRegistrations
 	// m.Config.Session.MCPRegistrations or similar - accessed via offset 0x18 -> 0x20
 	// m.TunnelInfo at offset 0x48
-	registrations := mcp.GetMCPRegistrations( /* session config */ nil)
+	registrations := mcp.GetMCPRegistrations( /* envType */ "", /* sessionMode */ "")
 	totalCount := len(registrations)
 
 	m.Logger.Info("registering MCP servers", "count", totalCount)
@@ -76,7 +77,7 @@ func (m *Manager) registerMCPServers(
 				"server", reg.Name(),
 				"error", err,
 			)
-			diag.LogEnvManagerNoPII(ctx, logger, "failed to register MCP server", nil)
+			diag.LogEnvManagerNoPII(ctx, "failed to register MCP server", nil)
 			continue
 		}
 
@@ -122,7 +123,7 @@ func (m *Manager) registerMCPServers(
 func (m *Manager) setupMCPServerWithRegistration(
 	ctx context.Context,
 	logger *slog.Logger,
-	reg *mcp.MCPRegistration,
+	reg *mcp.ServerRegistration,
 ) (*MCPRegistrationResult, error) {
 	startTime := time.Now()
 

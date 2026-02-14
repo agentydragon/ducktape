@@ -50,13 +50,31 @@ type HttpClient struct {
 //
 // Binary address: 0x82de80
 // Calls: NewHttpClientWithOptions with timeout=0, retryConfig=nil
-func NewHttpClient(baseURL string, apiKey string, logger interface{} /* *slog.Logger */) *HttpClient {
+func NewHttpClient(baseURL string, args ...interface{}) *HttpClient {
 	if len(baseURL) >= 7 && baseURL[:7] == "http://" {
 		// ok
 	} else if len(baseURL) >= 8 && baseURL[:8] == "https://" {
 		// ok
 	} else {
 		baseURL = "https://" + baseURL
+	}
+	var apiKey string
+	var logger interface{}
+	// Extract apiKey and logger from variadic args based on types
+	for _, arg := range args {
+		if arg == nil {
+			continue
+		}
+		switch v := arg.(type) {
+		case string:
+			if apiKey == "" {
+				apiKey = v
+			}
+		default:
+			if logger == nil {
+				logger = v
+			}
+		}
 	}
 	return NewHttpClientWithOptions(baseURL, apiKey, logger, 0, nil)
 }

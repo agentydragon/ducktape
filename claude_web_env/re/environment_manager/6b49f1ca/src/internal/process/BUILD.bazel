@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "process",
+    srcs = [
+        "process.go",
+        "script.go",
+    ],
+    importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/process",
+    visibility = ["//claude_web_env/re/environment_manager/6b49f1ca/src:__subpackages__"],
+    deps = [
+        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/util",
+    ],
+)

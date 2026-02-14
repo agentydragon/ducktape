@@ -251,6 +251,7 @@ type GitOutcomeInfo struct {
 //	EnvironmentSubType(240).
 type StartupContext struct {
 	Sources                 []Source          `json:"-"`
+	SessionID               string            `json:"session_id,omitempty"`
 	APIBaseURL              string            `json:"api_base_url,omitempty"`
 	Outcomes                []OutcomeField    `json:"outcomes,omitempty"`
 	CustomSystemPrompt      string            `json:"custom_system_prompt,omitempty"`
@@ -372,6 +373,31 @@ func (sc *StartupContext) Validate() error {
 		}
 	}
 	return nil
+}
+
+// Len returns the total number of fields/elements in the startup context
+// (approximate measure of context size for logging).
+func (sc *StartupContext) Len() int {
+	return len(sc.Sources) + len(sc.Outcomes) + len(sc.AllowedTools) + len(sc.DisallowedTools) + len(sc.EnabledTools)
+}
+
+// NumSources returns the number of sources in the startup context.
+func (sc *StartupContext) NumSources() int {
+	return len(sc.Sources)
+}
+
+// NumLanguages returns the number of enabled tools (used as a proxy for language count in logging).
+func (sc *StartupContext) NumLanguages() int {
+	return len(sc.EnabledTools)
+}
+
+// EnvironmentConfig represents the environment configuration from input.
+// Reconstructed from callers in v0_parser.go and v1_parser.go.
+type EnvironmentConfig struct {
+	EnvironmentType string                 `json:"environment_type"`
+	Cwd             string                 `json:"cwd,omitempty"`
+	InitScript      string                 `json:"init_script,omitempty"`
+	McpServers      map[string]interface{} `json:"mcp_servers,omitempty"`
 }
 
 // Session represents a session configuration with its ID and startup context.

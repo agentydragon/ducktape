@@ -12,9 +12,9 @@ import (
 	"net/http"
 	"time"
 
-	isync "internal/sync"
+	isync "sync"
 
-	tunnelpb "github.com/anthropics/anthropic/api-go/gen/proto/anthropic/sessions/tunnel/v1alpha"
+	tunnelpb "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/tunnelpb"
 )
 
 // Handler handles incoming HTTP tunnel requests by forwarding them to a local

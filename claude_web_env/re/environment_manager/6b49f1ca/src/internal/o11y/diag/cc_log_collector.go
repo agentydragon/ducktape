@@ -8,6 +8,7 @@
 package diag
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -37,13 +38,13 @@ type ccLogCollector struct {
 //
 // Binary address: 0x8330a0
 // Parameters: ctx context.Context, logPath string, logFilePath string, lineCh <-chan string
-func newCCLogCollector(ctx interface{}, logPath string, logFilePath string, lineCh <-chan string) (*ccLogCollector, error) {
-	tailer, err := util.NewTailer(logFilePath, lineCh, nil)
+func newCCLogCollector(ctx context.Context, logPath string) (*ccLogCollector, error) {
+	tailer, err := util.NewTailer(logPath, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tailer for claude-code log: %w", err)
 	}
 
-	if err := tailer.Start(ctx, logPath); err != nil {
+	if err := tailer.Start(ctx); err != nil {
 		return nil, fmt.Errorf("failed to create tailer for claude-code log: %w", err)
 	}
 
@@ -52,7 +53,7 @@ func newCCLogCollector(ctx interface{}, logPath string, logFilePath string, line
 	}
 
 	c.wg.Add(1)
-	go c.collect(ctx, logPath)
+	go c.collect()
 
 	return c, nil
 }
@@ -88,21 +89,21 @@ func (c *ccLogCollector) Stop() {
 //
 // Binary address: 0x8334c0
 // Source: cc_log_collector.go
-func (c *ccLogCollector) collect(ctx interface{}, logPath string) {
+func (c *ccLogCollector) collect() {
 	defer c.wg.Done()
 
-	lineCh := c.tailer.Lines() // channel of strings
+	lineCh := c.tailer.Lines()
 
 	for line := range lineCh {
-		if line == "" {
+		if line.Err != nil || line.Text == "" {
 			continue
 		}
 
 		var parsed map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &parsed); err != nil {
+		if err := json.Unmarshal([]byte(line.Text), &parsed); err != nil {
 			slog.Warn("failed to parse claude-code log line as JSON",
 				"error", err,
-				"line", line,
+				"line", line.Text,
 			)
 			continue
 		}

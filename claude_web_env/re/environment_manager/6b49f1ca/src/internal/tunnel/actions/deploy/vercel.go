@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"internal/filepathlite"
+	"path/filepath"
 )
 
 // FileEntry represents a file to be deployed, with its path, content, and SHA hash.
@@ -41,7 +41,7 @@ type Deployment struct {
 }
 
 // ValidateProjectDir validates that the given directory path is under
-// /home/project/. Cleans the path first using filepathlite.Clean,
+// /home/project/. Cleans the path first using filepath.Clean,
 // then checks if it starts with "/home/project/" (13 chars = 0x0d).
 //
 // Returns nil on success, or an error like:
@@ -49,7 +49,7 @@ type Deployment struct {
 //
 // Binary address: 0xb41b80
 func ValidateProjectDir(dir string) error {
-	cleaned := filepathlite.Clean(dir)
+	cleaned := filepath.Clean(dir)
 
 	prefix := "/home/project/" // 0x0d = 13 chars (checked without trailing slash actually)
 	if len(cleaned) >= 13 && cleaned[:13] == "/home/project" {

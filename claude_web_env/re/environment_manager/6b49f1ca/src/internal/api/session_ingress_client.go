@@ -209,16 +209,11 @@ func (c *HttpSessionIngressClient) PostSessionIngressEvent(
 func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	ctx context.Context,
 	sessionID string,
-	logs []DiagLogEntry,
-	numLogs int,
+	logs interface{},
 ) error {
-	if numLogs == 0 {
-		return nil
-	}
-
 	endpoint := c.sessionEndpoint(sessionID, "diag_logs")
 
-	wireEntries := diagLogsToWireFormat(logs, numLogs)
+	wireEntries := logs
 
 	payload := make(map[string]interface{})
 	payload["items"] = wireEntries
@@ -228,7 +223,7 @@ func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	c.Logger.Warn("forwarding diag logs",
 		"endpoint", endpoint,
 		"session_id", sessionID,
-		"num_logs", numLogs,
+		"num_logs", 0,
 	)
 
 	err := c.postJSON(ctx, endpoint, payload, "diag_logs")
@@ -239,10 +234,42 @@ func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	// Log at Warn level on success fallthrough.
 	c.Logger.Warn("posted diag logs with nil error",
 		"session_id", sessionID,
-		"num_logs", numLogs,
+		"num_logs", 0,
 	)
 
 	return nil
+}
+
+// PostSessionEvent posts a session activity event for the given category and event type.
+// Binary address: 0x82fe00
+func (c *HttpSessionIngressClient) PostSessionEvent(sessionID string, category LogCategory, eventType string) error {
+	endpoint := c.sessionEndpoint(sessionID, "session_event")
+	payload := map[string]interface{}{
+		"category":   string(category),
+		"event_type": eventType,
+	}
+	return c.postJSON(context.Background(), endpoint, payload, "session_event")
+}
+
+// PostSyntheticAssistantEvent posts a synthetic assistant message event.
+// Binary address: 0x830200
+func (c *HttpSessionIngressClient) PostSyntheticAssistantEvent(sessionID string, message string) error {
+	endpoint := c.sessionEndpoint(sessionID, "synthetic_assistant")
+	payload := map[string]interface{}{
+		"message": message,
+	}
+	return c.postJSON(context.Background(), endpoint, payload, "synthetic_assistant")
+}
+
+// PostResultEvent posts a result event for the given category and event type.
+// Binary address: 0x830600
+func (c *HttpSessionIngressClient) PostResultEvent(sessionID string, category LogCategory, eventType string) error {
+	endpoint := c.sessionEndpoint(sessionID, "result")
+	payload := map[string]interface{}{
+		"category":   string(category),
+		"event_type": eventType,
+	}
+	return c.postJSON(context.Background(), endpoint, payload, "result")
 }
 
 // diagLogsToWireFormat converts a slice of DiagLogEntry to the wire format

@@ -212,9 +212,9 @@ func makeStdoutExporter() (sdkmetric.Exporter, error) {
 // singleton O11yService and calls its Increment method.
 //
 // Binary address: 0xa56820
-func Increment(name string, tags []string, metric *O11yMetric, providers []TagProvider) {
-	svc, _ := GetO11yService(name, tags)
-	svc.Increment(name, metric, providers)
+func Increment(ctx context.Context, metric *O11yMetric, providers []TagProvider) {
+	svc, _ := GetO11yService("", nil)
+	svc.Increment("", metric, providers)
 }
 
 // RecordGauge is the package-level convenience function that obtains the

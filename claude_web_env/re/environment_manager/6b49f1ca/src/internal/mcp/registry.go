@@ -65,11 +65,33 @@ type MCPServer interface {
 //   offset 0x38: disable func() (closure from NewRegistration.func2)
 type ServerRegistration struct {
 	name            string
+	command         string
 	configureServer func(*slog.Logger, string, interface{}, interface{}, interface{}) (MCPServer, error)
 	shouldRegister  func() bool
 	server          MCPServer
 	enabled         func() bool
 	disable         func()
+}
+
+// Name returns the registration's server name.
+func (r *ServerRegistration) Name() string {
+	return r.name
+}
+
+// Command returns the registration's command string.
+func (r *ServerRegistration) Command() string {
+	return r.command
+}
+
+// Setup calls the registration's configureServer function and starts the server.
+// Returns the MCPServer, the socket directory path, and any error.
+func (r *ServerRegistration) Setup(ctx context.Context, logger *slog.Logger) (MCPServer, string, error) {
+	srv, err := r.configureServer(logger, r.name, nil, nil, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	r.server = srv
+	return srv, "", nil
 }
 
 // registry is the global slice of registered MCP server registrations.

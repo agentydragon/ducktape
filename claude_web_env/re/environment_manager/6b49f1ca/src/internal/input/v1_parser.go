@@ -265,7 +265,7 @@ func (p *V1Parser) buildOutcomes(sessCtx *sessionContext, secret *WorkSecret) *c
 
 	var rawOutcomes []v0Outcome
 	if err := json.Unmarshal(sessCtx.Outcomes, &rawOutcomes); err != nil {
-		p.O11y.Increment("outcomes_parse_failed")
+		p.O11y.Increment("outcomes_parse_failed", nil, nil)
 		logger := p.Logger
 		logger.Warn("Failed to parse outcomes for git push info",
 			"error", err,

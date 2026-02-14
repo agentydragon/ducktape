@@ -16,12 +16,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/anthropics/anthropic/api-go/core/dogmetrics"
-	tunnelpb "github.com/anthropics/anthropic/api-go/gen/proto/anthropic/sessions/tunnel/v1alpha"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/dogmetrics"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/manager"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions"
+	tunnelpb "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/tunnelpb"
 
-	isync "internal/sync"
+	isync "sync"
 )
 
 // ResponseSender is the interface for sending HTTP tunnel responses back through the tunnel.

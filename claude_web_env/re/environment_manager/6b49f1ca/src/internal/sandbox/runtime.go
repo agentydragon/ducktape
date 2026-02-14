@@ -45,10 +45,8 @@ type SandboxRuntime struct {
 //
 // Binary address: 0x7dbd80
 func NewSandboxRuntimeWithConfig(
+	config *SandboxConfig,
 	logger *slog.Logger,
-	configPath string,
-	runtimePath string,
-	extraDenyReadPaths []string,
 ) (*SandboxRuntime, error) {
 	// Determine the srt binary path from environment, defaulting to "srt".
 	srtBinary := os.Getenv("SRT_BINARY_PATH")
@@ -72,33 +70,22 @@ func NewSandboxRuntimeWithConfig(
 		}
 	}
 
-	var config *SandboxConfig
-	var configFile string
-	var hasCustomConfig bool
+	hasCustomConfig := config != nil
 
-	if runtimePath != "" {
-		// A custom config path was supplied; load and validate it.
-		config, err = LoadAndValidateConfig(configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load custom sandbox config: %w", err)
-		}
-
+	if config == nil {
+		// Build the default sandbox config.
+		config = buildDefaultConfig(nil)
+	} else {
 		if logger != nil {
 			logger.Log(context.Background(), slog.LevelDebug,
 				"using custom sandbox config",
-				"config_path", configPath,
 				"allowed_domains", config.AllowedDomains,
 			)
 		}
-
-		hasCustomConfig = true
-	} else {
-		// Build the default sandbox config.
-		config = buildDefaultConfig(extraDenyReadPaths)
 	}
 
 	// Write the config to a temp file (0x7dc403: WriteConfigFile).
-	configFile, err = WriteConfigFile(config)
+	configFile, err := WriteConfigFile(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write sandbox config file: %w", err)
 	}
@@ -117,7 +104,7 @@ func NewSandboxRuntimeWithConfig(
 		RuntimePath:  srtBinary,
 		ConfigFile:   configFile,
 		Logger:       logger,
-		HasConfig:    runtimePath != "",
+		HasConfig:    true,
 		CustomConfig: hasCustomConfig,
 	}, nil
 }

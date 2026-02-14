@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -26,16 +25,14 @@ type AuthContext struct {
 // NewAuthContextWithSessionID creates a new AuthContext by parsing the given
 // auth JSON (a JSON array of AuthConfig objects) and setting the session ID.
 // If authJSON is nil, an empty AuthContext is returned with only the session ID
-// and logger populated.
+// populated.
 func NewAuthContextWithSessionID(
-	logger *slog.Logger,
 	authJSON json.RawMessage,
 	sessionID string,
 ) (*AuthContext, error) {
 	if authJSON == nil {
 		ctx := &AuthContext{
 			sessionID: sessionID,
-			logger:    logger,
 		}
 		return ctx, nil
 	}
@@ -47,7 +44,6 @@ func NewAuthContextWithSessionID(
 
 	ctx := &AuthContext{
 		sessionID: sessionID,
-		logger:    logger,
 	}
 
 	for _, config := range configs {
@@ -57,36 +53,24 @@ func NewAuthContextWithSessionID(
 				return nil, fmt.Errorf("anthropic_api auth configuration missing required 'token' field")
 			}
 			ctx.anthropicAPIToken = config.Token
-			logger.Log(context.Background(), slog.LevelInfo, "Configured Anthropic API token",
-				"type", config.Type,
-			)
 
 		case "vercel_deploy":
 			if config.Token == "" {
 				return nil, fmt.Errorf("vercel_deploy auth configuration missing required 'token' field")
 			}
 			ctx.vercelDeployToken = config.Token
-			logger.Log(context.Background(), slog.LevelInfo, "Configured Vercel deploy token",
-				"type", config.Type,
-			)
 
 		case "anthropic_oauth":
 			if config.Token == "" {
 				return nil, fmt.Errorf("anthropic_oauth auth configuration missing required 'token' field")
 			}
 			ctx.anthropicOAuthToken = config.Token
-			logger.Log(context.Background(), slog.LevelInfo, "Configured Anthropic OAuth token",
-				"type", config.Type,
-			)
 
 		case "session_ingress":
 			if config.Token == "" {
 				return nil, fmt.Errorf("session_ingress auth configuration missing required 'token' field")
 			}
 			ctx.sessionIngressToken = config.Token
-			logger.Log(context.Background(), slog.LevelInfo, "Configured session ingress token",
-				"type", config.Type,
-			)
 
 		default:
 			return nil, fmt.Errorf("unknown auth provider type: %s", config.Type)

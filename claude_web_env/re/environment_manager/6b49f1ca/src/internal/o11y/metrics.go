@@ -6,6 +6,8 @@
 
 package o11y
 
+import "context"
+
 // ---- Global metric variables (data segment addresses) ----
 
 // EnvManagerStartCounter tracks environment manager start events.
@@ -104,7 +106,7 @@ func IncrementEnvManagerEnd(name string, tags []string, exitReason string, code 
 
 	errorProvider, _ := ErrorTags(err, errItf)
 
-	Increment(name, tags, EnvManagerEndCounter, []TagProvider{codeProvider, errorProvider})
+	Increment(context.Background(), EnvManagerEndCounter, []TagProvider{codeProvider, errorProvider})
 }
 
 // IncrementClaudeCodeEnd increments the ClaudeCodeEndCounter with
@@ -113,21 +115,17 @@ func IncrementEnvManagerEnd(name string, tags []string, exitReason string, code 
 // Binary address: 0xa51c80
 func IncrementClaudeCodeEnd(name string, tags []string, err error, errItf interface{}) {
 	errorProvider, _ := ErrorTags(err, errItf)
-	Increment(name, tags, ClaudeCodeEndCounter, []TagProvider{errorProvider})
+	Increment(context.Background(), ClaudeCodeEndCounter, []TagProvider{errorProvider})
 }
 
 // IncrementOrchestratorSessionEnd increments the OrchestratorSessionEndCounter
 // with a reason tag and error tags.
 //
 // Binary address: 0xa51d20
-func IncrementOrchestratorSessionEnd(name string, tags []string, reason string, err error, errItf interface{}) {
-	reasonTags := make(map[string]string)
-	reasonTags["reason"] = reason
-	reasonProvider := &kvTagProvider{tags: reasonTags}
+func IncrementOrchestratorSessionEnd(ctx context.Context, err error) {
+	errorProvider, _ := ErrorTags(err, nil)
 
-	errorProvider, _ := ErrorTags(err, errItf)
-
-	Increment(name, tags, OrchestratorSessionEndCounter, []TagProvider{reasonProvider, errorProvider})
+	Increment(ctx, OrchestratorSessionEndCounter, []TagProvider{errorProvider})
 }
 
 // RecordDuration records a duration metric with the given value and tags.

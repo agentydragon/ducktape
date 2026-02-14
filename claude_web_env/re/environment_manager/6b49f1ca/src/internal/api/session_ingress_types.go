@@ -13,6 +13,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// LogCategory represents a category for diagnostic log entries.
+// Binary: string-typed enum used in session activity recording.
+type LogCategory string
+
 // SessionError is the interface for errors that can occur during session processing.
 // Known implementors: ClaudeCodeExecutionError, SourceProcessingError
 //

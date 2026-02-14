@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y/diag"
 )
@@ -307,14 +306,14 @@ func (m *Manager) initializeEnvironmentAsync(ctx context.Context, logger *slog.L
 		// Deferred o11y recording cleanup
 	}()
 
-	// Record o11y metric
-	deferredMetric := o11y.RecordFunctionDeferred(ctx, logger, o11y.EnvInitMetric, nil)
-	defer deferredMetric()
-
 	startTime := time.Now()
 
+	// Record o11y metric
+	deferredMetric := o11y.RecordFunctionDeferred("", nil, nil, startTime, nil)
+	defer deferredMetric(nil, nil)
+
 	m.Logger.Info("Starting environment initialization (parallel)")
-	diag.LogEnvManagerNoPII(ctx, logger, "env_init_started", nil)
+	diag.LogEnvManagerNoPII(ctx, "env_init_started", nil)
 
 	// Call environment type's Initialize method via vtable dispatch
 	// Binary: 0xb6f44c CALL DX (interface method at offset 0x20)
@@ -332,7 +331,7 @@ func (m *Manager) initializeEnvironmentAsync(ctx context.Context, logger *slog.L
 	diagAttrs := map[string]interface{}{
 		"duration_ms": elapsed.Milliseconds(),
 	}
-	diag.LogEnvManagerNoPII(ctx, logger, "env_init_completed", diagAttrs)
+	diag.LogEnvManagerNoPII(ctx, "env_init_completed", diagAttrs)
 
 	// Apply environment config after initialization
 	m.applyEnvironmentConfig(ctx, logger)
@@ -353,10 +352,11 @@ func (m *Manager) addOfficialPluginMarketplaceAsync(ctx context.Context, logger 
 	startTime := time.Now()
 
 	// Records o11y.PluginMarketplaceMetric via o11y.RecordFunctionDeferred (0xb6fbd2)
-	o11y.RecordFunctionDeferred(ctx, logger, o11y.PluginMarketplaceMetric, nil)
+	deferredMetric := o11y.RecordFunctionDeferred("", nil, nil, startTime, nil)
+	defer deferredMetric(nil, nil)
 
 	m.Logger.Info("adding official plugin marketplace")
-	diag.LogEnvManagerNoPII(ctx, logger, "adding official plugin marketplace", nil)
+	diag.LogEnvManagerNoPII(ctx, "adding official plugin marketplace", nil)
 
 	// Gets the NPM registry URL from env var or uses default "stable"
 	// Binary: os.Getenv at 0xb6fc69 for "NPM_CONFIG_REGISTRY" (len 0x13=19)
@@ -389,7 +389,7 @@ func (m *Manager) addOfficialPluginMarketplaceAsync(ctx context.Context, logger 
 	diagAttrs := map[string]interface{}{
 		"duration_ms": elapsed.Milliseconds(),
 	}
-	diag.LogEnvManagerNoPII(ctx, logger, "added plugin marketplace", diagAttrs)
+	diag.LogEnvManagerNoPII(ctx, "added plugin marketplace", diagAttrs)
 }
 
 // createTunnelClient creates a tunnel client for the session. It parses the
