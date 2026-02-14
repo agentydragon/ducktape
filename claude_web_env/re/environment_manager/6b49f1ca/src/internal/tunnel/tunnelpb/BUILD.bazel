@@ -5,4 +5,7 @@ go_library(
     srcs = ["types.go"],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/tunnelpb",
     visibility = ["//claude_web_env/re/environment_manager/6b49f1ca/src:__subpackages__"],
+    deps = [
+        "@org_golang_google_protobuf//reflect/protoreflect",
+    ],
 )

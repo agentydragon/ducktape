@@ -171,7 +171,6 @@ func (h *GitHandler) CanHandle(source config.Source) bool {
 func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source config.Source) error {
 	// Binary 0xaea783: time.Now()
 	startTime := time.Now()
-	_ = startTime // TODO(re): should compute elapsed for o11y/diag metrics
 
 	// Binary 0xaea790-0xaea7c2: type assertion to GitRepositorySource
 	gitSource, ok := source.(config.GitRepositorySource)
@@ -274,8 +273,8 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 
 	// Binary 0xaeabee-0xaeac15: o11y.RecordFunctionDeferred(ctx, o11y.GitCheckoutMetric, ...)
 	// AX=ctx.itab, BX=ctx.data, CX=GitCheckoutMetric, DI=resultObj, SI=nil, R8=nil, R9=nil
-	deferredMetric := o11y.RecordFunctionDeferred(ctx, o11y.GitCheckoutMetric, nil, nil)
-	defer deferredMetric()
+	deferredMetric := o11y.RecordFunctionDeferred("git_checkout", nil, nil, startTime, nil)
+	defer deferredMetric(nil, nil)
 
 	// Binary 0xaeb56e-0xaeb5b4: getAuthenticatedURL
 	// Passes ctx, repoURL, authProvider, permission="read"
@@ -561,7 +560,7 @@ func (h *GitHandler) cloneRepository(
 
 	// Binary: check source.GitInfo.Ref for post-fetch BYOC branch setup
 	if source.GitInfo.Ref != nil && *source.GitInfo.Ref != "" {
-		branch := *source.GitInfo.Ref
+		_ = *source.GitInfo.Ref
 
 		// Check if processMode is "allow-prefetched" for BYOC logic
 		if processMode == "allow-prefetched" && isCustomURL {

@@ -9,6 +9,10 @@
 
 package tunnelpb
 
+import (
+	"google.golang.org/protobuf/reflect/protoreflect"
+)
+
 // ---------------------------------------------------------------------------
 // Header
 // ---------------------------------------------------------------------------
@@ -21,6 +25,9 @@ type Header struct {
 func (x *Header) Reset()         {}
 func (x *Header) String() string { return x.Key + ": " + x.Value }
 func (x *Header) ProtoMessage()  {}
+func (x *Header) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *Header) GetKey() string {
 	if x != nil {
@@ -62,6 +69,9 @@ type TunnelRequest struct {
 func (x *TunnelRequest) Reset()         {}
 func (x *TunnelRequest) String() string { return "TunnelRequest" }
 func (x *TunnelRequest) ProtoMessage()  {}
+func (x *TunnelRequest) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *TunnelRequest) GetPayload() isTunnelRequestPayload {
 	if x != nil {
@@ -194,6 +204,9 @@ type HttpCancel struct {
 func (x *HttpCancel) Reset()         {}
 func (x *HttpCancel) String() string { return "HttpCancel" }
 func (x *HttpCancel) ProtoMessage()  {}
+func (x *HttpCancel) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *HttpCancel) GetRequestId() string {
 	if x != nil {
@@ -249,6 +262,9 @@ type WsOpen struct {
 func (x *WsOpen) Reset()         {}
 func (x *WsOpen) String() string { return "WsOpen" }
 func (x *WsOpen) ProtoMessage()  {}
+func (x *WsOpen) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *WsOpen) GetPath() string {
 	if x != nil {
@@ -377,6 +393,9 @@ type TunnelResponse struct {
 func (x *TunnelResponse) Reset()         {}
 func (x *TunnelResponse) String() string { return "TunnelResponse" }
 func (x *TunnelResponse) ProtoMessage()  {}
+func (x *TunnelResponse) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *TunnelResponse) GetRequestId() string {
 	if x != nil {
@@ -479,6 +498,9 @@ type HttpHeaders struct {
 func (x *HttpHeaders) Reset()         {}
 func (x *HttpHeaders) String() string { return "HttpHeaders" }
 func (x *HttpHeaders) ProtoMessage()  {}
+func (x *HttpHeaders) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *HttpHeaders) GetStatusCode() int32 {
 	if x != nil {
@@ -502,6 +524,9 @@ type HttpChunk struct {
 func (x *HttpChunk) Reset()         {}
 func (x *HttpChunk) String() string { return "HttpChunk" }
 func (x *HttpChunk) ProtoMessage()  {}
+func (x *HttpChunk) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *HttpChunk) GetData() []byte {
 	if x != nil {
@@ -519,6 +544,9 @@ type HttpError struct {
 func (x *HttpError) Reset()         {}
 func (x *HttpError) String() string { return "HttpError" }
 func (x *HttpError) ProtoMessage()  {}
+func (x *HttpError) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *HttpError) GetMessage() string {
 	if x != nil {
@@ -544,6 +572,9 @@ type WsOpened struct{}
 func (x *WsOpened) Reset()         {}
 func (x *WsOpened) String() string { return "WsOpened" }
 func (x *WsOpened) ProtoMessage()  {}
+func (x *WsOpened) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 // WsMessage represents a WebSocket message forwarded through the tunnel.
 type WsMessage struct {
@@ -555,6 +586,9 @@ type WsMessage struct {
 func (x *WsMessage) Reset()         {}
 func (x *WsMessage) String() string { return "WsMessage" }
 func (x *WsMessage) ProtoMessage()  {}
+func (x *WsMessage) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *WsMessage) GetData() []byte {
 	if x != nil {
@@ -590,6 +624,9 @@ type WsClose struct {
 func (x *WsClose) Reset()         {}
 func (x *WsClose) String() string { return "WsClose" }
 func (x *WsClose) ProtoMessage()  {}
+func (x *WsClose) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *WsClose) GetCode() int32 {
 	if x != nil {
@@ -641,6 +678,9 @@ type WsError struct {
 func (x *WsError) Reset()         {}
 func (x *WsError) String() string { return "WsError" }
 func (x *WsError) ProtoMessage()  {}
+func (x *WsError) ProtoReflect() protoreflect.Message {
+	return nil
+}
 
 func (x *WsError) GetMessage() string {
 	if x != nil {

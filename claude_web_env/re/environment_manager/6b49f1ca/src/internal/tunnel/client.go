@@ -298,11 +298,11 @@ func (c *Client) readLoop(ctx context.Context, cancel context.CancelCauseFunc, c
 						slog.Error("panic in handleHTTPRequest", "error", r)
 					}
 				}()
-				c.handleHTTPRequest(ctx, payload.HttpRequest, req)
+				c.handleHTTPRequest(ctx, payload, req)
 			}()
 
 		case *tunnelpb.TunnelRequest_HttpCancel:
-			c.handleHTTPCancel(ctx, payload.HttpCancel)
+			c.handleHTTPCancel(ctx, payload)
 
 		case *tunnelpb.TunnelRequest_WsOpen:
 			go func() {
@@ -311,14 +311,14 @@ func (c *Client) readLoop(ctx context.Context, cancel context.CancelCauseFunc, c
 						slog.Error("panic in handleWSOpen", "error", r)
 					}
 				}()
-				c.handleWSOpen(ctx, payload.WsOpen, req)
+				c.handleWSOpen(ctx, payload, req)
 			}()
 
 		case *tunnelpb.TunnelRequest_WsMessage:
-			c.handleWSMessage(ctx, payload.WsMessage, req)
+			c.handleWSMessage(ctx, payload, req)
 
 		case *tunnelpb.TunnelRequest_WsClose:
-			c.handleWSClose(ctx, payload.WsClose, req)
+			c.handleWSClose(ctx, payload, req)
 		}
 	}
 }
@@ -341,10 +341,17 @@ func (c *Client) handleHTTPRequest(ctx context.Context, httpReq *tunnelpb.Tunnel
 		path := req.GetPath()
 		if len(path) >= 11 && path[:11] == "/__actions/" {
 			// Dispatch to action registry
+			// Convert headers from map[string][]string to map[string]string
+			headers := make(map[string]string)
+			for k, v := range req.GetHeaders() {
+				if len(v) > 0 {
+					headers[k] = v[0]
+				}
+			}
 			c.registry.Execute(
 				ctx,
 				req.GetBody(),
-				req.GetHeaders(),
+				headers,
 				sender,
 				path,
 			)
@@ -353,7 +360,7 @@ func (c *Client) handleHTTPRequest(ctx context.Context, httpReq *tunnelpb.Tunnel
 	}
 
 	// Forward to local HTTP handler
-	c.handler.HandleRequest(ctx, httpReq, sender)
+	c.handler.HandleRequest(ctx, httpReq.HttpRequest, sender)
 }
 
 // handleHTTPCancel handles a cancellation request for an in-flight HTTP request.
@@ -630,12 +637,7 @@ func (s *httpResponseSender) SendHeaders(headers *tunnelpb.HttpHeaders) error {
 // SendChunk wraps a TunnelResponse with HttpChunk payload and sends it.
 //
 // Binary address: 0xb65760
-func (s *httpResponseSender) SendChunk(chunk *tunnelpb.HttpChunk) error {
-	resp := &tunnelpb.TunnelResponse{
-		Payload: &tunnelpb.TunnelResponse_HttpChunk{
-			HttpChunk: chunk,
-		},
-	}
+func (s *httpResponseSender) SendChunk(resp *tunnelpb.TunnelResponse) error {
 	return s.client.sendResponse(resp)
 }
 

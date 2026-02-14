@@ -25,7 +25,7 @@ type Handler struct {
 	logger    *slog.Logger
 	baseURL   string
 	requests  map[string]interface{}
-	cancelMap isync.HashTrieMap[string, context.CancelFunc] // offset 0x18
+	cancelMap isync.Map // offset 0x18 - stores context.CancelFunc values
 }
 
 // HandleRequest forwards an incoming HTTP tunnel request to the local server.

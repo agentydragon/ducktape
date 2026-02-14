@@ -159,7 +159,7 @@ func (s *CodeSignMCPServer) Stop() bool {
 //       "content"            - type: string, description: "content to sign..."
 //
 //   The "required" array at offset 0xb0d3ed (len 7) is likely ["file_path"].
-func (s *CodeSignMCPServer) GetTools() map[string]interface{} {
+func (s *CodeSignMCPServer) GetTools() (interface{}, int, int) {
 	// Build input schema for sign_file tool
 	filePathProp := map[string]interface{}{
 		"type":        "string",
@@ -186,7 +186,7 @@ func (s *CodeSignMCPServer) GetTools() map[string]interface{} {
 	_ = signingKeyPathProp
 	_ = contentProp
 
-	return nil
+	return nil, 0, 0
 }
 
 // handleSignFile handles the "sign_file" MCP tool call. It extracts the
@@ -216,14 +216,16 @@ func (s *CodeSignMCPServer) handleSignFile(ctx context.Context, request mcplib.C
 	// Extract optional parameters from the request arguments map
 	var sourceIdentifier string
 	var signingKeyPath string
-	if args, ok := request.Params.Arguments["source_identifier"]; ok {
-		if s, ok := args.(string); ok {
-			sourceIdentifier = s
+	if argsMap, ok := request.Params.Arguments.(map[string]interface{}); ok {
+		if args, ok := argsMap["source_identifier"]; ok {
+			if s, ok := args.(string); ok {
+				sourceIdentifier = s
+			}
 		}
-	}
-	if args, ok := request.Params.Arguments["signing_key_path"]; ok {
-		if s, ok := args.(string); ok {
-			signingKeyPath = s
+		if args, ok := argsMap["signing_key_path"]; ok {
+			if s, ok := args.(string); ok {
+				signingKeyPath = s
+			}
 		}
 	}
 

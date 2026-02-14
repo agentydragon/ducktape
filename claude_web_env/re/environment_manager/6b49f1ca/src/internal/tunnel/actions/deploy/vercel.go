@@ -10,12 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"path/filepath"
 )
 
 // FileEntry represents a file to be deployed, with its path, content, and SHA hash.
@@ -121,9 +120,8 @@ func ProjectName(path string) string {
 // Binary address: 0xb3f240
 func CollectFiles(dir string) ([]FileEntry, error) {
 	var files []FileEntry
-	shaMap := make(map[string]string)
 
-	err := filepath.WalkDir(dir, func(path string, d interface{}, err error) error {
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
