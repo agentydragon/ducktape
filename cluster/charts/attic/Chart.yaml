@@ -16,5 +16,5 @@ maintainers:
 dependencies:
   - name: postgresql
     version: 18.1.13
-    repository: https://charts.bitnami.com/bitnami
+    repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
