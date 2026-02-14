@@ -231,11 +231,11 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb798ae: Initialize diagnostic logging
 			diagService, diagCleanup, err := initDiagLogging(
-				slogger,
+				cmd.Context(),
 				apiURL,
-				secretPath,
 				envServiceKey,
 				sessionID,
+				slogger,
 			)
 			if err != nil {
 				return fmt.Errorf("failed to initialize diagnostic logging: %w", err)
@@ -750,60 +750,53 @@ func (s *stdinConfigClient) GetOutcomes() *claude.Outcomes {
 // Binary: 0xb7c260 - cmd.initDiagLogging
 // Source: cmd/cmd_task_run.go
 //
-// Parameters (register-based ABI):
+// DWARF-verified parameters (line 710-715):
 //
-//	AX  = logger (*slog.Logger)
-//	BX  = logger length/data
-//	CX  = API URL string data
-//	DI  = API URL string length
-//	SI  = secret path string data
-//	R8  = secret path string length
-//	R9  = session ID string data
-//	R10 = session ID string length
-//	R11 = secret key from env
-//
-// Returns:
-//
-//	AX = *diag.DiagService (or logger if disabled)
-//	BX = associated data
-//	CX = cleanup function (or nil)
-//	DI = error interface type
-//	SI = error interface data
+//	ctx                  context.Context   (AX=type, BX=value)
+//	apiBaseURL           string            (CX=ptr, DI=len)
+//	sessionIngressToken  string            (SI=ptr, R8=len)
+//	sessionID            string            (R9=ptr, R10=len)
+//	logger               *slog.Logger      (R11)
 //
 // Flow:
 //  1. Call diag.LogsEnabled() - checks if diagnostic logging is enabled
 //  2. If disabled:
-//     - Log "Diagnostic logs are disabled" at info level (0x1c chars)
-//     - Return logger and nil cleanup
+//     - Log "Diagnostic logs are disabled" at info level
+//     - Return nil, nil, nil
 //  3. If enabled:
-//     - Create api.NewHttpClient(apiURL, secretPath, secretKey, nil)
-//     - Create SessionIngressLogFlusher struct with httpClient, secretPath, secretKey
-//     - Call diag.NewDiagService(logger, sessionID, flusher_itab, flusher)
-//     - If error from NewDiagService:
-//       Return error wrapped: "failed to initialize diagnostic logging service: %w"
+//     - Create api.NewHttpClient(apiBaseURL)
+//     - Wrap in HttpSessionIngressClient{Client: httpClient, ApiKey: sessionIngressToken, Logger: logger, UseV2: false}
+//     - Create SessionIngressLogFlusher{Client: ingressClient, SessionID: sessionID}
+//     - Call diag.NewDiagService(ctx, sessionID, ctx, flusher)
+//     - If error: return wrapped "failed to initialize diagnostic logging service: %w"
 //     - Create cleanup function (func2) that calls DiagService.Shutdown with 10s timeout
 //     - Return diagService, cleanup, nil
 func initDiagLogging(
-	slogger *slog.Logger,
-	apiURL string,
-	secretPath string,
-	secretKey string,
+	ctx context.Context,
+	apiBaseURL string,
+	sessionIngressToken string,
 	sessionID string,
+	logger *slog.Logger,
 ) (*diag.DiagService, func(), error) {
 	if !diag.LogsEnabled() {
-		slogger.Info("Diagnostic logs are disabled")
+		logger.Info("Diagnostic logs are disabled")
 		return nil, nil, nil
 	}
 
-	httpClient := api.NewHttpClient(apiURL, secretPath, secretKey, nil)
+	httpClient := api.NewHttpClient(apiBaseURL)
 
-	flusher := &diag.SessionIngressLogFlusher{
-		Client:    httpClient, // TODO(re): was nil — httpClient was created above but discarded
-		SessionID: sessionID,
-		AuthToken: secretKey,
+	ingressClient := &api.HttpSessionIngressClient{
+		Client: httpClient,
+		ApiKey: sessionIngressToken,
+		Logger: logger,
 	}
 
-	diagService, err, _ := diag.NewDiagService(context.Background(), sessionID, context.Background(), flusher)
+	flusher := &diag.SessionIngressLogFlusher{
+		Client:    ingressClient,
+		SessionID: sessionID,
+	}
+
+	diagService, err, _ := diag.NewDiagService(ctx, sessionID, ctx, flusher)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize diagnostic logging service: %w", err)
 	}
