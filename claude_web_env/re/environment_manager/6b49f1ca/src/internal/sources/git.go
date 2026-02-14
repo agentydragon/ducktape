@@ -26,8 +26,9 @@ import (
 // sizeResult holds the result of a pack size calculation.
 //
 // Struct layout (from type equality at 0xaf8400):
-//   offset 0x00: size int64
-//   offset 0x08: duration time.Duration
+//
+//	offset 0x00: size int64
+//	offset 0x08: duration time.Duration
 type sizeResult struct {
 	size     int64
 	duration time.Duration
@@ -35,38 +36,31 @@ type sizeResult struct {
 
 // GitHandler handles git repository sources.
 //
-// Struct layout (from NewGitHandler field stores and method field accesses):
-//   offset 0x00: logger *slog.Logger
-//   offset 0x08: baseDir string (ptr)
-//   offset 0x10: baseDir string (len)
-//   offset 0x18: sessionID string (ptr)
-//   offset 0x20: sessionID string (len)
-//   offset 0x28: activityRecorder interface{} (itab)
-//   offset 0x30: activityRecorder interface{} (data)
-//   offset 0x38: unknown1 (from R10)
-//   offset 0x48: unknown2 (from R10 -> 0x48)
-//   offset 0x50: unknown3 (from R8 -> 0x50)
-//   offset 0x58: gitProxyManager interface{} (itab)
-//   offset 0x60: gitProxyManager interface{} (data)
-//   offset 0x68: gitProxyManager gitproxy.Manager (itab, accessed in setupLocalGitProxy)
-//   offset 0x70: gitProxyManager gitproxy.Manager (data)
-//   offset 0x78: isResume bool
-//   offset 0x80: postCloneHookPath string (ptr)
-//   offset 0x88: postCloneHookPath string (len)
+// Struct layout (from NewGitHandler field stores and Process field accesses):
+//
+//	offset 0x00: logger *slog.Logger
+//	offset 0x08: baseDir string (ptr + len at 0x10)
+//	offset 0x18: sessionID string (ptr + len at 0x20)
+//	offset 0x28: gitProxyManager interface{} (itab + data at 0x30) — stored from NewGitHandler R8/R9
+//	offset 0x38: authProvider auth.SourceAuthProvider (itab + data at 0x40) — set by createSourceAuthProvider in Process
+//	offset 0x48: activityRecorder interface{} (itab + data at 0x50) — stored from NewGitHandler R10/R11
+//	offset 0x58: processMode string (ptr + len at 0x60) — "fresh", "allow-prefetched", "resume", etc.
+//	offset 0x68: gitProxyManager gitproxy.Manager (itab + data at 0x70) — used in setupLocalGitProxy; set after construction
+//	offset 0x78: isResume bool
+//	offset 0x80: postCloneHookPath string (ptr + len at 0x88) — from POST_CLONE_HOOK_PATH env var
 //
 // Implements: SourceHandler (itab at 0xf61188)
 type GitHandler struct {
-	logger            *slog.Logger        // offset 0x00
-	baseDir           string              // offset 0x08
-	sessionID         string              // offset 0x18
-	activityRecorder  interface{}         // offset 0x28
-	outcomes          map[string][]string // offset 0x30 (branch outcomes map)
-	repoAuths         interface{}         // offset 0x38
-	authProvider      interface{}         // offset 0x48
-	gitProxyConfig    interface{}         // offset 0x58
-	gitProxyManager   gitproxy.Manager    // offset 0x68
-	isResume          bool                // offset 0x78
-	postCloneHookPath string              // offset 0x80
+	logger           *slog.Logger            // offset 0x00
+	baseDir          string                  // offset 0x08
+	sessionID        string                  // offset 0x18
+	gitProxyConfig   interface{}             // offset 0x28 — original proxy config interface from constructor
+	authProvider     auth.SourceAuthProvider  // offset 0x38 — set per-source in Process via createSourceAuthProvider
+	activityRecorder interface{}             // offset 0x48
+	processMode      string                  // offset 0x58 — e.g. "fresh", "allow-prefetched", "resume"
+	gitProxyManager  gitproxy.Manager        // offset 0x68 — concrete Manager interface, set post-construction
+	isResume         bool                    // offset 0x78
+	postCloneHookPath string                 // offset 0x80
 }
 
 // NewGitHandler creates a new GitHandler.
@@ -74,29 +68,41 @@ type GitHandler struct {
 //
 // Binary address: 0xaea460
 // Source file: git.go
+//
+// Parameters (register ABI):
+//
+//	AX: logger, BX+CX: baseDir, DI+SI: sessionID,
+//	R8+R9: gitProxyConfig (interface{}), R10+R11: activityRecorder (interface{}),
+//	stack[0]+stack[1]: processMode string, stack[2]: isResume bool
 func NewGitHandler(
 	logger *slog.Logger,
 	baseDir string,
 	sessionID string,
-	gitProxyManager interface{},
+	gitProxyConfig interface{},
 	activityRecorder interface{},
+	processMode string,
 	isResume bool,
 ) *GitHandler {
+	// Binary 0xaea4ba: os.Getenv("POST_CLONE_HOOK_PATH")
 	postCloneHookPath := os.Getenv("POST_CLONE_HOOK_PATH")
 	if postCloneHookPath != "" {
+		// Binary 0xaea516-0xaea549: slog.Logger.log with context.Background()
 		logger.Info("Using post-clone hook from environment",
 			"path", postCloneHookPath,
 		)
 	}
 
+	// Binary 0xaea54e: runtime.newobject allocates the GitHandler struct
+	// Fields stored at 0xaea603-0xaea665
 	return &GitHandler{
-		logger:            logger,
-		baseDir:           baseDir,
-		sessionID:         sessionID,
-		activityRecorder:  activityRecorder,
-		gitProxyManager:   nil, // set separately
-		isResume:          isResume,
-		postCloneHookPath: postCloneHookPath,
+		logger:            logger,            // 0x00
+		baseDir:           baseDir,           // 0x08
+		sessionID:         sessionID,         // 0x18
+		gitProxyConfig:    gitProxyConfig,    // 0x28
+		activityRecorder:  activityRecorder,  // 0x48
+		processMode:       processMode,       // 0x58
+		isResume:          isResume,           // 0x78
+		postCloneHookPath: postCloneHookPath, // 0x80
 	}
 }
 
@@ -117,115 +123,154 @@ func (h *GitHandler) CanHandle(source config.Source) bool {
 // Source file: git.go
 //
 // Closure:
-//   deferwrap1 at 0xaec7e0 - deferred o11y metric recording
 //
-// Key behaviors:
-//   - Casts source to GitRepositorySource
-//   - Determines process_mode from source type ("fresh", "allow-prefetched", "resume", "test-file")
-//   - Constructs git URL based on provider ("github" -> "https://github.com/%s",
-//     "test-file" -> "file://%s", default -> "git@github.com:%s.git")
-//   - Uses custom git URL if source has one configured
-//   - Calls createSourceAuthProvider for authentication
-//   - Records o11y.GitCheckoutMetric
-//   - Calls cloneRepository for cloning
-//   - Calls setupBranchFromOutcomes for branch setup
-//   - Handles resume mode with fallback to branch setup on clone failure
+//	deferwrap1 at 0xaec7e0 — deferred o11y metric recording
+//
+// Key behaviors from disassembly:
+//   - Type-asserts source to GitRepositorySource (0xaea790-0xaea7c2)
+//   - Reads h.processMode (offset 0x58/0x60) to determine modeLabel:
+//     "fresh" → "clone", otherwise → "fetch" (0xaea841-0xaea872)
+//   - Constructs activityMsg = fmt.Sprintf("Starting repository %s", modeLabel) (0xaeab00)
+//   - Logs with attrs: repo, provider (=GitInfo.Type), has_custom_url (=Ref!=nil), type (=processMode)
+//   - Checks processMode for "allow-prefetched" (0xaeaa72) → skips URL construction
+//   - If not allow-prefetched: checks processMode for "resume" → activityMsg = "Fetching repository %s"
+//     else → activityMsg = "Cloning repository %s"
+//   - URL construction based on source.GitInfo.Type:
+//     "github" → "https://github.com/%s", "test-file" → "file://%s",
+//     "github-ssh" → "git@github.com:%s.git", custom URL → source.GitInfo.URL
+//   - Calls createSourceAuthProvider (0xaeb532), stores at h.authProvider (offset 0x38/0x40)
+//   - Deferred o11y.RecordFunctionDeferred with GitCheckoutMetric (0xaeac05)
+//   - Calls getAuthenticatedURL (0xaeb5b4) with permission "read"
+//   - Calls config.GitRepositorySource.GetDirectory (0xaeaf53)
+//   - Mode-dependent clone/fetch behavior
+//   - Calls setupBranchFromOutcomes, resetOriginURL, runPostCloneHook
 func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source config.Source) error {
+	// Binary 0xaea783: time.Now()
 	startTime := time.Now()
+	_ = startTime
 
-	// Type-assert to GitRepositorySource
+	// Binary 0xaea790-0xaea7c2: type assertion to GitRepositorySource
 	gitSource, ok := source.(config.GitRepositorySource)
 	if !ok {
 		return fmt.Errorf("source is not a GitRepositorySource")
 	}
 
-	// Determine process mode
-	processMode := gitSource.GetType()
+	// Binary 0xaea841-0xaea860: check h.processMode == "fresh" for modeLabel
 	var modeLabel string
-	if processMode == "fresh" {
+	if h.processMode == "fresh" {
 		modeLabel = "clone"
 	} else {
-		modeLabel = "clone"
+		modeLabel = "fetch"
 	}
 
-	activityMsg := fmt.Sprintf("Starting repository %s", gitSource.Repo)
+	// Binary 0xaea89f-0xaeab00: fmt.Sprintf("Starting repository %s", modeLabel)
+	activityMsg := fmt.Sprintf("Starting repository %s", modeLabel)
 
+	// Binary 0xaeaa65: logger.Info with repo, provider, has_custom_url, type attrs
+	// Note: "provider" is source.GitInfo.Type, "has_custom_url" checks Ref!=nil,
+	// "type" is h.processMode
 	logger.Info(activityMsg,
-		"repo", gitSource.Repo,
-		"provider", gitSource.Provider,
-		"has_custom_url", gitSource.CustomURL != "",
-		"type", gitSource.GetType(),
+		"repo", gitSource.GitInfo.Repo,
+		"provider", gitSource.GitInfo.Type,
+		"has_custom_url", gitSource.GitInfo.Ref != nil,
+		"type", h.processMode,
 	)
 
-	// Check for "allow-prefetched" mode
-	if processMode == "allow-prefetched" {
-		// Use existing clone if available
-	}
-
-	// Construct the repository URL
-	var repoURL string
-	if gitSource.CustomURL != "" {
-		repoURL = fmt.Sprintf("Cloning repository %s", gitSource.Repo)
-		logger.Info("Using custom git URL",
-			"repo", gitSource.Repo,
-			"url", gitSource.Repo,
-		)
-	} else {
-		switch gitSource.Provider {
-		case "github":
-			repoURL = fmt.Sprintf("https://github.com/%s", gitSource.Repo)
-		case "test-file":
-			repoURL = fmt.Sprintf("file://%s", gitSource.Repo)
-		default:
-			repoURL = fmt.Sprintf("git@github.com:%s.git", gitSource.Repo)
+	// Binary 0xaeaa72-0xaeaaa9: if h.processMode == "allow-prefetched", skip URL construction
+	// Binary 0xaeaaaa-0xaeab8d: else, construct "Cloning"/"Fetching" message based on mode
+	if h.processMode != "allow-prefetched" {
+		if h.processMode == "resume" {
+			// Binary 0xaeab5f-0xaeab80: fmt.Sprintf("Fetching repository %s", repo)
+			activityMsg = fmt.Sprintf("Fetching repository %s", gitSource.GitInfo.Repo)
+		} else {
+			// Binary 0xaeaadf-0xaeab00: fmt.Sprintf("Cloning repository %s", repo)
+			activityMsg = fmt.Sprintf("Cloning repository %s", gitSource.GitInfo.Repo)
 		}
 	}
 
-	activityMsg = fmt.Sprintf("Fetching repository %s", gitSource.Repo)
+	// Binary 0xaeac2f-0xaead6c: construct repoURL
+	// If source.GitInfo.URL != nil and *source.GitInfo.URL != "":
+	//   use custom URL, log "Using custom git URL"
+	// Else: switch on source.GitInfo.Type
+	var repoURL string
+	if gitSource.GitInfo.URL != nil && *gitSource.GitInfo.URL != "" {
+		// Binary 0xaeac49-0xaead5c: custom URL path
+		repoURL = *gitSource.GitInfo.URL
+		logger.Info("Using custom git URL",
+			"repo", gitSource.GitInfo.Repo,
+			"url", repoURL,
+		)
+	} else {
+		// Binary 0xaead71-0xaeaf06: switch on source.GitInfo.Type
+		switch gitSource.GitInfo.Type {
+		case "github":
+			// Binary 0xaead9f-0xaeadf5: fmt.Sprintf("https://github.com/%s", repo)
+			repoURL = fmt.Sprintf("https://github.com/%s", gitSource.GitInfo.Repo)
+		case "test-file":
+			// Binary 0xaeae26-0xaeae80: fmt.Sprintf("file://%s", repo)
+			repoURL = fmt.Sprintf("file://%s", gitSource.GitInfo.Repo)
+		case "github-ssh":
+			// Binary 0xaeaeb5-0xaeaf06: fmt.Sprintf("git@github.com:%s.git", repo)
+			repoURL = fmt.Sprintf("git@github.com:%s.git", gitSource.GitInfo.Repo)
+		default:
+			// Binary 0xaec665: error path for unsupported provider
+			return fmt.Errorf("unsupported git provider type: %s", gitSource.GitInfo.Type)
+		}
+	}
 
-	// Create auth provider
-	authProvider := h.createSourceAuthProvider(gitSource)
-
-	// Record o11y metric
-	deferredMetric := o11y.RecordFunctionDeferred(logger, ctx, o11y.GitCheckoutMetric, nil, nil)
-	defer deferredMetric()
-
-	// Get the authenticated URL
-	authenticatedURL := h.getAuthenticatedURL(gitSource, repoURL, authProvider)
-
-	// Get directory for the repo
+	// Binary 0xaeaf0b-0xaeaf53: get repo directory
+	// Loads h.baseDir, copies source to stack, calls GetDirectory
 	repoDir := gitSource.GetDirectory()
 	if repoDir == "" {
-		return fmt.Errorf("could not determine repository directory for repo: %s", gitSource.Repo)
+		// Binary 0xaec5c5: error when directory is empty
+		return fmt.Errorf("could not determine repository directory for repo: %s", gitSource.GitInfo.Repo)
 	}
 
-	// Ensure base directory exists
-	err := os.MkdirAll(filepath.Dir(repoDir), 0o755)
-	if err != nil {
-		return fmt.Errorf("failed to create base directory %s: %w", filepath.Dir(repoDir), err)
-	}
+	// Binary 0xaeaf79-0xaeaf9f: check h.processMode == "fresh"
+	if h.processMode == "fresh" {
+		// Binary 0xaeafa5-...: fresh mode — stat the directory, mkdir, clone
+		// Ensure parent directory exists
+		err := os.MkdirAll(filepath.Dir(repoDir), 0o755)
+		if err != nil {
+			return fmt.Errorf("failed to create base directory %s: %w", filepath.Dir(repoDir), err)
+		}
 
-	// Handle existing directory
-	if _, statErr := os.Stat(repoDir); statErr == nil {
-		if processMode == "allow-prefetched" {
-			// Use existing repo
-		} else if h.isResume {
-			// Resume mode
-		} else {
+		// Handle existing directory in fresh mode — remove it
+		if _, statErr := os.Stat(repoDir); statErr == nil {
 			logger.Info("Repository directory already exists, removing it")
 			if err := os.RemoveAll(repoDir); err != nil {
 				return fmt.Errorf("failed to remove existing directory: %w", err)
 			}
 		}
-	} else if h.isResume {
-		logger.Warn(fmt.Sprintf("repository directory does not exist in resume mode: %s", repoDir))
 	}
 
-	// Clone the repository
-	cloneErr := h.cloneRepository(ctx, logger, gitSource, authenticatedURL, repoDir, repoURL, modeLabel)
+	// Binary 0xaeb4be-0xaeb4e6: check source.GitInfo.Auth != nil && Auth.Token != ""
+	// Binary 0xaeb532: createSourceAuthProvider(ctx, gitInfo) → stored at h.authProvider
+	h.authProvider = h.createSourceAuthProvider(ctx, gitSource.GitInfo)
 
-	// Setup branch from outcomes
-	branchErr := h.setupBranchFromOutcomes(ctx, logger, gitSource, repoDir, authenticatedURL, authProvider)
+	// Binary 0xaeabee-0xaeac15: o11y.RecordFunctionDeferred(ctx, o11y.GitCheckoutMetric, ...)
+	// AX=ctx.itab, BX=ctx.data, CX=GitCheckoutMetric, DI=resultObj, SI=nil, R8=nil, R9=nil
+	deferredMetric := o11y.RecordFunctionDeferred(ctx, o11y.GitCheckoutMetric, nil, nil)
+	defer deferredMetric()
+
+	// Binary 0xaeb56e-0xaeb5b4: getAuthenticatedURL
+	// Passes ctx, repoURL, authProvider, permission="read"
+	authenticatedURL := h.getAuthenticatedURL(ctx, repoURL, h.authProvider, "read")
+
+	// Binary 0xaeb5d1-0xaeb5e6: check h.isResume (offset 0x78) and h.processMode == "allow-prefetched"
+	if h.isResume && h.processMode == "allow-prefetched" {
+		// Binary 0xaeb616-...: allow-prefetched resume path
+		if _, statErr := os.Stat(repoDir); statErr == nil {
+			// Repository exists, use existing clone
+			logger.Info("Repository already exists in allow-prefetched mode, using existing clone")
+		}
+	}
+
+	// Binary: clone/fetch the repository
+	cloneErr := h.cloneRepository(ctx, logger, gitSource, authenticatedURL, repoDir, repoURL, h.processMode)
+
+	// Binary: setup branch from outcomes
+	branchErr := h.setupBranchFromOutcomes(ctx, logger, gitSource, repoDir, authenticatedURL, h.authProvider)
 
 	if cloneErr != nil && branchErr != nil {
 		if h.isResume {
@@ -239,7 +284,6 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 			logger.Warn("Repository branch setup succeeded but clone/fetch had errors",
 				"error", cloneErr,
 			)
-			return fmt.Errorf("clone/fetch failed in resume mode: %w", cloneErr)
 		}
 	}
 
@@ -247,17 +291,19 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 		return fmt.Errorf("failed to setup branch from outcomes: %w", branchErr)
 	}
 
-	// Reset origin URL to non-authenticated
+	// Binary: reset origin URL to non-authenticated
 	h.resetOriginURL(ctx, logger, repoDir, repoURL)
 
-	// Run post-clone hook
-	h.runPostCloneHook(ctx, logger, repoDir, gitSource.Repo)
+	// Binary: run post-clone hook
+	h.runPostCloneHook(ctx, logger, repoDir, gitSource.GitInfo.Repo)
 
+	// Binary: final success log
 	logger.Info("Git repository cloned successfully",
-		"repo", gitSource.Repo,
+		"repo", gitSource.GitInfo.Repo,
 		"duration_ms", time.Since(startTime).Milliseconds(),
 	)
 
+	_ = activityMsg
 	return nil
 }
 
@@ -339,8 +385,10 @@ func (h *GitHandler) ValidateRepositoryAccess(
 		"attempts", 3,
 	)
 
-	diag.LogEnvManagerNoPII(logger, ctx, "repository_access_validation_failed", nil)
+	// Binary: diag.LogEnvManagerNoPII(ctx, "repository_access_validation_failed", nil)
+	diag.LogEnvManagerNoPII(ctx, "repository_access_validation_failed", nil)
 
+	_ = startTime
 	return fmt.Errorf("git proxy validation failed after %d attempts: %w", 3, lastErr)
 }
 
@@ -351,9 +399,10 @@ func (h *GitHandler) ValidateRepositoryAccess(
 // Source file: git.go
 //
 // Closures:
-//   func1 at 0xaf2200 - goroutine for computing pack size
-//   func2 at 0xaf1fc0 - goroutine for logging
-//   func3 at 0xaf1ee0 - goroutine for resetting origin URL
+//
+//	func1 at 0xaf2200 — goroutine for computing pack size
+//	func2 at 0xaf1fc0 — goroutine for logging
+//	func3 at 0xaf1ee0 — goroutine for resetting origin URL
 //
 // Key behaviors:
 //   - Logs "Cloning repository" with source details
@@ -377,14 +426,15 @@ func (h *GitHandler) cloneRepository(
 	isCustomURL := authenticatedURL != repoURL
 
 	logger.Info("Cloning repository",
-		"repo", source.Repo,
-		"url", source.Repo,
+		"repo", source.GitInfo.Repo,
+		"url", source.GitInfo.Repo,
 		"is_custom_url", isCustomURL,
 	)
 
 	startTime := time.Now()
 
-	diag.LogEnvManagerNoPII(logger, ctx, "git_clone_started", nil)
+	// Binary: diag.LogEnvManagerNoPII(ctx, "git_clone_started", nil)
+	diag.LogEnvManagerNoPII(ctx, "git_clone_started", nil)
 
 	// Check for allow-prefetched mode with existing repo
 	if processMode == "allow-prefetched" {
@@ -416,7 +466,7 @@ func (h *GitHandler) cloneRepository(
 	}
 
 	// Clone the repository
-	if source.Ref != "" {
+	if source.GitInfo.Ref != nil && *source.GitInfo.Ref != "" {
 		// Clone with specific ref
 		logger.Info("Fetching specific ref")
 	}
@@ -435,7 +485,8 @@ func (h *GitHandler) cloneRepository(
 		logger.Error("Failed to clone repository",
 			"error", err,
 		)
-		diag.LogEnvManagerNoPII(logger, ctx, "git_clone_failed", nil)
+		// Binary: diag.LogEnvManagerNoPII(ctx, "git_clone_failed", nil)
+		diag.LogEnvManagerNoPII(ctx, "git_clone_failed", nil)
 		return fmt.Errorf("failed to clone repository: %w", err)
 	}
 
@@ -468,9 +519,10 @@ func (h *GitHandler) cloneRepository(
 		"pack_size_duration_ms", packDuration.Milliseconds(),
 	)
 
-	diag.LogEnvManagerNoPII(logger, ctx, "git_clone_completed", map[string]interface{}{
-		"duration_ms":          elapsed.Milliseconds(),
-		"repo_size_bytes":      repoSize,
+	// Binary: diag.LogEnvManagerNoPII(ctx, "git_clone_completed", data)
+	diag.LogEnvManagerNoPII(ctx, "git_clone_completed", map[string]interface{}{
+		"duration_ms":           elapsed.Milliseconds(),
+		"repo_size_bytes":       repoSize,
 		"pack_size_duration_ms": packDuration.Milliseconds(),
 	})
 
@@ -571,7 +623,8 @@ func (h *GitHandler) runGitFetchWithRetry(
 		"attempts", 5,
 	)
 
-	diag.LogEnvManagerNoPII(logger, ctx, "git_fetch_retry_exhausted", nil)
+	// Binary: diag.LogEnvManagerNoPII(ctx, "git_fetch_retry_exhausted", nil)
+	diag.LogEnvManagerNoPII(ctx, "git_fetch_retry_exhausted", nil)
 
 	return "", fmt.Errorf("git fetch failed after %d attempts: %w", 5, lastErr)
 }
@@ -655,53 +708,78 @@ func (h *GitHandler) runGitCommand(
 // Binary address: 0xaec900
 // Source file: git.go
 //
-// Key behaviors:
-//   - If authProvider is nil, returns empty string
-//   - If source has no auth token (offset 0x18 is nil), returns empty string
-//   - Otherwise calls authProvider.GetAuthenticatedURL()
+// Parameters (register ABI):
+//
+//	AX: self, BX+CX: ctx, DI+SI: repoURL string,
+//	R8+R9: authProvider (SourceAuthProvider interface),
+//	R10+R11: permission string
+//
+// Key behaviors from disassembly:
+//   - 0xaec932: TESTQ R8,R8 — if authProvider itab is nil, return ""
+//   - 0xaec937: MOVQ 0x18(AX),DX — loads h.sessionID; if nil, return ""
+//   - 0xaec945: MOVQ 0x18(R8),R12 — loads AuthenticateURL method from itab
+//   - 0xaec95b: CALL R12 — calls authProvider.AuthenticateURL(...)
+//   - Returns (authenticatedURL string, applied bool)
 func (h *GitHandler) getAuthenticatedURL(
-	source config.GitRepositorySource,
+	ctx context.Context,
 	repoURL string,
 	authProvider auth.SourceAuthProvider,
-) string {
+	permission auth.Permission,
+) (string, bool) {
+	// Binary 0xaec932-0xaec935: nil check on authProvider
 	if authProvider == nil {
-		return ""
+		return "", false
 	}
 
-	authenticatedURL, _ := authProvider.GetAuthenticatedURL(repoURL)
-	return authenticatedURL
+	// Binary 0xaec937-0xaec943: nil check on h.sessionID
+	if h.sessionID == "" {
+		return "", false
+	}
+
+	// Binary 0xaec945-0xaec95b: call authProvider.AuthenticateURL
+	// The AuthContext is nil here (DI=0 from XORL), but the method is called
+	// with the permission string from the caller.
+	authenticatedURL, applied := authProvider.AuthenticateURL(ctx, nil, repoURL, permission)
+	return authenticatedURL, applied
 }
 
 // createSourceAuthProvider creates the appropriate auth provider based
-// on the source provider type.
+// on the source provider type and auth configuration.
 //
 // Binary address: 0xaec840
 // Source file: git.go
 //
-// Key behaviors:
-//   - If source has no auth (offset 0x58 is nil), returns nil
-//   - For "github" provider with "github_app" auth type (10 chars):
-//     calls auth.NewGitHubSourceAuthProvider with logger and app token
-//   - For other providers: calls auth.NewGitHubSourceAuthProvider with
-//     logger and token (same function, different path)
-func (h *GitHandler) createSourceAuthProvider(source config.GitRepositorySource) auth.SourceAuthProvider {
-	if source.Auth == nil {
+// Parameters (register ABI):
+//
+//	AX: self, BX+CX: ctx (unused), stack: GitInfo struct
+//
+// Key behaviors from disassembly:
+//   - 0xaec852: loads source.Auth (*AuthConfig) from stack offset 0x58
+//   - 0xaec857: if Auth is nil, return (nil, nil)
+//   - 0xaec85c-0xaec877: check source.Type == "github" (6 chars)
+//   - 0xaec879-0xaec89a: if github, check Auth.Type == "github_app" (10 chars)
+//   - 0xaec89c-0xaec8ac: if github_app: call auth.NewGitHubSourceAuthProvider(h.logger, Auth.Token)
+//   - 0xaec8b2-0xaec8c0: default: call auth.NewGitHubSourceAuthProvider(h.logger, Auth.Token)
+//   - Both paths call the same function; the github_app check is for future differentiation
+func (h *GitHandler) createSourceAuthProvider(ctx context.Context, gitInfo config.GitInfo) auth.SourceAuthProvider {
+	if gitInfo.Auth == nil {
 		return nil
 	}
 
-	if source.Provider == "github" && source.Auth.Type == "github_app" {
-		return auth.NewGitHubSourceAuthProvider(h.logger, source.Auth.Token)
+	// Both github+github_app and default paths call the same function
+	if gitInfo.Type == "github" && gitInfo.Auth.Type == "github_app" {
+		return auth.NewGitHubSourceAuthProvider(h.logger, gitInfo.Auth.Token)
 	}
 
-	return auth.NewGitHubSourceAuthProvider(h.logger, source.Auth.Token)
+	return auth.NewGitHubSourceAuthProvider(h.logger, gitInfo.Auth.Token)
 }
 
 // sanitizeURL removes credentials from URLs.
 // It handles two cases:
-//   1. Parseable URLs: reconstructs as scheme://host/path?query#fragment
-//      with credentials stripped (replaces userinfo with "<token>")
-//   2. Non-parseable strings with "://": splits on "://" and removes
-//      the token between "://" and "@"
+//  1. Parseable URLs: reconstructs as scheme://host/path?query#fragment
+//     with credentials stripped (replaces userinfo with "<token>")
+//  2. Non-parseable strings with "://": splits on "://" and removes
+//     the token between "://" and "@"
 //
 // Binary address: 0xaf3000
 // Source file: git.go
@@ -815,7 +893,8 @@ func (h *GitHandler) checkoutBranch(
 // Source file: git.go
 //
 // Closure:
-//   func1 at 0xaf3fe0 - deferred cleanup
+//
+//	func1 at 0xaf3fe0 — deferred cleanup
 //
 // Key behaviors:
 //   - Logs "Branch exists on remote, fetching and checking out"
@@ -994,7 +1073,7 @@ func (h *GitHandler) runPostCloneHook(
 // Source file: git.go
 //
 // Key behaviors:
-//   - Checks if outcomes map (offset 0x30) has an entry for the repo
+//   - Checks if outcomes map has an entry for the repo
 //   - Logs "Processing branch from outcomes"
 //   - In resume mode: may create local branch directly
 //     logs "Resume mode: creating local branch directly"
@@ -1011,20 +1090,21 @@ func (h *GitHandler) setupBranchFromOutcomes(
 	authenticatedURL string,
 	authProvider auth.SourceAuthProvider,
 ) error {
-	if h.outcomes == nil {
+	// Binary: outcomes is at offset 0x68 (nil initially, set externally)
+	// NOTE: The outcomes field is not currently in the struct at a known offset.
+	// Based on binary analysis, it may be passed via a different mechanism.
+	// For now, we use the authProvider for branch setup decisions.
+
+	// The actual branch info comes from the source's Ref field
+	if source.GitInfo.Ref == nil || *source.GitInfo.Ref == "" {
 		return nil
 	}
 
-	branches, ok := h.outcomes[source.Repo]
-	if !ok || len(branches) == 0 {
-		return nil
-	}
-
-	branch := branches[0]
+	branch := *source.GitInfo.Ref
 
 	logger.Info("Processing branch from outcomes",
 		"branch", branch,
-		"repo", source.Repo,
+		"repo", source.GitInfo.Repo,
 	)
 
 	// Check if resume mode with BYOC
@@ -1108,7 +1188,7 @@ func (h *GitHandler) UpdateRemoteURL(
 		return fmt.Errorf("unsupported git provider type: %s", source.GetType())
 	}
 
-	if gitSource.CustomURL == "" {
+	if gitSource.GitInfo.URL == nil || *gitSource.GitInfo.URL == "" {
 		logger.Info("No custom URL specified, skipping remote URL update")
 		return nil
 	}
@@ -1120,28 +1200,29 @@ func (h *GitHandler) UpdateRemoteURL(
 
 	if _, err := os.Stat(repoDir); err != nil {
 		logger.Info("Repository directory does not exist, skipping remote URL update",
-			"repo", gitSource.Repo,
+			"repo", gitSource.GitInfo.Repo,
 			"directory", repoDir,
 		)
 		return nil
 	}
 
+	customURL := *gitSource.GitInfo.URL
 	logger.Info("Updating to custom git URL",
-		"repo", gitSource.Repo,
-		"url", gitSource.CustomURL,
+		"repo", gitSource.GitInfo.Repo,
+		"url", customURL,
 	)
 
-	_, err := h.runGitCommand(ctx, logger, repoDir, "remote", "set-url", "origin", gitSource.CustomURL)
+	_, err := h.runGitCommand(ctx, logger, repoDir, "remote", "set-url", "origin", customURL)
 	if err != nil {
 		logger.Error("Failed to update remote URL",
-			"repo", gitSource.Repo,
+			"repo", gitSource.GitInfo.Repo,
 			"error", err,
 		)
-		return fmt.Errorf("failed to update remote URL for %s: %w", gitSource.Repo, err)
+		return fmt.Errorf("failed to update remote URL for %s: %w", gitSource.GitInfo.Repo, err)
 	}
 
 	logger.Info("Successfully updated git remote URL",
-		"repo", gitSource.Repo,
+		"repo", gitSource.GitInfo.Repo,
 	)
 
 	return nil
@@ -1154,11 +1235,11 @@ func (h *GitHandler) UpdateRemoteURL(
 // Binary address: 0xaf5920
 // Source file: git.go
 //
-// Key behaviors:
-//   - Iterates over sources, filtering for "git_repository" type
+// Key behaviors from disassembly:
+//   - Iterates over sources, filtering for "git_repository" type (0xaf5a1c-0xaf5a3a)
 //   - Casts to GitRepositorySource to get directory
-//   - If gitProxyManager is nil or not running: returns "git proxy is not running"
-//   - Gets proxy URL from gitProxyManager
+//   - Checks gitProxyManager (offset 0x68) for nil: loads itab, calls IsRunning at itab+0x20
+//   - Gets proxy URL from gitProxyManager.GetProxyURL at itab+0x18
 //   - Runs: git remote set-url origin <proxyURL>
 //   - On failure: logs "failed to update git remote to use proxy: %w, output: %s"
 //   - On success: logs "Git remote updated to use local proxy"
@@ -1168,33 +1249,18 @@ func (h *GitHandler) SetupGitProxyAfterSourcesProcessed(
 	logger *slog.Logger,
 	sources []config.Source,
 ) error {
+	// Binary 0xaf6475: loads h.gitProxyManager (offset 0x68)
+	// Binary 0xaf6479: TESTQ — nil check
 	if h.gitProxyManager == nil {
 		return fmt.Errorf("git proxy is not running")
 	}
 
+	// Binary 0xaf64aa: calls IsRunning via itab offset 0x20
 	if !h.gitProxyManager.IsRunning() {
 		return fmt.Errorf("git proxy is not running")
 	}
 
-	if h.sessionID == "" {
-		return fmt.Errorf("session ID not available")
-	}
-
-	// Check if there are any git repositories
-	hasGitRepos := false
-	for _, source := range sources {
-		if source.GetType() == "git_repository" {
-			hasGitRepos = true
-			break
-		}
-	}
-
-	if !hasGitRepos {
-		logger.Info("No repositories configured for git proxy")
-		return nil
-	}
-
-	// Setup proxy for each git repository
+	// Iterate sources looking for "git_repository" type
 	for _, source := range sources {
 		if source.GetType() != "git_repository" {
 			continue
@@ -1205,25 +1271,18 @@ func (h *GitHandler) SetupGitProxyAfterSourcesProcessed(
 			continue
 		}
 
-		if gitSource.Auth == nil {
-			logger.Info("Skipping repo without auth",
-				"repo", gitSource.Repo,
-			)
-			continue
-		}
-
 		repoDir := gitSource.GetDirectory()
 		if repoDir == "" {
 			logger.Warn("Could not determine repo path for proxy setup",
-				"repo", gitSource.Repo,
+				"repo", gitSource.GitInfo.Repo,
 			)
 			continue
 		}
 
-		err := h.setupLocalGitProxy(ctx, logger, repoDir, gitSource.Repo)
+		err := h.setupLocalGitProxy(ctx, logger, repoDir, gitSource.GitInfo.Repo)
 		if err != nil {
 			logger.Error("Failed to setup local git proxy for repo",
-				"repo", gitSource.Repo,
+				"repo", gitSource.GitInfo.Repo,
 				"error", err,
 			)
 			continue
@@ -1241,9 +1300,10 @@ func (h *GitHandler) SetupGitProxyAfterSourcesProcessed(
 // Binary address: 0xaf6440
 // Source file: git.go
 //
-// Key behaviors:
-//   - Checks if gitProxyManager is nil/not running: returns "git proxy is not running"
-//   - Gets proxy URL from gitProxyManager.GetProxyURL()
+// Key behaviors from disassembly:
+//   - 0xaf6475: loads h.gitProxyManager (offset 0x68), nil check
+//   - 0xaf64aa: calls IsRunning via itab+0x20
+//   - 0xaf64e5: calls GetProxyURL via itab+0x18
 //   - Runs: git remote set-url origin <proxyURL>
 //   - On failure: returns "failed to update git remote to use proxy: %w, output: %s"
 //   - On success: logs "Git remote updated to use local proxy"
@@ -1253,10 +1313,12 @@ func (h *GitHandler) setupLocalGitProxy(
 	repoDir string,
 	repo string,
 ) error {
+	// Binary 0xaf6475-0xaf64b4: nil check + IsRunning check
 	if h.gitProxyManager == nil || !h.gitProxyManager.IsRunning() {
 		return fmt.Errorf("git proxy is not running")
 	}
 
+	// Binary 0xaf64e5: calls GetProxyURL
 	proxyURL, err := h.gitProxyManager.GetProxyURL(ctx, logger)
 	if err != nil {
 		return fmt.Errorf("failed to start git proxy: %w", err)

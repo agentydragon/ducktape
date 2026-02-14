@@ -21,12 +21,15 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/anthropic/install_scripts"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/process"
 )
@@ -44,6 +47,11 @@ var defaultSettingsJSON []byte
 // stopHookScript holds the stop hook script content.
 // Copied from envtype/shared.StopHookScript during init().
 var stopHookScript []byte
+
+// sessionStartHookSkill holds the startup hook skill YAML content.
+// Embedded as a package-level string variable.
+// Symbol: anthropic.sessionStartHookSkill (0x158e4a0)
+var sessionStartHookSkill string
 
 // init copies shared defaults (DefaultSettingsJSON, StopHookScript) from the
 // shared package into package-level variables.
@@ -301,10 +309,8 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 			return err
 		}
 
-		// Step 2: Clone git repos / initialize working directory (via RecordFunction.func2 at 0xafdf60)
-		if err := e.initGitRepo(ctx); err != nil {
-			return err
-		}
+		// Step 2: Sources processing is handled by the SourceHandlerManager
+		// (via RecordFunction.func2 at 0xafdf60)
 	} else if isNewOrSetup {
 		// Step 1 only: Install languages without git
 		if err := e.installLanguages(ctx); err != nil {
@@ -313,8 +319,10 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	}
 
 	// Step 3: Run init script (via RecordFunction.func3 at 0xafdaa0)
-	if err := e.runInitScript(ctx); err != nil {
-		return err
+	if e.config != nil && e.config.InitScript != "" {
+		if err := e.runInitScript(ctx, e.config.InitScript); err != nil {
+			return err
+		}
 	}
 
 	// Step 4: Bootstrap Claude skills (via RecordFunction.func4 at 0xafd5e0)
@@ -328,7 +336,7 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	}
 
 	// Step 6: Initialize Baku project and start dev server (via RecordFunction.func6 at 0xafcc60)
-	if err := e.initializeBakuProject(ctx); err != nil {
+	if _, err := e.initializeBakuProject(ctx); err != nil {
 		return err
 	}
 
@@ -361,7 +369,7 @@ func (e *anthropicEnvironmentType) installLanguages(ctx context.Context) error {
 		wg.Add(1)
 		go func(language anthropicLanguage) {
 			defer wg.Done()
-			if err := e.installLanguage(ctx, language.Name); err != nil {
+			if err := e.installLanguage(ctx, language.Name, language.Version); err != nil {
 				errCh <- err
 			}
 		}(lang)
@@ -403,267 +411,516 @@ func (e *anthropicEnvironmentType) installLanguages(ctx context.Context) error {
 	return nil
 }
 
-// installLanguage installs a single language runtime.
+// installLanguage installs a single language runtime by selecting the
+// appropriate install script, substituting the version placeholder ($1),
+// and executing it via process.ExecuteScript.
 //
 // Binary address: 0xaffe80
 // Source file: anthropic.go
-func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, language string) error {
-	// Binary: calls process.RunCommand or similar to install the language
-	// The exact implementation depends on the language type
-	e.logger.Info("Installing language", "language", language)
+//
+// Assembly flow:
+//  1. slog.Info "Installing language" (0x13=19 chars) with name, version, script_len, is_resume attrs at 0xafffcd
+//  2. Switch on language name:
+//     - "go" / "golang" -> install_scripts.goScript
+//     - "node" / "nodejs" -> install_scripts.nodeScript
+//     - "python" -> install_scripts.pythonScript
+//     - other -> logs warning "No install script for language" and returns nil
+//  3. strings.Replace(script, "$1", version, -1) at 0xb00060
+//  4. Creates temp file pattern via fmt.Sprintf("install-%s-%s-*.sh", name, version) at 0xb0026d
+//  5. Calls process.ExecuteScript(ctx, logger, scriptContent, pattern, streamer) at 0xb002a9
+//  6. On error: returns fmt.Errorf("failed to execute installation script: %w", err)
+//  7. On result.Error != nil: returns fmt.Errorf("init script failed: %w", result.Error)
+//  8. On success: logs "Installation script completed" and checks version output
+//  9. Iterates over stdout lines, checks if installed version matches expected
+// 10. If no version match found: logs error "failed to install %s %s: %s (exit code: %d)"
+func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, version string) error {
+	// 0xafffcd: slog.Info "Installing language"
+	e.logger.Info("Installing language",
+		"name", name,
+		"version", version,
+		"script_len", 0,
+		"is_resume", e.sessionMode == "resume",
+	)
+
+	// 0xafffd2-0xb000d8: Select install script based on language name
+	var script string
+	switch name {
+	case "go", "golang":
+		script = install_scripts.GoScript
+	case "node", "nodejs":
+		script = install_scripts.NodeScript
+	case "python":
+		script = install_scripts.PythonScript
+	default:
+		// 0xb00ae0: slog.Error "No install script for language"
+		e.logger.Error("No install script for language",
+			"name", name,
+			"version", version,
+		)
+		return nil
+	}
+
+	// 0xb00060: strings.Replace(script, "$1", version, -1)
+	script = strings.Replace(script, "$1", version, -1)
+
+	// 0xb0026d: fmt.Sprintf("install-%s-%s-*.sh", name, version)
+	pattern := fmt.Sprintf("install-%s-%s-*.sh", name, version)
+
+	// 0xb002a9: process.ExecuteScript
+	result, err := process.ExecuteScript(ctx, e.logger, script, pattern, nil)
+	if err != nil {
+		// 0xb003ea: slog + fmt.Errorf "failed to execute installation script: %w"
+		e.logger.Error("Failed to execute installation script",
+			"name", name,
+			"version", version,
+			"error", err,
+		)
+		return fmt.Errorf("failed to execute installation script: %w", err)
+	}
+
+	// 0xafeb91: Check result.Error (offset 0x40)
+	if result.Error != nil {
+		// 0xb009e3: fmt.Errorf with name, version, output, exit code
+		return fmt.Errorf("failed to install %s %s: %s (exit code: %d)",
+			name, version, result.Error.Error(), result.ExitCode)
+	}
+
+	// 0xb0062c: slog.Info "Installation script completed"
+	e.logger.Info("Installation script completed",
+		"name", name,
+		"version", version,
+		"exit_code", result.ExitCode,
+		"duration", result.Duration,
+		"is_resume", e.sessionMode == "resume",
+	)
+
 	return nil
 }
 
-// initGitRepo initializes git repositories from the startup context sources.
+// initGitRepo initializes a git repository in the given directory,
+// configures git settings, adds all files, and creates an initial commit.
 //
 // Binary address: 0xb02600
 // Source file: anthropic.go
-func (e *anthropicEnvironmentType) initGitRepo(ctx context.Context) error {
-	// Binary: 0xb02600 - large function (line 839+)
-	// Sets up git configuration in the working directory:
-	//   1. git init (line 841: ["git", "init"])
-	//   2. git config user.email "claude@anthropic.com" (line 842)
-	//   3. git config user.name "Claude" (line 843)
-	//   4. git config gc.auto "0" (line 844)
-	//   5. git config commit.gpgsign "false" (line 848)
-	//
-	// Then iterates over sources from startupContext and clones each repository.
-	// Uses process.RunCommand for git operations and sources.CloneGitRepository
-	// for repository cloning.
-
-	cwd := e.cwd
-
-	// Initialize git repo.
-	if err := process.RunCommand(ctx, e.logger, cwd, "git", "init"); err != nil {
-		return fmt.Errorf("failed to initialize git repository: %w", err)
+//
+// Assembly flow:
+//  1. Builds 7 command slices as allocated structs (runtime.newobject):
+//     a. ["git", "init"]
+//     b. ["git", "config", "user.email", "claude@anthropic.com"]
+//     c. ["git", "config", "user.name", "Claude"]
+//     d. ["git", "config", "gc.auto", "0"]
+//     e. ["git", "config", "commit.gpgsign", "false"]
+//     f. ["git", "add", "."]
+//     g. ["git", "commit", "-m", "Initial project from Baku template"]
+//  2. Iterates over all 7 commands (CMPQ AX, $0x7 at 0xb029c0)
+//  3. For each: exec.CommandContext(ctx, args[0], args[1:]...)
+//     Sets cmd.Dir to the dir parameter (offset 0x40/0x48 of exec.Cmd)
+//  4. Calls cmd.CombinedOutput()
+//  5. On error: fmt.Errorf("git command %v failed: %w\nOutput: %s", args, err, output)
+//  6. On success (all 7 pass): slog.Info "Git repository initialized" with "dir" attr
+func (e *anthropicEnvironmentType) initGitRepo(ctx context.Context, dir string) error {
+	// 0xb02680-0xb02973: Build 7 git command arg slices
+	commands := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "claude@anthropic.com"},
+		{"git", "config", "user.name", "Claude"},
+		{"git", "config", "gc.auto", "0"},
+		{"git", "config", "commit.gpgsign", "false"},
+		{"git", "add", "."},
+		{"git", "commit", "-m", "Initial project from Baku template"},
 	}
 
-	// Configure git settings.
-	gitConfigs := [][2]string{
-		{"user.email", "claude@anthropic.com"},
-		{"user.name", "Claude"},
-		{"gc.auto", "0"},
-		{"commit.gpgsign", "false"},
-	}
+	// 0xb029c0-0xb02b4f: Iterate and execute each command
+	for _, args := range commands {
+		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+		cmd.Dir = dir
 
-	for _, cfg := range gitConfigs {
-		if err := process.RunCommand(ctx, e.logger, cwd, "git", "config", cfg[0], cfg[1]); err != nil {
-			return fmt.Errorf("failed to set git config %s: %w", cfg[0], err)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// 0xb02b2d: fmt.Errorf("git command %v failed: %w\nOutput: %s", ...)
+			return fmt.Errorf("git command %v failed: %w\nOutput: %s", args, err, string(output))
 		}
 	}
 
-	// Clone sources from startup context.
-	if e.startupContext != nil {
-		for _, source := range e.startupContext.Sources {
-			if source.IsRepository() {
-				dir := source.GetDirectory(cwd)
-				if dir == "" {
-					continue
-				}
-				e.logger.Info("Cloning repository",
-					"type", source.GetType(),
-					"directory", dir,
-				)
-				// Clone implementation delegated to sources package
-			}
-		}
-	}
+	// 0xb02bdb: slog.Info "Git repository initialized"
+	e.logger.Info("Git repository initialized",
+		"dir", dir,
+	)
 
 	return nil
 }
 
 // runInitScript runs the user-specified init script if configured.
+// It receives the init script content and script length as parameters
+// from the RecordFunction wrapper (func3).
 //
 // Binary address: 0xafea20
 // Source file: anthropic.go
-func (e *anthropicEnvironmentType) runInitScript(ctx context.Context) error {
-	// Binary: 0xafea20
-	// Checks if config has an init script configured.
-	// If not, returns nil immediately.
-	// If yes, runs the script using process.RunCommand in the cwd.
-	if e.config == nil || e.config.InitScript == "" {
-		return nil
-	}
-
-	e.logger.Info("Running init script",
-		"script", e.config.InitScript,
-		"cwd", e.cwd,
+//
+// Assembly flow:
+//  1. slog.Info "Running initialization script" (0x1d=29 chars) with "script_len" attr at 0xafead7
+//  2. Creates func1 closure capturing receiver at 0xafeae3-0xafeaef
+//  3. Calls process.ExecuteScript(ctx, logger, scriptContent, "init-script-*.sh", streamer) at 0xafeb4d
+//  4. If ExecuteScript error: fmt.Errorf("failed to execute init script: %w", err) at 0xafeb86
+//  5. If result.Error != nil (offset 0x40): fmt.Errorf("init script failed: %w", result.Error) at 0xafebd2
+//  6. On success: slog.Info "Successfully executed init script" (0x21=33 chars) at 0xafec02
+func (e *anthropicEnvironmentType) runInitScript(ctx context.Context, scriptContent string) error {
+	// 0xafead7: slog.Info "Running initialization script"
+	e.logger.Info("Running initialization script",
+		"script_len", len(scriptContent),
 	)
 
-	if err := process.RunCommand(ctx, e.logger, e.cwd, "bash", "-c", e.config.InitScript); err != nil {
-		return fmt.Errorf("init script failed: %w", err)
+	// 0xafeb4d: process.ExecuteScript with pattern "init-script-*.sh"
+	result, err := process.ExecuteScript(ctx, e.logger, scriptContent, "init-script-*.sh", nil)
+	if err != nil {
+		// 0xafeb86: fmt.Errorf("failed to execute init script: %w", err)
+		return fmt.Errorf("failed to execute init script: %w", err)
 	}
 
-	e.logger.Info("Init script completed successfully")
+	// 0xafeb91: Check result.Error (offset 0x40 of Result struct)
+	if result.Error != nil {
+		// 0xafebd2: fmt.Errorf("init script failed: %w", result.Error)
+		return fmt.Errorf("init script failed: %w", result.Error)
+	}
+
+	// 0xafec02: slog.Info "Successfully executed init script"
+	e.logger.Info("Successfully executed init script")
+
 	return nil
 }
 
-// bootstrapClaudeSkills sets up Claude Code skills in the working directory.
+// bootstrapClaudeSkills sets up Claude Code skills in the home directory
+// and the configured working directory ("/home/claude").
 //
 // Binary address: 0xb01d00
 // Source file: anthropic.go
+//
+// Assembly flow:
+//  1. os.UserHomeDir() at 0xb01d2a
+//  2. If error: fmt.Errorf("failed to get home directory: %w", err) at 0xb01d51
+//  3. Call bootstrapClaudeSkillsUnderDir(homeDir) at 0xb01dc7
+//  4. If error: fmt.Errorf("failed to bootstrap Claude skills in home dir %s: %w", ...) at 0xb01e04
+//  5. Call bootstrapClaudeSkillsUnderDir("/home/claude") at 0xb01e68
+//  6. If error: fmt.Errorf("failed to bootstrap Claude skills in cwd %s: %w", ...) at 0xb01e8a
 func (e *anthropicEnvironmentType) bootstrapClaudeSkills(ctx context.Context) error {
-	// Binary: 0xb01d00
-	// 1. Get home directory via os.UserHomeDir()
-	// 2. If error: fmt.Errorf("failed to get home directory: %w", err)
-	// 3. Call bootstrapClaudeSkillsUnderDir(ctx, homeDir)
-	// 4. If error: fmt.Errorf("failed to bootstrap Claude skills in home dir %s: %w", homeDir, err)
-	// 5. Also bootstrap under cwd if different from home
+	// 0xb01d2a: os.UserHomeDir()
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
+		// 0xb01d51: fmt.Errorf("failed to get home directory: %w", err)
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
+	// 0xb01dc7: bootstrapClaudeSkillsUnderDir(homeDir)
 	if err := e.bootstrapClaudeSkillsUnderDir(ctx, homeDir); err != nil {
+		// 0xb01e04: fmt.Errorf with homeDir
 		return fmt.Errorf("failed to bootstrap Claude skills in home dir %s: %w", homeDir, err)
 	}
 
-	// Also bootstrap under the working directory.
-	if e.cwd != "" && e.cwd != homeDir {
-		if err := e.bootstrapClaudeSkillsUnderDir(ctx, e.cwd); err != nil {
-			return fmt.Errorf("failed to bootstrap Claude skills in cwd %s: %w", e.cwd, err)
-		}
+	// 0xb01e40: hardcoded second dir = "/home/claude" (0xc=12 chars)
+	if err := e.bootstrapClaudeSkillsUnderDir(ctx, "/home/claude"); err != nil {
+		// 0xb01e8a: fmt.Errorf with cwd
+		return fmt.Errorf("failed to bootstrap Claude skills in cwd %s: %w", "/home/claude", err)
 	}
 
 	return nil
 }
 
-// bootstrapClaudeSkillsUnderDir copies skills into a specific directory.
-// It creates the .claude/ directory structure and writes default settings JSON
-// and stop hook script files.
+// bootstrapClaudeSkillsUnderDir creates the .claude/skills/session-start-hook/
+// directory under the given dir and writes the session start hook skill YAML
+// as SKILL.md.
 //
 // Binary address: 0xb01ee0
 // Source file: anthropic.go
+//
+// Assembly flow:
+//  1. filepath.Join(dir, ".claude", "skills", "session-start-hook") at 0xb01f64-0xb01fba
+//  2. os.MkdirAll(skillDir, 0755) at 0xb01fc0 (perm 0x1ed = 0o755)
+//  3. If error: fmt.Errorf("failed to create skills directory: %w", err) at 0xb02056
+//  4. filepath.Join(skillDir, "SKILL.md") at 0xb01ff6-0xb02020
+//  5. os.WriteFile(skillPath, []byte(sessionStartHookSkill), 0600) at 0xb02078 (perm 0x180 = 0o600)
+//  6. If error: fmt.Errorf("failed to write skill file: %w", err) at 0xb020e9
+//  7. On success: slog.Info "Bootstrapped Claude skills under directory" at 0xb02192
+//  8. Or if skill already exists: slog.Info "Claude skills already exist, skipping" at 0xb0223d
 func (e *anthropicEnvironmentType) bootstrapClaudeSkillsUnderDir(ctx context.Context, dir string) error {
-	// Creates .claude/ directory under the target dir and writes:
-	// - Default settings JSON (from package-level defaultSettingsJSON)
-	// - Stop hook script (from package-level stopHookScript)
-	claudeDir := filepath.Join(dir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .claude directory: %w", err)
+	// 0xb01f64: filepath.Join(dir, ".claude", "skills", "session-start-hook")
+	skillDir := filepath.Join(dir, ".claude", "skills", "session-start-hook")
+
+	// 0xb01ff6: filepath.Join(skillDir, "SKILL.md")
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+
+	// Check if skill file already exists
+	if _, err := os.Stat(skillPath); err == nil {
+		// 0xb0223d: slog.Info "Claude skills already exist, skipping"
+		e.logger.Info("Claude skills already exist, skipping",
+			"path", skillPath,
+		)
+		return nil
 	}
 
-	// Write default settings if available.
-	if len(defaultSettingsJSON) > 0 {
-		settingsPath := filepath.Join(claudeDir, "settings.json")
-		if err := os.WriteFile(settingsPath, defaultSettingsJSON, 0644); err != nil {
-			return fmt.Errorf("failed to write settings.json: %w", err)
-		}
+	// 0xb01fc0: os.MkdirAll(skillDir, 0755)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		// 0xb02056: fmt.Errorf("failed to create skills directory: %w", err)
+		return fmt.Errorf("failed to create skills directory: %w", err)
 	}
 
-	// Write stop hook script if available.
-	if len(stopHookScript) > 0 {
-		hookPath := filepath.Join(claudeDir, "stop-hook-git-check.sh")
-		if err := os.WriteFile(hookPath, stopHookScript, 0755); err != nil {
-			return fmt.Errorf("failed to write stop hook script: %w", err)
-		}
+	// 0xb02078: os.WriteFile(skillPath, sessionStartHookSkill, 0600)
+	if err := os.WriteFile(skillPath, []byte(sessionStartHookSkill), 0600); err != nil {
+		// 0xb020e9: fmt.Errorf("failed to write skill file: %w", err)
+		return fmt.Errorf("failed to write skill file: %w", err)
 	}
+
+	// 0xb02192: slog.Info "Bootstrapped Claude skills under directory"
+	e.logger.Info("Bootstrapped Claude skills under directory",
+		"path", skillPath,
+	)
 
 	return nil
 }
 
-// bootstrapHooksInAllDirs installs git hooks in all relevant directories.
+// bootstrapHooksInAllDirs installs Claude settings and stop hooks in the
+// home directory and the hardcoded "/home/claude" directory.
 //
 // Binary address: 0xb01480
 // Source file: anthropic.go
+//
+// Assembly flow:
+//  1. os.UserHomeDir() at 0xb014b2
+//  2. If error: fmt.Errorf("failed to get home directory: %w", err) at 0xb014e2
+//  3. Copies 64 bytes of stack args (defaultSettingsJSON + stopHookScript slices) at 0xb0150f-0xb0153d
+//  4. Call bootstrapHooksUnderDir(homeDir) at 0xb01560
+//  5. If error: fmt.Errorf("failed to bootstrap hooks in home dir %s: %w", ...) at 0xb015e5
+//  6. Call bootstrapHooksUnderDir("/home/claude") at 0xb01660 (DI = LEAQ "/home/claude", SI = 0xc)
+//  7. If error: fmt.Errorf("failed to bootstrap hooks in cwd %s: %w", ...) at 0xb016b7
 func (e *anthropicEnvironmentType) bootstrapHooksInAllDirs(ctx context.Context) error {
-	// Binary: 0xb01480 (line 672)
-	// 1. Get home directory via os.UserHomeDir()
-	// 2. If error: fmt.Errorf("failed to get home directory: %w", err)
-	// 3. Call bootstrapHooksUnderDir(ctx, homeDir)
-	// 4. If error: fmt.Errorf("failed to bootstrap hooks in home dir %s: %w", homeDir, err)
-	// 5. Also bootstrap under cwd if different from home
+	// 0xb014b2: os.UserHomeDir()
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
+		// 0xb014e2: fmt.Errorf("failed to get home directory: %w", err)
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
+	// 0xb01560: bootstrapHooksUnderDir(homeDir, defaultSettingsJSON, stopHookScript)
 	if err := e.bootstrapHooksUnderDir(ctx, homeDir); err != nil {
+		// 0xb015e5: fmt.Errorf with homeDir and error
 		return fmt.Errorf("failed to bootstrap hooks in home dir %s: %w", homeDir, err)
 	}
 
-	// Also bootstrap hooks under the working directory.
-	if e.cwd != "" && e.cwd != homeDir {
-		if err := e.bootstrapHooksUnderDir(ctx, e.cwd); err != nil {
-			return fmt.Errorf("failed to bootstrap hooks in cwd %s: %w", e.cwd, err)
-		}
+	// 0xb01660: bootstrapHooksUnderDir("/home/claude", ...)
+	if err := e.bootstrapHooksUnderDir(ctx, "/home/claude"); err != nil {
+		// 0xb016b7: fmt.Errorf with dir and error
+		return fmt.Errorf("failed to bootstrap hooks in cwd %s: %w", "/home/claude", err)
 	}
 
 	return nil
 }
 
-// bootstrapHooksUnderDir installs hooks under a specific directory.
-// It sets up git hooks for the Claude Code environment.
+// bootstrapHooksUnderDir writes the default settings JSON and stop hook script
+// under dir/.claude/. The settings are written as settings.json and the stop
+// hook is written with the path from config.StopHookPath. Both files are only
+// written if they don't already exist (checked via os.Stat).
 //
 // Binary address: 0xb01720
 // Source file: anthropic.go
+//
+// Assembly flow:
+//  1. claudeDir = filepath.Join(dir, ".claude") at 0xb01770-0xb017a5
+//  2. settingsPath = filepath.Join(claudeDir, "settings.json") at 0xb017ee-0xb01806
+//  3. stopHookPath = filepath.Join(claudeDir, config.StopHookPath) at 0xb01849-0xb01871
+//     (StopHookPath loaded from stack args at 0x1b0(SP)/0x1b8(SP))
+//  4. os.MkdirAll(claudeDir, 0755) at 0xb0188f (perm 0x1ed = 0o755)
+//  5. If MkdirAll error: fmt.Errorf("failed to create .claude directory: %w", err) at 0xb018bf
+//  6. os.Stat(settingsPath) at 0xb018ec
+//  7. If stat error (doesn't exist):
+//     - os.WriteFile(settingsPath, defaultSettingsJSON, 0600) at 0xb01922 (perm 0x180)
+//     - If error: fmt.Errorf("failed to write settings.json: %w", err) at 0xb01952
+//     - slog.Info "Wrote default Claude settings" at 0xb01a00
+//  8. If stat success (exists):
+//     - slog.Info "Claude settings already exist, skipping" at 0xb01ab0
+//  9. os.Stat(stopHookPath) at 0xb01ad6
+// 10. If stat error (doesn't exist):
+//     - os.WriteFile(stopHookPath, stopHookScript, 0755) at 0xb01b11 (perm 0x1ed)
+//     - If error: fmt.Errorf("failed to write stop hook script: %w", err) at 0xb01b41
+//     - slog.Info "Wrote stop hook script" at 0xb01be9
+// 11. If stat success (exists):
+//     - slog.Info "Stop hook script already exists, skipping" at 0xb01c95
 func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, dir string) error {
-	// Creates .claude/hooks/ directory and installs hook scripts
-	hooksDir := filepath.Join(dir, ".claude", "hooks")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("failed to create hooks directory: %w", err)
+	// 0xb01770: claudeDir = filepath.Join(dir, ".claude")
+	claudeDir := filepath.Join(dir, ".claude")
+
+	// 0xb017ee: settingsPath = filepath.Join(claudeDir, "settings.json")
+	settingsPath := filepath.Join(claudeDir, "settings.json")
+
+	// 0xb01849: stopHookPath = filepath.Join(claudeDir, config.StopHookPath)
+	stopHookPath := filepath.Join(claudeDir, e.config.StopHookPath)
+
+	// 0xb0188f: os.MkdirAll(claudeDir, 0755)
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		// 0xb018bf: fmt.Errorf("failed to create .claude directory: %w", err)
+		return fmt.Errorf("failed to create .claude directory: %w", err)
+	}
+
+	// 0xb018ec: os.Stat(settingsPath) - check if settings already exist
+	if _, err := os.Stat(settingsPath); err != nil {
+		// File doesn't exist, write it
+		// 0xb01922: os.WriteFile(settingsPath, defaultSettingsJSON, 0600)
+		if err := os.WriteFile(settingsPath, defaultSettingsJSON, 0600); err != nil {
+			// 0xb01952: fmt.Errorf("failed to write settings.json: %w", err)
+			return fmt.Errorf("failed to write settings.json: %w", err)
+		}
+		// 0xb01a00: slog.Info "Wrote default Claude settings"
+		e.logger.Info("Wrote default Claude settings",
+			"path", settingsPath,
+		)
+	} else {
+		// 0xb01ab0: slog.Info "Claude settings already exist, skipping"
+		e.logger.Info("Claude settings already exist, skipping",
+			"path", settingsPath,
+		)
+	}
+
+	// 0xb01ad6: os.Stat(stopHookPath) - check if stop hook already exists
+	if _, err := os.Stat(stopHookPath); err != nil {
+		// File doesn't exist, write it
+		// 0xb01b11: os.WriteFile(stopHookPath, stopHookScript, 0755)
+		if err := os.WriteFile(stopHookPath, stopHookScript, 0755); err != nil {
+			// 0xb01b41: fmt.Errorf("failed to write stop hook script: %w", err)
+			return fmt.Errorf("failed to write stop hook script: %w", err)
+		}
+		// 0xb01be9: slog.Info "Wrote stop hook script"
+		e.logger.Info("Wrote stop hook script",
+			"path", stopHookPath,
+		)
+	} else {
+		// 0xb01c95: slog.Info "Stop hook script already exists, skipping"
+		e.logger.Info("Stop hook script already exists, skipping",
+			"path", stopHookPath,
+		)
 	}
 
 	return nil
 }
 
-// initializeBakuProject initializes a Baku project if configured.
+// initializeBakuProject initializes a new Baku project by copying the
+// vite-template, initializing a git repo, and starting the dev server.
 //
 // Binary address: 0xb022c0
 // Source file: anthropic.go
-func (e *anthropicEnvironmentType) initializeBakuProject(ctx context.Context) error {
-	// Binary: 0xb022c0
-	// 1. Calls findExistingBakuProject to check for existing project
-	// 2. If found, logs and returns
-	// 3. If not found and config has baku project config, initializes new project
-	// 4. After project init, calls startDevServer
-	existing, err := e.findExistingBakuProject(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to find existing Baku project: %w", err)
+//
+// Assembly flow:
+//  1. slog.Debug "Initializing Baku project" (0x19=25 chars) with 4 attrs
+//     (itab/runtime pointers for debug level attrs) at 0xb0236d
+//  2. copyDir("/opt/baku-templates/vite-template", "/home/claude/project") at 0xb0238a
+//  3. If error: fmt.Errorf("failed to copy Baku template: %w", err) at 0xb023cf
+//  4. initGitRepo(ctx, "/home/claude/project") at 0xb0240b
+//  5. If error: fmt.Errorf("failed to initialize git repo: %w", err) at 0xb02452
+//  6. startDevServer(ctx, "/home/claude/project") at 0xb0248e
+//  7. If startDevServer error: slog.Error "Failed to start dev server (non-fatal)"
+//     with "error" attr at 0xb0250b (error is logged but NOT returned)
+//  8. Return ("/home/claude/project", nil) at 0xb02517
+func (e *anthropicEnvironmentType) initializeBakuProject(ctx context.Context) (string, error) {
+	// 0xb0236d: slog.Debug "Initializing Baku project"
+	e.logger.Debug("Initializing Baku project")
+
+	// 0xb0238a: copyDir("/opt/baku-templates/vite-template", "/home/claude/project")
+	if err := copyDir("/opt/baku-templates/vite-template", "/home/claude/project"); err != nil {
+		// 0xb023cf: fmt.Errorf("failed to copy Baku template: %w", err)
+		return "", fmt.Errorf("failed to copy Baku template: %w", err)
 	}
 
-	if existing != "" {
-		e.logger.Info("Found existing Baku project", "path", existing)
+	// 0xb0240b: initGitRepo(ctx, "/home/claude/project")
+	if err := e.initGitRepo(ctx, "/home/claude/project"); err != nil {
+		// 0xb02452: fmt.Errorf("failed to initialize git repo: %w", err)
+		return "", fmt.Errorf("failed to initialize git repo: %w", err)
 	}
 
-	// Start dev server if configured.
-	if err := e.startDevServer(ctx); err != nil {
-		return fmt.Errorf("failed to start dev server: %w", err)
+	// 0xb0248e: startDevServer(ctx, "/home/claude/project")
+	if err := e.startDevServer(ctx, "/home/claude/project"); err != nil {
+		// 0xb0250b: slog.Error (non-fatal, just log it)
+		e.logger.Error("Failed to start dev server (non-fatal)",
+			"error", err,
+		)
 	}
 
-	return nil
+	// 0xb02517: return "/home/claude/project"
+	return "/home/claude/project", nil
 }
 
-// findExistingBakuProject searches for an existing Baku project.
+// findExistingBakuProject checks if /home/claude/project exists as a directory.
+// If it does, returns the path. Otherwise returns an error.
 //
 // Binary address: 0xb02560
 // Source file: anthropic.go
+//
+// Assembly flow:
+//  1. os.Stat("/home/claude/project") at 0xb02580 (LEAQ 0x310533 = "/home/claude/project", len 0x14=20)
+//  2. If stat error (CX != nil): fmt.Errorf("project directory %s not found", path) at 0xb025c8
+//  3. If stat success: check info.IsDir() via interface method call at 0xb02591
+//  4. If not a directory: also returns the "not found" error
+//  5. If is directory: return ("/home/claude/project", nil) at 0xb025e4
 func (e *anthropicEnvironmentType) findExistingBakuProject(ctx context.Context) (string, error) {
-	// Searches for existing Baku project in the working directory
-	// by looking for known project markers.
-	return "", nil
+	const projectDir = "/home/claude/project"
+
+	// 0xb02580: os.Stat("/home/claude/project")
+	info, err := os.Stat(projectDir)
+	if err != nil || !info.IsDir() {
+		// 0xb025c8: fmt.Errorf("project directory %s not found", projectDir)
+		return "", fmt.Errorf("project directory %s not found", projectDir)
+	}
+
+	// 0xb025e4: return ("/home/claude/project", nil)
+	return projectDir, nil
 }
 
-// startDevServer starts a development server if configured.
+// startDevServer starts supervisord with /etc/supervisord.conf to run
+// the dev server. If supervisord is already running, it logs and returns.
+// The actual supervisord process is started asynchronously via a goroutine
+// that waits for it to complete.
 //
 // Binary address: 0xb02c60
 // Source file: anthropic.go
-func (e *anthropicEnvironmentType) startDevServer(ctx context.Context) error {
-	// Checks if dev server configuration is present in config.
-	// If not configured, returns nil immediately.
-	if e.config == nil || e.config.DevServerConfig == nil {
-		return nil
-	}
-
-	// Check if supervisord is running first.
+//
+// Assembly flow:
+//  1. isSupervisordRunning() at 0xb02ca2
+//  2. If running: slog.Info "supervisord already running, skipping start" at 0xb02f30
+//     then return (nil, nil)
+//  3. exec.Command("supervisord", "-c", "/etc/supervisord.conf") at 0xb02d13
+//  4. cmd.Start() at 0xb02d20
+//  5. If start error: return fmt.Errorf("failed to start supervisord: %w", err) at 0xb02d65
+//  6. slog.Info "supervisord started for dev server" with "dir", "pid" attrs at 0xb02e4e
+//  7. go func1() { cmd.Wait(); if err { slog.Error(...) } }() at 0xb02eea
+//  8. return (nil, nil) at 0xb02eef
+func (e *anthropicEnvironmentType) startDevServer(ctx context.Context, dir string) error {
+	// 0xb02ca2: isSupervisordRunning()
 	if e.isSupervisordRunning() {
-		e.logger.Info("Supervisord is running, skipping dev server start")
+		// 0xb02f30: slog.Info "supervisord already running, skipping start"
+		e.logger.Info("supervisord already running, skipping start")
 		return nil
 	}
 
-	e.logger.Info("Starting dev server",
-		"command", e.config.DevServerConfig.Command,
+	// 0xb02d13: exec.Command("supervisord", "-c", "/etc/supervisord.conf")
+	cmd := exec.Command("supervisord", "-c", "/etc/supervisord.conf")
+
+	// 0xb02d20: cmd.Start()
+	if err := cmd.Start(); err != nil {
+		// 0xb02d65: fmt.Errorf("failed to start supervisord: %w", err)
+		return fmt.Errorf("failed to start supervisord: %w", err)
+	}
+
+	// 0xb02e4e: slog.Info "supervisord started for dev server"
+	e.logger.Info("supervisord started for dev server",
+		"dir", dir,
+		"pid", cmd.Process.Pid,
 	)
+
+	// 0xb02eea: go func1() - wait for supervisord in background
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			e.logger.Error("supervisord exited with error",
+				"dir", dir,
+				"error", err,
+			)
+		}
+	}()
 
 	return nil
 }
@@ -741,5 +998,5 @@ func copyDir(src, dst string) error {
 // Ensure unused imports are referenced.
 var (
 	_ = o11y.RecordFunction
-	_ = process.RunCommand
+	_ = process.ExecuteScript
 )

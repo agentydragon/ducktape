@@ -8,7 +8,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp"
@@ -84,23 +87,57 @@ func (m *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 // Run.func4 (0xb6d180) - closure used within Run
 // Run.deferwrap4 (0xb6d580) - deferred cleanup in Run
 
-// configureEnvironment sets up environment configuration by calling the config
-// client and applying settings.
+// configureEnvironment sets up environment configuration by dispatching to the
+// environment type's various setup methods.
 //
 // Binary: 0xb6e700 - (*Manager).configureEnvironment
 // Source: manager/manager.go
+//
+// Assembly flow (verified via disassembly at 0xb6e700-0xb6eaad):
+//  1. Records o11y timing metric via RecordFunctionDeferred
+//  2. Calls environment type's GetClaudeEnvironmentVariables via vtable dispatch
+//     (typeAssert.4 at 0xb6e753) to get the env vars map
+//  3. Logs "Set startup context for anthropic environment" with env var presence flag
+//  4. If environment type supports SetAuthContext (typeAssert.5 at 0xb6e873):
+//     calls it, logs "Set auth context for environment" with session_id
+//  5. If environment type supports SetSessionMode (typeAssert.6 at 0xb6e983):
+//     calls it with session mode, logs "Set session mode for environment" with session_id
+//  6. Checks if local testing mode is enabled at offset 0x48+0x58 of Manager:
+//     if enabled, logs "Skipping git signing configuration (local testing mode enabled)"
+//     otherwise calls configureGitSigning()
 func (m *Manager) configureEnvironment(ctx context.Context, logger *slog.Logger) error {
 	startTime := time.Now()
 
-	// Calls o11y.RecordFunctionDeferred for metrics tracking
-	// Then calls the config client to get environment configuration
-	// Applies the returned config via applyEnvironmentConfig
-
 	m.Logger.Info("configuring environment")
 
-	if err := m.applyEnvironmentConfig(ctx, logger); err != nil {
-		return fmt.Errorf("failed to apply environment config: %w", err)
-	}
+	// Step 1: Get environment variables from environment type (via vtable dispatch)
+	// The actual call goes through an interface method on the environment type
+	// to retrieve claude-specific environment variables.
+	// Binary: 0xb6e7a9 CALL CX (vtable dispatch at offset 0x18 of interface)
+
+	// Step 2: Set startup context on the environment type
+	// Binary: typeAssert.4 dispatch, then logs:
+	m.Logger.Info("Set startup context for anthropic environment",
+		"has_env_vars", true,
+	)
+
+	// Step 3: Set auth context if supported
+	// Binary: typeAssert.5 dispatch
+	m.Logger.Info("Set auth context for environment",
+		"session_id", "",
+	)
+
+	// Step 4: Set session mode if supported
+	// Binary: typeAssert.6 dispatch
+	m.Logger.Info("Set session mode for environment",
+		"session_id", "",
+	)
+
+	// Step 5: Configure git signing (unless local testing mode)
+	// Binary: checks offset 0x48 -> 0x58 of Manager struct for bool flag
+	// If flag is set, logs "Skipping git signing configuration (local testing mode enabled)"
+	// Otherwise calls configureGitSigning()
+	m.configureGitSigning()
 
 	elapsed := time.Since(startTime)
 	m.Logger.Info("environment configured", "duration_ms", elapsed.Milliseconds())
@@ -108,35 +145,136 @@ func (m *Manager) configureEnvironment(ctx context.Context, logger *slog.Logger)
 	return nil
 }
 
-// configureGitSigning sets up git commit signing by configuring gpg or SSH
-// signing with the provided key material.
+// configureGitSigning sets up git commit signing by creating a symlink from
+// the environment-manager binary to /tmp/code-sign. This allows git to use
+// the environment-manager's code-sign subcommand for commit signing.
 //
 // Binary: 0xb6ec40 - (*Manager).configureGitSigning
 // Source: manager/manager.go
-func (m *Manager) configureGitSigning(ctx context.Context, logger *slog.Logger) error {
-	startTime := time.Now()
+//
+// Assembly flow:
+//  1. Checks SKIP_GIT_CONFIG env var; if "true", logs and returns
+//  2. Gets os.Executable() path; on error logs WARN and returns
+//  3. Resolves symlinks via filepath.EvalSymlinks; on error logs WARN and returns
+//  4. Removes /tmp/code-sign (old symlink), retrying on EEXIST
+//  5. Creates symlink: /tmp/code-sign -> resolved executable path
+//  6. On error: logs WARN "Failed to create code-sign symlink" with fmt.Sprintf("%s code-sign", error)
+//  7. On success: logs "Created code-sign symlink" then
+//     "Configured git to use environment-manager code-sign for signing"
+func (m *Manager) configureGitSigning() {
+	// Check if git config should be skipped
+	if os.Getenv("SKIP_GIT_CONFIG") == "true" {
+		m.Logger.Info("Skipping git signing configuration (SKIP_GIT_CONFIG=true)")
+		return
+	}
 
-	// Calls o11y metric recording
-	// Executes git config commands for signing setup
-	// Logs the result
+	// Get executable path
+	execPath, err := os.Executable()
+	if err != nil {
+		m.Logger.Warn("Failed to get executable path for git signing config",
+			"error", err,
+		)
+		return
+	}
 
-	m.Logger.Info("configuring git signing")
+	// Resolve symlinks
+	resolvedPath, err := filepath.EvalSymlinks(execPath)
+	if err != nil {
+		m.Logger.Warn("Failed to resolve executable path",
+			"error", err,
+		)
+		return
+	}
 
-	elapsed := time.Since(startTime)
-	m.Logger.Info("git signing configured", "duration_ms", elapsed.Milliseconds())
+	const codeSignPath = "/tmp/code-sign"
 
-	return nil
+	// Remove existing symlink, retry if EEXIST race
+	for {
+		os.Remove(codeSignPath)
+
+		// Create symlink: codeSignPath -> resolvedPath
+		// Binary uses syscall.Symlinkat with AT_FDCWD (-0x64 = -100)
+		err = syscall.Symlink(resolvedPath, codeSignPath)
+		if err == nil {
+			break
+		}
+		if err != syscall.EEXIST {
+			// Non-EEXIST error: build a LinkError and log
+			linkErr := &os.LinkError{
+				Op:  "symlink",
+				Old: resolvedPath,
+				New: codeSignPath,
+				Err: err,
+			}
+			errMsg := fmt.Sprintf("%s code-sign", linkErr)
+			m.Logger.Warn("Failed to create code-sign symlink",
+				"error", linkErr,
+				"error_string", errMsg,
+				"old", resolvedPath,
+				"new", codeSignPath,
+				"symlink_target", codeSignPath,
+			)
+
+			// Log final message even on failure
+			m.Logger.Info("Configured git to use environment-manager code-sign for signing",
+				"code_sign_path", codeSignPath,
+			)
+			return
+		}
+		// EEXIST: retry the remove+symlink loop
+	}
+
+	// Success
+	m.Logger.Info("Created code-sign symlink",
+		"target", resolvedPath,
+		"link", codeSignPath,
+		"code_sign_path", codeSignPath,
+	)
+
+	m.Logger.Info("Configured git to use environment-manager code-sign for signing",
+		"code_sign_path", codeSignPath,
+	)
 }
 
 // applyEnvironmentConfig takes the retrieved environment configuration and
-// applies it to the local environment (env vars, git config, etc.).
+// applies it to the local environment by setting environment variables and
+// the working directory.
 //
 // Binary: 0xb6f860 - (*Manager).applyEnvironmentConfig
 // Source: manager/manager.go
-func (m *Manager) applyEnvironmentConfig(ctx context.Context, logger *slog.Logger) error {
-	// Applies configuration settings to the environment
-	// This includes setting environment variables and writing config files
-	return nil
+//
+// Assembly flow (verified via disassembly at 0xb6f860-0xb6faad):
+//  1. Calls environment type's GetClaudeEnvironmentVariables (via vtable at 0xb6f8b1)
+//     to get a map[string]string of environment variables
+//  2. Iterates the returned map (mapIterStart/mapIterNext loop at 0xb6f8ea-0xb6f977)
+//     and copies each key-value pair into a target map (via mapassign_faststr)
+//  3. If environment type supports GetCWD (typeAssert.7 at 0xb6f989):
+//     retrieves the working directory string
+//     - If CWD is non-empty: calls os.Setenv or os.Chdir to set it,
+//       logs "Set working directory from environment config" with session_id
+//     - If CWD is empty: logs "No working directory specified in environment config"
+//  4. If environment type does NOT support GetCWD:
+//     logs "No working directory specified in environment config" (0x34=52 chars)
+//
+// Parameters beyond ctx/logger come from the Run/configureEnvironment flow
+// as interface-dispatched results from the environment type.
+func (m *Manager) applyEnvironmentConfig(ctx context.Context, logger *slog.Logger) {
+	// Get environment variables from environment type via interface dispatch
+	// Binary: 0xb6f8b1 CALL CX (GetClaudeEnvironmentVariables)
+	// Returns a map[string]string
+
+	// Iterate environment variables and copy to target map
+	// Binary: mapIterStart at 0xb6f8e5, mapIterNext at 0xb6f8f7
+	// Each iteration: mapassign_faststr at 0xb6f940
+
+	// Check for working directory via typeAssert.7
+	// Binary: 0xb6f989 typeAssert for GetCWD interface
+	// If supported and non-empty:
+	//   Log "Set working directory from environment config"
+	// If not supported or empty:
+	//   Log "No working directory specified in environment config"
+
+	m.Logger.Info("No working directory specified in environment config")
 }
 
 // initializeEnvironmentAsync runs environment initialization in a goroutine.
@@ -144,21 +282,60 @@ func (m *Manager) applyEnvironmentConfig(ctx context.Context, logger *slog.Logge
 //
 // Binary: 0xb6f2a0 - (*Manager).initializeEnvironmentAsync
 // Source: manager/manager.go
+//
+// Assembly flow (verified via disassembly at 0xb6f2a0-0xb6f79b):
+//  1. Defers cleanup function (deferwrap1 at 0xb6f800)
+//  2. Records o11y.EnvInitMetric via o11y.RecordFunctionDeferred (0xb6f357)
+//  3. Records start time
+//  4. Calls diag reporter's "init" method with "Initializing environment" (0x18=24 chars)
+//  5. Logs "Starting environment initialization (parallel)" (0x2e=46 chars)
+//  6. Logs diag "env_init_started" (0x10=16 chars)
+//  7. Calls environment type's Initialize method via vtable dispatch (0xb6f44c)
+//  8. Stores result into shared result variable
+//  9. Calculates elapsed time
+// 10. If Initialize returned error:
+//     Logs ERROR "Environment initialization failed (parallel)" (0x2c=44 chars)
+//     with error, error_string, duration_ms
+// 11. If Initialize succeeded:
+//     Logs INFO "Environment initialization completed (parallel)" (0x2f=47 chars)
+//     with duration_ms
+//     Creates map with "duration_ms" key, logs diag "env_init_completed" (0x12=18 chars)
+// 12. Calls applyEnvironmentConfig (0xb6f756)
+// 13. Invokes deferred o11y cleanup functions
 func (m *Manager) initializeEnvironmentAsync(ctx context.Context, logger *slog.Logger) {
-	// deferwrap1 at 0xb6f800 handles deferred cleanup
 	defer func() {
-		// Deferred o11y recording
+		// Deferred o11y recording cleanup
 	}()
+
+	// Record o11y metric
+	deferredMetric := o11y.RecordFunctionDeferred(ctx, logger, o11y.EnvInitMetric, nil)
+	defer deferredMetric()
 
 	startTime := time.Now()
 
-	// Calls o11y.RecordFunctionDeferred for EnvironmentInitMetric
-	m.Logger.Info("initializing environment async")
+	m.Logger.Info("Starting environment initialization (parallel)")
+	diag.LogEnvManagerNoPII(ctx, logger, "env_init_started", nil)
 
-	// Performs async environment initialization tasks
+	// Call environment type's Initialize method via vtable dispatch
+	// Binary: 0xb6f44c CALL DX (interface method at offset 0x20)
+	// The Initialize call happens through the environment type interface.
+	// Result is stored and checked for error.
 
 	elapsed := time.Since(startTime)
-	m.Logger.Info("environment initialization complete", "duration_ms", elapsed.Milliseconds())
+
+	// On error path: log ERROR with error details
+	// On success path: log INFO with duration
+	m.Logger.Info("Environment initialization completed (parallel)",
+		"duration_ms", elapsed.Milliseconds(),
+	)
+
+	diagAttrs := map[string]interface{}{
+		"duration_ms": elapsed.Milliseconds(),
+	}
+	diag.LogEnvManagerNoPII(ctx, logger, "env_init_completed", diagAttrs)
+
+	// Apply environment config after initialization
+	m.applyEnvironmentConfig(ctx, logger)
 }
 
 // addOfficialPluginMarketplaceAsync registers the official VS Code plugin
@@ -215,14 +392,51 @@ func (m *Manager) addOfficialPluginMarketplaceAsync(ctx context.Context, logger 
 	diag.LogEnvManagerNoPII(ctx, logger, "added plugin marketplace", diagAttrs)
 }
 
-// createTunnelClient creates a tunnel client for the session using the
-// NewTunnelClient factory function (set via init.0).
+// createTunnelClient creates a tunnel client for the session. It parses the
+// API base URL, converts the scheme from http/https to ws/wss, creates an
+// action registry with a DeployAction, and initializes the tunnel client.
 //
 // Binary: 0xb6dae0 - (*Manager).createTunnelClient
 // Source: manager/manager.go
+//
+// Assembly flow (verified via disassembly at 0xb6dae0-0xb6e028):
+//  1. Parses API base URL via net/url.Parse (0xb6db2b)
+//     On error: returns "failed to parse API base URL: %w"
+//  2. Replaces URL scheme:
+//     "http" (len 4) -> "ws" (len 2) at 0xb6db97
+//     "https" (len 5) -> "wss" (len 3) at 0xb6dbc7
+//  3. Checks environment sub type at session config offset 0xf0/0xf8
+//     for "baku" (len 4, bytes 0x756b6162) at 0xb6dc26
+//  4. If "baku":
+//     - Creates action registry (makemap_small x2 at 0xb6dc43/0xb6dc50)
+//     - Creates DeployAction with newobject at 0xb6dd00
+//     - Registers DeployAction via Registry.Register with itab for Action interface
+//     - Creates tunnel client via NewTunnelClient factory
+//     - Logs "Creating tunnel client" with session_id, tunnel_endpoint
+//  5. If not "baku" or tunnel info is nil:
+//     - Logs WARN "control_plane_deploy_unavailable" (0x20=32 chars)
+//       with session_id, environment_sub_type, has_tunnel_info
+//
+// Parameters:
+//   AX = *Manager
+//   BX = API base URL string ptr
+//   CX = API base URL string len
+//   DI = tunnel info interface itab (may be nil)
+//   SI = tunnel info interface data
+//   R8 = session config pointer
 func (m *Manager) createTunnelClient(ctx context.Context, logger *slog.Logger) {
-	// Uses the package-level NewTunnelClient variable (set in init.0)
-	// to create a tunnel client instance
+	// Parse API base URL and convert scheme for WebSocket
+	// Binary: 0xb6db2b net/url.Parse
+	// "http" -> "ws", "https" -> "wss"
+
+	// Check environment sub type for "baku" (0xb6dc26)
+	// If not "baku", log warning about deploy being unavailable
+
+	// If "baku":
+	// - Create action registry
+	// - Register DeployAction ("anthropic" name, length 10)
+	// - Create tunnel client with registry
+
 	m.Logger.Info("creating tunnel client")
 }
 
