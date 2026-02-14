@@ -120,7 +120,12 @@ func (h *Handler) HandleRequest(
 	headers := &tunnelpb.HttpHeaders{
 		StatusCode: int32(resp.StatusCode),
 	}
-	if err := sender.SendHeaders(headers); err != nil {
+	headersResp := &tunnelpb.TunnelResponse{
+		Payload: &tunnelpb.TunnelResponse_HttpHeaders{
+			HttpHeaders: headers,
+		},
+	}
+	if err := sender.SendHeaders(headersResp); err != nil {
 		return err
 	}
 
@@ -132,7 +137,12 @@ func (h *Handler) HandleRequest(
 			chunk := &tunnelpb.HttpChunk{
 				Data: buf[:n],
 			}
-			if err := sender.SendChunk(chunk); err != nil {
+			chunkResp := &tunnelpb.TunnelResponse{
+				Payload: &tunnelpb.TunnelResponse_HttpChunk{
+					HttpChunk: chunk,
+				},
+			}
+			if err := sender.SendChunk(chunkResp); err != nil {
 				return err
 			}
 		}
@@ -169,8 +179,10 @@ func (h *Handler) CancelRequest(requestID string) {
 		return
 	}
 
-	// Call the cancel function
-	cancelFunc()
+	// Call the cancel function with type assertion
+	if fn, ok := cancelFunc.(context.CancelFunc); ok {
+		fn()
+	}
 
 	// Remove the entry from the map
 	h.cancelMap.LoadAndDelete(requestID)

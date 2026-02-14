@@ -367,7 +367,7 @@ func (c *Client) handleHTTPRequest(ctx context.Context, httpReq *tunnelpb.Tunnel
 //
 // Binary address: 0xb628e0
 func (c *Client) handleHTTPCancel(ctx context.Context, cancel *tunnelpb.TunnelRequest_HttpCancel) {
-	c.handler.CancelRequest(cancel)
+	c.handler.CancelRequest(cancel.GetRequestId())
 }
 
 // handleWSOpen handles a WebSocket tunnel open request.
@@ -625,12 +625,7 @@ func addJitter(base time.Duration) time.Duration {
 // SendHeaders wraps a TunnelResponse with HttpHeaders payload and sends it.
 //
 // Binary address: 0xb656a0
-func (s *httpResponseSender) SendHeaders(headers *tunnelpb.HttpHeaders) error {
-	resp := &tunnelpb.TunnelResponse{
-		Payload: &tunnelpb.TunnelResponse_HttpHeaders{
-			HttpHeaders: headers,
-		},
-	}
+func (s *httpResponseSender) SendHeaders(resp *tunnelpb.TunnelResponse) error {
 	return s.client.sendResponse(resp)
 }
 
@@ -644,12 +639,7 @@ func (s *httpResponseSender) SendChunk(resp *tunnelpb.TunnelResponse) error {
 // SendError wraps a TunnelResponse with HttpError payload and sends it.
 //
 // Binary address: 0xb65820
-func (s *httpResponseSender) SendError(httpErr *tunnelpb.HttpError) error {
-	resp := &tunnelpb.TunnelResponse{
-		Payload: &tunnelpb.TunnelResponse_HttpError{
-			HttpError: httpErr,
-		},
-	}
+func (s *httpResponseSender) SendError(resp *tunnelpb.TunnelResponse) error {
 	return s.client.sendResponse(resp)
 }
 
@@ -658,48 +648,28 @@ func (s *httpResponseSender) SendError(httpErr *tunnelpb.HttpError) error {
 // SendOpened wraps a TunnelResponse with WsOpened payload and sends it.
 //
 // Binary address: 0xb658e0
-func (s *wsResponseSender) SendOpened(opened *tunnelpb.WsOpened) error {
-	resp := &tunnelpb.TunnelResponse{
-		Payload: &tunnelpb.TunnelResponse_WsOpened{
-			WsOpened: opened,
-		},
-	}
+func (s *wsResponseSender) SendOpened(resp *tunnelpb.TunnelResponse) error {
 	return s.client.sendResponse(resp)
 }
 
 // SendMessage wraps a TunnelResponse with WsMessage payload and sends it.
 //
 // Binary address: 0xb659a0
-func (s *wsResponseSender) SendMessage(msg *tunnelpb.WsMessage) error {
-	resp := &tunnelpb.TunnelResponse{
-		Payload: &tunnelpb.TunnelResponse_WsMessage{
-			WsMessage: msg,
-		},
-	}
+func (s *wsResponseSender) SendMessage(resp *tunnelpb.TunnelResponse) error {
 	return s.client.sendResponse(resp)
 }
 
 // SendClose wraps a TunnelResponse with WsClose payload and sends it.
 //
 // Binary address: 0xb65a60
-func (s *wsResponseSender) SendClose(wsClose *tunnelpb.WsClose) error {
-	resp := &tunnelpb.TunnelResponse{
-		Payload: &tunnelpb.TunnelResponse_WsClose{
-			WsClose: wsClose,
-		},
-	}
+func (s *wsResponseSender) SendClose(resp *tunnelpb.TunnelResponse) error {
 	return s.client.sendResponse(resp)
 }
 
 // SendError wraps a TunnelResponse with WsError payload and sends it.
 //
 // Binary address: 0xb65b20
-func (s *wsResponseSender) SendError(wsErr *tunnelpb.WsError) error {
-	resp := &tunnelpb.TunnelResponse{
-		Payload: &tunnelpb.TunnelResponse_WsError{
-			WsError: wsErr,
-		},
-	}
+func (s *wsResponseSender) SendError(resp *tunnelpb.TunnelResponse) error {
 	return s.client.sendResponse(resp)
 }
 

@@ -167,7 +167,12 @@ func (h *WSHandler) readLoop(
 			Data: message,
 		}
 
-		if err := sender.SendMessage(wsMsg); err != nil {
+		msgResp := &tunnelpb.TunnelResponse{
+			Payload: &tunnelpb.TunnelResponse_WsMessage{
+				WsMessage: wsMsg,
+			},
+		}
+		if err := sender.SendMessage(msgResp); err != nil {
 			slog.Warn("failed to send ws message through tunnel",
 				"error", err,
 				"connection_id", connectionID,

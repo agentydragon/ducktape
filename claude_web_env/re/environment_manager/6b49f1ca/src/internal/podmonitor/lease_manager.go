@@ -260,7 +260,7 @@ func NewLeaseManager(
 //
 // Closures:
 //   gowrap1 at 0xad47c0 - goroutine wrapper for heartbeatLoop
-func (lm *LeaseManager) Start() error {
+func (lm *LeaseManager) Start(ctx context.Context) error {
 	// Send initial heartbeat
 	err := lm.sendHeartbeat()
 	if err != nil {

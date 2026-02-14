@@ -603,10 +603,12 @@ func (e *byocEnvironmentType) handleBranchCheckout(ctx context.Context) error {
 	mgr, err := sources.NewSourceHandlerManager(
 		e.logger,
 		e.config.CWD,
-		"",   // sessionID
-		nil,  // gitProxyManager
-		nil,  // activityRecorder
-		true, // isResume (0xb055e1: MOVB $1)
+		"",     // sessionID
+		nil,    // gitProxyManager
+		nil,    // outcomes
+		nil,    // activityRecorder
+		"resume", // processMode
+		true,   // isResume (0xb055e1: MOVB $1)
 	)
 	if err != nil {
 		// 0xb05630: Wrap error
