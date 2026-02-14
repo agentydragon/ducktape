@@ -1,248 +1,120 @@
-# Environment Manager Reverse Engineering - Incomplete Items
+# Environment Manager Reverse Engineering - TODO
 
-This document tracks areas where the reverse engineering is incomplete, stubbed, or where the reconstructed code doesn't fully capture the binary's behavior.
+This document tracks incomplete reverse engineering work and stubs that need implementation.
 
-## Critical Stubs (Affects Functionality)
+## ✅ Recently Completed
 
-### ✅ FIXED: MCP Server Registration (`internal/mcp/server.go`)
+- **MCP Server Registration** (`internal/mcp/server.go`) - Tool registration, HTTP serving, heartbeat loop
+- **CodeSign Server** (`internal/mcp/servers/codesign/server.go`) - GetTools() returns proper schema
+- **Manager MCP Registration** (`internal/manager/manager.go`) - Logs registration results/errors
 
-**Previously stubbed at lines 142, 193, 198**
+## 🔴 Critical Stubs (Affects Functionality)
 
-- ✅ Tool registration now calls `s.GetTools()` and `mcpSrv.AddTools(tools...)`
-- ✅ HTTP server creation and `Serve()` call implemented in goroutine
-- ✅ Heartbeat loop implemented with 30-second ticker
-- ⚠️ Streamable server cleanup still not reconstructed (line 238)
-- **Impact**: MCP servers now register tools and serve requests properly
+### Tunnel Registration (`internal/manager/tunnel_register.go:64`)
 
-### ✅ FIXED: CodeSign Server (`internal/mcp/servers/codesign/server.go`)
-
-**Previously stubbed at lines 162-189**
-
-- ✅ `GetTools()` now constructs proper `mcpserver.ServerTool` with complete schema
-- ✅ Returns tool slice with "sign_file" tool definition
-- ✅ Input schema includes all 4 properties: file_path, source_identifier, signing_key_path, content
-- ✅ Required fields and handler properly wired
-- **Impact**: CodeSign MCP server now exposes its tool to Claude
-
-### ✅ FIXED: Manager MCP Registration Results (`internal/manager/manager.go`)
-
-**Previously ignored at lines 467-468**
-
-- ✅ `registeredServers` list now logged with count and server names
-- ✅ `errors` slice now checked and logged with error count
-- ✅ Registration summary logged with success/failure counts
-- **Impact**: MCP registration failures no longer silently ignored
-
-### Tunnel Registration (`internal/manager/tunnel_register.go`)
-
-**Line 64**
-
-- Function is a complete stub - returns `nil` instead of creating tunnel client
-- Should forward params to `tunnel.NewClient` and return result
+- `defaultNewTunnelClient()` returns `nil` - should forward params to `tunnel.NewClient`
 - **Impact**: Tunnel functionality completely broken
 
-### Manager Functions (`internal/manager/manager.go`)
+### Manager Functions (`internal/manager/manager.go:261-263, 432-434`)
 
-**Lines 261-263, 432-434**
-
-- `handleActivity()` stub - should dispatch to environment type's activity handler
-- `constructWebSocketURL()` stub - should convert API URL from http→ws/https→wss
+- `handleActivity()` - should dispatch to environment type's activity handler
+- `constructWebSocketURL()` - should convert http→ws / https→wss
 - **Impact**: Activity reporting and WebSocket connections won't work
 
-### Vercel Deploy (`internal/tunnel/actions/deploy/vercel.go`)
+### Vercel Deploy (`internal/tunnel/actions/deploy/vercel.go:122-146`)
 
-**Lines 122-146**
+- `CollectFiles()` function body empty - should walk directory, read files, compute SHA256 hashes
+- **Impact**: Vercel deployment won't work
 
-- `CollectFiles()` function body mostly empty - only has comments
-- Should walk directory, read files, compute SHA256 hashes, build FileEntry slice
-- **Impact**: Vercel deployment action won't work - can't collect files to deploy
+## 🟢 Observability & Metrics (Non-Critical)
 
-## Observability & Metrics (Non-Critical)
+### Command Timing (`cmd/cmd_task_run.go:198, 202, 225, 252, 292, 323, 325, 340`)
 
-### Command Timing (`cmd/cmd_task_run.go`)
+- Unused duration variables should be logged as o11y metrics
 
-**Lines 198, 202, 225, 252, 292, 323, 325, 340**
-
-- Multiple duration variables unused: `stdinParseDuration`, `installDuration`, `healthcheckDuration`, `totalParseTime`, `totalSetupTime`, `managerDuration`
-- Should be logged or recorded as o11y metrics
-- **Impact**: Missing timing telemetry
-
-### Git Operations (`internal/sources/git.go`)
-
-**Lines 313, 398, 717**
+### Git Operations (`internal/sources/git.go:313, 398, 717`)
 
 - `activityMsg` should be sent to activityRecorder
-- `startTime` and `elapsed` should be used for o11y metrics
-- **Impact**: Missing activity tracking and performance metrics
+- `startTime`/`elapsed` should be used for metrics
 
-### Manager Metrics (`internal/manager/manager.go`)
-
-**Line 79**
+### Manager Metrics (`internal/manager/manager.go:79`)
 
 - `startTime` not used for elapsed time calculation
-- **Impact**: Missing manager duration metrics
 
-## Configuration Wiring (Medium Priority)
+## 🟡 Configuration Wiring (Medium Priority)
 
-### Command Flags (`cmd/cmd_task_run.go`)
+### Command Flags (`cmd/cmd_task_run.go:105, 140, 144, 206`)
 
-**Lines 105, 140, 144, 206**
+- `inputFormatChanged`, `sessionMode`, `skipGitConfig` not wired to behavior
 
-- `inputFormatChanged` should gate input format behavior
-- `sessionMode` should be passed to session/manager config
-- `skipGitConfig` should be passed to environment config
-- **Impact**: Some command-line flags don't affect behavior
+### API & Service Setup (`cmd/cmd_task_run.go:202, 252, 259`)
 
-### API & Service Setup (`cmd/cmd_task_run.go`)
+- `activityRecorder`, `otelEndpoint`, `o11yService` not wired to manager/diagnostics
 
-**Lines 202, 252, 259**
+### Poll Command (`cmd/cmd_poll.go:102, 160, 161`)
 
-- `activityRecorder` should be passed to manager/environment setup
-- `otelEndpoint` should be passed to o11y.NewO11yService config
-- `o11yService` should be wired into manager/diagnostics
-- **Impact**: Incomplete telemetry integration
+- `identity`, `maxPollRetries`, `secretKeyEnv` not wired
 
-### Poll Command (`cmd/cmd_poll.go`)
+### Orchestrator (`cmd/cmd_orchestrator.go:128`)
 
-**Lines 102, 160, 161**
+- `PollHook` created but not passed to orchestrator
 
-- `identity` fields should update sessionID/workID
-- `maxPollRetries` should be wired into poller retry config
-- `secretKeyEnv` should be used as fallback secret key source
-- **Impact**: Some configuration options ignored
+## Type Recovery (Low Impact)
 
-### Orchestrator (`cmd/cmd_orchestrator.go`)
+### Manager Config (`internal/manager/manager.go:37`)
 
-**Line 128**
+- `Config interface{}` should be concrete environment config client
 
-- `PollHook` created but result discarded - should be passed to orchestrator
-- **Impact**: Poll hooks won't be registered
+### Claude Executor (`internal/claude/claude_code_executor.go:50`)
 
-## Type Recovery (Low Impact on Build)
+- Multiple fields typed as `interface{}` instead of concrete types
 
-### Manager Config (`internal/manager/manager.go`)
+### Session Ingress Logs (`internal/api/session_ingress_client.go:210, 219, 229, 240`)
 
-**Line 37**
-
-```go
-Config interface{} // TODO(re): concrete type not recovered
-```
-
-- Should be specific environment config client interface
-- Currently typed as `interface{}`
-
-### Claude Executor (`internal/claude/claude_code_executor.go`)
-
-**Line 50**
-
-```go
-// TODO(re): many fields typed as interface{} — concrete types not yet recovered
-```
-
-- Multiple struct fields are `interface{}` instead of concrete types
-- **Impact**: Loss of type safety, but builds and runs
-
-### Session Ingress Logs (`internal/api/session_ingress_client.go`)
-
-**Lines 210, 219, 229, 240**
-
-- `logs` param typed as `interface{}` instead of `[]DiagLogEntry`
-- Should call `diagLogsToWireFormat(logs, len(logs))`
-- Hardcoded `num_logs: 0` instead of `len(logs)`
-- **Impact**: Log submission may not work correctly
+- `logs` param typed as `interface{}`, hardcoded `num_logs: 0`
 
 ## Incomplete Reconstructions
 
-### Claude Executor Environment Setup (`internal/claude/claude_code_executor.go`)
+### Claude Executor Environment Setup (`internal/claude/claude_code_executor.go:278, 336, 337, 379, 429`)
 
-**Lines 278, 336, 337, 379, 429**
+- Environment variable setup, pipe cleanup closures, config access patterns incomplete
 
-- Environment variable setup not reconstructed - should call `GetClaudeEnvironmentVariables(...)`
-- Pipe write-end cleanup closure (func3 at 0xadf1c0) not reconstructed
-- Output writer closure (func4 at 0xadf0a0) not reconstructed
-- Config access patterns incomplete - should access as `*config.ClaudeConfig`
-- **Impact**: Claude Code execution environment may be incomplete
-
-### ✅ FIXED: MCP Server Results (`internal/manager/manager.go`)
-
-**Previously at lines 467-468**
-
-- ✅ `registeredServers` list now logged with count and names
-- ✅ `errors` slice now checked and logged
-- **Impact**: MCP registration failures now properly reported
-
-### Session Ingress OTel (`internal/api/session_ingress_client.go`)
-
-**Line 114**
+### Session Ingress OTel (`internal/api/session_ingress_client.go:114`)
 
 - OTel propagator created but injection call not reconstructed
-- **Impact**: Distributed tracing context not propagated
 
-### Git Proxy Handler (`internal/gitproxy/handler.go`)
+### Git Proxy Handler (`internal/gitproxy/handler.go:237`)
 
-**Line 237**
+- `upstreamURL` param accepted but never used
 
-- URL construction incomplete - `upstreamURL` param accepted but never used
-- **Impact**: Git proxy may not construct correct upstream URLs
+### Protobuf Types (`internal/tunnel/tunnelpb/`)
 
-### Protobuf Types (`internal/tunnel/tunnelpb/types.go`)
-
-**Lines 1, 5, 28-30, 72-74, etc.**
-
-- All ProtoReflect() methods return `nil` (stubs)
-- Types are manual reconstructions, not protoc-generated
-- Missing full protobuf reflection support
-- **Impact**: Some protobuf operations may fail, but basic marshaling works
+- ⚠️ Note: Now using proper protoc-generated code instead of manual reconstructions
 
 ### DataDog Metrics (`internal/dogmetrics/dogmetrics.go`)
 
-**Lines 1, 14**
+- Entire package stubbed - `IncrementCounter()` does nothing
 
-- Entire package is a stub
-- `IncrementCounter()` does nothing - should send to DataDog statsd
-- **Impact**: No DataDog metrics emitted
+## Priority Order
 
-## Summary by Impact
+### Critical (Breaks Core Features)
 
-### 🔴 Critical (Breaks Core Features)
+1. Tunnel client creation (`tunnel_register.go:64`)
+2. Vercel file collection (`vercel.go:122-146`)
+3. Manager activity handling and WebSocket URL (`manager.go:261-263, 432-434`)
 
-1. ✅ ~~MCP server tool registration and serving~~ - **FIXED**
-2. Tunnel client creation
-3. Vercel file collection
-4. Manager activity handling and WebSocket URL construction
+### Medium (Degrades Features)
 
-### 🟡 Medium (Degrades Features)
-
-1. Command flag wiring (session mode, input format, skip git config, etc.)
+1. Command flag wiring
 2. Activity recorder and telemetry plumbing
 3. Session ingress log submission
 4. Claude executor environment setup
 5. Git proxy URL construction
-6. ⚠️ Streamable server cleanup (partial - heartbeat loop added but cleanup not reconstructed)
+6. Streamable server cleanup (partial)
 
-### 🟢 Low (Missing Telemetry/Type Safety)
+### Low (Missing Telemetry/Type Safety)
 
-1. All duration metrics and o11y timing
+1. Duration metrics and o11y timing
 2. Type recovery (interface{} → concrete types)
-3. DataDog metrics (stub package)
-4. ✅ ~~MCP registration error handling~~ - **FIXED**
-5. OTel context propagation
-
-## Verification Strategy
-
-To validate completeness:
-
-1. **Differential Testing**: Run reconstructed binary vs original with identical inputs
-2. **Coverage Analysis**: Compare function call graphs from both binaries
-3. **Integration Tests**: Exercise each stub and verify behavior matches expectations
-4. **Binary Diffing**: Compare execution traces for critical paths
-
-## Next Steps
-
-Priority order for completion:
-
-1. Fix MCP tool registration (enables core MCP functionality)
-2. Implement tunnel client creation (enables remote development)
-3. Complete Vercel CollectFiles (enables deployment actions)
-4. Wire command flags to actual config
-5. Add metrics/telemetry (last - non-functional)
+3. DataDog metrics
+4. OTel context propagation
