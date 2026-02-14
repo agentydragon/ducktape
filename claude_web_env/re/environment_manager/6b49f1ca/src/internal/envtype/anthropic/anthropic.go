@@ -48,10 +48,8 @@ var defaultSettingsJSON []byte
 // Copied from envtype/shared.StopHookScript during init().
 var stopHookScript []byte
 
-// sessionStartHookSkill holds the startup hook skill YAML content.
-// Embedded as a package-level string variable.
-// Symbol: anthropic.sessionStartHookSkill (0x158e4a0)
-var sessionStartHookSkill string
+// sessionStartHookSkill is defined in skill_content.go
+// Symbol: anthropic.sessionStartHookSkill (0x158e4a0), 4931 bytes
 
 // init copies shared defaults (DefaultSettingsJSON, StopHookScript) from the
 // shared package into package-level variables.
@@ -997,6 +995,6 @@ func copyDir(src, dst string) error {
 
 // Ensure unused imports are referenced.
 var (
-	_ = o11y.RecordFunction
+	_ = o11y.RecordFunctionDeferred
 	_ = process.ExecuteScript
 )

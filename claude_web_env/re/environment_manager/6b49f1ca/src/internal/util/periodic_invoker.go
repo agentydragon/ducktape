@@ -8,13 +8,6 @@ import (
 	"time"
 )
 
-// Reconstructed from symbol: internal/util.Stopper
-//
-// Stopper is an interface for types that can be stopped.
-type Stopper interface {
-	Stop()
-}
-
 // Reconstructed from symbol: internal/util.PeriodicInvoker
 //
 // PeriodicInvoker periodically invokes a function at a fixed interval.

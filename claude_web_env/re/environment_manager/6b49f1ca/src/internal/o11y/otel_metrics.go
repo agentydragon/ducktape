@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
@@ -179,8 +180,8 @@ func makeOTLPExporter(cfg *O11yConfig) (sdkmetric.Exporter, error) {
 	}
 
 	opts = append(opts, otlpmetrichttp.WithTemporalitySelector(
-		func(kind sdkmetric.InstrumentKind) sdkmetric.Temporality {
-			return sdkmetric.DeltaTemporality
+		func(kind sdkmetric.InstrumentKind) metricdata.Temporality {
+			return metricdata.DeltaTemporality
 		},
 	))
 
@@ -197,8 +198,8 @@ func makeOTLPExporter(cfg *O11yConfig) (sdkmetric.Exporter, error) {
 // Source: otel_metrics.go
 func makeStdoutExporter() (sdkmetric.Exporter, error) {
 	exporter, err := stdoutmetric.New(
-		stdoutmetric.WithTemporalitySelector(func(kind sdkmetric.InstrumentKind) sdkmetric.Temporality {
-			return sdkmetric.DeltaTemporality
+		stdoutmetric.WithTemporalitySelector(func(kind sdkmetric.InstrumentKind) metricdata.Temporality {
+			return metricdata.DeltaTemporality
 		}),
 	)
 	if err != nil {
