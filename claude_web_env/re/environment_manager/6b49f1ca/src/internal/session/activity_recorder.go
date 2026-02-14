@@ -15,11 +15,30 @@ import (
 )
 
 // ActivityRecorder is the interface for recording session activity events.
-// Implemented by SessionActivityRecorder (real) and noopActivityRecorder (cmd package).
+// Implemented by SessionActivityRecorder (real) and NoopActivityRecorder.
 type ActivityRecorder interface {
 	RecordActivity(category api.LogCategory, eventType string) error
 	RecordFailureResult(category api.LogCategory, eventType string, errMsg string) error
 	RecordLongRunningActivity(category api.LogCategory, eventType string) *util.PeriodicInvoker
+}
+
+// NoopActivityRecorder is a no-op implementation of ActivityRecorder.
+// Used when session ingress is not available.
+type NoopActivityRecorder struct{}
+
+// RecordActivity does nothing.
+func (n *NoopActivityRecorder) RecordActivity(category api.LogCategory, eventType string) error {
+	return nil
+}
+
+// RecordFailureResult does nothing.
+func (n *NoopActivityRecorder) RecordFailureResult(category api.LogCategory, eventType string, errMsg string) error {
+	return nil
+}
+
+// RecordLongRunningActivity returns nil.
+func (n *NoopActivityRecorder) RecordLongRunningActivity(category api.LogCategory, eventType string) *util.PeriodicInvoker {
+	return nil
 }
 
 // SessionActivityRecorder posts session activity events to the session ingress API.

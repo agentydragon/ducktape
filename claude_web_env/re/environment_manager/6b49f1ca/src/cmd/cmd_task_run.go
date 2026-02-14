@@ -197,13 +197,27 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			stdinParseDuration := time.Since(stdinStartTime)
 			o11y.RecordDuration("env_manager.stdin_parse.duration_ms", nil, nil, float64(stdinParseDuration.Milliseconds()))
 
-			// 0xb79583: Create activity recorder
-			activityRecorder := session.NewActivityRecorder(nil, slogger, sessionID)
-			_ = activityRecorder // TODO(re): should be passed to manager/environment setup
+			// 0xb79583: Create HTTP client for session ingress and activity recorder
+			var activityRecorder session.ActivityRecorder
+			if parsedCtx != nil && parsedCtx.AuthContext != nil {
+				sessionIngressToken := parsedCtx.AuthContext.GetSessionIngressToken()
+				if sessionIngressToken != "" {
+					httpClient := api.NewHttpClient(apiURL)
+					ingressClient := &api.HttpSessionIngressClient{
+						Client: httpClient,
+						ApiKey: sessionIngressToken,
+						Logger: slogger,
+					}
+					activityRecorder = session.NewActivityRecorder(ingressClient, slogger, sessionID)
+				}
+			}
+			if activityRecorder == nil {
+				// Create noop activity recorder if no session ingress token
+				activityRecorder = &session.NoopActivityRecorder{}
+			}
 
-			// 0xb795a0: Get SKIP_GIT_CONFIG env var
-			skipGitConfig := os.Getenv("SKIP_GIT_CONFIG")
-			_ = skipGitConfig // TODO(re): should be passed to environment config or set as env var
+			// Note: SKIP_GIT_CONFIG env var is checked directly in setupGitConfig() and configureGitSigning()
+			// No need to read it here.
 
 			// 0xb79654-0xb79672: Log custom executable path if set
 			if scriptPath != "" {
@@ -249,14 +263,19 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb79996: Get OTEL endpoint from env (for telemetry)
 			otelEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-			_ = otelEndpoint // TODO(re): should be passed to o11y.NewO11yService config
 
-			// 0xb79a5a: Initialize observability service
-			o11yService, err := o11y.NewO11yService(context.Background(), nil)
+			// 0xb79a5a: Initialize observability service with OTEL endpoint
+			var o11yConfig *o11y.O11yConfig
+			if otelEndpoint != "" {
+				o11yConfig = &o11y.O11yConfig{
+					Endpoint: otelEndpoint,
+				}
+			}
+			o11yService, err := o11y.NewO11yService(context.Background(), o11yConfig)
 			if err != nil {
 				return fmt.Errorf("failed to initialize observability service: %w", err)
 			}
-			_ = o11yService // TODO(re): should be wired into manager/diagnostics
+			_ = o11yService // Already wired via singleton - accessed via o11y.GetO11yService()
 
 			// 0xb79bc0: Increment start counter
 			o11y.Increment(context.Background(), nil, nil)
@@ -315,7 +334,8 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// Build stdinConfigClient for the manager
 			stdinClient := &stdinConfigClient{
-				parsedCtx: parsedCtx,
+				parsedCtx:        parsedCtx,
+				activityRecorder: activityRecorder,
 			}
 
 			// 0xb7a761-0xb7a7a0: Compute durations
@@ -649,10 +669,11 @@ func acknowledgeWorkIfNeeded(
 //
 // Binary itab: go:itab.*cmd.stdinConfigClient,api.Client at 0xf5a240
 type stdinConfigClient struct {
-	parsedCtx  *input.ParsedContext // offset 0x00
-	authCtx    *auth.AuthContext    // offset 0x08
-	outcomes   *claude.Outcomes     // offset 0x10
-	logger     *slog.Logger         // offset 0x18
+	parsedCtx        *input.ParsedContext // offset 0x00
+	authCtx          *auth.AuthContext    // offset 0x08
+	outcomes         *claude.Outcomes     // offset 0x10
+	logger           *slog.Logger         // offset 0x18
+	activityRecorder interface{}          // offset 0x20 - session.ActivityRecorder interface
 }
 
 // GetEnvironmentForSession returns the environment configuration from the
