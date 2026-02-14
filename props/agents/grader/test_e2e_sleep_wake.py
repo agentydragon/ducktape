@@ -43,8 +43,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
     """Test that snapshot grader sleeps after grading, wakes on new drift, grades again.
 
-    Train1 fixture for subtract.py produces 5 edges per issue:
-    - 4 TP edges: tp-001/occ-1, tp-003/occ-1, tp-004/occ-1, tp-005/occ-1
+    Train1 fixture for subtract.py produces 6 edges per issue:
+    - 5 TP edges: tp-001/occ-1, tp-003/occ-1, tp-004/occ-1, tp-005/occ-1, tp-006/occ-subtract
     - 1 FP edge: fp-001/fp-occ-1
 
     Since we give TP edges credit > 0, issues won't appear in clustering_pending.
@@ -70,6 +70,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
                 EdgeSpec(gt_ref=TPRef(tp_id="tp-003", occurrence_id="occ-1"), credit=0.1),
                 EdgeSpec(gt_ref=TPRef(tp_id="tp-004", occurrence_id="occ-1"), credit=0.1),
                 EdgeSpec(gt_ref=TPRef(tp_id="tp-005", occurrence_id="occ-1"), credit=0.1),
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-006", occurrence_id="occ-subtract"), credit=0.1),
                 EdgeSpec(gt_ref=FPRef(fp_id="fp-001", occurrence_id="fp-occ-1"), credit=0.0),
             ],
             "All edges for issue-1",
@@ -94,6 +95,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
                 EdgeSpec(gt_ref=TPRef(tp_id="tp-003", occurrence_id="occ-1"), credit=0.2),
                 EdgeSpec(gt_ref=TPRef(tp_id="tp-004", occurrence_id="occ-1"), credit=0.2),
                 EdgeSpec(gt_ref=TPRef(tp_id="tp-005", occurrence_id="occ-1"), credit=0.2),
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-006", occurrence_id="occ-subtract"), credit=0.2),
                 EdgeSpec(gt_ref=FPRef(fp_id="fp-001", occurrence_id="fp-occ-1"), credit=0.0),
             ],
             "All edges for issue-2",

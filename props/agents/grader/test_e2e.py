@@ -44,8 +44,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
     """Test that snapshot grader detects, grades, and clusters new critique issues.
 
-    Train1 fixture for subtract.py produces 5 edges:
-    - 4 TP edges: tp-001/occ-1, tp-003/occ-1, tp-004/occ-1, tp-005/occ-1
+    Train1 fixture for subtract.py produces 6 edges:
+    - 5 TP edges: tp-001/occ-1, tp-003/occ-1, tp-004/occ-1, tp-005/occ-1, tp-006/occ-subtract
     - 1 FP edge: fp-001/fp-occ-1
 
     All graded with credit=0, so issue appears in clustering_pending.
@@ -61,8 +61,8 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
         drift = yield from m.get_drift_roundtrip()
         run_id = drift.grading[0].critique_run_id
 
-        # Fill all 5 edges with credit=0
-        yield from m.fill_remaining_roundtrip(run_id, "test-issue-1", 5, "No matching ground truth")
+        # Fill all 6 edges with credit=0
+        yield from m.fill_remaining_roundtrip(run_id, "test-issue-1", 6, "No matching ground truth")
 
         # Issue has credit=0, so it appears in clustering_pending
         drift = yield from m.get_drift_roundtrip()

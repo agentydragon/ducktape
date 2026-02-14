@@ -189,7 +189,7 @@ async def _make_stack(
 
     try:
         _set_backend_env(monkeypatch, db.config, e2e_registry_url)
-        monkeypatch.setenv("OPENAI_BASE_URL", fake_openai.url)
+        monkeypatch.setenv("OPENAI_BASE_URL", f"{fake_openai.url}/v1")
 
         backend_port = pick_free_port()
         registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)

@@ -35,7 +35,7 @@ TEST_TIMEOUT_SECONDS = 120
 def make_critic_mock_zero_issues() -> DecoratorMock:
     """Create mock for critic that finds zero issues."""
 
-    @DecoratorMock.mock(check_consumed=False)
+    @DecoratorMock.mock()
     def mock(m: DecoratorMock) -> PlayGen:
         yield None  # First request
         yield m.tool_call("submit", SubmitArgs(issues_count=0, summary="Reviewed code, no issues found"))
@@ -73,7 +73,7 @@ async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, cri
 def make_critic_mock_with_issues() -> DecoratorMock:
     """Create mock for critic that finds and submits issues."""
 
-    @DecoratorMock.mock(check_consumed=False)
+    @DecoratorMock.mock()
     def mock(m: DecoratorMock) -> PlayGen:
         yield None  # First request
         yield m.tool_call(
@@ -137,7 +137,7 @@ async def test_python3_can_import_and_inspect_props(
     to read bundled source code at runtime (the "show over retell" principle).
     """
 
-    @CriticMock.mock(check_consumed=False)
+    @CriticMock.mock()
     def mock(m: CriticMock) -> PlayGen:
         yield None  # First request
 
