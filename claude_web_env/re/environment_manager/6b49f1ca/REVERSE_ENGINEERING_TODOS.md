@@ -6,7 +6,11 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 
 **✅ All critical functionality implemented** - Binary builds and core features work correctly.
 
-**Recently Completed** (2024-02):
+**Recently Completed** (2024-02-14):
+
+- **Claude Executor Wiring**: Added ClaudeCodeExecutor creation and execution after manager.Run() in cmd_task_run.go. Binary now properly creates executor via NewClaudeCodeExecutor and calls Execute() method. Basic environment variable setup added (os.Environ()).
+
+**Previously Completed** (2024-02):
 
 - Core infrastructure: MCP server registration, tunnel client creation, Vercel file collection (SHA1 hashing, 100MB limit)
 - Observability: All timing metrics (stdin parse, Claude Code install, setup, manager run, git operations)
@@ -62,11 +66,13 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 
 ### Claude Executor
 
-**`internal/claude/claude_code_executor.go:50`**
+**`internal/claude/claude_code_executor.go:50`** - **PARTIALLY FIXED**
 
-- Multiple `interface{}` fields instead of concrete types
-- Environment variable setup incomplete (lines 278, 336, 337, 379, 429)
-- Pipe cleanup closures and config access patterns
+- ✅ Executor creation and execution wired in cmd_task_run.go (after manager.Run())
+- ✅ Basic environment variable setup added (os.Environ() passed to cmd.Env)
+- ❌ Config type remains `interface{}` - should be `*config.ClaudeConfig` (type not yet defined)
+- ❌ Pipe cleanup closures not reconstructed (lines 336, 337)
+- ❌ Config access patterns incomplete (lines 379, 429)
 
 ### Session Ingress
 

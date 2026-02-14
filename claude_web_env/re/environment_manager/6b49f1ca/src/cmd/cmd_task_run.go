@@ -381,6 +381,38 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 			)
 
+			// 0xb7af60-0xb7b000: Create and execute Claude Code executor
+			// Binary: func1.3 closure creates ClaudeCodeExecutor via NewClaudeCodeExecutor
+			// and calls Execute() via interface dispatch at 0xb7b1a6
+			slogger.Info("Creating Claude Code executor")
+
+			// Create outcomes tracker for executor
+			outcomes := claude.NewOutcomes()
+
+			// Create Claude Code executor
+			// Binary: NewClaudeCodeExecutor call at 0xb7b000
+			// TODO(re): config parameter should be *config.ClaudeConfig, but that type
+			// hasn't been fully reconstructed yet. Using parsedCtx.StartupContext for now.
+			executor := claude.NewClaudeCodeExecutor(
+				slogger,              // logger
+				context.Background(), // ctx
+				parsedCtx.StartupContext, // config (TODO: should be *config.ClaudeConfig)
+				outcomes,             // outcomes
+				diagService,          // diagReporter
+			)
+
+			// Execute Claude Code process
+			// Binary: Execute() interface call at 0xb7b1a6
+			slogger.Info("Executing Claude Code")
+			if err := executor.Execute(context.Background()); err != nil {
+				slogger.Error("Claude Code execution failed",
+					"error", err,
+				)
+				return fmt.Errorf("Claude Code execution failed: %w", err)
+			}
+
+			slogger.Info("Claude Code execution completed successfully")
+
 			return nil
 		},
 	}

@@ -275,8 +275,12 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 		"claudeConfig", e.Config,
 	)
 
-	// TODO(re): env var setup not reconstructed — should call GetClaudeEnvironmentVariables(...)
-	// and set cmd.Env. Binary at 0xad9540.
+	// 0xad9540: Set up environment variables
+	// Get base environment from os.Environ()
+	envVars := os.Environ()
+
+	// TODO(re): Add environment variables from config once config type is properly reconstructed
+	// For now, cmd.Env will use the base environment
 
 	// Build command arguments
 	// 0xad9620-0xad96e0: start building args slice
@@ -301,6 +305,7 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 
 	// 0xad9c50-0xad9cc0: configure cmd.Dir, cmd.Env, cmd.Stdin
 	cmd.Dir = e.WorkingDir
+	cmd.Env = envVars
 	cmd.Stdin = os.Stdin
 
 	// 0xad9d00-0xad9d80: set up stdout/stderr as io.MultiWriter
