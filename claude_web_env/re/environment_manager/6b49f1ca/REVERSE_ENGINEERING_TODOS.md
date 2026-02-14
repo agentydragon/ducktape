@@ -11,6 +11,7 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 - **Claude Executor Wiring**: Added ClaudeCodeExecutor creation and execution after manager.Run() in cmd_task_run.go. Binary now properly creates executor via NewClaudeCodeExecutor and calls Execute() method. Basic environment variable setup added (os.Environ()).
 - **SessionMode Wiring**: Implemented SetSessionMode call in Manager.configureEnvironment() with type assertion to envtype.EnvironmentType (binary at 0xb6e983).
 - **Executor Config Access**: Fixed ClaudeCodeExecutor config field access in buildArgsFromGatewayConfig and writeMCPConfigFileFromGateway using type assertion to \*config.StartupContext. Properly reads ClaudeCodeArgs map and McpConfigFile fields.
+- **PollHook Orchestrator Wiring**: Fixed orchestrator to conditionally create PollHook (when hookCommand set) or regular Poller, matching binary conditional logic at 0xb74716.
 
 **Previously Completed** (2024-02):
 
@@ -45,9 +46,9 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 
 ### Orchestrator
 
-**`cmd/cmd_orchestrator.go:128`**
+**`cmd/cmd_orchestrator.go:128`** - **✅ FIXED**
 
-- `PollHook` created but not passed to orchestrator initialization
+- ✅ PollHook properly wired with conditional logic (create PollHook if hookCommand set, otherwise create regular Poller)
 
 ### API & Service Setup
 
