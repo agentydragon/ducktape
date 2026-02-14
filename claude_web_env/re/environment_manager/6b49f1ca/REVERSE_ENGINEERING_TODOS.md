@@ -4,23 +4,34 @@ This document tracks areas where the reverse engineering is incomplete, stubbed,
 
 ## Critical Stubs (Affects Functionality)
 
-### MCP Server Registration (`internal/mcp/server.go`)
+### ✅ FIXED: MCP Server Registration (`internal/mcp/server.go`)
 
-**Lines 142, 193, 198, 238**
+**Previously stubbed at lines 142, 193, 198**
 
-- `GetTools()` returns `nil, 0, 0` - should call `s.GetTools()` and register tools with MCP server
-- HTTP server serving is stubbed - should call `s.httpServer.Serve(listener)`
-- Heartbeat loop body not reconstructed (~1.5KB at 0xad0d00)
-- Streamable server cleanup not reconstructed
-- **Impact**: MCP servers won't actually register their tools or serve requests
+- ✅ Tool registration now calls `s.GetTools()` and `mcpSrv.AddTools(tools...)`
+- ✅ HTTP server creation and `Serve()` call implemented in goroutine
+- ✅ Heartbeat loop implemented with 30-second ticker
+- ⚠️ Streamable server cleanup still not reconstructed (line 238)
+- **Impact**: MCP servers now register tools and serve requests properly
 
-### CodeSign Server (`internal/mcp/servers/codesign/server.go`)
+### ✅ FIXED: CodeSign Server (`internal/mcp/servers/codesign/server.go`)
 
-**Lines 162-189**
+**Previously stubbed at lines 162-189**
 
-- `GetTools()` creates property maps but returns `nil, 0, 0` instead of actual tool definitions
-- Should construct and return MCP tool schema for `sign_file` tool
-- **Impact**: CodeSign MCP server won't expose its tool to Claude
+- ✅ `GetTools()` now constructs proper `mcpserver.ServerTool` with complete schema
+- ✅ Returns tool slice with "sign_file" tool definition
+- ✅ Input schema includes all 4 properties: file_path, source_identifier, signing_key_path, content
+- ✅ Required fields and handler properly wired
+- **Impact**: CodeSign MCP server now exposes its tool to Claude
+
+### ✅ FIXED: Manager MCP Registration Results (`internal/manager/manager.go`)
+
+**Previously ignored at lines 467-468**
+
+- ✅ `registeredServers` list now logged with count and server names
+- ✅ `errors` slice now checked and logged with error count
+- ✅ Registration summary logged with success/failure counts
+- **Impact**: MCP registration failures no longer silently ignored
 
 ### Tunnel Registration (`internal/manager/tunnel_register.go`)
 
@@ -152,13 +163,13 @@ Config interface{} // TODO(re): concrete type not recovered
 - Config access patterns incomplete - should access as `*config.ClaudeConfig`
 - **Impact**: Claude Code execution environment may be incomplete
 
-### MCP Server Results (`internal/manager/manager.go`)
+### ✅ FIXED: MCP Server Results (`internal/manager/manager.go`)
 
-**Lines 467-468**
+**Previously at lines 467-468**
 
-- `registeredServers` list not used/logged
-- `errors` slice not checked/logged
-- **Impact**: MCP registration failures silently ignored
+- ✅ `registeredServers` list now logged with count and names
+- ✅ `errors` slice now checked and logged
+- **Impact**: MCP registration failures now properly reported
 
 ### Session Ingress OTel (`internal/api/session_ingress_client.go`)
 
@@ -195,7 +206,7 @@ Config interface{} // TODO(re): concrete type not recovered
 
 ### 🔴 Critical (Breaks Core Features)
 
-1. MCP server tool registration and serving
+1. ✅ ~~MCP server tool registration and serving~~ - **FIXED**
 2. Tunnel client creation
 3. Vercel file collection
 4. Manager activity handling and WebSocket URL construction
@@ -207,13 +218,14 @@ Config interface{} // TODO(re): concrete type not recovered
 3. Session ingress log submission
 4. Claude executor environment setup
 5. Git proxy URL construction
+6. ⚠️ Streamable server cleanup (partial - heartbeat loop added but cleanup not reconstructed)
 
 ### 🟢 Low (Missing Telemetry/Type Safety)
 
 1. All duration metrics and o11y timing
 2. Type recovery (interface{} → concrete types)
 3. DataDog metrics (stub package)
-4. MCP registration error handling
+4. ✅ ~~MCP registration error handling~~ - **FIXED**
 5. OTel context propagation
 
 ## Verification Strategy
