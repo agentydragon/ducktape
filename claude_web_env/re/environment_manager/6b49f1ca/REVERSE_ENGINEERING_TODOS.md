@@ -7,48 +7,17 @@ This document tracks incomplete reverse engineering work and stubs that need imp
 - **MCP Server Registration** (`internal/mcp/server.go`) - Tool registration, HTTP serving, heartbeat loop
 - **CodeSign Server** (`internal/mcp/servers/codesign/server.go`) - GetTools() returns proper schema
 - **Manager MCP Registration** (`internal/manager/manager.go`) - Logs registration results/errors
+- **Tunnel Client** (`internal/tunnel/factory.go`) - Factory implementation, circular dependency resolved
+- **Vercel CollectFiles** (`internal/tunnel/actions/deploy/vercel.go`) - Directory walking, SHA1 hashing, 100MB limit
+- **Git Proxy URL** (`internal/gitproxy/handler.go`) - SessionID added to URL path
 
 ## 🔴 Critical Stubs (Affects Functionality)
-
-### ✅ FIXED: Tunnel Registration (`internal/manager/tunnel_register.go`)
-
-**Previously stubbed at line 64**
-
-- ✅ Implemented `newTunnelClientFactory` in `internal/tunnel/factory.go`
-- ✅ Factory extracts parameters from opts slice and calls `tunnel.NewClient`
-- ✅ Circular dependency resolved by moving implementation to tunnel package
-- ✅ Tunnel package's init sets `manager.NewTunnelClient` variable
-- **Impact**: Tunnel functionality now works - client creation properly implemented
 
 ### Manager Functions (`internal/manager/manager.go:261-263, 432-434`)
 
 - `handleActivity()` - should dispatch to environment type's activity handler
 - `constructWebSocketURL()` - should convert http→ws / https→wss
 - **Impact**: Activity reporting and WebSocket connections won't work
-
-### ✅ FIXED: Vercel Deploy (`internal/tunnel/actions/deploy/vercel.go`)
-
-**Previously stubbed at lines 122-146**
-
-**Before:**
-
-- Function body mostly empty with only comments
-- Only called filepath.WalkDir with no-op closure
-- Returned empty files slice
-
-**After:**
-
-- ✅ Walks directory using `filepath.WalkDir`
-- ✅ Skips directories, returns early on errors
-- ✅ Reads file contents with `os.ReadFile`
-- ✅ Computes SHA1 hash (not SHA256) using `crypto/sha1.Sum`
-- ✅ Encodes hash as hex string
-- ✅ Computes relative path from base directory
-- ✅ Tracks cumulative file size, enforces 100MB limit (0x6400000 bytes)
-- ✅ Builds `FileEntry` slice with Path, SHA, Content, and Size fields
-- ✅ Maintains shaMap for deduplication
-
-**Impact**: Vercel deployment file collection now functional
 
 ## 🟢 Observability & Metrics (Non-Critical)
 
@@ -106,12 +75,6 @@ This document tracks incomplete reverse engineering work and stubs that need imp
 ### Session Ingress OTel (`internal/api/session_ingress_client.go:114`)
 
 - OTel propagator created but injection call not reconstructed
-
-### ✅ FIXED: Git Proxy Handler (`internal/gitproxy/handler.go:237`)
-
-- ✅ Added `sessionID` as 5th path component in URL construction
-- ✅ URL format now: `baseURL/sessionID/owner/repo/gitPath`
-- ✅ `upstreamURL` properly used as baseURL when provided
 
 ### Protobuf Types (`internal/tunnel/tunnelpb/`)
 
