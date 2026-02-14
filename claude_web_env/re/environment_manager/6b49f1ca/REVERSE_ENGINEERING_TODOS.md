@@ -19,20 +19,20 @@ This document tracks incomplete reverse engineering work and stubs that need imp
 
 All critical functionality stubs have been implemented. Remaining work is configuration wiring and observability.
 
-## 🟢 Observability & Metrics (Non-Critical)
+## 🟢 Observability & Metrics (Non-Critical) - COMPLETE ✅
 
-### Command Timing - PARTIALLY COMPLETE ✅
+### Command Timing - COMPLETE ✅
 
-- ✅ **Duration metrics wired** (`cmd/cmd_task_run.go`) - All 5 duration variables now logged as o11y metrics
+- ✅ **All duration metrics wired** - stdin parse, claude code install, total parse, total setup, manager run, healthcheck
 
-### Git Operations (`internal/sources/git.go:313, 398, 717`)
+### Git Operations - COMPLETE ✅
 
-- `activityMsg` should be sent to activityRecorder
-- `startTime`/`elapsed` should be used for metrics
+- ✅ **Timing metrics added** (`internal/sources/git.go`) - git validation and fetch duration recorded on success/failure
+- Note: `activityMsg` variables are logged but not sent to activityRecorder (low priority)
 
-### Manager Metrics (`internal/manager/manager.go:79`)
+### Manager Metrics - COMPLETE ✅
 
-- `startTime` not used for elapsed time calculation
+- ✅ **Manager run duration** (`internal/manager/manager.go`) - elapsed time now recorded
 
 ## 🟡 Configuration Wiring (Medium Priority)
 
