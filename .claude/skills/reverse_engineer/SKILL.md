@@ -1,21 +1,33 @@
 ---
 name: reverse_engineer
-description: Reverse-engineer a compiled binary into fully equivalent, compilable source code. Systematic binary-first reconstruction with differential verification.
-argument-hint: "<path/to/binary> [language]"
+description: Reverse-engineer a compiled binary (full reconstruction) or extract protocol/API specifications from specific components (focused analysis). Systematic binary-first reconstruction with differential verification.
+argument-hint: "<path/to/binary> [language|--protocol=<component>]"
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task, WebFetch
 ---
 
 # Reverse Engineer Binary to Source
 
 Reconstruct a compiled binary into fully equivalent, compilable source code in
-the specified language.
+the specified language, OR extract protocol/API specifications from specific
+components within a larger binary.
 
 **Argument:** `$ARGUMENTS` — path to the binary (or `.gz`-compressed binary),
-and optionally the target language (auto-detected if omitted).
+and optionally:
+
+- Target language (auto-detected if omitted) for **full reconstruction**
+- `--protocol=<component>` for **focused protocol extraction** (e.g., `--protocol=session_ingress`)
 
 **The binary is ground truth.** Your opinions about how code "should" look are
 irrelevant when they contradict evidence from the binary. Every decision must be
 traceable to binary evidence.
+
+## Mode Selection
+
+**Full Binary Reconstruction:** Follow all phases below to reconstruct the entire binary into compilable source code.
+
+**Focused Protocol Extraction:** Skip to [Phase 0.5: Protocol-Focused Analysis](#phase-05-protocol-focused-analysis) when the goal is to document a specific API/protocol/component within a larger binary (e.g., reverse-engineering the session ingress API from environment-manager).
+
+---
 
 ## Phase 0: Setup and Tool Installation
 
@@ -40,6 +52,139 @@ location first:
 BINARY="/tmp/target_binary"
 # gzip -dk path/to/binary.gz -c > "$BINARY" && chmod +x "$BINARY"
 ```
+
+## Phase 0.5: Protocol-Focused Analysis
+
+**Use this phase when reverse-engineering a specific component/protocol from a larger binary**, rather than reconstructing the entire source.
+
+**Goal:** Extract complete protocol/API specification by analyzing:
+
+1. Function symbols related to the target component
+2. Strings used by those functions (endpoints, log messages, error messages)
+3. Data structures and wire formats
+4. HTTP client behavior (headers, retry logic, error handling)
+
+### 0.5.1 Identify target functions
+
+```bash
+BINARY="/usr/local/bin/environment-manager"
+COMPONENT="session_ingress"  # or whatever you're analyzing
+
+# Find all symbols related to the component
+nm "$BINARY" | grep -i "$COMPONENT" > /tmp/${COMPONENT}_symbols.txt
+
+# Get function addresses
+nm "$BINARY" | grep -i "$COMPONENT" | grep ' T ' | awk '{print $1, $3}' > /tmp/${COMPONENT}_functions.txt
+
+# Example output:
+# 0x8309a0 PostSessionIngressEvent
+# 0x830de0 PostForwardDiagLogs
+```
+
+### 0.5.2 Extract component-specific strings
+
+```bash
+# Find all strings that reference the component
+strings "$BINARY" | grep -i "$COMPONENT" > /tmp/${COMPONENT}_strings.txt
+
+# Extract endpoint URLs
+strings "$BINARY" | grep -E "^/.*${COMPONENT}" > /tmp/${COMPONENT}_endpoints.txt
+
+# Extract log messages (these reveal behavior)
+strings "$BINARY" | grep -iE "(posting|forwarding|sending|receiving).*${COMPONENT}" > /tmp/${COMPONENT}_logs.txt
+
+# Extract error messages
+strings "$BINARY" | grep -iE "(error|failed|invalid).*${COMPONENT}" > /tmp/${COMPONENT}_errors.txt
+```
+
+### 0.5.3 Analyze data structures
+
+```bash
+# Get type information (if not stripped)
+readelf --debug-dump=info "$BINARY" | grep -A 20 "$COMPONENT" > /tmp/${COMPONENT}_types.txt
+
+# Look for JSON field names (reveals wire format)
+strings "$BINARY" | grep "json:" | grep -i "$COMPONENT" > /tmp/${COMPONENT}_json_fields.txt
+```
+
+### 0.5.4 Extract function implementations
+
+For each key function, extract its implementation details:
+
+```bash
+# Get function address from symbols
+FUNC_ADDR=$(nm "$BINARY" | grep "PostSessionIngressEvent" | awk '{print $1}')
+FUNC_END=$(nm "$BINARY" | grep -A 1 "PostSessionIngressEvent" | tail -1 | awk '{print $1}')
+
+# Disassemble the function
+objdump -d "$BINARY" --start-address=0x$FUNC_ADDR --stop-address=0x$FUNC_END > /tmp/func_disasm.txt
+
+# Look for string references in the disassembly
+# These reveal log messages, endpoints, content-types, etc.
+```
+
+### 0.5.5 Document the protocol
+
+Create a protocol specification document (`PROTOCOL.md`) containing:
+
+1. **Base URL and versioning** (from endpoint construction strings)
+2. **Authentication** (from header-setting code)
+3. **Endpoints** (all discovered URLs with HTTP methods)
+4. **Request/Response formats** (from JSON marshal/unmarshal and struct tags)
+5. **Event types** (from string constants and type switches)
+6. **Error handling** (from error message strings and status code checks)
+7. **HTTP client behavior** (retry logic, timeouts, headers)
+
+**Example output structure:**
+
+```markdown
+# Component API Protocol
+
+## Base URL
+
+`https://api.example.com` (extracted from string at offset 0xABCDEF)
+
+## Authentication
+
+Bearer token via `Authorization` header (code at 0x123456)
+
+## Endpoints
+
+### POST /v2/component/session/{id}/action
+
+**Purpose:** <from log message "posting session event">
+**Request:** <from struct fields with json tags>
+**Response:** <from unmarshal code or response body handling>
+
+## Data Types
+
+<from DWARF debug info or struct analysis>
+```
+
+### 0.5.6 Verify protocol against live API
+
+If you have access credentials (API token, etc.), verify the extracted protocol:
+
+```bash
+# Test endpoint
+curl -X POST "https://api.example.com/v2/endpoint" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"field": "value"}' \
+  -v
+
+# Check response matches expected format
+```
+
+**Deliverable:** Complete protocol specification document, not full source reconstruction.
+
+**When to use this vs full reconstruction:**
+
+- Use protocol extraction when you only need to understand/document an API
+- Use full reconstruction when you need compilable, equivalent source code
+- Protocol extraction is faster and focuses on interfaces, not implementation details
+
+---
 
 ## Phase 1: Binary Census
 
