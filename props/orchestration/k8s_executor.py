@@ -23,7 +23,7 @@ from kubernetes_asyncio.client import (
     V1PodSpec,
 )
 
-from props.orchestration.executor import ContainerResult
+from props.orchestration.executor import ContainerResult, Exited, TimedOut
 
 logger = logging.getLogger(__name__)
 
@@ -60,21 +60,18 @@ class K8sPodHandle:
                 await v1.delete_namespaced_pod(name=self.name, namespace=self.namespace, grace_period_seconds=0)
             except ApiException as e:
                 logger.warning("Failed to delete timed-out pod %s: %s", self.name, e)
-            return ContainerResult(stdout="", stderr="", exit_code=None)
+            return ContainerResult(stdout="", stderr="", exit=TimedOut())
 
-        # Capture logs
+        # Capture logs (k8s merges stdout/stderr into a single stream)
         stdout = ""
-        stderr = ""
         try:
-            # k8s pod logs merge stdout and stderr; we put everything in stdout
             stdout = await v1.read_namespaced_pod_log(name=self.name, namespace=self.namespace)
         except ApiException as e:
             logger.warning("Failed to read logs for pod %s: %s", self.name, e)
 
-        # Determine exit code from container status
         exit_code = _extract_exit_code(await v1.read_namespaced_pod(name=self.name, namespace=self.namespace))
-        logger.info("Pod %s finished with phase=%s exit_code=%s", self.name, phase, exit_code)
-        return ContainerResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
+        logger.info("Pod %s finished with phase=%s exit_code=%d", self.name, phase, exit_code)
+        return ContainerResult(stdout=stdout, stderr="", exit=Exited(exit_code=exit_code))
 
     async def kill_and_delete(self) -> None:
         """Delete a pod. Best-effort."""

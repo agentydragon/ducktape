@@ -15,6 +15,7 @@ from kubernetes_asyncio.client import (
     V1PodStatus,
 )
 
+from props.orchestration.executor import Exited, TimedOut
 from props.orchestration.k8s_executor import K8sExecutor, K8sPodHandle, _extract_exit_code
 
 
@@ -119,9 +120,8 @@ async def test_wait_succeeded_pod(mocked_executor: MockedExecutor):
     handle = K8sPodHandle(name="agent-test", namespace="test-ns", core_v1=mocked_executor.core_v1)
     result = await handle.wait(timeout_seconds=60)
 
-    assert result.exit_code == 0
+    assert result.exit == Exited(exit_code=0)
     assert result.stdout == "agent output here"
-    assert not result.timed_out
 
 
 async def test_wait_failed_pod(mocked_executor: MockedExecutor):
@@ -134,21 +134,19 @@ async def test_wait_failed_pod(mocked_executor: MockedExecutor):
     handle = K8sPodHandle(name="agent-test", namespace="test-ns", core_v1=mocked_executor.core_v1)
     result = await handle.wait(timeout_seconds=60)
 
-    assert result.exit_code == 1
+    assert result.exit == Exited(exit_code=1)
     assert result.stdout == "error output"
-    assert not result.timed_out
 
 
 async def test_wait_timeout(mocked_executor: MockedExecutor):
-    """wait returns timed_out result when pod doesn't finish in time."""
+    """wait returns TimedOut when pod doesn't finish in time."""
     running_pod = _make_pod("Running")
     mocked_executor.core_v1.read_namespaced_pod = AsyncMock(return_value=running_pod)
 
     handle = K8sPodHandle(name="agent-test", namespace="test-ns", core_v1=mocked_executor.core_v1)
     result = await handle.wait(timeout_seconds=0)
 
-    assert result.timed_out
-    assert result.exit_code is None
+    assert result.exit == TimedOut()
 
 
 async def test_kill_and_delete(mocked_executor: MockedExecutor):
@@ -173,10 +171,12 @@ async def test_extract_exit_code_succeeded_no_status():
     assert _extract_exit_code(pod) == 0
 
 
-async def test_close(mocked_executor: MockedExecutor):
+async def test_close():
     """close() closes the API client."""
-    await mocked_executor.executor.close()
-    mocked_executor.executor._api_client.close.assert_called_once()
+    api_client = AsyncMock()
+    executor = K8sExecutor(api_client=api_client, core_v1=AsyncMock(), namespace="test-ns")
+    await executor.close()
+    api_client.close.assert_called_once()
 
 
 if __name__ == "__main__":

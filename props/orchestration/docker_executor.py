@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import aiodocker
 
-from props.orchestration.executor import ContainerResult
+from props.orchestration.executor import ContainerResult, Exited, TimedOut
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +33,20 @@ class DockerContainerHandle:
             else:
                 exit_info = await container.wait()
 
-            stdout = "".join(await container.log(stdout=True, stderr=False))
-            stderr = "".join(await container.log(stdout=False, stderr=True))
             exit_code = exit_info.get("StatusCode", 1)
             logger.info("Container %s exited with code %d", self.name, exit_code)
-            return ContainerResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
+            exit_status: Exited | TimedOut = Exited(exit_code=exit_code)
         except TimeoutError:
             logger.error("Container %s timed out after %d seconds", self.name, timeout_seconds)
             try:
                 await container.kill()
             except aiodocker.DockerError as e:
                 logger.warning("Failed to kill timed-out container: %s", e)
-            stdout = "".join(await container.log(stdout=True, stderr=False))
-            stderr = "".join(await container.log(stdout=False, stderr=True))
-            return ContainerResult(stdout=stdout, stderr=stderr, exit_code=None)
+            exit_status = TimedOut()
+
+        stdout = "".join(await container.log(stdout=True, stderr=False))
+        stderr = "".join(await container.log(stdout=False, stderr=True))
+        return ContainerResult(stdout=stdout, stderr=stderr, exit=exit_status)
 
     async def kill_and_delete(self) -> None:
         """Kill and remove a Docker container. Best-effort."""

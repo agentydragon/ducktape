@@ -120,6 +120,7 @@ py_test(
     ],
     imports = ["../.."],
     deps = [
+        ":executor",
         ":k8s_executor",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest_asyncio",

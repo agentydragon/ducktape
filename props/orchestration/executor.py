@@ -12,16 +12,27 @@ from typing import Protocol
 
 
 @dataclass(frozen=True)
+class Exited:
+    """Container exited normally (possibly with non-zero exit code)."""
+
+    exit_code: int
+
+
+@dataclass(frozen=True)
+class TimedOut:
+    """Container was killed after exceeding its timeout."""
+
+
+ExitStatus = Exited | TimedOut
+
+
+@dataclass(frozen=True)
 class ContainerResult:
-    """Result of running an agent container. exit_code is None if the container timed out."""
+    """Result of running an agent container."""
 
     stdout: str
     stderr: str
-    exit_code: int | None
-
-    @property
-    def timed_out(self) -> bool:
-        return self.exit_code is None
+    exit: ExitStatus
 
 
 class ContainerHandle(Protocol):
@@ -37,7 +48,7 @@ class ContainerHandle(Protocol):
         """Wait for container to exit, capturing stdout/stderr.
 
         If timeout_seconds is not None and the container doesn't exit in time,
-        kills the container and returns a ContainerResult with exit_code=None.
+        kills the container and returns a ContainerResult with exit=TimedOut().
         """
         ...
 

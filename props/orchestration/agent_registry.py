@@ -62,7 +62,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, Snapshot
 from props.orchestration.agent_credentials import ensure_agent_role
-from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult
+from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult, Exited, TimedOut
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +251,8 @@ class AgentRegistry:
             result: ContainerResult = await handle.wait(timeout_seconds=timeout_seconds)
 
             # Log container output
-            if result.exit_code == 0:
+            exit = result.exit
+            if isinstance(exit, Exited) and exit.exit_code == 0:
                 logger.info("Container %s stdout:\n%s", handle.name, result.stdout)
                 if result.stderr:
                     logger.info("Container %s stderr:\n%s", handle.name, result.stderr)
@@ -267,14 +268,20 @@ class AgentRegistry:
                 logger.warning("Failed to delete container: %s", e)
 
         # Determine and persist status
-        status = AgentRunStatus.TIMED_OUT if result.timed_out else AgentRunStatus.EXITED
+        exit = result.exit
+        if isinstance(exit, TimedOut):
+            status = AgentRunStatus.TIMED_OUT
+            container_exit_code = None
+        else:
+            status = AgentRunStatus.EXITED
+            container_exit_code = exit.exit_code
 
         with self._db.session() as session:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
             if found_run.status == AgentRunStatus.IN_PROGRESS:
                 found_run.status = status
-                found_run.container_exit_code = result.exit_code
+                found_run.container_exit_code = container_exit_code
                 session.commit()
                 logger.info(f"Updated {agent_run_id} status to {status}")
         return status
