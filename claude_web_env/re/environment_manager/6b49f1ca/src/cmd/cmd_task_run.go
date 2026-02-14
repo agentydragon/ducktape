@@ -195,7 +195,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb79260: Measure stdin parse duration
 			stdinParseDuration := time.Since(stdinStartTime)
-			_ = stdinParseDuration // TODO(re): should be logged or recorded as o11y metric
+			o11y.RecordDuration("env_manager.stdin_parse.duration_ms", nil, nil, float64(stdinParseDuration.Milliseconds()))
 
 			// 0xb79583: Create activity recorder
 			activityRecorder := session.NewActivityRecorder(nil, slogger, sessionID)
@@ -222,7 +222,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				_, err = claude.InstallOrUpdateClaudeCode(slogger, installCtx, "", "", nil, nil)
 				installCancel()
 				installDuration := time.Since(installStart)
-				_ = installDuration // TODO(re): should be logged or recorded as o11y metric
+				o11y.RecordDuration("env_manager.claude_code_install.duration_ms", nil, nil, float64(installDuration.Milliseconds()))
 
 				if err != nil {
 					return fmt.Errorf("failed to ensure Claude Code is available: %w", err)
@@ -320,9 +320,9 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb7a761-0xb7a7a0: Compute durations
 			totalParseTime := time.Since(stdinStartTime)
-			_ = totalParseTime // TODO(re): should be logged or recorded as o11y metric
+			o11y.RecordDuration("env_manager.total_parse.duration_ms", nil, nil, float64(totalParseTime.Milliseconds()))
 			totalSetupTime := time.Since(startTime)
-			_ = totalSetupTime // TODO(re): should be logged or recorded as o11y metric
+			o11y.RecordDuration("env_manager.total_setup.duration_ms", nil, nil, float64(totalSetupTime.Milliseconds()))
 
 			// 0xb7a881-0xb7a8a0: Log "Setup completed, starting manager execution"
 			slogger.Info("Setup completed, starting manager execution",
@@ -331,13 +331,16 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb7a8c0: Run the manager
 			mgr := &manager.Manager{
-				Logger: slogger,
-				Config: stdinClient,
+				Logger:        slogger,
+				Config:        stdinClient,
+				SessionID:     sessionID,
+				APIBaseURL:    apiURL,
+				SessionConfig: parsedCtx,
 			}
 			managerErr := mgr.Run(context.Background(), slogger)
 
 			managerDuration := time.Since(startTime)
-			_ = managerDuration // TODO(re): should be logged or recorded as o11y metric
+			o11y.RecordDuration("env_manager.manager_run.duration_ms", nil, nil, float64(managerDuration.Milliseconds()))
 
 			if managerErr != nil {
 				// 0xb7a9d9-0xb7aaa7: Manager execution failed
