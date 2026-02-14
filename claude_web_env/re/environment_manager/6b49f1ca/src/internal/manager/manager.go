@@ -82,7 +82,8 @@ func (m *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 	// Binary: call at ~0xb6a600+ to createTunnelClient
 	m.createTunnelClient(ctx, logger)
 
-	_ = startTime // TODO(re): should compute elapsed for o11y metric recording
+	elapsed := time.Since(startTime)
+	o11y.RecordDuration("env_manager.manager_run.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 	return nil
 }
 

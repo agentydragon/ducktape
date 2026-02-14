@@ -289,7 +289,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				slogger.Info("Running healthcheck")
 				slogger.Info("Executing healthcheck")
 				healthcheckDuration := time.Since(startTime)
-				_ = healthcheckDuration // TODO(re): should be logged or recorded as metric
+				o11y.RecordDuration("env_manager.healthcheck.duration_ms", nil, nil, float64(healthcheckDuration.Milliseconds()))
 				slogger.Info("Healthcheck completed successfully",
 					"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 				)
