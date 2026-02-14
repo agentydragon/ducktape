@@ -46,16 +46,19 @@ Dockerfile
 # Python version files
 .python-version
 
-# Terraform files (managed separately)
-*.tf
+# Terraform lock files (generated, not in BUILD srcs)
+*.lock.hcl
 
 # Shell scripts (many are standalone utilities)
 *.sh
 
-# Certificates and keys
+# Certificates, keys, and encrypted secrets
 *.pem
 *.crt
 *.key
+*.age
+*.pub
+*.asc
 
 # Nginx configs
 *.conf
@@ -115,8 +118,23 @@ website/**
 *.nix
 flake.lock
 
-# Helm charts
+# Helm charts (files auto-discovered by helm_chart rule, but .helmignore
+# is not part of the chart content — whitelist it)
 *.helmignore
+
+# Props specimens (committed code snapshots, not buildable)
+props/specimens/**
+
+# claude_web_env (rootfs overlay and tools, not Bazelized)
+claude_web_env/**
+
+# Compressed data files
+*.gz
+*.zst
+
+# APT repository config files
+*.sources
+*.list
 
 # === Legacy/Archived Directories ===
 nonrcm_dotfiles/**
@@ -141,7 +159,7 @@ llm/mcp/habitify/examples/install_to_claude.py
 # Local registry patches
 tools/local_registry/**
 
-# Data files
+# Data/archive files
 *.cereal
 *.edn
 *.info
@@ -173,11 +191,38 @@ TODO
 # finance/reconcile - partially Bazelized, one file remains
 finance/reconcile/external_expense.py
 
+# agent_pkg examples (not part of the library)
+agent_pkg/examples/mcp_discover.py
+
+# cluster scripts (standalone utilities)
+cluster/scripts/check-authentik-login.py
+cluster/terraform.tf
+
+# experimental - ad-hoc scripts not yet Bazelized
+experimental/domains/check_domains.py
+experimental/ember_evals/**
+experimental/flake8_early_bailout/setup.py
+
+# inop/docker - Docker build script
+inop/docker/build.py
+
+# inventree_utils - plugins not yet Bazelized
+inventree_utils/labels/mixin.py
+inventree_utils/rai_plugin/plugin.py
+
+# openai_utils examples
+openai_utils/openai_api_examples/stateless_two_step_demo.py
+
 # gatelet Makefile (not Python, but tracked here)
 experimental/gatelet/Makefile
 
-# cluster/ - Bazelized for validation scripts, but terraform scripts are standalone
-cluster/terraform/**
+# cluster/ - terraform modules without BUILD files (not yet Bazelized)
+cluster/terraform/gitops/authentik-passwords/**
+cluster/terraform/gitops/gitea-admin/**
+cluster/terraform/gitops/grafana-admin/**
+cluster/terraform/gitops/matrix-secrets/**
+cluster/terraform/gitops/ollama-api-key/**
+cluster/terraform/gitops/user-passwords/**
 
 # Extensionless scripts and misc non-code files
 *.service

@@ -5,10 +5,8 @@ Usage:
     bazel run //tools/orphans:find_orphans           # List orphans
     bazel run //tools/orphans:find_orphans -- --check  # Fail if orphans exist
 
-TODO: Add a terraform coverage check — find directories with *.tf files containing
-a `terraform {` block that lack a corresponding tf_module BUILD target. Could use
-`bazel query 'kind("tf_module", //...)'` to get covered packages and diff against
-filesystem-discovered modules (excluding .terraform/ and modules/ subdirs).
+Covers files referenced via labels(srcs/data), plus files auto-discovered by
+rules that don't use explicit srcs (helm_chart via helm_package rule kind).
 """
 
 import argparse
@@ -63,6 +61,38 @@ def query_bazel_files(repo_root: Path) -> set[Path]:
     return paths
 
 
+def query_helm_chart_files(repo_root: Path, git_files: set[Path]) -> set[Path]:
+    """Find git-tracked files inside helm chart packages.
+
+    helm_chart (helm_package) auto-discovers Chart.yaml, values.yaml, and
+    templates/ — these don't appear in labels(srcs, //...).  We query for
+    helm_package targets, derive their package directories, and claim all
+    git-tracked files under those directories.
+    """
+    result = subprocess.run(
+        ["bazel", "query", 'kind("helm_package", //...)'], capture_output=True, text=True, cwd=repo_root, check=False
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return set()
+
+    chart_dirs: list[Path] = []
+    for label in result.stdout.strip().split("\n"):
+        if not label or not label.startswith("//"):
+            continue
+        # //cluster/charts/attic:attic -> cluster/charts/attic
+        pkg = label.removeprefix("//").split(":")[0]
+        if pkg:
+            chart_dirs.append(Path(pkg))
+
+    covered = set()
+    for git_file in git_files:
+        for chart_dir in chart_dirs:
+            if git_file == chart_dir or str(git_file).startswith(str(chart_dir) + "/"):
+                covered.add(git_file)
+                break
+    return covered
+
+
 def get_git_files(repo_root: Path) -> set[Path]:
     """Get all git-tracked files."""
     repo = pygit2.Repository(repo_root)
@@ -81,9 +111,10 @@ def find_orphans(repo_root: Path, whitelist_path: Path) -> list[Path]:
     """Find git files not in any Bazel target, excluding whitelisted patterns."""
     git_files = get_git_files(repo_root)
     bazel_files = query_bazel_files(repo_root)
+    helm_files = query_helm_chart_files(repo_root, git_files)
     whitelist = load_whitelist(whitelist_path)
 
-    orphans = git_files - bazel_files
+    orphans = git_files - bazel_files - helm_files
     # Filter out whitelisted patterns
     orphans = {p for p in orphans if not whitelist.match_file(str(p))}
 

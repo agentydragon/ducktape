@@ -10,11 +10,11 @@ Fully Bazel-managed repository: `bazel build //...`, `bazel test //...`, `bazel 
 - Nix configuration
 - Website (Haskell/stack)
 
-## Current State (January 2026)
+## Current State (February 2026)
 
-6 of 8 success criteria met. Python at 91.1% Bazel coverage (944/1036 files), Rust at 100%. All linters integrated into `bazel lint //...` (ruff, mypy, clippy/rustfmt, eslint, buildifier, yamllint). 12 Docker images migrated to rules_oci. Flat package layout with colocated tests is the norm. Single root `pyproject.toml` remains (tool config only). Pre-commit framework handles git hooks; Claude Code session hooks handle proxy setup for web sessions.
+6 of 8 success criteria met. Python at 95.6% Bazel coverage (990/1036 files), Rust at 100%, Terraform at 82.9% (63/76 modules), Helm at 100% (4 charts via `rules_helm`). All linters integrated into `bazel lint //...` (ruff, mypy, clippy/rustfmt, eslint, buildifier, yamllint). 12 Docker images migrated to rules_oci. Flat package layout with colocated tests is the norm. Single root `pyproject.toml` remains (tool config only). Pre-commit framework handles git hooks; Claude Code session hooks handle proxy setup for web sessions.
 
-Run `bazel run //tools/orphans:find_orphans` to list orphaned Python files.
+Run `bazel run //tools/orphans:find_orphans` to list orphaned files. The checker covers `labels(srcs/data)` and auto-discovered `helm_package` chart files.
 
 ## Remaining Work
 
@@ -25,6 +25,7 @@ Run `bazel run //tools/orphans:find_orphans` to list orphaned Python files.
 
 ### Lower Priority
 
+- **Terraform modules**: 6 gitops modules under `cluster/terraform/gitops/` lack BUILD.bazel files (`authentik-passwords`, `gitea-admin`, `grafana-admin`, `matrix-secrets`, `ollama-api-key`, `user-passwords`).
 - **Package consolidation**: Small experimental packages could move into `experimental/` monolith. Keep packages separate when they have different deployment targets or dependency sets.
 - **Ruff version alignment**: 0.14.0 in `tools/multitool/lockfile.json` vs 0.14.6 in `.pre-commit-config.yaml`.
 - **Remove `check-ast` pre-commit hook**: Redundant with `bazel build`.
@@ -56,7 +57,7 @@ Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Do
 bazel build --config=check //...        # Lint + typecheck
 bazel build --config=typecheck //...    # Mypy only
 bazel run //:requirements.update        # Update Python requirements lock
-bazel run //tools/orphans:find_orphans  # Find un-Bazelized Python files
+bazel run //tools/orphans:find_orphans  # Find un-Bazelized files
 bazel run //tools:gazelle               # Update BUILD files
 bazel run //tools/format                # Format code
 bazel run //tools/lint:buildifier       # Format BUILD files
