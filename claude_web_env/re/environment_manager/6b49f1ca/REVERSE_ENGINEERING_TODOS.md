@@ -36,13 +36,13 @@ All critical functionality stubs have been implemented. Remaining work is config
 
 ## 🟡 Configuration Wiring (Medium Priority)
 
-### Command Flags (`cmd/cmd_task_run.go:105, 140, 144`)
+### Command Flags - Task Run (`cmd/cmd_task_run.go`)
 
 - ✅ ~~`skipGitConfig`~~ - **FIXED** (already working via direct os.Getenv in setupGitConfig/configureGitSigning)
-- ✅ ~~`activityRecorder`~~ - **FIXED** (wired through stdinConfigClient with proper HttpSessionIngressClient)
+- ✅ ~~`activityRecorder`~~ - **FIXED** (wired through stdinConfigClient with proper HttpSessionIngressClient, NoopActivityRecorder fallback)
 - ✅ ~~`otelEndpoint`~~ - **FIXED** (wired to O11yConfig initialization)
-- `inputFormatChanged` - needs conditional logic implementation (complex binary behavior)
-- `sessionMode` - parsed but not passed to Manager/environment types
+- 🟡 `sessionMode` - **PARTIAL** (field added to Manager, passed from CLI, logged in configureEnvironment; needs SetSessionMode call on environment type)
+- `inputFormatChanged` - needs conditional logic implementation (complex binary behavior at 0xb78d20-0xb78ddb)
 
 ### API & Service Setup
 
