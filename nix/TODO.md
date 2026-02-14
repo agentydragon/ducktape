@@ -25,6 +25,7 @@ Could unify via `home-manager.nixosModules.home-manager` to use single `nixos-re
 3. Neither runs for non-interactive shells, so `which mosh-server` finds `/usr/bin/mosh-server` (old system version) instead of `~/.nix-profile/bin/mosh-server`
 
 **Symptoms:**
+
 - mosh true color broken (mosh 1.4.0 required, but system has 1.3.2)
 - Any nix-installed binary unavailable when running commands via `ssh host 'command'`
 

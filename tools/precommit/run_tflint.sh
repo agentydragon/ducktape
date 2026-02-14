@@ -4,6 +4,13 @@
 # tflint binary is installed by pre-commit via language: golang.
 set -euo pipefail
 
+# Skip in gVisor (Claude Code web) - tflint plugins fail with "bad address"
+# due to gVisor sandbox limitations with certain system calls.
+if [[ "${CLAUDE_CODE_REMOTE:-false}" == "true" ]]; then
+  echo "tflint: skipped (gVisor environment - plugin incompatibility)" >&2
+  exit 0
+fi
+
 REPO_ROOT="$(pwd)"
 CONFIG="${REPO_ROOT}/cluster/.tflint.hcl"
 
