@@ -446,12 +446,27 @@ Extracted from strings and function analysis:
 
 ## Artifacts
 
-All extraction artifacts (source tree, function lists, build info, log messages,
-embedded scripts) have been removed — all reproducible from the reference binary
-via `go tool nm`, `go version -m`, and `strings`. Embedded scripts live in the
-reconstructed source (`src/internal/envtype/anthropic/install_scripts/scripts.go`).
+Original extraction artifacts (source tree, function lists, build info, log
+messages, embedded scripts) were removed — all reproducible from the reference
+binary. Embedded scripts live in the reconstructed source
+(`src/internal/envtype/anthropic/install_scripts/scripts.go`).
 
-See `6b49f1ca/artifacts/README.md` for regeneration commands.
+```bash
+gunzip -k claude_web_env/reference/environment-manager.gz
+BIN=claude_web_env/reference/environment-manager
+
+# Build info (module deps, build flags)
+go version -m "$BIN"
+
+# Source file paths from DWARF
+go tool objdump "$BIN" 2>/dev/null | grep -oP '(?<=TEXT )\S+' | sort -u
+
+# Application functions with addresses
+go tool nm "$BIN" | grep -E '^0x[0-9a-f]+ T (cmd\.|internal/)' | sort
+
+# Application string literals
+strings "$BIN" | grep -vE '^(runtime\.|go\.|reflect\.|sync\.)' | sort -u
+```
 
 ## Key Differences from process_api RE
 
