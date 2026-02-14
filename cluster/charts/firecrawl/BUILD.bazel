@@ -1,0 +1,8 @@
+load("@rules_helm//helm:defs.bzl", "helm_chart", "helm_lint_test")
+
+helm_chart(name = "firecrawl")
+
+helm_lint_test(
+    name = "firecrawl_lint_test",
+    chart = ":firecrawl",
+)

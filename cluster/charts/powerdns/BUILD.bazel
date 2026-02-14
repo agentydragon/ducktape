@@ -1,0 +1,11 @@
+load("@rules_helm//helm:defs.bzl", "helm_chart", "helm_lint_test")
+
+helm_chart(
+    name = "powerdns",
+    deps = ["@helm_charts__mariadb//:mariadb"],
+)
+
+helm_lint_test(
+    name = "powerdns_lint_test",
+    chart = ":powerdns",
+)

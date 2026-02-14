@@ -17,6 +17,6 @@ maintainers:
 
 dependencies:
   - name: mariadb
-    version: "~23.2.0"
+    version: "23.2.2"
     repository: "oci://registry-1.docker.io/bitnamicharts"
     condition: mariadb.enabled

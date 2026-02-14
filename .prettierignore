@@ -38,6 +38,7 @@ cluster/k8s/kustomization.yaml
 # Helm chart templates - Go templating, not valid YAML
 cluster/charts/**/templates/**
 cluster/k8s/*-chart/templates/**
+props/helm/templates/**
 
 # Specimens committed snapshot code
 props/specimens/*/*/code/**

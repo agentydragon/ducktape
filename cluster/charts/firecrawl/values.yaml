@@ -85,5 +85,8 @@ secret:
   FIRE_ENGINE_BETA_URL: ""
   REDIS_PASSWORD: ""
 
+ingress:
+  enabled: false
+
 imagePullSecrets:
   - name: docker-registry-secret

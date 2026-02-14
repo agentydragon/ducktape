@@ -1,0 +1,7 @@
+exports_files(
+    [
+        "helm_deps.bzl",
+        "helm_extensions.bzl",
+    ],
+    visibility = ["//visibility:public"],
+)

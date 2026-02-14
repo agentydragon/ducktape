@@ -40,7 +40,7 @@ repos:
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
-        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/"
+        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/|props/helm/templates/"
       - id: check-toml
 
       # TODO: disabled - should NOT fix within dotfiles e.g. OrcaSlicer

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "props.fullname" . }}-config
+  labels:
+    {{- include "props.labels" . | nindent 4 }}
+data:
+  config.toml: |
+    backend_url = {{ .Values.config.backend_url | quote }}
+    {{- if .Values.config.grader_model }}
+    grader_model = {{ .Values.config.grader_model | quote }}
+    {{- end }}
+
+    [agent_env]
+    {{- range $key, $value := .Values.config.agent_env }}
+    {{ $key }} = {{ $value | quote }}
+    {{- end }}
+
+    [executor]
+    {{- range $key, $value := .Values.config.executor }}
+    {{ $key }} = {{ $value | quote }}
+    {{- end }}

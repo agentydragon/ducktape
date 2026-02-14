@@ -1,0 +1,76 @@
+image:
+  repository: ghcr.io/agentydragon/props-backend
+  tag: latest
+  pullPolicy: Always
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts: []
+  tls: []
+
+# Props config.toml content (mounted as ConfigMap)
+config:
+  backend_url: "http://props-backend:8000"
+  grader_model: ""
+  agent_env:
+    PGHOST: "props-postgresql"
+    PGPORT: "5432"
+    PGDATABASE: "eval_results"
+  executor:
+    type: "kubernetes"
+    namespace: "props"
+
+# Environment variables for the backend container
+env:
+  PROPS_CONFIG_FILE: /etc/props/config.toml
+  PROPS_LOG_OUTPUT: stderr
+  PROPS_LOG_LEVEL: INFO
+
+# Secret environment variables (keys to inject from the secret)
+secretEnv:
+  - name: PGPASSWORD
+    key: pgpassword
+  - name: OPENAI_API_KEY
+    key: openai-api-key
+
+# Name of the externally-managed secret containing credentials
+existingSecret: ""
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+  limits:
+    memory: 1Gi
+    cpu: 1000m
+
+podAnnotations: {}
+
+# PostgreSQL subchart configuration
+postgresql:
+  enabled: true
+  auth:
+    database: eval_results
+    username: postgres
+    password: "changeme"
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
