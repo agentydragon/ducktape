@@ -446,16 +446,12 @@ Extracted from strings and function analysis:
 
 ## Artifacts
 
-Intermediate analysis artifacts in `6b49f1ca/artifacts/`:
+All extraction artifacts (source tree, function lists, build info, log messages,
+embedded scripts) have been removed — all reproducible from the reference binary
+via `go tool nm`, `go version -m`, and `strings`. Embedded scripts live in the
+reconstructed source (`src/internal/envtype/anthropic/install_scripts/scripts.go`).
 
-| File                           | Description                               |
-| ------------------------------ | ----------------------------------------- |
-| `source_tree.txt`              | 78 Go source files from DWARF             |
-| `functions_with_addresses.txt` | 691 functions with addresses (go tool nm) |
-| `functions_clean.txt`          | 624 functions, cleaned names              |
-| `application_log_messages.txt` | 309 application log/error messages        |
-| `go_build_info.txt`            | Full `go version -m` output               |
-| `embedded_scripts/`            | 3 extracted language install scripts      |
+See `6b49f1ca/artifacts/README.md` for regeneration commands.
 
 ## Key Differences from process_api RE
 
