@@ -28,18 +28,17 @@ spec:
               containerPort: 8000
               protocol: TCP
           env:
-            {{- range $key, $value := .Values.env }}
+            - name: PROPS_CONFIG_FILE
+              value: /etc/props/config.toml
+            - name: PROPS_LOG_OUTPUT
+              value: stderr
+            {{- range $key, $value := .Values.extraEnv }}
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            {{- if .Values.existingSecret }}
-            {{- range .Values.secretEnv }}
-            - name: {{ .name }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $.Values.existingSecret }}
-                  key: {{ .key }}
-            {{- end }}
+            {{- if .Values.registry.enabled }}
+            - name: PROPS_REGISTRY_UPSTREAM_URL
+              value: http://{{ include "props.fullname" . }}-registry:{{ .Values.registry.service.port }}
             {{- end }}
             {{- if .Values.postgresql.enabled }}
             - name: PGHOST
@@ -50,12 +49,20 @@ spec:
               value: {{ .Values.postgresql.auth.database | quote }}
             - name: PGUSER
               value: {{ .Values.postgresql.auth.username | quote }}
+            {{- end }}
+            {{- if .Values.postgresql.enabled }}
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "props.fullname" . }}-postgresql
-                  key: password
+                  key: postgres-password
             {{- end }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "props.fullname" . }}
+                  key: openai-api-key
+                  optional: true
           volumeMounts:
             - name: config
               mountPath: /etc/props

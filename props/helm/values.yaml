@@ -30,21 +30,11 @@ config:
     type: "kubernetes"
     namespace: "props"
 
-# Environment variables for the backend container
-env:
-  PROPS_CONFIG_FILE: /etc/props/config.toml
-  PROPS_LOG_OUTPUT: stderr
-  PROPS_LOG_LEVEL: INFO
+# Extra environment variables for the backend container
+extraEnv: {}
 
-# Secret environment variables (keys to inject from the secret)
-secretEnv:
-  - name: PGPASSWORD
-    key: pgpassword
-  - name: OPENAI_API_KEY
-    key: openai-api-key
-
-# Name of the externally-managed secret containing credentials
-existingSecret: ""
+# OpenAI API key (stored in the chart-managed secret)
+openaiApiKey: ""
 
 resources:
   requests:
@@ -56,13 +46,26 @@ resources:
 
 podAnnotations: {}
 
+# OCI container registry for agent images
+registry:
+  enabled: true
+  image:
+    repository: registry
+    tag: "2"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5000
+  persistence:
+    enabled: true
+    size: 50Gi
+
 # PostgreSQL subchart configuration
+# The bitnami subchart auto-generates and manages its own password secret.
 postgresql:
   enabled: true
   auth:
     database: eval_results
     username: postgres
-    password: "changeme"
   primary:
     persistence:
       enabled: true

@@ -1,0 +1,52 @@
+{{- if .Values.registry.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "props.fullname" . }}-registry
+  labels:
+    {{- include "props.labels" . | nindent 4 }}
+    app.kubernetes.io/component: registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "props.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: registry
+  template:
+    metadata:
+      labels:
+        {{- include "props.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: registry
+    spec:
+      containers:
+        - name: registry
+          image: "{{ .Values.registry.image.repository }}:{{ .Values.registry.image.tag }}"
+          imagePullPolicy: {{ .Values.registry.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          volumeMounts:
+            {{- if .Values.registry.persistence.enabled }}
+            - name: data
+              mountPath: /var/lib/registry
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+      volumes:
+        {{- if .Values.registry.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "props.fullname" . }}-registry
+        {{- end }}
+{{- end }}
