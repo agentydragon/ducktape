@@ -375,6 +375,8 @@ func (h *GitHandler) ValidateRepositoryAccess(
 				logger.Info("Git proxy validation succeeded")
 			}
 			logger.Info("Repository access validated successfully")
+			elapsed := time.Since(startTime)
+			o11y.RecordDuration("env_manager.git_validation.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 			return nil
 		}
 
@@ -395,7 +397,8 @@ func (h *GitHandler) ValidateRepositoryAccess(
 	// Binary: diag.LogEnvManagerNoPII(ctx, "repository_access_validation_failed", nil)
 	diag.LogEnvManagerNoPII(ctx, "repository_access_validation_failed", nil)
 
-	_ = startTime // TODO(re): should compute elapsed for o11y metric
+	elapsed := time.Since(startTime)
+	o11y.RecordDuration("env_manager.git_validation.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 	return fmt.Errorf("git proxy validation failed after %d attempts: %w", 3, lastErr)
 }
 
@@ -701,6 +704,8 @@ func (h *GitHandler) runGitFetchWithRetry(
 					"attempts", attempt+1,
 				)
 			}
+			elapsed := time.Since(startTime)
+			o11y.RecordDuration("env_manager.git_fetch.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 			return output, nil
 		}
 
@@ -714,7 +719,7 @@ func (h *GitHandler) runGitFetchWithRetry(
 	}
 
 	elapsed := time.Since(startTime)
-	_ = elapsed // TODO(re): should be recorded as o11y metric
+	o11y.RecordDuration("env_manager.git_fetch.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 
 	logger.Error("Git fetch failed after all retries",
 		"error", lastErr,

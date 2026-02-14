@@ -21,9 +21,9 @@ All critical functionality stubs have been implemented. Remaining work is config
 
 ## 🟢 Observability & Metrics (Non-Critical)
 
-### Command Timing (`cmd/cmd_task_run.go:198, 202, 225, 252, 292, 323, 325, 340`)
+### Command Timing - PARTIALLY COMPLETE ✅
 
-- Unused duration variables should be logged as o11y metrics
+- ✅ **Duration metrics wired** (`cmd/cmd_task_run.go`) - All 5 duration variables now logged as o11y metrics
 
 ### Git Operations (`internal/sources/git.go:313, 398, 717`)
 
@@ -62,9 +62,9 @@ All critical functionality stubs have been implemented. Remaining work is config
 
 - Multiple fields typed as `interface{}` instead of concrete types
 
-### Session Ingress Logs (`internal/api/session_ingress_client.go:210, 219, 229, 240`)
+### Session Ingress Logs - COMPLETE ✅
 
-- `logs` param typed as `interface{}`, hardcoded `num_logs: 0`
+- ✅ **Fixed log submission** (`internal/api/session_ingress_client.go`) - `logs` param now typed as `[]DiagLogEntry`, calls `diagLogsToWireFormat()`, uses `len(logs)` for metrics
 
 ## Incomplete Reconstructions
 
