@@ -1,0 +1,73 @@
+# BuildBuddy Workflows Configuration
+#
+# Runs Bazel build/test/lint on BuildBuddy RBE for faster CI.
+# Non-Bazel tasks (ansible-lint, nix-flake-check, pre-commit) remain in GitHub Actions.
+#
+# BuildBuddy docs: https://www.buildbuddy.io/docs/workflows-config/
+
+actions:
+  - name: "CI"
+    triggers:
+      push:
+        branches:
+          - main
+          - master
+          - devel
+      pull_request: {}
+
+    # Bazel commands run sequentially. Each uses RBE via setup-buildbuddy.sh config.
+    bazel_commands:
+      # 1. Run all tests (excluding live OpenAI API tests)
+      - >
+        test
+        --keep_going
+        --build_metadata=ROLE=ci
+        --build_metadata=TAGS=test
+        --test_tag_filters=-live_openai_api
+        --test_env=CI=true
+        --test_env=BUILDBUDDY_WORKFLOWS=true
+        //...
+
+      # 2. Build + lint + typecheck + rust-check (all quality checks in one pass)
+      # Use local strategy for mypy to avoid sandbox copying overhead
+      # --config=check runs: ruff, ESLint, mypy, clippy, rustfmt
+      - >
+        build
+        --keep_going
+        --config=check
+        --strategy=mypy=local
+        --build_metadata=ROLE=ci
+        --build_metadata=TAGS=check
+        //...
+
+  # Separate action for manual/release builds that build wheels
+  - name: "Build Wheels"
+    triggers:
+      push:
+        branches:
+          - main
+          - devel
+      workflow_dispatch: {}
+
+    bazel_commands:
+      # Build all wheel targets for potential release
+      # These are built but not published (GitHub Actions handles publishing)
+      - build //gnome_terminal_profile_switcher:wheel
+      - build //ducktape:wheel
+      - build //headscale_cleanup:wheel
+      - build //tools/claude_hooks:wheel
+
+  # Build container images (OCI images built with Bazel)
+  - name: "Build Container Images"
+    triggers:
+      push:
+        branches:
+          - main
+          - devel
+      workflow_dispatch: {}
+
+    bazel_commands:
+      # Build OCI images for potential release
+      # These are built but not pushed to GHCR (GitHub Actions handles pushing)
+      - build //props/backend:image
+      - build //agent_server:image

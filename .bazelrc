@@ -26,10 +26,11 @@ build:typecheck --output_groups=+mypy
 
 # Combined lint + typecheck
 # Run with: bazel build --config=check //...
+# Combines lint (ruff, ESLint), typecheck (mypy), and Rust checks (clippy, rustfmt)
 # Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant)
 build:check --@rules_python//python/config_settings:python_version=3.13
-build:check --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%mypy_aspect
-build:check --output_groups=+rules_lint_report,+mypy
+build:check --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%mypy_aspect,//tools/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
+build:check --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 
 # Rust linting (clippy)
 # Run with: bazel build --config=clippy //finance/worthy:all

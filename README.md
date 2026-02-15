@@ -29,6 +29,40 @@ To exclude a file/directory:
 1. Add `path/** rules-lint-ignored=true` to `.gitattributes`
 2. If it contains Python, also add to `ruff.toml exclude`
 
+## Continuous Integration
+
+### BuildBuddy Workflows (Recommended for Bazel tasks)
+
+BuildBuddy Workflows provides fast, Bazel-native CI with remote execution. The `buildbuddy.yaml` configuration runs:
+
+- `bazel test //...` - Run all tests (excluding `live_openai_api`)
+- `bazel build --config=check //...` - Unified quality checks (ruff, ESLint, mypy, clippy, rustfmt)
+
+**Setup**:
+
+1. Enable BuildBuddy Workflows for this repository at <https://app.buildbuddy.io>
+2. BuildBuddy will automatically use your RBE configuration from `tools/setup-buildbuddy.sh`
+3. Workflow runs appear in GitHub PRs as status checks
+
+**Architecture**:
+
+- **BuildBuddy**: Bazel build/test/lint (fast RBE, dependency-aware parallelization)
+- **GitHub Actions**: Non-Bazel tasks (ansible-lint, nix-flake-check, pre-commit) and artifact publishing
+
+Artifacts (wheels, container images) are built by BuildBuddy, then published by GitHub Actions:
+- Wheels → GitHub Releases
+- Container images → GitHub Container Registry (GHCR)
+
+### GitHub Actions
+
+GitHub Actions handles:
+
+- Non-Bazel workflows (ansible, nix, pre-commit)
+- Release publishing (wheels, Docker images)
+- RBE image builds
+
+See `.github/workflows/` for workflow definitions.
+
 ## License
 
 AGPL 3.0
