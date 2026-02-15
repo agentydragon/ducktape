@@ -122,28 +122,10 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
     return dirs
 
 
-@pytest.fixture
-def system_bazel() -> str:
-    """Get the real bazelisk binary path.
-
-    Prefers the actual binary at auth-proxy/bazelisk over bin/bazelisk,
-    which is a symlink to the wrapper script and would cause an infinite
-    loop when used as BAZELISK_PATH.
-    """
-    real = settings.HookSettings().get_bazelisk_path()
-    if real.exists():
-        return str(real)
-    path = shutil.which("bazelisk") or shutil.which("bazel")
-    if not path:
-        pytest.fail("Neither bazelisk nor bazel found on PATH")
-    return path
-
-
 def _setup_hook_env(
     monkeypatch: pytest.MonkeyPatch,
     isolated_dirs: IsolatedDirs,
     mock_proxy: MockEgressProxy,
-    system_bazel: str,
     *,
     install_podman: bool = False,
 ) -> None:
@@ -153,7 +135,6 @@ def _setup_hook_env(
         monkeypatch: pytest monkeypatch fixture
         isolated_dirs: Test isolation directories
         mock_proxy: TLS proxy simulating Anthropic's proxy
-        system_bazel: Path to system bazel/bazelisk
         install_podman: Whether to install podman (default False)
     """
     # Create combined CA bundle with system CAs + mock proxy CA
@@ -182,12 +163,8 @@ def _setup_hook_env(
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
     monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(auth_proxy_port))
 
-    # Disable nix and bazelisk (speeds up tests)
+    # Disable nix (speeds up tests)
     monkeypatch.setenv(settings.ENV_INSTALL_NIX, "0")
-    monkeypatch.setenv(settings.ENV_INSTALL_BAZELISK, "0")
-
-    # Provide system bazel path (required when install_bazelisk=False)
-    monkeypatch.setenv(settings.ENV_SYSTEM_BAZEL, system_bazel)
 
     # Proxy configuration (simulating Claude Code web)
     for var in PROXY_ENV_VARS:
@@ -203,27 +180,16 @@ def _setup_hook_env(
     mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
     monkeypatch.setenv("ANTHROPIC_CA_PATH", str(mock_ca_path))
 
-    # Remove BuildBuddy API key so the nested session_start hook doesn't
-    # run setup-buildbuddy.sh. On BuildBuddy CI runners this key is set at
-    # the runner level; if inherited, the hook writes a ~/.bazelrc with
-    # try-import of buildbuddy.bazelrc, causing the nested bazel to attempt
-    # grpcs connections to remote.buildbuddy.io through the MockEgressProxy
-    # (which can't forward them), failing with exit code 38.
-    monkeypatch.delenv("BUILDBUDDY_API_KEY", raising=False)
-
     if not install_podman:
         monkeypatch.setenv(settings.ENV_INSTALL_PODMAN, "0")
 
 
 @pytest.fixture
 def hook_env(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_dirs: IsolatedDirs,
-    mock_egress_proxy: MockEgressProxyFixture,
-    system_bazel: str,
+    monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, mock_egress_proxy: MockEgressProxyFixture
 ) -> None:
     """Set up environment for running the session start hook (podman disabled)."""
-    _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, install_podman=False)
+    _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, install_podman=False)
 
 
 def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:
@@ -350,7 +316,6 @@ class TestFullSessionStartHook:
         supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
         assert (supervisor_dir / "supervisord.pid").exists(), "supervisor not started"
 
-    @pytest.mark.skipif(not shutil.which("bazel") and not shutil.which("bazelisk"), reason="bazel/bazelisk required")
     async def test_bazel_build_after_hook(
         self, isolated_dirs: IsolatedDirs, hook_env: None, mock_egress_proxy: MockEgressProxyFixture
     ) -> None:
@@ -464,14 +429,10 @@ class TestPodmanIntegration:
 
     @pytest.fixture
     def podman_hook_env(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        isolated_dirs: IsolatedDirs,
-        mock_egress_proxy: MockEgressProxyFixture,
-        system_bazel: str,
+        self, monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, mock_egress_proxy: MockEgressProxyFixture
     ) -> None:
         """Set up environment for running session start hook WITH podman enabled."""
-        _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, system_bazel, install_podman=True)
+        _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, install_podman=True)
 
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
     async def test_podman_can_run_container(
