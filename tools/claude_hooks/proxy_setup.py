@@ -342,13 +342,18 @@ def _get_local_registry_path() -> Path | None:
     return None
 
 
-def _write_bazel_config(settings: HookSettings) -> None:
+def _write_bazel_config(settings: HookSettings, *, buildbuddy_configured: bool) -> None:
     """Write Bazel config for auth proxy integration.
 
     Writes to two locations:
     1. The auth-proxy bazelrc (always written, used by --bazelrc= in wrapper)
     2. ~/.bazelrc (only if it doesn't already exist, so non-wrapper bazel
        invocations also pick up proxy config)
+
+    Args:
+        settings: Hook settings
+        buildbuddy_configured: Whether BuildBuddy RBE was successfully configured
+            (passed from session_start after buildbuddy_setup completes)
     """
     truststore = settings.get_auth_proxy_truststore()
     combined_ca = settings.get_auth_proxy_combined_ca()
@@ -379,6 +384,7 @@ def _write_bazel_config(settings: HookSettings) -> None:
         local_proxy=local_proxy,
         combined_ca_path=combined_ca,
         local_registry_path=local_registry,
+        buildbuddy_configured=buildbuddy_configured,
     )
     write_config(proxy_rc, result, "proxy bazelrc")
 
@@ -436,7 +442,9 @@ async def _snapshot_proxy_status(settings: HookSettings, supervisor: SupervisorC
     return "configured (not running)"
 
 
-async def setup_auth_proxy(settings: HookSettings, supervisor: SupervisorClient) -> ProxySetup:
+async def setup_auth_proxy(
+    settings: HookSettings, supervisor: SupervisorClient, *, buildbuddy_configured: bool = False
+) -> ProxySetup:
     """Set up the complete auth proxy environment for TLS-inspecting proxies.
 
     This is needed when running behind Anthropic's TLS-inspecting proxy
@@ -471,8 +479,8 @@ async def setup_auth_proxy(settings: HookSettings, supervisor: SupervisorClient)
     # Step 4: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(settings)
 
-    # Step 5: Write bazelrc configuration
-    _write_bazel_config(settings)
+    # Step 5: Write bazelrc configuration with BuildBuddy state
+    _write_bazel_config(settings, buildbuddy_configured=buildbuddy_configured)
 
     status = await _snapshot_proxy_status(settings, supervisor, port)
     ca_status = "custom CA" if combined_ca.exists() else "system"

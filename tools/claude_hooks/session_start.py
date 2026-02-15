@@ -327,10 +327,12 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # re-raise the same exception, resulting in N copies of the upstream error.
     # Consider: skip downstream tasks silently or return a sentinel value instead
     # of re-raising, so only the original upstream error surfaces once.
-    async def setup_proxy_with_supervisor() -> proxy_setup.ProxySetup:
+    async def setup_proxy_with_supervisor(*, buildbuddy_configured: bool = False) -> proxy_setup.ProxySetup:
         """Set up auth proxy (depends on supervisor)."""
         supervisor_result = await supervisor_task
-        return await proxy_setup.setup_auth_proxy(settings, supervisor_result.client)
+        return await proxy_setup.setup_auth_proxy(
+            settings, supervisor_result.client, buildbuddy_configured=buildbuddy_configured
+        )
 
     async def setup_podman_with_deps() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor + tmpfs mount)."""
@@ -367,8 +369,33 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             bazelisk_skipped=skipped,
         )
 
-    # Create a shared proxy task so both mkcert and other code can depend on it
-    proxy_task = asyncio.create_task(setup_proxy_with_supervisor())
+    # Decrypt age-encrypted secrets from .claude_hooks/secrets/ in the repo checkout.
+    secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
+    secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
+
+    # Setup kubeconfig if KUBECONFIG_B64 is in decrypted secrets
+    if secrets and "KUBECONFIG_B64" in secrets.env_vars:
+        kubeconfig_setup.setup_kubeconfig(cache_dir=settings.get_cache_dir(), env_vars=secrets.env_vars)
+
+    # Run BuildBuddy setup first so we know if RBE is available
+    buildbuddy_result = await run_in_thread(
+        lambda: buildbuddy_setup.setup_buildbuddy(
+            project_dir, api_key=secrets.env_vars.get("BUILDBUDDY_API_KEY") if secrets else None
+        )
+    )
+    buildbuddy_configured = (
+        isinstance(buildbuddy_result, buildbuddy_setup.BuildbuddySetup) and buildbuddy_result.configured
+    )
+
+    # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
+    # Dependency graph:
+    #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
+    #                     └── setup_podman_with_deps ←── tmpfs_mount_task
+    #   tmpfs_mount_task ──── setup_bazel_on_tmpfs
+    logger.info("Starting parallel installations...")
+
+    # Create proxy task with BuildBuddy configuration state
+    proxy_task = asyncio.create_task(setup_proxy_with_supervisor(buildbuddy_configured=buildbuddy_configured))
 
     async def setup_mkcert_with_proxy() -> mkcert_setup.MkcertSetup:
         """Set up mkcert (depends on proxy for the combined CA bundle)."""
@@ -378,31 +405,12 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         combined_ca = settings.get_auth_proxy_combined_ca()
         return mkcert_setup.setup_mkcert(settings, combined_ca if combined_ca.exists() else None)
 
-    # Decrypt age-encrypted secrets from .claude_hooks/secrets/ in the repo checkout.
-    secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
-    secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
-
-    # Setup kubeconfig if KUBECONFIG_B64 is in decrypted secrets
-    if secrets and "KUBECONFIG_B64" in secrets.env_vars:
-        kubeconfig_setup.setup_kubeconfig(cache_dir=settings.get_cache_dir(), env_vars=secrets.env_vars)
-
-    # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
-    # Dependency graph:
-    #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
-    #                     └── setup_podman_with_deps ←── tmpfs_mount_task
-    #   tmpfs_mount_task ──── setup_bazel_on_tmpfs
-    logger.info("Starting parallel installations...")
     results = await asyncio.gather(
         proxy_task,
         setup_podman_with_deps(),
         run_in_thread(precommit_setup.install_precommit, project_dir),
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
-        run_in_thread(
-            lambda: buildbuddy_setup.setup_buildbuddy(
-                project_dir, api_key=secrets.env_vars.get("BUILDBUDDY_API_KEY") if secrets else None
-            )
-        ),
         setup_bazel_on_tmpfs(),
         setup_mkcert_with_proxy(),
         return_exceptions=True,
@@ -413,9 +421,10 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     precommit: precommit_setup.PrecommitSetup | BaseException = results[2]
     nix: nix_setup.NixSetup | BaseException = results[3]
     bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
-    buildbuddy: buildbuddy_setup.BuildbuddySetup | BaseException = results[5]
-    tmpfs: tmpfs_setup.TmpfsSetup | BaseException = results[6]
-    mkcert: mkcert_setup.MkcertSetup | BaseException = results[7]
+    tmpfs: tmpfs_setup.TmpfsSetup | BaseException = results[5]
+    mkcert: mkcert_setup.MkcertSetup | BaseException = results[6]
+    # buildbuddy was set up earlier (before parallel tasks)
+    buildbuddy: buildbuddy_setup.BuildbuddySetup | BaseException = buildbuddy_result
 
     # Log non-critical failures
     if isinstance(precommit, BaseException):

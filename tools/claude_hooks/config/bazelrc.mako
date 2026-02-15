@@ -23,10 +23,18 @@ common --repo_env=GOSUMDB=sum.golang.org
 # only affect the Bazel host (repo rules); RBE workers are unaffected.
 common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
 common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
+% if buildbuddy_configured:
 # Enable RBE: host_platform for CC toolchain resolution, spawn_strategy for
 # gVisor avoidance (remote workers don't use gVisor, local fallback is
 # unsandboxed). See .bazelrc for the full flag set.
 build --config=rbe
+% else:
+# BuildBuddy not configured - use local execution only.
+# Set host_platform for CC toolchain resolution (BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+# disables auto-detection), but without remote execution.
+build --host_platform=//:rbe_linux_x64
+build --spawn_strategy=local
+% endif
 
 # Tag invocations for BuildBuddy filtering
 build --build_metadata=ROLE=claude-code
