@@ -5,6 +5,16 @@ common --enable_bzlmod
 # runner's system GCC. The BuildBuddy GCC toolchain handles RBE independently.
 build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
+# Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
+# Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
+# with many targets this exhausts the default 20 GB BuildBuddy disk.
+# --nobuild_runfile_links: don't eagerly create runfiles trees during build phase
+#   (created on-demand for test/run). Safe for CI where we only `bazel test` or `bazel run`.
+# --nolegacy_external_runfiles: skip duplicate legacy external/<repo> runfiles path,
+#   keeping only the modern ../<repo> path. Halves external dep symlink count.
+build --nobuild_runfile_links
+build --nolegacy_external_runfiles
+
 # Disable MODULE.bazel.lock to avoid churn between environments.
 # The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
 # has platform-specific resolution that causes the lockfile to differ between local
