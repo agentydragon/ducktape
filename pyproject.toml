@@ -1,5 +1,14 @@
-# Consolidated Python dependencies for the ducktape monorepo.
-# This is the single source of truth for all third-party Python dependencies.
+# Python dependency manifest for Bazel lock file generation.
+#
+# This file serves as the single source of truth for Python dependencies.
+# It is NOT used for pip/uv installation - dependencies are consumed via Bazel.
+#
+# Workflow:
+#   1. Edit dependencies in [project.dependencies] below
+#   2. Run: bazel run //:requirements.update
+#   3. This generates requirements_bazel.txt (the lock file)
+#   4. Bazel targets reference deps as @pypi//package_name
+#
 # Individual packages no longer have their own pyproject.toml files.
 
 [project]
