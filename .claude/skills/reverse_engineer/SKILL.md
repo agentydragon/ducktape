@@ -1,21 +1,17 @@
 ---
 name: reverse_engineer
 description: Reverse-engineer a compiled binary (full reconstruction) or extract protocol/API specifications from specific components (focused analysis). Systematic binary-first reconstruction with differential verification.
-argument-hint: "<path/to/binary> [language|--protocol=<component>]"
+argument-hint: "<path/to/binary> [language]"
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task, WebFetch
 ---
 
 # Reverse Engineer Binary to Source
 
-Reconstruct a compiled binary into fully equivalent, compilable source code in
-the specified language, OR extract protocol/API specifications from specific
-components within a larger binary.
+Reconstruct a compiled binary into fully equivalent, compilable source code, OR
+extract protocol/API specifications from specific components within a larger binary.
 
 **Argument:** `$ARGUMENTS` — path to the binary (or `.gz`-compressed binary),
-and optionally:
-
-- Target language (auto-detected if omitted) for **full reconstruction**
-- `--protocol=<component>` for **focused protocol extraction** (e.g., `--protocol=session_ingress`)
+and optionally the target language (auto-detected if omitted).
 
 **The binary is ground truth.** Your opinions about how code "should" look are
 irrelevant when they contradict evidence from the binary. Every decision must be
@@ -23,9 +19,22 @@ traceable to binary evidence.
 
 ## Mode Selection
 
-**Full Binary Reconstruction:** Follow all phases below to reconstruct the entire binary into compilable source code.
+Choose based on the user's request:
 
-**Focused Protocol Extraction:** Skip to [Phase 0.5: Protocol-Focused Analysis](#phase-05-protocol-focused-analysis) when the goal is to document a specific API/protocol/component within a larger binary (e.g., reverse-engineering the session ingress API from environment-manager).
+**Full Binary Reconstruction** → Use when the user wants:
+
+- Compilable source code
+- Complete implementation reconstruction
+- Verification via differential testing
+
+**Focused Protocol Extraction** → Use when the user wants:
+
+- API/protocol documentation from a specific component
+- Understanding how to call/use an API
+- Wire format specifications without full implementation
+- Example: "document the session ingress API from environment-manager"
+
+For protocol extraction, skip to [Phase 0.5: Protocol-Focused Analysis](#phase-05-protocol-focused-analysis).
 
 ---
 
