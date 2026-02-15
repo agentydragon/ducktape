@@ -4,6 +4,16 @@
 # Non-Bazel tasks (ansible-lint, nix-flake-check, pre-commit) remain in GitHub Actions.
 #
 # BuildBuddy docs: https://www.buildbuddy.io/docs/workflows-config/
+#
+# RBE is NOT auto-enabled by BuildBuddy Workflows (only remote cache + BES are).
+# We must pass --remote_executor and --extra_execution_platforms explicitly.
+# See: https://www.buildbuddy.io/docs/rbe-setup/
+#
+# --host_platform: Point host platform at the RBE platform so CC toolchain
+# resolution for exec-config tools succeeds even though .bazelrc sets
+# BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 (which disables local auto-detection).
+# Without this, the BuildBuddy GCC toolchain doesn't match the auto-detected
+# host platform, causing "No matching toolchains found" for cpp:toolchain_type.
 
 actions:
   - name: "CI"
@@ -20,19 +30,17 @@ actions:
     # like ghcr.io/agentydragon/rbe-worker. RBE workers still use the custom image.
     container_image: "ubuntu-24.04"
 
-    # Bazel commands run sequentially. Each uses RBE via setup-buildbuddy.sh config.
-    #
-    # --host_platform: Point host platform at the RBE platform so CC toolchain
-    # resolution for exec-config tools succeeds even though .bazelrc sets
-    # BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 (which disables local auto-detection).
-    # Without this, the BuildBuddy GCC toolchain doesn't match the auto-detected
-    # host platform, causing "No matching toolchains found" for cpp:toolchain_type.
     bazel_commands:
       # 1. Run all tests (excluding live OpenAI API tests)
       - >
         test
         --keep_going
+        --remote_executor=grpcs://remote.buildbuddy.io
+        --extra_execution_platforms=//:rbe_linux_x64
         --host_platform=//:rbe_linux_x64
+        --spawn_strategy=remote,local
+        --jobs=50
+        --remote_download_minimal
         --build_metadata=ROLE=ci
         --build_metadata=TAGS=test
         --test_tag_filters=-live_openai_api
@@ -46,7 +54,12 @@ actions:
       - >
         build
         --keep_going
+        --remote_executor=grpcs://remote.buildbuddy.io
+        --extra_execution_platforms=//:rbe_linux_x64
         --host_platform=//:rbe_linux_x64
+        --spawn_strategy=remote,local
+        --jobs=50
+        --remote_download_minimal
         --config=check
         --strategy=mypy=local
         --build_metadata=ROLE=ci
@@ -68,10 +81,18 @@ actions:
     bazel_commands:
       # Build all wheel targets for potential release
       # These are built but not published (GitHub Actions handles publishing)
-      - build --host_platform=//:rbe_linux_x64 //gnome_terminal_profile_switcher:wheel
-      - build --host_platform=//:rbe_linux_x64 //ducktape:wheel
-      - build --host_platform=//:rbe_linux_x64 //headscale_cleanup:wheel
-      - build --host_platform=//:rbe_linux_x64 //tools/claude_hooks:wheel
+      - >
+        build
+        --remote_executor=grpcs://remote.buildbuddy.io
+        --extra_execution_platforms=//:rbe_linux_x64
+        --host_platform=//:rbe_linux_x64
+        --spawn_strategy=remote,local
+        --jobs=50
+        --remote_download_minimal
+        //gnome_terminal_profile_switcher:wheel
+        //ducktape:wheel
+        //headscale_cleanup:wheel
+        //tools/claude_hooks:wheel
 
   # Build container images (OCI images built with Bazel)
   - name: "Build Container Images"
@@ -88,5 +109,13 @@ actions:
     bazel_commands:
       # Build OCI images for potential release
       # These are built but not pushed to GHCR (GitHub Actions handles pushing)
-      - build --host_platform=//:rbe_linux_x64 //props/backend:image
-      - build --host_platform=//:rbe_linux_x64 //agent_server:image
+      - >
+        build
+        --remote_executor=grpcs://remote.buildbuddy.io
+        --extra_execution_platforms=//:rbe_linux_x64
+        --host_platform=//:rbe_linux_x64
+        --spawn_strategy=remote,local
+        --jobs=50
+        --remote_download_minimal
+        //props/backend:image
+        //agent_server:image
