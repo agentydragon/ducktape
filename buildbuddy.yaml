@@ -6,14 +6,8 @@
 # BuildBuddy docs: https://www.buildbuddy.io/docs/workflows-config/
 #
 # RBE is NOT auto-enabled by BuildBuddy Workflows (only remote cache + BES are).
-# We must pass --remote_executor and --extra_execution_platforms explicitly.
+# We pass --config=rbe (defined in .bazelrc) to enable remote execution.
 # See: https://www.buildbuddy.io/docs/rbe-setup/
-#
-# --host_platform: Point host platform at the RBE platform so CC toolchain
-# resolution for exec-config tools succeeds even though .bazelrc sets
-# BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 (which disables local auto-detection).
-# Without this, the BuildBuddy GCC toolchain doesn't match the auto-detected
-# host platform, causing "No matching toolchains found" for cpp:toolchain_type.
 
 actions:
   - name: "CI"
@@ -35,12 +29,7 @@ actions:
       - >
         test
         --keep_going
-        --remote_executor=grpcs://remote.buildbuddy.io
-        --extra_execution_platforms=//:rbe_linux_x64
-        --host_platform=//:rbe_linux_x64
-        --spawn_strategy=remote,local
-        --jobs=50
-        --remote_download_minimal
+        --config=rbe
         --build_metadata=ROLE=ci
         --build_metadata=TAGS=test
         --test_tag_filters=-live_openai_api
@@ -54,12 +43,7 @@ actions:
       - >
         build
         --keep_going
-        --remote_executor=grpcs://remote.buildbuddy.io
-        --extra_execution_platforms=//:rbe_linux_x64
-        --host_platform=//:rbe_linux_x64
-        --spawn_strategy=remote,local
-        --jobs=50
-        --remote_download_minimal
+        --config=rbe
         --config=check
         --strategy=mypy=local
         --build_metadata=ROLE=ci
@@ -82,13 +66,7 @@ actions:
       # Build all wheel targets for potential release
       # These are built but not published (GitHub Actions handles publishing)
       - >
-        build
-        --remote_executor=grpcs://remote.buildbuddy.io
-        --extra_execution_platforms=//:rbe_linux_x64
-        --host_platform=//:rbe_linux_x64
-        --spawn_strategy=remote,local
-        --jobs=50
-        --remote_download_minimal
+        build --config=rbe
         //gnome_terminal_profile_switcher:wheel
         //ducktape:wheel
         //headscale_cleanup:wheel
@@ -110,12 +88,6 @@ actions:
       # Build OCI images for potential release
       # These are built but not pushed to GHCR (GitHub Actions handles pushing)
       - >
-        build
-        --remote_executor=grpcs://remote.buildbuddy.io
-        --extra_execution_platforms=//:rbe_linux_x64
-        --host_platform=//:rbe_linux_x64
-        --spawn_strategy=remote,local
-        --jobs=50
-        --remote_download_minimal
+        build --config=rbe
         //props/backend:image
         //agent_server:image

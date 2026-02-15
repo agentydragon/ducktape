@@ -52,6 +52,20 @@ build:rust-check --output_groups=+clippy_checks,+rustfmt_checks
 build:eslint --aspects=//tools/lint:linters.bzl%eslint
 build:eslint --output_groups=+rules_lint_report
 
+# Remote Build Execution (BuildBuddy)
+# Activated by: setup-buildbuddy.sh, buildbuddy.yaml, bazelrc.mako (Claude Code web)
+# Requires authentication via ~/.config/bazel/buildbuddy.bazelrc (API key + BES).
+build:rbe --remote_executor=grpcs://remote.buildbuddy.io
+build:rbe --extra_execution_platforms=//:rbe_linux_x64
+# Point host platform at the RBE platform so toolchain resolution for exec-config
+# tools (e.g. Rust linking needs CC) succeeds even though
+# BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 disables local auto-detection.
+build:rbe --host_platform=//:rbe_linux_x64
+build:rbe --spawn_strategy=remote,local
+test:rbe --spawn_strategy=remote,local
+build:rbe --jobs=50
+build:rbe --remote_download_minimal
+
 # Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)
 
