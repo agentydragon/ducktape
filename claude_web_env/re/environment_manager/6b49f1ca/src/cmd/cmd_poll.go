@@ -76,7 +76,7 @@ func AddPollCommand(rootCmd *cobra.Command) {
 			// Binary: 0xb762a3-0xb76398 - ReadFile + TrimSpace + Getenv fallback
 			// Same pattern as loadServiceKey: if secretPath non-empty, ReadFile it,
 			// on error return fmt.Errorf("failed to read service key file %s: %w"),
-			// TrimSpace result, if empty fall back to os.Getenv("ENVIRONMENT_SERVICE_KEY").
+			// TrimSpace result, if empty fall back to env var (secretKeyEnv or ENVIRONMENT_SERVICE_KEY).
 			var serviceKey string
 			if secretPath != "" {
 				data, err := os.ReadFile(secretPath)
@@ -86,7 +86,12 @@ func AddPollCommand(rootCmd *cobra.Command) {
 				serviceKey = strings.TrimSpace(string(data))
 			}
 			if serviceKey == "" {
-				serviceKey = os.Getenv("ENVIRONMENT_SERVICE_KEY")
+				// Use custom env var name if specified, otherwise default to ENVIRONMENT_SERVICE_KEY
+				envVarName := "ENVIRONMENT_SERVICE_KEY"
+				if secretKeyEnv != "" {
+					envVarName = secretKeyEnv
+				}
+				serviceKey = os.Getenv(envVarName)
 			}
 
 			// Step 3: Check service key is available.
@@ -99,7 +104,6 @@ func AddPollCommand(rootCmd *cobra.Command) {
 			// Binary: 0xb763f8 NewWhoamiClient, 0xb76407 GetIdentity
 			whoamiClient := orchestrator.NewWhoamiClient(apiURL, serviceKey, sessionID, log)
 			identity, err := whoamiClient.GetIdentity(cmd.Context())
-			_ = identity // TODO(re): identity fields should update sessionID/workID
 			if err != nil {
 				// Step 4a: Check if sessionID and workID were provided.
 				// Binary: 0xb76415-0xb76555 - checks closed-over sessionID and workID ptrs
@@ -112,10 +116,11 @@ func AddPollCommand(rootCmd *cobra.Command) {
 					return fmt.Errorf("session_id and org_id are required when identity could not be retrieved")
 				}
 			} else {
-				// Step 4b: Update sessionID and workID from identity if they differ.
-				// Binary: 0xb765a1-0xb7669e - memequal comparisons and gcWriteBarrier
-				// Compares identity.SessionID with closed-over sessionID,
-				// and identity.OrgID with closed-over workID, updating if different.
+				// Step 4b: Update sessionID and workID from identity.
+				// Binary: 0xb765a1-0xb7669e - compares with memequal and updates if different
+				// This updates the closed-over variables sessionID and workID with identity values
+				sessionID = identity.SessionID
+				workID = identity.OrgID
 			}
 
 			// Step 5: Log poll info.
@@ -157,8 +162,9 @@ func AddPollCommand(rootCmd *cobra.Command) {
 
 			// Step 8: Return success.
 			// Binary: 0xb76a28 XORL AX, AX; XORL BX, BX
-			_ = maxPollRetries // TODO(re): should be wired into poller retry config
-			_ = secretKeyEnv // TODO(re): should be used as fallback secret key source
+			// Note: maxPollRetries is currently unused - Poller struct has no retry field.
+			// Retries may be handled at a higher level (orchestrator) rather than in Poller.Poll().
+			_ = maxPollRetries
 			return nil
 		},
 	}
