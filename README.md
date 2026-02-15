@@ -50,6 +50,7 @@ BuildBuddy Workflows provides fast, Bazel-native CI with remote execution. The `
 - **GitHub Actions**: Non-Bazel tasks (ansible-lint, nix-flake-check, pre-commit) and artifact publishing
 
 Artifacts (wheels, container images) are built by BuildBuddy, then published by GitHub Actions:
+
 - Wheels → GitHub Releases
 - Container images → GitHub Container Registry (GHCR)
 

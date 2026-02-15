@@ -46,7 +46,7 @@
     mode: "0644"
   become: true
   when: ansible_os_family == "Debian"
-  notify: restart NetworkManager
+  notify: Restart NetworkManager
   tags: [tailscale, install]
 
 - name: Start and enable tailscaled service
