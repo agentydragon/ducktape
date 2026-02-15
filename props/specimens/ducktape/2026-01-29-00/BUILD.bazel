@@ -1,0 +1,6 @@
+load("//props/specimens:defs.bzl", "specimen_targets")
+
+specimen_targets(
+    name = "specimen",
+    slug = "ducktape/2026-01-29-00",
+)

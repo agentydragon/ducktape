@@ -20,9 +20,10 @@ cluster/.direnv
 wt/.direnv
 props/.direnv
 
-# Specimens - frozen code snapshots contain BUILD.bazel files that
-# would create spurious Bazel packages. Test reads from source tree.
-props/specimens
+# Note: props/specimens is NOT ignored - it now has proper BUILD.bazel files
+# that generate specimen tars and tests. The BUILD.bazel files inside specimen
+# code/ directories have been renamed to BUILD.bazel.specimen to prevent them
+# from being treated as Bazel packages.
 
 # Investigations - no BUILD files
 investigations

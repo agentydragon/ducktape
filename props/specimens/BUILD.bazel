@@ -1,0 +1,7 @@
+# gazelle:python_generation_mode off
+
+# Export generic test file and conftest for specimen_targets to reference
+exports_files([
+    "test_specimen.py",
+    "conftest.py",
+])
