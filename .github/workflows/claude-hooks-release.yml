@@ -275,6 +275,7 @@ jobs:
 
       - name: Bump settings.json to new release tag
         run: |
+          set -x  # Print commands for debugging
           TAG="claude-hooks-${{ env.SHORT_SHA }}"
           sed -i "s|claude-hooks-[a-f0-9]\{8\}|${TAG}|g" .claude/settings.json
           if git diff --quiet .claude/settings.json; then
@@ -283,10 +284,31 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin ${{ github.ref_name }}
+
+          # Pull with rebase, show error details if it fails
+          if ! git pull --rebase origin ${{ github.ref_name }}; then
+            echo "::error::Rebase failed. Git status:"
+            git status
+            echo "Conflicting files:"
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+
           git add .claude/settings.json
           git commit -m "chore: bump claude-hooks to ${TAG} [skip ci]"
-          git push origin HEAD:${{ github.ref_name }}
+
+          # Push with error diagnostics
+          if ! git push origin HEAD:${{ github.ref_name }}; then
+            echo "::error::Push failed. Diagnostics:"
+            echo "Git status:"
+            git status
+            echo "Recent commits:"
+            git log --oneline -5
+            echo "Remote state:"
+            git fetch origin ${{ github.ref_name }}
+            git log --oneline HEAD..origin/${{ github.ref_name }}
+            exit 1
+          fi
 
       - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
