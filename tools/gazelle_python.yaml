@@ -9,7 +9,6 @@ manifest:
     7ae574991b77ef47acad__mypyc: mypy
     7bce59c0a152c0e01f70__mypyc: tomli
     Crypto: pycryptodome
-    Cryptodome: pycryptodomex
     IPython: ipython
     OpenSSL: pyopenssl
     PIL: pillow
@@ -31,7 +30,6 @@ manifest:
     anyio: anyio
     apiclient: google_api_python_client
     appdirs: appdirs
-    aqipy: aqipy
     argcomplete: argcomplete
     argon2: argon2_cffi
     arrow: arrow
@@ -72,7 +70,6 @@ manifest:
     cloudpickle: cloudpickle
     cloudsplaining: cloudsplaining
     colorama: colorama
-    colored: colored
     comm: comm
     compact_json: compact_json
     configargparse: configargparse
@@ -124,9 +121,6 @@ manifest:
     fqdn: fqdn
     frozenlist: frozenlist
     fsspec: fsspec
-    geographiclib: geographiclib
-    geojson: geojson
-    geopy: geopy
     gepa: gepa
     git: gitpython
     gitdb: gitdb
@@ -235,12 +229,10 @@ manifest:
     ipython_pygments_lexers: ipython_pygments_lexers
     iso8601: iso8601
     isoduration: isoduration
-    isort: isort
     itsdangerous: itsdangerous
     jaraco.classes: jaraco.classes
     jaraco.context: jaraco_context
     jaraco.functools: jaraco_functools
-    javaobj: javaobj_py3
     jedi: jedi
     jeepney: jeepney
     jinja2: jinja2
@@ -290,8 +282,6 @@ manifest:
     mautrix: mautrix
     mcp: mcp
     mdurl: mdurl
-    metar: python_metar
-    meteostat: meteostat
     mirakuru: mirakuru
     mistune: mistune
     mizani: mizani
@@ -350,7 +340,6 @@ manifest:
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
     orjson: orjson
-    oura: oura
     packageurl: packageurl_python
     packaging: packaging
     pandas: pandas
@@ -406,7 +395,6 @@ manifest:
     pygit2: pygit2
     pygments: pygments
     pylab: matplotlib
-    pyowm: pyowm
     pyparsing: pyparsing
     pyperclip: pyperclip
     pyrage: pyrage
@@ -424,7 +412,6 @@ manifest:
     python_socks: python_socks
     pythonjsonlogger: python_json_logger
     pytimeparse: pytimeparse
-    pytz: pytz
     rdflib: rdflib
     reaktiv: reaktiv
     redis: redis
@@ -457,8 +444,6 @@ manifest:
     slugify: python_slugify
     smmap: smmap
     sniffio: sniffio
-    socks: PySocks
-    sockshandler: PySocks
     sortedcontainers: sortedcontainers
     soupsieve: soupsieve
     spdx_tools.common: spdx_tools
@@ -466,8 +451,6 @@ manifest:
     spdx_tools.spdx3: spdx_tools
     splitwise: splitwise
     sqlalchemy: sqlalchemy
-    sqlmypy: sqlalchemy_stubs
-    sqltyping: sqlalchemy_stubs
     sse_starlette: sse_starlette
     stack_data: stack_data
     starlette: starlette
@@ -568,7 +551,6 @@ manifest:
     websocket: websocket_client
     websockets: websockets
     wrapt: wrapt
-    xdg: xdg
     xdist: pytest_xdist
     xmltodict: xmltodict
     yaml: pyyaml
@@ -578,4 +560,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: 8feed30cac5051ec6f1c978485f797d2200e3f00826a06a5a7fe8f0419e9e02b
+integrity: c62fd1d0e902697b8c5d91a4e7e131e2eb402abb18463549d0f718db660c49a6
