@@ -36,6 +36,12 @@ build --experimental_profile_include_primary_output
 build --remote_executor=grpcs://remote.buildbuddy.io
 build --extra_execution_platforms=//:rbe_linux_x64
 build --spawn_strategy=remote,local
+
+# Point host platform at the RBE platform so toolchain resolution for
+# exec-config tools (e.g. Rust linking needs CC) succeeds even though
+# BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 disables local auto-detection.
+# This is the standard RBE pattern (bazelbuild/bazel#8636).
+build --host_platform=//:rbe_linux_x64
 build --jobs=50
 build --remote_download_minimal
 EOF
