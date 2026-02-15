@@ -27,14 +27,15 @@ Choose based on the user's request:
 - Complete implementation reconstruction
 - Verification via differential testing
 
-**Focused Protocol Extraction** → Use when the user wants:
+**Focused/Partial Analysis** → Use when the user wants:
 
-- API/protocol documentation from a specific component
-- Understanding how to call/use an API
-- Wire format specifications without full implementation
-- Example: "document the session ingress API from environment-manager"
+- Understand how a specific function/module works
+- Document an API/protocol from a component
+- Explain what changed between binary versions
+- Deepen existing reverse engineering
+- Answer "how does it do X?" questions
 
-For protocol extraction, skip to [Phase 0.5: Protocol-Focused Analysis](#phase-05-protocol-focused-analysis).
+For focused analysis, skip to [Phase 0.5: Focused Analysis](#phase-05-focused-analysis).
 
 ---
 
@@ -62,136 +63,127 @@ BINARY="/tmp/target_binary"
 # gzip -dk path/to/binary.gz -c > "$BINARY" && chmod +x "$BINARY"
 ```
 
-## Phase 0.5: Protocol-Focused Analysis
+## Phase 0.5: Focused Analysis
 
-**Use this phase when reverse-engineering a specific component/protocol from a larger binary**, rather than reconstructing the entire source.
+**Use this phase for targeted reverse engineering tasks** on specific parts of a binary, rather than reconstructing the entire source. Common use cases:
 
-**Goal:** Extract complete protocol/API specification by analyzing:
+- **Understand a specific function:** "How does `validate_signature` work?"
+- **Document an API/protocol:** "Extract the session ingress API specification"
+- **Compare versions:** "What changed in the auth logic between v1.2 and v1.3?"
+- **Deepen existing RE:** "We have partial RE, but need details on the crypto module"
 
-1. Function symbols related to the target component
-2. Strings used by those functions (endpoints, log messages, error messages)
-3. Data structures and wire formats
-4. HTTP client behavior (headers, retry logic, error handling)
-
-### 0.5.1 Identify target functions
+### 0.5.1 Identify target symbols/functions
 
 ```bash
-BINARY="/usr/local/bin/environment-manager"
-COMPONENT="session_ingress"  # or whatever you're analyzing
+BINARY="/usr/local/bin/target"
+TARGET="auth"  # module, function name, or component
 
-# Find all symbols related to the component
-nm "$BINARY" | grep -i "$COMPONENT" > /tmp/${COMPONENT}_symbols.txt
+# Find all related symbols
+nm "$BINARY" | grep -i "$TARGET" > /tmp/${TARGET}_symbols.txt
 
-# Get function addresses
-nm "$BINARY" | grep -i "$COMPONENT" | grep ' T ' | awk '{print $1, $3}' > /tmp/${COMPONENT}_functions.txt
+# Get function addresses and names
+nm "$BINARY" | grep -i "$TARGET" | grep ' T ' | awk '{print $1, $3}'
 
-# Example output:
-# 0x8309a0 PostSessionIngressEvent
-# 0x830de0 PostForwardDiagLogs
+# For unstripped binaries, get source file info
+readelf --debug-dump=info "$BINARY" | grep -B5 -A10 "$TARGET"
 ```
 
-### 0.5.2 Extract component-specific strings
+### 0.5.2 Extract relevant strings
+
+Strings reveal behavior - log messages, error paths, endpoints, formats:
 
 ```bash
-# Find all strings that reference the component
-strings "$BINARY" | grep -i "$COMPONENT" > /tmp/${COMPONENT}_strings.txt
+# All strings mentioning the target
+strings "$BINARY" | grep -i "$TARGET" > /tmp/${TARGET}_strings.txt
 
-# Extract endpoint URLs
-strings "$BINARY" | grep -E "^/.*${COMPONENT}" > /tmp/${COMPONENT}_endpoints.txt
-
-# Extract log messages (these reveal behavior)
-strings "$BINARY" | grep -iE "(posting|forwarding|sending|receiving).*${COMPONENT}" > /tmp/${COMPONENT}_logs.txt
-
-# Extract error messages
-strings "$BINARY" | grep -iE "(error|failed|invalid).*${COMPONENT}" > /tmp/${COMPONENT}_errors.txt
+# Categorize by type
+strings "$BINARY" | grep -iE "(error|fail).*${TARGET}" > /tmp/${TARGET}_errors.txt
+strings "$BINARY" | grep -iE "^/.*${TARGET}" > /tmp/${TARGET}_paths.txt  # URLs/paths
+strings "$BINARY" | grep "json:.*${TARGET}" > /tmp/${TARGET}_json.txt   # JSON fields
 ```
 
-### 0.5.3 Analyze data structures
+### 0.5.3 Disassemble target functions
+
+Extract implementations of key functions:
 
 ```bash
-# Get type information (if not stripped)
-readelf --debug-dump=info "$BINARY" | grep -A 20 "$COMPONENT" > /tmp/${COMPONENT}_types.txt
+# Get function bounds
+FUNC_START=$(nm "$BINARY" | grep "MyFunction" | awk '{print "0x"$1}')
+FUNC_END=$(nm "$BINARY" | awk -v start="$FUNC_START" '$1 > start {print "0x"$1; exit}')
 
-# Look for JSON field names (reveals wire format)
-strings "$BINARY" | grep "json:" | grep -i "$COMPONENT" > /tmp/${COMPONENT}_json_fields.txt
+# Disassemble
+objdump -d "$BINARY" --start-address="$FUNC_START" --stop-address="$FUNC_END" > /tmp/func.asm
+
+# For Go binaries, use go tool objdump for better formatting
+go tool objdump -s MyFunction "$BINARY" > /tmp/func.asm
 ```
 
-### 0.5.4 Extract function implementations
+### 0.5.4 Analyze data structures
 
-For each key function, extract its implementation details:
+For typed languages (Go, Rust, C++ with debug info):
 
 ```bash
-# Get function address from symbols
-FUNC_ADDR=$(nm "$BINARY" | grep "PostSessionIngressEvent" | awk '{print $1}')
-FUNC_END=$(nm "$BINARY" | grep -A 1 "PostSessionIngressEvent" | tail -1 | awk '{print $1}')
+# Extract type definitions
+readelf --debug-dump=info "$BINARY" | grep -A 50 "DW_TAG_structure_type" | grep -A 50 "$TARGET"
 
-# Disassemble the function
-objdump -d "$BINARY" --start-address=0x$FUNC_ADDR --stop-address=0x$FUNC_END > /tmp/func_disasm.txt
-
-# Look for string references in the disassembly
-# These reveal log messages, endpoints, content-types, etc.
+# For Go, look for reflect type metadata
+strings "$BINARY" | grep "type\\..*${TARGET}"
+strings "$BINARY" | grep "json:.*${TARGET}"  # struct tags reveal wire formats
 ```
 
-### 0.5.5 Document the protocol
+### 0.5.5 Compare binary versions (diff analysis)
 
-Create a protocol specification document (`PROTOCOL.md`) containing:
-
-1. **Base URL and versioning** (from endpoint construction strings)
-2. **Authentication** (from header-setting code)
-3. **Endpoints** (all discovered URLs with HTTP methods)
-4. **Request/Response formats** (from JSON marshal/unmarshal and struct tags)
-5. **Event types** (from string constants and type switches)
-6. **Error handling** (from error message strings and status code checks)
-7. **HTTP client behavior** (retry logic, timeouts, headers)
-
-**Example output structure:**
-
-```markdown
-# Component API Protocol
-
-## Base URL
-
-`https://api.example.com` (extracted from string at offset 0xABCDEF)
-
-## Authentication
-
-Bearer token via `Authorization` header (code at 0x123456)
-
-## Endpoints
-
-### POST /v2/component/session/{id}/action
-
-**Purpose:** <from log message "posting session event">
-**Request:** <from struct fields with json tags>
-**Response:** <from unmarshal code or response body handling>
-
-## Data Types
-
-<from DWARF debug info or struct analysis>
-```
-
-### 0.5.6 Verify protocol against live API
-
-If you have access credentials (API token, etc.), verify the extracted protocol:
+When analyzing what changed:
 
 ```bash
-# Test endpoint
-curl -X POST "https://api.example.com/v2/endpoint" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"field": "value"}' \
-  -v
+OLD_BINARY="app-v1.2"
+NEW_BINARY="app-v1.3"
 
-# Check response matches expected format
+# Symbol diff
+diff <(nm "$OLD_BINARY" | sort) <(nm "$NEW_BINARY" | sort) > /tmp/symbol_diff.txt
+
+# String diff (reveals new features, changed messages)
+diff <(strings "$OLD_BINARY" | sort) <(strings "$NEW_BINARY" | sort) > /tmp/string_diff.txt
+
+# Size diff per section
+diff <(readelf -S "$OLD_BINARY") <(readelf -S "$NEW_BINARY")
+
+# For specific function changes, compare disassembly
+diff <(objdump -d "$OLD_BINARY" --start-address=0xABCD) \
+     <(objdump -d "$NEW_BINARY" --start-address=0xDEF0)
 ```
 
-**Deliverable:** Complete protocol specification document, not full source reconstruction.
+### 0.5.6 Output format
 
-**When to use this vs full reconstruction:**
+Choose output based on the task:
 
-- Use protocol extraction when you only need to understand/document an API
-- Use full reconstruction when you need compilable, equivalent source code
-- Protocol extraction is faster and focuses on interfaces, not implementation details
+**For "how does function X work?"** → Write a detailed explanation with:
+
+- Purpose (inferred from strings, call sites, context)
+- Algorithm (from disassembly/decompilation)
+- Error paths (from error strings)
+- Dependencies (from calls to other functions)
+
+**For "document API/protocol"** → Create specification with:
+
+- Endpoints/interfaces (from strings, URL construction)
+- Request/response formats (from JSON tags, marshal/unmarshal code)
+- Authentication (from header-setting code)
+- Examples (verified against live API if possible)
+
+**For "what changed between versions?"** → Write a changelog with:
+
+- New functions/symbols
+- Modified functions (with before/after behavior)
+- Removed functionality
+- Changed constants/strings
+
+**For "deepen existing RE"** → Add to existing reconstruction:
+
+- Implement previously stubbed functions
+- Add missing error paths
+- Clarify ambiguous logic
+- Verify against binary
 
 ---
 
