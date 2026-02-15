@@ -39,13 +39,13 @@ type Handler struct {
 // Binary address: 0xb65be0
 func (h *Handler) HandleRequest(
 	ctx context.Context,
-	req *tunnelpb.TunnelRequest,
+	req *tunnelpb.HTTPTunnelRequest,
 	sender ResponseSender,
 ) error {
 	startTime := time.Now()
 
 	// Extract request metadata
-	var path, method, url, contentType string
+	var path, method, url string
 	var port int32
 	var headerCount int
 	var body []byte
@@ -55,7 +55,6 @@ func (h *Handler) HandleRequest(
 		port = req.GetPort()
 		method = req.GetMethod()
 		url = req.GetUrl()
-		contentType = req.GetContentType()
 		body = req.GetBody()
 		headerCount = len(req.GetHeaders())
 	}
@@ -65,7 +64,6 @@ func (h *Handler) HandleRequest(
 		"port", port,
 		"method", method,
 		"url", url,
-		"content_type", contentType,
 		"header_count", headerCount,
 	)
 
@@ -89,12 +87,10 @@ func (h *Handler) HandleRequest(
 		return fmt.Errorf("failed to create upstream HTTP request: %w", err)
 	}
 
-	// Copy headers from tunnel request
+	// Copy headers from tunnel request (repeated Header messages)
 	if req != nil {
-		for key, values := range req.GetHeaders() {
-			for _, v := range values {
-				httpReq.Header.Add(key, v)
-			}
+		for _, h := range req.GetHeaders() {
+			httpReq.Header.Add(h.GetName(), h.GetValue())
 		}
 	}
 
@@ -117,12 +113,12 @@ func (h *Handler) HandleRequest(
 	defer resp.Body.Close()
 
 	// Send headers back through tunnel
-	headers := &tunnelpb.HttpHeaders{
+	respHeaders := &tunnelpb.HttpHeaders{
 		StatusCode: int32(resp.StatusCode),
 	}
 	headersResp := &tunnelpb.TunnelResponse{
 		Payload: &tunnelpb.TunnelResponse_HttpHeaders{
-			HttpHeaders: headers,
+			HttpHeaders: respHeaders,
 		},
 	}
 	if err := sender.SendHeaders(headersResp); err != nil {
@@ -160,8 +156,7 @@ func (h *Handler) HandleRequest(
 		"status", resp.StatusCode,
 		"duration", elapsed,
 		"url", url,
-		"content_type", contentType,
-		"tunnel_id", req.GetTunnelId(),
+		"request_id", req.GetRequestId(),
 	)
 
 	return nil

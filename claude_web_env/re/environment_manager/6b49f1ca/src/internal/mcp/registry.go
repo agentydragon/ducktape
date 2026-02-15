@@ -27,7 +27,20 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 )
+
+// ToolConfig holds a tool definition and its handler function.
+// This is the mcp package's own tool type used by the MCPServer interface.
+//
+// DWARF type: github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp.ToolConfig
+//   field: Tool -> mcp.Tool (github.com/mark3labs/mcp-go/mcp)
+//   field: Handler -> func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+type ToolConfig struct {
+	Tool    mcplib.Tool
+	Handler func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error)
+}
 
 // MCPServer is the interface that all MCP servers must implement.
 // Implementations include BaseServer (embedded default) and concrete servers
@@ -37,10 +50,10 @@ import (
 //   go:itab.*codesign.CodeSignMCPServer,mcp.MCPServer (0xf68220)
 type MCPServer interface {
 	// GetName returns the server's display name.
-	GetName() (string, int)
+	GetName() string
 
 	// GetTools returns the server tool definitions for the MCP protocol.
-	GetTools() (interface{}, int, int)
+	GetTools() []ToolConfig
 
 	// Start starts the MCP server, binding to a port and serving requests.
 	// It returns the listening port and any error.

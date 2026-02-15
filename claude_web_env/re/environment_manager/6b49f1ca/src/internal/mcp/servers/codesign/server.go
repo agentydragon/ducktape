@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
-	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp"
@@ -66,8 +65,8 @@ type signingConfig struct {
 //   MOVQ 0x8(CX), AX  ; load name.ptr
 //   MOVQ 0x10(CX), BX ; load name.len
 //   RET
-func (s *CodeSignMCPServer) GetName() (string, int) {
-	return s.name, len(s.name)
+func (s *CodeSignMCPServer) GetName() string {
+	return s.name
 }
 
 // ShouldRegisterWithClaude returns false for the codesign server.
@@ -160,7 +159,7 @@ func (s *CodeSignMCPServer) Stop() bool {
 //       "content"            - type: string, description: "content to sign..."
 //
 //   The "required" array at offset 0xb0d3ed (len 7) is likely ["file_path"].
-func (s *CodeSignMCPServer) GetTools() ([]mcpserver.ServerTool, int, int) {
+func (s *CodeSignMCPServer) GetTools() []mcp.ToolConfig {
 	// Build input schema properties for sign_file tool
 	properties := map[string]interface{}{
 		"file_path": map[string]interface{}{
@@ -181,7 +180,7 @@ func (s *CodeSignMCPServer) GetTools() ([]mcpserver.ServerTool, int, int) {
 		},
 	}
 
-	tool := mcpserver.ServerTool{
+	tool := mcp.ToolConfig{
 		Tool: mcplib.Tool{
 			Name:        "sign_file",
 			Description: "Sign a file with the codesigning service",
@@ -194,8 +193,7 @@ func (s *CodeSignMCPServer) GetTools() ([]mcpserver.ServerTool, int, int) {
 		Handler: s.handleSignFile,
 	}
 
-	tools := []mcpserver.ServerTool{tool}
-	return tools, len(tools), len(tools)
+	return []mcp.ToolConfig{tool}
 }
 
 // handleSignFile handles the "sign_file" MCP tool call. It extracts the

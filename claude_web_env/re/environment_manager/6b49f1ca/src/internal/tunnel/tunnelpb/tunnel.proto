@@ -9,9 +9,10 @@ package tunnelpb;
 
 option go_package = "github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/tunnelpb";
 
-// Header represents a single HTTP header key-value pair.
+// Header represents a single HTTP header name-value pair.
+// DWARF fields: Name (string), Value (string)
 message Header {
-  string key = 1;
+  string name = 1;
   string value = 2;
 }
 

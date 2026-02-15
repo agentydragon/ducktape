@@ -74,8 +74,8 @@ type BaseServer struct {
 //   MOVQ 0x10(AX), BX   ; name.len
 //   MOVQ CX, AX
 //   RET
-func (s *BaseServer) GetName() (string, int) {
-	return s.name, len(s.name)
+func (s *BaseServer) GetName() string {
+	return s.name
 }
 
 // GetTools returns an empty tool list. Concrete implementations override this.
@@ -88,8 +88,8 @@ func (s *BaseServer) GetName() (string, int) {
 //   XOR BX, BX
 //   MOV BX, CX
 //   RET
-func (s *BaseServer) GetTools() ([]mcpserver.ServerTool, int, int) {
-	return nil, 0, 0
+func (s *BaseServer) GetTools() []ToolConfig {
+	return nil
 }
 
 // ShouldRegisterWithClaude returns true by default. Concrete implementations
@@ -139,9 +139,16 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 	mcpSrv := mcpserver.NewMCPServer(s.name, s.version)
 
 	// Register tools with the MCP server
-	tools, _, _ := s.GetTools()
-	if len(tools) > 0 {
-		mcpSrv.AddTools(tools...)
+	toolConfigs := s.GetTools()
+	if len(toolConfigs) > 0 {
+		serverTools := make([]mcpserver.ServerTool, len(toolConfigs))
+		for i, tc := range toolConfigs {
+			serverTools[i] = mcpserver.ServerTool{
+				Tool:    tc.Tool,
+				Handler: tc.Handler,
+			}
+		}
+		mcpSrv.AddTools(serverTools...)
 	}
 
 	// Create streamable HTTP server with options

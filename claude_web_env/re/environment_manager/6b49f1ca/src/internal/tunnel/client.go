@@ -341,12 +341,10 @@ func (c *Client) handleHTTPRequest(ctx context.Context, httpReq *tunnelpb.Tunnel
 		path := req.GetPath()
 		if len(path) >= 11 && path[:11] == "/__actions/" {
 			// Dispatch to action registry
-			// Convert headers from map[string][]string to map[string]string
+			// Convert repeated Header messages to map[string]string
 			headers := make(map[string]string)
-			for k, v := range req.GetHeaders() {
-				if len(v) > 0 {
-					headers[k] = v[0]
-				}
+			for _, h := range req.GetHeaders() {
+				headers[h.GetName()] = h.GetValue()
 			}
 			c.registry.Execute(
 				ctx,

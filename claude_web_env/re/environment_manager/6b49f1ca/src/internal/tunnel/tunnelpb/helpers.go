@@ -146,7 +146,7 @@ func convertHeadersToMap(headers []*Header) map[string][]string {
 	result := make(map[string][]string)
 	for _, h := range headers {
 		if h != nil {
-			result[h.Key] = append(result[h.Key], h.Value)
+			result[h.Name] = append(result[h.Name], h.Value)
 		}
 	}
 	return result
