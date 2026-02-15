@@ -1,41 +1,25 @@
 ---
 name: reverse_engineer
-description: Reverse-engineer a compiled binary (full reconstruction) or extract protocol/API specifications from specific components (focused analysis). Systematic binary-first reconstruction with differential verification.
+description: Systematic binary reverse engineering toolkit. Extract source code, understand functions, document protocols, compare versions. Uses strings, symbols, disassembly, and differential verification.
 argument-hint: "<path/to/binary> [language]"
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task, WebFetch
 ---
 
-# Reverse Engineer Binary to Source
+# Reverse Engineering Toolkit
 
-Reconstruct a compiled binary into fully equivalent, compilable source code, OR
-extract protocol/API specifications from specific components within a larger binary.
+Comprehensive guide for reverse engineering binaries. Choose the appropriate techniques based on what the user needs:
 
-**Argument:** `$ARGUMENTS` — path to the binary (or `.gz`-compressed binary),
-and optionally the target language (auto-detected if omitted).
+- **Full reconstruction:** Complete, compilable source code
+- **Function analysis:** Understand how specific parts work
+- **Protocol documentation:** API specs and wire formats
+- **Version comparison:** What changed between releases
+- **Deepening existing RE:** Fill gaps in partial reconstructions
 
-**The binary is ground truth.** Your opinions about how code "should" look are
-irrelevant when they contradict evidence from the binary. Every decision must be
-traceable to binary evidence.
+**Argument:** `$ARGUMENTS` — path to the binary (or `.gz`-compressed binary), and optionally the target language (auto-detected if omitted).
 
-## Mode Selection
+**The binary is ground truth.** Every decision must be traceable to binary evidence—strings, symbols, disassembly, or runtime behavior. Your opinions about how code "should" look are irrelevant when they contradict what's in the binary.
 
-Choose based on the user's request:
-
-**Full Binary Reconstruction** → Use when the user wants:
-
-- Compilable source code
-- Complete implementation reconstruction
-- Verification via differential testing
-
-**Focused/Partial Analysis** → Use when the user wants:
-
-- Understand how a specific function/module works
-- Document an API/protocol from a component
-- Explain what changed between binary versions
-- Deepen existing reverse engineering
-- Answer "how does it do X?" questions
-
-For focused analysis, skip to [Phase 0.5: Focused Analysis](#phase-05-focused-analysis).
+**Approach:** Start with Phase 1 (census) for context, then select techniques from subsequent phases based on scope. For full reconstruction, work through all phases. For focused tasks (single function, protocol docs, etc.), use Phase 0.5 techniques to zero in on the target.
 
 ---
 
@@ -63,14 +47,17 @@ BINARY="/tmp/target_binary"
 # gzip -dk path/to/binary.gz -c > "$BINARY" && chmod +x "$BINARY"
 ```
 
-## Phase 0.5: Focused Analysis
+## Phase 0.5: Focused Analysis Techniques
 
-**Use this phase for targeted reverse engineering tasks** on specific parts of a binary, rather than reconstructing the entire source. Common use cases:
+Techniques for targeted reverse engineering when you need to understand or document specific parts of a binary without full reconstruction. Use these when the task is scoped to:
 
-- **Understand a specific function:** "How does `validate_signature` work?"
-- **Document an API/protocol:** "Extract the session ingress API specification"
-- **Compare versions:** "What changed in the auth logic between v1.2 and v1.3?"
-- **Deepen existing RE:** "We have partial RE, but need details on the crypto module"
+- Understanding how a specific function works
+- Documenting an API/protocol from a component
+- Comparing what changed between binary versions
+- Deepening partial/existing reverse engineering
+- Answering "how does it do X?" questions
+
+These techniques complement the full reconstruction workflow—use them to zoom in on specific areas.
 
 ### 0.5.1 Identify target symbols/functions
 
