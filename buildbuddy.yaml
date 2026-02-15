@@ -15,6 +15,9 @@ actions:
           - devel
       pull_request: {}
 
+    # Use Ubuntu 24.04 for glibc 2.39 (Node.js 22.11.0 requires glibc 2.28+)
+    container_image: "ubuntu-24.04"
+
     # Bazel commands run sequentially. Each uses RBE via setup-buildbuddy.sh config.
     bazel_commands:
       # 1. Run all tests (excluding live OpenAI API tests)
@@ -49,6 +52,8 @@ actions:
           - devel
       workflow_dispatch: {}
 
+    container_image: "ubuntu-24.04"
+
     bazel_commands:
       # Build all wheel targets for potential release
       # These are built but not published (GitHub Actions handles publishing)
@@ -65,6 +70,8 @@ actions:
           - main
           - devel
       workflow_dispatch: {}
+
+    container_image: "ubuntu-24.04"
 
     bazel_commands:
       # Build OCI images for potential release
