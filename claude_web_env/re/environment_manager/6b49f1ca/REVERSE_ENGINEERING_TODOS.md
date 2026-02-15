@@ -8,12 +8,6 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 
 ### Medium Priority - Configuration Wiring
 
-**`inputFormatChanged` flag** (`cmd/cmd_task_run.go:104`)
-
-- Complex conditional at 0xb78d20-0xb78ddb
-- Sets default value of 4 when flag set and some field empty
-- Binary works without it
-
 **Poll command flags** (`cmd/cmd_poll.go`)
 
 - `identity` (L102) - should update sessionID/workID from GetIdentity response
@@ -25,30 +19,30 @@ Binary: `/tmp/em-re/environment-manager` (Build ID: 6b49f1ca, Go 1.25.6)
 - Returned from initDiagLogging but not used
 - Likely sets global singleton - verify if intentional
 
-### Low Priority - Type Recovery
-
-**Manager structure** (`internal/manager/manager.go:37-40`)
-
-- `Config interface{}` should be concrete type
-- Missing field at offset 0x00 (likely environment type/context)
+### Low Priority - Implementation Details
 
 **Claude Executor** (`internal/claude/claude_code_executor.go:336-337`)
 
 - Pipe cleanup closures not reconstructed
-
-**Session Ingress** (`internal/api/session_ingress_client.go:114`)
-
-- OTel propagator injection call not reconstructed
+- Binary has deferred cleanup functions for stdout/stderr pipes
 
 **DataDog metrics** (`internal/dogmetrics/dogmetrics.go`)
 
 - Entire package stubbed
 - `IncrementCounter()` does nothing
-- May be intentionally disabled
+- May be intentionally disabled (possibly replaced by OpenTelemetry)
 
 **Git activity** (`internal/sources/git.go`)
 
-- `activityMsg` variables not sent to activityRecorder
+- `activityMsg` variables logged but not sent to activityRecorder
+- May be intentional (activity recording might be done elsewhere)
+
+## Recently Completed (2024-02-15)
+
+- ✅ **inputFormatChanged logic** - Fully reconstructed conditional at 0xb78d20-0xb78d88
+- ✅ **Manager.Ctx field** - Added context.Context at offset 0x00
+- ✅ **OTel propagator injection** - Implemented `otel.GetTextMapPropagator().Inject()`
+- ✅ **Manager.Config** - Verified as interface{} (holds either envtype.EnvironmentType or stdinConfigClient)
 
 ## Build Command
 
