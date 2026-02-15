@@ -45,17 +45,10 @@ const maxLogEntries = 5000
 // Binary: 0x12a05f200 nanoseconds = 5 seconds
 const flushInterval = 5 * time.Second
 
-// DiagLogEntry represents a single diagnostic log entry with a timestamp
-// and arbitrary fields.
-type DiagLogEntry struct {
-	Timestamp time.Time
-	Fields    map[string]interface{}
-}
-
 // LogFlusher is the interface for flushing diagnostic logs to a remote endpoint.
 // Binary itab: go:itab.*SessionIngressLogFlusher,LogFlusher at 0xf5a1e0
 type LogFlusher interface {
-	Flush(ctx context.Context, sessionID string, logs []DiagLogEntry) error
+	Flush(ctx context.Context, sessionID string, logs []api.DiagLogEntry) error
 }
 
 // SessionIngressLogFlusher flushes diagnostic logs via the session ingress
@@ -73,7 +66,7 @@ type SessionIngressLogFlusher struct {
 // the session ingress client's PostForwardDiagLogs method.
 //
 // Binary address: 0x835fc0
-func (f *SessionIngressLogFlusher) Flush(ctx context.Context, sessionID string, logs []DiagLogEntry) error {
+func (f *SessionIngressLogFlusher) Flush(ctx context.Context, sessionID string, logs []api.DiagLogEntry) error {
 	err := f.Client.PostForwardDiagLogs(ctx, f.SessionID, logs)
 	if err != nil {
 		return fmt.Errorf("Failed to write diag log entry: %w", err)
@@ -98,7 +91,7 @@ type DiagService struct {
 	envManagerLogFile *os.File
 	ccDiagLogFile     *os.File
 	ccLogCollector    *ccLogCollector
-	envManagerLogs    []DiagLogEntry
+	envManagerLogs    []api.DiagLogEntry
 	logFlusherCtx     context.Context
 	logFlusher        LogFlusher
 	stopCh            chan struct{}
@@ -323,7 +316,7 @@ func (d *DiagService) logEnvManagerNoPII(ctx context.Context, event string, data
 		return
 	}
 
-	entry := DiagLogEntry{
+	entry := api.DiagLogEntry{
 		Timestamp: time.Now(),
 		Fields: map[string]interface{}{
 			"source":  "env-manager",
@@ -343,7 +336,7 @@ func (d *DiagService) logEnvManagerNoPII(ctx context.Context, event string, data
 // buffer, and returns the old entries.
 //
 // Binary address: 0x835ac0
-func (d *DiagService) drainEnvManagerLogs() ([]DiagLogEntry, int, int) {
+func (d *DiagService) drainEnvManagerLogs() ([]api.DiagLogEntry, int, int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -360,7 +353,7 @@ func (d *DiagService) drainEnvManagerLogs() ([]DiagLogEntry, int, int) {
 // maxLogEntries, sorts by timestamp, and returns the merged result.
 //
 // Binary address: 0x835920
-func (d *DiagService) collectAndMergeLogs(existing []DiagLogEntry, _ interface{}, _ interface{}) []DiagLogEntry {
+func (d *DiagService) collectAndMergeLogs(existing []api.DiagLogEntry, _ interface{}, _ interface{}) []api.DiagLogEntry {
 	// Drain env-manager logs
 	emLogs, _, _ := d.drainEnvManagerLogs()
 
@@ -374,7 +367,7 @@ func (d *DiagService) collectAndMergeLogs(existing []DiagLogEntry, _ interface{}
 	existing = appendAndCapLogs(existing, ccLogs)
 
 	// Sort by timestamp
-	slices.SortFunc(existing, func(a, b DiagLogEntry) int {
+	slices.SortFunc(existing, func(a, b api.DiagLogEntry) int {
 		return a.Timestamp.Compare(b.Timestamp)
 	})
 
@@ -386,7 +379,7 @@ func (d *DiagService) collectAndMergeLogs(existing []DiagLogEntry, _ interface{}
 // with the number of dropped entries.
 //
 // Binary address: 0x835c60
-func appendAndCapLogs(existing []DiagLogEntry, new []DiagLogEntry) []DiagLogEntry {
+func appendAndCapLogs(existing []api.DiagLogEntry, new []api.DiagLogEntry) []api.DiagLogEntry {
 	existing = append(existing, new...)
 
 	if len(existing) > maxLogEntries {
@@ -409,7 +402,7 @@ func (d *DiagService) flushPeriodically(ctx context.Context, sessionID string) {
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 
-	var accumulated []DiagLogEntry
+	var accumulated []api.DiagLogEntry
 
 	for {
 		select {
@@ -442,7 +435,7 @@ func (d *DiagService) flushPeriodically(ctx context.Context, sessionID string) {
 // via the LogFlusher. Returns nil if no logs to flush or no flusher configured.
 //
 // Binary address: 0x835ee0
-func (d *DiagService) flushDiagLogsToRemote(sessionID string, logs []DiagLogEntry) error {
+func (d *DiagService) flushDiagLogsToRemote(sessionID string, logs []api.DiagLogEntry) error {
 	if len(logs) == 0 {
 		return nil
 	}

@@ -8,14 +8,19 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y/diag"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions"
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions/deploy"
 )
 
 // TunnelClient is an interface for tunnel client creation.
@@ -27,15 +32,22 @@ type TunnelClient interface {
 
 // Manager orchestrates environment setup: tunnel registration, MCP server
 // registration, git signing configuration, and environment initialization.
+//
+// Binary struct layout:
+//   Offset 0x00: Ctx context.Context (interface, 16 bytes)
+//   Offset 0x10: Logger *slog.Logger (pointer, 8 bytes)
+//   Offset 0x18: Config interface{} (can be envtype.EnvironmentType or api.Client, 16 bytes)
+//   Offset 0x28: TunnelInfo *TunnelInfo
+//   Offset 0x48: tunnelClient (may be nil, checked at runtime)
 type Manager struct {
-	// Offset 0x00: context or API client (interface pair)
-	// Offset 0x10: logger *slog.Logger
-	// Offset 0x18: session config / environment config client (interface pair)
-	// Offset 0x28: ...
-	// Offset 0x48: tunnelClient (may be nil, checked at runtime)
-	Logger     *slog.Logger
-	Config     interface{} // TODO(re): concrete type not recovered — likely environment config client interface
-	TunnelInfo *TunnelInfo
+	Ctx           context.Context // Context for manager operations
+	Logger        *slog.Logger    // Structured logger
+	Config        interface{}     // Environment config (envtype.EnvironmentType or stdinConfigClient)
+	TunnelInfo    *TunnelInfo     // Tunnel registration info
+	SessionID     string          // Session identifier
+	APIBaseURL    string          // Base URL for API calls
+	SessionConfig interface{}     // Session config passed to tunnel client
+	SessionMode   string          // Session mode (e.g., "new", "resume")
 }
 
 // TunnelInfo holds tunnel client data used during registration.
@@ -76,7 +88,8 @@ func (m *Manager) Run(ctx context.Context, logger *slog.Logger) error {
 	// Binary: call at ~0xb6a600+ to createTunnelClient
 	m.createTunnelClient(ctx, logger)
 
-	_ = startTime // TODO(re): should compute elapsed for o11y metric recording
+	elapsed := time.Since(startTime)
+	o11y.RecordDuration("env_manager.manager_run.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 	return nil
 }
 
@@ -127,10 +140,20 @@ func (m *Manager) configureEnvironment(ctx context.Context, logger *slog.Logger)
 	)
 
 	// Step 4: Set session mode if supported
-	// Binary: typeAssert.6 dispatch
-	m.Logger.Info("Set session mode for environment",
-		"session_id", "",
-	)
+	// Binary: typeAssert.6 dispatch at 0xb6e983
+	if m.Config != nil && m.SessionMode != "" {
+		// Type assert to EnvironmentType interface to call SetSessionMode
+		if envType, ok := m.Config.(envtype.EnvironmentType); ok {
+			// Parse session mode string to config.SessionMode type
+			sessionMode := config.SessionMode(m.SessionMode)
+			envType.SetSessionMode(sessionMode)
+
+			m.Logger.Info("Set session mode for environment",
+				"session_id", m.SessionID,
+				"session_mode", m.SessionMode,
+			)
+		}
+	}
 
 	// Step 5: Configure git signing (unless local testing mode)
 	// Binary: checks offset 0x48 -> 0x58 of Manager struct for bool flag
@@ -429,23 +452,75 @@ func (m *Manager) addOfficialPluginMarketplaceAsync(ctx context.Context, logger 
 //   SI = tunnel info interface data
 //   R8 = session config pointer
 func (m *Manager) createTunnelClient(ctx context.Context, logger *slog.Logger) {
-	// TODO(re): function body is a stub — only logs. Should parse API URL, convert http→ws/https→wss,
-	// check env sub type for "baku", create action registry with DeployAction, and call NewTunnelClient.
-	// Binary: 0xb6dae0-0xb6e028 (~1.3KB of machine code).
-
 	// Parse API base URL and convert scheme for WebSocket
 	// Binary: 0xb6db2b net/url.Parse
-	// "http" -> "ws", "https" -> "wss"
+	parsedURL, err := url.Parse(m.APIBaseURL)
+	if err != nil {
+		m.Logger.Error("failed to parse API base URL", "error", err)
+		return
+	}
 
-	// Check environment sub type for "baku" (0xb6dc26)
-	// If not "baku", log warning about deploy being unavailable
+	// Convert http→ws or https→wss
+	// Binary: 0xb6db91-0xdbfe — scheme comparison and replacement
+	switch parsedURL.Scheme {
+	case "http": // 4 bytes: 0x70747468
+		parsedURL.Scheme = "ws" // 2 bytes
+	case "https": // 5 bytes: "http" + 's'
+		parsedURL.Scheme = "wss" // 3 bytes
+	}
 
-	// If "baku":
-	// - Create action registry
-	// - Register DeployAction ("anthropic" name, length 10)
-	// - Create tunnel client with registry
+	// Check environment sub type for "baku"
+	// Binary: 0xb6dc26 — comparison with 0x756b6162 ("baku")
+	envSubType := m.GetEnvironmentSubType()
+	hasTunnelInfo := m.TunnelInfo != nil
 
-	m.Logger.Info("creating tunnel client")
+	// If environment sub type is "baku" and tunnel info exists, create tunnel client
+	// Binary: 0xb6dc35-0xb6dd6a
+	if envSubType == "baku" && hasTunnelInfo {
+		// Create action registry with two maps (runtime.makemap_small at 0xb6dc43, 0xb6dc50)
+		registry := actions.NewRegistry(logger)
+
+		// Create DeployAction with token and teamID from session config
+		// Binary: 0xb6dc64 newobject, 0xb6dd00 second newobject for DeployAction
+		deployAction := &deploy.DeployAction{
+			Token:  m.GetVercelToken(),
+			TeamID: m.GetVercelTeamID(),
+		}
+
+		// Register DeployAction with name "anthropic" (length 10, at 0xb6dd48)
+		// Binary: 0xb6dd65 call to Registry.Register
+		registry.Register(deployAction)
+
+		// Create tunnel client via factory
+		// Binary: 0xb6dfc0-0xb6e018 — URL.String(), NewTunnelClient call
+		tunnelEndpoint := parsedURL.String()
+		NewTunnelClient(
+			logger,              // [0]
+			ctx,                 // [1]
+			m.SessionID,         // [2]
+			m.APIBaseURL,        // [3]
+			tunnelEndpoint,      // [4]
+			m.SessionConfig,     // [5]
+			m.GetAuthToken(),    // [6]
+			registry,            // [7]
+		)
+
+		// Log success
+		// Binary: 0xb6dfa0 log call with level 0 (INFO), message "control_plane_enabled" (21 bytes)
+		m.Logger.Info("control_plane_enabled",
+			"session_id", m.SessionID,
+			"tunnel.endpoint", tunnelEndpoint,
+		)
+		return
+	}
+
+	// Log warning if deploy is unavailable (not "baku" or no tunnel info)
+	// Binary: 0xb6de60 log call with level 4 (WARN), message "control_plane_deploy_unavailable" (32 bytes)
+	m.Logger.Warn("control_plane_deploy_unavailable",
+		"session_id", m.SessionID,
+		"environment_sub_type", envSubType,
+		"has_tunnel_info", hasTunnelInfo,
+	)
 }
 
 // registerMCPServersAsync wraps registerMCPServers for goroutine execution.
@@ -464,9 +539,59 @@ func (m *Manager) registerMCPServersAsync(ctx context.Context, logger *slog.Logg
 	m.Logger.Info("registering MCP servers async")
 
 	registeredServers, errors := m.registerMCPServers(ctx, logger)
-	_ = registeredServers // TODO(re): should be logged/used — contains list of registered MCP server names
-	_ = errors // TODO(re): should be checked/logged — contains registration errors
+
+	// Log registration results
+	if len(registeredServers) > 0 {
+		m.Logger.Info("MCP servers registered successfully",
+			"count", len(registeredServers),
+			"servers", registeredServers,
+		)
+	}
+
+	// Log any registration errors
+	if len(errors) > 0 {
+		m.Logger.Warn("MCP server registration errors",
+			"error_count", len(errors),
+			"errors", errors,
+		)
+	}
 
 	elapsed := time.Since(startTime)
-	m.Logger.Info("MCP server registration complete", "duration_ms", elapsed.Milliseconds())
+	m.Logger.Info("MCP server registration complete",
+		"duration_ms", elapsed.Milliseconds(),
+		"successful", len(registeredServers),
+		"failed", len(errors),
+	)
+}
+// Helper methods to extract configuration values from the Config interface.
+// These use type assertions to access fields from the environment config.
+// Binary: Config interface is accessed via struct field reads in createTunnelClient.
+
+// GetEnvironmentSubType extracts the SubType field from the environment config.
+// Binary: 0xb6dc09-0xb6dc26 — reads Config.SubType and compares with "baku"
+func (m *Manager) GetEnvironmentSubType() string {
+	// TODO(re): Type assert to concrete config type and extract SubType field
+	// For now, return empty string to prevent panics
+	return ""
+}
+
+// GetVercelToken extracts the Vercel deploy token from session config.
+// Binary: Referenced in DeployAction creation at 0xb6dd00+
+func (m *Manager) GetVercelToken() string {
+	// TODO(re): Type assert SessionConfig and extract Vercel token
+	return ""
+}
+
+// GetVercelTeamID extracts the Vercel team ID from session config.
+// Binary: Referenced in DeployAction creation at 0xb6dd00+
+func (m *Manager) GetVercelTeamID() string {
+	// TODO(re): Type assert SessionConfig and extract Vercel team ID
+	return ""
+}
+
+// GetAuthToken extracts the authentication token for tunnel connection.
+// Binary: Passed to NewTunnelClient at 0xb6dffd (register R8)
+func (m *Manager) GetAuthToken() string {
+	// TODO(re): Type assert SessionConfig and extract auth token
+	return ""
 }

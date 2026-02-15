@@ -123,10 +123,17 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 				"identity", identity,
 			)
 
-			// Step 7: Create poll hook and poller.
+			// Step 7: Create poller (either PollHook or regular Poller).
 			// Binary: 0xb7470a NewPollHook, 0xb7476c NewPollerWithWorkerID
-			_ = orchestrator.NewPollHook(nil, hookCommand, hookTimeout, nil, sandboxEnabled, sandboxBackend, nil, log) // TODO(re): PollHook created but result discarded — should be passed to orchestrator
-			poller := orchestrator.NewPollerWithWorkerID(apiURL, sessionID, secret, secretPath, workID, log)
+			// If hookCommand is set, use PollHook; otherwise use regular Poller
+			var poller orchestrator.PollerInterface
+			if hookCommand != "" {
+				// Create PollHook when hook command is specified
+				poller = orchestrator.NewPollHook(nil, hookCommand, hookTimeout, nil, sandboxEnabled, sandboxBackend, nil, log)
+			} else {
+				// Create regular Poller when no hook command
+				poller = orchestrator.NewPollerWithWorkerID(apiURL, sessionID, secret, secretPath, workID, log)
+			}
 
 			// Step 8: Install sandbox runtime if configured.
 			// Binary: 0xb74ac0 os.Getenv, 0xb74af0 InstallSandboxRuntime

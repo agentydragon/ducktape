@@ -88,8 +88,7 @@ func (s *BaseServer) GetName() (string, int) {
 //   XOR BX, BX
 //   MOV BX, CX
 //   RET
-// TODO(re): return type should be ([]mcpserver.ServerTool, int, int) or similar — interface{} is a placeholder
-func (s *BaseServer) GetTools() (interface{}, int, int) {
+func (s *BaseServer) GetTools() ([]mcpserver.ServerTool, int, int) {
 	return nil, 0, 0
 }
 
@@ -139,8 +138,11 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 	// Create MCP server
 	mcpSrv := mcpserver.NewMCPServer(s.name, s.version)
 
-	// TODO(re): tool registration is stubbed — should call s.GetTools() and mcpSrv.AddTools(tools...)
-	_ = mcpSrv
+	// Register tools with the MCP server
+	tools, _, _ := s.GetTools()
+	if len(tools) > 0 {
+		mcpSrv.AddTools(tools...)
+	}
 
 	// Create streamable HTTP server with options
 	opts := []mcpserver.StreamableHTTPOption{
@@ -187,15 +189,38 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 		"port", s.port,
 	)
 
+	// Create HTTP server with the streamable handler
+	s.httpServer = &http.Server{
+		Handler: streamable,
+	}
+
 	// Start serving in background goroutine (func1 at 0xad13e0)
 	s.stopCh = make(chan struct{})
 	go func() {
-		// TODO(re): stub — should call s.httpServer.Serve(listener) and handle errors
+		if err := s.httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+			logger.Error("MCP HTTP server error",
+				"error", err,
+				"server", s.name,
+			)
+		}
 	}()
 
 	// Start heartbeat goroutine (func2 at 0xad0d00)
 	go func() {
-		// TODO(re): stub — heartbeat loop body not reconstructed (binary func2 at 0xad0d00, ~1.5KB)
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-s.stopCh:
+				return
+			case <-ticker.C:
+				logger.Debug("MCP server heartbeat",
+					"server", s.name,
+					"port", s.port,
+				)
+			}
+		}
 	}()
 
 	return s.port, nil

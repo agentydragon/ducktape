@@ -171,7 +171,6 @@ func (h *GitHandler) CanHandle(source config.Source) bool {
 func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source config.Source) error {
 	// Binary 0xaea783: time.Now()
 	startTime := time.Now()
-	_ = startTime // TODO(re): should compute elapsed for o11y/diag metrics
 
 	// Binary 0xaea790-0xaea7c2: type assertion to GitRepositorySource
 	gitSource, ok := source.(config.GitRepositorySource)
@@ -274,8 +273,8 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 
 	// Binary 0xaeabee-0xaeac15: o11y.RecordFunctionDeferred(ctx, o11y.GitCheckoutMetric, ...)
 	// AX=ctx.itab, BX=ctx.data, CX=GitCheckoutMetric, DI=resultObj, SI=nil, R8=nil, R9=nil
-	deferredMetric := o11y.RecordFunctionDeferred(ctx, o11y.GitCheckoutMetric, nil, nil)
-	defer deferredMetric()
+	deferredMetric := o11y.RecordFunctionDeferred("git_checkout", nil, nil, startTime, nil)
+	defer deferredMetric(nil, nil)
 
 	// Binary 0xaeb56e-0xaeb5b4: getAuthenticatedURL
 	// Passes ctx, repoURL, authProvider, permission="read"
@@ -311,7 +310,10 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 		"duration_ms", time.Since(startTime).Milliseconds(),
 	)
 
-	_ = activityMsg // TODO(re): should be sent to activityRecorder
+	// Note: activityMsg is constructed and logged but not sent to activityRecorder.
+	// Binary analysis shows no interface method calls on h.activityRecorder (offset 0x48)
+	// in this function - the field is stored but never accessed. This matches the binary.
+	_ = activityMsg
 	return nil
 }
 
@@ -376,6 +378,8 @@ func (h *GitHandler) ValidateRepositoryAccess(
 				logger.Info("Git proxy validation succeeded")
 			}
 			logger.Info("Repository access validated successfully")
+			elapsed := time.Since(startTime)
+			o11y.RecordDuration("env_manager.git_validation.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 			return nil
 		}
 
@@ -396,7 +400,8 @@ func (h *GitHandler) ValidateRepositoryAccess(
 	// Binary: diag.LogEnvManagerNoPII(ctx, "repository_access_validation_failed", nil)
 	diag.LogEnvManagerNoPII(ctx, "repository_access_validation_failed", nil)
 
-	_ = startTime // TODO(re): should compute elapsed for o11y metric
+	elapsed := time.Since(startTime)
+	o11y.RecordDuration("env_manager.git_validation.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 	return fmt.Errorf("git proxy validation failed after %d attempts: %w", 3, lastErr)
 }
 
@@ -561,7 +566,7 @@ func (h *GitHandler) cloneRepository(
 
 	// Binary: check source.GitInfo.Ref for post-fetch BYOC branch setup
 	if source.GitInfo.Ref != nil && *source.GitInfo.Ref != "" {
-		branch := *source.GitInfo.Ref
+		_ = *source.GitInfo.Ref
 
 		// Check if processMode is "allow-prefetched" for BYOC logic
 		if processMode == "allow-prefetched" && isCustomURL {
@@ -702,6 +707,8 @@ func (h *GitHandler) runGitFetchWithRetry(
 					"attempts", attempt+1,
 				)
 			}
+			elapsed := time.Since(startTime)
+			o11y.RecordDuration("env_manager.git_fetch.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 			return output, nil
 		}
 
@@ -715,7 +722,7 @@ func (h *GitHandler) runGitFetchWithRetry(
 	}
 
 	elapsed := time.Since(startTime)
-	_ = elapsed // TODO(re): should be recorded as o11y metric
+	o11y.RecordDuration("env_manager.git_fetch.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 
 	logger.Error("Git fetch failed after all retries",
 		"error", lastErr,

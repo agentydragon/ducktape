@@ -99,10 +99,11 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			os.Setenv("CLAUDE_CODE_SESSION_ID", sessionID)
 			os.Setenv("CLAUDE_CODE_BASE_REF", "")
 
-			// 0xb78d20-0xb78d31: Check if --input-format flag was changed
+			// 0xb78d20-0xb78d88: Handle --input-format flag changes
+			// If the flag was explicitly set AND environment config is empty AND stdin=false,
+			// set a default environment config of []byte("skip")
 			flags := cmd.Flags()
 			inputFormatChanged := flags.Changed("input-format")
-			_ = inputFormatChanged // TODO(re): should gate input format behavior
 
 			// 0xb78d8a-0xb78da0: Validate mutually exclusive flags
 			// "--upgrade-claude-code and --claude-agent-version are mutually exclusive"
@@ -137,11 +138,6 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			if err != nil {
 				return fmt.Errorf("failed to parse session mode: %w", err)
 			}
-			_ = sessionMode // TODO(re): should be passed to session/manager config
-
-			// 0xb78fb6-0xb78fc7: Check if --input-format flag was explicitly set
-			inputFormatFlags := cmd.Flags()
-			_ = inputFormatFlags.Changed("input-format") // TODO(re): duplicate check — reconcile with inputFormatChanged above
 
 			// 0xb78fd0: Record stdin read start time
 			stdinStartTime := time.Now()
@@ -160,6 +156,15 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb794c0: Log "Loaded context from stdin"
 			slogger.Info("Loaded context from stdin")
+
+			// 0xb78d20-0xb78d88: Apply input-format default behavior
+			// If --input-format was explicitly set and environment config is empty
+			// and stdin mode is disabled, set default environment config to "skip"
+			if inputFormatChanged && parsedCtx != nil {
+				if len(parsedCtx.EnvironmentConfig) == 0 && !stdin {
+					parsedCtx.EnvironmentConfig = json.RawMessage([]byte("skip"))
+				}
+			}
 
 			// 0xb794cc: Create session from parsed context
 			sess := &config.Session{}
@@ -195,15 +200,29 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb79260: Measure stdin parse duration
 			stdinParseDuration := time.Since(stdinStartTime)
-			_ = stdinParseDuration // TODO(re): should be logged or recorded as o11y metric
+			o11y.RecordDuration("env_manager.stdin_parse.duration_ms", nil, nil, float64(stdinParseDuration.Milliseconds()))
 
-			// 0xb79583: Create activity recorder
-			activityRecorder := session.NewActivityRecorder(nil, slogger, sessionID)
-			_ = activityRecorder // TODO(re): should be passed to manager/environment setup
+			// 0xb79583: Create HTTP client for session ingress and activity recorder
+			var activityRecorder session.ActivityRecorder
+			if parsedCtx != nil && parsedCtx.AuthContext != nil {
+				sessionIngressToken := parsedCtx.AuthContext.GetSessionIngressToken()
+				if sessionIngressToken != "" {
+					httpClient := api.NewHttpClient(apiURL)
+					ingressClient := &api.HttpSessionIngressClient{
+						Client: httpClient,
+						ApiKey: sessionIngressToken,
+						Logger: slogger,
+					}
+					activityRecorder = session.NewActivityRecorder(ingressClient, slogger, sessionID)
+				}
+			}
+			if activityRecorder == nil {
+				// Create noop activity recorder if no session ingress token
+				activityRecorder = &session.NoopActivityRecorder{}
+			}
 
-			// 0xb795a0: Get SKIP_GIT_CONFIG env var
-			skipGitConfig := os.Getenv("SKIP_GIT_CONFIG")
-			_ = skipGitConfig // TODO(re): should be passed to environment config or set as env var
+			// Note: SKIP_GIT_CONFIG env var is checked directly in setupGitConfig() and configureGitSigning()
+			// No need to read it here.
 
 			// 0xb79654-0xb79672: Log custom executable path if set
 			if scriptPath != "" {
@@ -222,7 +241,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				_, err = claude.InstallOrUpdateClaudeCode(slogger, installCtx, "", "", nil, nil)
 				installCancel()
 				installDuration := time.Since(installStart)
-				_ = installDuration // TODO(re): should be logged or recorded as o11y metric
+				o11y.RecordDuration("env_manager.claude_code_install.duration_ms", nil, nil, float64(installDuration.Milliseconds()))
 
 				if err != nil {
 					return fmt.Errorf("failed to ensure Claude Code is available: %w", err)
@@ -249,14 +268,19 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb79996: Get OTEL endpoint from env (for telemetry)
 			otelEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-			_ = otelEndpoint // TODO(re): should be passed to o11y.NewO11yService config
 
-			// 0xb79a5a: Initialize observability service
-			o11yService, err := o11y.NewO11yService(context.Background(), nil)
+			// 0xb79a5a: Initialize observability service with OTEL endpoint
+			var o11yConfig *o11y.O11yConfig
+			if otelEndpoint != "" {
+				o11yConfig = &o11y.O11yConfig{
+					Endpoint: otelEndpoint,
+				}
+			}
+			o11yService, err := o11y.NewO11yService(context.Background(), o11yConfig)
 			if err != nil {
 				return fmt.Errorf("failed to initialize observability service: %w", err)
 			}
-			_ = o11yService // TODO(re): should be wired into manager/diagnostics
+			_ = o11yService // Already wired via singleton - accessed via o11y.GetO11yService()
 
 			// 0xb79bc0: Increment start counter
 			o11y.Increment(context.Background(), nil, nil)
@@ -289,7 +313,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				slogger.Info("Running healthcheck")
 				slogger.Info("Executing healthcheck")
 				healthcheckDuration := time.Since(startTime)
-				_ = healthcheckDuration // TODO(re): should be logged or recorded as metric
+				o11y.RecordDuration("env_manager.healthcheck.duration_ms", nil, nil, float64(healthcheckDuration.Milliseconds()))
 				slogger.Info("Healthcheck completed successfully",
 					"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 				)
@@ -315,14 +339,15 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// Build stdinConfigClient for the manager
 			stdinClient := &stdinConfigClient{
-				parsedCtx: parsedCtx,
+				parsedCtx:        parsedCtx,
+				activityRecorder: activityRecorder,
 			}
 
 			// 0xb7a761-0xb7a7a0: Compute durations
 			totalParseTime := time.Since(stdinStartTime)
-			_ = totalParseTime // TODO(re): should be logged or recorded as o11y metric
+			o11y.RecordDuration("env_manager.total_parse.duration_ms", nil, nil, float64(totalParseTime.Milliseconds()))
 			totalSetupTime := time.Since(startTime)
-			_ = totalSetupTime // TODO(re): should be logged or recorded as o11y metric
+			o11y.RecordDuration("env_manager.total_setup.duration_ms", nil, nil, float64(totalSetupTime.Milliseconds()))
 
 			// 0xb7a881-0xb7a8a0: Log "Setup completed, starting manager execution"
 			slogger.Info("Setup completed, starting manager execution",
@@ -331,13 +356,18 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb7a8c0: Run the manager
 			mgr := &manager.Manager{
-				Logger: slogger,
-				Config: stdinClient,
+				Ctx:           context.Background(),
+				Logger:        slogger,
+				Config:        stdinClient,
+				SessionID:     sessionID,
+				APIBaseURL:    apiURL,
+				SessionConfig: parsedCtx,
+				SessionMode:   string(sessionMode),
 			}
 			managerErr := mgr.Run(context.Background(), slogger)
 
 			managerDuration := time.Since(startTime)
-			_ = managerDuration // TODO(re): should be logged or recorded as o11y metric
+			o11y.RecordDuration("env_manager.manager_run.duration_ms", nil, nil, float64(managerDuration.Milliseconds()))
 
 			if managerErr != nil {
 				// 0xb7a9d9-0xb7aaa7: Manager execution failed
@@ -357,6 +387,38 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			slogger.Info("Environment manager completed successfully",
 				"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 			)
+
+			// 0xb7af60-0xb7b000: Create and execute Claude Code executor
+			// Binary: func1.3 closure creates ClaudeCodeExecutor via NewClaudeCodeExecutor
+			// and calls Execute() via interface dispatch at 0xb7b1a6
+			slogger.Info("Creating Claude Code executor")
+
+			// Create outcomes tracker for executor
+			outcomes := claude.NewOutcomes()
+
+			// Create Claude Code executor
+			// Binary: NewClaudeCodeExecutor call at 0xb7b000
+			// TODO(re): config parameter should be *config.ClaudeConfig, but that type
+			// hasn't been fully reconstructed yet. Using parsedCtx.StartupContext for now.
+			executor := claude.NewClaudeCodeExecutor(
+				slogger,              // logger
+				context.Background(), // ctx
+				parsedCtx.StartupContext, // config (TODO: should be *config.ClaudeConfig)
+				outcomes,             // outcomes
+				diagService,          // diagReporter
+			)
+
+			// Execute Claude Code process
+			// Binary: Execute() interface call at 0xb7b1a6
+			slogger.Info("Executing Claude Code")
+			if err := executor.Execute(context.Background()); err != nil {
+				slogger.Error("Claude Code execution failed",
+					"error", err,
+				)
+				return fmt.Errorf("Claude Code execution failed: %w", err)
+			}
+
+			slogger.Info("Claude Code execution completed successfully")
 
 			return nil
 		},
@@ -646,10 +708,11 @@ func acknowledgeWorkIfNeeded(
 //
 // Binary itab: go:itab.*cmd.stdinConfigClient,api.Client at 0xf5a240
 type stdinConfigClient struct {
-	parsedCtx  *input.ParsedContext // offset 0x00
-	authCtx    *auth.AuthContext    // offset 0x08
-	outcomes   *claude.Outcomes     // offset 0x10
-	logger     *slog.Logger         // offset 0x18
+	parsedCtx        *input.ParsedContext // offset 0x00
+	authCtx          *auth.AuthContext    // offset 0x08
+	outcomes         *claude.Outcomes     // offset 0x10
+	logger           *slog.Logger         // offset 0x18
+	activityRecorder interface{}          // offset 0x20 - session.ActivityRecorder interface
 }
 
 // GetEnvironmentForSession returns the environment configuration from the

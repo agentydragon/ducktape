@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp"
@@ -133,8 +134,8 @@ func (s *CodeSignMCPServer) Stop() bool {
 }
 
 // GetTools returns the MCP tool definitions for the codesign server.
-// The server exposes three tools: "sign_file", with input schemas for
-// file_path, description, and content_type parameters.
+// The server exposes the "sign_file" tool with input schemas for
+// file_path, source_identifier, signing_key_path, and content parameters.
 //
 // Binary address: 0xb0d060
 // Source file: server.go
@@ -159,34 +160,42 @@ func (s *CodeSignMCPServer) Stop() bool {
 //       "content"            - type: string, description: "content to sign..."
 //
 //   The "required" array at offset 0xb0d3ed (len 7) is likely ["file_path"].
-func (s *CodeSignMCPServer) GetTools() map[string]interface{} {
-	// Build input schema for sign_file tool
-	filePathProp := map[string]interface{}{
-		"type":        "string",
-		"description": "Absolute path to the file to sign",
+func (s *CodeSignMCPServer) GetTools() ([]mcpserver.ServerTool, int, int) {
+	// Build input schema properties for sign_file tool
+	properties := map[string]interface{}{
+		"file_path": map[string]interface{}{
+			"type":        "string",
+			"description": "Absolute path to the file to sign",
+		},
+		"source_identifier": map[string]interface{}{
+			"type":        "string",
+			"description": "Source identifier for the repository",
+		},
+		"signing_key_path": map[string]interface{}{
+			"type":        "string",
+			"description": "Path to the signing key file",
+		},
+		"content": map[string]interface{}{
+			"type":        "string",
+			"description": "Content to sign (if not reading from file_path)",
+		},
 	}
 
-	sourceIdentifierProp := map[string]interface{}{
-		"type":        "string",
-		"description": "Source identifier for the repository",
+	tool := mcpserver.ServerTool{
+		Tool: mcplib.Tool{
+			Name:        "sign_file",
+			Description: "Sign a file with the codesigning service",
+			InputSchema: mcplib.ToolInputSchema{
+				Type:       "object",
+				Properties: properties,
+				Required:   []string{"file_path"},
+			},
+		},
+		Handler: s.handleSignFile,
 	}
 
-	signingKeyPathProp := map[string]interface{}{
-		"type":        "string",
-		"description": "Path to the signing key file",
-	}
-
-	contentProp := map[string]interface{}{
-		"type":        "string",
-		"description": "Content to sign (if not reading from file_path)",
-	}
-
-	_ = filePathProp
-	_ = sourceIdentifierProp
-	_ = signingKeyPathProp
-	_ = contentProp
-
-	return nil
+	tools := []mcpserver.ServerTool{tool}
+	return tools, len(tools), len(tools)
 }
 
 // handleSignFile handles the "sign_file" MCP tool call. It extracts the
@@ -216,14 +225,16 @@ func (s *CodeSignMCPServer) handleSignFile(ctx context.Context, request mcplib.C
 	// Extract optional parameters from the request arguments map
 	var sourceIdentifier string
 	var signingKeyPath string
-	if args, ok := request.Params.Arguments["source_identifier"]; ok {
-		if s, ok := args.(string); ok {
-			sourceIdentifier = s
+	if argsMap, ok := request.Params.Arguments.(map[string]interface{}); ok {
+		if args, ok := argsMap["source_identifier"]; ok {
+			if s, ok := args.(string); ok {
+				sourceIdentifier = s
+			}
 		}
-	}
-	if args, ok := request.Params.Arguments["signing_key_path"]; ok {
-		if s, ok := args.(string); ok {
-			signingKeyPath = s
+		if args, ok := argsMap["signing_key_path"]; ok {
+			if s, ok := args.(string); ok {
+				signingKeyPath = s
+			}
 		}
 	}
 

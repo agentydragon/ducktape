@@ -1,21 +1,27 @@
 ---
 name: reverse_engineer
-description: Reverse-engineer a compiled binary into fully equivalent, compilable source code. Systematic binary-first reconstruction with differential verification.
+description: Systematic binary reverse engineering toolkit. Extract source code, understand functions, document protocols, compare versions. Uses strings, symbols, disassembly, and differential verification.
 argument-hint: "<path/to/binary> [language]"
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task, WebFetch
 ---
 
-# Reverse Engineer Binary to Source
+# Reverse Engineering Toolkit
 
-Reconstruct a compiled binary into fully equivalent, compilable source code in
-the specified language.
+Comprehensive guide for reverse engineering binaries. Choose the appropriate techniques based on what the user needs:
 
-**Argument:** `$ARGUMENTS` — path to the binary (or `.gz`-compressed binary),
-and optionally the target language (auto-detected if omitted).
+- **Full reconstruction:** Complete, compilable source code
+- **Function analysis:** Understand how specific parts work
+- **Protocol documentation:** API specs and wire formats
+- **Version comparison:** What changed between releases
+- **Deepening existing RE:** Fill gaps in partial reconstructions
 
-**The binary is ground truth.** Your opinions about how code "should" look are
-irrelevant when they contradict evidence from the binary. Every decision must be
-traceable to binary evidence.
+**Argument:** `$ARGUMENTS` — path to the binary (or `.gz`-compressed binary), and optionally the target language (auto-detected if omitted).
+
+**The binary is ground truth.** Every decision must be traceable to binary evidence—strings, symbols, disassembly, or runtime behavior. Your opinions about how code "should" look are irrelevant when they contradict what's in the binary.
+
+**Approach:** Start with Phase 1 (census) for context, then select techniques from subsequent phases based on scope. For full reconstruction, work through all phases. For focused tasks (single function, protocol docs, etc.), use Phase 0.5 techniques to zero in on the target.
+
+---
 
 ## Phase 0: Setup and Tool Installation
 
@@ -40,6 +46,133 @@ location first:
 BINARY="/tmp/target_binary"
 # gzip -dk path/to/binary.gz -c > "$BINARY" && chmod +x "$BINARY"
 ```
+
+## Phase 0.5: Focused Analysis Techniques
+
+Techniques for targeted reverse engineering when you need to understand or document specific parts of a binary without full reconstruction. Use these when the task is scoped to:
+
+- Understanding how a specific function works
+- Documenting an API/protocol from a component
+- Comparing what changed between binary versions
+- Deepening partial/existing reverse engineering
+- Answering "how does it do X?" questions
+
+These techniques complement the full reconstruction workflow—use them to zoom in on specific areas.
+
+### 0.5.1 Identify target symbols/functions
+
+```bash
+BINARY="/usr/local/bin/target"
+TARGET="auth"  # module, function name, or component
+
+# Find all related symbols
+nm "$BINARY" | grep -i "$TARGET" > /tmp/${TARGET}_symbols.txt
+
+# Get function addresses and names
+nm "$BINARY" | grep -i "$TARGET" | grep ' T ' | awk '{print $1, $3}'
+
+# For unstripped binaries, get source file info
+readelf --debug-dump=info "$BINARY" | grep -B5 -A10 "$TARGET"
+```
+
+### 0.5.2 Extract relevant strings
+
+Strings reveal behavior - log messages, error paths, endpoints, formats:
+
+```bash
+# All strings mentioning the target
+strings "$BINARY" | grep -i "$TARGET" > /tmp/${TARGET}_strings.txt
+
+# Categorize by type
+strings "$BINARY" | grep -iE "(error|fail).*${TARGET}" > /tmp/${TARGET}_errors.txt
+strings "$BINARY" | grep -iE "^/.*${TARGET}" > /tmp/${TARGET}_paths.txt  # URLs/paths
+strings "$BINARY" | grep "json:.*${TARGET}" > /tmp/${TARGET}_json.txt   # JSON fields
+```
+
+### 0.5.3 Disassemble target functions
+
+Extract implementations of key functions:
+
+```bash
+# Get function bounds
+FUNC_START=$(nm "$BINARY" | grep "MyFunction" | awk '{print "0x"$1}')
+FUNC_END=$(nm "$BINARY" | awk -v start="$FUNC_START" '$1 > start {print "0x"$1; exit}')
+
+# Disassemble
+objdump -d "$BINARY" --start-address="$FUNC_START" --stop-address="$FUNC_END" > /tmp/func.asm
+
+# For Go binaries, use go tool objdump for better formatting
+go tool objdump -s MyFunction "$BINARY" > /tmp/func.asm
+```
+
+### 0.5.4 Analyze data structures
+
+For typed languages (Go, Rust, C++ with debug info):
+
+```bash
+# Extract type definitions
+readelf --debug-dump=info "$BINARY" | grep -A 50 "DW_TAG_structure_type" | grep -A 50 "$TARGET"
+
+# For Go, look for reflect type metadata
+strings "$BINARY" | grep "type\\..*${TARGET}"
+strings "$BINARY" | grep "json:.*${TARGET}"  # struct tags reveal wire formats
+```
+
+### 0.5.5 Compare binary versions (diff analysis)
+
+When analyzing what changed:
+
+```bash
+OLD_BINARY="app-v1.2"
+NEW_BINARY="app-v1.3"
+
+# Symbol diff
+diff <(nm "$OLD_BINARY" | sort) <(nm "$NEW_BINARY" | sort) > /tmp/symbol_diff.txt
+
+# String diff (reveals new features, changed messages)
+diff <(strings "$OLD_BINARY" | sort) <(strings "$NEW_BINARY" | sort) > /tmp/string_diff.txt
+
+# Size diff per section
+diff <(readelf -S "$OLD_BINARY") <(readelf -S "$NEW_BINARY")
+
+# For specific function changes, compare disassembly
+diff <(objdump -d "$OLD_BINARY" --start-address=0xABCD) \
+     <(objdump -d "$NEW_BINARY" --start-address=0xDEF0)
+```
+
+### 0.5.6 Output format
+
+Choose output based on the task:
+
+**For "how does function X work?"** → Write a detailed explanation with:
+
+- Purpose (inferred from strings, call sites, context)
+- Algorithm (from disassembly/decompilation)
+- Error paths (from error strings)
+- Dependencies (from calls to other functions)
+
+**For "document API/protocol"** → Create specification with:
+
+- Endpoints/interfaces (from strings, URL construction)
+- Request/response formats (from JSON tags, marshal/unmarshal code)
+- Authentication (from header-setting code)
+- Examples (verified against live API if possible)
+
+**For "what changed between versions?"** → Write a changelog with:
+
+- New functions/symbols
+- Modified functions (with before/after behavior)
+- Removed functionality
+- Changed constants/strings
+
+**For "deepen existing RE"** → Add to existing reconstruction:
+
+- Implement previously stubbed functions
+- Add missing error paths
+- Clarify ambiguous logic
+- Verify against binary
+
+---
 
 ## Phase 1: Binary Census
 

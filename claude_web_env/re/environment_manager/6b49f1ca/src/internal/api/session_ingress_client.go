@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/util"
@@ -111,10 +112,7 @@ func (c *HttpSessionIngressClient) postJSON(
 
 	// Inject OpenTelemetry propagation context.
 	// Uses globalPropagators from go.opentelemetry.io/otel/internal/global.
-	// TODO(re): OTel propagator created but injection call not reconstructed
-	// Should call otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-	propagator := propagation.HeaderCarrier(req.Header)
-	_ = propagator
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	// Set auth header.
 	c.Client.setAuthHeader(req, c.ApiKey)
@@ -207,16 +205,14 @@ func (c *HttpSessionIngressClient) PostSessionIngressEvent(
 // Content-Type: "diag_logs" (9 = 0x09 bytes).
 //
 // Binary address: 0x830de0
-// TODO(re): logs param should be []DiagLogEntry — interface{} is placeholder.
-// Should call diagLogsToWireFormat(logs, len(logs)) to convert.
 func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	ctx context.Context,
 	sessionID string,
-	logs interface{},
+	logs []DiagLogEntry,
 ) error {
 	endpoint := c.sessionEndpoint(sessionID, "diag_logs")
 
-	wireEntries := logs // TODO(re): should be diagLogsToWireFormat(logs, len(logs))
+	wireEntries := diagLogsToWireFormat(logs, len(logs))
 
 	payload := make(map[string]interface{})
 	payload["items"] = wireEntries
@@ -226,7 +222,7 @@ func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	c.Logger.Warn("forwarding diag logs",
 		"endpoint", endpoint,
 		"session_id", sessionID,
-		"num_logs", 0, // TODO(re): should be len(logs) once logs is typed as []DiagLogEntry
+		"num_logs", len(logs),
 	)
 
 	err := c.postJSON(ctx, endpoint, payload, "diag_logs")
@@ -237,7 +233,7 @@ func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	// Log at Warn level on success fallthrough.
 	c.Logger.Warn("posted diag logs with nil error",
 		"session_id", sessionID,
-		"num_logs", 0, // TODO(re): should be len(logs) once logs is typed as []DiagLogEntry
+		"num_logs", len(logs),
 	)
 
 	return nil

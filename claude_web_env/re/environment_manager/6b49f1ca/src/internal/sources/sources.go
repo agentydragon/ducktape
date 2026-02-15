@@ -130,11 +130,11 @@ func (m *SourceHandlerManager) ProcessSources(
 		return result, nil
 	}
 
-	// Binary 0xaf6af4-0xaf6b1b: o11y.RecordFunctionDeferred(ctx, SourcesProcessingMetric, ...)
-	deferredMetric := o11y.RecordFunctionDeferred(ctx, o11y.SourcesProcessingMetric, nil, nil)
-	defer deferredMetric()
-
 	startTime := time.Now()
+
+	// Binary 0xaf6af4-0xaf6b1b: o11y.RecordFunctionDeferred(ctx, SourcesProcessingMetric, ...)
+	deferredMetric := o11y.RecordFunctionDeferred("sources_processing", nil, nil, startTime, nil)
+	defer deferredMetric(nil, nil)
 
 	// Log start
 	logger.Info("Starting to process sources",

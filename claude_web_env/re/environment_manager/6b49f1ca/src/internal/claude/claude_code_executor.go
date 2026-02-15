@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 )
 
 // Executor is the interface for executing Claude Code. ClaudeCodeExecutor
@@ -275,8 +277,12 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 		"claudeConfig", e.Config,
 	)
 
-	// TODO(re): env var setup not reconstructed — should call GetClaudeEnvironmentVariables(...)
-	// and set cmd.Env. Binary at 0xad9540.
+	// 0xad9540: Set up environment variables
+	// Get base environment from os.Environ()
+	envVars := os.Environ()
+
+	// TODO(re): Add environment variables from config once config type is properly reconstructed
+	// For now, cmd.Env will use the base environment
 
 	// Build command arguments
 	// 0xad9620-0xad96e0: start building args slice
@@ -301,6 +307,7 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 
 	// 0xad9c50-0xad9cc0: configure cmd.Dir, cmd.Env, cmd.Stdin
 	cmd.Dir = e.WorkingDir
+	cmd.Env = envVars
 	cmd.Stdin = os.Stdin
 
 	// 0xad9d00-0xad9d80: set up stdout/stderr as io.MultiWriter
@@ -375,19 +382,26 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 //
 // Binary address: 0xadf6c0 - 0xadfe96
 func (e *ClaudeCodeExecutor) buildArgsFromGatewayConfig(ctx context.Context) ([]string, error) {
-	config := e.Config
-	_ = config // TODO(re): config should be accessed as *config.ClaudeConfig to read fields
+	// Type assert config to *config.StartupContext to access fields
+	// The Config field is set to parsedCtx.StartupContext in cmd_task_run.go
+	startupCtx, ok := e.Config.(*config.StartupContext)
+	if !ok || startupCtx == nil {
+		// No gateway config, return empty args
+		return []string{}, nil
+	}
 
 	// 0xadf709-0xadf718: read ClaudeCodeArgs from config (offset 0xc0)
+	claudeCodeArgs := startupCtx.ClaudeCodeArgs
+
 	// 0xadf738-0xadf743: check McpConfig != nil (offset 0xc8)
-	hasMcpConfig := false // derived from config.McpConfig != nil
+	hasMcpConfig := startupCtx.McpConfig != nil
 
 	// 0xadf76b-0xadf828: slog.Info
 	// Message length 0x31 = 49:
 	// "Building args from gateway config for Claude Code"
 	e.Logger.InfoContext(ctx,
 		"Building args from gateway config for Claude Code",
-		"numGatewayArgs", 0,
+		"numGatewayArgs", len(claudeCodeArgs),
 		"hasMcpConfig", hasMcpConfig,
 	)
 
@@ -405,8 +419,12 @@ func (e *ClaudeCodeExecutor) buildArgsFromGatewayConfig(ctx context.Context) ([]
 	var args []string
 
 	// 0xadf93e-0xadfe80: map iteration loop
-	// For each key-value pair, build "--key=value" or "--key value" args
-	// mapIterStart -> mapIterNext loop pattern
+	// For each key-value pair, build "--key=value" style arguments
+	for key, value := range claudeCodeArgs {
+		// Build argument in "--key=value" format
+		arg := fmt.Sprintf("--%s=%s", key, value)
+		args = append(args, arg)
+	}
 
 	return args, nil
 }
@@ -425,13 +443,22 @@ func (e *ClaudeCodeExecutor) buildArgsFromGatewayConfig(ctx context.Context) ([]
 //
 // Binary address: 0xadfee0 - 0xae01c1
 func (e *ClaudeCodeExecutor) writeMCPConfigFileFromGateway(ctx context.Context) error {
-	config := e.Config
-	_ = config // TODO(re): config should be accessed as *config.ClaudeConfig to read fields
+	// Type assert config to *config.StartupContext to access McpConfigFile
+	startupCtx, ok := e.Config.(*config.StartupContext)
+	if !ok || startupCtx == nil {
+		return fmt.Errorf("config is not *config.StartupContext")
+	}
+
+	// Check if McpConfigFile is present
+	if startupCtx.McpConfigFile == nil {
+		return fmt.Errorf("no MCP config file specified")
+	}
+
+	mcpConfigFile := startupCtx.McpConfigFile
 
 	// 0xadff0e: read McpConfig (offset 0xc8 of gateway config)
 	// 0xadff3b-0xadff4a: base64.StdEncoding.DecodeString
-	mcpConfigEncoded := "" // from config.McpConfig.Content
-	decoded, err := base64.StdEncoding.DecodeString(mcpConfigEncoded)
+	decoded, err := base64.StdEncoding.DecodeString(mcpConfigFile.Content)
 	if err != nil {
 		// 0xadff73-0xadff8f: fmt.Errorf
 		// Format length 0x27 = 39: "failed to decode MCP config from base64: %w"
@@ -441,8 +468,15 @@ func (e *ClaudeCodeExecutor) writeMCPConfigFileFromGateway(ctx context.Context) 
 	// 0xadffb1-0xadffe9: determine file path and permissions
 	// Default path: "/tmp/mcp_config.json" (len 0x14 = 20)
 	// Default permissions: 0600 (0x180), capped at 0x1fe (510)
-	filePath := "/tmp/mcp_config.json" // from McpConfig.Path or default
-	filePerms := os.FileMode(0600)
+	filePath := mcpConfigFile.Path
+	if filePath == "" {
+		filePath = "/tmp/mcp_config.json"
+	}
+
+	filePerms := os.FileMode(mcpConfigFile.Mode)
+	if filePerms == 0 {
+		filePerms = 0600
+	}
 
 	// 0xae0002: os.WriteFile
 	if err := os.WriteFile(filePath, decoded, filePerms); err != nil {

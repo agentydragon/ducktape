@@ -104,6 +104,16 @@ type Registry struct {
 	sender   ResponseSender
 }
 
+// NewRegistry creates a new action registry with the given logger.
+// Initializes the actions and running maps.
+func NewRegistry(logger *slog.Logger) *Registry {
+	return &Registry{
+		logger:  logger,
+		actions: make(map[string]Action),
+		running: make(map[string]bool),
+	}
+}
+
 // Register adds an action to the registry. Stores the action in the actions map
 // keyed by its Name(), and logs the registration.
 //

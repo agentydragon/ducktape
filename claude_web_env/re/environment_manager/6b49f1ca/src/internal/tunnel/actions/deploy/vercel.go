@@ -7,22 +7,30 @@ package deploy
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"path/filepath"
 )
 
-// FileEntry represents a file to be deployed, with its path, content, and SHA hash.
+// FileEntry represents a file to be deployed, with its path, SHA hash, size, and content.
+// Based on binary analysis, struct layout includes:
+// - Path (string): ptr + len (16 bytes)
+// - SHA (string): ptr + len (16 bytes)
+// - Content ([]byte): ptr + len + cap (24 bytes)
+// - Size (int64): 8 bytes
 type FileEntry struct {
 	Path    string
-	Content []byte
 	SHA     string
+	Content []byte
+	Size    int64
 }
 
 // VercelClient handles communication with the Vercel API for deployments.
@@ -121,20 +129,52 @@ func ProjectName(path string) string {
 // Binary address: 0xb3f240
 func CollectFiles(dir string) ([]FileEntry, error) {
 	var files []FileEntry
-	shaMap := make(map[string]string)
+	shaMap := make(map[string]int64)
 
-	err := filepath.WalkDir(dir, func(path string, d interface{}, err error) error {
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			return fmt.Errorf("walk error for %s: %w", path, err)
 		}
 
 		// Skip directories
-		// (The func1 closure handles file reading, SHA computation, and appending to files slice)
+		if d.IsDir() {
+			return nil
+		}
 
 		// Read file content
-		// Compute SHA256
-		// Append to files slice
-		// Store in shaMap
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", path, err)
+		}
+
+		// Check cumulative size doesn't exceed 100MB (0x6400000 bytes)
+		totalSize := shaMap[""] // Map stores total at empty key based on binary
+		totalSize += int64(len(content))
+		if totalSize > 0x6400000 {
+			return fmt.Errorf("total file size exceeds limit")
+		}
+		shaMap[""] = totalSize
+
+		// Compute relative path from dir
+		relPath, err := filepath.Rel(dir, path)
+		if err != nil {
+			return fmt.Errorf("failed to compute relative path for %s: %w", path, err)
+		}
+
+		// Compute SHA1 hash (binary uses crypto/sha1.Sum, not SHA256)
+		hash := sha1.Sum(content)
+		hashHex := hex.EncodeToString(hash[:])
+
+		// Append FileEntry with path, SHA, content, and size
+		files = append(files, FileEntry{
+			Path:    relPath,
+			SHA:     hashHex,
+			Content: content,
+			Size:    int64(len(content)),
+		})
+
+		// Store hash -> size in map for deduplication
+		shaMap[hashHex] = int64(len(content))
 
 		return nil
 	})
