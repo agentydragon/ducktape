@@ -17,7 +17,7 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         libssl-dev \
         pkg-config \
         # clang: needed by pip to build Python packages with C extensions
-        # (e.g., twofish, lru-dict) during rules_python whl_library fetch
+        # (e.g., lru-dict) during rules_python whl_library fetch
         clang \
         # dbus-daemon: needed by tests that spawn a private D-Bus session
         # (e.g. experimental/dbus_fast_example)

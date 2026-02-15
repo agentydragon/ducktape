@@ -245,7 +245,6 @@ manifest:
     jeepney: jeepney
     jinja2: jinja2
     jiter: jiter
-    jks: pyjks
     jmespath: jmespath
     jsonpointer: jsonpointer
     jsonref: jsonref
@@ -533,7 +532,6 @@ manifest:
     testcontainers.vault: testcontainers
     testcontainers.weaviate: testcontainers
     tests: splitwise
-    tests.expected: pyjks
     text_unidecode: text_unidecode
     tiktoken: tiktoken
     tiktoken_ext.openai_public: tiktoken
@@ -546,7 +544,6 @@ manifest:
     tornado: tornado
     tqdm: tqdm
     traitlets: traitlets
-    twofish: twofish
     typer: typer_slim
     typer_di: typer_di
     typing_extensions: typing_extensions
