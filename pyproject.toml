@@ -105,12 +105,6 @@ dependencies = [
     "fastapi-sessions",
     "aw-client",
     "aw-core",
-    "oura",
-    "python-metar",
-    "pyowm",
-    "aqipy",
-    "meteostat",
-    "geopy",
     "google-api-python-client>=2.0.0",
     "google-auth",
     "google-auth-oauthlib>=1.0.0",
@@ -133,9 +127,7 @@ dependencies = [
     "checkov>=3.2",
 
     # finance
-    "absl-py",
     "splitwise",
-    "xdg",
 
     # unidiff
     "unidiff>=0.7.5",
@@ -206,9 +198,7 @@ dependencies = [
     "syrupy>=4.0",
     "PyHamcrest>=2.1",
     "mypy==1.18.2",
-    "isort>=5.12.0",
     "invoke",
-    "sqlalchemy-stubs>=0.4.0",
 
     # Type stubs for mypy
     "types-PyYAML",
