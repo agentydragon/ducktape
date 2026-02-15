@@ -285,7 +285,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin ${{ github.ref_name }}
           git add .claude/settings.json
-          git commit -m "chore: bump claude-hooks to ${TAG}"
+          git commit -m "chore: bump claude-hooks to ${TAG} [skip ci]"
           git push origin HEAD:${{ github.ref_name }}
 
       - uses: ./.github/actions/bazel-repo-cache-save
