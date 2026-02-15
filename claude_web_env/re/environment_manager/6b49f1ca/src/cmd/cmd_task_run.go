@@ -99,10 +99,11 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			os.Setenv("CLAUDE_CODE_SESSION_ID", sessionID)
 			os.Setenv("CLAUDE_CODE_BASE_REF", "")
 
-			// 0xb78d20-0xb78d31: Check if --input-format flag was changed
+			// 0xb78d20-0xb78d88: Handle --input-format flag changes
+			// If the flag was explicitly set AND environment config is empty AND stdin=false,
+			// set a default environment config of []byte("skip")
 			flags := cmd.Flags()
 			inputFormatChanged := flags.Changed("input-format")
-			_ = inputFormatChanged // TODO(re): should gate input format behavior
 
 			// 0xb78d8a-0xb78da0: Validate mutually exclusive flags
 			// "--upgrade-claude-code and --claude-agent-version are mutually exclusive"
@@ -138,10 +139,6 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 				return fmt.Errorf("failed to parse session mode: %w", err)
 			}
 
-			// 0xb78fb6-0xb78fc7: Check if --input-format flag was explicitly set
-			inputFormatFlags := cmd.Flags()
-			_ = inputFormatFlags.Changed("input-format") // TODO(re): duplicate check — reconcile with inputFormatChanged above
-
 			// 0xb78fd0: Record stdin read start time
 			stdinStartTime := time.Now()
 
@@ -159,6 +156,15 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb794c0: Log "Loaded context from stdin"
 			slogger.Info("Loaded context from stdin")
+
+			// 0xb78d20-0xb78d88: Apply input-format default behavior
+			// If --input-format was explicitly set and environment config is empty
+			// and stdin mode is disabled, set default environment config to "skip"
+			if inputFormatChanged && parsedCtx != nil {
+				if len(parsedCtx.EnvironmentConfig) == 0 && !stdin {
+					parsedCtx.EnvironmentConfig = json.RawMessage([]byte("skip"))
+				}
+			}
 
 			// 0xb794cc: Create session from parsed context
 			sess := &config.Session{}
@@ -350,6 +356,7 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 
 			// 0xb7a8c0: Run the manager
 			mgr := &manager.Manager{
+				Ctx:           context.Background(),
 				Logger:        slogger,
 				Config:        stdinClient,
 				SessionID:     sessionID,

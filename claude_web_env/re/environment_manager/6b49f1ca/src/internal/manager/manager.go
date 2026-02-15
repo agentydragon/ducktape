@@ -32,19 +32,22 @@ type TunnelClient interface {
 
 // Manager orchestrates environment setup: tunnel registration, MCP server
 // registration, git signing configuration, and environment initialization.
+//
+// Binary struct layout:
+//   Offset 0x00: Ctx context.Context (interface, 16 bytes)
+//   Offset 0x10: Logger *slog.Logger (pointer, 8 bytes)
+//   Offset 0x18: Config interface{} (can be envtype.EnvironmentType or api.Client, 16 bytes)
+//   Offset 0x28: TunnelInfo *TunnelInfo
+//   Offset 0x48: tunnelClient (may be nil, checked at runtime)
 type Manager struct {
-	// Offset 0x00: context or API client (interface pair)
-	// Offset 0x10: logger *slog.Logger
-	// Offset 0x18: session config / environment config client (interface pair)
-	// Offset 0x28: ...
-	// Offset 0x48: tunnelClient (may be nil, checked at runtime)
-	Logger        *slog.Logger
-	Config        interface{} // Environment config client interface (implements envtype.EnvironmentType methods)
-	TunnelInfo    *TunnelInfo
-	SessionID     string
-	APIBaseURL    string
-	SessionConfig interface{} // Session config passed to tunnel client
-	SessionMode   string      // Session mode (e.g., "new", "resume") passed to environment types
+	Ctx           context.Context // Context for manager operations
+	Logger        *slog.Logger    // Structured logger
+	Config        interface{}     // Environment config (envtype.EnvironmentType or stdinConfigClient)
+	TunnelInfo    *TunnelInfo     // Tunnel registration info
+	SessionID     string          // Session identifier
+	APIBaseURL    string          // Base URL for API calls
+	SessionConfig interface{}     // Session config passed to tunnel client
+	SessionMode   string          // Session mode (e.g., "new", "resume")
 }
 
 // TunnelInfo holds tunnel client data used during registration.

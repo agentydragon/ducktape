@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/util"
@@ -111,10 +112,7 @@ func (c *HttpSessionIngressClient) postJSON(
 
 	// Inject OpenTelemetry propagation context.
 	// Uses globalPropagators from go.opentelemetry.io/otel/internal/global.
-	// TODO(re): OTel propagator created but injection call not reconstructed
-	// Should call otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-	propagator := propagation.HeaderCarrier(req.Header)
-	_ = propagator
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	// Set auth header.
 	c.Client.setAuthHeader(req, c.ApiKey)
