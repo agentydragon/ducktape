@@ -127,6 +127,7 @@ dependencies = [
     "checkov>=3.2",
 
     # finance
+    "absl-py",
     "splitwise",
 
     # unidiff
