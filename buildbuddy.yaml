@@ -16,6 +16,8 @@ actions:
       pull_request: {}
 
     # Use Ubuntu 24.04 for glibc 2.39 (Node.js 22.11.0 requires glibc 2.28+)
+    # BuildBuddy Workflows only supports predefined Ubuntu images, not custom images
+    # like ghcr.io/agentydragon/rbe-worker. RBE workers still use the custom image.
     container_image: "ubuntu-24.04"
 
     # Bazel commands run sequentially. Each uses RBE via setup-buildbuddy.sh config.
@@ -52,6 +54,7 @@ actions:
           - devel
       workflow_dispatch: {}
 
+    # Same as CI action - BuildBuddy Workflows doesn't support custom images
     container_image: "ubuntu-24.04"
 
     bazel_commands:
@@ -71,6 +74,7 @@ actions:
           - devel
       workflow_dispatch: {}
 
+    # Same as CI action - BuildBuddy Workflows doesn't support custom images
     container_image: "ubuntu-24.04"
 
     bazel_commands:
