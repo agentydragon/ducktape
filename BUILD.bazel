@@ -91,7 +91,7 @@ js_library(
     ],
 )
 
-# Generate requirements_bazel.txt from all pyproject.toml files
+# Generate requirements_bazel.txt from pyproject.toml
 # Run: bazel run //:requirements.update
 #
 # IMPORTANT: This target requires direct network access to PyPI for dependency resolution.
@@ -100,7 +100,6 @@ lock(
     name = "requirements",
     srcs = ["pyproject.toml"],
     out = "requirements_bazel.txt",
-    args = ["--all-extras"],
     exec_properties = {"dockerNetwork": "bridge"},
 )
 

@@ -180,11 +180,8 @@ dependencies = [
 
     # yamllint
     "yamllint>=1.35",
-]
 
-[project.optional-dependencies]
-# Development and testing dependencies
-dev = [
+    # Development and testing
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "pytest-timeout>=2.3",
@@ -203,10 +200,8 @@ dev = [
     "isort>=5.12.0",
     "invoke",
     "sqlalchemy-stubs>=0.4.0",
-]
 
-# Type stubs for mypy
-typing = [
+    # Type stubs for mypy
     "types-PyYAML",
     "types-requests",
     "types-docker",
@@ -227,18 +222,11 @@ typing = [
     "asyncpg-stubs",
     "pandas-stubs",
     "sqlalchemy[mypy]>=2.0.32",
-]
 
-# Optional: GEPA integration for props
-gepa = [
+    # GEPA integration for props
     "gepa>=0.0.22",
     "litellm>=1.0.0",
     "nest-asyncio>=1.5.0",
-]
-
-# Optional: Linux desktop notifications
-notifications = [
-    "dbus-python>=1.2.0",
 ]
 
 # 2025-12-29: Override rfc3987-syntax with fork that precompiles the Lark parser.
