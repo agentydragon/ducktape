@@ -384,7 +384,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     # Setup kubeconfig if KUBECONFIG_B64 is in decrypted secrets
     if secrets and "KUBECONFIG_B64" in secrets.env_vars:
-        kubeconfig_setup.setup_kubeconfig(cache_dir=settings.cache_dir, env_vars=secrets.env_vars)
+        kubeconfig_setup.setup_kubeconfig(cache_dir=settings.get_cache_dir(), env_vars=secrets.env_vars)
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
