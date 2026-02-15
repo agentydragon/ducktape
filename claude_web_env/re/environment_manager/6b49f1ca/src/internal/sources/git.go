@@ -310,7 +310,10 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 		"duration_ms", time.Since(startTime).Milliseconds(),
 	)
 
-	_ = activityMsg // TODO(re): should be sent to activityRecorder
+	// Note: activityMsg is constructed and logged but not sent to activityRecorder.
+	// Binary analysis shows no interface method calls on h.activityRecorder (offset 0x48)
+	// in this function - the field is stored but never accessed. This matches the binary.
+	_ = activityMsg
 	return nil
 }
 
