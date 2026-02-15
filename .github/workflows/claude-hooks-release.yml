@@ -276,22 +276,23 @@ jobs:
       - name: Bump settings.json to new release tag
         run: |
           set -x  # Print commands for debugging
-          TAG="claude-hooks-${{ env.SHORT_SHA }}"
-          sed -i "s|claude-hooks-[a-f0-9]\{8\}|${TAG}|g" .claude/settings.json
-          if git diff --quiet .claude/settings.json; then
-            echo "No change needed"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Pull with rebase, show error details if it fails
+          # Pull with rebase before making changes (rebase fails with dirty working tree)
           if ! git pull --rebase origin ${{ github.ref_name }}; then
             echo "::error::Rebase failed. Git status:"
             git status
             echo "Conflicting files:"
             git diff --name-only --diff-filter=U
             exit 1
+          fi
+
+          TAG="claude-hooks-${{ env.SHORT_SHA }}"
+          sed -i "s|claude-hooks-[a-f0-9]\{8\}|${TAG}|g" .claude/settings.json
+          if git diff --quiet .claude/settings.json; then
+            echo "No change needed"
+            exit 0
           fi
 
           git add .claude/settings.json
