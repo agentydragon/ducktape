@@ -60,12 +60,15 @@ repos:
   # Syntax check catches: YAML errors, undefined variables, invalid module usage, etc.
   # Full ansible-lint in CI catches: Style issues, best practices, deprecated modules, etc.
 
-  # Ruff linter (formatting handled by bazel-format below)
+  # Ruff linter and formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.6
     hooks:
       - id: ruff-check
         args: [--fix, --config, ruff.toml]
+        files: "\\.py$"
+      - id: ruff-format
+        args: [--config, ruff.toml]
         files: "\\.py$"
 
   # TODO: Check if Bazel mypy (bazelisk build --config=check //...) can replace
@@ -138,14 +141,14 @@ repos:
       # Unified pre-commit: format + validate
       # Uses --script_path runner to avoid Bazel lock (allows parallel batch execution)
       # Runners stored in .git/precommit-runners/, one per pre-commit invocation
-      # NOTE: buildifier moved to keith/pre-commit-buildifier (see above)
+      # NOTE: buildifier moved to keith/pre-commit-buildifier, ruff to astral-sh/ruff-pre-commit (see above)
       - id: bazel-precommit
         name: bazel precommit (format + validate)
         entry: tools/precommit/run-precommit.sh
         language: system
         pass_filenames: true
-        # Triggers on: formattable files (not Bazel - handled by buildifier hook), test files, cluster files
-        files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html|py|sh|bash|tf)$|^cluster/"
+        # Triggers on: shell scripts (shfmt), test files (pytest-main), cluster files (validations), terraform (centralization)
+        files: "\\.(sh|bash|py|tf)$|^cluster/"
 
       # Specimens: block changes to committed snapshot code/ directories
       - id: block-specimen-code-changes
@@ -227,8 +230,9 @@ repos:
   # See MODULE.bazel tf.download(mirror={...}) for provider configuration.
 
   # NOTE: The following hooks are combined into bazel-precommit:
-  # - bazel-format (ruff, shfmt)
+  # - bazel-format (shfmt only)
   # - bazel-validate (pytest-main check, cluster validations)
   # - terraform checks (terraform-version-centralization)
   # This avoids Bazel client lock contention and runs validations in parallel.
-  # buildifier (format + lint) is handled separately by keith/pre-commit-buildifier.
+  # buildifier (format + lint) → keith/pre-commit-buildifier
+  # ruff (format + lint) → astral-sh/ruff-pre-commit

@@ -5,7 +5,7 @@
 # the Bazel client lock (~55s each). This single binary runs both sequentially
 # within one invocation (~20s total).
 #
-# Note: buildifier (format + lint) is handled separately by keith/pre-commit-buildifier.
+# Note: buildifier → keith/pre-commit-buildifier, ruff → astral-sh/ruff-pre-commit
 #
 # Usage:
 #   bazel run //tools/precommit -- [files...]
@@ -52,7 +52,6 @@ py_binary(
     srcs = ["precommit.py"],
     data = [
         # Formatters
-        "@aspect_rules_lint//format:ruff",
         "@aspect_rules_lint//format:shfmt",
         # Validators (validate_kustomizations is unified: kustomize + CRD layering + deps + flux)
         "//cluster/scripts:validate_helm_templates",
@@ -60,7 +59,6 @@ py_binary(
         "//cluster/scripts:validate_sealed_secrets",
     ],
     env = {
-        "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
     },
     visibility = ["//visibility:public"],
@@ -80,7 +78,6 @@ py_binary(
     srcs = ["precommit.py"],
     data = [
         # Formatters
-        "@aspect_rules_lint//format:ruff",
         "@aspect_rules_lint//format:shfmt",
         # Validators (validate_kustomizations is unified: kustomize + CRD layering + deps + flux)
         "//cluster/scripts:validate_helm_templates",
@@ -89,7 +86,6 @@ py_binary(
     ],
     env = {
         "FMT_CHECK": "1",
-        "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
     },
     main = "precommit.py",

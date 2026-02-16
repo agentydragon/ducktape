@@ -5,10 +5,10 @@ When pre-commit runs multiple Bazel hooks concurrently, they serialize on
 the Bazel client lock, causing ~55s per hook even though actual work is <20s.
 
 This single binary runs both in sequence within one Bazel invocation:
-1. Format: ruff, shfmt
-2. Validate: pytest-main check, cluster validations
+1. Format: shfmt
+2. Validate: pytest-main check, cluster validations, terraform centralization
 
-Note: buildifier (format + lint) is handled separately by keith/pre-commit-buildifier.
+Note: buildifier → keith/pre-commit-buildifier, ruff → astral-sh/ruff-pre-commit
 
 Usage:
     bazel run //tools/precommit -- [files...]
@@ -49,7 +49,7 @@ def resolve_bin(rlocation: str) -> str:
     return path
 
 
-EXTENSION_MAP: dict[str, str] = {".py": "ruff", ".sh": "shfmt", ".bash": "shfmt"}
+EXTENSION_MAP: dict[str, str] = {".sh": "shfmt", ".bash": "shfmt"}
 
 FILENAME_MAP: dict[str, str] = {}
 
@@ -130,8 +130,7 @@ def resolve_formatter_bin(formatter: str) -> str:
 
 
 FORMATTER_COMMANDS: dict[str, Callable[[str, bool], list[str]]] = {
-    "ruff": lambda bin_path, check: [bin_path, "format", *(["--check"] if check else [])],
-    "shfmt": lambda bin_path, check: [bin_path, "-d" if check else "-w"],
+    "shfmt": lambda bin_path, check: [bin_path, "-d" if check else "-w"]
 }
 
 

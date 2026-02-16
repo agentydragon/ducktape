@@ -7,7 +7,7 @@ This document describes the linting and formatting setup across pre-commit, Baze
 | Tool                             | Pre-commit             | Bazel Aspect          | GitHub CI           |
 | -------------------------------- | ---------------------- | --------------------- | ------------------- |
 | **Python (ruff check)**          | `ruff-check` hook      | `--config=lint`       | Both                |
-| **Python (ruff format)**         | `bazel-precommit` hook | N/A                   | Pre-commit          |
+| **Python (ruff format)**         | `ruff-format` hook     | N/A                   | Pre-commit          |
 | **Python (mypy)**                | -                      | `--config=typecheck`  | bazel-build         |
 | **JS/TS (eslint)**               | -                      | `--config=lint`       | bazel-build         |
 | **JS/TS (prettier)**             | `prettier` hook        | N/A                   | Pre-commit          |
@@ -115,15 +115,16 @@ Note: **buildifier** is managed separately via `keith/pre-commit-buildifier` hoo
 
 Key hooks in `.pre-commit-config.yaml`:
 
-| Hook                | Source                       | Purpose                       |
-| ------------------- | ---------------------------- | ----------------------------- |
-| `ruff-check`        | astral-sh/ruff-pre-commit    | Python linting                |
-| `buildifier`        | keith/pre-commit-buildifier  | Starlark formatting           |
-| `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting              |
-| `bazel-precommit`   | local (Bazel)                | Unified formatting + validate |
-| `prettier`          | local (node)                 | JS/TS/MD/YAML formatting      |
-| `nixfmt`            | local (static binary)        | Nix formatting                |
-| `markdownlint-cli2` | DavidAnson/markdownlint-cli2 | Markdown linting              |
+| Hook                | Source                       | Purpose                        |
+| ------------------- | ---------------------------- | ------------------------------ |
+| `ruff-check`        | astral-sh/ruff-pre-commit    | Python linting                 |
+| `ruff-format`       | astral-sh/ruff-pre-commit    | Python formatting              |
+| `buildifier`        | keith/pre-commit-buildifier  | Starlark formatting            |
+| `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting               |
+| `bazel-precommit`   | local (Bazel)                | Shell formatting + validations |
+| `prettier`          | local (node)                 | JS/TS/MD/YAML formatting       |
+| `nixfmt`            | local (static binary)        | Nix formatting                 |
+| `markdownlint-cli2` | DavidAnson/markdownlint-cli2 | Markdown linting               |
 
 Cluster-specific hooks run only on `cluster/` files:
 
@@ -135,15 +136,16 @@ Cluster-specific hooks run only on `cluster/` files:
 
 Pre-commit uses external tool versions for some hooks:
 
-- `ruff-check`: from `astral-sh/ruff-pre-commit`
+- `ruff-check`/`ruff-format`: from `astral-sh/ruff-pre-commit`
 - `buildifier`/`buildifier-lint`: from `keith/pre-commit-buildifier`
 
 Bazel uses managed versions:
 
-- ruff: `@multitool//tools/ruff`
+- ruff: `@multitool//tools/ruff` (used by `//tools/format`)
 - buildifier: `@buildifier_prebuilt//buildifier` (used by `//tools/format`, `//tools/lint`)
+- shfmt: `@aspect_rules_lint//format:shfmt` (used by `//tools/precommit`, `//tools/format`)
 
-The `bazel-precommit` hook uses Bazel-managed ruff and shfmt versions, ensuring consistency.
+The `bazel-precommit` hook uses Bazel-managed shfmt version for shell formatting.
 
 ### Known Gaps
 
