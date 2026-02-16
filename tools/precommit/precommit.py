@@ -1,30 +1,30 @@
-"""Unified pre-commit tool: format + validate in a single Bazel invocation.
+"""Unified pre-commit tool: custom validations in a single Bazel invocation.
 
-Combines formatting and validation to avoid Bazel client lock contention.
+Combines custom validations to avoid Bazel client lock contention.
 When pre-commit runs multiple Bazel hooks concurrently, they serialize on
 the Bazel client lock, causing ~55s per hook even though actual work is <20s.
 
-This single binary runs both in sequence within one Bazel invocation:
-1. Format: shfmt
-2. Validate: pytest-main check, cluster validations, terraform centralization
+Validations:
+- pytest-main check (ensures test files have pytest_bazel.main() entry points)
+- terraform-version-centralization (checks terraform modules don't define provider versions)
+- filename-conventions (enforces underscores not dashes in new .py/.md files)
+- cluster validations (kustomize, helm, sealed-secrets)
 
-Note: buildifier → keith/pre-commit-buildifier, ruff → astral-sh/ruff-pre-commit
+Note: formatting moved to standard hooks (buildifier, ruff, shfmt)
 
 Usage:
     bazel run //tools/precommit -- [files...]
-    bazel run //tools/precommit  # format and validate all tracked files
+    bazel run //tools/precommit  # validate all tracked files
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-import re
 import sys
 import time
-from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import pygit2
@@ -47,138 +47,6 @@ def resolve_bin(rlocation: str) -> str:
     if not path or not Path(path).exists():
         raise RuntimeError(f"Could not resolve {rlocation}")
     return path
-
-
-EXTENSION_MAP: dict[str, str] = {".sh": "shfmt", ".bash": "shfmt"}
-
-FILENAME_MAP: dict[str, str] = {}
-
-SHELL_SHEBANG_RE = re.compile(rb"^#![ \t]*/(usr/)?bin/(env[ \t]+)?(sh|bash|mksh|bats|zsh)")
-IGNORE_ATTRIBUTES = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
-
-
-def get_max_batch_size() -> int:
-    """Get max command-line size, matching rules_lint behavior."""
-    try:
-        arg_max = os.sysconf("SC_ARG_MAX")
-    except (ValueError, OSError):
-        arg_max = 128000
-    return min(arg_max - 2048, 128000)
-
-
-def batch_files(files: list[str], max_size: int) -> list[list[str]]:
-    """Split files into batches that fit within ARG_MAX."""
-    batches: list[list[str]] = []
-    batch: list[str] = []
-    for f in files:
-        if batch and len(" ".join(batch)) + 1 + len(f) >= max_size:
-            batches.append(batch)
-            batch = []
-        batch.append(f)
-    return [*batches, batch] if batch else batches
-
-
-def detect_shell_by_shebang(path: Path) -> bool:
-    """Check if file has a shell shebang (for files without .sh extension)."""
-    if path.suffix:
-        return False
-    try:
-        with path.open("rb") as f:
-            first_line = f.readline(256)
-        return bool(SHELL_SHEBANG_RE.match(first_line))
-    except OSError:
-        return False
-
-
-def get_formatter(path: Path) -> str | None:
-    """Determine which formatter to use for a file."""
-    if path.name in FILENAME_MAP:
-        return FILENAME_MAP[path.name]
-    if formatter := EXTENSION_MAP.get(path.suffix.lower()):
-        return formatter
-    if detect_shell_by_shebang(path):
-        return "shfmt"
-    return None
-
-
-def filter_ignored(repo: pygit2.Repository, files: list[Path]) -> list[Path]:
-    """Filter out files marked as ignored via .gitattributes."""
-    if not files:
-        return []
-    return [f for f in files if not any(repo.get_attr(str(f), attr) in (True, "true") for attr in IGNORE_ATTRIBUTES)]
-
-
-@dataclass
-class FormatterResult:
-    """Result of running a formatter."""
-
-    formatter: str
-    file_count: int
-    elapsed: float
-    success: bool
-    errors: list[str] = field(default_factory=list)
-
-
-def resolve_formatter_bin(formatter: str) -> str:
-    """Resolve formatter binary path from environment. Raises if not found."""
-    bin_var = f"{formatter.upper()}_BIN"
-    if not (rlocation_path := os.environ.get(bin_var)):
-        raise RuntimeError(f"{bin_var} environment variable not set")
-    if not (bin_path := _RUNFILES.Rlocation(rlocation_path)) or not Path(bin_path).exists():
-        raise RuntimeError(f"Could not resolve {rlocation_path}")
-    return bin_path
-
-
-FORMATTER_COMMANDS: dict[str, Callable[[str, bool], list[str]]] = {
-    "shfmt": lambda bin_path, check: [bin_path, "-d" if check else "-w"]
-}
-
-
-async def run_format_batch(base_cmd: list[str], batch: list[str]) -> tuple[int, str]:
-    """Run formatter on a batch of files. Returns (returncode, combined output)."""
-    proc = await asyncio.create_subprocess_exec(
-        *base_cmd, *batch, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await proc.communicate()
-    output = (stdout.decode() + stderr.decode()).strip()
-    return proc.returncode or 0, output
-
-
-async def run_formatter_async(formatter: str, files: list[Path], check_mode: bool) -> FormatterResult:
-    """Run a formatter on files asynchronously, parallelizing batches."""
-    if not files:
-        return FormatterResult(formatter=formatter, file_count=0, elapsed=0.0, success=True)
-
-    file_paths = [str(f) for f in files]
-    bin_path = resolve_formatter_bin(formatter)
-    base_cmd = FORMATTER_COMMANDS[formatter](bin_path, check_mode)
-
-    batches = batch_files(file_paths, get_max_batch_size())
-    start = time.perf_counter()
-
-    results = await asyncio.gather(*[run_format_batch(base_cmd, batch) for batch in batches])
-
-    errors = [output for returncode, output in results if returncode != 0 and output]
-    elapsed = time.perf_counter() - start
-    return FormatterResult(
-        formatter=formatter, file_count=len(file_paths), elapsed=elapsed, success=not errors, errors=errors
-    )
-
-
-async def run_format(repo: pygit2.Repository, files: list[Path], check_mode: bool) -> list[FormatterResult]:
-    """Run all formatters on files."""
-    files = filter_ignored(repo, files)
-
-    by_formatter: dict[str, list[Path]] = defaultdict(list)
-    for f in files:
-        if formatter := get_formatter(f):
-            by_formatter[formatter].append(f)
-
-    return list(
-        await asyncio.gather(
-            *[run_formatter_async(fmt, fmt_files, check_mode) for fmt, fmt_files in by_formatter.items()]
-        )
-    )
 
 
 @dataclass
@@ -314,7 +182,6 @@ def get_all_files(repo: pygit2.Repository) -> list[Path]:
 
 async def main_async() -> int:
     profile = os.environ.get("PRECOMMIT_PROFILE", "").lower() in ("1", "true", "yes")
-    check_mode = os.environ.get("FMT_CHECK", "").lower() in ("1", "true", "yes")
 
     t0 = time.perf_counter()
 
@@ -333,22 +200,8 @@ async def main_async() -> int:
 
     start_total = time.perf_counter()
 
-    # Run format
-    print(f"Formatting {len(files)} files...")
-    format_results = await run_format(repo, files, check_mode)
-
-    format_failed = []
-    for result in format_results:
-        if result.file_count > 0:
-            status = "✓" if result.success else "✗"
-            print(f"{status} {result.formatter}: {result.file_count} files in {result.elapsed:.1f}s")
-        if result.errors:
-            format_failed.append(result)
-            for error in result.errors:
-                print(error, file=sys.stderr)
-
-    # Run validate
-    print(f"\nValidating {len(files)} files...")
+    # Run validations
+    print(f"Validating {len(files)} files...")
     validate_results = await run_validate(files, repo_root, repo)
 
     validate_failed = []
@@ -365,9 +218,7 @@ async def main_async() -> int:
     elapsed_total = time.perf_counter() - start_total
     print(f"\nTotal: {elapsed_total:.1f}s")
 
-    if format_failed or validate_failed:
-        if check_mode and format_failed:
-            print("Try running 'bazel run //tools/precommit' to fix formatting.", file=sys.stderr)
+    if validate_failed:
         return 1
 
     return 0

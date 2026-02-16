@@ -106,6 +106,12 @@ repos:
       - id: buildifier
       - id: buildifier-lint
 
+  # shfmt - Shell script formatting
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.12.0-2
+    hooks:
+      - id: shfmt
+
   # ============================================================================
   # LOCAL HOOKS
   # ============================================================================
@@ -138,17 +144,17 @@ repos:
         files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
         exclude: "\\.pnpm/"
 
-      # Unified pre-commit: format + validate
+      # Unified pre-commit: custom validations only (formatting handled by dedicated hooks)
       # Uses --script_path runner to avoid Bazel lock (allows parallel batch execution)
       # Runners stored in .git/precommit-runners/, one per pre-commit invocation
-      # NOTE: buildifier moved to keith/pre-commit-buildifier, ruff to astral-sh/ruff-pre-commit (see above)
+      # NOTE: formatting moved to standard hooks (buildifier, ruff, shfmt - see above)
       - id: bazel-precommit
-        name: bazel precommit (format + validate)
+        name: bazel precommit (validate)
         entry: tools/precommit/run-precommit.sh
         language: system
         pass_filenames: true
-        # Triggers on: shell scripts (shfmt), test files (pytest-main), cluster files (validations), terraform (centralization)
-        files: "\\.(sh|bash|py|tf)$|^cluster/"
+        # Triggers on: test files (pytest-main), cluster files (validations), terraform (centralization)
+        files: "\\.(py|tf)$|^cluster/"
 
       # Specimens: block changes to committed snapshot code/ directories
       - id: block-specimen-code-changes
@@ -229,10 +235,14 @@ repos:
   # terraform modules via :validate and :lint targets with hermetic providers.
   # See MODULE.bazel tf.download(mirror={...}) for provider configuration.
 
-  # NOTE: The following hooks are combined into bazel-precommit:
-  # - bazel-format (shfmt only)
-  # - bazel-validate (pytest-main check, cluster validations)
-  # - terraform checks (terraform-version-centralization)
+  # NOTE: The following custom validations are in bazel-precommit:
+  # - pytest-main check (ensures test files have pytest_bazel.main() entry points)
+  # - terraform-version-centralization (checks terraform modules don't define provider versions)
+  # - filename-conventions (enforces underscores not dashes in new .py/.md files)
+  # - cluster validations (kustomize, helm, sealed-secrets)
   # This avoids Bazel client lock contention and runs validations in parallel.
-  # buildifier (format + lint) → keith/pre-commit-buildifier
-  # ruff (format + lint) → astral-sh/ruff-pre-commit
+  #
+  # Standard formatting hooks (no longer in bazel-precommit):
+  # - buildifier (format + lint) → keith/pre-commit-buildifier
+  # - ruff (format + lint) → astral-sh/ruff-pre-commit
+  # - shfmt (format) → scop/pre-commit-shfmt
