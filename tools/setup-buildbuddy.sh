@@ -31,7 +31,7 @@ build --noslim_profile
 build --experimental_profile_include_target_label
 build --experimental_profile_include_primary_output
 
-# Enable RBE (platforms, host_platform, spawn_strategy, etc. defined in .bazelrc)
+# Enable RBE (platforms, exec properties in .bazelrc + BUILD.bazel platform)
 build --config=rbe
 EOF
 

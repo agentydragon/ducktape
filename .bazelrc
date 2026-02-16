@@ -75,6 +75,8 @@ build:rbe --spawn_strategy=remote,local
 test:rbe --spawn_strategy=remote,local
 build:rbe --jobs=50
 build:rbe --remote_download_minimal
+# Docker daemon for all RBE tests (lightweight - Firecracker isolation already enabled in platform)
+test:rbe --remote_default_exec_properties=test.init-dockerd=true
 
 # Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)

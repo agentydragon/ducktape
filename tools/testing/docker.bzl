@@ -2,52 +2,24 @@
 
 On BuildBuddy RBE, these tests run inside Firecracker microVMs with a Docker
 daemon started automatically via the init-dockerd exec property.
+
+Deprecated: Use py_test(requires_docker=True) from //tools/testing:defs instead.
 """
 
-load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/testing:defs.bzl", "py_test")
 
-# Exec properties for tests needing Docker on RBE (Firecracker microVM).
-# The test. prefix scopes these to the test action only (not build actions).
-DOCKER_EXEC_PROPERTIES = {
-    "test.workload-isolation-type": "firecracker",
-    "test.init-dockerd": "true",
-    "test.recycle-runner": "true",
-    "test.EstimatedComputeUnits": "3",
-}
-
-def merge_docker_exec_properties(exec_properties = None):
-    """Merge caller exec_properties with Docker defaults.
-
-    Args:
-        exec_properties: Extra exec properties to merge on top of Docker defaults.
-
-    Returns:
-        Merged dict with DOCKER_EXEC_PROPERTIES as base.
-    """
-    merged = dict(DOCKER_EXEC_PROPERTIES)
-    if exec_properties:
-        merged.update(exec_properties)
-    return merged
-
-def docker_py_test(name, tags = None, exec_properties = None, **kwargs):
+def docker_py_test(name, requires_docker = True, **kwargs):
     """py_test wrapper that adds Firecracker Docker exec properties.
 
-    Automatically adds the "requires_docker" tag and Firecracker exec
-    properties so the test gets a Docker daemon on RBE workers.
+    Deprecated: Use py_test(requires_docker=True) from //tools/testing:defs instead.
 
     Args:
         name: Target name.
-        tags: Additional tags. "requires_docker" is added automatically.
-        exec_properties: Extra exec properties merged with Docker defaults.
+        requires_docker: Whether this test needs Docker. Defaults to True.
         **kwargs: Passed through to py_test.
     """
-    base_tags = tags or []
-    if "requires_docker" not in base_tags:
-        base_tags = base_tags + ["requires_docker"]
-
     py_test(
         name = name,
-        tags = base_tags,
-        exec_properties = merge_docker_exec_properties(exec_properties),
+        requires_docker = requires_docker,
         **kwargs
     )

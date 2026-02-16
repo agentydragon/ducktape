@@ -129,6 +129,9 @@ platform(
         # ca-certificates, and podman for e2e tests.
         # Built by .github/workflows/rbe-image.yml
         "container-image": "docker://ghcr.io/agentydragon/rbe-worker:latest",
+        # BuildBuddy Firecracker isolation for all RBE actions (better isolation + runner recycling)
+        "workload-isolation-type": "firecracker",
+        "recycle-runner": "true",
     },
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )

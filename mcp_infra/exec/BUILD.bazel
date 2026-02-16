@@ -249,7 +249,7 @@ live_openai_py_test(
     srcs = ["test_exec_roundtrip.py"],
     data = ["//third_party/debian_slim:load"],
     imports = ["../.."],
-    tags = ["requires_docker"],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//agent_core:agent",
