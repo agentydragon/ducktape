@@ -44,9 +44,9 @@ from props.db.models import (
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.stats import SyncStats
 from props.db.sync.yaml_loader import (
-    FalsePositive as FalsePositive_yaml,
+    SyncFalsePositive,
+    SyncTruePositive,
     SyncValidationError,
-    TruePositive as TruePositive_yaml,
     YAMLIssue,
     load_yaml_issues,
 )
@@ -73,30 +73,33 @@ class SpecimenData(BaseModel):
 class SpecimenBundle:
     """Bundle artifacts for a single specimen.
 
-    Format: code_tar + data_yaml (merged issues + split)
+    Holds parsed specimen data and path to code tar.
     """
 
-    slug: str
     code_tar: Path
-    data_yaml: Path
+    data: SpecimenData
+
+    @property
+    def slug(self) -> SnapshotSlug:
+        """Snapshot slug from parsed data."""
+        return self.data.snapshot_slug
 
     @staticmethod
     def from_paths(code_tar: Path, data_yaml: Path) -> SpecimenBundle:
         """Create a SpecimenBundle from code tar and data YAML paths.
 
-        The snapshot slug is read from the data YAML.
+        Parses the data YAML immediately to avoid redundant parsing.
 
         Args:
             code_tar: Path to uncompressed code tar
             data_yaml: Path to merged data YAML (snapshot_slug + split + issues)
 
         Returns:
-            SpecimenBundle with slug read from the data YAML
+            SpecimenBundle with parsed data
         """
         with data_yaml.open() as f:
             specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
-            slug = specimen_data.snapshot_slug
-        return SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml)
+        return SpecimenBundle(code_tar=code_tar, data=specimen_data)
 
 
 def _add_ranges_to_tp_occurrence(orm_occ: TruePositiveOccurrenceORM, files: dict[Path, list[LineRange] | None]) -> None:
@@ -469,9 +472,13 @@ def sync_issues_to_db(
 def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> SyncStats:
     """Sync snapshot_files table from snapshot content archives in DB."""
 
-    # Get existing files from DB (primitive tuples to avoid detached ORM access)
+    # Get existing files from DB for ONLY the slugs being synced (not all snapshots!)
+    # This prevents deleting files from other snapshots when syncing multiple specimens sequentially
     existing_keys: set[tuple[SnapshotSlug, str]] = {
-        (row[0], row[1]) for row in session.execute(select(SnapshotFile.snapshot_slug, SnapshotFile.file_path))
+        (row[0], row[1])
+        for row in session.execute(
+            select(SnapshotFile.snapshot_slug, SnapshotFile.file_path).where(SnapshotFile.snapshot_slug.in_(slugs))
+        )
     }
     seen_keys: set[tuple[SnapshotSlug, str]] = set()
 
@@ -556,6 +563,11 @@ def _reconstruct_occ_common(
             .all()
         )
         restriction = {Path(m.file_path) for m in members}
+        if not restriction:
+            raise ValueError(
+                f"FileSet {db_occ.snapshot_slug}/{db_occ.match_file_restriction} has no members "
+                f"(referenced by occurrence {db_occ.occurrence_id})"
+            )
 
     return files, restriction
 
@@ -612,7 +624,7 @@ def _sync_occurrences(
     return changed
 
 
-def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: TruePositive_yaml) -> bool:
+def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: SyncTruePositive) -> bool:
     """Sync a TP issue, returning True if anything changed."""
     changed = existing.rationale != yaml_issue.rationale
     if changed:
@@ -624,7 +636,7 @@ def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: TruePos
     return _sync_occurrences(session, existing.occurrences, yaml_issue.occurrences, _tp_occ_from_orm, add) or changed
 
 
-def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: FalsePositive_yaml) -> bool:
+def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: SyncFalsePositive) -> bool:
     """Sync an FP issue, returning True if anything changed."""
     changed = existing.rationale != yaml_fp.rationale
     if changed:
@@ -665,7 +677,7 @@ def _add_fp_occurrence(session: Session, snapshot_slug: SnapshotSlug, fp_id: str
     for relevant_file in occ.relevant_files:
         orm_occ.relevant_file_orms.append(
             FalsePositiveRelevantFileORM(
-                snapshot_slug=snapshot_slug, occurrence_id=occ.occurrence_id, file_path=relevant_file
+                snapshot_slug=snapshot_slug, fp_id=fp_id, occurrence_id=occ.occurrence_id, file_path=relevant_file
             )
         )
 
@@ -710,9 +722,10 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
         # Create file_set and members
         fs = FileSet(snapshot_slug=snapshot_slug, files_hash=files_hash)
         session.add(fs)
-        session.flush()  # Ensure FK for members
+        session.flush()
         for path_str in path_strs:
             session.add(FileSetMember(snapshot_slug=snapshot_slug, files_hash=files_hash, file_path=path_str))
+        session.flush()
 
     return files_hash
 
@@ -833,6 +846,76 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
 
 
+def _sync_critic_scopes_for_specimen(
+    session: Session,
+    slug: SnapshotSlug,
+    true_positives: list[SyncTruePositive],
+    false_positives: list[SyncFalsePositive],
+) -> None:
+    """Sync file sets and critic_scopes_expected_to_recall for a specimen from parsed occurrence data.
+
+    Note: File sets for match_file_restriction are already created by ensure_file_set during
+    occurrence sync. This function only needs to handle critic_scopes_expected_to_recall.
+
+    Args:
+        session: Database session
+        slug: Snapshot slug
+        true_positives: List of parsed true positives with occurrences
+        false_positives: List of parsed false positives with occurrences
+    """
+    logger.info(
+        f"[CURRENT] _sync_critic_scopes_for_specimen: Starting for {slug}, {len(true_positives)} TPs, {len(false_positives)} FPs"
+    )
+    # Collect desired critic scopes from occurrence data
+    desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
+
+    for tp in true_positives:
+        for occurrence in tp.occurrences:
+            for trigger_files in occurrence.critic_scopes_expected_to_recall:
+                # Ensure file set exists for this critic scope
+                files_hash = ensure_file_set(session, slug, trigger_files)
+                assert files_hash is not None  # trigger_files is not None, so hash shouldn't be None
+                desired_triggers.add((slug, tp.tp_id, occurrence.occurrence_id, files_hash))
+
+    logger.info(f"[CURRENT] _sync_critic_scopes_for_specimen: Collected {len(desired_triggers)} desired critic scopes")
+
+    # Current critic scopes from DB
+    existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
+        (t_slug, tp_id, occ_id, h)
+        for t_slug, tp_id, occ_id, h in session.query(
+            CriticScopeExpectedToRecall.snapshot_slug,
+            CriticScopeExpectedToRecall.tp_id,
+            CriticScopeExpectedToRecall.occurrence_id,
+            CriticScopeExpectedToRecall.files_hash,
+        )
+        .filter_by(snapshot_slug=slug)
+        .all()
+    }
+
+    # Diff critic scopes
+    triggers_to_add = desired_triggers - existing_triggers
+    triggers_to_delete = existing_triggers - desired_triggers
+
+    for t_slug, tp_id, occurrence_id, files_hash in triggers_to_add:
+        session.add(
+            CriticScopeExpectedToRecall(
+                snapshot_slug=t_slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash
+            )
+        )
+
+    if triggers_to_delete:
+        session.query(CriticScopeExpectedToRecall).filter(
+            tuple_(
+                CriticScopeExpectedToRecall.snapshot_slug,
+                CriticScopeExpectedToRecall.tp_id,
+                CriticScopeExpectedToRecall.occurrence_id,
+                CriticScopeExpectedToRecall.files_hash,
+            ).in_(list(triggers_to_delete))
+        ).delete(synchronize_session=False)
+
+    session.flush()
+
+
 def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
     """Sync a single specimen from bundle artifacts.
 
@@ -841,14 +924,11 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
 
     Args:
         session: Database session (caller must commit/rollback)
-        bundle: Specimen bundle with code tar and data YAML paths
+        bundle: Specimen bundle with parsed data and code tar
     """
-    # Read and parse data YAML
-    with bundle.data_yaml.open() as f:
-        specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
-
-    # Use slug from data YAML (not from bundle parameter)
-    slug = specimen_data.snapshot_slug
+    # Use pre-parsed data from bundle
+    specimen_data = bundle.data
+    slug = bundle.slug
 
     # Read uncompressed tar (bundle and DB use same format)
     archive_bytes = bundle.code_tar.read_bytes()
@@ -863,9 +943,9 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
     # Sync snapshot files from the tar we just stored
     sync_snapshot_files_to_db(session, [slug])
 
-    # Convert issues dict to TruePositive/FalsePositive objects
-    true_positives: list[TruePositive_yaml] = []
-    false_positives: list[FalsePositive_yaml] = []
+    # Convert issues dict to sync TruePositive/FalsePositive objects
+    true_positives: list[SyncTruePositive] = []
+    false_positives: list[SyncFalsePositive] = []
 
     for issue_id, issue in specimen_data.issues.items():
         # issue is already a YAMLIssue (validated by Pydantic when loading SpecimenData)
@@ -922,6 +1002,11 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
         session.delete(existing_fps[key])
 
     session.flush()
+
+    # Sync critic_scopes_expected_to_recall from occurrences
+    # BISECTION TEST: Commented out to test if this is causing the issue
+    # _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
+
     logger.info(f"Synced specimen from bundle: {slug}")
 
 

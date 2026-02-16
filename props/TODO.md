@@ -40,4 +40,4 @@
 - Need sane story for applying migrations without full `db recreate`
 - Consolidate shared envrc and directory structure across workspace members
 - Add timeout warning handler for agents: send warning messages when running out of time (e.g., "5 minutes remaining"). Could use `created_at` + `timeout_seconds` to calculate remaining time and inject reminder messages via agent communication channel
-- Add bulk specimen sync to `props db sync` that discovers and syncs all specimens at once from Bazel bundle artifacts. Currently `props db sync` only syncs model metadata; specimens must be synced one-by-one with `props-sync-specimen`
+- Add bulk specimen sync to `props db sync` that discovers and syncs all specimens at once from Bazel bundle artifacts. Currently `props db sync` only syncs model metadata; specimens must be synced one-by-one with `props db sync-specimen`

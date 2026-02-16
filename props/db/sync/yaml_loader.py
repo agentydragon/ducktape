@@ -38,8 +38,8 @@ class SyncValidationError(Exception):
 
 
 @dataclass
-class TruePositive:
-    """True positive issue (for sync only)."""
+class SyncTruePositive:
+    """True positive issue (intermediate sync type for YAML→ORM conversion)."""
 
     tp_id: str
     snapshot_slug: SnapshotSlug
@@ -48,8 +48,8 @@ class TruePositive:
 
 
 @dataclass
-class FalsePositive:
-    """False positive (for sync only)."""
+class SyncFalsePositive:
+    """False positive (intermediate sync type for YAML→ORM conversion)."""
 
     fp_id: str
     snapshot_slug: SnapshotSlug
@@ -258,24 +258,24 @@ class YAMLIssue(BaseModel):
                     occ.relevant_files = list(occ.files.keys())
         return self
 
-    def to_true_positive(self, tp_id: str, snapshot_slug: SnapshotSlug) -> TruePositive:
-        """Expand to canonical TruePositive model."""
+    def to_true_positive(self, tp_id: str, snapshot_slug: SnapshotSlug) -> SyncTruePositive:
+        """Expand to sync TruePositive model (intermediate YAML→ORM type)."""
         if not self.should_flag:
             raise ValueError("Cannot convert FP (should_flag=false) to TruePositive")
 
-        return TruePositive(
+        return SyncTruePositive(
             tp_id=tp_id,
             snapshot_slug=snapshot_slug,
             rationale=Rationale(self.rationale),
             occurrences=[occ.to_tp_occurrence() for occ in self.occurrences],
         )
 
-    def to_false_positive(self, fp_id: str, snapshot_slug: SnapshotSlug) -> FalsePositive:
-        """Expand to canonical FalsePositive model."""
+    def to_false_positive(self, fp_id: str, snapshot_slug: SnapshotSlug) -> SyncFalsePositive:
+        """Expand to sync FalsePositive model (intermediate YAML→ORM type)."""
         if self.should_flag:
             raise ValueError("Cannot convert TP (should_flag=true) to FalsePositive")
 
-        return FalsePositive(
+        return SyncFalsePositive(
             fp_id=fp_id,
             snapshot_slug=snapshot_slug,
             rationale=Rationale(self.rationale),
@@ -292,7 +292,7 @@ class YAMLIssue(BaseModel):
 
 def load_yaml_issues(
     slug: SnapshotSlug, specimens_dir: Path, *, collect_errors: bool = False
-) -> tuple[list[TruePositive], list[FalsePositive]]:
+) -> tuple[list[SyncTruePositive], list[SyncFalsePositive]]:
     """Load YAML issue files for a snapshot.
 
     When collect_errors is True, all files are attempted and a
@@ -311,8 +311,8 @@ def load_yaml_issues(
 
     yaml_files = sorted(issues_dir.glob("*.yaml"))
 
-    true_positives: list[TruePositive] = []
-    false_positives: list[FalsePositive] = []
+    true_positives: list[SyncTruePositive] = []
+    false_positives: list[SyncFalsePositive] = []
     errors: list[str] = []
 
     for yaml_file in yaml_files:

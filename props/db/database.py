@@ -83,7 +83,8 @@ class Database:
         url = config.url
 
         logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
-        self._engine: Engine = create_engine(url, echo=False, poolclass=NullPool)
+        # Enable SQLAlchemy echo for debugging file set sync issue
+        self._engine: Engine = create_engine(url, echo=True, poolclass=NullPool)
 
         # Register composite type adapter on each checkout.
         # NullPool creates a fresh connection per checkout, so this runs on every use.
