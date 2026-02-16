@@ -1,57 +1,46 @@
 """Generic single-specimen validation test.
 
 This test is instantiated once per specimen by the specimen_targets macro.
-Test parameters (slug, code tar, data YAML) are passed via environment variables.
+Test parameters (code tar, data YAML) are passed via environment variables.
+The slug is read from the data YAML.
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Generator
 
-import pytest
 import pytest_bazel
 
 from bazel_util.runfiles import get_required_path
 from props.db.database import Database
 from props.db.models import Snapshot
-from props.db.sync.sync import SpecimenBundle, sync_all
-
-pytestmark = pytest.mark.integration
+from props.db.sync.sync import SpecimenBundle, sync_specimen
 
 
-@pytest.fixture
-def synced_db(db: Database) -> Generator[Database]:
-    """Function-scoped database synced with the specimen from bundle artifacts."""
-    slug = os.environ["SPECIMEN_SLUG"]
+def test_specimen(db: Database) -> None:
+    """Verify specimen syncs successfully and has expected content."""
+    # Resolve runfiles paths
     code_tar_rloc = os.environ["SPECIMEN_CODE_TAR"]
     data_yaml_rloc = os.environ["SPECIMEN_DATA_YAML"]
-
-    # Resolve runfiles paths
     code_tar = get_required_path(f"_main/{code_tar_rloc}")
     data_yaml = get_required_path(f"_main/{data_yaml_rloc}")
 
-    # Create specimen bundle
-    bundle = SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml)
+    # Create specimen bundle (reads slug from data YAML)
+    bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
 
-    # Sync from bundle artifacts (no filesystem needed)
+    # Sync from bundle artifacts
     with db.session() as session:
-        sync_all(session, specimen_bundles=[bundle])
+        sync_specimen(session, bundle)
+        session.commit()
 
-    return db
-
-
-def test_specimen(synced_db: Database) -> None:
-    """Verify specimen syncs successfully and has expected content."""
-    slug = os.environ["SPECIMEN_SLUG"]
-
-    with synced_db.session() as session:
-        snapshot = session.query(Snapshot).filter_by(slug=slug).one_or_none()
-        assert snapshot is not None, f"Specimen {slug} was not synced"
-        assert snapshot.content is not None, f"Specimen {slug} has no content tar"
+    # Verify sync succeeded
+    with db.session() as session:
+        snapshot = session.query(Snapshot).filter_by(slug=bundle.slug).one_or_none()
+        assert snapshot is not None, f"Specimen {bundle.slug} was not synced"
+        assert snapshot.content is not None, f"Specimen {bundle.slug} has no content tar"
 
         tp_count = len(snapshot.true_positives)
-        assert tp_count > 0, f"Specimen {slug} has no true positives"
+        assert tp_count > 0, f"Specimen {bundle.slug} has no true positives"
 
 
 if __name__ == "__main__":
