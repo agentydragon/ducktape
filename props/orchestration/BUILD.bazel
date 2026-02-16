@@ -6,7 +6,8 @@ This package contains HOST-only code that orchestrates agent containers:
 - agent_credentials: PostgreSQL role creation for agents
 """
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
     name = "executor",

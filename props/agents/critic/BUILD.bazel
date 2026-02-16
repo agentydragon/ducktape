@@ -17,7 +17,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//tools/testing:defs.bzl", "py_test")
 
 exports_files(
     ["prompt.md.mako"],
@@ -105,10 +105,11 @@ py_python3_symlink(
 # Tests
 # =============================================================================
 
-docker_py_test(
+py_test(
     name = "test_critic_sql_integration",
     srcs = ["test_critic_sql_integration.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//props:conftest",
@@ -125,10 +126,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_reported_issues_constraints",
     srcs = ["test_reported_issues_constraints.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//props:conftest",
@@ -146,7 +148,7 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
@@ -154,6 +156,7 @@ docker_py_test(
         "//props/agents/grader:image",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     tags = [
         "e2e",
     ],

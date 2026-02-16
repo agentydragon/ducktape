@@ -79,7 +79,7 @@ bazel run //:requirements.update
 To format Bazel configuration files:
 
 ```bash
-bazel run //tools:buildifier
+bazel run //tools/lint:buildifier
 ```
 
 ## Running GitHub Actions Locally

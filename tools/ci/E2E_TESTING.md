@@ -31,7 +31,7 @@ from test_util.docker import (
 
 **Pattern for Docker tests:**
 
-1. Add `tags = ["requires_docker"]` to the Bazel test target
+1. Add `requires_docker = True` to the `py_test()` call in the Bazel BUILD file
 2. Use fixtures from `test_util.docker` or `mcp_infra/testing/docker_fixtures.py`
 
 ### Props E2E Tests (Testcontainers)
@@ -59,7 +59,7 @@ This eliminates the need for docker-compose and CI workflow infrastructure setup
 
 ### PostgreSQL Tests
 
-All PostgreSQL tests (both `props/` and `gatelet/`) use **testcontainers** for hermetic PostgreSQL instances. No CI service containers or `PG*` env vars are needed — tests only require Docker (provided by `docker_py_test` / `requires_docker` tag).
+All PostgreSQL tests (both `props/` and `gatelet/`) use **testcontainers** for hermetic PostgreSQL instances. No CI service containers or `PG*` env vars are needed — tests only require Docker (enabled via `py_test(requires_docker=True)`).
 
 ### Workflow Dispatch
 

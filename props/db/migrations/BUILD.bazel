@@ -4,7 +4,8 @@
 # gazelle:exclude script.py.mako
 # gazelle:exclude versions
 
-load("@rules_python//python:defs.bzl", "py_test")
+# Removed py_test load - using defs.bzl version
+load("//tools/testing:defs.bzl", "py_test")
 
 filegroup(
     name = "migrations",

@@ -9,7 +9,8 @@
 #   bazel run //tools/precommit -- [files...]
 #   bazel run //tools/precommit  # format and validate all tracked files
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
     name = "check_filename_conventions",

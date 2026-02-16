@@ -4,7 +4,6 @@
 # gazelle:resolve py inop.engine //inop/engine:optimizer
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 # no-mypy: statsmodels (transitive dep of plotnine) has broken __init__.py structure
 # that causes mypy to error with "Source file found twice under different module names".
@@ -12,10 +11,11 @@ load("//tools/testing:docker.bzl", "docker_py_test")
 # help because the error occurs during module discovery, not import following.
 # See: https://github.com/python/mypy/issues/8944
 
-docker_py_test(
+py_test(
     name = "test_optimizer_two_iters",
     srcs = ["test_optimizer_two_iters.py"],
     imports = [".."],
+    requires_docker = True,
     tags = ["no-mypy"],  # see comment on inop library
     deps = [
         ":config",
@@ -91,6 +91,7 @@ py_library(
 py_test(
     name = "test_config",
     srcs = ["test_config.py"],
+    requires_docker = True,
     deps = [
         ":config",
         ":conftest",
@@ -102,6 +103,7 @@ py_test(
 py_test(
     name = "test_exclusion_patterns",
     srcs = ["test_exclusion_patterns.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         "@pypi//pathspec",
@@ -113,6 +115,7 @@ py_test(
     name = "test_file_truncation",
     srcs = ["test_file_truncation.py"],
     data = ["@tiktoken_o200k_base//file"],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//inop/engine:models",
@@ -126,6 +129,7 @@ py_test(
 py_test(
     name = "test_types",
     srcs = ["test_types.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
     ],

@@ -1,6 +1,7 @@
 # Agent server E2E tests (manual, require Playwright).
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_test(
     name = "test_abort",

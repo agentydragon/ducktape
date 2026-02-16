@@ -20,16 +20,9 @@ BUILDBUDDY_BAZELRC="$HOME/.config/bazel/buildbuddy.bazelrc"
 mkdir -p "$(dirname "$BUILDBUDDY_BAZELRC")"
 
 cat >"$BUILDBUDDY_BAZELRC" <<EOF
-# BuildBuddy configuration (auto-generated)
-build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpcs://remote.buildbuddy.io
-common --remote_cache=grpcs://remote.buildbuddy.io
-common --remote_timeout=10m
+# BuildBuddy authentication (auto-generated)
+# Static configuration is in .bazelrc under build:rbe
 common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
-common --remote_cache_compression
-build --noslim_profile
-build --experimental_profile_include_target_label
-build --experimental_profile_include_primary_output
 
 # Enable RBE (platforms, exec properties in .bazelrc + BUILD.bazel platform)
 build --config=rbe
@@ -47,7 +40,7 @@ fi
 USER_BAZELRC="$HOME/.bazelrc"
 if [[ ! -f "$USER_BAZELRC" ]] || ! grep -q "try-import.*buildbuddy.bazelrc" "$USER_BAZELRC" 2>/dev/null; then
   echo "" >>"$USER_BAZELRC"
-  echo "# BuildBuddy remote cache (auto-added by setup-buildbuddy.sh)" >>"$USER_BAZELRC"
+  echo "# BuildBuddy remote cache (auto-added by setup_buildbuddy.sh)" >>"$USER_BAZELRC"
   echo "try-import $BUILDBUDDY_BAZELRC" >>"$USER_BAZELRC"
 fi
 

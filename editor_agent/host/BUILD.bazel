@@ -1,7 +1,6 @@
 """Editor agent host package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 py_library(
     name = "cli",
@@ -30,11 +29,12 @@ py_binary(
     deps = [":cli"],
 )
 
-docker_py_test(
+py_test(
     name = "test_runner_session",
     srcs = ["test_runner_session.py"],
     data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":runner",
@@ -45,11 +45,12 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_editor_e2e_steps",
     srcs = ["test_editor_e2e_steps.py"],
     data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":agent_runner",
         ":conftest",
@@ -71,6 +72,7 @@ py_test(
     name = "test_submit_server",
     srcs = ["test_submit_server.py"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":submit_server",

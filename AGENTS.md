@@ -161,6 +161,9 @@ bazel test //...
 # Format code (ruff, prettier, shfmt, buildifier)
 bazel run //tools/format
 
+# Format only Bazel files
+bazel run //tools/lint:buildifier
+
 # Build specific target
 bazel build //adgn:adgn
 ```

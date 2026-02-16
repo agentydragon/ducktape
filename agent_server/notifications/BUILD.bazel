@@ -1,7 +1,7 @@
 """Notifications package - notification batching and handling."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
     name = "notifications",
@@ -30,11 +30,12 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_flow",
     srcs = ["test_flow.py"],
     data = ["//third_party/debian_slim:load"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":notifications",
         "//agent_core:agent",

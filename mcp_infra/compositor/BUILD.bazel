@@ -1,5 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
     name = "admin",
@@ -148,6 +148,7 @@ py_test(
         "conftest.py",
         "test_admin.py",
     ],
+    requires_docker = True,
     deps = [
         ":admin",
         ":conftest",
@@ -172,6 +173,7 @@ py_test(
         "conftest.py",
         "test_inproc_server_storage.py",
     ],
+    requires_docker = True,
     deps = [
         ":admin",
         ":compositor",
@@ -194,6 +196,7 @@ py_test(
         "conftest.py",
         "test_lifecycle.py",
     ],
+    requires_docker = True,
     deps = [
         ":admin",
         ":compositor",
@@ -215,6 +218,7 @@ py_test(
 py_test(
     name = "test_meta",
     srcs = ["test_meta.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//mcp_infra:conftest",
@@ -242,6 +246,7 @@ py_test(
     name = "test_rendering_instructions",
     srcs = ["test_rendering_instructions.py"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":rendering",
@@ -252,11 +257,12 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_resources_flow",
     srcs = ["test_resources_flow.py"],
     data = ["//third_party/debian_slim:load"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":resources_server",

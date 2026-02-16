@@ -1,7 +1,7 @@
 """MCP Bridge - two-compositor architecture for agent-MCP integration."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_test(
     name = "test_agents_server",
@@ -19,11 +19,12 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
     data = ["//third_party/debian_slim:load"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":agents",
         ":auth",

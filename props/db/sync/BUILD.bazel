@@ -1,6 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/deps:check.bzl", "assert_no_deps")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//tools/testing:defs.bzl", "py_test")
 
 # =============================================================================
 # Library targets
@@ -116,10 +116,11 @@ assert_no_deps(
 # Tests
 # =============================================================================
 
-docker_py_test(
+py_test(
     name = "test_example_generation",
     srcs = ["test_example_generation.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         "//props:conftest",
         "//props/core:ids",
@@ -137,6 +138,7 @@ py_test(
     name = "test_collect_errors",
     srcs = ["test_collect_errors.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":yaml_loader",
         "//props:conftest",
@@ -148,10 +150,11 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_sync_occurrence_update",
     srcs = ["test_sync_occurrence_update.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":sync",
         ":yaml_loader",
@@ -166,10 +169,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_manifest_loading",
     srcs = ["test_manifest_loading.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":loader",
         "//props:conftest",

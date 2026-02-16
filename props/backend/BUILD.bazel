@@ -4,9 +4,9 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//tools/testing:defs.bzl", "py_test")
 
 # =============================================================================
 # Library targets
@@ -112,6 +112,7 @@ py_test(
     name = "test_auth",
     srcs = ["test_auth.py"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":auth",
         ":conftest",
@@ -127,6 +128,7 @@ py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":cli",
         "//props:conftest",
@@ -138,10 +140,11 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_agent_db_integration",
     srcs = ["test_agent_db_integration.py"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":auth",
         ":conftest",

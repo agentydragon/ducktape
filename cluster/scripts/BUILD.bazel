@@ -9,7 +9,8 @@
 #   bazel run //cluster/scripts:validate_sealed_secrets
 #   bazel run //cluster/scripts:validate_helm_templates
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 package(default_visibility = [
     "//cluster:__subpackages__",

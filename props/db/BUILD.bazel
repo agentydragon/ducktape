@@ -1,6 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/deps:check.bzl", "assert_no_deps")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
 # Leaf modules (no db/ deps)
@@ -193,12 +192,13 @@ assert_no_deps(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_agent_queries",
     srcs = [
         "test_agent_queries.py",
     ],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":database",
@@ -214,12 +214,13 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_tp_occurrence_credits",
     srcs = [
         "test_tp_occurrence_credits.py",
     ],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":examples",
@@ -234,12 +235,13 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_pydantic_column_null",
     srcs = [
         "test_pydantic_column_null.py",
     ],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":database",
@@ -252,12 +254,13 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_split_based_rls",
     srcs = [
         "test_split_based_rls.py",
     ],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":config",
         ":conftest",
@@ -279,10 +282,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_view_extracts_grade_fields",
     srcs = ["test_view_extracts_grade_fields.py"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":config",
         ":conftest",

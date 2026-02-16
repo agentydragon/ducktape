@@ -3,10 +3,11 @@
 
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@pypi//:requirements.bzl", "all_whl_requirements")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//:filter_wheels.bzl", "filter_system_packages")
+load("//tools/testing:defs.bzl", "py_test")
 load(":build_info.bzl", "build_info")
 
 # Copy workspace status file for Python to parse at runtime

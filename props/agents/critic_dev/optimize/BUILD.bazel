@@ -8,7 +8,7 @@ Build targets:
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//tools/testing:defs.bzl", "py_test")
 
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(
@@ -29,7 +29,7 @@ py_python3_symlink(
     binary_name = "optimize",
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
@@ -38,6 +38,7 @@ docker_py_test(
         "//props/agents/grader:image",
     ],
     imports = ["../../../.."],
+    requires_docker = True,
     tags = ["e2e"],
     deps = [
         "//agent_core/testing:responses",

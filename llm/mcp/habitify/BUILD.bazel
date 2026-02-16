@@ -2,7 +2,8 @@
 # gazelle:exclude utils
 # gazelle:exclude examples
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 # --- Base types (no internal deps) ---
 

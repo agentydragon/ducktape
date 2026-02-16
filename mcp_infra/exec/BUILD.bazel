@@ -1,7 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 load("//tools/deps:check.bzl", "assert_no_deps")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 # Core models - no MCP dependencies, usable outside fastmcp
 py_library(
@@ -137,6 +136,7 @@ py_library(
 py_test(
     name = "test_direct",
     srcs = ["test_direct.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":direct",
@@ -152,6 +152,7 @@ py_test(
 py_test(
     name = "test_seatbelt",
     srcs = ["test_seatbelt.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":models",
@@ -169,6 +170,7 @@ py_test(
 py_test(
     name = "test_bwrap",
     srcs = ["test_bwrap.py"],
+    requires_docker = True,
     deps = [
         ":bwrap",
         ":conftest",
@@ -181,11 +183,12 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_docker",
     srcs = ["test_docker.py"],
     data = ["//third_party/debian_slim:load"],
     main = "test_docker.py",
+    requires_docker = True,
     deps = [
         ":conftest",
         ":models",
@@ -228,10 +231,11 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_docker_unit",
     srcs = ["test_docker_unit.py"],
     data = ["//third_party/debian_slim:load"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":docker",
@@ -271,11 +275,12 @@ live_openai_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_mcp_integration",
     srcs = ["test_mcp_integration.py"],
     data = ["//third_party/debian_slim:load"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":direct",

@@ -1,5 +1,4 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 py_library(
     name = "agent_definitions",
@@ -95,10 +94,11 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_llm_budget",
     srcs = ["test_llm_budget.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":llm",
         "//props:conftest",
@@ -115,10 +115,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_llm_routing",
     srcs = ["test_llm_routing.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":llm",
         "//props:config",
@@ -132,10 +133,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_runs",
     srcs = ["test_runs.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":runs",
         "//props:conftest",
@@ -160,6 +162,7 @@ py_test(
     name = "test_registry_proxy",
     srcs = ["test_registry_proxy.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":registry",
         "//props:conftest",
@@ -195,10 +198,11 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_stats",
     srcs = ["test_stats.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":stats",
         "//props:conftest",

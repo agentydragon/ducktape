@@ -1,5 +1,6 @@
 # gazelle:ignore
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
     name = "dbus_fast_example",

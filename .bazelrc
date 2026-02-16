@@ -77,6 +77,16 @@ build:rbe --jobs=50
 build:rbe --remote_download_minimal
 # Docker daemon for all RBE tests (lightweight - Firecracker isolation already enabled in platform)
 test:rbe --remote_default_exec_properties=test.init-dockerd=true
+# BuildBuddy Build Event Service (BES) and remote cache configuration
+build:rbe --bes_results_url=https://app.buildbuddy.io/invocation/
+build:rbe --bes_backend=grpcs://remote.buildbuddy.io
+common:rbe --remote_cache=grpcs://remote.buildbuddy.io
+common:rbe --remote_timeout=10m
+common:rbe --remote_cache_compression
+# Detailed profiling for BuildBuddy UI
+build:rbe --noslim_profile
+build:rbe --experimental_profile_include_target_label
+build:rbe --experimental_profile_include_primary_output
 
 # Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)

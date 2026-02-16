@@ -1,7 +1,6 @@
 """Gatelet server endpoints."""
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 py_library(
     name = "activitywatch",
@@ -96,9 +95,10 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_activitywatch",
     srcs = ["test_activitywatch.py"],
+    requires_docker = True,
     deps = [
         ":activitywatch",
         "//experimental/gatelet/server:config",
@@ -108,9 +108,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_admin_cr_sessions",
     srcs = ["test_admin_cr_sessions.py"],
+    requires_docker = True,
     deps = [
         "//experimental/gatelet/server:conftest",
         "//experimental/gatelet/server:models",
@@ -120,9 +121,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_admin_keys",
     srcs = ["test_admin_keys.py"],
+    requires_docker = True,
     deps = [
         "//experimental/gatelet/server:conftest",
         "//experimental/gatelet/server:models",
@@ -132,9 +134,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_admin_login",
     srcs = ["test_admin_login.py"],
+    requires_docker = True,
     deps = [
         "//experimental/gatelet/server:conftest",
         "@pypi//httpx",
@@ -143,9 +146,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_admin_logs",
     srcs = ["test_admin_logs.py"],
+    requires_docker = True,
     deps = [
         "//experimental/gatelet/server:config",
         "//experimental/gatelet/server:conftest",
@@ -154,9 +158,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_admin_sessions",
     srcs = ["test_admin_sessions.py"],
+    requires_docker = True,
     deps = [
         "//experimental/gatelet/server:conftest",
         "//experimental/gatelet/server:models",
@@ -166,9 +171,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_challenge",
     srcs = ["test_challenge.py"],
+    requires_docker = True,
     deps = [
         ":challenge",
         "//experimental/gatelet/server:config",
@@ -183,6 +189,7 @@ docker_py_test(
 py_test(
     name = "test_compute_correct_option",
     srcs = ["test_compute_correct_option.py"],
+    requires_docker = True,
     deps = [
         ":challenge",
         "@pypi//pytest",
@@ -190,9 +197,10 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_homeassistant",
     srcs = ["test_homeassistant.py"],
+    requires_docker = True,
     deps = [
         "//experimental/gatelet/server:conftest",
         "@pypi//httpx",
@@ -201,9 +209,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_webhook_receive",
     srcs = ["test_webhook_receive.py"],
+    requires_docker = True,
     deps = [
         "//experimental/gatelet/server:conftest",
         "//experimental/gatelet/server:models",
@@ -215,9 +224,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_webhook_view",
     srcs = ["test_webhook_view.py"],
+    requires_docker = True,
     deps = [
         "//experimental/gatelet/server:conftest",
         "//experimental/gatelet/server:models",

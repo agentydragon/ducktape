@@ -1,7 +1,7 @@
 """MCP Approval Policy server - policy engine and middleware."""
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
     name = "engine",
@@ -34,7 +34,7 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_engine",
     srcs = ["test_engine.py"],
     data = [
@@ -42,6 +42,7 @@ docker_py_test(
         "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":engine",
         "//agent_server:conftest",
@@ -56,7 +57,7 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_gateway_middleware",
     srcs = ["test_gateway_middleware.py"],
     data = [
@@ -64,6 +65,7 @@ docker_py_test(
         "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":engine",
         "//agent_server:conftest",
@@ -81,7 +83,7 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_server",
     srcs = ["test_server.py"],
     data = [
@@ -89,6 +91,7 @@ docker_py_test(
         "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         "//agent_core:agent",
         "//agent_core:handler",
@@ -108,7 +111,7 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
     data = [
@@ -116,6 +119,7 @@ docker_py_test(
         "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":engine",
         "//agent_core:agent",
@@ -135,7 +139,7 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_default_policy",
     srcs = ["test_default_policy.py"],
     data = [
@@ -143,6 +147,7 @@ docker_py_test(
         "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         "//agent_server:conftest",
         "//agent_server/policies:policy_types",
@@ -156,7 +161,7 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_eval_abort",
     srcs = ["test_eval_abort.py"],
     data = [
@@ -164,6 +169,7 @@ docker_py_test(
         "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":engine",
         "//agent_server:conftest",

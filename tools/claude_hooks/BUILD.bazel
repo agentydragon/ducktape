@@ -1,5 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//tools/testing:defs.bzl", "py_test")
 
 # === Base modules (no internal deps) ===
 

@@ -2,7 +2,7 @@
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_binary(
     name = "server",
@@ -164,13 +164,14 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_admin_webhook_e2e",
     srcs = ["test_admin_webhook_e2e.py"],
     data = ["@playwright_browsers//:chromium-headless-shell"],
     env = {
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
+    requires_docker = True,
     deps = [
         ":app",
         ":config",
@@ -189,9 +190,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_report_battery",
     srcs = ["test_report_battery.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":models",
@@ -204,9 +206,10 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_report_event",
     srcs = ["test_report_event.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":models",

@@ -1,5 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 # =============================================================================
 # Leaf modules (no props.core deps)
@@ -130,7 +130,7 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_production_specimens",
     srcs = ["test_production_specimens.py"],
     # TODO: Specimens dir is .bazelignored because snapshot code/ dirs contain
@@ -141,6 +141,7 @@ docker_py_test(
     # as packages (Bazel doesn't support this natively as of 2026-02).
     imports = ["../.."],
     local = True,
+    requires_docker = True,
     tags = ["integration"],
     deps = [
         ":splits",

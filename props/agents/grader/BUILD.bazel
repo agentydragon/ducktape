@@ -16,7 +16,6 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 exports_files(
     ["prompt.md.mako"],
@@ -150,6 +149,7 @@ py_test(
     name = "test_notification_handler",
     srcs = ["test_notification_handler.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":notification_handler",
         "//openai_utils:text_extraction",
@@ -159,10 +159,11 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_grading_edges_constraints",
     srcs = ["test_grading_edges_constraints.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//props:conftest",
@@ -176,10 +177,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_matchable_occurrences",
     srcs = ["test_matchable_occurrences.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//props:conftest",
@@ -191,13 +193,14 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
         ":image",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     tags = [
         "e2e",
     ],
@@ -220,13 +223,14 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e_sleep_wake",
     srcs = ["test_e2e_sleep_wake.py"],
     data = [
         ":image",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     tags = [
         "e2e",
     ],
@@ -249,13 +253,14 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e_clustering",
     srcs = ["test_e2e_clustering.py"],
     data = [
         ":image",
     ],
     imports = ["../../.."],
+    requires_docker = True,
     tags = [
         "e2e",
     ],

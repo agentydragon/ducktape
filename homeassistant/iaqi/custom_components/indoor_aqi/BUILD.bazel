@@ -1,7 +1,8 @@
 # gazelle:ignore
 # Uses @pypi_homeassistant hub, not the main @pypi
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
     name = "indoor_aqi",
