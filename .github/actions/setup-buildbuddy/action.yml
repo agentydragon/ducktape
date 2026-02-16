@@ -47,6 +47,6 @@ runs:
         fi
 
         # Run the shared setup script (writes to ~/.config/bazel/buildbuddy.bazelrc)
-        "${{ github.workspace }}/tools/setup-buildbuddy.sh"
+        "${{ github.workspace }}/tools/setup_buildbuddy.sh"
 
         echo "enabled=true" >> $GITHUB_OUTPUT

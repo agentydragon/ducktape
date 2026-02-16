@@ -63,7 +63,7 @@ build:eslint --aspects=//tools/lint:linters.bzl%eslint
 build:eslint --output_groups=+rules_lint_report
 
 # Remote Build Execution (BuildBuddy)
-# Activated by: setup-buildbuddy.sh, buildbuddy.yaml, bazelrc.mako (Claude Code web)
+# Activated by: setup_buildbuddy.sh, buildbuddy.yaml, bazelrc.mako (Claude Code web)
 # Requires authentication via ~/.config/bazel/buildbuddy.bazelrc (API key + BES).
 build:rbe --remote_executor=grpcs://remote.buildbuddy.io
 build:rbe --extra_execution_platforms=//:rbe_linux_x64

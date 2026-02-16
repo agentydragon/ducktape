@@ -28,7 +28,7 @@ def setup_buildbuddy(project_dir: Path, *, api_key: str | None = None) -> Buildb
         logger.info("BuildBuddy API key not provided, skipping setup")
         return BuildbuddySetup(configured=False)
 
-    script_path = project_dir / "tools" / "setup-buildbuddy.sh"
+    script_path = project_dir / "tools" / "setup_buildbuddy.sh"
     if not script_path.exists():
         logger.warning("BuildBuddy setup script not found: %s", script_path)
         return BuildbuddySetup(configured=False)

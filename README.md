@@ -41,7 +41,7 @@ BuildBuddy Workflows provides fast, Bazel-native CI with remote execution. The `
 **Setup**:
 
 1. Enable BuildBuddy Workflows for this repository at <https://app.buildbuddy.io>
-2. BuildBuddy will automatically use your RBE configuration from `tools/setup-buildbuddy.sh`
+2. BuildBuddy will automatically use your RBE configuration from `tools/setup_buildbuddy.sh`
 3. Workflow runs appear in GitHub PRs as status checks
 
 **Architecture**:
