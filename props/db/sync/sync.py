@@ -976,9 +976,7 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
 
     session.flush()
 
-    # Sync critic_scopes_expected_to_recall from occurrences
-    # BISECTION TEST: Commented out to test if this is causing the issue
-    # _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
+    _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
 
     logger.info(f"Synced specimen from bundle: {slug}")
 
