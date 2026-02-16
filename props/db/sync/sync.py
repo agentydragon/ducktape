@@ -559,6 +559,12 @@ def _reconstruct_occ_common(
             .all()
         )
         restriction = {Path(m.file_path) for m in members}
+        # Sanity check: file set with no members is invalid
+        if not restriction:
+            raise ValueError(
+                f"FileSet {db_occ.snapshot_slug}/{db_occ.match_file_restriction} has no members "
+                f"(referenced by occurrence {db_occ.occurrence_id})"
+            )
 
     return files, restriction
 
@@ -836,6 +842,71 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
 
 
+def _sync_critic_scopes_for_specimen(
+    session: Session,
+    slug: SnapshotSlug,
+    true_positives: list[SyncTruePositive],
+    false_positives: list[SyncFalsePositive],
+) -> None:
+    """Sync file sets and critic_scopes_expected_to_recall for a specimen from parsed occurrence data.
+
+    Note: File sets for match_file_restriction are already created by ensure_file_set during
+    occurrence sync. This function only needs to handle critic_scopes_expected_to_recall.
+
+    Args:
+        session: Database session
+        slug: Snapshot slug
+        true_positives: List of parsed true positives with occurrences
+        false_positives: List of parsed false positives with occurrences
+    """
+    # Collect desired critic scopes from occurrence data
+    desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
+
+    for tp in true_positives:
+        for occurrence in tp.occurrences:
+            for trigger_files in occurrence.critic_scopes_expected_to_recall:
+                # Ensure file set exists for this critic scope
+                files_hash = ensure_file_set(session, slug, trigger_files)
+                assert files_hash is not None  # trigger_files is not None, so hash shouldn't be None
+                desired_triggers.add((slug, tp.tp_id, occurrence.occurrence_id, files_hash))
+
+    # Current critic scopes from DB
+    existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
+        (t_slug, tp_id, occ_id, h)
+        for t_slug, tp_id, occ_id, h in session.query(
+            CriticScopeExpectedToRecall.snapshot_slug,
+            CriticScopeExpectedToRecall.tp_id,
+            CriticScopeExpectedToRecall.occurrence_id,
+            CriticScopeExpectedToRecall.files_hash,
+        )
+        .filter_by(snapshot_slug=slug)
+        .all()
+    }
+
+    # Diff critic scopes
+    triggers_to_add = desired_triggers - existing_triggers
+    triggers_to_delete = existing_triggers - desired_triggers
+
+    for t_slug, tp_id, occurrence_id, files_hash in triggers_to_add:
+        session.add(
+            CriticScopeExpectedToRecall(
+                snapshot_slug=t_slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash
+            )
+        )
+
+    if triggers_to_delete:
+        session.query(CriticScopeExpectedToRecall).filter(
+            tuple_(
+                CriticScopeExpectedToRecall.snapshot_slug,
+                CriticScopeExpectedToRecall.tp_id,
+                CriticScopeExpectedToRecall.occurrence_id,
+                CriticScopeExpectedToRecall.files_hash,
+            ).in_(list(triggers_to_delete))
+        ).delete(synchronize_session=False)
+
+    session.flush()
+
+
 def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
     """Sync a single specimen from bundle artifacts.
 
@@ -922,6 +993,10 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
         session.delete(existing_fps[key])
 
     session.flush()
+
+    # Sync critic_scopes_expected_to_recall from occurrences
+    _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
+
     logger.info(f"Synced specimen from bundle: {slug}")
 
 
