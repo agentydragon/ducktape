@@ -466,6 +466,25 @@ http_archive(
     urls = ["https://github.com/google/go-containerregistry/releases/download/v0.18.0/go-containerregistry_Linux_x86_64.tar.gz"],
 )
 
+# ─ Specimen code archives (remote-VCS specimens) ─────────────────────────────
+# These specimens reference external Git repos rather than bundled code/ dirs.
+# Code is fetched at build time and exposed as filegroups for create_code_tar.
+http_archive(
+    name = "specimen_crush_code",
+    build_file_content = 'filegroup(name = "all_files", srcs = glob(["**"]), visibility = ["//visibility:public"])\n',
+    sha256 = "06f94a6f0c121b365bb84eb0b845df3c9f50261562d224d478582d25e21c0acb",
+    strip_prefix = "crush-a2a1ffa00943aa373f688ac05b667083ac3230b1",
+    urls = ["https://github.com/agentydragon/crush/archive/a2a1ffa00943aa373f688ac05b667083ac3230b1.tar.gz"],
+)
+
+http_archive(
+    name = "specimen_ducktape_2025_09_03_code",
+    build_file_content = 'filegroup(name = "all_files", srcs = glob(["**"]), visibility = ["//visibility:public"])\n',
+    sha256 = "b12ba5b8f553f3c90860e926af8527a531e49590395da23ec42a9e8fc01aa900",
+    strip_prefix = "ducktape-4ad33013af27e159863bed92ffcfdb55b388e46c",
+    urls = ["https://github.com/agentydragon/ducktape/archive/4ad33013af27e159863bed92ffcfdb55b388e46c.tar.gz"],
+)
+
 # ─ Go toolchain (environment-manager RE) ──────────────────────────────────
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.6")

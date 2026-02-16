@@ -2,6 +2,7 @@ load("//props/specimens:defs.bzl", "specimen_targets")
 
 specimen_targets(
     name = "specimen",
+    code_srcs = ["@specimen_ducktape_2025_09_03_code//:all_files"],
     slug = "ducktape/2025-09-03-00",
     split = "train",
 )
