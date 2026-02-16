@@ -7,12 +7,21 @@ package(default_testonly = True)
 py_library(
     name = "db",
     srcs = ["db.py"],
-    data = glob(["testdata/specimens/**"]) + [
+    data = [
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/test1:specimen_code_tar",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/test1:specimen_data_blob",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/train1:specimen_code_tar",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/train1:specimen_data_blob",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/valid1:specimen_code_tar",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/valid1:specimen_data_blob",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_code_tar",
+        "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_data_blob",
         "//third_party/containers:postgres_16_tarball",
         "//third_party/containers:ryuk_tarball",
     ],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//bazel_util:runfiles",
         "//props/db:config",
         "//props/db:database",
         "//props/db:setup",

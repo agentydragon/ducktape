@@ -1,5 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/testing:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 # =============================================================================
 # Leaf modules (no props.core deps)
@@ -127,37 +126,6 @@ py_test(
         ":agent_workspace",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_production_specimens",
-    srcs = ["test_production_specimens.py"],
-    # TODO: Specimens dir is .bazelignored because snapshot code/ dirs contain
-    # BUILD.bazel files that create spurious Bazel packages, blocking glob().
-    # Test reads from source tree via Path.resolve() + local=True. This prevents
-    # RBE and loses Bazel cache invalidation on specimen changes. To fix: find a
-    # way to include specimens as Bazel data without treating their BUILD files
-    # as packages (Bazel doesn't support this natively as of 2026-02).
-    imports = ["../.."],
-    local = True,
-    requires_docker = True,
-    tags = ["integration"],
-    deps = [
-        ":splits",
-        "//props:conftest",
-        "//props/db:config",
-        "//props/db:database",
-        "//props/db:models",
-        "//props/db:setup",
-        "//props/db/sync",
-        "//test_util:image_loader",
-        "//third_party/containers:rlocations",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 

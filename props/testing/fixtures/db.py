@@ -16,10 +16,11 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
+from bazel_util.runfiles import get_required_path
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
-from props.db.sync.sync import sync_all
+from props.db.sync.sync import SpecimenBundle, sync_all
 from test_util.image_loader import load_image
 from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
 
@@ -161,11 +162,29 @@ def engine(db: Database) -> Engine:
     return db.engine
 
 
+def _load_test_fixture_bundles() -> list[SpecimenBundle]:
+    """Load test fixture bundles from Bazel runfiles."""
+    fixtures = [
+        ("test-fixtures/test1", "props/testing/fixtures/testdata/specimens/test-fixtures/test1"),
+        ("test-fixtures/train1", "props/testing/fixtures/testdata/specimens/test-fixtures/train1"),
+        ("test-fixtures/valid1", "props/testing/fixtures/testdata/specimens/test-fixtures/valid1"),
+        ("test-fixtures/valid2", "props/testing/fixtures/testdata/specimens/test-fixtures/valid2"),
+    ]
+
+    bundles = []
+    for slug, base_path in fixtures:
+        code_tar = get_required_path(f"_main/{base_path}/specimen_code.tar")
+        data_yaml = get_required_path(f"_main/{base_path}/specimen_data.yaml")
+        bundles.append(SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml))
+
+    return bundles
+
+
 def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sync test fixtures to the current database."""
-    monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(TEST_FIXTURES_PATH))
+    """Sync test fixtures to the current database using bundle workflow."""
+    bundles = _load_test_fixture_bundles()
     with db.session() as session:
-        sync_all(session, use_staged=True)
+        sync_all(session, specimen_bundles=bundles)
 
 
 @pytest.fixture(scope="session")

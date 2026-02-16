@@ -26,26 +26,28 @@
 
 ### ❌ Gaps Against Design Goals
 
-| Goal | Current State | Gap |
-|------|---------------|-----|
-| **One path for payload generation** | Tests use genrule tar, production sync reads source tree directly | **DUPLICATE PATHS**: Test path ≠ production path |
-| **One synchronization path** | Test calls `sync_all()`, but specimen extraction logic is test-specific | **PARTIAL DUPLICATION**: Tar extraction in test, direct read in prod |
-| **Starlark file renaming** | Uses shell script with heredoc, `cp`, `tar` | **SHELLS OUT**: Should use Starlark glob + rename instead |
-| **DRY Starlark** | Logic spread across genrule shell, test Python, sync Python | **SCATTERED**: No single source of truth |
-| **Manifest generation** | Manifests committed to repo | **NOT GENERATED**: Manifest still manual |
-| **Covers external repos** | Only handles in-repo specimens | **MISSING**: No git_repository integration for crush |
-| **Single payload concept** | Separate handling for code tar vs issues glob | **FRAGMENTED**: Code and issues not unified |
+| Goal                                | Current State                                                           | Gap                                                                  |
+| ----------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **One path for payload generation** | Tests use genrule tar, production sync reads source tree directly       | **DUPLICATE PATHS**: Test path ≠ production path                     |
+| **One synchronization path**        | Test calls `sync_all()`, but specimen extraction logic is test-specific | **PARTIAL DUPLICATION**: Tar extraction in test, direct read in prod |
+| **Starlark file renaming**          | Uses shell script with heredoc, `cp`, `tar`                             | **SHELLS OUT**: Should use Starlark glob + rename instead            |
+| **DRY Starlark**                    | Logic spread across genrule shell, test Python, sync Python             | **SCATTERED**: No single source of truth                             |
+| **Manifest generation**             | Manifests committed to repo                                             | **NOT GENERATED**: Manifest still manual                             |
+| **Covers external repos**           | Only handles in-repo specimens                                          | **MISSING**: No git_repository integration for crush                 |
+| **Single payload concept**          | Separate handling for code tar vs issues glob                           | **FRAGMENTED**: Code and issues not unified                          |
 
 ## Proposed Architecture
 
 ### Core Concept: Unified Specimen Payload
 
 A "specimen payload" is a single conceptual object containing:
+
 - Code (with BUILD.bazel files restored)
 - Issues (YAML files)
 - Minimal metadata (generated manifest)
 
 This payload is:
+
 1. Generated once in Starlark
 2. Used by both tests AND production sync
 3. Defined for both local and external specimens
@@ -77,7 +79,7 @@ def specimen_targets(name, slug):
         srcs = code_files,
         renames = {src: dst for src, dst in rename_pairs},
         package_dir = "code",
-        out = name + "_code.tar.gz",
+        out = name + "_code.tar",
     )
 
     # Generate manifest from metadata (not committed)
@@ -122,7 +124,7 @@ class SpecimenPayload:
         """Load from Bazel test runfiles (per-specimen test)."""
         # Find payload files in runfiles
         return cls(
-            code_tar=get_required_path(f"_main/props/specimens/{slug}/specimen_code.tar.gz"),
+            code_tar=get_required_path(f"_main/props/specimens/{slug}/specimen_code.tar"),
             issues_blob=get_required_path(f"_main/props/specimens/{slug}/specimen_issues.yaml"),
             manifest=get_required_path(f"_main/props/specimens/{slug}/specimen_manifest.yaml"),
         )
@@ -242,6 +244,7 @@ def _compile_issues(name, srcs):
 ### Manifest Fields - What to Keep?
 
 Current manifest.yaml contains:
+
 - `slug`: Keep (identifier)
 - `repository`: Keep? (Could derive from slug or macro param)
 - `commit_sha`: Keep? (For external repos via git_repository, for local could come from workspace status)
@@ -254,6 +257,7 @@ Current manifest.yaml contains:
 ### Issues Blob Format
 
 Should compiled issues be:
+
 - Array of issue objects? `[{id: "...", ...}, ...]`
 - Map by ID? `{"issue-1": {...}, "issue-2": {...}}`
 - Nested by directory structure? `{"dir1": {"issue-1": {...}}}`
