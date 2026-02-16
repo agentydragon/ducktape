@@ -166,15 +166,12 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sync test fixtures to the current database using bundle workflow."""
     fixture_slugs = ["test-fixtures/test1", "test-fixtures/train1", "test-fixtures/valid1", "test-fixtures/valid2"]
 
-    bundles = []
-    for slug in fixture_slugs:
-        base_path = f"props/testing/fixtures/testdata/specimens/{slug}"
-        code_tar = get_required_path(f"_main/{base_path}/specimen_code.tar")
-        data_yaml = get_required_path(f"_main/{base_path}/specimen_data.yaml")
-        bundles.append(SpecimenBundle.from_paths(code_tar, data_yaml))
-
     with db.session() as session:
-        for bundle in bundles:
+        for slug in fixture_slugs:
+            base_path = f"props/testing/fixtures/testdata/specimens/{slug}"
+            code_tar = get_required_path(f"_main/{base_path}/specimen_code.tar")
+            data_yaml = get_required_path(f"_main/{base_path}/specimen_data.yaml")
+            bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
             sync_specimen(session, bundle)
         session.commit()
 

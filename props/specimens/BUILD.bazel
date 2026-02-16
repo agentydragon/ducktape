@@ -9,16 +9,9 @@ exports_files([
 ])
 
 py_binary(
-    name = "create_code_tar",
-    srcs = ["create_code_tar.py"],
-    main = "create_code_tar.py",
-    visibility = ["//visibility:public"],
-)
-
-py_binary(
-    name = "create_data_blob",
-    srcs = ["create_data_blob.py"],
-    main = "create_data_blob.py",
+    name = "compile",
+    srcs = ["compile.py"],
+    main = "compile.py",
     visibility = ["//visibility:public"],
     deps = [
         "//props/db/sync",

@@ -6,8 +6,8 @@
 
 The `specimen_targets()` macro in <defs.bzl> generates three targets per specimen:
 
-1. **`{name}_code_tar`** — Deterministic uncompressed tar of source code, with `.specimen` suffix stripped (restoring original filenames like `BUILD.bazel`). Built by a custom Starlark rule (`create_code_tar`) invoking <create_code_tar.py>.
-2. **`{name}_data_blob`** — Single YAML blob merging all `issues/**/*.yaml` files with `snapshot_slug` and `split` metadata. Built by a custom Starlark rule (`create_data_blob`) invoking <create_data_blob.py>. Validated through `SpecimenData` Pydantic model at build time.
+1. **`{name}_code_tar`** — Deterministic uncompressed tar of source code, with `.specimen` suffix stripped (restoring original filenames like `BUILD.bazel`). Built by a custom Starlark rule (`create_code_tar`) invoking `compile.py code-tar`. For external repos (http_archive), the strip prefix is auto-detected from `File.owner.workspace_root`.
+2. **`{name}_data_blob`** — Single YAML blob merging all `issues/**/*.yaml` files with `snapshot_slug` and `split` metadata. Built by a custom Starlark rule (`create_data_blob`) invoking `compile.py data-blob`. Validated through `SpecimenData` Pydantic model at build time.
 3. **`test_{name}`** — Per-specimen `py_test` using <test_specimen.py>, receiving artifact paths via env vars (`SPECIMEN_CODE_TAR`, `SPECIMEN_DATA_YAML`).
 
 ### Sync Path
@@ -32,7 +32,7 @@ Remote-VCS specimens (crush, older ducktape snapshots) use `http_archive` in `MO
 | **Per-specimen tests**              | Each specimen has its own test target (parallel, isolated, RBE-compatible)        |
 | **Generic test**                    | Single `test_specimen.py` instantiated per specimen via macro                     |
 | **No `local = True`**               | Tests use testcontainers PostgreSQL, run on RBE                                   |
-| **No shell-out in tar creation**    | Custom Starlark rule + Python tool (replaces earlier genrule shell script)        |
+| **No shell-out in tar creation**    | Custom Starlark rules + `compile.py` tool (replaces earlier genrule shell script) |
 | **No committed manifests**          | Slug and split are macro params; `SpecimenData` blob is generated at build time   |
 | **Compiled issues blob**            | `create_data_blob` rule merges YAML files into single blob (using Python, not yq) |
 | **External repo support**           | `http_archive` in `MODULE.bazel` for crush and older ducktape snapshots           |
@@ -54,16 +54,11 @@ This means after a bundle-based sync, the `critic_scopes_expected_to_recall` M:N
 
 `load_yaml_issues()` in `yaml_loader.py` is still used by `sync_file_sets_to_db` and by `test_collect_errors.py`. Once `sync_file_sets_to_db` is removed, `load_yaml_issues` is only needed for that test. Consider whether that test should migrate to using `SpecimenData` parsing instead.
 
-### 3. `pkg_tar` with renames not adopted
-
-The current `create_code_tar` Starlark rule invokes a custom Python tool that handles `.specimen` → original name renaming. The original design proposed using `pkg_tar(renames={...})` — a declarative, built-in Bazel mechanism that wouldn't need a custom tool. This is a minor concern: the current approach works, is shell-free, and produces deterministic tars. The `pkg_tar` migration would reduce custom code but isn't blocking.
-
-### 4. Pre-commit hook doesn't distinguish `.specimen` renames from content changes
+### 3. Pre-commit hook doesn't distinguish `.specimen` renames from content changes
 
 The `block-specimen-code-changes` hook blocks all staged changes under `props/specimens/*/code/` for committed specimens. This means adding new `.specimen`-renamed BUILD files to an existing specimen requires either temporarily removing the `issues/` directory or bypassing the hook. Low priority — new specimens rarely need retroactive BUILD file renaming.
 
 ## Possible Future Work
 
 - **Remove legacy sync path**: After fixing gap #1, delete `sync_snapshots_to_db`, `sync_issues_to_db`, `sync_file_sets_to_db`, and related source-resolution code.
-- **Migrate to `pkg_tar`**: Replace `create_code_tar` rule + Python tool with `pkg_tar(renames={...})`.
 - **Refine pre-commit hook**: Allow `.specimen` file additions/renames while still blocking content changes to committed specimen code.

@@ -8,12 +8,21 @@ def _create_code_tar_impl(ctx):
     if not srcs:
         fail("create_code_tar: srcs is empty")
 
-    if not ctx.attr.strip_prefix:
-        fail("strip_prefix is required. Specify the path prefix to remove from tar entries.")
+    # For external repo files, auto-detect strip prefix from workspace root.
+    # For local files, use the explicit strip_prefix attribute.
+    first_src = srcs[0]
+    ws_root = first_src.owner.workspace_root
+    if ws_root:
+        strip_prefix = ws_root
+    elif ctx.attr.strip_prefix:
+        strip_prefix = ctx.attr.strip_prefix
+    else:
+        fail("strip_prefix is required for local source files")
 
     args = ctx.actions.args()
+    args.add("code-tar")
     args.add(ctx.outputs.out)
-    args.add("--strip-prefix", ctx.attr.strip_prefix)
+    args.add("--strip-prefix", strip_prefix)
     args.add_all(srcs)
 
     ctx.actions.run(
@@ -32,12 +41,11 @@ create_code_tar = rule(
     attrs = {
         "srcs": attr.label_list(allow_files = True),
         "strip_prefix": attr.string(
-            doc = "Path prefix to strip from source files (required).",
-            mandatory = True,
+            doc = "Path prefix to strip from source files. Auto-detected for external repos.",
         ),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
-            default = "//props/specimens:create_code_tar",
+            default = "//props/specimens:compile",
             executable = True,
             cfg = "exec",
         ),
@@ -47,6 +55,7 @@ create_code_tar = rule(
 def _create_data_blob_impl(ctx):
     """Implementation for create_data_blob rule."""
     args = ctx.actions.args()
+    args.add("data-blob")
     args.add(ctx.outputs.out)
     args.add(ctx.attr.snapshot_slug)
     args.add(ctx.attr.split)
@@ -71,14 +80,14 @@ create_data_blob = rule(
         "split": attr.string(mandatory = True),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
-            default = "//props/specimens:create_data_blob",
+            default = "//props/specimens:compile",
             executable = True,
             cfg = "exec",
         ),
     },
 )
 
-def specimen_targets(name, slug, split, code_srcs):
+def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
     """Generate bundle artifacts and test target for a specimen.
 
     Args:
@@ -87,6 +96,8 @@ def specimen_targets(name, slug, split, code_srcs):
         split: Dataset split (e.g., "train", "test", "val")
         code_srcs: Label list for code files. For local specimens, pass glob(["code/**/*"]).
             For remote-VCS specimens, pass the http_archive filegroup label.
+        code_strip_prefix: Override strip prefix for code tar. If empty, uses
+            "{package}/code" for local or auto-detects for external repos.
 
     Generates:
         - {name}_code_tar: Deterministic uncompressed tar of code/ with BUILD.bazel restored
@@ -96,19 +107,17 @@ def specimen_targets(name, slug, split, code_srcs):
     code_tar_target = name + "_code_tar"
     data_blob_target = name + "_data_blob"
 
-    # Compute strip_prefix: package path + "/code" convention
-    pkg = native.package_name()
-    strip_prefix = pkg + "/code"
+    if not code_strip_prefix:
+        pkg = native.package_name()
+        code_strip_prefix = pkg + "/code"
 
-    # Create code tar using custom Starlark rule (no shell!)
     create_code_tar(
         name = code_tar_target,
         srcs = code_srcs,
-        strip_prefix = strip_prefix,
+        strip_prefix = code_strip_prefix,
         out = name + "_code.tar",
     )
 
-    # Create data blob using custom Starlark rule (no shell!)
     create_data_blob(
         name = data_blob_target,
         issue_files = native.glob(["issues/**/*.yaml"]),
