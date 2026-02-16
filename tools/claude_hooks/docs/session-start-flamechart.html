@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Session Start Hook — Flame Chart</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #1a1a2e;
+        color: #e0e0e0;
+        padding: 32px;
+      }
+      h1 {
+        font-size: 20px;
+        margin-bottom: 4px;
+        color: #fff;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: #888;
+        margin-bottom: 24px;
+      }
+      .chart-container {
+        position: relative;
+        margin-top: 16px;
+      }
+      .ruler {
+        position: relative;
+        height: 28px;
+        border-bottom: 1px solid #444;
+        margin-bottom: 4px;
+      }
+      .ruler-tick {
+        position: absolute;
+        top: 0;
+        font-size: 11px;
+        color: #888;
+      }
+      .ruler-tick::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 18px;
+        width: 1px;
+        height: 10px;
+        background: #444;
+      }
+      .gridlines {
+        position: absolute;
+        top: 28px;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        pointer-events: none;
+      }
+      .gridline {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: #ffffff08;
+      }
+      .track {
+        position: relative;
+        height: 32px;
+        margin-bottom: 2px;
+        display: flex;
+        align-items: center;
+      }
+      .track-label {
+        width: 140px;
+        flex-shrink: 0;
+        font-size: 12px;
+        color: #aaa;
+        text-align: right;
+        padding-right: 12px;
+        white-space: nowrap;
+      }
+      .track-bars {
+        position: relative;
+        flex: 1;
+        height: 100%;
+      }
+      .bar {
+        position: absolute;
+        height: 24px;
+        top: 4px;
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        padding: 0 6px;
+        font-size: 11px;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: default;
+        transition: filter 0.15s;
+        min-width: 2px;
+      }
+      .bar:hover {
+        filter: brightness(1.3);
+      }
+      .bar .dur {
+        margin-left: 4px;
+        opacity: 0.7;
+        font-size: 10px;
+      }
+      .bar-bg {
+        position: absolute;
+        height: 24px;
+        top: 4px;
+        border-radius: 3px;
+        opacity: 0.15;
+      }
+      .critical {
+        outline: 2px solid #ff6b6b88;
+        outline-offset: 1px;
+      }
+      .legend {
+        margin-top: 24px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 12px;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .legend-swatch {
+        width: 14px;
+        height: 14px;
+        border-radius: 2px;
+      }
+      .summary {
+        margin-top: 20px;
+        font-size: 13px;
+        color: #aaa;
+        line-height: 1.6;
+      }
+      .summary strong {
+        color: #ff6b6b;
+      }
+      .tooltip {
+        position: fixed;
+        background: #2a2a4a;
+        border: 1px solid #555;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 100;
+        display: none;
+        max-width: 320px;
+        box-shadow: 0 4px 12px #0008;
+      }
+      .tooltip .tt-name {
+        font-weight: 600;
+        color: #fff;
+      }
+      .tooltip .tt-time {
+        color: #aaa;
+        margin-top: 2px;
+      }
+      .tooltip .tt-dur {
+        color: #4ecdc4;
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Session Start Hook — Flame Chart</h1>
+    <div class="subtitle">
+      2026-02-16T01:15:49 — 01:16:23 &nbsp;|&nbsp; Total wall time: 34s &nbsp;|&nbsp; Source: session-start.log
+    </div>
+
+    <div class="chart-container" id="chart"></div>
+
+    <div class="legend" id="legend"></div>
+
+    <div class="summary">
+      <strong>Critical path:</strong> supervisor (1s) → podman apt-get install (28s) → podman configure + start (2s) →
+      emit context (3s) = 34s<br />
+      Podman install dominates at 28s (82% of wall time). Everything else completes in parallel before podman finishes.
+    </div>
+
+    <div class="tooltip" id="tooltip">
+      <div class="tt-name"></div>
+      <div class="tt-time"></div>
+      <div class="tt-dur"></div>
+    </div>
+
+    <script>
+      const TOTAL = 34; // seconds
+      const T0 = 49; // base seconds (01:15:49)
+
+      function s(sec) {
+        return sec - T0;
+      } // normalize to 0-based
+
+      const COLORS = {
+        secrets: "#6c5ce7",
+        supervisor: "#fdcb6e",
+        bazel: "#00b894",
+        proxy: "#0984e3",
+        mkcert: "#e17055",
+        podman: "#d63031",
+        precommit: "#00cec9",
+        nix: "#636e72",
+        context: "#a29bfe",
+      };
+
+      // Each track: { label, color, bars: [{ name, start, end, critical?, sub? }] }
+      const tracks = [
+        {
+          label: "secrets + bb",
+          color: COLORS.secrets,
+          bars: [
+            { name: "Decrypt secrets (4 age files, 5 vars)", start: 0, end: 0.3 },
+            { name: "Kubeconfig write", start: 0.3, end: 0.4 },
+            { name: "BuildBuddy setup", start: 0.4, end: 0.6 },
+          ],
+        },
+        {
+          label: "supervisor",
+          color: COLORS.supervisor,
+          bars: [
+            { name: "Write config + spawn supervisord", start: 0, end: 0.5 },
+            { name: "Wait for port 19001", start: 0.5, end: 1, critical: true },
+          ],
+        },
+        {
+          label: "bazel tmpfs",
+          color: COLORS.bazel,
+          bars: [
+            { name: "Mount tmpfs (300G)", start: 0, end: 0.2 },
+            { name: "Create cache + symlink", start: 0.2, end: 0.4 },
+          ],
+        },
+        {
+          label: "bazelisk",
+          color: COLORS.bazel,
+          bars: [
+            { name: "Install wrapper + symlink", start: 0, end: 0.3 },
+            { name: "Download bazelisk from GitHub", start: 0.3, end: 1.5 },
+          ],
+        },
+        {
+          label: "auth proxy",
+          color: COLORS.proxy,
+          bars: [
+            { name: "Write proxy creds", start: 1, end: 1.2, critical: true },
+            { name: "Supervisor service start", start: 1.2, end: 1.5, critical: true },
+            { name: "Wait for auth-proxy RUNNING", start: 1.5, end: 2, critical: true },
+            { name: "Java truststore + CA bundle + bazelrc", start: 2, end: 3, critical: true },
+          ],
+        },
+        {
+          label: "mkcert",
+          color: COLORS.mkcert,
+          bars: [
+            { name: "Download mkcert binary", start: 3, end: 5 },
+            { name: "Install CA into system trust stores", start: 5, end: 13 },
+            { name: "Generate localhost cert", start: 13, end: 14 },
+            { name: "Append root CA to combined bundle", start: 14, end: 14.3 },
+          ],
+        },
+        {
+          label: "podman",
+          color: COLORS.podman,
+          bars: [
+            { name: "apt-get install podman + crun", start: 1, end: 29, critical: true },
+            { name: "Write configs (storage, containers, registries)", start: 29, end: 29.3, critical: true },
+            { name: "Start podman supervisor service", start: 29.3, end: 30, critical: true },
+            { name: "Wait for socket ready", start: 30, end: 31, critical: true },
+          ],
+        },
+        {
+          label: "pre-commit",
+          color: COLORS.precommit,
+          bars: [
+            { name: "pip install pre-commit", start: 0, end: 7 },
+            { name: "Install git hook", start: 7, end: 8 },
+            { name: "Background: install-hooks (non-blocking)", start: 8, end: 20, sub: true },
+          ],
+        },
+        {
+          label: "nix",
+          color: COLORS.nix,
+          bars: [{ name: "Skipped (install_nix=False)", start: 0, end: 0.3, sub: true }],
+        },
+        {
+          label: "emit context",
+          color: COLORS.context,
+          bars: [{ name: "Write env file + render Mako template", start: 31, end: 34 }],
+        },
+      ];
+
+      // Build chart
+      const container = document.getElementById("chart");
+      const barAreaWidth = 800;
+
+      // Ruler
+      const ruler = document.createElement("div");
+      ruler.className = "ruler";
+      ruler.style.paddingLeft = "140px";
+      for (let t = 0; t <= TOTAL; t += 2) {
+        const tick = document.createElement("div");
+        tick.className = "ruler-tick";
+        tick.style.left = 140 + (t / TOTAL) * barAreaWidth + "px";
+        tick.textContent = t + "s";
+        ruler.appendChild(tick);
+      }
+      container.appendChild(ruler);
+
+      // Gridlines
+      const gridlines = document.createElement("div");
+      gridlines.className = "gridlines";
+      gridlines.style.left = "140px";
+      gridlines.style.right = "0";
+      for (let t = 0; t <= TOTAL; t += 2) {
+        const gl = document.createElement("div");
+        gl.className = "gridline";
+        gl.style.left = (t / TOTAL) * barAreaWidth + "px";
+        gridlines.appendChild(gl);
+      }
+      container.appendChild(gridlines);
+
+      // Tooltip
+      const tooltip = document.getElementById("tooltip");
+
+      function fmtTime(sec) {
+        const m = Math.floor((T0 + sec) / 60);
+        const s = Math.floor((T0 + sec) % 60);
+        const ms = Math.round(((T0 + sec) % 1) * 1000);
+        return `01:${15 + m}:${String(s).padStart(2, "0")}`;
+      }
+
+      // Tracks
+      tracks.forEach((track) => {
+        const row = document.createElement("div");
+        row.className = "track";
+
+        const label = document.createElement("div");
+        label.className = "track-label";
+        label.textContent = track.label;
+        row.appendChild(label);
+
+        const barsDiv = document.createElement("div");
+        barsDiv.className = "track-bars";
+        barsDiv.style.width = barAreaWidth + "px";
+
+        track.bars.forEach((b) => {
+          const left = (b.start / TOTAL) * barAreaWidth;
+          const width = Math.max(2, ((b.end - b.start) / TOTAL) * barAreaWidth);
+          const bar = document.createElement("div");
+          bar.className = "bar" + (b.critical ? " critical" : "");
+          bar.style.left = left + "px";
+          bar.style.width = width + "px";
+          bar.style.background = b.sub ? track.color + "44" : track.color;
+          if (b.sub) {
+            bar.style.borderWidth = "1px";
+            bar.style.borderStyle = "dashed";
+            bar.style.borderColor = track.color;
+            bar.style.background = "transparent";
+          }
+
+          const dur = b.end - b.start;
+          if (width > 40) {
+            bar.innerHTML = `<span>${b.name}</span><span class="dur">${dur < 1 ? "<1s" : dur.toFixed(0) + "s"}</span>`;
+          }
+
+          bar.addEventListener("mouseenter", (e) => {
+            tooltip.style.display = "block";
+            tooltip.querySelector(".tt-name").textContent = b.name;
+            tooltip.querySelector(".tt-time").textContent = `${fmtTime(b.start)} → ${fmtTime(b.end)}`;
+            tooltip.querySelector(".tt-dur").textContent =
+              `Duration: ${dur < 1 ? "<1s" : dur.toFixed(1) + "s"}` + (b.critical ? "  ⚠ critical path" : "");
+          });
+          bar.addEventListener("mousemove", (e) => {
+            tooltip.style.left = e.clientX + 12 + "px";
+            tooltip.style.top = e.clientY - 40 + "px";
+          });
+          bar.addEventListener("mouseleave", () => {
+            tooltip.style.display = "none";
+          });
+
+          barsDiv.appendChild(bar);
+        });
+
+        row.appendChild(barsDiv);
+        container.appendChild(row);
+      });
+
+      // Legend
+      const legend = document.getElementById("legend");
+      const legendItems = [
+        { label: "Secrets / BuildBuddy", color: COLORS.secrets },
+        { label: "Supervisor", color: COLORS.supervisor },
+        { label: "Bazel / Bazelisk", color: COLORS.bazel },
+        { label: "Auth Proxy", color: COLORS.proxy },
+        { label: "mkcert", color: COLORS.mkcert },
+        { label: "Podman", color: COLORS.podman },
+        { label: "pre-commit", color: COLORS.precommit },
+        { label: "Emit Context", color: COLORS.context },
+      ];
+      legendItems.forEach((li) => {
+        const el = document.createElement("div");
+        el.className = "legend-item";
+        el.innerHTML = `<div class="legend-swatch" style="background:${li.color}"></div>${li.label}`;
+        legend.appendChild(el);
+      });
+      // critical path marker
+      const cp = document.createElement("div");
+      cp.className = "legend-item";
+      cp.innerHTML = `<div class="legend-swatch" style="outline:2px solid #ff6b6b88;outline-offset:-2px;background:transparent"></div>Critical path`;
+      legend.appendChild(cp);
+    </script>
+  </body>
+</html>
