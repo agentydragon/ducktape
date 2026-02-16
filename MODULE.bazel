@@ -243,26 +243,37 @@ use_repo(pip, "pypi", "pypi_homeassistant")
 types = use_extension("@rules_mypy//mypy:types.bzl", "types")
 types.requirements(
     name = "pip_types",
-    # Exclusions prevent rules_mypy from generating requirement("X") mappings
-    # for type stubs whose runtime package isn't in the pip hub (or has a
-    # different name). Without exclusion, Bazel fails at analysis time with
-    # "no such package '@@rules_python++pip+pypi//X'".
+    # == Exclusion list for mypy type stubs ==
     #
-    # Cleaned-up stubs (no longer need exclusion):
-    # - sqlalchemy-stubs, types-sqlalchemy: removed from pyproject.toml
-    #   (SQLAlchemy 2.0+ provides types via sqlalchemy[mypy])
-    # - types-jinja2: removed from pyproject.toml (jinja2 ships py.typed)
-    # - types-toml: removed from pyproject.toml (we use tomllib, not toml)
-    # - types-paramiko, types-pytz: runtime deps added to pyproject.toml
-    #   so their stubs resolve correctly
+    # How it works: rules_mypy scans requirements_bazel.txt for types-* and
+    # *-stubs packages, strips the prefix/suffix to find the runtime package
+    # name, and generates requirement("X") → types-X stub mappings. If the
+    # runtime package "X" doesn't exist in the pip hub, Bazel fails at
+    # analysis time: "no such package '@@rules_python++pip+pypi//X'".
+    #
+    # Valid reasons to exclude a stub:
+    #   1. Name mismatch: the stub maps to a package name that differs from
+    #      what's in the pip hub (e.g., types-psycopg2 → psycopg2, but we
+    #      use psycopg2-binary). Can't be fixed by adding a dep.
+    #   2. Conflicting inline types: the runtime package ships py.typed, so
+    #      external stubs would conflict. Fix: remove the stub from
+    #      pyproject.toml instead of excluding here.
+    #
+    # Prefer alternatives to exclusion:
+    #   - If a transitive stub (types-X via another package) references a
+    #     runtime package not in the pip hub, add X to pyproject.toml with
+    #     a comment explaining it's there for stub resolution. This keeps
+    #     stubs active so mypy type-checks X if it's ever imported.
+    #   - If a stub is for a package we don't use and don't plan to use,
+    #     remove the stub from pyproject.toml rather than excluding here.
     #
     # TODO: Upstream fix in rules_mypy to gracefully skip stubs whose
     # runtime package isn't in the pip hub, instead of failing at load time.
     # That would eliminate the need for this exclusion list entirely.
     exclude_requirements = [
-        # types-psycopg2 maps to requirement("psycopg2") but we use
-        # psycopg2-binary (different pip package name). Can't be fixed
-        # by adding a dep — psycopg2 and psycopg2-binary conflict.
+        # Name mismatch: types-psycopg2 maps to requirement("psycopg2")
+        # but we use psycopg2-binary (different pip package name). Adding
+        # psycopg2 as a dep would conflict with psycopg2-binary.
         "types-psycopg2",
     ],
     pip_requirements = "@pypi//:requirements.bzl",
