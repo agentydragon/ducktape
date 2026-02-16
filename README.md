@@ -62,41 +62,10 @@ This repository uses **Bazel** as the unified build system for all Python packag
 
 ### Python (Bazel with rules_python)
 
-```
-ducktape/
-├── MODULE.bazel             # Bazel module definition
-├── requirements_bazel.txt   # Single source of truth for Python deps
-├── agent_cli/BUILD.bazel    # Agent REPL CLI
-├── agent_core/BUILD.bazel   # Core agent loop machinery
-├── mcp_infra/BUILD.bazel    # MCP infrastructure
-└── ...                      # Other packages with BUILD.bazel files
-```
-
-**Key points:**
-
-- `requirements_bazel.txt` is the single source of truth for Python dependencies
+- `requirements_bazel.txt` - Single source of truth for Python dependencies
 - All Python packages have `BUILD.bazel` files defining targets
 - Linting via Bazel aspects (`--config=check` runs ruff + mypy + eslint)
 - Python 3.12+ is the target runtime version
-
-**Development workflow:**
-
-```bash
-# Build all targets
-bazel build //...
-
-# Run all tests
-bazel test //...
-
-# Format code (ruff, prettier, shfmt, buildifier)
-bazel run //tools/format
-
-# Format only Bazel files
-bazel run //tools/lint:buildifier
-
-# Build specific target
-bazel build //adgn:adgn
-```
 
 **Adding dependencies:**
 
