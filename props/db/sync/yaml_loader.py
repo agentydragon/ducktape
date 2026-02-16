@@ -1,7 +1,7 @@
-"""YAML issue file parsing and loading for sync operations.
+"""YAML issue models and sync bridge types.
 
-Loads issue YAML files from the specimens directory, validates them through
-Pydantic models, and converts them to intermediate dataclasses for ORM sync.
+Pydantic models for parsing issue YAML files, and intermediate dataclasses
+for YAML→ORM conversion during sync.
 """
 
 from __future__ import annotations
@@ -9,28 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
 from more_itertools import one
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from props.core.ids import SnapshotSlug, split_snapshot_slug
+from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.core.models.types import Rationale
-
-# ---------------------------------------------------------------------------
-# Error type
-# ---------------------------------------------------------------------------
-
-
-class SyncValidationError(Exception):
-    """Multiple validation errors encountered during sync."""
-
-    def __init__(self, errors: list[str], *, failed_slugs: set[SnapshotSlug] | None = None) -> None:
-        self.errors = errors
-        self.failed_slugs = failed_slugs or set()
-        bullet_list = "\n".join(f"  - {e}" for e in errors)
-        super().__init__(f"{len(errors)} sync error(s):\n{bullet_list}")
-
 
 # ---------------------------------------------------------------------------
 # Intermediate dataclasses (YAML → ORM bridge)
@@ -283,57 +267,3 @@ class YAMLIssue(BaseModel):
         )
 
     model_config = ConfigDict(extra="forbid")
-
-
-# ---------------------------------------------------------------------------
-# Loading function
-# ---------------------------------------------------------------------------
-
-
-def load_yaml_issues(
-    slug: SnapshotSlug, specimens_dir: Path, *, collect_errors: bool = False
-) -> tuple[list[SyncTruePositive], list[SyncFalsePositive]]:
-    """Load YAML issue files for a snapshot.
-
-    When collect_errors is True, all files are attempted and a
-    SyncValidationError is raised at the end if any failed.
-    """
-    repo, version = split_snapshot_slug(slug)
-    snapshot_dir = specimens_dir / repo / version
-
-    if not snapshot_dir.is_dir():
-        raise FileNotFoundError(f"Snapshot directory not found: {snapshot_dir}")
-
-    # Discover all YAML files in the issues subdirectory
-    issues_dir = snapshot_dir / "issues"
-    if not issues_dir.is_dir():
-        raise FileNotFoundError(f"Issues directory not found: {issues_dir}")
-
-    yaml_files = sorted(issues_dir.glob("*.yaml"))
-
-    true_positives: list[SyncTruePositive] = []
-    false_positives: list[SyncFalsePositive] = []
-    errors: list[str] = []
-
-    for yaml_file in yaml_files:
-        issue_id = yaml_file.stem
-
-        try:
-            with yaml_file.open() as f:
-                raw_data = yaml.safe_load(f)
-
-            issue = YAMLIssue.model_validate(raw_data)
-
-            if issue.should_flag:
-                true_positives.append(issue.to_true_positive(tp_id=issue_id, snapshot_slug=slug))
-            else:
-                false_positives.append(issue.to_false_positive(fp_id=issue_id, snapshot_slug=slug))
-        except Exception as e:
-            if not collect_errors:
-                raise
-            errors.append(f"{slug}/issues/{yaml_file.name}: {e}")
-
-    if errors:
-        raise SyncValidationError(errors)
-
-    return true_positives, false_positives

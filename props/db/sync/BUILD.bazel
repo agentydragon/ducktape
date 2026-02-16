@@ -17,7 +17,6 @@ py_library(
         "//props/core/models:types",
         "@pypi//more_itertools",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -110,21 +109,6 @@ py_test(
         "//props/db:examples",
         "//props/db:models",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_collect_errors",
-    srcs = ["test_collect_errors.py"],
-    imports = ["../../.."],
-    deps = [
-        ":yaml_loader",
-        "//props:conftest",
-        "//props/core:ids",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
