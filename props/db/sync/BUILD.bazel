@@ -124,8 +124,9 @@ py_test(
         "//props/core:ids",
         "//props/core/models:true_positive",
         "//props/db:conftest",
-        "//props/db:database",
         "//props/db:models",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

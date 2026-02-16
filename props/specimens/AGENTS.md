@@ -52,6 +52,10 @@ How to write good specimens:
 
 @docs/quality-checklist.md
 
+### 4. Build and Sync
+
+@docs/build-and-sync.md
+
 Pre-commit verification checklist:
 
 - Structure validation
