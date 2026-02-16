@@ -13,7 +13,7 @@ from rich.table import Table
 
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
-from props.db.sync.sync import sync_all
+from props.db.sync.sync import SpecimenBundle, sync_all, sync_specimen
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
@@ -25,7 +25,7 @@ def cmd_sync(
 ) -> None:
     """Sync model metadata and other non-specimen data to database.
 
-    Note: This does NOT sync specimens. Use props-sync-specimen for specimens.
+    Note: This does NOT sync specimens. Use 'props db sync-specimen' for specimens.
     """
     db: Database = ctx.obj
     console = Console()
@@ -35,6 +35,41 @@ def cmd_sync(
         console.print("[yellow]DRY-RUN:[/yellow] Validation passed, no changes committed")
 
     console.print(f"Model metadata: {result.model_metadata_stats.summary_text}")
+
+
+# Typer Option defaults must not be created in function signatures (ruff B008)
+SYNC_SPECIMEN_CODE_TAR_OPT = typer.Option(..., "--code-tar", help="Path to uncompressed code tar")
+SYNC_SPECIMEN_DATA_YAML_OPT = typer.Option(
+    ..., "--data-yaml", help="Path to merged data YAML (snapshot_slug + split + issues)"
+)
+
+
+def cmd_sync_specimen(
+    ctx: typer.Context, code_tar: Path = SYNC_SPECIMEN_CODE_TAR_OPT, data_yaml: Path = SYNC_SPECIMEN_DATA_YAML_OPT
+) -> None:
+    """Sync a specimen from bundle artifacts (code tar + data YAML).
+
+    The code tar must be an uncompressed tar file containing the code/ directory.
+    The data YAML must have {snapshot_slug, split, issues} structure.
+    The snapshot slug is read from the data YAML.
+
+    Example:
+        props db sync-specimen \\
+            --code-tar bazel-bin/props/specimens/ducktape/2026-01-17-00/specimen_code.tar \\
+            --data-yaml bazel-bin/props/specimens/ducktape/2026-01-17-00/specimen_data.yaml
+    """
+    db: Database = ctx.obj
+    console = Console()
+
+    # Create bundle (reads slug from data YAML)
+    bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
+
+    console.print(f"Syncing {bundle.slug} from bundle artifacts...")
+    with db.session() as session:
+        sync_specimen(session, bundle)
+        session.commit()
+
+    console.print("[green]✓[/green] Sync completed successfully")
 
 
 def cmd_db_recreate(
@@ -47,7 +82,7 @@ def cmd_db_recreate(
     2. Drop all existing schema objects (tables, views, RLS policies, functions)
     3. Run Alembic migrations to recreate schema
 
-    Note: This does NOT sync specimens. Use props-sync-specimen to sync individual specimens.
+    Note: This does NOT sync specimens. Use 'props db sync-specimen' to sync individual specimens.
 
     Requires database connection configured via environment variables (postgres superuser).
     """
@@ -68,7 +103,7 @@ def cmd_db_recreate(
     console.print("Recreating database schema...")
     db.recreate()
     console.print("✓ Database schema recreated")
-    console.print("\nTo sync specimens, use: props-sync-specimen --slug <slug> --code-tar <tar> --data-yaml <yaml>")
+    console.print("\nTo sync specimens, use: props db sync-specimen --code-tar <tar> --data-yaml <yaml>")
 
 
 def get_default_backup_dir() -> Path:
@@ -189,6 +224,7 @@ def cmd_db_list_backups() -> None:
 
 # Register commands
 db_app.command("sync")(cmd_sync)
+db_app.command("sync-specimen")(cmd_sync_specimen)
 db_app.command("recreate")(cmd_db_recreate)
 db_app.command("backup")(cmd_db_backup)
 db_app.command("restore")(cmd_db_restore)

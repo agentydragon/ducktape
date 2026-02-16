@@ -17,7 +17,7 @@ from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, 
 from props.db.database import Database
 from props.db.models import FalsePositive, FalsePositiveOccurrenceORM, TruePositive, TruePositiveOccurrenceORM
 from props.db.sync.sync import _fp_occ_from_orm, _sync_fp_issue, _sync_tp_issue, _tp_occ_from_orm
-from props.db.sync.yaml_loader import FalsePositive as FalsePositive_yaml, TruePositive as TruePositive_yaml
+from props.db.sync.yaml_loader import SyncFalsePositive as FalsePositive_yaml, SyncTruePositive as TruePositive_yaml
 
 SLUG = SnapshotSlug("test-fixtures/train1")
 

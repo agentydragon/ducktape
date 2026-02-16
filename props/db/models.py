@@ -644,7 +644,7 @@ class FileSet(Base):
 
     # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship()
-    members: Mapped[list[FileSetMember]] = relationship(back_populates="file_set", cascade="all, delete-orphan")
+    members: Mapped[list[FileSetMember]] = relationship(back_populates="file_set", cascade="all")
 
 
 class FileSetMember(Base):
