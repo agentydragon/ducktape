@@ -1,5 +1,7 @@
+# Deprecated fields (removed, kept for reference):
+#   bundle: None
+
 source:
   vcs: local
   root: code
 split: valid
-bundle: null

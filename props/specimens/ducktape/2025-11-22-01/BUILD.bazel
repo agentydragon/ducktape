@@ -3,4 +3,5 @@ load("//props/specimens:defs.bzl", "specimen_targets")
 specimen_targets(
     name = "specimen",
     slug = "ducktape/2025-11-22-01",
+    split = "valid",
 )

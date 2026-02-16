@@ -1,10 +1,7 @@
+# Deprecated fields (removed, kept for reference):
+#   bundle: {'source_commit': '9395ba65dcef5057176c890981fa0e973d9798eb', 'include': ['adgn/'], 'exclude': ['adgn/src/adgn/props/specimens/']}
+
 source:
   vcs: local
   root: code
 split: valid
-bundle:
-  source_commit: 9395ba65dcef5057176c890981fa0e973d9798eb
-  include:
-    - adgn/
-  exclude:
-    - adgn/src/adgn/props/specimens/

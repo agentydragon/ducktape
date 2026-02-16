@@ -1,17 +1,13 @@
 """Generic single-specimen validation test.
 
 This test is instantiated once per specimen by the specimen_targets macro.
-Test parameters are passed via environment variables.
+Test parameters (slug, code tar, data YAML) are passed via environment variables.
 """
 
 from __future__ import annotations
 
 import os
-import shutil
-import tarfile
-import tempfile
 from collections.abc import Generator
-from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -23,57 +19,24 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import Snapshot
 from props.db.setup import ensure_database_exists
-from props.db.sync.sync import sync_all
+from props.db.sync.sync import SpecimenBundle, sync_all
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def specimen_dir() -> Generator[Path]:
-    """Extract specimen tar to temp dir matching expected structure.
-
-    Creates:
-        {tmpdir}/{repo}/{date}/code/...
-        {tmpdir}/{repo}/{date}/manifest.yaml
-        {tmpdir}/{repo}/{date}/issues/**/*.yaml
-    """
+def synced_db(postgres_container: PostgresContainer) -> Generator[Database]:
+    """Function-scoped database synced with the specimen from bundle artifacts."""
     slug = os.environ["SPECIMEN_SLUG"]
     code_tar_rloc = os.environ["SPECIMEN_CODE_TAR"]
-    manifest_rloc = os.environ["SPECIMEN_MANIFEST"]
-    issues_dir_pkg = os.environ["SPECIMEN_ISSUES_DIR"]
+    data_yaml_rloc = os.environ["SPECIMEN_DATA_YAML"]
 
     # Resolve runfiles paths
     code_tar = get_required_path(f"_main/{code_tar_rloc}")
-    manifest = get_required_path(f"_main/{manifest_rloc}")
+    data_yaml = get_required_path(f"_main/{data_yaml_rloc}")
 
-    repo, date = slug.split("/")
-
-    with tempfile.TemporaryDirectory(prefix="specimen_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        specimen_path = tmp_path / repo / date
-        code_path = specimen_path / "code"
-        code_path.mkdir(parents=True, exist_ok=True)
-
-        # Extract code tar
-        with tarfile.open(code_tar, "r:gz") as tar:
-            tar.extractall(code_path)
-
-        # Copy manifest
-        shutil.copy2(manifest, specimen_path / "manifest.yaml")
-
-        # Copy issues directory
-        issues_source = get_required_path(f"_main/{issues_dir_pkg}")
-        issues_dest = specimen_path / "issues"
-        if issues_source.exists() and issues_source.is_dir():
-            shutil.copytree(issues_source, issues_dest)
-
-        yield tmp_path
-
-
-@pytest.fixture
-def synced_db(postgres_container: PostgresContainer, specimen_dir: Path, monkeypatch) -> Generator[Database]:
-    """Function-scoped database synced with the specimen."""
-    slug = os.environ["SPECIMEN_SLUG"]
+    # Create specimen bundle
+    bundle = SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml)
 
     host = postgres_container.get_container_host_ip()
     port = int(postgres_container.get_exposed_port(5432))
@@ -89,9 +52,9 @@ def synced_db(postgres_container: PostgresContainer, specimen_dir: Path, monkeyp
     db = Database(test_config)
     db.recreate()
 
-    monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(specimen_dir))
+    # Sync from bundle artifacts (no filesystem needed)
     with db.session() as session:
-        sync_all(session, use_staged=True, collect_errors=True)
+        sync_all(session, specimen_bundles=[bundle], use_staged=True, collect_errors=True)
 
     yield db
 

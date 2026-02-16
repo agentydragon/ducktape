@@ -17,7 +17,9 @@ from urllib.parse import urlunparse
 from urllib.request import urlopen
 
 import pygit2
+import yaml
 from opentelemetry import trace
+from pydantic import BaseModel
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
@@ -46,6 +48,7 @@ from props.db.sync.yaml_loader import (
     FalsePositive as FalsePositive_yaml,
     SyncValidationError,
     TruePositive as TruePositive_yaml,
+    YAMLIssue,
     load_yaml_issues,
 )
 
@@ -54,6 +57,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+
+
+class SpecimenData(BaseModel):
+    """Specimen data YAML blob structure.
+
+    Contains the split designation and merged issues from all YAML files.
+    """
+
+    split: str
+    issues: dict[str, YAMLIssue]
+
+
+@dataclass
+class SpecimenBundle:
+    """Bundle artifacts for a single specimen.
+
+    Format: code_tar + data_yaml (merged issues + split)
+    """
+
+    slug: str
+    code_tar: Path
+    data_yaml: Path
 
 
 def _add_ranges_to_occurrence(
@@ -780,6 +805,117 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
 
 
+def sync_specimen_from_bundle(session: Session, bundle: SpecimenBundle) -> None:
+    """Sync a single specimen from bundle artifacts (code tar + data YAML).
+
+    This function handles the complete sync process for one specimen:
+    1. Reads code tar.gz and converts to uncompressed tar for DB
+    2. Reads data.yaml and parses with SpecimenData model
+    3. Syncs snapshot to DB
+    4. Syncs issues to DB
+
+    Args:
+        session: Database session
+        bundle: Specimen bundle with slug, code_tar, and data_yaml paths
+    """
+    # Read and parse data YAML
+    with bundle.data_yaml.open() as f:
+        specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
+
+    # Convert tar.gz to uncompressed tar for DB storage
+    # (DB expects uncompressed tar, but our bundle is tar.gz for efficiency)
+    uncompressed_tar = io.BytesIO()
+    with tarfile.open(bundle.code_tar, "r:gz") as src_tar, tarfile.open(fileobj=uncompressed_tar, mode="w") as dst_tar:
+        for member in src_tar.getmembers():
+            # Copy member metadata and content
+            file_obj = src_tar.extractfile(member)
+            if file_obj is not None:
+                dst_tar.addfile(member, file_obj)
+            else:
+                # Directory or special file
+                dst_tar.addfile(member)
+
+    archive_bytes = uncompressed_tar.getvalue()
+
+    # Sync snapshot to DB
+    snapshot_data = {
+        "slug": bundle.slug,
+        "split": specimen_data.split,
+        "content": archive_bytes,
+        "source": None,  # Bundle mode doesn't track source
+        "bundle": None,  # Bundle mode doesn't use bundle filters
+    }
+
+    stmt = insert(Snapshot).values(**snapshot_data).on_conflict_do_update(index_elements=["slug"], set_=snapshot_data)
+    session.execute(stmt)
+    session.flush()
+
+    # Sync snapshot files from the tar we just stored
+    sync_snapshot_files_to_db(session, [bundle.slug])
+
+    # Convert issues dict to TruePositive/FalsePositive objects
+    true_positives: list[TruePositive_yaml] = []
+    false_positives: list[FalsePositive_yaml] = []
+
+    for issue_id, issue in specimen_data.issues.items():
+        # issue is already a YAMLIssue (validated by Pydantic when loading SpecimenData)
+        if issue.should_flag:
+            true_positives.append(issue.to_true_positive(tp_id=issue_id, snapshot_slug=bundle.slug))
+        else:
+            false_positives.append(issue.to_false_positive(fp_id=issue_id, snapshot_slug=bundle.slug))
+
+    # Sync issues to DB (similar to sync_issues_to_db logic for one specimen)
+    existing_issues = {
+        (i.snapshot_slug, i.tp_id): i for i in session.query(TruePositive).filter_by(snapshot_slug=bundle.slug).all()
+    }
+    existing_fps = {
+        (fp.snapshot_slug, fp.fp_id): fp
+        for fp in session.query(FalsePositive).filter_by(snapshot_slug=bundle.slug).all()
+    }
+
+    seen_issue_keys: set[tuple[SnapshotSlug, str]] = set()
+    seen_fp_keys: set[tuple[SnapshotSlug, str]] = set()
+
+    # Sync true positives
+    for issue in true_positives:
+        key = (issue.snapshot_slug, issue.tp_id)
+        seen_issue_keys.add(key)
+
+        if key not in existing_issues:
+            logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.tp_id}")
+            orm_issue = TruePositive(snapshot_slug=issue.snapshot_slug, tp_id=issue.tp_id, rationale=issue.rationale)
+            session.add(orm_issue)
+            for occ in issue.occurrences:
+                _add_tp_occurrence(session, issue.snapshot_slug, issue.tp_id, occ)
+        else:
+            existing = existing_issues[key]
+            _sync_tp_issue(session, existing, issue)
+
+    # Sync false positives
+    for fp in false_positives:
+        fp_key = (fp.snapshot_slug, fp.fp_id)
+        seen_fp_keys.add(fp_key)
+
+        if fp_key not in existing_fps:
+            logger.debug(f"Adding false positive: {fp.snapshot_slug}/{fp.fp_id}")
+            orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
+            session.add(orm_fp)
+            for fp_occ in fp.occurrences:
+                _add_fp_occurrence(session, fp.snapshot_slug, fp.fp_id, fp_occ)
+        else:
+            existing_fp = existing_fps[fp_key]
+            _sync_fp_issue(session, existing_fp, fp)
+
+    # Delete orphaned issues (in DB but not in bundle)
+    for key in set(existing_issues.keys()) - seen_issue_keys:
+        session.delete(existing_issues[key])
+    for key in set(existing_fps.keys()) - seen_fp_keys:
+        session.delete(existing_fps[key])
+
+    session.flush()
+    logger.info(f"Synced specimen from bundle: {bundle.slug}")
+
+
 @dataclass
 class FullSyncResult:
     """Combined result from syncing snapshots, issues, files, file sets, and model metadata."""
@@ -798,14 +934,22 @@ def sync_all(
     use_staged: bool = False,
     dry_run: bool = False,
     collect_errors: bool = False,
+    specimen_bundles: list[SpecimenBundle] | None = None,
 ) -> FullSyncResult:
     """Sync snapshots, issues, files, file sets, and model metadata.
 
-    Discovers snapshots once and passes data to all sync operations.
+    Mode 1: Bundle artifacts (specimen_bundles provided)
+        Syncs from pre-built tar.gz + data.yaml bundles.
+        Used by tests and production CLI with bundle flags.
+
+    Mode 2: Filesystem discovery (specimen_bundles=None)
+        Discovers snapshots once and passes data to all sync operations.
+        Legacy mode for existing workflows.
+
     All sync operations happen within the provided database session for consistency.
 
     Sync order is critical:
-    1. snapshots (creates content archives from specimens repo)
+    1. snapshots (creates content archives from specimens repo or bundles)
     2. snapshot_files (reads from DB content column)
     3. issues (depends on snapshots)
     4. file_sets (depends on snapshot_files and issues via FK)
@@ -815,42 +959,60 @@ def sync_all(
     of failing on the first one. The entire transaction is rolled back on any failure.
     """
     with tracer.start_as_current_span("sync_all"):
-        specimens_dir = get_specimens_base_path()
-
-        # Discover snapshots once
-        print(f"Discovering snapshots from {specimens_dir}...")
-        snapshots = discover_snapshots(specimens_dir)
-        slugs = list(snapshots.keys())
-        print(f"  Found {len(snapshots)} snapshots")
-
-        # 1. Sync snapshots (creates content archives from filesystem)
-        print("Syncing snapshots (creating tar archives)...")
-        snapshot_stats = sync_snapshots_to_db(session, snapshots, specimens_dir)
-        print(f"  {snapshot_stats.summary_text}")
-
-        # 2. Sync snapshot files (reads from DB content column)
-        print("Syncing snapshot files...")
-        snapshot_file_stats = sync_snapshot_files_to_db(session, slugs)
-        print(f"  {snapshot_file_stats.summary_text}")
-
-        # 3. Sync issues (collect errors per-snapshot when enabled)
+        # Initialize error tracking
         all_errors: list[str] = []
         failed_slugs: set[SnapshotSlug] = set()
 
-        print("Syncing issues...")
-        try:
-            issue_stats = sync_issues_to_db(session, slugs, specimens_dir, collect_errors=collect_errors)
-        except SyncValidationError as e:
-            all_errors.extend(e.errors)
-            failed_slugs.update(e.failed_slugs)
-            issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-        print(f"  {issue_stats.summary_text}")
+        # Bundle mode: sync from pre-built artifacts
+        if specimen_bundles:
+            print(f"Syncing {len(specimen_bundles)} specimen(s) from bundle artifacts...")
+            for bundle in specimen_bundles:
+                print(f"  Syncing {bundle.slug}...")
+                sync_specimen_from_bundle(session, bundle)
 
-        # 4. Sync file sets (skip failed slugs from stage 3)
-        remaining_slugs = [s for s in slugs if s not in failed_slugs]
-        print("Syncing file sets...")
-        file_set_stats = sync_file_sets_to_db(session, remaining_slugs, specimens_dir)
-        print(f"  {file_set_stats.summary_text}")
+            slugs = [bundle.slug for bundle in specimen_bundles]
+
+            # Dummy stats for bundles (actual work done in sync_specimen_from_bundle)
+            snapshot_stats = SyncStats(total=len(specimen_bundles), added=0, updated=len(specimen_bundles), deleted=0)
+            snapshot_file_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+            issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+            file_set_stats = SyncStats(total=0, added=0, updated=0, deleted=0)  # Not supported in bundle mode yet
+
+        # Filesystem mode: discover and sync from filesystem
+        else:
+            specimens_dir = get_specimens_base_path()
+
+            # Discover snapshots once
+            print(f"Discovering snapshots from {specimens_dir}...")
+            snapshots = discover_snapshots(specimens_dir)
+            slugs = list(snapshots.keys())
+            print(f"  Found {len(snapshots)} snapshots")
+
+            # 1. Sync snapshots (creates content archives from filesystem)
+            print("Syncing snapshots (creating tar archives)...")
+            snapshot_stats = sync_snapshots_to_db(session, snapshots, specimens_dir)
+            print(f"  {snapshot_stats.summary_text}")
+
+            # 2. Sync snapshot files (reads from DB content column)
+            print("Syncing snapshot files...")
+            snapshot_file_stats = sync_snapshot_files_to_db(session, slugs)
+            print(f"  {snapshot_file_stats.summary_text}")
+
+            # 3. Sync issues (collect errors per-snapshot when enabled)
+            print("Syncing issues...")
+            try:
+                issue_stats = sync_issues_to_db(session, slugs, specimens_dir, collect_errors=collect_errors)
+            except SyncValidationError as e:
+                all_errors.extend(e.errors)
+                failed_slugs.update(e.failed_slugs)
+                issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+            print(f"  {issue_stats.summary_text}")
+
+            # 4. Sync file sets (skip failed slugs from stage 3)
+            remaining_slugs = [s for s in slugs if s not in failed_slugs]
+            print("Syncing file sets...")
+            file_set_stats = sync_file_sets_to_db(session, remaining_slugs, specimens_dir)
+            print(f"  {file_set_stats.summary_text}")
 
         # 5. Sync model metadata
         print("Syncing model metadata...")
