@@ -1,7 +1,0 @@
-# Deprecated fields (removed, kept for reference):
-#   bundle: {'source_commit': 'd1ab8dd72fe7d4fa55e5d8f8dce9ad933e2d0e83', 'exclude': ['py_detectors/', 'website/', 'ansible/', 'cluster/', 'k8s-old/', 'terraform/', 'infra/', 'dotfiles/', 'nonrcm-dotfiles/', 'nix/', 'investigations/', 'props/db_backups/', 'gmail_archiver/inbox/', 'gmail_archiver/to_filter_emails/']}
-
-source:
-  vcs: local
-  root: code
-split: train

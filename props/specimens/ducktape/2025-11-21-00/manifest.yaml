@@ -1,7 +1,0 @@
-# Deprecated fields (removed, kept for reference):
-#   bundle: {'source_commit': '167e39012aca16381442c53bf10d5fc980d0f26a', 'include': ['adgn/', 'wt/'], 'exclude': ['adgn/src/adgn/agent/web/', 'adgn/src/adgn/props/specimens/']}
-
-source:
-  vcs: local
-  root: code
-split: valid

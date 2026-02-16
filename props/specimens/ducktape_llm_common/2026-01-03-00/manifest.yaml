@@ -1,7 +1,0 @@
-# Deprecated fields (removed, kept for reference):
-#   bundle: {'source_commit': '7cfd2bb3542a5435dddbb51c84f6e0474db3646c', 'include': ['ducktape_llm_common/', 'tests/']}
-
-source:
-  vcs: local
-  root: code
-split: train

@@ -889,12 +889,8 @@ def sync_specimen_from_bundle(session: Session, bundle: SpecimenBundle) -> None:
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing snapshots, issues, files, file sets, and model metadata."""
+    """Result from syncing model metadata (specimen sync doesn't track stats)."""
 
-    snapshot_stats: SyncStats
-    issue_stats: SyncStats
-    snapshot_file_stats: SyncStats
-    file_set_stats: SyncStats
     model_metadata_stats: SyncStats
 
 
@@ -905,7 +901,7 @@ def sync_all(
     config: PropsConfig | None = None,
     dry_run: bool = False,
 ) -> FullSyncResult:
-    """Sync snapshots, issues, files, file sets, and model metadata from bundle artifacts.
+    """Sync specimens and model metadata from bundle artifacts.
 
     Syncs from pre-built uncompressed tar + data.yaml bundles (if provided) and model metadata.
 
@@ -922,7 +918,7 @@ def sync_all(
         dry_run: If True, rollback all changes instead of committing
 
     Returns:
-        FullSyncResult with stats for each sync operation
+        FullSyncResult with model metadata sync stats
     """
     with tracer.start_as_current_span("sync_all"):
         if specimen_bundles:
@@ -930,15 +926,6 @@ def sync_all(
             for bundle in specimen_bundles:
                 print(f"  Syncing {bundle.slug}...")
                 sync_specimen_from_bundle(session, bundle)
-
-            # Dummy stats for bundles (actual work done in sync_specimen_from_bundle)
-            snapshot_stats = SyncStats(total=len(specimen_bundles), added=0, updated=len(specimen_bundles), deleted=0)
-        else:
-            snapshot_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-
-        snapshot_file_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-        issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-        file_set_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
 
         # Sync model metadata
         print("Syncing model metadata...")
@@ -952,10 +939,4 @@ def sync_all(
         else:
             session.commit()
 
-        return FullSyncResult(
-            snapshot_stats=snapshot_stats,
-            issue_stats=issue_stats,
-            snapshot_file_stats=snapshot_file_stats,
-            file_set_stats=file_set_stats,
-            model_metadata_stats=model_metadata_stats,
-        )
+        return FullSyncResult(model_metadata_stats=model_metadata_stats)

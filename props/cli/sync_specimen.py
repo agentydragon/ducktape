@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import traceback
 from pathlib import Path
 
 from props.db.config import load_database_config
@@ -35,19 +34,13 @@ def sync_from_bundle(slug: str, code_tar: Path, data_yaml: Path, db: Database) -
         data_yaml: Path to merged data YAML (split + issues)
         db: Database instance
     """
-    # Create bundle
     bundle = SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml)
 
-    # Sync using bundle workflow
     print(f"Syncing {slug} from bundle artifacts...")
     with db.session() as session:
-        result = sync_all(session, specimen_bundles=[bundle])
+        sync_all(session, specimen_bundles=[bundle])
 
-    print(f"  Snapshots: {result.snapshots}")
-    print(f"  Issues: {result.issues}")
-    print(f"  Files: {result.files}")
-    print(f"  File sets: {result.file_sets}")
-    print(f"  Model metadata: {result.model_metadata}")
+    print("✓ Sync completed successfully")
 
 
 def main() -> int:
@@ -64,24 +57,12 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    # Load database config
-    try:
-        db_config = load_database_config()
-        db = Database(db_config)
-    except Exception as e:
-        print(f"Error connecting to database: {e}", file=sys.stderr)
-        return 1
-
-    # Sync
+    # Load database config and sync (let errors propagate naturally)
+    db_config = load_database_config()
+    db = Database(db_config)
     try:
         sync_from_bundle(args.slug, args.code_tar, args.data_yaml, db)
-        print("✓ Sync completed successfully")
         return 0
-
-    except Exception as e:
-        print(f"Error during sync: {e}", file=sys.stderr)
-        traceback.print_exc()
-        return 1
     finally:
         db.dispose()
 
