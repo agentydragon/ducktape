@@ -6,6 +6,9 @@
 # Triggers:
 #   - workflow_call (from ci.yml): tags :<sha>
 #   - workflow_dispatch: tags :latest + :<sha>
+#
+# TODO: auto-trigger :latest push on green props tests on devel
+#   (e.g., on: workflow_run targeting the CI workflow with props test success)
 name: Props Backend Image
 
 on:
