@@ -551,6 +551,9 @@ def _reconstruct_occ_common(
 
     restriction: set[Path] | None = None
     if db_occ.match_file_restriction is not None:
+        logger.info(
+            f"[CURRENT] _reconstruct_occ_common: Querying members for {db_occ.snapshot_slug}/{db_occ.match_file_restriction} (occ={db_occ.occurrence_id})"
+        )
         session = Session.object_session(db_occ)
         assert session is not None
         members = (
@@ -559,6 +562,9 @@ def _reconstruct_occ_common(
             .all()
         )
         restriction = {Path(m.file_path) for m in members}
+        logger.info(
+            f"[CURRENT] _reconstruct_occ_common: Found {len(members)} members for {db_occ.match_file_restriction}"
+        )
         # Sanity check: file set with no members is invalid
         if not restriction:
             raise ValueError(
@@ -713,9 +719,12 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
     path_strs = [str(p) for p in file_paths]
     files_hash = compute_files_hash(path_strs)
 
+    logger.info(f"[CURRENT] ensure_file_set: slug={snapshot_slug}, hash={files_hash}, paths={path_strs}")
+
     # Check if file_set already exists
     existing = session.query(FileSet).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).first()
     if existing is None:
+        logger.info(f"[CURRENT] Creating new FileSet {snapshot_slug}/{files_hash} with {len(path_strs)} paths")
         # Create file_set and members
         fs = FileSet(snapshot_slug=snapshot_slug, files_hash=files_hash)
         session.add(fs)
@@ -723,6 +732,20 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
         for path_str in path_strs:
             session.add(FileSetMember(snapshot_slug=snapshot_slug, files_hash=files_hash, file_path=path_str))
         session.flush()  # Ensure members are persisted for subsequent queries
+
+        # Verify members were added
+        member_count = (
+            session.query(FileSetMember).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).count()
+        )
+        logger.info(
+            f"[CURRENT] After creation: FileSet {files_hash} has {member_count} members in session (expected {len(path_strs)})"
+        )
+    else:
+        # Verify existing file set has members
+        member_count = (
+            session.query(FileSetMember).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).count()
+        )
+        logger.info(f"[CURRENT] Reusing existing FileSet {files_hash}, has {member_count} members")
 
     return files_hash
 
@@ -860,6 +883,9 @@ def _sync_critic_scopes_for_specimen(
         true_positives: List of parsed true positives with occurrences
         false_positives: List of parsed false positives with occurrences
     """
+    logger.info(
+        f"[CURRENT] _sync_critic_scopes_for_specimen: Starting for {slug}, {len(true_positives)} TPs, {len(false_positives)} FPs"
+    )
     # Collect desired critic scopes from occurrence data
     desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
 
@@ -870,6 +896,8 @@ def _sync_critic_scopes_for_specimen(
                 files_hash = ensure_file_set(session, slug, trigger_files)
                 assert files_hash is not None  # trigger_files is not None, so hash shouldn't be None
                 desired_triggers.add((slug, tp.tp_id, occurrence.occurrence_id, files_hash))
+
+    logger.info(f"[CURRENT] _sync_critic_scopes_for_specimen: Collected {len(desired_triggers)} desired critic scopes")
 
     # Current critic scopes from DB
     existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
@@ -996,7 +1024,8 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
     session.flush()
 
     # Sync critic_scopes_expected_to_recall from occurrences
-    _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
+    # BISECTION TEST: Commented out to test if this is causing the issue
+    # _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
 
     logger.info(f"Synced specimen from bundle: {slug}")
 

@@ -149,3 +149,19 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_fileset_persistence",
+    srcs = ["test_fileset_persistence.py"],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        "//props:conftest",
+        "//props/db:conftest",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing/fixtures:db",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

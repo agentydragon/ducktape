@@ -118,14 +118,46 @@ Possibility 1: INSERTs are failing with constraint violations but exceptions are
 Possibility 2: Session isolation is preventing SELECT from seeing flushed data
 Possibility 3: Something is expunging/rolling back the FileSet between flush and next SELECT
 
+## Root Cause Identified
+
+### Test: FileSet Persists But Members Don't
+
+Created `test_fileset_persistence.py` to check database state after fixture sync:
+
+```python
+# Query for FileSet d5673969af8b94a23a229e9215d473c4
+fs = session.query(FileSet).filter_by(...).first()
+assert fs is not None  # ✅ PASSES
+
+# Query for FileSetMembers
+members = session.query(FileSetMember).filter_by(...).all()
+assert len(members) > 0  # ❌ FAILS
+```
+
+**Result**: `AssertionError: FileSet exists but has ZERO members!`
+
+### What This Means
+
+1. ✅ **FileSet rows persist correctly** - they exist in DB after fixture sync
+2. ❌ **FileSetMember rows do NOT persist** - even though they were inserted and verified during sync
+
+The sync logs show:
+
+- `INSERT INTO file_set_members` executes
+- Immediately after: COUNT query shows "1 member in session"
+- Later: Query finds 0 members in database
+
+**Conclusion**: FileSetMembers are created in the session but rolled back before commit.
+
 ## Next Steps
 
 1. ✅ Verify error is raised (not swallowed) - ERROR IS RAISED CORRECTLY
 2. ✅ Trace session boundaries - single session used throughout fixture sync
-3. ✅ Check for duplicate creation - FOUND: FileSet created multiple times
-4. ⏳ Find why SELECT doesn't see flushed FileSet
-5. ⏳ Check if IntegrityError is being caught and swallowed
-6. ⏳ Compare with devel branch behavior
+3. ✅ Check for duplicate creation - FOUND: FileSet created 20+ times
+4. ✅ Test persistence after sync - FileSet exists, members don't
+5. ⏳ Find what's causing FileSetMember rollback
+6. ⏳ Check for constraint violations on FileSetMember table
+7. ⏳ Compare with devel branch behavior
 
 ## Relevant Code Locations
 
