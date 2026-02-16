@@ -62,9 +62,10 @@ tracer = trace.get_tracer(__name__)
 class SpecimenData(BaseModel):
     """Specimen data YAML blob structure.
 
-    Contains the split designation and merged issues from all YAML files.
+    Contains the snapshot slug, split designation, and merged issues from all YAML files.
     """
 
+    snapshot_slug: SnapshotSlug
     split: Split
     issues: dict[str, YAMLIssue]
 
@@ -79,6 +80,24 @@ class SpecimenBundle:
     slug: str
     code_tar: Path
     data_yaml: Path
+
+    @staticmethod
+    def from_paths(code_tar: Path, data_yaml: Path) -> SpecimenBundle:
+        """Create a SpecimenBundle from code tar and data YAML paths.
+
+        The snapshot slug is read from the data YAML.
+
+        Args:
+            code_tar: Path to uncompressed code tar
+            data_yaml: Path to merged data YAML (snapshot_slug + split + issues)
+
+        Returns:
+            SpecimenBundle with slug read from the data YAML
+        """
+        with data_yaml.open() as f:
+            specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
+            slug = specimen_data.snapshot_slug
+        return SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml)
 
 
 def _add_ranges_to_tp_occurrence(orm_occ: TruePositiveOccurrenceORM, files: dict[Path, list[LineRange] | None]) -> None:
@@ -828,35 +847,35 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
 
 
-def sync_specimen_from_bundle(session: Session, bundle: SpecimenBundle) -> None:
-    """Sync a single specimen from bundle artifacts (code tar + data YAML).
+def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
+    """Sync a single specimen from bundle artifacts.
 
-    This function handles the complete sync process for one specimen:
-    1. Reads code tar (uncompressed)
-    2. Reads data.yaml and parses with SpecimenData model
-    3. Syncs snapshot to DB
-    4. Syncs issues to DB
+    Syncs the snapshot, snapshot files, and issues to the database within the
+    provided session. Does not commit - caller is responsible for commit/rollback.
 
     Args:
-        session: Database session
-        bundle: Specimen bundle with slug, code_tar, and data_yaml paths
+        session: Database session (caller must commit/rollback)
+        bundle: Specimen bundle with code tar and data YAML paths
     """
     # Read and parse data YAML
     with bundle.data_yaml.open() as f:
         specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
 
+    # Use slug from data YAML (not from bundle parameter)
+    slug = specimen_data.snapshot_slug
+
     # Read uncompressed tar (bundle and DB use same format)
     archive_bytes = bundle.code_tar.read_bytes()
 
     # Sync snapshot to DB
-    snapshot_data = {"slug": bundle.slug, "split": specimen_data.split, "content": archive_bytes}
+    snapshot_data = {"slug": slug, "split": specimen_data.split, "content": archive_bytes}
 
     stmt = insert(Snapshot).values(**snapshot_data).on_conflict_do_update(index_elements=["slug"], set_=snapshot_data)
     session.execute(stmt)
     session.flush()
 
     # Sync snapshot files from the tar we just stored
-    sync_snapshot_files_to_db(session, [bundle.slug])
+    sync_snapshot_files_to_db(session, [slug])
 
     # Convert issues dict to TruePositive/FalsePositive objects
     true_positives: list[TruePositive_yaml] = []
@@ -865,17 +884,16 @@ def sync_specimen_from_bundle(session: Session, bundle: SpecimenBundle) -> None:
     for issue_id, issue in specimen_data.issues.items():
         # issue is already a YAMLIssue (validated by Pydantic when loading SpecimenData)
         if issue.should_flag:
-            true_positives.append(issue.to_true_positive(tp_id=issue_id, snapshot_slug=bundle.slug))
+            true_positives.append(issue.to_true_positive(tp_id=issue_id, snapshot_slug=slug))
         else:
-            false_positives.append(issue.to_false_positive(fp_id=issue_id, snapshot_slug=bundle.slug))
+            false_positives.append(issue.to_false_positive(fp_id=issue_id, snapshot_slug=slug))
 
     # Sync issues to DB (similar to sync_issues_to_db logic for one specimen)
     existing_issues = {
-        (i.snapshot_slug, i.tp_id): i for i in session.query(TruePositive).filter_by(snapshot_slug=bundle.slug).all()
+        (i.snapshot_slug, i.tp_id): i for i in session.query(TruePositive).filter_by(snapshot_slug=slug).all()
     }
     existing_fps = {
-        (fp.snapshot_slug, fp.fp_id): fp
-        for fp in session.query(FalsePositive).filter_by(snapshot_slug=bundle.slug).all()
+        (fp.snapshot_slug, fp.fp_id): fp for fp in session.query(FalsePositive).filter_by(snapshot_slug=slug).all()
     }
 
     seen_issue_keys: set[tuple[SnapshotSlug, str]] = set()
@@ -918,7 +936,7 @@ def sync_specimen_from_bundle(session: Session, bundle: SpecimenBundle) -> None:
         session.delete(existing_fps[key])
 
     session.flush()
-    logger.info(f"Synced specimen from bundle: {bundle.slug}")
+    logger.info(f"Synced specimen from bundle: {slug}")
 
 
 @dataclass
@@ -959,7 +977,7 @@ def sync_all(
             print(f"Syncing {len(specimen_bundles)} specimen(s) from bundle artifacts...")
             for bundle in specimen_bundles:
                 print(f"  Syncing {bundle.slug}...")
-                sync_specimen_from_bundle(session, bundle)
+                sync_specimen(session, bundle)
 
         # Sync model metadata
         print("Syncing model metadata...")

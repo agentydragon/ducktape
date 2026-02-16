@@ -36,6 +36,7 @@ def _create_data_blob_impl(ctx):
     """Implementation for create_data_blob rule."""
     args = ctx.actions.args()
     args.add(ctx.outputs.out)
+    args.add(ctx.attr.snapshot_slug)
     args.add(ctx.attr.split)
     args.add_all(ctx.files.issue_files)
 
@@ -54,6 +55,7 @@ create_data_blob = rule(
     implementation = _create_data_blob_impl,
     attrs = {
         "issue_files": attr.label_list(allow_files = [".yaml"]),
+        "snapshot_slug": attr.string(mandatory = True),
         "split": attr.string(mandatory = True),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
@@ -91,6 +93,7 @@ def specimen_targets(name, slug, split):
     create_data_blob(
         name = data_blob_target,
         issue_files = native.glob(["issues/**/*.yaml"]),
+        snapshot_slug = slug,
         split = split,
         out = name + "_data.yaml",
     )
@@ -104,7 +107,6 @@ def specimen_targets(name, slug, split):
             ":" + data_blob_target,
         ],
         env = {
-            "SPECIMEN_SLUG": slug,
             "SPECIMEN_CODE_TAR": "$(location :" + code_tar_target + ")",
             "SPECIMEN_DATA_YAML": "$(location :" + data_blob_target + ")",
         },
