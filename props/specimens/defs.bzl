@@ -6,6 +6,9 @@ def _create_code_tar_impl(ctx):
     """Implementation for create_code_tar rule."""
     args = ctx.actions.args()
     args.add(ctx.outputs.out)
+    if ctx.attr.root_marker != "code":
+        args.add("--root-marker")
+        args.add(ctx.attr.root_marker)
     args.add_all(ctx.files.srcs)
 
     ctx.actions.run(
@@ -23,6 +26,7 @@ create_code_tar = rule(
     implementation = _create_code_tar_impl,
     attrs = {
         "srcs": attr.label_list(allow_files = True),
+        "root_marker": attr.string(default = "code"),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
             default = "//props/specimens:create_code_tar",
@@ -66,13 +70,17 @@ create_data_blob = rule(
     },
 )
 
-def specimen_targets(name, slug, split):
+def specimen_targets(name, slug, split, code_srcs = None, code_root_marker = "code"):
     """Generate bundle artifacts and test target for a specimen.
 
     Args:
         name: Base name for generated targets (typically "specimen")
         slug: Specimen slug in format "{repo}/{date}" (e.g., "ducktape/2026-01-17-00")
         split: Dataset split (e.g., "train", "test", "val") - required parameter
+        code_srcs: Optional label list for code files. If None, uses native.glob(["code/**/*"]).
+            Use this for remote-VCS specimens where code is fetched via http_archive.
+        code_root_marker: Path segment that marks the root of source files in code_srcs.
+            The tar tool extracts relative paths after this segment. Defaults to "code".
 
     Generates:
         - {name}_code_tar: Deterministic uncompressed tar of code/ with BUILD.bazel restored
@@ -82,10 +90,14 @@ def specimen_targets(name, slug, split):
     code_tar_target = name + "_code_tar"
     data_blob_target = name + "_data_blob"
 
+    if code_srcs == None:
+        code_srcs = native.glob(["code/**/*"])
+
     # Create code tar using custom Starlark rule (no shell!)
     create_code_tar(
         name = code_tar_target,
-        srcs = native.glob(["code/**/*"]),
+        srcs = code_srcs,
+        root_marker = code_root_marker,
         out = name + "_code.tar",
     )
 

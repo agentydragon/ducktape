@@ -5,22 +5,45 @@ import tarfile
 from pathlib import Path
 
 
-def main():
-    output_tar = Path(sys.argv[1])
-    source_files = sys.argv[2:]
+def _parse_args(argv):
+    """Parse arguments: output_tar [--root-marker MARKER] source_files..."""
+    output_tar = Path(argv[0])
+    root_marker = "code"
+    source_files = []
 
-    # Group files by their path relative to code/
+    i = 1
+    while i < len(argv):
+        if argv[i] == "--root-marker" and i + 1 < len(argv):
+            root_marker = argv[i + 1]
+            i += 2
+        else:
+            source_files.append(argv[i])
+            i += 1
+
+    return output_tar, root_marker, source_files
+
+
+def main():
+    output_tar, root_marker, source_files = _parse_args(sys.argv[1:])
+
+    # Group files by their path relative to root_marker/
     files_to_add = []
     for src in source_files:
         src_path = Path(src)
         if not src_path.exists():
             continue
 
-        # Extract relative path after code/
+        # Extract relative path after the root_marker segment.
+        # Match suffix to handle bzlmod canonical names (e.g.,
+        # "external/+_repo_rules+specimen_crush_code" matches "specimen_crush_code").
         parts = src_path.parts
-        if "code" not in parts:
+        code_idx = None
+        for i, part in enumerate(parts):
+            if part == root_marker or part.endswith("+" + root_marker):
+                code_idx = i
+                break
+        if code_idx is None:
             continue
-        code_idx = parts.index("code")
         rel_parts = parts[code_idx + 1 :]
         if not rel_parts:
             continue
