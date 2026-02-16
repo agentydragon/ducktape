@@ -198,21 +198,96 @@ cascade="all"
 
 **Result**: No effect - still failing with same error.
 
-## Next Steps
+## ROOT CAUSE FOUND ✅
 
-1. ✅ Verify error is raised (not swallowed) - ERROR IS RAISED CORRECTLY
-2. ✅ Trace session boundaries - single session used throughout fixture sync
-3. ✅ Check for duplicate creation - FOUND: FileSet created 20+ times (reuse pattern)
-4. ✅ Test persistence after sync - FileSet exists, members don't
-5. ✅ Track member existence during sync - Members exist until COMMIT
-6. ✅ Try removing delete-orphan - No effect
-7. ⏳ Check database triggers on COMMIT
-8. ⏳ Check if issue occurs on devel branch
-9. ⏳ Add SQLAlchemy event logging for DELETE operations
+### The Bug: `sync_snapshot_files_to_db` Deletes Other Snapshots' Files
+
+In `props/db/sync/sync.py:472-535`, the function `sync_snapshot_files_to_db(session, slugs)`:
+
+1. **Queries ALL SnapshotFile rows** from the entire database (line 476-478):
+
+   ```python
+   existing_keys = {
+       (row[0], row[1]) for row in session.execute(
+           select(SnapshotFile.snapshot_slug, SnapshotFile.file_path)
+       )
+   }
+   ```
+
+2. **Only marks files from current `slugs` as "seen"** (line 502):
+
+   ```python
+   seen_keys.add((slug, relative))  # Only for slugs being synced
+   ```
+
+3. **Deletes ALL files not "seen"** (line 529-530):
+   ```python
+   for snapshot_slug, file_path in existing_keys - seen_keys:
+       session.query(SnapshotFile).filter_by(...).delete()
+   ```
+
+### The Cascade Effect
+
+FileSetMember has an `ON DELETE CASCADE` foreign key constraint to SnapshotFile (line 667-671 in models.py):
+
+```python
+ForeignKeyConstraint(
+    ["snapshot_slug", "file_path"],
+    ["snapshot_files.snapshot_slug", "snapshot_files.file_path"],
+    ondelete="CASCADE",  # <-- PostgreSQL deletes FileSetMembers automatically
+)
+```
+
+When SnapshotFile is deleted, PostgreSQL automatically deletes all FileSetMembers referencing that file **at the database level**, without triggering SQLAlchemy ORM events!
+
+### The Sequential Sync Bug
+
+When syncing multiple specimens sequentially (as `_sync_test_fixtures` does):
+
+1. **Sync specimen 1** → creates SnapshotFiles for specimen 1
+2. **Sync specimen 2** → sees ALL files, only marks specimen 2 as "seen", **DELETES specimen 1's files**
+3. **Sync specimen 3** → sees ALL files, only marks specimen 3 as "seen", **DELETES specimens 1 & 2's files**
+4. **Sync specimen 4** → sees ALL files, only marks specimen 4 as "seen", **DELETES specimens 1, 2, & 3's files**
+
+**Result**: Only the last specimen's files remain. All others are deleted along with their FileSetMembers.
+
+### Why No SQLAlchemy Events?
+
+The deletion happens via database-level `ON DELETE CASCADE`, not through SQLAlchemy's ORM:
+
+- No `after_delete` events are triggered on FileSetMember
+- The ORM never sees the deletion
+- Event listeners remain silent
+
+### The Fix
+
+Filter `existing_keys` to only include files from the slugs being synced:
+
+```python
+existing_keys: set[tuple[SnapshotSlug, str]] = {
+    (row[0], row[1])
+    for row in session.execute(
+        select(SnapshotFile.snapshot_slug, SnapshotFile.file_path)
+        .where(SnapshotFile.snapshot_slug.in_(slugs))  # <-- ADDED
+    )
+}
+```
+
+This ensures we only delete orphaned files within the snapshots being synced, not from unrelated snapshots.
+
+## Test Results After Fix
+
+✅ `test_fileset_persistence` - PASSING
+✅ `test_debug_events` - PASSING
+✅ `test_minimal_fileset_repro` - PASSING
+✅ `test_collect_errors` - PASSING
+✅ `test_yaml_loader_no_db_deps` - PASSING
+❌ `test_example_generation` - Still failing (unrelated issue)
+❌ `test_sync_occurrence_update` - Still failing (needs investigation)
 
 ## Relevant Code Locations
 
-- `props/db/sync/sync.py:696-727` - `ensure_file_set()` function
-- `props/db/sync/sync.py:542-569` - `_reconstruct_occ_common()` function
-- `props/testing/fixtures/db.py:165-176` - `_sync_test_fixtures()` function
-- `props/db/database.py:116-130` - `Database.session()` context manager
+- `props/db/sync/sync.py:472-535` - `sync_snapshot_files_to_db()` function (**BUG LOCATION**)
+- `props/db/sync/sync.py:970` - Called with single slug from `sync_specimen()`
+- `props/db/models.py:663-672` - FileSetMember FK constraints with CASCADE
+- `props/testing/fixtures/db.py:165-220` - `_sync_test_fixtures()` syncs multiple specimens

@@ -5,20 +5,23 @@ a fresh PostgreSQL container, and each test gets its own isolated database.
 """
 
 import hashlib
+import logging
 import os
+import traceback
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from opentelemetry import trace
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
 from bazel_util.runfiles import get_required_path
 from props.db.config import DatabaseConfig
 from props.db.database import Database
+from props.db.models import FileSetMember
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import SpecimenBundle, sync_specimen
 from test_util.image_loader import load_image
@@ -164,6 +167,37 @@ def engine(db: Database) -> Engine:
 
 def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sync test fixtures to the current database using bundle workflow."""
+    logger = logging.getLogger(__name__)
+
+    # Add SQL-level logging to catch ALL statements
+    @event.listens_for(db.engine, "before_cursor_execute", retval=True)
+    def receive_before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        if "DELETE" in statement.upper() or "file_set_member" in statement.lower():
+            logger.error(f"[FIXTURE SQL] {statement}")
+            logger.error(f"[FIXTURE SQL] params: {parameters}")
+        return statement, parameters
+
+    @event.listens_for(db.engine, "after_cursor_execute")
+    def receive_after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        if "DELETE" in statement.upper() or "file_set_member" in statement.lower():
+            logger.error(f"[FIXTURE SQL] rowcount: {cursor.rowcount}")
+
+    # Add event listeners to catch FileSetMember deletions
+    @event.listens_for(FileSetMember, "after_delete", propagate=True)
+    def receive_after_delete(mapper, connection, target):
+        logger.error(
+            f"[FIXTURE EVENT] FileSetMember DELETED during fixture sync: slug={target.snapshot_slug} hash={target.files_hash} path={target.file_path}"
+        )
+        logger.error(f"[FIXTURE EVENT] Delete traceback:\n{''.join(traceback.format_stack())}")
+
+    @event.listens_for(Session, "after_flush", propagate=True)
+    def receive_after_flush(session, flush_context):
+        deleted_members = [obj for obj in session.deleted if isinstance(obj, FileSetMember)]
+        if deleted_members:
+            logger.error(f"[FIXTURE EVENT] after_flush: {len(deleted_members)} FileSetMembers DELETED")
+            for obj in deleted_members:
+                logger.error(f"[FIXTURE EVENT]   DELETED: {obj.snapshot_slug}/{obj.files_hash}/{obj.file_path}")
+
     fixture_slugs = ["test-fixtures/test1", "test-fixtures/train1", "test-fixtures/valid1", "test-fixtures/valid2"]
 
     # Load all bundles BEFORE opening session to keep them in scope during sync
@@ -174,10 +208,29 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
         data_yaml = get_required_path(f"_main/{base_path}/specimen_data.yaml")
         bundles.append(SpecimenBundle.from_paths(code_tar, data_yaml))
 
+    logger.warning(f"[FIXTURE] Loaded {len(bundles)} bundles, opening session to sync")
+
     with db.session() as session:
         for bundle in bundles:
+            logger.warning(f"[FIXTURE] Syncing bundle: {bundle.slug}")
             sync_specimen(session, bundle)
+        logger.warning("[FIXTURE] All bundles synced, committing...")
         session.commit()
+        logger.warning("[FIXTURE] Commit complete")
+
+    logger.warning("[FIXTURE] Session closed, bundles still in scope")
+
+    # Verify FileSetMembers exist after session closes
+    logger.warning("[FIXTURE] Opening new session to verify FileSetMembers...")
+    with db.session() as verify_session:
+        member_count = (
+            verify_session.query(FileSetMember)
+            .filter_by(snapshot_slug="test-fixtures/train1", files_hash="d5673969af8b94a23a229e9215d473c4")
+            .count()
+        )
+        logger.warning(f"[FIXTURE] After fixture sync, d5673969 has {member_count} members")
+        if member_count == 0:
+            logger.error("[FIXTURE] BUG REPRODUCED: Members disappeared after fixture sync!")
 
 
 @pytest.fixture(scope="session")

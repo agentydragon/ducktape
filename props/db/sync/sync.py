@@ -472,9 +472,13 @@ def sync_issues_to_db(
 def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> SyncStats:
     """Sync snapshot_files table from snapshot content archives in DB."""
 
-    # Get existing files from DB (primitive tuples to avoid detached ORM access)
+    # Get existing files from DB for ONLY the slugs being synced (not all snapshots!)
+    # This prevents deleting files from other snapshots when syncing multiple specimens sequentially
     existing_keys: set[tuple[SnapshotSlug, str]] = {
-        (row[0], row[1]) for row in session.execute(select(SnapshotFile.snapshot_slug, SnapshotFile.file_path))
+        (row[0], row[1])
+        for row in session.execute(
+            select(SnapshotFile.snapshot_slug, SnapshotFile.file_path).where(SnapshotFile.snapshot_slug.in_(slugs))
+        )
     }
     seen_keys: set[tuple[SnapshotSlug, str]] = set()
 
@@ -526,9 +530,13 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
                 total += 1
 
     # Delete orphaned files
-    for snapshot_slug, file_path in existing_keys - seen_keys:
-        session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, file_path=file_path).delete()
-        deleted += 1
+    orphaned = existing_keys - seen_keys
+    if orphaned:
+        logger.warning(f"[ORPHAN DELETE] Deleting {len(orphaned)} orphaned SnapshotFile rows")
+        for snapshot_slug, file_path in orphaned:
+            logger.warning(f"[ORPHAN DELETE]   {snapshot_slug}/{file_path}")
+            session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, file_path=file_path).delete()
+            deleted += 1
 
     session.flush()
     logger.info(f"Snapshot files synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
