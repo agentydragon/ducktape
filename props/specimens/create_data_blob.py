@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Merge issue YAMLs and wrap with split field."""
 
 import sys

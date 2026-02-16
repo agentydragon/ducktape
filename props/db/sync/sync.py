@@ -297,30 +297,19 @@ def sync_snapshots_to_db(
         total_archive_bytes += archive_size
         print(f"  [{idx}/{total_snapshots}] {slug} ({archive_size / 1024:.1f} KB)")
 
-        # Convert Pydantic model to dict for upsert
-        snapshot_data = {
-            "slug": slug,
-            "split": manifest.split,
-            "content": archive,
-            "source": manifest.source.model_dump(mode="json") if manifest.source else None,
-            "bundle": manifest.bundle.model_dump(mode="json") if manifest.bundle else None,
-        }
+        # Upsert snapshot (insert if new, update if exists)
+        snapshot_data = {"slug": slug, "split": manifest.split, "content": archive}
+        stmt = (
+            insert(Snapshot).values(**snapshot_data).on_conflict_do_update(index_elements=["slug"], set_=snapshot_data)
+        )
+        session.execute(stmt)
 
+        # Track stats for reporting
         if slug not in db_slugs:
-            # New snapshot - insert
             logger.debug(f"Adding snapshot: {slug} (split={manifest.split}, size={archive_size} bytes)")
-            stmt = insert(Snapshot).values(**snapshot_data)
-            session.execute(stmt)
             added += 1
         else:
-            # Always update content (content comparison would be expensive)
             logger.debug(f"Updating snapshot: {slug} (size={archive_size} bytes)")
-            stmt = (
-                insert(Snapshot)
-                .values(**snapshot_data)
-                .on_conflict_do_update(index_elements=["slug"], set_=snapshot_data)
-            )
-            session.execute(stmt)
             updated += 1
 
     session.flush()
@@ -838,13 +827,7 @@ def sync_specimen_from_bundle(session: Session, bundle: SpecimenBundle) -> None:
     archive_bytes = uncompressed_tar.getvalue()
 
     # Sync snapshot to DB
-    snapshot_data = {
-        "slug": bundle.slug,
-        "split": specimen_data.split,
-        "content": archive_bytes,
-        "source": None,  # Bundle mode doesn't track source
-        "bundle": None,  # Bundle mode doesn't use bundle filters
-    }
+    snapshot_data = {"slug": bundle.slug, "split": specimen_data.split, "content": archive_bytes}
 
     stmt = insert(Snapshot).values(**snapshot_data).on_conflict_do_update(index_elements=["slug"], set_=snapshot_data)
     session.execute(stmt)
