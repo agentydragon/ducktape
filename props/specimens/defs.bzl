@@ -45,6 +45,10 @@ create_code_tar = rule(
     implementation = _create_code_tar_impl,
     attrs = {
         "srcs": attr.label_list(allow_files = True),
+        "strip_prefix": attr.string(
+            doc = "Path prefix to strip from source files. If empty, defaults to <package>/code.",
+            default = "",
+        ),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
             default = "//props/specimens:create_code_tar",
