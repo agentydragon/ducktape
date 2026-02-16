@@ -248,6 +248,7 @@ types.requirements(
     #   the [mypy] extra, so external stubs conflict and cause duplicate keys.
     # - types-paramiko: transitive dep but paramiko isn't in pypi hub
     # - types-psycopg2: we use psycopg2-binary, not psycopg2
+    # - types-pytz: transitive dep (via pandas-stubs) but pytz isn't in pypi hub
     # - types-toml: we use tomli, not toml
     # - types-jinja2: jinja2 has py.typed; stubs have broken markupsafe dep
     exclude_requirements = [
@@ -255,6 +256,7 @@ types.requirements(
         "types-jinja2",
         "types-paramiko",
         "types-psycopg2",
+        "types-pytz",
         "types-sqlalchemy",
         "types-toml",
     ],
