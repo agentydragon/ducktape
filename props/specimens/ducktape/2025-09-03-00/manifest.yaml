@@ -1,6 +1,0 @@
-source:
-  vcs: github
-  org: agentydragon
-  repo: ducktape
-  ref: 4ad33013af27e159863bed92ffcfdb55b388e46c
-split: train

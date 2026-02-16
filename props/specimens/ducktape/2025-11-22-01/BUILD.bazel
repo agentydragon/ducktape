@@ -1,5 +1,8 @@
 load("//props/specimens:defs.bzl", "specimen_targets")
 
+# Snapshot of ducktape at c263d680.
+# Included: adgn/, wt/
+# Excluded: adgn/src/adgn/props/specimens/
 specimen_targets(
     name = "specimen",
     code_srcs = glob(["code/**/*"]),

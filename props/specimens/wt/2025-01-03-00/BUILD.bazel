@@ -1,5 +1,6 @@
 load("//props/specimens:defs.bzl", "specimen_targets")
 
+# Snapshot of wt at 7cfd2bb3.
 specimen_targets(
     name = "specimen",
     code_srcs = glob(["code/**/*"]),
