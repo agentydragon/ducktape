@@ -18,6 +18,7 @@ from props.core.ids import SnapshotSlug
 from props.db.sync.loader import discover_snapshots
 
 
+@pytest.mark.skip(reason="Filesystem discovery deprecated - test fixtures now use bundle workflow")
 def test_load_git_fixtures(test_specimens_base: Path) -> None:
     """Test loading snapshots from git-tracked test fixtures.
 
