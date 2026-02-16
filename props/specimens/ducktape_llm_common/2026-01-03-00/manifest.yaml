@@ -1,0 +1,4 @@
+source:
+  vcs: local
+  root: code
+split: train

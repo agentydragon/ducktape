@@ -1,7 +1,9 @@
-load("//props/specimens:defs.bzl", "specimen_targets")
-
-specimen_targets(
-    name = "specimen",
-    slug = "ducktape/2025-09-03-00",
-    split = "train",
-)
+# Remote VCS specimen (no local code/ dir) — specimen_targets() requires
+# local code. TODO: support remote-VCS specimens in defs.bzl.
+# load("//props/specimens:defs.bzl", "specimen_targets")
+#
+# specimen_targets(
+#     name = "specimen",
+#     slug = "ducktape/2025-09-03-00",
+#     split = "train",
+# )

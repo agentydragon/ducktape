@@ -3,4 +3,5 @@ load("//props/specimens:defs.bzl", "specimen_targets")
 specimen_targets(
     name = "specimen",
     slug = "wt/2025-01-03-00",
+    split = "train",
 )
