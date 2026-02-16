@@ -1,44 +1,25 @@
 """Create specimen code tar with BUILD file renaming."""
 
-import sys
+import argparse
 import tarfile
 from pathlib import Path
 
 
-def _parse_args(argv):
-    """Parse arguments: output_tar --strip-prefix PREFIX source_files..."""
-    output_tar = Path(argv[0])
-    strip_prefix = None
-    source_files = []
-
-    i = 1
-    while i < len(argv):
-        if argv[i] == "--strip-prefix" and i + 1 < len(argv):
-            strip_prefix = argv[i + 1]
-            i += 2
-        else:
-            source_files.append(argv[i])
-            i += 1
-
-    if strip_prefix is None:
-        raise SystemExit("--strip-prefix is required")
-
-    return output_tar, strip_prefix, source_files
-
-
 def main():
-    output_tar, strip_prefix, source_files = _parse_args(sys.argv[1:])
-    prefix_path = Path(strip_prefix)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("output_tar", type=Path)
+    parser.add_argument("--strip-prefix", required=True, type=Path, dest="strip_prefix")
+    parser.add_argument("sources", nargs="*", type=Path)
+    args = parser.parse_args()
 
     files_to_add = []
-    for src in source_files:
-        src_path = Path(src)
+    for src_path in args.sources:
         if not src_path.exists():
             continue
 
         # Strip the prefix to get the path relative to the code root.
         try:
-            rel_path = src_path.relative_to(prefix_path)
+            rel_path = src_path.relative_to(args.strip_prefix)
         except ValueError:
             continue
         if not rel_path.parts:
@@ -54,7 +35,7 @@ def main():
     files_to_add.sort(key=lambda x: str(x[1]))
 
     # Create uncompressed tar with deterministic properties
-    with tarfile.open(output_tar, "w") as tar:
+    with tarfile.open(args.output_tar, "w") as tar:
         for src_path, arcname in files_to_add:
             tarinfo = tar.gettarinfo(str(src_path), arcname=str(arcname))
             tarinfo.mtime = 0  # Epoch time for determinism
