@@ -1,6 +1,10 @@
 load("//props/specimens:defs.bzl", "specimen_targets")
 
+# Snapshot of ducktape at 7cfd2bb3.
+# Included: ducktape_llm_common/, tests/
 specimen_targets(
     name = "specimen",
+    code_srcs = glob(["code/**/*"]),
     slug = "ducktape_llm_common/2026-01-03-00",
+    split = "train",
 )

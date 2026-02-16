@@ -27,7 +27,6 @@ from sqlalchemy.orm import Session
 from props.core.ids import SnapshotSlug
 from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
-from props.core.runs_context import specimens_definitions_root
 from props.core.splits import Split
 from props.db.models import (
     CriticScopeExpectedToRecall,
@@ -148,19 +147,6 @@ def _add_ranges_to_fp_occurrence(
                 )
         else:
             logger.debug(f"  Skipping {file_path} (ranges is None)")
-
-
-def get_specimens_base_path() -> Path:
-    """Get specimens base path from ADGN_PROPS_SPECIMENS_ROOT environment variable.
-
-    Returns:
-        Path to specimens directory
-
-    Raises:
-        ValueError: If ADGN_PROPS_SPECIMENS_ROOT environment variable not set
-        FileNotFoundError: If specimens directory doesn't exist or missing required files
-    """
-    return specimens_definitions_root()
 
 
 def _download_github_tarball_to_temp(owner: str, repo: str, ref: str) -> Path:
@@ -900,19 +886,19 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
     seen_fp_keys: set[tuple[SnapshotSlug, str]] = set()
 
     # Sync true positives
-    for issue in true_positives:
-        key = (issue.snapshot_slug, issue.tp_id)
+    for tp in true_positives:
+        key = (tp.snapshot_slug, tp.tp_id)
         seen_issue_keys.add(key)
 
         if key not in existing_issues:
-            logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.tp_id}")
-            orm_issue = TruePositive(snapshot_slug=issue.snapshot_slug, tp_id=issue.tp_id, rationale=issue.rationale)
+            logger.debug(f"Adding issue: {tp.snapshot_slug}/{tp.tp_id}")
+            orm_issue = TruePositive(snapshot_slug=tp.snapshot_slug, tp_id=tp.tp_id, rationale=tp.rationale)
             session.add(orm_issue)
-            for occ in issue.occurrences:
-                _add_tp_occurrence(session, issue.snapshot_slug, issue.tp_id, occ)
+            for occ in tp.occurrences:
+                _add_tp_occurrence(session, tp.snapshot_slug, tp.tp_id, occ)
         else:
             existing = existing_issues[key]
-            _sync_tp_issue(session, existing, issue)
+            _sync_tp_issue(session, existing, tp)
 
     # Sync false positives
     for fp in false_positives:

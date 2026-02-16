@@ -243,20 +243,38 @@ use_repo(pip, "pypi", "pypi_homeassistant")
 types = use_extension("@rules_mypy//mypy:types.bzl", "types")
 types.requirements(
     name = "pip_types",
-    # Exclusions:
-    # - sqlalchemy-stubs, types-sqlalchemy: SQLAlchemy 2.0+ has inline types via
-    #   the [mypy] extra, so external stubs conflict and cause duplicate keys.
-    # - types-paramiko: transitive dep but paramiko isn't in pypi hub
-    # - types-psycopg2: we use psycopg2-binary, not psycopg2
-    # - types-toml: we use tomli, not toml
-    # - types-jinja2: jinja2 has py.typed; stubs have broken markupsafe dep
+    # == Exclusion list for mypy type stubs ==
+    #
+    # How it works: rules_mypy scans requirements_bazel.txt for types-* and
+    # *-stubs packages, strips the prefix/suffix to find the runtime package
+    # name, and generates requirement("X") → types-X stub mappings. If the
+    # runtime package "X" doesn't exist in the pip hub, Bazel fails at
+    # analysis time: "no such package '@@rules_python++pip+pypi//X'".
+    #
+    # Valid reasons to exclude a stub:
+    #   1. Name mismatch: the stub maps to a package name that differs from
+    #      what's in the pip hub (e.g., types-psycopg2 → psycopg2, but we
+    #      use psycopg2-binary). Can't be fixed by adding a dep.
+    #   2. Conflicting inline types: the runtime package ships py.typed, so
+    #      external stubs would conflict. Fix: remove the stub from
+    #      pyproject.toml instead of excluding here.
+    #
+    # Prefer alternatives to exclusion:
+    #   - If a transitive stub (types-X via another package) references a
+    #     runtime package not in the pip hub, add X to pyproject.toml with
+    #     a comment explaining it's there for stub resolution. This keeps
+    #     stubs active so mypy type-checks X if it's ever imported.
+    #   - If a stub is for a package we don't use and don't plan to use,
+    #     remove the stub from pyproject.toml rather than excluding here.
+    #
+    # TODO: Upstream fix in rules_mypy to gracefully skip stubs whose
+    # runtime package isn't in the pip hub, instead of failing at load time.
+    # That would eliminate the need for this exclusion list entirely.
     exclude_requirements = [
-        "sqlalchemy-stubs",
-        "types-jinja2",
-        "types-paramiko",
+        # Name mismatch: types-psycopg2 maps to requirement("psycopg2")
+        # but we use psycopg2-binary (different pip package name). Adding
+        # psycopg2 as a dep would conflict with psycopg2-binary.
         "types-psycopg2",
-        "types-sqlalchemy",
-        "types-toml",
     ],
     pip_requirements = "@pypi//:requirements.bzl",
     requirements_txt = "//:requirements_bazel.txt",
@@ -457,6 +475,25 @@ http_archive(
     build_file_content = 'exports_files(["crane"], visibility = ["//visibility:public"])\n',
     sha256 = "cdf4d426d965d9a8ba613d7ebf3addf93101aa2e853a3f08fbfdaed2823918f3",
     urls = ["https://github.com/google/go-containerregistry/releases/download/v0.18.0/go-containerregistry_Linux_x86_64.tar.gz"],
+)
+
+# ─ Specimen code archives (remote-VCS specimens) ─────────────────────────────
+# These specimens reference external Git repos rather than bundled code/ dirs.
+# Code is fetched at build time and exposed as filegroups for create_code_tar.
+http_archive(
+    name = "specimen_crush_code",
+    build_file_content = 'filegroup(name = "all_files", srcs = glob(["**"]), visibility = ["//visibility:public"])\n',
+    sha256 = "06f94a6f0c121b365bb84eb0b845df3c9f50261562d224d478582d25e21c0acb",
+    strip_prefix = "crush-a2a1ffa00943aa373f688ac05b667083ac3230b1",
+    urls = ["https://github.com/agentydragon/crush/archive/a2a1ffa00943aa373f688ac05b667083ac3230b1.tar.gz"],
+)
+
+http_archive(
+    name = "specimen_ducktape_2025_09_03_code",
+    build_file_content = 'filegroup(name = "all_files", srcs = glob(["**"]), visibility = ["//visibility:public"])\n',
+    sha256 = "b12ba5b8f553f3c90860e926af8527a531e49590395da23ec42a9e8fc01aa900",
+    strip_prefix = "ducktape-4ad33013af27e159863bed92ffcfdb55b388e46c",
+    urls = ["https://github.com/agentydragon/ducktape/archive/4ad33013af27e159863bed92ffcfdb55b388e46c.tar.gz"],
 )
 
 # ─ Go toolchain (environment-manager RE) ──────────────────────────────────

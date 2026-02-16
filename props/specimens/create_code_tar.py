@@ -1,37 +1,33 @@
 """Create specimen code tar with BUILD file renaming."""
 
-import sys
+import argparse
 import tarfile
 from pathlib import Path
 
 
 def main():
-    output_tar = Path(sys.argv[1])
-    source_files = sys.argv[2:]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("output_tar", type=Path)
+    parser.add_argument("--strip-prefix", required=True, type=Path, dest="strip_prefix")
+    parser.add_argument("sources", nargs="*", type=Path)
+    args = parser.parse_args()
 
-    # Group files by their path relative to code/
     files_to_add = []
-    for src in source_files:
-        src_path = Path(src)
+    for src_path in args.sources:
         if not src_path.exists():
             continue
 
-        # Extract relative path after code/
-        parts = src_path.parts
-        if "code" not in parts:
+        # Strip the prefix to get the path relative to the code root.
+        try:
+            rel_path = src_path.relative_to(args.strip_prefix)
+        except ValueError:
             continue
-        code_idx = parts.index("code")
-        rel_parts = parts[code_idx + 1 :]
-        if not rel_parts:
+        if not rel_path.parts:
             continue
 
         # Handle .specimen rename
         if src_path.suffix == ".specimen":
-            # Remove .specimen extension
-            new_name = src_path.stem
-            rel_path = Path(*rel_parts[:-1]) / new_name
-        else:
-            rel_path = Path(*rel_parts)
+            rel_path = rel_path.with_name(rel_path.stem)
 
         files_to_add.append((src_path, rel_path))
 
@@ -39,7 +35,7 @@ def main():
     files_to_add.sort(key=lambda x: str(x[1]))
 
     # Create uncompressed tar with deterministic properties
-    with tarfile.open(output_tar, "w") as tar:
+    with tarfile.open(args.output_tar, "w") as tar:
         for src_path, arcname in files_to_add:
             tarinfo = tar.gettarinfo(str(src_path), arcname=str(arcname))
             tarinfo.mtime = 0  # Epoch time for determinism

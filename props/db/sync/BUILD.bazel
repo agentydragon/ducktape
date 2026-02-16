@@ -66,7 +66,6 @@ py_library(
         ":yaml_loader",
         "//props:config",
         "//props/core:ids",
-        "//props/core:runs_context",
         "//props/core:splits",
         "//props/core/models:snapshot",
         "//props/core/models:true_positive",
