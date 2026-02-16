@@ -40,25 +40,21 @@ Remote-VCS specimens (crush, older ducktape snapshots) use `http_archive` in `MO
 
 ## Remaining Gaps
 
-### 1. `sync_specimen` doesn't sync `critic_scopes_expected_to_recall`
+### 1. Legacy sync functions are dead code
 
-**Severity: High.** The bundle-based `sync_specimen()` creates TP occurrences with `match_file_restriction` (via `ensure_file_set`), but does **not** insert `CriticScopeExpectedToRecall` rows. Those rows are only synced by the legacy `sync_file_sets_to_db()`, which reads raw YAML files from the filesystem via `load_yaml_issues()`.
-
-This means after a bundle-based sync, the `critic_scopes_expected_to_recall` M:N table is empty for that specimen. Recall computation depends on this table, so grading results will be wrong.
-
-**Fix**: `sync_specimen` should insert `CriticScopeExpectedToRecall` rows (and their backing `FileSet`/`FileSetMember` rows) for each TP occurrence. The data is already available — `to_tp_occurrence()` populates `TruePositiveOccurrence.critic_scopes_expected_to_recall` from the YAML. The `_add_tp_occurrence` helper just doesn't persist it.
-
-### 2. Legacy sync functions are dead code
-
-`sync_snapshots_to_db()`, `sync_issues_to_db()`, and `sync_file_sets_to_db()` in `props/db/sync/sync.py` have no live callers outside of frozen specimen code snapshots. They read `manifest.yaml` files and glob raw YAML from the filesystem — the old pre-bundle path. Once gap #1 is fixed (so `sync_specimen` handles file sets and critic scopes), these functions and their supporting code (`create_snapshot_archive`, `resolve_git_content`, `SnapshotDoc`, `BundleFilter`, `LocalSource`/`GitSource`/`GitHubSource`) can be removed.
+`sync_snapshots_to_db()`, `sync_issues_to_db()`, and `sync_file_sets_to_db()` in `props/db/sync/sync.py` have no live callers outside of frozen specimen code snapshots. They read `manifest.yaml` files and glob raw YAML from the filesystem — the old pre-bundle path. Now that `sync_specimen` handles file sets and critic scopes, these functions and their supporting code (`create_snapshot_archive`, `resolve_git_content`, `SnapshotDoc`, `BundleFilter`, `LocalSource`/`GitSource`/`GitHubSource`) can be removed.
 
 `load_yaml_issues()` in `yaml_loader.py` is still used by `sync_file_sets_to_db` and by `test_collect_errors.py`. Once `sync_file_sets_to_db` is removed, `load_yaml_issues` is only needed for that test. Consider whether that test should migrate to using `SpecimenData` parsing instead.
 
-### 3. Pre-commit hook doesn't distinguish `.specimen` renames from content changes
+### 2. Pre-commit hook doesn't distinguish `.specimen` renames from content changes
 
 The `block-specimen-code-changes` hook blocks all staged changes under `props/specimens/*/code/` for committed specimens. This means adding new `.specimen`-renamed BUILD files to an existing specimen requires either temporarily removing the `issues/` directory or bypassing the hook. Low priority — new specimens rarely need retroactive BUILD file renaming.
 
+## Resolved
+
+- **`sync_specimen` now syncs `critic_scopes_expected_to_recall`**: `_sync_critic_scopes_for_specimen` is called after flushing issues. All 4 previously-failing tests (`test_sync_occurrence_update`, `test_tp_occurrence_credits`, `test_view_extracts_grade_fields`, `test_grading_edges_constraints`) pass.
+
 ## Possible Future Work
 
-- **Remove legacy sync path**: After fixing gap #1, delete `sync_snapshots_to_db`, `sync_issues_to_db`, `sync_file_sets_to_db`, and related source-resolution code.
+- **Remove legacy sync path**: Delete `sync_snapshots_to_db`, `sync_issues_to_db`, `sync_file_sets_to_db`, and related source-resolution code.
 - **Refine pre-commit hook**: Allow `.specimen` file additions/renames while still blocking content changes to committed specimen code.
