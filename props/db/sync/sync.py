@@ -44,9 +44,9 @@ from props.db.models import (
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.stats import SyncStats
 from props.db.sync.yaml_loader import (
-    FalsePositive as FalsePositive_yaml,
+    SyncFalsePositive,
+    SyncTruePositive,
     SyncValidationError,
-    TruePositive as TruePositive_yaml,
     YAMLIssue,
     load_yaml_issues,
 )
@@ -73,30 +73,33 @@ class SpecimenData(BaseModel):
 class SpecimenBundle:
     """Bundle artifacts for a single specimen.
 
-    Format: code_tar + data_yaml (merged issues + split)
+    Holds parsed specimen data and path to code tar.
     """
 
-    slug: str
     code_tar: Path
-    data_yaml: Path
+    data: SpecimenData
+
+    @property
+    def slug(self) -> SnapshotSlug:
+        """Snapshot slug from parsed data."""
+        return self.data.snapshot_slug
 
     @staticmethod
     def from_paths(code_tar: Path, data_yaml: Path) -> SpecimenBundle:
         """Create a SpecimenBundle from code tar and data YAML paths.
 
-        The snapshot slug is read from the data YAML.
+        Parses the data YAML immediately to avoid redundant parsing.
 
         Args:
             code_tar: Path to uncompressed code tar
             data_yaml: Path to merged data YAML (snapshot_slug + split + issues)
 
         Returns:
-            SpecimenBundle with slug read from the data YAML
+            SpecimenBundle with parsed data
         """
         with data_yaml.open() as f:
             specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
-            slug = specimen_data.snapshot_slug
-        return SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml)
+        return SpecimenBundle(code_tar=code_tar, data=specimen_data)
 
 
 def _add_ranges_to_tp_occurrence(orm_occ: TruePositiveOccurrenceORM, files: dict[Path, list[LineRange] | None]) -> None:
@@ -612,7 +615,7 @@ def _sync_occurrences(
     return changed
 
 
-def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: TruePositive_yaml) -> bool:
+def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: SyncTruePositive) -> bool:
     """Sync a TP issue, returning True if anything changed."""
     changed = existing.rationale != yaml_issue.rationale
     if changed:
@@ -624,7 +627,7 @@ def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: TruePos
     return _sync_occurrences(session, existing.occurrences, yaml_issue.occurrences, _tp_occ_from_orm, add) or changed
 
 
-def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: FalsePositive_yaml) -> bool:
+def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: SyncFalsePositive) -> bool:
     """Sync an FP issue, returning True if anything changed."""
     changed = existing.rationale != yaml_fp.rationale
     if changed:
@@ -841,14 +844,11 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
 
     Args:
         session: Database session (caller must commit/rollback)
-        bundle: Specimen bundle with code tar and data YAML paths
+        bundle: Specimen bundle with parsed data and code tar
     """
-    # Read and parse data YAML
-    with bundle.data_yaml.open() as f:
-        specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
-
-    # Use slug from data YAML (not from bundle parameter)
-    slug = specimen_data.snapshot_slug
+    # Use pre-parsed data from bundle
+    specimen_data = bundle.data
+    slug = bundle.slug
 
     # Read uncompressed tar (bundle and DB use same format)
     archive_bytes = bundle.code_tar.read_bytes()
@@ -863,9 +863,9 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
     # Sync snapshot files from the tar we just stored
     sync_snapshot_files_to_db(session, [slug])
 
-    # Convert issues dict to TruePositive/FalsePositive objects
-    true_positives: list[TruePositive_yaml] = []
-    false_positives: list[FalsePositive_yaml] = []
+    # Convert issues dict to sync TruePositive/FalsePositive objects
+    true_positives: list[SyncTruePositive] = []
+    false_positives: list[SyncFalsePositive] = []
 
     for issue_id, issue in specimen_data.issues.items():
         # issue is already a YAMLIssue (validated by Pydantic when loading SpecimenData)
