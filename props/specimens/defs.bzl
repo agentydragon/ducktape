@@ -70,15 +70,15 @@ create_data_blob = rule(
     },
 )
 
-def specimen_targets(name, slug, split, code_srcs = None, code_root_marker = "code"):
+def specimen_targets(name, slug, split, code_srcs, code_root_marker = "code"):
     """Generate bundle artifacts and test target for a specimen.
 
     Args:
         name: Base name for generated targets (typically "specimen")
         slug: Specimen slug in format "{repo}/{date}" (e.g., "ducktape/2026-01-17-00")
-        split: Dataset split (e.g., "train", "test", "val") - required parameter
-        code_srcs: Optional label list for code files. If None, uses native.glob(["code/**/*"]).
-            Use this for remote-VCS specimens where code is fetched via http_archive.
+        split: Dataset split (e.g., "train", "test", "val")
+        code_srcs: Label list for code files. For local specimens, pass glob(["code/**/*"]).
+            For remote-VCS specimens, pass the http_archive filegroup label.
         code_root_marker: Path segment that marks the root of source files in code_srcs.
             The tar tool extracts relative paths after this segment. Defaults to "code".
 
@@ -89,9 +89,6 @@ def specimen_targets(name, slug, split, code_srcs = None, code_root_marker = "co
     """
     code_tar_target = name + "_code_tar"
     data_blob_target = name + "_data_blob"
-
-    if code_srcs == None:
-        code_srcs = native.glob(["code/**/*"])
 
     # Create code tar using custom Starlark rule (no shell!)
     create_code_tar(

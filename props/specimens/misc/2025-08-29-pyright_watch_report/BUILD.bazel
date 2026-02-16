@@ -2,6 +2,7 @@ load("//props/specimens:defs.bzl", "specimen_targets")
 
 specimen_targets(
     name = "specimen",
+    code_srcs = glob(["code/**/*"]),
     slug = "misc/2025-08-29-pyright_watch_report",
     split = "train",
 )

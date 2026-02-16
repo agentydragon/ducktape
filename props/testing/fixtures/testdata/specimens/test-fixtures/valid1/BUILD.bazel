@@ -4,6 +4,7 @@ package(default_visibility = ["//props/testing/fixtures:__pkg__"])
 
 specimen_targets(
     name = "specimen",
+    code_srcs = glob(["code/**/*"]),
     slug = "test-fixtures/valid1",
     split = "valid",
 )
