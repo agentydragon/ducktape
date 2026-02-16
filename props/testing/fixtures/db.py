@@ -20,6 +20,7 @@ from bazel_util.runfiles import get_required_path
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
+from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, sync_specimen
 from test_util.image_loader import load_image
 from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
@@ -167,6 +168,7 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     fixture_slugs = ["test-fixtures/test1", "test-fixtures/train1", "test-fixtures/valid1", "test-fixtures/valid2"]
 
     with db.session() as session:
+        sync_model_metadata_with_session(session)
         for slug in fixture_slugs:
             base_path = f"props/testing/fixtures/testdata/specimens/{slug}"
             code_tar = get_required_path(f"_main/{base_path}/specimen_code.tar")

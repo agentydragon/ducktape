@@ -13,6 +13,7 @@ from rich.table import Table
 
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
+from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, sync_metadata, sync_specimen
 
 # Database subcommand group
@@ -98,11 +99,17 @@ def cmd_db_recreate(
     db: Database = ctx.obj
     ensure_database_exists(db.config, db.config.database, drop_existing=False)
 
-    # Recreate schema only (no sync)
+    # Recreate schema and sync model metadata
     console = Console()
     console.print("Recreating database schema...")
     db.recreate()
     console.print("✓ Database schema recreated")
+
+    console.print("Syncing model metadata...")
+    with db.session() as session:
+        sync_model_metadata_with_session(session)
+        session.commit()
+    console.print("✓ Model metadata synced")
     console.print("\nTo sync specimens, use: props db sync-specimen --code-tar <tar> --data-yaml <yaml>")
 
 

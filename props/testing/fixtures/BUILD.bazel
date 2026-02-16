@@ -26,6 +26,7 @@ py_library(
         "//props/db:database",
         "//props/db:setup",
         "//props/db/sync",
+        "//props/db/sync:model_metadata",
         "//test_util:image_loader",
         "//third_party/containers:rlocations",
         "@pypi//opentelemetry_api",

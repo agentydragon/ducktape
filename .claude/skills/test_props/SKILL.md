@@ -1,14 +1,17 @@
 ---
 name: test_props
-description: Run end-to-end props testing with a real OpenAI API key. Tests critic, grader, improver, and optimizer workflows in a podman + host networking environment.
+description: Manual live props deployment testing — sets up Podman infrastructure (postgres, registry, backend) and runs real agent containers with a real OpenAI API key. NOT for standard Bazel tests (use `bazel test //props/...` for those).
 argument-hint: "[workflow: setup|critic|grader|improver|all]"
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, Task
 ---
 
-# Test Props E2E
+# Test Props Live Deployment
 
-Run end-to-end props testing. Sets up infrastructure, initializes the database,
-runs the backend, pushes agent images, and tests agent workflows.
+Manual live deployment testing. Sets up Podman infrastructure, initializes the database,
+runs the backend, pushes agent images, and tests agent workflows with real OpenAI calls.
+
+**Not for standard tests** — use `bazel test //props/...` for unit, integration, and e2e
+Bazel tests. This skill is for manual live deployment verification only.
 
 **Argument:** `$ARGUMENTS` (default: `all`)
 
