@@ -17,7 +17,7 @@ from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, 
 from props.db.database import Database
 from props.db.models import FalsePositive, FalsePositiveOccurrenceORM, TruePositive, TruePositiveOccurrenceORM
 from props.db.sync.sync import _fp_occ_from_orm, _sync_fp_issue, _sync_tp_issue, _tp_occ_from_orm
-from props.db.sync.yaml_loader import SyncFalsePositive as FalsePositive_yaml, SyncTruePositive as TruePositive_yaml
+from props.db.sync.yaml_loader import SyncFalsePositive, SyncTruePositive
 
 SLUG = SnapshotSlug("test-fixtures/train1")
 
@@ -298,9 +298,9 @@ def _find_occ(occs: list[TruePositiveOccurrence], occ_id: str) -> TruePositiveOc
     return next(o for o in occs if o.occurrence_id == occ_id)
 
 
-def _tp_issue_from_orm(session: Session, tp: TruePositive) -> TruePositive_yaml:
-    """Build a TruePositive_yaml from current DB state (for mutation tests)."""
-    return TruePositive_yaml(
+def _tp_issue_from_orm(session: Session, tp: TruePositive) -> SyncTruePositive:
+    """Build a SyncTruePositive from current DB state (for mutation tests)."""
+    return SyncTruePositive(
         tp_id=tp.tp_id,
         snapshot_slug=tp.snapshot_slug,
         rationale=tp.rationale,
@@ -308,9 +308,9 @@ def _tp_issue_from_orm(session: Session, tp: TruePositive) -> TruePositive_yaml:
     )
 
 
-def _fp_issue_from_orm(session: Session, fp: FalsePositive) -> FalsePositive_yaml:
-    """Build a FalsePositive_yaml from current DB state (for mutation tests)."""
-    return FalsePositive_yaml(
+def _fp_issue_from_orm(session: Session, fp: FalsePositive) -> SyncFalsePositive:
+    """Build a SyncFalsePositive from current DB state (for mutation tests)."""
+    return SyncFalsePositive(
         fp_id=fp.fp_id,
         snapshot_slug=fp.snapshot_slug,
         rationale=fp.rationale,
