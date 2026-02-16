@@ -13,7 +13,7 @@ from rich.table import Table
 
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
-from props.db.sync.sync import SpecimenBundle, sync_all, sync_specimen
+from props.db.sync.sync import SpecimenBundle, sync_metadata, sync_specimen
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
@@ -30,7 +30,7 @@ def cmd_sync(
     db: Database = ctx.obj
     console = Console()
     with db.session() as session:
-        result = sync_all(session, dry_run=dry_run)
+        result = sync_metadata(session, dry_run=dry_run)
     if dry_run:
         console.print("[yellow]DRY-RUN:[/yellow] Validation passed, no changes committed")
 

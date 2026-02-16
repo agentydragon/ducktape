@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest_bazel
-from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
@@ -77,7 +76,7 @@ def test_unchanged_occurrence_preserved(synced_db: Database):
 
         # Re-sync with identical data
         existing = session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-006").one()
-        yaml_issue = _tp_issue_from_orm(session, existing)
+        yaml_issue = _tp_issue_from_orm(existing)
         changed = _sync_tp_issue(session, existing, yaml_issue)
         session.flush()
 
@@ -96,7 +95,7 @@ def test_note_change_detected(synced_db: Database):
     """Changing an occurrence's note triggers re-sync."""
     with synced_db.session() as session:
         existing = session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-006").one()
-        yaml_issue = _tp_issue_from_orm(session, existing)
+        yaml_issue = _tp_issue_from_orm(existing)
         # Mutate the note on one occurrence
         occ = _find_occ(yaml_issue.occurrences, "occ-add")
         yaml_issue.occurrences = [
@@ -128,7 +127,7 @@ def test_files_change_detected(synced_db: Database):
     """Changing an occurrence's file ranges triggers re-sync."""
     with synced_db.session() as session:
         existing = session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-001").one()
-        yaml_issue = _tp_issue_from_orm(session, existing)
+        yaml_issue = _tp_issue_from_orm(existing)
         # Change line range
         yaml_issue.occurrences = [
             TruePositiveOccurrence(
@@ -162,7 +161,7 @@ def test_rationale_change_detected(synced_db: Database):
     """Changing the issue-level rationale triggers update."""
     with synced_db.session() as session:
         existing = session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-001").one()
-        yaml_issue = _tp_issue_from_orm(session, existing)
+        yaml_issue = _tp_issue_from_orm(existing)
         yaml_issue.rationale = "Updated rationale."
 
         changed = _sync_tp_issue(session, existing, yaml_issue)
@@ -177,7 +176,7 @@ def test_critic_scopes_change_detected(synced_db: Database):
     """Changing critic_scopes_expected_to_recall triggers re-sync (detected as changed)."""
     with synced_db.session() as session:
         existing = session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-001").one()
-        yaml_issue = _tp_issue_from_orm(session, existing)
+        yaml_issue = _tp_issue_from_orm(existing)
         original_created_at = existing.occurrences[0].created_at
         occ = yaml_issue.occurrences[0]
         yaml_issue.occurrences = [
@@ -214,7 +213,7 @@ def test_occurrence_added(synced_db: Database):
     """Adding an occurrence to an existing issue is detected."""
     with synced_db.session() as session:
         existing = session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-001").one()
-        yaml_issue = _tp_issue_from_orm(session, existing)
+        yaml_issue = _tp_issue_from_orm(existing)
         yaml_issue.occurrences.append(
             TruePositiveOccurrence(
                 occurrence_id="occ-new",
@@ -240,7 +239,7 @@ def test_occurrence_removed(synced_db: Database):
     """Removing an occurrence from an existing issue is detected."""
     with synced_db.session() as session:
         existing = session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-006").one()
-        yaml_issue = _tp_issue_from_orm(session, existing)
+        yaml_issue = _tp_issue_from_orm(existing)
         # Keep only the first occurrence
         yaml_issue.occurrences = [yaml_issue.occurrences[0]]
 
@@ -264,7 +263,7 @@ def test_fp_relevant_files_change_detected(synced_db: Database):
     """Changing relevant_files on an FP occurrence triggers re-sync."""
     with synced_db.session() as session:
         existing = session.query(FalsePositive).filter_by(snapshot_slug=SLUG, fp_id="fp-001").one()
-        yaml_fp = _fp_issue_from_orm(session, existing)
+        yaml_fp = _fp_issue_from_orm(existing)
         occ = yaml_fp.occurrences[0]
         yaml_fp.occurrences = [
             FalsePositiveOccurrence(
@@ -298,7 +297,7 @@ def _find_occ(occs: list[TruePositiveOccurrence], occ_id: str) -> TruePositiveOc
     return next(o for o in occs if o.occurrence_id == occ_id)
 
 
-def _tp_issue_from_orm(session: Session, tp: TruePositive) -> SyncTruePositive:
+def _tp_issue_from_orm(tp: TruePositive) -> SyncTruePositive:
     """Build a SyncTruePositive from current DB state (for mutation tests)."""
     return SyncTruePositive(
         tp_id=tp.tp_id,
@@ -308,7 +307,7 @@ def _tp_issue_from_orm(session: Session, tp: TruePositive) -> SyncTruePositive:
     )
 
 
-def _fp_issue_from_orm(session: Session, fp: FalsePositive) -> SyncFalsePositive:
+def _fp_issue_from_orm(fp: FalsePositive) -> SyncFalsePositive:
     """Build a SyncFalsePositive from current DB state (for mutation tests)."""
     return SyncFalsePositive(
         fp_id=fp.fp_id,

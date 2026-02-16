@@ -67,12 +67,10 @@ py_library(
         "//props:config",
         "//props/core:ids",
         "//props/core:splits",
-        "//props/core/models:snapshot",
         "//props/core/models:true_positive",
         "//props/db:models",
         "@pypi//opentelemetry_api",
         "@pypi//pydantic",
-        "@pypi//pygit2",
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
     ],
@@ -119,7 +117,6 @@ py_test(
     name = "test_collect_errors",
     srcs = ["test_collect_errors.py"],
     imports = ["../../.."],
-    requires_docker = True,
     deps = [
         ":yaml_loader",
         "//props:conftest",
@@ -146,6 +143,5 @@ py_test(
         "//props/db:database",
         "//props/db:models",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )

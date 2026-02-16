@@ -75,7 +75,6 @@ py_library(
         "//props/core:ids",
         "//props/core:splits",
         "//props/core/models:examples",
-        "//props/core/models:snapshot",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],

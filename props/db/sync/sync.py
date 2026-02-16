@@ -1,22 +1,16 @@
-"""Sync snapshots, issues, and model metadata from filesystem to database."""
+"""Sync specimens and model metadata to database."""
 
 from __future__ import annotations
 
 import hashlib
 import io
 import logging
-import shutil
 import tarfile
-import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlunparse
-from urllib.request import urlopen
 
-import pygit2
 import yaml
 from opentelemetry import trace
 from pydantic import BaseModel
@@ -25,7 +19,6 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug
-from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.core.splits import Split
 from props.db.models import (
@@ -43,13 +36,7 @@ from props.db.models import (
 )
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.stats import SyncStats
-from props.db.sync.yaml_loader import (
-    SyncFalsePositive,
-    SyncTruePositive,
-    SyncValidationError,
-    YAMLIssue,
-    load_yaml_issues,
-)
+from props.db.sync.yaml_loader import SyncFalsePositive, SyncTruePositive, YAMLIssue
 
 if TYPE_CHECKING:
     from props.config import PropsConfig
@@ -123,323 +110,6 @@ def _add_ranges_to_occurrence(
                     note=line_range.note,
                 )
             )
-
-
-def _download_github_tarball_to_temp(owner: str, repo: str, ref: str) -> Path:
-    """Download GitHub tarball to temp directory, return extracted content root."""
-    url = urlunparse(("https", "codeload.github.com", f"/{owner}/{repo}/tar.gz/{ref}", "", "", ""))
-    logger.debug("downloading %s", url)
-    try:
-        with urlopen(url) as resp:
-            tarball_bytes = resp.read()
-    except (URLError, HTTPError) as e:
-        raise RuntimeError(f"GitHub download failed: {e}") from e
-
-    # Extract directly from bytes
-    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-sync-"))
-    with tarfile.open(fileobj=io.BytesIO(tarball_bytes), mode="r:gz") as tf:
-        tf.extractall(tmpdir, filter=_safe_tar_filter)
-
-    # GitHub tarballs have top-level dir like "repo-commit/", return that
-    for p in tmpdir.iterdir():
-        if p.is_dir():
-            return p
-    return tmpdir
-
-
-def _clone_git_to_temp(url: str, ref: str) -> Path:
-    """Clone git repo to temp directory, return content root."""
-    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-sync-"))
-    try:
-        repo = pygit2.clone_repository(url, str(tmpdir), bare=False)
-        commit = repo.revparse_single(ref)
-        repo.checkout_tree(commit)
-        repo.set_head(commit.id)
-        shutil.rmtree(tmpdir / ".git", ignore_errors=True)
-        return tmpdir
-    except (pygit2.GitError, KeyError) as e:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        raise RuntimeError(f"Git clone failed for {url}@{ref}: {e}") from e
-
-
-def _safe_tar_filter(member: tarfile.TarInfo, path: str) -> tarfile.TarInfo | None:
-    """Tarfile filter that skips absolute symlinks."""
-    try:
-        return tarfile.data_filter(member, path)
-    except tarfile.AbsoluteLinkError:
-        logger.warning(f"Skipping absolute symlink: {member.name} -> {member.linkname}")
-        return None
-
-
-def resolve_git_content(manifest: SnapshotDoc, slug: SnapshotSlug) -> Path:
-    """Resolve GitSource/GitHubSource to local temp directory.
-
-    Returns path to directory containing source code (caller must clean up after use).
-    No file-based caching - DB stores the final archives.
-    """
-    source = manifest.source
-
-    if isinstance(source, GitHubSource):
-        return _download_github_tarball_to_temp(source.org, source.repo, source.ref)
-
-    if isinstance(source, GitSource):
-        # Try GitHub fast path for github.com URLs
-        if source.url.startswith("https://github.com/"):
-            parts = source.url.removeprefix("https://github.com/").rstrip("/").removesuffix(".git").split("/")
-            if len(parts) >= 2:
-                try:
-                    return _download_github_tarball_to_temp(parts[0], parts[1], source.commit)
-                except RuntimeError:
-                    pass  # Fall through to git clone
-        # Fall back to git clone
-        return _clone_git_to_temp(source.url, source.commit)
-
-    raise ValueError(f"resolve_git_content called with non-git source: {type(source)}")
-
-
-def _matches_bundle_pattern(path: str, pattern: str) -> bool:
-    """Match path against gitignore-style pattern.
-
-    - Trailing slash means directory prefix (e.g., "web/" matches "web/foo.py")
-    - No trailing slash matches as prefix or exact (e.g., "foo" matches "foo.py" and "foo/bar.py")
-    """
-    if pattern.endswith("/"):
-        # Directory pattern: matches if path starts with pattern (without trailing /)
-        return path.startswith(pattern[:-1] + "/") or path == pattern[:-1]
-    # Prefix or exact match
-    return path.startswith(pattern) or path == pattern
-
-
-def create_snapshot_archive(content_dir: Path, bundle_filter: BundleFilter | None = None) -> bytes:
-    """Create uncompressed tar archive from directory.
-
-    Args:
-        content_dir: Directory containing source files to archive
-        bundle_filter: Optional filter with include/exclude patterns
-
-    Returns:
-        Uncompressed tar archive as bytes
-    """
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w") as tar:
-        for path in sorted(content_dir.rglob("*")):  # sorted for determinism
-            if not path.is_file():
-                continue
-
-            rel_path = path.relative_to(content_dir)
-            rel_str = str(rel_path)
-
-            # Skip VCS internals
-            if ".git" in rel_path.parts:
-                continue
-
-            # Apply bundle filter if present
-            if bundle_filter:
-                # Check include patterns (if specified, file must match at least one)
-                if bundle_filter.include and not any(
-                    _matches_bundle_pattern(rel_str, p) for p in bundle_filter.include
-                ):
-                    continue
-
-                # Check exclude patterns (if matches any, skip)
-                if bundle_filter.exclude and any(_matches_bundle_pattern(rel_str, p) for p in bundle_filter.exclude):
-                    continue
-
-            # TODO: Symlink support was removed because Bazel runfiles are symlinks,
-            # causing tar to store them as symlink entries which break snapshot_files
-            # extraction. To restore relative symlink support: check if the resolved
-            # target is under content_dir — if so, keep as symlink; otherwise dereference.
-            source_path = str(path)
-            if path.is_symlink():
-                logger.warning(f"Dereferencing symlink in snapshot archive: {rel_str}")
-                source_path = str(path.resolve())
-
-            # Add file to archive with deterministic mtime
-            info = tar.gettarinfo(source_path, arcname=rel_str)
-            info.mtime = 0  # Deterministic for reproducibility
-            with path.open("rb") as f:
-                tar.addfile(info, f)
-
-    return buffer.getvalue()
-
-
-def sync_snapshots_to_db(
-    session: Session, snapshots: dict[SnapshotSlug, SnapshotDoc], specimens_dir: Path
-) -> SyncStats:
-    """Sync snapshots to database, creating content archives from specimens repo."""
-
-    # Get existing snapshots from DB
-    existing = {s.slug: s for s in session.query(Snapshot).all()}
-    source_slugs = set(snapshots.keys())
-    db_slugs = set(existing.keys())
-
-    # Track stats
-    added = 0
-    updated = 0
-    deleted = 0
-
-    # Delete orphaned snapshots (in DB but not in source)
-    for slug in db_slugs - source_slugs:
-        logger.info(f"Deleting orphaned snapshot: {slug}")
-        session.delete(existing[slug])
-        deleted += 1
-
-    # Add/update snapshots from source
-    total_snapshots = len(snapshots)
-    total_archive_bytes = 0
-    for idx, (slug, manifest) in enumerate(snapshots.items(), 1):
-        # Resolve content directory based on source type
-        cleanup_dir: Path | None = None
-        if isinstance(manifest.source, LocalSource):
-            content_dir = (specimens_dir / slug / manifest.source.root).resolve()
-        elif isinstance(manifest.source, GitSource | GitHubSource):
-            content_dir = resolve_git_content(manifest, slug)
-            cleanup_dir = content_dir.parent if content_dir.parent.name.startswith("adgn-sync-") else content_dir
-        else:
-            raise ValueError(f"Unknown source type for {slug}: {type(manifest.source)}")
-
-        try:
-            # Create tar archive from content directory
-            archive = create_snapshot_archive(content_dir, manifest.bundle)
-        finally:
-            # Clean up temp directory for git sources
-            if cleanup_dir is not None:
-                shutil.rmtree(cleanup_dir, ignore_errors=True)
-
-        archive_size = len(archive)
-        total_archive_bytes += archive_size
-        print(f"  [{idx}/{total_snapshots}] {slug} ({archive_size / 1024:.1f} KB)")
-
-        # Upsert snapshot (insert if new, update if exists)
-        snapshot_data = {"slug": slug, "split": manifest.split, "content": archive}
-        stmt = (
-            insert(Snapshot).values(**snapshot_data).on_conflict_do_update(index_elements=["slug"], set_=snapshot_data)
-        )
-        session.execute(stmt)
-
-        # Track stats for reporting
-        if slug not in db_slugs:
-            logger.debug(f"Adding snapshot: {slug} (split={manifest.split}, size={archive_size} bytes)")
-            added += 1
-        else:
-            logger.debug(f"Updating snapshot: {slug} (size={archive_size} bytes)")
-            updated += 1
-
-    session.flush()
-    total = len(snapshots)
-    print(f"  Total archive size: {total_archive_bytes / 1024 / 1024:.1f} MB")
-    logger.info(f"Snapshots synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
-    return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
-
-
-def sync_issues_to_db(
-    session: Session, slugs: list[SnapshotSlug], specimens_dir: Path, *, collect_errors: bool = False
-) -> SyncStats:
-    """Sync issues and false positives from filesystem to database.
-
-    When collect_errors is True, per-snapshot errors are collected using
-    savepoints. Raises SyncValidationError at the end if any snapshots failed.
-    """
-
-    # Track stats across both TPs and FPs
-    total = 0
-    added = 0
-    updated = 0
-    deleted = 0
-
-    errors: list[str] = []
-    failed_slugs: set[SnapshotSlug] = set()
-
-    # Get existing issues and FPs from DB
-    existing_issues = {(i.snapshot_slug, i.tp_id): i for i in session.query(TruePositive).all()}
-    existing_fps = {(fp.snapshot_slug, fp.fp_id): fp for fp in session.query(FalsePositive).all()}
-
-    # Track which issues/FPs we've seen (to detect deletions)
-    seen_issue_keys: set[tuple[SnapshotSlug, str]] = set()
-    seen_fp_keys: set[tuple[SnapshotSlug, str]] = set()
-
-    # Process each snapshot
-    for slug in slugs:
-        savepoint = session.begin_nested()
-        try:
-            true_positives, false_positives = load_yaml_issues(slug, specimens_dir, collect_errors=collect_errors)
-
-            # Sync true positives
-            for issue in true_positives:
-                key = (issue.snapshot_slug, issue.tp_id)
-                seen_issue_keys.add(key)
-
-                if key not in existing_issues:
-                    logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.tp_id}")
-                    orm_issue = TruePositive(
-                        snapshot_slug=issue.snapshot_slug, tp_id=issue.tp_id, rationale=issue.rationale
-                    )
-                    session.add(orm_issue)
-                    for occ in issue.occurrences:
-                        _add_tp_occurrence(session, issue.snapshot_slug, issue.tp_id, occ)
-                    added += 1
-                    total += 1
-                else:
-                    existing = existing_issues[key]
-                    if _sync_tp_issue(session, existing, issue):
-                        updated += 1
-                    total += 1
-
-            # Sync false positives
-            for fp in false_positives:
-                fp_key = (fp.snapshot_slug, fp.fp_id)
-                seen_fp_keys.add(fp_key)
-
-                if fp_key not in existing_fps:
-                    logger.debug(f"Adding false positive: {fp.snapshot_slug}/{fp.fp_id}")
-                    orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
-                    session.add(orm_fp)
-                    for fp_occ in fp.occurrences:
-                        _add_fp_occurrence(session, fp.snapshot_slug, fp.fp_id, fp_occ)
-                    added += 1
-                    total += 1
-                else:
-                    existing_fp = existing_fps[fp_key]
-                    if _sync_fp_issue(session, existing_fp, fp):
-                        updated += 1
-                    total += 1
-
-            session.flush()
-        except Exception as e:
-            savepoint.rollback()
-            if not collect_errors:
-                raise
-            if isinstance(e, SyncValidationError):
-                errors.extend(e.errors)
-            else:
-                errors.append(f"{slug}: {e}")
-            failed_slugs.add(slug)
-        else:
-            savepoint.commit()
-
-    # Delete orphaned issues (in DB but not in source, skip failed slugs)
-    for key in set(existing_issues.keys()) - seen_issue_keys:
-        if key[0] in failed_slugs:
-            continue
-        logger.info(f"Deleting orphaned issue: {key[0]}/{key[1]}")
-        session.delete(existing_issues[key])
-        deleted += 1
-
-    # Delete orphaned FPs (in DB but not in source, skip failed slugs)
-    for key in set(existing_fps.keys()) - seen_fp_keys:
-        if key[0] in failed_slugs:
-            continue
-        logger.info(f"Deleting orphaned false positive: {key[0]}/{key[1]}")
-        session.delete(existing_fps[key])
-        deleted += 1
-
-    session.flush()
-    logger.info(f"Issues synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
-
-    if errors:
-        raise SyncValidationError(errors, failed_slugs=failed_slugs)
-
-    return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
 def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> SyncStats:
@@ -669,7 +339,7 @@ def compute_files_hash(file_paths: list[str]) -> str:
     return hashlib.md5(content.encode("utf-8")).hexdigest()
 
 
-def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: set[Path] | None) -> str | None:
+def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: AbstractSet[Path] | None) -> str | None:
     """Ensure a file_set exists for the given paths and return its hash.
 
     Upserts the FileSet and FileSetMember rows if they don't exist.
@@ -703,122 +373,6 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
     return files_hash
 
 
-def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir: Path) -> SyncStats:
-    """Sync file_sets, file_set_members, and critic_scopes_expected_to_recall from YAML sources.
-
-    Reads critic_scopes_expected_to_recall from YAML files (the source of truth), not from ORM.
-    """
-    desired_file_sets: dict[tuple[SnapshotSlug, str], list[str]] = {}
-    desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
-
-    # Load canonical TPs from YAML to get critic_scopes_expected_to_recall
-
-    for slug in slugs:
-        true_positives, false_positives = load_yaml_issues(slug, specimens_dir)
-
-        for tp in true_positives:
-            for occurrence in tp.occurrences:
-                for trigger_files in occurrence.critic_scopes_expected_to_recall:
-                    # Convert to strings and compute hash
-                    file_paths = [str(f) for f in trigger_files]
-                    files_hash = compute_files_hash(file_paths)
-
-                    key = (slug, files_hash)
-                    desired_file_sets.setdefault(key, file_paths)
-                    desired_triggers.add((slug, tp.tp_id, occurrence.occurrence_id, files_hash))
-
-                # Also preserve file sets used by match_file_restriction
-                if occurrence.match_file_restriction is not None:
-                    restriction_paths = [str(f) for f in occurrence.match_file_restriction]
-                    restriction_hash = compute_files_hash(restriction_paths)
-                    desired_file_sets.setdefault((slug, restriction_hash), restriction_paths)
-
-        for fp in false_positives:
-            for fp_occ in fp.occurrences:
-                if fp_occ.match_file_restriction is not None:
-                    restriction_paths = [str(f) for f in fp_occ.match_file_restriction]
-                    restriction_hash = compute_files_hash(restriction_paths)
-                    desired_file_sets.setdefault((slug, restriction_hash), restriction_paths)
-
-    # Current state from DB
-    existing_file_sets: set[tuple[SnapshotSlug, str]] = {
-        (slug, h) for slug, h in session.query(FileSet.snapshot_slug, FileSet.files_hash).all()
-    }
-    existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
-        (slug, tp_id, occ_id, h)
-        for slug, tp_id, occ_id, h in session.query(
-            CriticScopeExpectedToRecall.snapshot_slug,
-            CriticScopeExpectedToRecall.tp_id,
-            CriticScopeExpectedToRecall.occurrence_id,
-            CriticScopeExpectedToRecall.files_hash,
-        ).all()
-    }
-
-    # Diff file sets
-    to_add = desired_file_sets.keys() - existing_file_sets
-    to_delete = existing_file_sets - desired_file_sets.keys()
-
-    file_sets_added = 0
-    file_sets_deleted = 0
-
-    for slug, files_hash in to_add:
-        file_paths = desired_file_sets[(slug, files_hash)]
-        fs = FileSet(snapshot_slug=slug, files_hash=files_hash)
-        session.add(fs)
-        session.flush()  # ensure FK for members
-        for file_path in file_paths:
-            session.add(FileSetMember(snapshot_slug=slug, files_hash=files_hash, file_path=file_path))
-        file_sets_added += 1
-
-    for slug, files_hash in to_delete:
-        # Clear match_file_restriction on occurrences before deleting file_set (FK RESTRICT)
-        session.query(TruePositiveOccurrenceORM).filter_by(
-            snapshot_slug=slug, match_file_restriction=files_hash
-        ).update({TruePositiveOccurrenceORM.match_file_restriction: None})
-        session.query(FalsePositiveOccurrenceORM).filter_by(
-            snapshot_slug=slug, match_file_restriction=files_hash
-        ).update({FalsePositiveOccurrenceORM.match_file_restriction: None})
-        session.query(FileSet).filter_by(snapshot_slug=slug, files_hash=files_hash).delete()
-        file_sets_deleted += 1
-
-    # Diff occurrence triggers
-    triggers_to_add = desired_triggers - existing_triggers
-    triggers_to_delete = existing_triggers - desired_triggers
-
-    critic_scopes_expected_to_recall_added = 0
-    critic_scopes_expected_to_recall_deleted = 0
-
-    for slug, tp_id, occurrence_id, files_hash in triggers_to_add:
-        session.add(
-            CriticScopeExpectedToRecall(
-                snapshot_slug=slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash
-            )
-        )
-        critic_scopes_expected_to_recall_added += 1
-
-    if triggers_to_delete:
-        session.query(CriticScopeExpectedToRecall).filter(
-            tuple_(
-                CriticScopeExpectedToRecall.snapshot_slug,
-                CriticScopeExpectedToRecall.tp_id,
-                CriticScopeExpectedToRecall.occurrence_id,
-                CriticScopeExpectedToRecall.files_hash,
-            ).in_(list(triggers_to_delete))
-        ).delete(synchronize_session=False)
-        critic_scopes_expected_to_recall_deleted = len(triggers_to_delete)
-
-    session.flush()
-    logger.info(
-        "File sets synced: +%d added, -%d deleted; critic_scopes_expected_to_recall +%d, -%d",
-        file_sets_added,
-        file_sets_deleted,
-        critic_scopes_expected_to_recall_added,
-        critic_scopes_expected_to_recall_deleted,
-    )
-    total = len(desired_file_sets)
-    return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
-
-
 def _sync_critic_scopes_for_specimen(
     session: Session,
     slug: SnapshotSlug,
@@ -836,9 +390,7 @@ def _sync_critic_scopes_for_specimen(
         true_positives: List of parsed true positives with occurrences
         false_positives: List of parsed false positives with occurrences
     """
-    logger.info(
-        f"[CURRENT] _sync_critic_scopes_for_specimen: Starting for {slug}, {len(true_positives)} TPs, {len(false_positives)} FPs"
-    )
+    logger.debug(f"Syncing critic scopes for {slug}: {len(true_positives)} TPs, {len(false_positives)} FPs")
     # Collect desired critic scopes from occurrence data
     desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
 
@@ -850,7 +402,7 @@ def _sync_critic_scopes_for_specimen(
                 assert files_hash is not None  # trigger_files is not None, so hash shouldn't be None
                 desired_triggers.add((slug, tp.tp_id, occurrence.occurrence_id, files_hash))
 
-    logger.info(f"[CURRENT] _sync_critic_scopes_for_specimen: Collected {len(desired_triggers)} desired critic scopes")
+    logger.debug(f"Collected {len(desired_triggers)} desired critic scopes for {slug}")
 
     # Current critic scopes from DB
     existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
@@ -982,55 +534,32 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
 
 
 @dataclass
-class FullSyncResult:
-    """Result from syncing model metadata (specimen sync doesn't track stats)."""
+class SyncMetadataResult:
+    """Result from sync_metadata."""
 
     model_metadata_stats: SyncStats
 
 
-def sync_all(
-    session: Session,
-    specimen_bundles: list[SpecimenBundle] | None = None,
-    *,
-    config: PropsConfig | None = None,
-    dry_run: bool = False,
-) -> FullSyncResult:
-    """Sync specimens and model metadata from bundle artifacts.
+def sync_metadata(session: Session, *, config: PropsConfig | None = None, dry_run: bool = False) -> SyncMetadataResult:
+    """Sync model metadata to database.
 
-    Syncs from pre-built uncompressed tar + data.yaml bundles (if provided) and model metadata.
-
-    All sync operations happen within the provided database session for consistency.
-
-    Sync order:
-    1. For each bundle: sync snapshot, snapshot_files, and issues
-    2. Sync model metadata (independent, but needs config for custom models)
+    Specimens are synced separately via sync_specimen (called from specimen tests
+    and `props db sync-specimen`).
 
     Args:
         session: Database session
-        specimen_bundles: List of specimen bundles with slug, code_tar, and data_yaml paths
         config: Optional props config for custom model metadata
         dry_run: If True, rollback all changes instead of committing
-
-    Returns:
-        FullSyncResult with model metadata sync stats
     """
-    with tracer.start_as_current_span("sync_all"):
-        if specimen_bundles:
-            print(f"Syncing {len(specimen_bundles)} specimen(s) from bundle artifacts...")
-            for bundle in specimen_bundles:
-                print(f"  Syncing {bundle.slug}...")
-                sync_specimen(session, bundle)
-
-        # Sync model metadata
+    with tracer.start_as_current_span("sync_metadata"):
         print("Syncing model metadata...")
         model_metadata_stats = sync_model_metadata_with_session(session, config)
         print(f"  {model_metadata_stats.summary_text}")
 
-        # Final commit/rollback
         if dry_run:
             logger.info("DRY-RUN: Rolling back all changes")
             session.rollback()
         else:
             session.commit()
 
-        return FullSyncResult(model_metadata_stats=model_metadata_stats)
+        return SyncMetadataResult(model_metadata_stats=model_metadata_stats)
