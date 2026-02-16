@@ -5,6 +5,8 @@
 # the Bazel client lock (~55s each). This single binary runs both sequentially
 # within one invocation (~20s total).
 #
+# Note: buildifier (format + lint) is handled separately by keith/pre-commit-buildifier.
+#
 # Usage:
 #   bazel run //tools/precommit -- [files...]
 #   bazel run //tools/precommit  # format and validate all tracked files
@@ -52,14 +54,12 @@ py_binary(
         # Formatters
         "@aspect_rules_lint//format:ruff",
         "@aspect_rules_lint//format:shfmt",
-        "@buildifier_prebuilt//buildifier",
         # Validators (validate_kustomizations is unified: kustomize + CRD layering + deps + flux)
         "//cluster/scripts:validate_helm_templates",
         "//cluster/scripts:validate_kustomizations",
         "//cluster/scripts:validate_sealed_secrets",
     ],
     env = {
-        "BUILDIFIER_BIN": "$(rlocationpath @buildifier_prebuilt//buildifier:buildifier)",
         "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
     },
@@ -82,14 +82,12 @@ py_binary(
         # Formatters
         "@aspect_rules_lint//format:ruff",
         "@aspect_rules_lint//format:shfmt",
-        "@buildifier_prebuilt//buildifier",
         # Validators (validate_kustomizations is unified: kustomize + CRD layering + deps + flux)
         "//cluster/scripts:validate_helm_templates",
         "//cluster/scripts:validate_kustomizations",
         "//cluster/scripts:validate_sealed_secrets",
     ],
     env = {
-        "BUILDIFIER_BIN": "$(rlocationpath @buildifier_prebuilt//buildifier:buildifier)",
         "FMT_CHECK": "1",
         "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",

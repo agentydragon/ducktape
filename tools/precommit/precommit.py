@@ -5,8 +5,10 @@ When pre-commit runs multiple Bazel hooks concurrently, they serialize on
 the Bazel client lock, causing ~55s per hook even though actual work is <20s.
 
 This single binary runs both in sequence within one Bazel invocation:
-1. Format: prettier, ruff, shfmt, buildifier
-2. Validate: buildifier-lint, pytest-main check, cluster validations
+1. Format: ruff, shfmt
+2. Validate: pytest-main check, cluster validations
+
+Note: buildifier (format + lint) is handled separately by keith/pre-commit-buildifier.
 
 Usage:
     bazel run //tools/precommit -- [files...]
@@ -47,20 +49,9 @@ def resolve_bin(rlocation: str) -> str:
     return path
 
 
-EXTENSION_MAP: dict[str, str] = {
-    ".py": "ruff",
-    ".sh": "shfmt",
-    ".bash": "shfmt",
-    ".bzl": "buildifier",
-    ".bazel": "buildifier",
-}
+EXTENSION_MAP: dict[str, str] = {".py": "ruff", ".sh": "shfmt", ".bash": "shfmt"}
 
-FILENAME_MAP: dict[str, str] = {
-    "BUILD": "buildifier",
-    "BUILD.bazel": "buildifier",
-    "WORKSPACE": "buildifier",
-    "WORKSPACE.bazel": "buildifier",
-}
+FILENAME_MAP: dict[str, str] = {}
 
 SHELL_SHEBANG_RE = re.compile(rb"^#![ \t]*/(usr/)?bin/(env[ \t]+)?(sh|bash|mksh|bats|zsh)")
 IGNORE_ATTRIBUTES = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
@@ -141,7 +132,6 @@ def resolve_formatter_bin(formatter: str) -> str:
 FORMATTER_COMMANDS: dict[str, Callable[[str, bool], list[str]]] = {
     "ruff": lambda bin_path, check: [bin_path, "format", *(["--check"] if check else [])],
     "shfmt": lambda bin_path, check: [bin_path, "-d" if check else "-w"],
-    "buildifier": lambda bin_path, _: [bin_path],
 }
 
 
@@ -203,10 +193,6 @@ class ValidationResult:
     skipped: bool = False
 
 
-def is_bazel_file(p: Path) -> bool:
-    return p.name in ("BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel") or p.suffix in (".bzl", ".bazel")
-
-
 def is_test_file(p: Path) -> bool:
     return p.suffix == ".py" and "test_" in p.name
 
@@ -227,30 +213,6 @@ def is_sealed_secret(p: Path) -> bool:
 
 def is_terraform_module(p: Path) -> bool:
     return p.suffix == ".tf" and p.is_relative_to("cluster/terraform/modules")
-
-
-async def run_buildifier_lint(files: list[Path]) -> ValidationResult:
-    """Run buildifier lint on Bazel files."""
-    name = "buildifier-lint"
-    bazel_files = [str(f) for f in files if is_bazel_file(f)]
-    if not bazel_files:
-        return ValidationResult(name, 0.0, True, skipped=True)
-
-    start = time.perf_counter()
-    buildifier = resolve_bin("buildifier_prebuilt/buildifier/buildifier")
-    proc = await asyncio.create_subprocess_exec(
-        buildifier,
-        "--mode=check",
-        "--lint=warn",
-        *bazel_files,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
-    elapsed = time.perf_counter() - start
-
-    output = (stdout + stderr).decode()
-    return ValidationResult(name, elapsed, proc.returncode == 0, output)
 
 
 async def run_pytest_main_check(files: list[Path], repo_root: Path) -> ValidationResult:
@@ -323,7 +285,6 @@ async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Reposito
     """Run all validations on files."""
     return list(
         await asyncio.gather(
-            run_buildifier_lint(files),
             run_pytest_main_check(files, repo_root),
             run_terraform_centralization_check(files),
             run_filename_convention_check(repo),
