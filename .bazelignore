@@ -20,11 +20,6 @@ cluster/.direnv
 wt/.direnv
 props/.direnv
 
-# Note: props/specimens is NOT ignored - it now has proper BUILD.bazel files
-# that generate specimen tars and tests. The BUILD.bazel files inside specimen
-# code/ directories have been renamed to BUILD.bazel.specimen to prevent them
-# from being treated as Bazel packages.
-
 # Investigations - no BUILD files
 investigations
 

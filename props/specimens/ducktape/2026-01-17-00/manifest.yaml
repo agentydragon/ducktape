@@ -1,8 +1,7 @@
+# Deprecated fields (removed, kept for reference):
+#   bundle: {'source_commit': 'ed0b4c0a059de6d1aca191d571d7ea0eb7d77d8b', 'exclude': ['py_detectors/']}
+
 source:
   vcs: local
   root: code
 split: train
-bundle:
-  source_commit: ed0b4c0a059de6d1aca191d571d7ea0eb7d77d8b
-  exclude:
-    - py_detectors/

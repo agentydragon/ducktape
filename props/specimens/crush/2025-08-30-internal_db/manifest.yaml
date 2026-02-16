@@ -1,6 +1,8 @@
+# Deprecated fields (removed, kept for reference):
+#   bundle: None
+
 source:
   vcs: git
   url: https://github.com/agentydragon/crush.git
   commit: a2a1ffa00943aa373f688ac05b667083ac3230b1
 split: train
-bundle: null

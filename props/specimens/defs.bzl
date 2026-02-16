@@ -2,94 +2,111 @@
 
 load("//tools/testing:docker.bzl", "docker_py_test")
 
-def specimen_targets(name, slug):
-    """Generate tar, metadata, and test targets for a specimen.
+def _create_code_tar_impl(ctx):
+    """Implementation for create_code_tar rule."""
+    args = ctx.actions.args()
+    args.add(ctx.outputs.out)
+    args.add_all(ctx.files.srcs)
+
+    ctx.actions.run(
+        inputs = ctx.files.srcs,
+        outputs = [ctx.outputs.out],
+        executable = ctx.executable._tool,
+        arguments = [args],
+        mnemonic = "CreateCodeTar",
+        progress_message = "Creating code tar for %s" % ctx.label.name,
+    )
+
+    return [DefaultInfo(files = depset([ctx.outputs.out]))]
+
+create_code_tar = rule(
+    implementation = _create_code_tar_impl,
+    attrs = {
+        "srcs": attr.label_list(allow_files = True),
+        "out": attr.output(mandatory = True),
+        "_tool": attr.label(
+            default = "//props/specimens:create_code_tar",
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
+
+def _create_data_blob_impl(ctx):
+    """Implementation for create_data_blob rule."""
+    args = ctx.actions.args()
+    args.add(ctx.outputs.out)
+    args.add(ctx.attr.split)
+    args.add_all(ctx.files.issue_files)
+
+    ctx.actions.run(
+        inputs = ctx.files.issue_files,
+        outputs = [ctx.outputs.out],
+        executable = ctx.executable._tool,
+        arguments = [args],
+        mnemonic = "CreateDataBlob",
+        progress_message = "Creating data blob for %s" % ctx.label.name,
+    )
+
+    return [DefaultInfo(files = depset([ctx.outputs.out]))]
+
+create_data_blob = rule(
+    implementation = _create_data_blob_impl,
+    attrs = {
+        "issue_files": attr.label_list(allow_files = [".yaml"]),
+        "split": attr.string(mandatory = True),
+        "out": attr.output(mandatory = True),
+        "_tool": attr.label(
+            default = "//props/specimens:create_data_blob",
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
+
+def specimen_targets(name, slug, split):
+    """Generate bundle artifacts and test target for a specimen.
 
     Args:
         name: Base name for generated targets (typically "specimen")
         slug: Specimen slug in format "{repo}/{date}" (e.g., "ducktape/2026-01-17-00")
+        split: Dataset split (e.g., "train", "test", "val") - required parameter
 
     Generates:
-        - {name}_code_tar: tar.gz of code/ directory with BUILD.bazel files restored
-        - {name}_metadata: filegroup of manifest.yaml + issues/**/*.yaml
+        - {name}_code_tar: Deterministic tar.gz of code/ with BUILD.bazel restored
+        - {name}_data_blob: YAML with {split, issues} structure
         - test_{name}: docker_py_test validating this specimen
     """
+    code_tar_target = name + "_code_tar"
+    data_blob_target = name + "_data_blob"
 
-    # Generate tar of code/ directory, renaming BUILD.bazel.specimen → BUILD.bazel
-    native.genrule(
-        name = name + "_code_tar",
-        srcs = native.glob(
-            ["code/**/*"],
-            exclude = ["code/**/.git/**"],
-        ),
-        outs = [name + "_code.tar.gz"],
-        cmd = """
-set -euo pipefail
-tmpdir=$$(mktemp -d)
-trap 'rm -rf "$$tmpdir"' EXIT
-
-# Write sources to file to avoid command line length issues
-srcs_file="$$tmpdir/srcs.txt"
-cat > "$$srcs_file" << 'SRCS_EOF'
-$(SRCS)
-SRCS_EOF
-
-# Process each source file
-while IFS= read -r src; do
-    [[ -z "$$src" ]] && continue
-    [[ ! -e "$$src" ]] && continue  # Skip files glob can't handle (special chars)
-
-    rel="$${src#*code/}"
-    [[ "$$rel" == "$$src" ]] && continue
-
-    # Rename .specimen → original extension
-    if [[ "$$src" == *.specimen ]]; then
-        dest="$$tmpdir/$${rel%.specimen}"
-    else
-        dest="$$tmpdir/$$rel"
-    fi
-
-    mkdir -p "$$(dirname "$$dest")"
-    cp "$$src" "$$dest"
-done < <(tr ' ' '\\n' < "$$srcs_file")
-
-# Create deterministic tar in tmpdir, then move to output
-cd "$$tmpdir"
-tar_name="$$(basename "$@")"
-find . -type f | sort | tar \
-    --create --gzip \
-    --file="$$tar_name" \
-    --mtime='1970-01-01 00:00:00' \
-    --owner=0 --group=0 --numeric-owner \
-    --no-recursion --files-from=-
-
-mv "$$tar_name" "$$OLDPWD/$@"
-        """,
-        visibility = ["//visibility:public"],
+    # Create code tar using custom Starlark rule (no shell!)
+    create_code_tar(
+        name = code_tar_target,
+        srcs = native.glob(["code/**/*"]),
+        out = name + "_code.tar.gz",
     )
 
-    # Metadata filegroup
-    native.filegroup(
-        name = name + "_metadata",
-        srcs = ["manifest.yaml"] + native.glob(["issues/**/*.yaml"]),
-        visibility = ["//visibility:public"],
+    # Create data blob using custom Starlark rule (no shell!)
+    create_data_blob(
+        name = data_blob_target,
+        issue_files = native.glob(["issues/**/*.yaml"]),
+        split = split,
+        out = name + "_data.yaml",
     )
 
     # Per-specimen test
     docker_py_test(
         name = "test_" + name,
-        srcs = [
-            "//props/specimens:test_specimen.py",
-        ],
+        srcs = ["//props/specimens:test_specimen.py"],
         data = [
-            ":" + name + "_code_tar",
-            ":manifest.yaml",
-        ] + native.glob(["issues/**/*.yaml"]),
+            ":" + code_tar_target,
+            ":" + data_blob_target,
+        ],
         env = {
             "SPECIMEN_SLUG": slug,
-            "SPECIMEN_CODE_TAR": "$(location :" + name + "_code_tar)",
-            "SPECIMEN_MANIFEST": "$(location :manifest.yaml)",
-            "SPECIMEN_ISSUES_DIR": native.package_name() + "/issues",
+            "SPECIMEN_CODE_TAR": "$(location :" + code_tar_target + ")",
+            "SPECIMEN_DATA_YAML": "$(location :" + data_blob_target + ")",
         },
         imports = ["../.."],
         tags = ["integration", "specimen"],
@@ -102,8 +119,6 @@ mv "$$tar_name" "$$OLDPWD/$@"
             "//props/db:setup",
             "//props/db/sync",
             "//test_util:image_loader",
-            "//third_party/containers:rlocations",
-            "@pypi//pyhamcrest",
             "@pypi//pytest",
             "@pypi//pytest_bazel",
             "@pypi//sqlalchemy",
