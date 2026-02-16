@@ -8,26 +8,12 @@ def _create_code_tar_impl(ctx):
     if not srcs:
         fail("create_code_tar: srcs is empty")
 
-    # Derive the path prefix to strip from source file paths.
-    # External repo files (from http_archive) have paths starting with
-    # "external/<canonical_name>/..." — strip the repo root.
-    # Local files have paths like "<package>/code/..." — strip through the
-    # first subdirectory after the package.
-    first = srcs[0]
-    if first.short_path.startswith("../"):
-        # External repo: path = "external/<canonical>/rest..."
-        parts = first.path.split("/", 2)
-        strip_prefix = parts[0] + "/" + parts[1]
-    else:
-        # Local source: path = "<package>/<subdir>/rest..."
-        pkg = ctx.label.package
-        after_pkg = first.path[len(pkg) + 1:]
-        first_subdir = after_pkg.split("/", 1)[0]
-        strip_prefix = pkg + "/" + first_subdir
+    if not ctx.attr.strip_prefix:
+        fail("strip_prefix is required. Specify the path prefix to remove from tar entries.")
 
     args = ctx.actions.args()
     args.add(ctx.outputs.out)
-    args.add("--strip-prefix", strip_prefix)
+    args.add("--strip-prefix", ctx.attr.strip_prefix)
     args.add_all(srcs)
 
     ctx.actions.run(
@@ -46,8 +32,8 @@ create_code_tar = rule(
     attrs = {
         "srcs": attr.label_list(allow_files = True),
         "strip_prefix": attr.string(
-            doc = "Path prefix to strip from source files. If empty, defaults to <package>/code.",
-            default = "",
+            doc = "Path prefix to strip from source files (required).",
+            mandatory = True,
         ),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
@@ -110,10 +96,15 @@ def specimen_targets(name, slug, split, code_srcs):
     code_tar_target = name + "_code_tar"
     data_blob_target = name + "_data_blob"
 
+    # Compute strip_prefix: package path + "/code" convention
+    pkg = native.package_name()
+    strip_prefix = pkg + "/code"
+
     # Create code tar using custom Starlark rule (no shell!)
     create_code_tar(
         name = code_tar_target,
         srcs = code_srcs,
+        strip_prefix = strip_prefix,
         out = name + "_code.tar",
     )
 
