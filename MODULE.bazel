@@ -243,22 +243,27 @@ use_repo(pip, "pypi", "pypi_homeassistant")
 types = use_extension("@rules_mypy//mypy:types.bzl", "types")
 types.requirements(
     name = "pip_types",
-    # Exclusions:
-    # - sqlalchemy-stubs, types-sqlalchemy: SQLAlchemy 2.0+ has inline types via
-    #   the [mypy] extra, so external stubs conflict and cause duplicate keys.
-    # - types-paramiko: transitive dep but paramiko isn't in pypi hub
-    # - types-psycopg2: we use psycopg2-binary, not psycopg2
-    # - types-pytz: transitive dep (via pandas-stubs) but pytz isn't in pypi hub
-    # - types-toml: we use tomli, not toml
-    # - types-jinja2: jinja2 has py.typed; stubs have broken markupsafe dep
+    # Exclusions prevent rules_mypy from generating requirement("X") mappings
+    # for type stubs whose runtime package isn't in the pip hub (or has a
+    # different name). Without exclusion, Bazel fails at analysis time with
+    # "no such package '@@rules_python++pip+pypi//X'".
+    #
+    # Cleaned-up stubs (no longer need exclusion):
+    # - sqlalchemy-stubs, types-sqlalchemy: removed from pyproject.toml
+    #   (SQLAlchemy 2.0+ provides types via sqlalchemy[mypy])
+    # - types-jinja2: removed from pyproject.toml (jinja2 ships py.typed)
+    # - types-toml: removed from pyproject.toml (we use tomllib, not toml)
+    # - types-paramiko, types-pytz: runtime deps added to pyproject.toml
+    #   so their stubs resolve correctly
+    #
+    # TODO: Upstream fix in rules_mypy to gracefully skip stubs whose
+    # runtime package isn't in the pip hub, instead of failing at load time.
+    # That would eliminate the need for this exclusion list entirely.
     exclude_requirements = [
-        "sqlalchemy-stubs",
-        "types-jinja2",
-        "types-paramiko",
+        # types-psycopg2 maps to requirement("psycopg2") but we use
+        # psycopg2-binary (different pip package name). Can't be fixed
+        # by adding a dep — psycopg2 and psycopg2-binary conflict.
         "types-psycopg2",
-        "types-pytz",
-        "types-sqlalchemy",
-        "types-toml",
     ],
     pip_requirements = "@pypi//:requirements.bzl",
     requirements_txt = "//:requirements_bazel.txt",

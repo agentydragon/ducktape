@@ -430,7 +430,9 @@ bcrypt==5.0.0 \
     --hash=sha256:f748f7c2d6fd375cc93d3fba7ef4a9e3a092421b8dbf34d8d4dc06be9492dfdd \
     --hash=sha256:f8429e1c410b4073944f03bd778a9e066e7fad723564a52ff91841d278dfc822 \
     --hash=sha256:fc746432b951e92b58317af8e0ca746efe93e66555f1b40888865ef5bf56446b
-    # via pwdlib
+    # via
+    #   paramiko
+    #   pwdlib
 beartype==0.22.9 \
     --hash=sha256:8f82b54aa723a2848a56008d18875f91c1db02c32ef6a62319a002e3e25a975f \
     --hash=sha256:d16c9bbc61ea14637596c5f6fbff2ee99cbe3573e46a716401734ef50c3060c2
@@ -990,6 +992,7 @@ cryptography==46.0.3 \
     # via
     #   ducktape (pyproject.toml)
     #   authlib
+    #   paramiko
     #   pyjwt
     #   pyopenssl
     #   secretstorage
@@ -1879,7 +1882,9 @@ inventree==0.21.1 \
 invoke==2.2.1 \
     --hash=sha256:2413bc441b376e5cd3f55bb5d364f973ad8bdd7bf87e53c79de3c11bf3feecc8 \
     --hash=sha256:515bf49b4a48932b79b024590348da22f39c4942dff991ad1fb8b8baea1be707
-    # via ducktape (pyproject.toml)
+    # via
+    #   ducktape (pyproject.toml)
+    #   paramiko
 ipykernel==7.1.0 \
     --hash=sha256:58a3fc88533d5930c3546dc7eac66c6d288acde4f801e2001e65edc5dc9cf0db \
     --hash=sha256:763b5ec6c5b7776f6a8d7ce09b267693b4e5ce75cb50ae696aaefb3c85e1ea4c
@@ -3265,6 +3270,10 @@ pandocfilters==1.5.1 \
     --hash=sha256:002b4a555ee4ebc03f8b66307e287fa492e4a77b4ea14d3f934328297bb4939e \
     --hash=sha256:93be382804a9cdb0a7267585f157e5d1731bbe5545a85b268d6f5fe6232de2bc
     # via nbconvert
+paramiko==4.0.0 \
+    --hash=sha256:0e20e00ac666503bf0b4eda3b6d833465a2b7aff2e2b3d79a8bba5ef144ee3b9 \
+    --hash=sha256:6a25f07b380cc9c9a88d2b920ad37167ac4667f8d9886ccebd8f90f654b5d69f
+    # via ducktape (pyproject.toml)
 parso==0.8.5 \
     --hash=sha256:034d7354a9a018bdce352f48b2a8a450f05e9d6ee85db84764e9b6bd96dafe5a \
     --hash=sha256:646204b5ee239c396d040b90f9e272e9a8017c630092bf59980beb62fd033887
@@ -4354,7 +4363,9 @@ pynacl==1.6.2 \
     --hash=sha256:d071c6a9a4c94d79eb665db4ce5cedc537faf74f2355e4d502591d850d3913c0 \
     --hash=sha256:d29bfe37e20e015a7d8b23cfc8bd6aa7909c92a1b8f41ee416bbb3e79ef182b2 \
     --hash=sha256:fe9847ca47d287af41e82be1dd5e23023d3c31a951da134121ab02e42ac218c9
-    # via pygithub
+    # via
+    #   paramiko
+    #   pygithub
 pyopenssl==25.3.0 \
     --hash=sha256:1fda6fc034d5e3d179d39e59c1895c9faeaf40a79de5fc4cbbfbe0d36f4a77b6 \
     --hash=sha256:c981cb0a3fd84e8602d7afc209522773b94c1c2446a3c710a75b06fe1beae329
@@ -4479,6 +4490,10 @@ python-socks[asyncio]==2.8.0 \
 pytimeparse==1.1.8 \
     --hash=sha256:04b7be6cc8bd9f5647a6325444926c3ac34ee6bc7e69da4367ba282f076036bd \
     --hash=sha256:e86136477be924d7e670646a98561957e8ca7308d44841e21f5ddea757556a0a
+    # via ducktape (pyproject.toml)
+pytz==2025.2 \
+    --hash=sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3 \
+    --hash=sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00
     # via ducktape (pyproject.toml)
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
@@ -5699,10 +5714,6 @@ types-filelock==3.2.7 \
     --hash=sha256:0673a25b45725c5c45661fe3744c3d8058653a16e683f0ae4a74afb44a0cdef4 \
     --hash=sha256:ee0ee2b4ec3d491ebe71f7343e21435c3a07f910881275a94788cac42acf4339
     # via ducktape (pyproject.toml)
-types-jinja2==2.11.9 \
-    --hash=sha256:60a1e21e8296979db32f9374d8a239af4cb541ff66447bb915d8ad398f9c63b2 \
-    --hash=sha256:dbdc74a40aba7aed520b7e4d89e8f0fe4286518494208b35123bcf084d4b8c81
-    # via ducktape (pyproject.toml)
 types-jsonschema==4.26.0.20260109 \
     --hash=sha256:340fe91e6ea517900d6ababb6262a86c176473b5bf8455b96e85a89e3cfb5daa \
     --hash=sha256:e0276640d228732fb75d883905d607359b24a4ff745ba7f9a5f50e6fda891926
@@ -5711,10 +5722,6 @@ types-markdown==3.10.0.20251106 \
     --hash=sha256:12836f7fcbd7221db8baeb0d3a2f820b95050d0824bfa9665c67b4d144a1afa1 \
     --hash=sha256:2c39512a573899b59efae07e247ba088a75b70e3415e81277692718f430afd7e
     # via ducktape (pyproject.toml)
-types-markupsafe==1.1.10 \
-    --hash=sha256:85b3a872683d02aea3a5ac2a8ef590193c344092032f58457287fbf8e06711b1 \
-    --hash=sha256:ca2bee0f4faafc45250602567ef38d533e877d2ddca13003b319c551ff5b3cc5
-    # via types-jinja2
 types-paramiko==4.0.0.20250822 \
     --hash=sha256:1b56b0cbd3eec3d2fd123c9eb2704e612b777e15a17705a804279ea6525e0c53 \
     --hash=sha256:55bdb14db75ca89039725ec64ae3fa26b8d57b6991cfb476212fa8f83a59753c
@@ -5722,10 +5729,6 @@ types-paramiko==4.0.0.20250822 \
 types-psutil==7.2.1.20260116 \
     --hash=sha256:4661be5d5d7acd5d8afb02a92d05160a6cbb2ce74723245b51f7ba7dfdb9f981 \
     --hash=sha256:f516d2a71b28a4fd290f065cb30d7e7141ee605899aa592d8d4b80e45c9849be
-    # via ducktape (pyproject.toml)
-types-psycopg2==2.9.21.20251012 \
-    --hash=sha256:4cdafd38927da0cfde49804f39ab85afd9c6e9c492800e42f1f0c1a1b0312935 \
-    --hash=sha256:712bad5c423fe979e357edbf40a07ca40ef775d74043de72bd4544ca328cc57e
     # via ducktape (pyproject.toml)
 types-pygments==2.19.0.20251121 \
     --hash=sha256:cb3bfde34eb75b984c98fb733ce4f795213bd3378f855c32e75b49318371bb25 \
@@ -5749,17 +5752,9 @@ types-requests==2.32.4.20260107 \
     # via
     #   ducktape (pyproject.toml)
     #   types-docker
-types-sqlalchemy==1.4.53.38 \
-    --hash=sha256:5bb7463537e04e1aa5a3557eb725930df99226dcfd3c9bf93008025bfe5c169e \
-    --hash=sha256:7e60e74f823931cc9a9e8adb0a4c05e5533e6708b8a266807893a739faf4eaaa
-    # via ducktape (pyproject.toml)
 types-tabulate==0.9.0.20241207 \
     --hash=sha256:ac1ac174750c0a385dfd248edc6279fa328aaf4ea317915ab879a2ec47833230 \
     --hash=sha256:b8dad1343c2a8ba5861c5441370c3e35908edd234ff036d4298708a1d4cf8a85
-    # via ducktape (pyproject.toml)
-types-toml==0.10.8.20240310 \
-    --hash=sha256:3d41501302972436a6b8b239c850b26689657e25281b48ff0ec06345b8830331 \
-    --hash=sha256:627b47775d25fa29977d9c70dc0cbab3f314f32c8d8d0c012f2ef5de7aaec05d
     # via ducktape (pyproject.toml)
 types-unidiff==0.7.0.20240505 \
     --hash=sha256:cf15201c7af233f8380f1a289d169e1f740a67369ff60ab7bd0a131402b33194 \

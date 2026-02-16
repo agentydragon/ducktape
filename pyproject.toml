@@ -206,21 +206,23 @@ dependencies = [
     "types-docker",
     "types-colorama",
     "types-Pygments",
-    "types-psycopg2",
     "types-python-dateutil",
     "types-Markdown",
     "types-tabulate",
     "types-filelock",
-    "types-toml",
     "types-aiofiles",
     "types-psutil",
     "types-jsonschema",
     "types-unidiff",
-    "types-Jinja2",
-    "types-sqlalchemy>=1.4.53",
     "asyncpg-stubs",
     "pandas-stubs",
     "sqlalchemy[mypy]>=2.0.32",
+    # Runtime packages needed only so their transitive type stubs (types-paramiko
+    # via types-docker, types-pytz via pandas-stubs) can resolve in the Bazel mypy
+    # types hub. Without these, rules_mypy's requirement("paramiko")/requirement("pytz")
+    # fails because the runtime packages aren't otherwise in the pip lockfile.
+    "paramiko",
+    "pytz",
 
     # GEPA integration for props
     "gepa>=0.0.22",
