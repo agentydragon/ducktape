@@ -81,15 +81,45 @@ class SpecimenBundle:
     data_yaml: Path
 
 
-def _add_ranges_to_occurrence(
-    orm_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM, files: dict[Path, list[LineRange] | None]
-) -> None:
-    """Add OccurrenceRangeORM objects to an ORM occurrence from a files dict."""
+def _add_ranges_to_tp_occurrence(orm_occ: TruePositiveOccurrenceORM, files: dict[Path, list[LineRange] | None]) -> None:
+    """Add OccurrenceRangeORM objects to a TP occurrence from a files dict."""
+    logger.debug(f"_add_ranges_to_tp_occurrence: files={files!r}, num_files={len(files)}")
     for file_path, ranges in files.items():
         if ranges is not None:
+            logger.debug(f"  Adding {len(ranges)} ranges for {file_path}")
+            for range_id, line_range in enumerate(ranges):
+                range_orm = OccurrenceRangeORM(
+                    snapshot_slug=orm_occ.snapshot_slug,
+                    tp_id=orm_occ.tp_id,
+                    occurrence_id=orm_occ.occurrence_id,
+                    file_path=file_path,
+                    range_id=range_id,
+                    start_line=line_range.start_line,
+                    end_line=line_range.end_line if line_range.end_line is not None else line_range.start_line,
+                    note=line_range.note,
+                )
+                orm_occ.ranges.append(range_orm)
+                logger.debug(
+                    f"    Created range: {range_orm.snapshot_slug}/{range_orm.tp_id}/{range_orm.occurrence_id}/{range_orm.file_path}:{range_orm.start_line}-{range_orm.end_line}"
+                )
+        else:
+            logger.debug(f"  Skipping {file_path} (ranges is None)")
+
+
+def _add_ranges_to_fp_occurrence(
+    orm_occ: FalsePositiveOccurrenceORM, files: dict[Path, list[LineRange] | None]
+) -> None:
+    """Add OccurrenceRangeORM objects to an FP occurrence from a files dict."""
+    logger.debug(f"_add_ranges_to_fp_occurrence: files={files!r}, num_files={len(files)}")
+    for file_path, ranges in files.items():
+        if ranges is not None:
+            logger.debug(f"  Adding {len(ranges)} ranges for {file_path}")
             for range_id, line_range in enumerate(ranges):
                 orm_occ.ranges.append(
                     OccurrenceRangeORM(
+                        snapshot_slug=orm_occ.snapshot_slug,
+                        fp_id=orm_occ.fp_id,
+                        occurrence_id=orm_occ.occurrence_id,
                         file_path=file_path,
                         range_id=range_id,
                         start_line=line_range.start_line,
@@ -97,6 +127,8 @@ def _add_ranges_to_occurrence(
                         note=line_range.note,
                     )
                 )
+        else:
+            logger.debug(f"  Skipping {file_path} (ranges is None)")
 
 
 def get_specimens_base_path() -> Path:
@@ -609,7 +641,8 @@ def _add_tp_occurrence(session: Session, snapshot_slug: SnapshotSlug, tp_id: str
         match_file_restriction=ensure_file_set(session, snapshot_slug, occ.match_file_restriction),
     )
     session.add(orm_occ)
-    _add_ranges_to_occurrence(orm_occ, occ.files)
+    _add_ranges_to_tp_occurrence(orm_occ, occ.files)
+    # Ranges will be cascade-saved when session flushes
 
 
 def _add_fp_occurrence(session: Session, snapshot_slug: SnapshotSlug, fp_id: str, occ: FalsePositiveOccurrence) -> None:
@@ -622,7 +655,8 @@ def _add_fp_occurrence(session: Session, snapshot_slug: SnapshotSlug, fp_id: str
         match_file_restriction=ensure_file_set(session, snapshot_slug, occ.match_file_restriction),
     )
     session.add(orm_occ)
-    _add_ranges_to_occurrence(orm_occ, occ.files)
+    _add_ranges_to_fp_occurrence(orm_occ, occ.files)
+    # Ranges will be cascade-saved when session flushes
     for relevant_file in occ.relevant_files:
         orm_occ.relevant_file_orms.append(
             FalsePositiveRelevantFileORM(
