@@ -121,6 +121,10 @@ Forbidden commands:
 - Starting the postgres container manually
 - Killing service PIDs without checking if they're process-compose managed
 
+## Debugging
+
+To enable SQLAlchemy SQL echo for debugging, change `echo=False` to `echo=True` in `Database.__init__` (`db/database.py`). Remember to revert before committing.
+
 ## Database Safety
 
 ### CRITICAL - NEVER DROP THE DATABASE WITHOUT PERMISSION

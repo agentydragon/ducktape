@@ -417,15 +417,7 @@ async def test_grader_can_read_occurrence_ranges_with_content(synced_db: Databas
     Verifies that file_path, start_line, end_line are returned (not just empty
     results or permission errors).
     """
-    # DEBUG: Check if ranges exist in DB at all (using admin session)
-    with synced_db.session() as admin_session:
-        admin_rows = (
-            admin_session.query(OccurrenceRangeORM).filter(OccurrenceRangeORM.snapshot_slug == TRAIN1_SLUG).all()
-        )
-        print(f"\nDEBUG: Admin session sees {len(admin_rows)} occurrence_ranges for {TRAIN1_SLUG}")
-
     rows = grader_train_session.query(OccurrenceRangeORM).filter(OccurrenceRangeORM.snapshot_slug == TRAIN1_SLUG).all()
-    print(f"DEBUG: Grader session sees {len(rows)} occurrence_ranges for {TRAIN1_SLUG}")
 
     # train1 has 7 occurrence_ranges rows (5 TPs with varying file counts)
     assert len(rows) >= 1, "Grader must see occurrence_ranges rows for its snapshot"
