@@ -900,14 +900,14 @@ class FullSyncResult:
 
 def sync_all(
     session: Session,
-    specimen_bundles: list[SpecimenBundle],
+    specimen_bundles: list[SpecimenBundle] | None = None,
     *,
     config: PropsConfig | None = None,
     dry_run: bool = False,
 ) -> FullSyncResult:
     """Sync snapshots, issues, files, file sets, and model metadata from bundle artifacts.
 
-    Syncs from pre-built uncompressed tar + data.yaml bundles.
+    Syncs from pre-built uncompressed tar + data.yaml bundles (if provided) and model metadata.
 
     All sync operations happen within the provided database session for consistency.
 
@@ -925,13 +925,17 @@ def sync_all(
         FullSyncResult with stats for each sync operation
     """
     with tracer.start_as_current_span("sync_all"):
-        print(f"Syncing {len(specimen_bundles)} specimen(s) from bundle artifacts...")
-        for bundle in specimen_bundles:
-            print(f"  Syncing {bundle.slug}...")
-            sync_specimen_from_bundle(session, bundle)
+        if specimen_bundles:
+            print(f"Syncing {len(specimen_bundles)} specimen(s) from bundle artifacts...")
+            for bundle in specimen_bundles:
+                print(f"  Syncing {bundle.slug}...")
+                sync_specimen_from_bundle(session, bundle)
 
-        # Dummy stats for bundles (actual work done in sync_specimen_from_bundle)
-        snapshot_stats = SyncStats(total=len(specimen_bundles), added=0, updated=len(specimen_bundles), deleted=0)
+            # Dummy stats for bundles (actual work done in sync_specimen_from_bundle)
+            snapshot_stats = SyncStats(total=len(specimen_bundles), added=0, updated=len(specimen_bundles), deleted=0)
+        else:
+            snapshot_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+
         snapshot_file_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
         issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
         file_set_stats = SyncStats(total=0, added=0, updated=0, deleted=0)

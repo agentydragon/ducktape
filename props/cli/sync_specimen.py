@@ -1,95 +1,53 @@
 #!/usr/bin/env python3
 """Sync a specimen bundle to the props database.
 
-This CLI tool syncs a single specimen (code + issues + manifest) to the database.
-It can be run with or without Bazel.
+This CLI tool syncs a single specimen from bundle artifacts (code tar + data YAML).
 
 Usage:
-    # Sync from extracted bundle directory
-    props-sync-specimen /path/to/specimens/ducktape/2026-01-17-00
-
-    # Sync from Bazel-generated artifacts
+    # Sync from Bazel-generated bundle artifacts
     props-sync-specimen \\
-        --code-tar bazel-bin/props/specimens/ducktape/2026-01-17-00/specimen_code.tar.gz \\
-        --issues-dir props/specimens/ducktape/2026-01-17-00/issues \\
-        --manifest props/specimens/ducktape/2026-01-17-00/manifest.yaml \\
-        --slug ducktape/2026-01-17-00
+        --slug ducktape/2026-01-17-00 \\
+        --code-tar bazel-bin/props/specimens/ducktape/2026-01-17-00/specimen_code.tar \\
+        --data-yaml bazel-bin/props/specimens/ducktape/2026-01-17-00/specimen_data.yaml
 
-The tool creates a temporary directory, extracts/copies the bundle, and syncs it
-using the same sync_all() path as tests and batch sync.
+The code tar must be an uncompressed tar file containing the code/ directory.
+The data YAML must be a merged YAML file with {split, issues} structure.
 """
 
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
-import tarfile
-import tempfile
+import traceback
 from pathlib import Path
 
 from props.db.config import load_database_config
 from props.db.database import Database
-from props.db.sync.sync import sync_all
+from props.db.sync.sync import SpecimenBundle, sync_all
 
 
-def sync_from_directory(specimen_dir: Path, db: Database) -> None:
-    """Sync specimen from a directory structure.
+def sync_from_bundle(slug: str, code_tar: Path, data_yaml: Path, db: Database) -> None:
+    """Sync specimen from bundle artifacts.
 
-    Expected structure:
-        {specimen_dir}/
-            code/...
-            issues/**/*.yaml
-            manifest.yaml
+    Args:
+        slug: Specimen slug (e.g., "ducktape/2026-01-17-00")
+        code_tar: Path to uncompressed code tar
+        data_yaml: Path to merged data YAML (split + issues)
+        db: Database instance
     """
-    if not specimen_dir.exists():
-        raise ValueError(f"Specimen directory not found: {specimen_dir}")
+    # Create bundle
+    bundle = SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml)
 
-    if not (specimen_dir / "manifest.yaml").exists():
-        raise ValueError(f"manifest.yaml not found in {specimen_dir}")
-
-    # sync_all expects specimens_root to be parent of {repo}/{date}
-    # If specimen_dir is /path/ducktape/2026-01-17-00, we need /path
-    specimens_root = specimen_dir.parent.parent
-
+    # Sync using bundle workflow
+    print(f"Syncing {slug} from bundle artifacts...")
     with db.session() as session:
-        sync_all(session, use_staged=True, collect_errors=True)
+        result = sync_all(session, specimen_bundles=[bundle])
 
-
-def sync_from_artifacts(
-    slug: str, code_tar: Path, issues_dir: Path, manifest: Path, db: Database
-) -> None:
-    """Sync specimen from separate artifacts (Bazel-generated).
-
-    Creates temporary directory with expected structure, then syncs.
-    """
-    repo, date = slug.split("/")
-
-    with tempfile.TemporaryDirectory(prefix=f"specimen_{slug.replace('/', '_')}_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        specimen_path = tmp_path / repo / date
-        code_path = specimen_path / "code"
-        code_path.mkdir(parents=True, exist_ok=True)
-
-        # Extract code tar
-        print(f"Extracting {code_tar} to {code_path}")
-        with tarfile.open(code_tar, "r:gz") as tar:
-            tar.extractall(code_path)
-
-        # Copy manifest
-        print(f"Copying {manifest}")
-        shutil.copy2(manifest, specimen_path / "manifest.yaml")
-
-        # Copy issues directory
-        issues_dest = specimen_path / "issues"
-        if issues_dir.exists() and issues_dir.is_dir():
-            print(f"Copying {issues_dir}")
-            shutil.copytree(issues_dir, issues_dest)
-
-        # Sync using sync_all
-        print(f"Syncing {slug} to database...")
-        with db.session() as session:
-            sync_all(session, use_staged=True, collect_errors=True, specimens_root=tmp_path)
+    print(f"  Snapshots: {result.snapshots}")
+    print(f"  Issues: {result.issues}")
+    print(f"  Files: {result.files}")
+    print(f"  File sets: {result.file_sets}")
+    print(f"  Model metadata: {result.model_metadata}")
 
 
 def main() -> int:
@@ -99,31 +57,12 @@ def main() -> int:
         epilog=__doc__,
     )
 
-    # Mode 1: Directory
-    parser.add_argument(
-        "directory",
-        nargs="?",
-        type=Path,
-        help="Path to specimen directory (contains code/, issues/, manifest.yaml)",
-    )
-
-    # Mode 2: Separate artifacts
-    parser.add_argument("--slug", help="Specimen slug (e.g., ducktape/2026-01-17-00)")
-    parser.add_argument("--code-tar", type=Path, help="Path to code tar.gz")
-    parser.add_argument("--manifest", type=Path, help="Path to manifest.yaml")
-    parser.add_argument("--issues-dir", type=Path, help="Path to issues directory")
+    # Bundle artifacts (required)
+    parser.add_argument("--slug", required=True, help="Specimen slug (e.g., ducktape/2026-01-17-00)")
+    parser.add_argument("--code-tar", type=Path, required=True, help="Path to uncompressed code tar")
+    parser.add_argument("--data-yaml", type=Path, required=True, help="Path to merged data YAML (split + issues)")
 
     args = parser.parse_args()
-
-    # Validate arguments
-    if args.directory:
-        if any([args.slug, args.code_tar, args.manifest, args.issues_dir]):
-            parser.error("Cannot mix directory mode with artifact mode")
-        mode = "directory"
-    elif all([args.slug, args.code_tar, args.manifest]):
-        mode = "artifacts"
-    else:
-        parser.error("Either provide directory or (slug + code-tar + manifest)")
 
     # Load database config
     try:
@@ -135,20 +74,12 @@ def main() -> int:
 
     # Sync
     try:
-        if mode == "directory":
-            print(f"Syncing from directory: {args.directory}")
-            sync_from_directory(args.directory, db)
-        else:
-            print(f"Syncing from artifacts: {args.slug}")
-            sync_from_artifacts(args.slug, args.code_tar, args.issues_dir or Path("/nonexistent"), args.manifest, db)
-
+        sync_from_bundle(args.slug, args.code_tar, args.data_yaml, db)
         print("✓ Sync completed successfully")
         return 0
 
     except Exception as e:
         print(f"Error during sync: {e}", file=sys.stderr)
-        import traceback
-
         traceback.print_exc()
         return 1
     finally:
