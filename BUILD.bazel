@@ -132,6 +132,11 @@ platform(
         # BuildBuddy Firecracker isolation for all RBE actions (better isolation + runner recycling)
         "workload-isolation-type": "firecracker",
         "recycle-runner": "true",
+        # Start Docker daemon for tests (lightweight with Firecracker).
+        # Defined here (not via --remote_default_exec_properties in .bazelrc)
+        # to avoid duplicate-key crash when --config=rbe is expanded twice
+        # (e.g., both buildbuddy.bazelrc and auth-proxy/bazelrc enable it).
+        "test.init-dockerd": "true",
     },
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )

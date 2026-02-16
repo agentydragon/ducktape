@@ -10,7 +10,7 @@ def py_test(name, size = "small", requires_docker = False, tags = None, **kwargs
     - Optional Docker tag via requires_docker parameter
 
     Note: Docker exec properties (Firecracker, init-dockerd, recycle-runner)
-    are now configured globally in //:rbe_linux_x64 platform and .bazelrc.
+    are configured globally in //:rbe_linux_x64 platform exec_properties.
 
     Args:
         name: Target name.

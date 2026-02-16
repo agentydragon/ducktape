@@ -75,8 +75,6 @@ build:rbe --spawn_strategy=remote,local
 test:rbe --spawn_strategy=remote,local
 build:rbe --jobs=50
 build:rbe --remote_download_minimal
-# Docker daemon for all RBE tests (lightweight - Firecracker isolation already enabled in platform)
-test:rbe --remote_default_exec_properties=test.init-dockerd=true
 # BuildBuddy Build Event Service (BES) and remote cache configuration
 build:rbe --bes_results_url=https://app.buildbuddy.io/invocation/
 build:rbe --bes_backend=grpcs://remote.buildbuddy.io

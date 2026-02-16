@@ -3,7 +3,8 @@
 # gazelle:resolve py inop.engine.optimizer //inop/engine:optimizer
 # gazelle:resolve py inop.engine //inop/engine:optimizer
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 # no-mypy: statsmodels (transitive dep of plotnine) has broken __init__.py structure
 # that causes mypy to error with "Source file found twice under different module names".

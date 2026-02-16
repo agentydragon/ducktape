@@ -1,5 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/deps:check.bzl", "assert_no_deps")
+load("//tools/testing:defs.bzl", "py_test")
 
 # =============================================================================
 # Leaf modules (no db/ deps)
