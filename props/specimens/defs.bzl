@@ -73,7 +73,7 @@ def specimen_targets(name, slug, split):
         split: Dataset split (e.g., "train", "test", "val") - required parameter
 
     Generates:
-        - {name}_code_tar: Deterministic tar.gz of code/ with BUILD.bazel restored
+        - {name}_code_tar: Deterministic uncompressed tar of code/ with BUILD.bazel restored
         - {name}_data_blob: YAML with {split, issues} structure
         - test_{name}: docker_py_test validating this specimen
     """
@@ -84,7 +84,7 @@ def specimen_targets(name, slug, split):
     create_code_tar(
         name = code_tar_target,
         srcs = native.glob(["code/**/*"]),
-        out = name + "_code.tar.gz",
+        out = name + "_code.tar",
     )
 
     # Create data blob using custom Starlark rule (no shell!)

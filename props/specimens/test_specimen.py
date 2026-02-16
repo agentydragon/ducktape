@@ -54,7 +54,7 @@ def synced_db(postgres_container: PostgresContainer) -> Generator[Database]:
 
     # Sync from bundle artifacts (no filesystem needed)
     with db.session() as session:
-        sync_all(session, specimen_bundles=[bundle], use_staged=True, collect_errors=True)
+        sync_all(session, specimen_bundles=[bundle])
 
     yield db
 

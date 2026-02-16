@@ -28,6 +28,7 @@ from props.core.ids import SnapshotSlug
 from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.core.runs_context import specimens_definitions_root
+from props.core.splits import Split
 from props.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
@@ -41,7 +42,6 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.db.sync.loader import discover_snapshots
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.stats import SyncStats
 from props.db.sync.yaml_loader import (
@@ -65,7 +65,7 @@ class SpecimenData(BaseModel):
     Contains the split designation and merged issues from all YAML files.
     """
 
-    split: str
+    split: Split
     issues: dict[str, YAMLIssue]
 
 
@@ -798,7 +798,7 @@ def sync_specimen_from_bundle(session: Session, bundle: SpecimenBundle) -> None:
     """Sync a single specimen from bundle artifacts (code tar + data YAML).
 
     This function handles the complete sync process for one specimen:
-    1. Reads code tar.gz and converts to uncompressed tar for DB
+    1. Reads code tar (uncompressed)
     2. Reads data.yaml and parses with SpecimenData model
     3. Syncs snapshot to DB
     4. Syncs issues to DB
@@ -811,20 +811,8 @@ def sync_specimen_from_bundle(session: Session, bundle: SpecimenBundle) -> None:
     with bundle.data_yaml.open() as f:
         specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
 
-    # Convert tar.gz to uncompressed tar for DB storage
-    # (DB expects uncompressed tar, but our bundle is tar.gz for efficiency)
-    uncompressed_tar = io.BytesIO()
-    with tarfile.open(bundle.code_tar, "r:gz") as src_tar, tarfile.open(fileobj=uncompressed_tar, mode="w") as dst_tar:
-        for member in src_tar.getmembers():
-            # Copy member metadata and content
-            file_obj = src_tar.extractfile(member)
-            if file_obj is not None:
-                dst_tar.addfile(member, file_obj)
-            else:
-                # Directory or special file
-                dst_tar.addfile(member)
-
-    archive_bytes = uncompressed_tar.getvalue()
+    # Read uncompressed tar (bundle and DB use same format)
+    archive_bytes = bundle.code_tar.read_bytes()
 
     # Sync snapshot to DB
     snapshot_data = {"slug": bundle.slug, "split": specimen_data.split, "content": archive_bytes}
@@ -912,100 +900,48 @@ class FullSyncResult:
 
 def sync_all(
     session: Session,
+    specimen_bundles: list[SpecimenBundle],
     *,
     config: PropsConfig | None = None,
-    use_staged: bool = False,
     dry_run: bool = False,
-    collect_errors: bool = False,
-    specimen_bundles: list[SpecimenBundle] | None = None,
 ) -> FullSyncResult:
-    """Sync snapshots, issues, files, file sets, and model metadata.
+    """Sync snapshots, issues, files, file sets, and model metadata from bundle artifacts.
 
-    Mode 1: Bundle artifacts (specimen_bundles provided)
-        Syncs from pre-built tar.gz + data.yaml bundles.
-        Used by tests and production CLI with bundle flags.
-
-    Mode 2: Filesystem discovery (specimen_bundles=None)
-        Discovers snapshots once and passes data to all sync operations.
-        Legacy mode for existing workflows.
+    Syncs from pre-built uncompressed tar + data.yaml bundles.
 
     All sync operations happen within the provided database session for consistency.
 
-    Sync order is critical:
-    1. snapshots (creates content archives from specimens repo or bundles)
-    2. snapshot_files (reads from DB content column)
-    3. issues (depends on snapshots)
-    4. file_sets (depends on snapshot_files and issues via FK)
-    5. model_metadata (independent, but needs config for custom models)
+    Sync order:
+    1. For each bundle: sync snapshot, snapshot_files, and issues
+    2. Sync model metadata (independent, but needs config for custom models)
 
-    When collect_errors is True, stages 3-4 collect per-snapshot errors instead
-    of failing on the first one. The entire transaction is rolled back on any failure.
+    Args:
+        session: Database session
+        specimen_bundles: List of specimen bundles with slug, code_tar, and data_yaml paths
+        config: Optional props config for custom model metadata
+        dry_run: If True, rollback all changes instead of committing
+
+    Returns:
+        FullSyncResult with stats for each sync operation
     """
     with tracer.start_as_current_span("sync_all"):
-        # Initialize error tracking
-        all_errors: list[str] = []
-        failed_slugs: set[SnapshotSlug] = set()
+        print(f"Syncing {len(specimen_bundles)} specimen(s) from bundle artifacts...")
+        for bundle in specimen_bundles:
+            print(f"  Syncing {bundle.slug}...")
+            sync_specimen_from_bundle(session, bundle)
 
-        # Bundle mode: sync from pre-built artifacts
-        if specimen_bundles:
-            print(f"Syncing {len(specimen_bundles)} specimen(s) from bundle artifacts...")
-            for bundle in specimen_bundles:
-                print(f"  Syncing {bundle.slug}...")
-                sync_specimen_from_bundle(session, bundle)
+        # Dummy stats for bundles (actual work done in sync_specimen_from_bundle)
+        snapshot_stats = SyncStats(total=len(specimen_bundles), added=0, updated=len(specimen_bundles), deleted=0)
+        snapshot_file_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+        issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+        file_set_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
 
-            slugs = [bundle.slug for bundle in specimen_bundles]
-
-            # Dummy stats for bundles (actual work done in sync_specimen_from_bundle)
-            snapshot_stats = SyncStats(total=len(specimen_bundles), added=0, updated=len(specimen_bundles), deleted=0)
-            snapshot_file_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-            issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-            file_set_stats = SyncStats(total=0, added=0, updated=0, deleted=0)  # Not supported in bundle mode yet
-
-        # Filesystem mode: discover and sync from filesystem
-        else:
-            specimens_dir = get_specimens_base_path()
-
-            # Discover snapshots once
-            print(f"Discovering snapshots from {specimens_dir}...")
-            snapshots = discover_snapshots(specimens_dir)
-            slugs = list(snapshots.keys())
-            print(f"  Found {len(snapshots)} snapshots")
-
-            # 1. Sync snapshots (creates content archives from filesystem)
-            print("Syncing snapshots (creating tar archives)...")
-            snapshot_stats = sync_snapshots_to_db(session, snapshots, specimens_dir)
-            print(f"  {snapshot_stats.summary_text}")
-
-            # 2. Sync snapshot files (reads from DB content column)
-            print("Syncing snapshot files...")
-            snapshot_file_stats = sync_snapshot_files_to_db(session, slugs)
-            print(f"  {snapshot_file_stats.summary_text}")
-
-            # 3. Sync issues (collect errors per-snapshot when enabled)
-            print("Syncing issues...")
-            try:
-                issue_stats = sync_issues_to_db(session, slugs, specimens_dir, collect_errors=collect_errors)
-            except SyncValidationError as e:
-                all_errors.extend(e.errors)
-                failed_slugs.update(e.failed_slugs)
-                issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-            print(f"  {issue_stats.summary_text}")
-
-            # 4. Sync file sets (skip failed slugs from stage 3)
-            remaining_slugs = [s for s in slugs if s not in failed_slugs]
-            print("Syncing file sets...")
-            file_set_stats = sync_file_sets_to_db(session, remaining_slugs, specimens_dir)
-            print(f"  {file_set_stats.summary_text}")
-
-        # 5. Sync model metadata
+        # Sync model metadata
         print("Syncing model metadata...")
         model_metadata_stats = sync_model_metadata_with_session(session, config)
         print(f"  {model_metadata_stats.summary_text}")
 
         # Final commit/rollback
-        if all_errors:
-            session.rollback()
-            raise SyncValidationError(all_errors, failed_slugs=failed_slugs)
         if dry_run:
             logger.info("DRY-RUN: Rolling back all changes")
             session.rollback()

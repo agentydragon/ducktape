@@ -1,0 +1,9 @@
+load("//props/specimens:defs.bzl", "specimen_targets")
+
+package(default_visibility = ["//props/testing/fixtures:__pkg__"])
+
+specimen_targets(
+    name = "specimen",
+    slug = "test-fixtures/valid2",
+    split = "valid",
+)

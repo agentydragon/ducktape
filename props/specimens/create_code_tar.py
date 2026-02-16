@@ -38,8 +38,8 @@ def main():
     # Sort for deterministic tar
     files_to_add.sort(key=lambda x: str(x[1]))
 
-    # Create tar with deterministic properties
-    with tarfile.open(output_tar, "w:gz") as tar:
+    # Create uncompressed tar with deterministic properties
+    with tarfile.open(output_tar, "w") as tar:
         for src_path, arcname in files_to_add:
             tarinfo = tar.gettarinfo(str(src_path), arcname=str(arcname))
             tarinfo.mtime = 0  # Epoch time for determinism

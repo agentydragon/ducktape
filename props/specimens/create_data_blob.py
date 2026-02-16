@@ -37,9 +37,9 @@ def main():
     # Create and validate SpecimenData model
     specimen_data = SpecimenData(split=split, issues=merged_issues)
 
-    # Write structured YAML using model_dump for serialization
+    # Write structured YAML using model_dump(mode='json') to serialize enums
     with output.open("w") as f:
-        yaml.safe_dump(specimen_data.model_dump(), f, default_flow_style=False, sort_keys=False)
+        yaml.safe_dump(specimen_data.model_dump(mode="json"), f, default_flow_style=False, sort_keys=False)
 
 
 if __name__ == "__main__":
