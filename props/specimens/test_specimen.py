@@ -72,8 +72,8 @@ def synced_db(postgres_container: PostgresContainer) -> Generator[Database]:
     postgres_engine.dispose()
 
 
-def test_specimen_syncs_successfully(synced_db: Database) -> None:
-    """Verify that the specimen syncs without errors."""
+def test_specimen(synced_db: Database) -> None:
+    """Verify specimen syncs successfully and has expected content."""
     slug = os.environ["SPECIMEN_SLUG"]
 
     with synced_db.session() as session:
@@ -81,16 +81,8 @@ def test_specimen_syncs_successfully(synced_db: Database) -> None:
         assert snapshot is not None, f"Specimen {slug} was not synced"
         assert snapshot.content is not None, f"Specimen {slug} has no content tar"
 
-
-def test_specimen_has_issues(synced_db: Database) -> None:
-    """Verify that the specimen has at least one true positive."""
-    slug = os.environ["SPECIMEN_SLUG"]
-
-    with synced_db.session() as session:
-        snapshot = session.query(Snapshot).filter_by(slug=slug).one()
         tp_count = len(snapshot.true_positives)
-
-    assert tp_count > 0, f"Specimen {slug} has no true positives"
+        assert tp_count > 0, f"Specimen {slug} has no true positives"
 
 
 if __name__ == "__main__":

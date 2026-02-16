@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Create specimen code tar with BUILD file renaming."""
 
 import sys
