@@ -2,7 +2,6 @@ load("//props/specimens:defs.bzl", "specimen_targets")
 
 specimen_targets(
     name = "specimen",
-    code_root_marker = "specimen_crush_code",
     code_srcs = ["@specimen_crush_code//:all_files"],
     slug = "crush/2025-08-30-internal_db",
     split = "train",

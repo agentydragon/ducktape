@@ -4,15 +4,34 @@ load("//tools/testing:defs.bzl", "py_test")
 
 def _create_code_tar_impl(ctx):
     """Implementation for create_code_tar rule."""
+    srcs = ctx.files.srcs
+    if not srcs:
+        fail("create_code_tar: srcs is empty")
+
+    # Derive the path prefix to strip from source file paths.
+    # External repo files (from http_archive) have paths starting with
+    # "external/<canonical_name>/..." — strip the repo root.
+    # Local files have paths like "<package>/code/..." — strip through the
+    # first subdirectory after the package.
+    first = srcs[0]
+    if first.short_path.startswith("../"):
+        # External repo: path = "external/<canonical>/rest..."
+        parts = first.path.split("/", 2)
+        strip_prefix = parts[0] + "/" + parts[1]
+    else:
+        # Local source: path = "<package>/<subdir>/rest..."
+        pkg = ctx.label.package
+        after_pkg = first.path[len(pkg) + 1:]
+        first_subdir = after_pkg.split("/", 1)[0]
+        strip_prefix = pkg + "/" + first_subdir
+
     args = ctx.actions.args()
     args.add(ctx.outputs.out)
-    if ctx.attr.root_marker != "code":
-        args.add("--root-marker")
-        args.add(ctx.attr.root_marker)
-    args.add_all(ctx.files.srcs)
+    args.add("--strip-prefix", strip_prefix)
+    args.add_all(srcs)
 
     ctx.actions.run(
-        inputs = ctx.files.srcs,
+        inputs = srcs,
         outputs = [ctx.outputs.out],
         executable = ctx.executable._tool,
         arguments = [args],
@@ -26,7 +45,6 @@ create_code_tar = rule(
     implementation = _create_code_tar_impl,
     attrs = {
         "srcs": attr.label_list(allow_files = True),
-        "root_marker": attr.string(default = "code"),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
             default = "//props/specimens:create_code_tar",
@@ -70,7 +88,7 @@ create_data_blob = rule(
     },
 )
 
-def specimen_targets(name, slug, split, code_srcs, code_root_marker = "code"):
+def specimen_targets(name, slug, split, code_srcs):
     """Generate bundle artifacts and test target for a specimen.
 
     Args:
@@ -79,8 +97,6 @@ def specimen_targets(name, slug, split, code_srcs, code_root_marker = "code"):
         split: Dataset split (e.g., "train", "test", "val")
         code_srcs: Label list for code files. For local specimens, pass glob(["code/**/*"]).
             For remote-VCS specimens, pass the http_archive filegroup label.
-        code_root_marker: Path segment that marks the root of source files in code_srcs.
-            The tar tool extracts relative paths after this segment. Defaults to "code".
 
     Generates:
         - {name}_code_tar: Deterministic uncompressed tar of code/ with BUILD.bazel restored
@@ -94,7 +110,6 @@ def specimen_targets(name, slug, split, code_srcs, code_root_marker = "code"):
     create_code_tar(
         name = code_tar_target,
         srcs = code_srcs,
-        root_marker = code_root_marker,
         out = name + "_code.tar",
     )
 

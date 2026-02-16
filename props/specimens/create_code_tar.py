@@ -6,55 +6,47 @@ from pathlib import Path
 
 
 def _parse_args(argv):
-    """Parse arguments: output_tar [--root-marker MARKER] source_files..."""
+    """Parse arguments: output_tar --strip-prefix PREFIX source_files..."""
     output_tar = Path(argv[0])
-    root_marker = "code"
+    strip_prefix = None
     source_files = []
 
     i = 1
     while i < len(argv):
-        if argv[i] == "--root-marker" and i + 1 < len(argv):
-            root_marker = argv[i + 1]
+        if argv[i] == "--strip-prefix" and i + 1 < len(argv):
+            strip_prefix = argv[i + 1]
             i += 2
         else:
             source_files.append(argv[i])
             i += 1
 
-    return output_tar, root_marker, source_files
+    if strip_prefix is None:
+        raise SystemExit("--strip-prefix is required")
+
+    return output_tar, strip_prefix, source_files
 
 
 def main():
-    output_tar, root_marker, source_files = _parse_args(sys.argv[1:])
+    output_tar, strip_prefix, source_files = _parse_args(sys.argv[1:])
+    prefix_path = Path(strip_prefix)
 
-    # Group files by their path relative to root_marker/
     files_to_add = []
     for src in source_files:
         src_path = Path(src)
         if not src_path.exists():
             continue
 
-        # Extract relative path after the root_marker segment.
-        # Match suffix to handle bzlmod canonical names (e.g.,
-        # "external/+_repo_rules+specimen_crush_code" matches "specimen_crush_code").
-        parts = src_path.parts
-        code_idx = None
-        for i, part in enumerate(parts):
-            if part == root_marker or part.endswith("+" + root_marker):
-                code_idx = i
-                break
-        if code_idx is None:
+        # Strip the prefix to get the path relative to the code root.
+        try:
+            rel_path = src_path.relative_to(prefix_path)
+        except ValueError:
             continue
-        rel_parts = parts[code_idx + 1 :]
-        if not rel_parts:
+        if not rel_path.parts:
             continue
 
         # Handle .specimen rename
         if src_path.suffix == ".specimen":
-            # Remove .specimen extension
-            new_name = src_path.stem
-            rel_path = Path(*rel_parts[:-1]) / new_name
-        else:
-            rel_path = Path(*rel_parts)
+            rel_path = rel_path.with_name(rel_path.stem)
 
         files_to_add.append((src_path, rel_path))
 
