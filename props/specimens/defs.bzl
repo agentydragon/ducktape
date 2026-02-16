@@ -1,6 +1,6 @@
 """Bazel rules for specimen tar generation and testing."""
 
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//tools/testing:defs.bzl", "py_test")
 
 def _create_code_tar_impl(ctx):
     """Implementation for create_code_tar rule."""
@@ -75,7 +75,7 @@ def specimen_targets(name, slug, split):
     Generates:
         - {name}_code_tar: Deterministic uncompressed tar of code/ with BUILD.bazel restored
         - {name}_data_blob: YAML with {split, issues} structure
-        - test_{name}: docker_py_test validating this specimen
+        - test_{name}: py_test validating this specimen
     """
     code_tar_target = name + "_code_tar"
     data_blob_target = name + "_data_blob"
@@ -96,7 +96,7 @@ def specimen_targets(name, slug, split):
     )
 
     # Per-specimen test
-    docker_py_test(
+    py_test(
         name = "test_" + name,
         srcs = ["//props/specimens:test_specimen.py"],
         data = [
@@ -109,6 +109,7 @@ def specimen_targets(name, slug, split):
             "SPECIMEN_DATA_YAML": "$(location :" + data_blob_target + ")",
         },
         imports = ["../.."],
+        requires_docker = True,
         tags = ["integration", "specimen"],
         deps = [
             "//bazel_util:runfiles",
