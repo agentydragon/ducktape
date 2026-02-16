@@ -12,8 +12,9 @@ from props.db.sync.sync import SpecimenData
 
 def main():
     output = Path(sys.argv[1])
-    split = sys.argv[2]
-    issue_files = sys.argv[3:]
+    snapshot_slug = sys.argv[2]
+    split = sys.argv[3]
+    issue_files = sys.argv[4:]
 
     # Merge all issue YAMLs into a dict keyed by issue_id (file stem)
     merged_issues = {}
@@ -35,7 +36,7 @@ def main():
             merged_issues[issue_id] = issue_data
 
     # Create and validate SpecimenData model
-    specimen_data = SpecimenData(split=split, issues=merged_issues)
+    specimen_data = SpecimenData(snapshot_slug=snapshot_slug, split=split, issues=merged_issues)
 
     # Write structured YAML using model_dump(mode='json') to serialize enums
     with output.open("w") as f:

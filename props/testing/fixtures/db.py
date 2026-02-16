@@ -20,7 +20,7 @@ from bazel_util.runfiles import get_required_path
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
-from props.db.sync.sync import SpecimenBundle, sync_all
+from props.db.sync.sync import SpecimenBundle, sync_specimen
 from test_util.image_loader import load_image
 from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
 
@@ -172,10 +172,10 @@ def _load_test_fixture_bundles() -> list[SpecimenBundle]:
     ]
 
     bundles = []
-    for slug, base_path in fixtures:
+    for _slug, base_path in fixtures:
         code_tar = get_required_path(f"_main/{base_path}/specimen_code.tar")
         data_yaml = get_required_path(f"_main/{base_path}/specimen_data.yaml")
-        bundles.append(SpecimenBundle(slug=slug, code_tar=code_tar, data_yaml=data_yaml))
+        bundles.append(SpecimenBundle.from_paths(code_tar, data_yaml))
 
     return bundles
 
@@ -184,7 +184,9 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sync test fixtures to the current database using bundle workflow."""
     bundles = _load_test_fixture_bundles()
     with db.session() as session:
-        sync_all(session, specimen_bundles=bundles)
+        for bundle in bundles:
+            sync_specimen(session, bundle)
+        session.commit()
 
 
 @pytest.fixture(scope="session")
