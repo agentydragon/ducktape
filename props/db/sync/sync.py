@@ -674,7 +674,7 @@ def _add_fp_occurrence(session: Session, snapshot_slug: SnapshotSlug, fp_id: str
     for relevant_file in occ.relevant_files:
         orm_occ.relevant_file_orms.append(
             FalsePositiveRelevantFileORM(
-                snapshot_slug=snapshot_slug, occurrence_id=occ.occurrence_id, file_path=relevant_file
+                snapshot_slug=snapshot_slug, fp_id=fp_id, occurrence_id=occ.occurrence_id, file_path=relevant_file
             )
         )
 
@@ -722,6 +722,7 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
         session.flush()  # Ensure FK for members
         for path_str in path_strs:
             session.add(FileSetMember(snapshot_slug=snapshot_slug, files_hash=files_hash, file_path=path_str))
+        session.flush()  # Ensure members are persisted for subsequent queries
 
     return files_hash
 
