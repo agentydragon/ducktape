@@ -18,29 +18,6 @@ from props.core.ids import SnapshotSlug
 from props.db.sync.loader import discover_snapshots
 
 
-@pytest.mark.skip(reason="Filesystem discovery deprecated - test fixtures now use bundle workflow")
-def test_load_git_fixtures(test_specimens_base: Path) -> None:
-    """Test loading snapshots from git-tracked test fixtures.
-
-    Verifies discover_snapshots finds all 4 test snapshots with correct slugs and splits.
-    """
-    snapshots = discover_snapshots(test_specimens_base)
-
-    # Should find all 4 test fixtures
-    assert len(snapshots) == 4
-
-    # Verify each expected snapshot exists with correct split
-    expected = {
-        "test-fixtures/train1": "train",
-        "test-fixtures/valid1": "valid",
-        "test-fixtures/valid2": "valid",
-        "test-fixtures/test1": "test",
-    }
-    for slug, expected_split in expected.items():
-        assert SnapshotSlug(slug) in snapshots, f"Missing snapshot: {slug}"
-        assert snapshots[SnapshotSlug(slug)].split == expected_split
-
-
 def test_ignores_nested_manifests(tmp_path: Path) -> None:
     """Test that manifest.yaml at wrong depth is ignored."""
     # Create valid snapshot
