@@ -723,6 +723,12 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
 
     # Check if file_set already exists
     existing = session.query(FileSet).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).first()
+    if existing is not None:
+        # Log immediately after loading to see if members exist
+        member_count_immediate = (
+            session.query(FileSetMember).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).count()
+        )
+        logger.info(f"[CURRENT] Found existing FileSet {files_hash}, immediate member count: {member_count_immediate}")
     if existing is None:
         logger.info(f"[CURRENT] Creating new FileSet {snapshot_slug}/{files_hash} with {len(path_strs)} paths")
         # Create file_set and members

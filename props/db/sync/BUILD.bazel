@@ -165,3 +165,19 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_minimal_fileset_repro",
+    srcs = ["test_minimal_fileset_repro.py"],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        "//props:conftest",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

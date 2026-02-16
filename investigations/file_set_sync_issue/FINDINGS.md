@@ -149,15 +149,66 @@ The sync logs show:
 
 **Conclusion**: FileSetMembers are created in the session but rolled back before commit.
 
+## Latest Investigation - Session Boundary Issue
+
+### Added Logging at Line 729
+
+```python
+if existing is not None:
+    member_count_immediate = session.query(FileSetMember).filter_by(...).count()
+    logger.info(f"Found existing FileSet {files_hash}, immediate member count: {member_count_immediate}")
+```
+
+**Result**: EVERY query shows "immediate member count: 1" throughout the entire sync!
+
+### Critical Timeline
+
+1. **During Sync (Setup Phase)**: Members exist
+   - Every reuse of d5673969 FileSet shows 1 member
+   - `INSERT INTO file_set_members` executes
+   - FLUSH happens
+   - COUNT queries show 1 member
+   - COMMIT happens after all specimens synced
+
+2. **After Sync Completes**: Members disappear
+   - New test session queries FileSet: ✅ exists
+   - New test session queries FileSetMembers: ❌ ZERO members
+
+### Hypothesis: Post-COMMIT Deletion
+
+The members exist throughout sync and survive FLUSH, but disappear AFTER COMMIT and BEFORE the test runs.
+
+Possible causes:
+
+1. Database trigger that runs on COMMIT
+2. `delete-orphan` cascade executing during session cleanup (after COMMIT)
+3. Some deferred constraint or FK cascade
+
+### Attempted Fix: Remove delete-orphan
+
+Changed line 647 in `props/db/models.py`:
+
+```python
+# Before
+cascade="all, delete-orphan"
+
+# After
+cascade="all"
+```
+
+**Result**: No effect - still failing with same error.
+
 ## Next Steps
 
 1. ✅ Verify error is raised (not swallowed) - ERROR IS RAISED CORRECTLY
 2. ✅ Trace session boundaries - single session used throughout fixture sync
-3. ✅ Check for duplicate creation - FOUND: FileSet created 20+ times
+3. ✅ Check for duplicate creation - FOUND: FileSet created 20+ times (reuse pattern)
 4. ✅ Test persistence after sync - FileSet exists, members don't
-5. ⏳ Find what's causing FileSetMember rollback
-6. ⏳ Check for constraint violations on FileSetMember table
-7. ⏳ Compare with devel branch behavior
+5. ✅ Track member existence during sync - Members exist until COMMIT
+6. ✅ Try removing delete-orphan - No effect
+7. ⏳ Check database triggers on COMMIT
+8. ⏳ Check if issue occurs on devel branch
+9. ⏳ Add SQLAlchemy event logging for DELETE operations
 
 ## Relevant Code Locations
 
