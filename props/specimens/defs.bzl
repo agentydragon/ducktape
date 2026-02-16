@@ -136,7 +136,7 @@ def specimen_targets(name, slug, split, code_srcs):
         },
         imports = ["../.."],
         requires_docker = True,
-        tags = ["integration", "specimen"],
+        tags = ["specimen"],
         deps = [
             "//bazel_util:runfiles",
             "//props:conftest",

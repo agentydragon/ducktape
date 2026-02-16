@@ -12,31 +12,26 @@ def main():
     parser.add_argument("sources", nargs="*", type=Path)
     args = parser.parse_args()
 
-    files_to_add = []
+    files_to_add: dict[Path, Path] = {}  # arcname -> src_path
     for src_path in args.sources:
         if not src_path.exists():
-            continue
+            raise FileNotFoundError(f"Source file does not exist: {src_path}")
 
         # Strip the prefix to get the path relative to the code root.
-        try:
-            rel_path = src_path.relative_to(args.strip_prefix)
-        except ValueError:
-            continue
+        rel_path = src_path.relative_to(args.strip_prefix)
         if not rel_path.parts:
-            continue
+            raise ValueError(f"Source {src_path} resolved to empty path after stripping {args.strip_prefix}")
 
         # Handle .specimen rename
         if src_path.suffix == ".specimen":
             rel_path = rel_path.with_name(rel_path.stem)
 
-        files_to_add.append((src_path, rel_path))
+        files_to_add[rel_path] = src_path
 
-    # Sort for deterministic tar
-    files_to_add.sort(key=lambda x: str(x[1]))
-
-    # Create uncompressed tar with deterministic properties
+    # Create uncompressed tar with deterministic properties (sorted by arcname)
     with tarfile.open(args.output_tar, "w") as tar:
-        for src_path, arcname in files_to_add:
+        for arcname in sorted(files_to_add.keys(), key=str):
+            src_path = files_to_add[arcname]
             tarinfo = tar.gettarinfo(str(src_path), arcname=str(arcname))
             tarinfo.mtime = 0  # Epoch time for determinism
             tarinfo.uid = 0

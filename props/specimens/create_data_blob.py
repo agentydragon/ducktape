@@ -5,8 +5,6 @@ from pathlib import Path
 
 import yaml
 
-# Import SpecimenData from sync.py for validation
-# This ensures consistent structure between write (here) and read (sync_specimen_from_bundle)
 from props.db.sync.sync import SpecimenData
 
 
