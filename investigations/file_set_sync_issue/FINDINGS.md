@@ -285,9 +285,19 @@ This ensures we only delete orphaned files within the snapshots being synced, no
 ❌ `test_example_generation` - Still failing (unrelated issue)
 ❌ `test_sync_occurrence_update` - Still failing (needs investigation)
 
+## Investigation Artifacts
+
+This directory contains test files created during the investigation:
+
+- **test_fileset_persistence.py** - Minimal test that proved FileSet rows persist but FileSetMember rows don't
+- **test_debug_events.py** - Test with comprehensive SQLAlchemy event logging (before_cursor_execute, after_delete, etc.)
+- **test_minimal_fileset_repro.py** - Minimal reproduction attempts created by subagent (all passed in isolation)
+
+These tests are kept for reference but are not part of the regular test suite.
+
 ## Relevant Code Locations
 
-- `props/db/sync/sync.py:472-535` - `sync_snapshot_files_to_db()` function (**BUG LOCATION**)
+- `props/db/sync/sync.py:472-535` - `sync_snapshot_files_to_db()` function (**BUG LOCATION AND FIX**)
 - `props/db/sync/sync.py:970` - Called with single slug from `sync_specimen()`
 - `props/db/models.py:663-672` - FileSetMember FK constraints with CASCADE
-- `props/testing/fixtures/db.py:165-220` - `_sync_test_fixtures()` syncs multiple specimens
+- `props/testing/fixtures/db.py` - `_sync_test_fixtures()` syncs multiple specimens

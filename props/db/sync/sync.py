@@ -530,13 +530,9 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
                 total += 1
 
     # Delete orphaned files
-    orphaned = existing_keys - seen_keys
-    if orphaned:
-        logger.warning(f"[ORPHAN DELETE] Deleting {len(orphaned)} orphaned SnapshotFile rows")
-        for snapshot_slug, file_path in orphaned:
-            logger.warning(f"[ORPHAN DELETE]   {snapshot_slug}/{file_path}")
-            session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, file_path=file_path).delete()
-            deleted += 1
+    for snapshot_slug, file_path in existing_keys - seen_keys:
+        session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, file_path=file_path).delete()
+        deleted += 1
 
     session.flush()
     logger.info(f"Snapshot files synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
@@ -559,9 +555,6 @@ def _reconstruct_occ_common(
 
     restriction: set[Path] | None = None
     if db_occ.match_file_restriction is not None:
-        logger.info(
-            f"[CURRENT] _reconstruct_occ_common: Querying members for {db_occ.snapshot_slug}/{db_occ.match_file_restriction} (occ={db_occ.occurrence_id})"
-        )
         session = Session.object_session(db_occ)
         assert session is not None
         members = (
@@ -570,10 +563,6 @@ def _reconstruct_occ_common(
             .all()
         )
         restriction = {Path(m.file_path) for m in members}
-        logger.info(
-            f"[CURRENT] _reconstruct_occ_common: Found {len(members)} members for {db_occ.match_file_restriction}"
-        )
-        # Sanity check: file set with no members is invalid
         if not restriction:
             raise ValueError(
                 f"FileSet {db_occ.snapshot_slug}/{db_occ.match_file_restriction} has no members "
@@ -727,39 +716,16 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
     path_strs = [str(p) for p in file_paths]
     files_hash = compute_files_hash(path_strs)
 
-    logger.info(f"[CURRENT] ensure_file_set: slug={snapshot_slug}, hash={files_hash}, paths={path_strs}")
-
     # Check if file_set already exists
     existing = session.query(FileSet).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).first()
-    if existing is not None:
-        # Log immediately after loading to see if members exist
-        member_count_immediate = (
-            session.query(FileSetMember).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).count()
-        )
-        logger.info(f"[CURRENT] Found existing FileSet {files_hash}, immediate member count: {member_count_immediate}")
     if existing is None:
-        logger.info(f"[CURRENT] Creating new FileSet {snapshot_slug}/{files_hash} with {len(path_strs)} paths")
         # Create file_set and members
         fs = FileSet(snapshot_slug=snapshot_slug, files_hash=files_hash)
         session.add(fs)
-        session.flush()  # Ensure FK for members
+        session.flush()
         for path_str in path_strs:
             session.add(FileSetMember(snapshot_slug=snapshot_slug, files_hash=files_hash, file_path=path_str))
-        session.flush()  # Ensure members are persisted for subsequent queries
-
-        # Verify members were added
-        member_count = (
-            session.query(FileSetMember).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).count()
-        )
-        logger.info(
-            f"[CURRENT] After creation: FileSet {files_hash} has {member_count} members in session (expected {len(path_strs)})"
-        )
-    else:
-        # Verify existing file set has members
-        member_count = (
-            session.query(FileSetMember).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).count()
-        )
-        logger.info(f"[CURRENT] Reusing existing FileSet {files_hash}, has {member_count} members")
+        session.flush()
 
     return files_hash
 
