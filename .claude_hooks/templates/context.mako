@@ -10,10 +10,9 @@
   Option B (fork): `git remote add fork https://github.com/agentydragon-agent/ducktape.git` (if not already configured),
     `git push fork <branch>`, then `gh pr create --repo agentydragon/ducktape --head agentydragon-agent:<branch-name> --base devel`.
 % endif
-% if "OLLAMA_API_KEY" in secrets.env_vars:
-Ollama: `OLLAMA_BASE_URL` and `OLLAMA_API_KEY` set. OpenAI-compatible LLM inference (2x RTX 5090).
-  Usage: `OpenAI(base_url=os.environ["OLLAMA_BASE_URL"], api_key=os.environ["OLLAMA_API_KEY"])`
-% endif
+Ollama: OpenAI-compatible LLM inference at `https://ollama.allegedly.works/v1` (2x RTX 5090).
+  API key in k8s secret `ollama-api-key`, key `api-key`, namespace `claude-sandbox`.
+  Retrieve: `kubectl get secret ollama-api-key -n claude-sandbox -o jsonpath='{.data.api-key}' | base64 -d`
 % if "BUILDBUDDY_API_KEY" in secrets.env_vars:
 `BUILDBUDDY_API_KEY`: BuildBuddy remote cache/execution key (also configured in ~/.config/bazel/buildbuddy.bazelrc).
 % endif
