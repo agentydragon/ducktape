@@ -19,7 +19,7 @@ from pathlib import Path
 
 from bazel_util.subprocess import write_shell_wrapper
 from tools.claude_hooks.platform_utils import get_platform
-from tools.claude_hooks.settings import HookSettings
+from tools.claude_hooks.settings import ENV_SESSION_DIR, HookSettings
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ def install_bazelisk(settings: HookSettings) -> Path:
     return bazelisk_path
 
 
-_WRAPPER_EXTRA_LINES = (
+_WRAPPER_RUNTIME_LINES = (
     'export _BAZEL_WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"\nexport _BAZEL_WRAPPER_NAME="$(basename "$0")"'
 )
 
@@ -116,10 +116,8 @@ def install_wrapper(settings: HookSettings, *, wrapper_dir: Path | None = None) 
     The wrapper is in ~/.cache/claude-hooks/auth-proxy/bin/bazel (web mode) or a
     session-specific bin directory (CLI mode). Also creates a bazelisk symlink.
 
-    The wrapper reads configuration from environment variables (set via get_env_script).
-    It exports _BAZEL_WRAPPER_NAME and _BAZEL_WRAPPER_DIR so the Python module
-    can route to the correct binary (bazel vs bazelisk) and skip its own directory
-    when searching PATH.
+    Bakes DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR into the script so subprocesses
+    (pre-commit, CI) that don't source the env file still have the session dir set.
 
     Args:
         settings: Hook settings
@@ -131,7 +129,12 @@ def install_wrapper(settings: HookSettings, *, wrapper_dir: Path | None = None) 
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
-    write_shell_wrapper(wrapper_path, "tools.claude_hooks.bazel_wrapper", extra_lines=_WRAPPER_EXTRA_LINES)
+    write_shell_wrapper(
+        wrapper_path,
+        "tools.claude_hooks.bazel_wrapper",
+        baked_env={ENV_SESSION_DIR: str(settings.session_dir)},
+        extra_lines=_WRAPPER_RUNTIME_LINES,
+    )
     logger.info("Installed bazel wrapper at %s", wrapper_path)
 
     # Create bazelisk symlink for pre-commit hooks

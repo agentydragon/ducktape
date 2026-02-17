@@ -68,6 +68,12 @@ def test_generate_shell_wrapper_extra_lines():
     assert 'export FOO="bar"' in wrapper
 
 
+def test_generate_shell_wrapper_baked_env():
+    wrapper = generate_shell_wrapper("my.module", baked_env={"MY_VAR": "/some/path"})
+    assert 'export MY_VAR="/some/path"' in wrapper
+    assert 'export PYTHONPATH="' in wrapper
+
+
 def test_write_shell_wrapper(tmp_path: Path):
     path = tmp_path / "wrapper.sh"
     result = write_shell_wrapper(path, "my.module")

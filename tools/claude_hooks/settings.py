@@ -92,6 +92,8 @@ class HookSettings(BaseSettings):
 
     # Per-session output directory. Exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR so
     # subprocesses (e.g. bazel_wrapper) pick it up automatically via pydantic-settings.
+    # Baked into the bazel/bazelisk shell wrapper at install time so it survives
+    # into pre-commit and other subprocess invocations that don't source the env file.
     # All session-scoped outputs (auth-proxy CAs, supervisor, bin wrappers, etc.) go here.
     session_dir: Path = Field(description="Per-session output directory")
 
@@ -182,14 +184,6 @@ class HookSettings(BaseSettings):
     def get_log_file(self) -> Path:
         """Get path to session-start log file."""
         return self.session_dir / "session-start.log"
-
-    def get_session_dir(self, env_file_path: Path) -> Path:
-        """Get session directory from CLAUDE_ENV_FILE path.
-
-        Both web and CLI modes use the parent directory of CLAUDE_ENV_FILE as the session directory.
-        Session-specific files (bazelrc, bin wrappers) are stored here.
-        """
-        return env_file_path.parent
 
     def get_docker_dir(self) -> Path:
         """Get Docker configuration directory."""
