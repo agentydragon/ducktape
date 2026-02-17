@@ -164,7 +164,7 @@ Docker is simpler and more robust in gVisor:
 
 - 70% less code than Podman (196 lines vs 600+ lines)
 - Runtime configurable via `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME` (podman/docker/none)
-- Default: Podman (for compatibility)
+- Default: **Docker** (switched from Podman for better gVisor compatibility)
 
 ## Open Questions
 

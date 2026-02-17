@@ -77,7 +77,7 @@ class HookSettings(BaseSettings):
     install_nix: bool = Field(default=False, description="Install nix package manager")
     install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
     container_runtime: Literal["podman", "docker", "none"] = Field(
-        default="podman", description="Container runtime to set up (podman, docker, or none)"
+        default="docker", description="Container runtime to set up (podman, docker, or none)"
     )
     system_bazel: Path | None = Field(
         default=None, description="Path to system bazel (used when install_bazelisk=False)"
