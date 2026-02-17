@@ -301,8 +301,7 @@ async def run_session_start_hook(
 def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
     """Cleanup supervisor after each test."""
     yield
-    # platformdirs respects XDG_CONFIG_HOME
-    _cleanup_supervisor(isolated_dirs.config / "claude-hooks")
+    _cleanup_supervisor(isolated_dirs.env_file.parent)
 
 
 class TestFullSessionStartHook:
@@ -319,13 +318,12 @@ class TestFullSessionStartHook:
         session_dir = isolated_dirs.env_file.parent
         assert (session_dir / "bazelrc").exists(), "bazelrc not created in session directory"
 
-        # Auth proxy artifacts in cache directory
-        auth_proxy_dir = isolated_dirs.cache / "claude-hooks" / "auth-proxy"
+        # Auth proxy artifacts in session directory
+        auth_proxy_dir = isolated_dirs.env_file.parent / "auth-proxy"
         assert (auth_proxy_dir / "anthropic_ca.pem").exists(), "CA not extracted"
 
         # Verify supervisor started
-        # platformdirs respects XDG_CONFIG_HOME
-        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
+        supervisor_dir = isolated_dirs.env_file.parent / "supervisor"
         assert (supervisor_dir / "supervisord.pid").exists(), "supervisor not started"
 
     async def test_bazel_build_after_hook(
@@ -352,7 +350,7 @@ class TestFullSessionStartHook:
         # and exports truststore configuration. The wrapper injects --bazelrc and falls
         # back to system bazel if bazelisk isn't installed.
         # --output_base isolates this Bazel from the test-running Bazel.
-        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
+        supervisor_dir = isolated_dirs.env_file.parent / "supervisor"
         bazel_result: subprocess.CompletedProcess[str] | None = None
         try:
             async with asyncio.timeout(60):
@@ -375,8 +373,7 @@ class TestFullSessionStartHook:
     async def test_stale_socket_recovery(self, isolated_dirs: IsolatedDirs, hook_env: None) -> None:
         """Verify hook recovers from stale supervisor socket."""
         # Create stale socket/pidfile
-        # platformdirs respects XDG_CONFIG_HOME
-        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
+        supervisor_dir = isolated_dirs.env_file.parent / "supervisor"
         supervisor_dir.mkdir(parents=True, exist_ok=True)
         (supervisor_dir / "supervisor.sock").touch()
         (supervisor_dir / "supervisord.pid").write_text("99999")  # Non-existent PID
@@ -470,7 +467,7 @@ class TestPodmanIntegration:
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
 
         # Collect supervisor logs (including podman daemon) for CI debugging
-        supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
+        supervisor_dir = isolated_dirs.env_file.parent / "supervisor"
         collect_supervisor_logs(supervisor_dir)
 
         # Verify we can run podman hello-world through the proxy

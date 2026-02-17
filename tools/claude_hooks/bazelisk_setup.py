@@ -82,10 +82,8 @@ def install_bazelisk(settings: HookSettings) -> Path:
     The wrapper script in ~/.cache/claude-hooks/auth-proxy/bin/bazel will call this.
     Skips download if already installed.
     """
-    auth_proxy_dir = settings.get_auth_proxy_dir()
     bazelisk_path = settings.get_bazelisk_path()
-
-    auth_proxy_dir.mkdir(parents=True, exist_ok=True)
+    bazelisk_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Check if already installed
     if get_bazelisk_version(settings):

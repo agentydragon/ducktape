@@ -46,6 +46,7 @@ ENV_INSTALL_NIX = _env_name("install_nix")
 ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
 ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_USE_WHEEL = _env_name("use_wheel")
+ENV_SESSION_DIR = _env_name("session_dir")
 
 
 class HookSettings(BaseSettings):
@@ -89,6 +90,11 @@ class HookSettings(BaseSettings):
     # Test configuration
     use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
 
+    # Per-session output directory. Exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR so
+    # subprocesses (e.g. bazel_wrapper) pick it up automatically via pydantic-settings.
+    # All session-scoped outputs (auth-proxy CAs, supervisor, bin wrappers, etc.) go here.
+    session_dir: Path = Field(description="Per-session output directory")
+
     def get_cache_dir(self) -> Path:
         """Get base cache directory for claude-hooks (auto-created)."""
         return Path(user_cache_dir(appname="claude-hooks", ensure_exists=True))
@@ -101,7 +107,7 @@ class HookSettings(BaseSettings):
         """Get supervisor configuration directory."""
         if self.supervisor_dir is not None:
             return self.supervisor_dir
-        return self.get_config_dir() / "supervisor"
+        return self.session_dir / "supervisor"
 
     def get_supervisor_pidfile(self) -> Path:
         """Get supervisor pidfile path."""
@@ -115,7 +121,7 @@ class HookSettings(BaseSettings):
         """Get auth proxy cache directory."""
         if self.auth_proxy_dir is not None:
             return self.auth_proxy_dir
-        return self.get_cache_dir() / "auth-proxy"
+        return self.session_dir / "auth-proxy"
 
     def get_auth_proxy_port(self) -> int:
         """Get auth proxy port with default."""
@@ -125,7 +131,7 @@ class HookSettings(BaseSettings):
         """Get podman configuration and storage directory."""
         if self.podman_dir is not None:
             return self.podman_dir
-        return self.get_cache_dir() / "podman"
+        return self.session_dir / "podman"
 
     def get_containers_config_dir(self) -> Path:
         """Get user-level containers config directory (~/.config/containers).
@@ -141,10 +147,6 @@ class HookSettings(BaseSettings):
         """Get path to combined CA bundle (system CAs + proxy CA)."""
         return self.get_auth_proxy_dir() / "combined_ca.pem"
 
-    def get_auth_proxy_rc(self) -> Path:
-        """Get path to auth proxy bazelrc file."""
-        return self.get_auth_proxy_dir() / "bazelrc"
-
     def get_auth_proxy_creds_file(self) -> Path:
         """Get path to upstream proxy credentials file."""
         return self.get_auth_proxy_dir() / "upstream_proxy"
@@ -158,16 +160,28 @@ class HookSettings(BaseSettings):
         return self.get_auth_proxy_dir() / "cacerts.jks"
 
     def get_bazelisk_path(self) -> Path:
-        """Get the bazelisk binary path."""
-        return self.get_auth_proxy_dir() / "bazelisk"
+        """Get the bazelisk binary path (global cache, not session-scoped)."""
+        return self.get_cache_dir() / "bazelisk"
 
     def get_wrapper_dir(self) -> Path:
         """Get the wrapper directory (added to PATH)."""
-        return self.get_auth_proxy_dir() / "bin"
+        return self.session_dir / "bin"
 
     def get_wrapper_path(self) -> Path:
         """Get the wrapper script path."""
         return self.get_wrapper_dir() / "bazel"
+
+    def get_mkcert_dir(self) -> Path:
+        """Get mkcert directory for certs and CA (session-scoped)."""
+        return self.session_dir / "mkcert"
+
+    def get_mkcert_binary(self) -> Path:
+        """Get mkcert binary path (global cache, not session-scoped)."""
+        return self.get_cache_dir() / "mkcert"
+
+    def get_log_file(self) -> Path:
+        """Get path to session-start log file."""
+        return self.session_dir / "session-start.log"
 
     def get_session_dir(self, env_file_path: Path) -> Path:
         """Get session directory from CLAUDE_ENV_FILE path.
@@ -181,4 +195,4 @@ class HookSettings(BaseSettings):
         """Get Docker configuration directory."""
         if self.docker_dir is not None:
             return self.docker_dir
-        return self.get_cache_dir() / "docker"
+        return self.session_dir / "docker"

@@ -136,19 +136,12 @@ def _render_session_bazelrc(
     return bazelrc_path
 
 
-def _get_session_bin_dir(session_dir: Path) -> Path:
-    """Create and return the session-scoped bin directory for tools and wrappers."""
-    bin_dir = session_dir / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    return bin_dir
-
-
 # ============================================================================
 # CLI mode: per-session bazel wrapper with direnv integration
 # ============================================================================
 
 
-async def run_cli_mode(hook_input: HookInput, settings: HookSettings) -> None:
+async def run_cli_mode(hook_input: HookInput, settings: HookSettings, env_file_path: Path) -> None:
     """CLI mode: set up per-session bazel wrapper and direnv eval.
 
     Renders a per-session bazelrc (with --config=ai_agent for quiet output),
@@ -156,7 +149,7 @@ async def run_cli_mode(hook_input: HookInput, settings: HookSettings) -> None:
     wrapper on PATH and direnv eval for .envrc propagation.
     """
     _collector, log_file = setup_logging(settings, print_banner=False)
-    tracer, trace_file = init_tracing(hook_input.session_id, settings.get_cache_dir())
+    tracer, trace_file = init_tracing(hook_input.session_id, settings.session_dir)
 
     with tracer.start_as_current_span(
         "session_start_cli", attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source}
@@ -165,17 +158,9 @@ async def run_cli_mode(hook_input: HookInput, settings: HookSettings) -> None:
         logger.info("Hook input: %s", hook_input.model_dump_json())
         log_entrypoint_debug("session_start")
 
-        env_file_path = os.environ.get("CLAUDE_ENV_FILE")
-        if not env_file_path:
-            logger.warning("CLAUDE_ENV_FILE not available")
-            shutdown_tracing()
-            return
-
-        session_dir = settings.get_session_dir(Path(env_file_path))
-
         with tracer.start_as_current_span("render_bazelrc"):
             session_bazelrc = _render_session_bazelrc(
-                session_dir,
+                settings.session_dir,
                 web_proxy=False,
                 proxy_port=None,
                 truststore_path=None,
@@ -187,13 +172,14 @@ async def run_cli_mode(hook_input: HookInput, settings: HookSettings) -> None:
             )
 
         with tracer.start_as_current_span("install_bazel_wrappers"):
-            bin_dir = _get_session_bin_dir(session_dir)
-            bazelisk_setup.install_wrapper(settings, wrapper_dir=bin_dir)
+            bazelisk_setup.install_wrapper(settings)
 
         with tracer.start_as_current_span("write_env_file"):
-            env_file.write_cli_env_file(Path(env_file_path), wrapper_dir=bin_dir, session_bazelrc=session_bazelrc)
+            env_file.write_cli_env_file(
+                env_file_path, wrapper_dir=settings.get_wrapper_dir(), session_bazelrc=session_bazelrc
+            )
 
-        logger.info("CLI session configured: %s", session_dir)
+        logger.info("CLI session configured: %s", settings.session_dir)
         print(f"Claude Code CLI session configured (log: {log_file})")
 
     shutdown_tracing()
@@ -350,7 +336,7 @@ def setup_logging(settings: HookSettings, *, print_banner: bool = True) -> tuple
 
     Returns (LogCollector, log_file_path) tuple.
     """
-    log_file = settings.get_cache_dir() / "session-start.log"
+    log_file = settings.get_log_file()
 
     formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
     collector = LogCollector()
@@ -390,7 +376,7 @@ async def run_in_thread(func, *args):
 # ============================================================================
 
 
-async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
+async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_path: Path) -> None:
     """Web mode with parallelized operations.
 
     Uses asyncio to parallelize independent installations (git hook, cluster
@@ -400,7 +386,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     variables.
     """
     collector, log_file = setup_logging(settings)
-    tracer, trace_file = init_tracing(hook_input.session_id, settings.get_cache_dir())
+    tracer, trace_file = init_tracing(hook_input.session_id, settings.session_dir)
     root_span = tracer.start_span(
         "session_start_web", attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source}
     )
@@ -414,16 +400,10 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     logger.info("Setting up dev environment...")
     logger.info(format_environment_summary())
 
-    # Get required environment variables (fail early if missing)
-    env_file_path = env_utils.get_required_env_path("CLAUDE_ENV_FILE")
-
     # Get required project directory
     project_dir = env_utils.get_required_env_path("CLAUDE_PROJECT_DIR")
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
-
-    # Session directory (unified for both web and CLI modes)
-    session_dir = settings.get_session_dir(env_file_path)
-    logger.info("Session directory: %s", session_dir)
+    logger.info("Session directory: %s", settings.session_dir)
 
     # --- Traced async helpers ---
     # Each helper creates its own child span under root_ctx so the parallel
@@ -618,7 +598,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     # Generate timestamp
     hook_timestamp = datetime.now()
-    timestamp_file = settings.get_cache_dir() / "session-hook-last-run"
+    timestamp_file = settings.session_dir / "session-hook-last-run"
     timestamp_file.write_text(f"{hook_timestamp.isoformat()}\n")
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
 
@@ -638,7 +618,10 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             proxy_ca_file = settings.get_auth_proxy_ca_file()
             proxy_ca_pem = proxy_ca_file.read_text() if proxy_ca_file.exists() else None
             kubeconfig_setup.setup_kubeconfig(
-                session_dir=session_dir, secret=secrets.kubeconfig, env_vars=secrets.env_vars, proxy_ca_pem=proxy_ca_pem
+                session_dir=settings.session_dir,
+                secret=secrets.kubeconfig,
+                env_vars=secrets.env_vars,
+                proxy_ca_pem=proxy_ca_pem,
             )
 
     # Render session bazelrc (unified for web mode with proxy configuration)
@@ -651,7 +634,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             logger.info("Found local registry at %s (patched ape for native ELF)", local_registry)
 
         session_bazelrc = _render_session_bazelrc(
-            session_dir,
+            settings.session_dir,
             web_proxy=True,
             proxy_port=proxy_port,
             truststore_path=truststore,
@@ -684,6 +667,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         mkcert_key = mkcert.key_path
 
     env_vars = env_file.EnvVars(
+        session_dir=settings.session_dir,
         proxy_port=settings.get_auth_proxy_port(),
         supervisor_port=settings.get_supervisor_port(),
         repo_root=project_dir,
@@ -755,12 +739,13 @@ async def async_main() -> None:
         print(f"Raw input JSON:\n{raw_input}", file=sys.stderr)
         raise
 
-    settings = HookSettings()
+    env_file_path = env_utils.get_required_env_path("CLAUDE_ENV_FILE")
+    settings = HookSettings(session_dir=env_file_path.parent)
 
     if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
-        await run_web_mode(hook_input, settings)
+        await run_web_mode(hook_input, settings, env_file_path)
     else:
-        await run_cli_mode(hook_input, settings)
+        await run_cli_mode(hook_input, settings, env_file_path)
 
 
 def main() -> None:

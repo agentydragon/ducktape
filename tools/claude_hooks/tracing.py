@@ -23,14 +23,12 @@ def _format_span(span: ReadableSpan) -> str:
     return json_str + "\n"
 
 
-def init_tracing(session_id: str, cache_dir: Path) -> tuple[trace.Tracer, Path]:
+def init_tracing(session_id: str, session_dir: Path) -> tuple[trace.Tracer, Path]:
     """Initialize OTel tracing with a per-session file exporter.
 
     Returns (tracer, trace_file_path).
     """
-    traces_dir = cache_dir / "traces"
-    trace_file = traces_dir / f"{session_id}.jsonl"
-    traces_dir.mkdir(parents=True, exist_ok=True)
+    trace_file = session_dir / "traces.jsonl"
 
     resource = Resource.create({"service.name": "claude-hooks", "session.id": session_id})
     provider = TracerProvider(resource=resource)

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
-from tools.claude_hooks.settings import ENV_SUPERVISOR_PORT
+from tools.claude_hooks.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
 
 # Runtime env var names (written by session hook, read by bazel_wrapper)
 ENV_AUTH_PROXY_PORT = "AUTH_PROXY_PORT"
@@ -66,6 +66,9 @@ class EnvVars:
     All environment variables that need to be exported are collected
     throughout the session hook setup and written once at the end.
     """
+
+    # Per-session directory (exported so subprocesses like bazel_wrapper inherit it)
+    session_dir: Path
 
     # Auth proxy and Bazel configuration
     proxy_port: int
@@ -120,6 +123,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     local_proxy = f"http://localhost:{vars.proxy_port}"
 
     auth_proxy_config: dict[str, str | Path] = {
+        ENV_SESSION_DIR: vars.session_dir,
         ENV_AUTH_PROXY_PORT: str(vars.proxy_port),
         ENV_AUTH_PROXY_URL: local_proxy,
         ENV_BAZELISK_PATH: vars.bazelisk_path,

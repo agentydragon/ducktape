@@ -39,29 +39,35 @@ class MockEgressProxyFixture:
 class IsolatedSupervisorDirs:
     """Isolated directories for supervisor/proxy testing."""
 
+    session_dir: Path
     supervisor_dir: Path
     auth_proxy_dir: Path
 
 
 @pytest.fixture
 def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[IsolatedSupervisorDirs]:
-    """Create isolated supervisor + auth proxy dirs with free ports.
+    """Create isolated session/supervisor/auth-proxy dirs with free ports.
 
     Sets environment variables so HookSettings() picks them up.
     Cleans up any supervisor processes on teardown.
     """
-    supervisor_dir = tmp_path / "supervisor"
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    supervisor_dir = session_dir / "supervisor"
     supervisor_dir.mkdir()
-    auth_proxy_dir = tmp_path / "auth-proxy"
+    auth_proxy_dir = session_dir / "auth-proxy"
     auth_proxy_dir.mkdir()
 
+    monkeypatch.setenv(settings.ENV_SESSION_DIR, str(session_dir))
     monkeypatch.setenv(settings.ENV_SUPERVISOR_DIR, str(supervisor_dir))
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(pick_free_port()))
     monkeypatch.setenv(settings.ENV_AUTH_PROXY_DIR, str(auth_proxy_dir))
     monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(pick_free_port()))
 
     with supervisor_cleanup(supervisor_dir / "supervisord.pid"):
-        yield IsolatedSupervisorDirs(supervisor_dir=supervisor_dir, auth_proxy_dir=auth_proxy_dir)
+        yield IsolatedSupervisorDirs(
+            session_dir=session_dir, supervisor_dir=supervisor_dir, auth_proxy_dir=auth_proxy_dir
+        )
 
     # Collect supervisor logs into test outputs for CI debugging
     collect_supervisor_logs(supervisor_dir)
@@ -70,7 +76,7 @@ def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[
 @pytest.fixture
 def hook_settings(isolated_dirs: IsolatedSupervisorDirs) -> HookSettings:
     """HookSettings wired to isolated dirs."""
-    return HookSettings()
+    return HookSettings(session_dir=isolated_dirs.session_dir)
 
 
 @pytest.fixture

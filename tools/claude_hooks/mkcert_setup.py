@@ -34,11 +34,11 @@ class MkcertSetup:
 
 
 def _get_mkcert_dir(settings: HookSettings) -> Path:
-    return settings.get_cache_dir() / "mkcert"
+    return settings.get_mkcert_dir()
 
 
 def _get_mkcert_binary(settings: HookSettings) -> Path:
-    return _get_mkcert_dir(settings) / "mkcert"
+    return settings.get_mkcert_binary()
 
 
 def _get_download_url() -> str:
