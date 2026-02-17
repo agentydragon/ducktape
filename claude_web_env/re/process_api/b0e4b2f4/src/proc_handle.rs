@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use nix::sys::signal::{self, Signal};
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
@@ -316,7 +316,7 @@ pub async fn wait_for_child_to_exit(
         }
 
         // Check per-process memory limit
-        if let (Some(limit), Some(ref cp), Some(version)) =
+        if let (Some(limit), Some(cp), Some(version)) =
             (memory_limit_bytes, &cgroup_path, cgroup_version)
         {
             if let Ok(usage) = cgroup::read_memory_usage(cp, version).await {
@@ -365,7 +365,9 @@ pub async fn wait_for_child_to_exit(
         // Check for stop signal (shutdown)
         if let Some(ref mut rx) = stop {
             if rx.try_recv().is_ok() {
-                log::debug!("wait_for_child_to_exit received message to stop waiting for process (PID {pid})");
+                log::debug!(
+                    "wait_for_child_to_exit received message to stop waiting for process (PID {pid})"
+                );
                 kill_and_wait(pid, cgroup_path.as_ref()).await;
                 break ExitReason::KilledByProcessApi;
             }

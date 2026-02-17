@@ -22,12 +22,12 @@
 //!             "[DEBUG] Reaping tracked orphaned zombie, first seen "
 //!             "[DEBUG] Found new zombie for tracked orphan ), will reap in next iteration"
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use tokio::sync::broadcast;
 

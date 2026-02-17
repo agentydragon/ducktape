@@ -14,7 +14,7 @@ rust_binary(
         "src/state.rs",
     ],
     crate_root = "src/main.rs",
-    edition = "2021",
+    edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
         "@crates//:bytes",

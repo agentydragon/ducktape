@@ -76,9 +76,9 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::process::Command;
-use tokio::sync::{broadcast, oneshot, Mutex as TokioMutex};
-use tokio_tungstenite::tungstenite::Message;
+use tokio::sync::{Mutex as TokioMutex, broadcast, oneshot};
 use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message;
 
 use crate::cgroup::{self, CgroupController};
 use crate::control_server;
@@ -224,7 +224,7 @@ async fn forward_stdin(
     data: &[u8],
     process_id: &str,
 ) {
-    if let Some(ref mut stdin) = stdin_writer {
+    if let Some(stdin) = stdin_writer {
         if let Err(e) = stdin.write_all(data).await {
             log::debug!(
                 "[DEBUG] stdin write failed for process {process_id} (process likely exited): {e}"
@@ -696,7 +696,7 @@ async fn handle_create_process(
     }
 
     // Spawn per-process memory monitor if memory limit is set
-    if let (Some(limit), Some(ref cp)) = (handle_memory_limit, &cgroup_path) {
+    if let (Some(limit), Some(cp)) = (handle_memory_limit, &cgroup_path) {
         let oom_shutdown_rx = shutdown_tx.subscribe();
         let oom_channels_clone = oom_channels.clone();
         tokio::spawn(oom_killer::per_process_memory_monitor(
@@ -906,7 +906,9 @@ async fn handle_process_connection(
 ) {
     let process_id = &req.process_id;
     let should_reattach = req.reattach.unwrap_or(true);
-    log::debug!("[DEBUG] Processing reattach request for process_id: {process_id}, reattach: {should_reattach}");
+    log::debug!(
+        "[DEBUG] Processing reattach request for process_id: {process_id}, reattach: {should_reattach}"
+    );
 
     // Check container name if expected
     // Read dynamic container name from shared state (updated by control server)

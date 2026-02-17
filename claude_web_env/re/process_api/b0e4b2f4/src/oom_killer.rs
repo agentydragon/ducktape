@@ -136,7 +136,9 @@ pub async fn container_oom_monitor(
     mut shutdown_rx: broadcast::Receiver<()>,
     oom_channels: OomChannelMap,
 ) {
-    log::debug!("[DEBUG] container_oom_monitor: starting, limit={container_memory_limit} bytes, poll={polling_period:?}");
+    log::debug!(
+        "[DEBUG] container_oom_monitor: starting, limit={container_memory_limit} bytes, poll={polling_period:?}"
+    );
 
     loop {
         tokio::select! {
@@ -173,7 +175,9 @@ pub async fn container_oom_monitor(
         }
 
         // Read fresh memory usage for ALL tracked processes to find the largest
-        log::debug!("[DEBUG] container_oom_monitor: Reading fresh memory usage for ALL processes to find largest...");
+        log::debug!(
+            "[DEBUG] container_oom_monitor: Reading fresh memory usage for ALL processes to find largest..."
+        );
 
         // Collect process info while holding the lock, then release it
         let process_cgroups: Vec<(String, u32, std::path::PathBuf)> = {
@@ -207,7 +211,7 @@ pub async fn container_oom_monitor(
             }
         }
 
-        if let (Some(pid), Some(ref process_id)) = (largest_pid, &largest_process_id) {
+        if let (Some(pid), Some(process_id)) = (largest_pid, &largest_process_id) {
             log::info!(
                 "[DEBUG] container_oom_monitor: Killing process {process_id} (PID {pid}) with memory usage {largest_usage} to free up memory"
             );
