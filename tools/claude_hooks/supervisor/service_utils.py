@@ -56,16 +56,10 @@ def log_service_failure(service_name: str, info: ProcessInfo) -> None:
     """
     logger.error("%s service failed: %s", service_name, info.model_dump())
 
-    if info.stdout_logfile:
-        logpath = Path(info.stdout_logfile)
-        if logpath.exists():
-            content = logpath.read_text()
-            if content.strip():
-                logger.error("%s stdout:\n%s", service_name, content)
-
-    if info.stderr_logfile:
-        logpath = Path(info.stderr_logfile)
-        if logpath.exists():
-            content = logpath.read_text()
-            if content.strip():
-                logger.error("%s stderr:\n%s", service_name, content)
+    for stream, logfile in (("stdout", info.stdout_logfile), ("stderr", info.stderr_logfile)):
+        if logfile:
+            logpath = Path(logfile)
+            if logpath.exists():
+                content = logpath.read_text()
+                if content.strip():
+                    logger.error("%s %s:\n%s", service_name, stream, content)
