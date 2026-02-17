@@ -31,7 +31,7 @@ class KubeconfigSecret(BaseModel):
 
 
 def setup_kubeconfig(
-    cache_dir: Path, secret: KubeconfigSecret, env_vars: dict[str, str], proxy_ca_pem: str | None = None
+    session_dir: Path, secret: KubeconfigSecret, env_vars: dict[str, str], proxy_ca_pem: str | None = None
 ) -> Path:
     """Build and write a kubeconfig from typed secret fields.
 
@@ -60,7 +60,7 @@ def setup_kubeconfig(
         "users": [{"name": "claude-code-web", "user": {"token": secret.token}}],
     }
 
-    kubeconfig_path = cache_dir / "kubeconfig"
+    kubeconfig_path = session_dir / "kubeconfig"
     kubeconfig_path.write_text(yaml.dump(kubeconfig, default_flow_style=False))
     kubeconfig_path.chmod(0o600)
 

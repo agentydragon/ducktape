@@ -638,10 +638,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             proxy_ca_file = settings.get_auth_proxy_ca_file()
             proxy_ca_pem = proxy_ca_file.read_text() if proxy_ca_file.exists() else None
             kubeconfig_setup.setup_kubeconfig(
-                cache_dir=settings.get_cache_dir(),
-                secret=secrets.kubeconfig,
-                env_vars=secrets.env_vars,
-                proxy_ca_pem=proxy_ca_pem,
+                session_dir=session_dir, secret=secrets.kubeconfig, env_vars=secrets.env_vars, proxy_ca_pem=proxy_ca_pem
             )
 
     # Render session bazelrc (unified for web mode with proxy configuration)
