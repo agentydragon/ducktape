@@ -12,7 +12,7 @@ trim_trailing_whitespace = true
 
 # Shell scripts - shfmt configuration
 # shfmt reads these settings: indent_style, indent_size, binary_next_line, switch_case_indent
-[*.sh]
+[*.{sh,envrc}]
 indent_style = space
 indent_size = 2
 # Keep binary operators at start of line (shfmt -bn)
