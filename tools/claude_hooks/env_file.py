@@ -79,9 +79,8 @@ class EnvVars:
     # Nix paths
     nix_paths: list[Path]
 
-    # Podman/Docker
-    docker_host: str | None
-    docker_env: dict[str, str] | None  # Docker-specific env vars if needed
+    # Podman/Docker environment variables (e.g., DOCKER_HOST, DOCKER_CERT_PATH)
+    docker_env: dict[str, str] | None
 
     # Session metadata
     hook_timestamp: datetime
@@ -149,9 +148,10 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.extend(["", "# NO_PROXY fix: strip *.googleapis.com/*.google.com (breaks Go module downloads)"])
         exports.extend(_exports_from_dict(no_proxy_override))
 
-    # Docker configuration
+    # Docker/Podman configuration
     if vars.docker_env:
-        exports.extend(["", "# Docker configuration"])
+        exports.extend(["", "# Docker/Podman configuration"])
+        exports.extend(_exports_from_dict(vars.docker_env))
 
     # mkcert localhost TLS certificate
     if vars.mkcert_cert and vars.mkcert_key:

@@ -127,7 +127,7 @@ def _setup_hook_env(
     isolated_dirs: IsolatedDirs,
     mock_proxy: MockEgressProxy,
     *,
-    install_podman: bool = False,
+    container_runtime: str = "none",
 ) -> None:
     """Set up environment variables for running session start hook via monkeypatch.
 
@@ -135,7 +135,7 @@ def _setup_hook_env(
         monkeypatch: pytest monkeypatch fixture
         isolated_dirs: Test isolation directories
         mock_proxy: TLS proxy simulating Anthropic's proxy
-        install_podman: Whether to install podman (default False)
+        container_runtime: Container runtime to use ("none", "podman", "docker")
     """
     # Create combined CA bundle with system CAs + mock proxy CA
     # This allows bazelisk and other TLS clients to trust the mock proxy
@@ -180,16 +180,15 @@ def _setup_hook_env(
     mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
     monkeypatch.setenv("ANTHROPIC_CA_PATH", str(mock_ca_path))
 
-    if not install_podman:
-        monkeypatch.setenv(settings.ENV_INSTALL_PODMAN, "0")
+    monkeypatch.setenv(settings.ENV_CONTAINER_RUNTIME, container_runtime)
 
 
 @pytest.fixture
 def hook_env(
     monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, mock_egress_proxy: MockEgressProxyFixture
 ) -> None:
-    """Set up environment for running the session start hook (podman disabled)."""
-    _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, install_podman=False)
+    """Set up environment for running the session start hook (container runtime disabled)."""
+    _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, container_runtime="none")
 
 
 def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:
@@ -452,7 +451,7 @@ class TestPodmanIntegration:
         self, monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, mock_egress_proxy: MockEgressProxyFixture
     ) -> None:
         """Set up environment for running session start hook WITH podman enabled."""
-        _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, install_podman=True)
+        _setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, container_runtime="podman")
 
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
     async def test_podman_can_run_container(

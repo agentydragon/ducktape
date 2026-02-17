@@ -2,6 +2,17 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
+    name = "service_utils",
+    srcs = ["service_utils.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        "//tools/claude_hooks:settings",
+    ],
+)
+
+py_library(
     name = "client",
     srcs = ["client.py"],
     imports = ["../../.."],
