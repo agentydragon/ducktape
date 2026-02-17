@@ -2,7 +2,7 @@
 # Cluster utility scripts (non-validation).
 # Validators are in //cluster/scripts/validate_cluster/.
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "generate_claude_kubeconfig_lib",
@@ -29,4 +29,21 @@ py_binary(
     name = "check_authentik_login",
     srcs = ["check_authentik_login.py"],
     imports = ["../.."],
+)
+
+# Test kubeconfig generation with K8s token authentication
+py_test(
+    name = "test_generate_claude_kubeconfig",
+    srcs = ["test_generate_claude_kubeconfig.py"],
+    imports = ["../.."],
+    deps = [
+        ":generate_claude_kubeconfig_lib",
+        "//tools/claude_hooks:kubeconfig_setup",
+        "@pypi//kubernetes",
+        "@pypi//pyrage",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pytest_mock",
+        "@pypi//pyyaml",
+    ],
 )
