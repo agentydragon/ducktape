@@ -30,6 +30,7 @@ from tools.claude_hooks import (
     bazelisk_setup,
     buildbuddy_setup,
     cli_tools_setup,
+    docker_service,
     env_file,
     kubeconfig_setup,
     mkcert_setup,
@@ -279,7 +280,7 @@ def emit_session_context(
     log_file: Path,
     project_dir: Path,
     auth_proxy: proxy_setup.ProxySetup,
-    podman: podman_service.PodmanSetup | None,
+    docker: docker_service.DockerSetup | None,
     precommit: precommit_setup.PrecommitSetup | None,
     secrets: secrets_setup.SecretsSetup | None,
     mkcert: mkcert_setup.MkcertSetup | None = None,
@@ -300,7 +301,7 @@ def emit_session_context(
         build_commit=BUILD_COMMIT,
         status=status,
         proxy=auth_proxy,
-        podman=podman,
+        docker=docker,
         precommit=precommit,
         PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
         mkcert=mkcert,
@@ -437,6 +438,17 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             tmpfs_root = None
         return await podman_service.setup_podman(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
 
+    async def setup_docker_with_deps() -> docker_service.DockerSetup:
+        """Set up Docker (depends on supervisor + tmpfs mount)."""
+        supervisor_result = await supervisor_task
+        # tmpfs failure is non-fatal — Docker falls back to VFS on 9p
+        try:
+            tmpfs_root = await tmpfs_mount_task
+        except Exception as e:
+            logger.warning("tmpfs mount failed, Docker will use VFS on 9p: %s", e)
+            tmpfs_root = None
+        return await docker_service.setup_docker(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
+
     async def setup_bazel_on_tmpfs() -> tmpfs_setup.TmpfsSetup:
         """Set up Bazel cache on tmpfs (depends on tmpfs mount)."""
         tmpfs_root = await tmpfs_mount_task
@@ -482,7 +494,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
     #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
-    #                     └── setup_podman_with_deps ←── tmpfs_mount_task
+    #                     └── setup_docker_with_deps ←── tmpfs_mount_task
     #   tmpfs_mount_task ──── setup_bazel_on_tmpfs
     logger.info("Starting parallel installations...")
 
@@ -499,7 +511,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     results = await asyncio.gather(
         proxy_task,
-        setup_podman_with_deps(),
+        setup_docker_with_deps(),
         run_in_thread(precommit_setup.install_precommit, project_dir),
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
@@ -510,7 +522,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     )
     # Unpack with explicit type annotations for mypy
     auth_proxy: proxy_setup.ProxySetup | BaseException = results[0]
-    podman: podman_service.PodmanSetup | BaseException = results[1]
+    docker: docker_service.DockerSetup | BaseException = results[1]
     precommit: precommit_setup.PrecommitSetup | BaseException = results[2]
     nix: nix_setup.NixSetup | BaseException = results[3]
     bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
@@ -542,16 +554,15 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     elif isinstance(nix, BaseException):
         logger.warning("Failed to install nix: %s", nix)
 
-    # Handle podman result
-    docker_host: str | None = None
-    podman_env: dict[str, str] | None = None
-    if isinstance(podman, SkipError):
-        logger.info("Podman setup skipped: %s", podman)
-    elif isinstance(podman, BaseException):
-        logger.warning("Failed to configure podman: %s", podman)
+    # Handle Docker result
+    docker_env: dict[str, str] | None = None
+    if isinstance(docker, SkipError):
+        logger.info("Docker setup skipped: %s", docker)
+    elif isinstance(docker, BaseException):
+        logger.warning("Failed to configure Docker: %s", docker)
     else:
-        docker_host = podman.socket_url
-        podman_env = podman.env_vars
+        # Socket URL is in docker.env_vars["DOCKER_HOST"]
+        docker_env = docker.env_vars
 
     # Generate timestamp
     hook_timestamp = datetime.now()
@@ -619,8 +630,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         bazelisk_path=bazelisk_path,
         session_bazelrc=session_bazelrc,
         nix_paths=nix_paths,
-        docker_host=docker_host,
-        podman_env=podman_env,
+        docker_env=docker_env,
         hook_timestamp=hook_timestamp,
         secrets_exports=secrets.env_exports if secrets else None,
         mkcert_cert=mkcert_cert,
@@ -640,8 +650,8 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         bazel_status = bazelisk.status
     logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, auth_proxy.status, auth_proxy.ca_status)
     logger.info("Nix: %s", get_nix_status())
-    if not isinstance(podman, BaseException):
-        logger.info("Podman: %s", podman.status)
+    if not isinstance(docker, BaseException):
+        logger.info("Docker: %s", docker.status)
 
     # Render agent context from structured results
     emit_session_context(
@@ -649,7 +659,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         log_file=log_file,
         project_dir=project_dir,
         auth_proxy=auth_proxy,
-        podman=None if isinstance(podman, BaseException) else podman,
+        docker=None if isinstance(docker, BaseException) else docker,
         precommit=None if isinstance(precommit, BaseException) else precommit,
         secrets=secrets,
         mkcert=None if isinstance(mkcert, BaseException) else mkcert,
