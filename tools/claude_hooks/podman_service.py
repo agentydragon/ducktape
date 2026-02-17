@@ -23,6 +23,7 @@ from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import ProcessInfo, ProcessState, SupervisorClient
+from tools.claude_hooks.supervisor.service_utils import log_service_failure, wait_for_service_socket
 
 logger = logging.getLogger(__name__)
 
@@ -320,50 +321,22 @@ async def start_podman_service(
 
     # Wait for socket to be ready
     async with asyncio.timeout(10):
-        await _wait_for_socket(settings, socket_path, supervisor)
+
+        def on_podman_failure(info: ProcessInfo) -> None:
+            """Log Podman failure with storage driver hint."""
+            log_service_failure("Podman", info)
+            podman_dir = settings.get_podman_dir()
+            logger.error(
+                "Common cause: storage driver mismatch. "
+                "If podman was previously used with a different driver, run: "
+                "rm -rf %s %s",
+                podman_dir / "storage",
+                podman_dir / "runroot",
+            )
+
+        await wait_for_service_socket(
+            supervisor=supervisor, service_name=PODMAN_SERVICE, socket_path=socket_path, on_failure=on_podman_failure
+        )
 
     logger.info("Podman service ready at %s", socket_url)
     return socket_url, {"DOCKER_HOST": socket_url}
-
-
-async def _wait_for_socket(settings: HookSettings, socket_path: Path, supervisor: SupervisorClient) -> None:
-    """Wait for Unix socket to be created and service to be running.
-
-    Caller should wrap with asyncio.timeout() to set deadline.
-
-    Raises:
-        PodmanServiceError: If service enters a terminal failure state.
-    """
-    while True:
-        info = await supervisor.get_process_info(PODMAN_SERVICE)
-
-        if socket_path.exists() and info.statename == ProcessState.RUNNING:
-            return
-
-        # Terminal failure states — no point waiting
-        if info.statename in (ProcessState.FATAL, ProcessState.BACKOFF, ProcessState.EXITED):
-            _log_podman_failure(info)
-            podman_dir = settings.get_podman_dir()
-            hint = (
-                "Common cause: storage driver mismatch. "
-                f"If podman was previously used with a different driver, run: "
-                f"rm -rf {podman_dir / 'storage'} {podman_dir / 'runroot'}"
-            )
-            raise TimeoutError(
-                f"Podman service entered {info.statename} (socket_exists={socket_path.exists()}). {hint}"
-            )
-
-        await asyncio.sleep(0.1)
-
-
-def _log_podman_failure(info: ProcessInfo) -> None:
-    """Log diagnostic info for a failed podman service."""
-    logger.error("Podman service failed: %s", info.model_dump())
-    for logfile_attr in ("stdout_logfile", "stderr_logfile"):
-        logfile = getattr(info, logfile_attr, None)
-        if logfile:
-            logpath = Path(logfile)
-            if logpath.exists():
-                content = logpath.read_text()
-                if content.strip():
-                    logger.error("Podman %s:\n%s", logfile_attr, content)

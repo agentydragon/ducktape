@@ -32,6 +32,7 @@ from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import ProcessState, SupervisorClient
+from tools.claude_hooks.supervisor.service_utils import log_service_failure, wait_for_service_socket
 
 logger = logging.getLogger(__name__)
 
@@ -187,48 +188,12 @@ async def start_docker_service(
 
     # Wait for socket to be ready
     async with asyncio.timeout(10):
-        await _wait_for_socket(supervisor)
+        await wait_for_service_socket(
+            supervisor=supervisor,
+            service_name=DOCKER_SERVICE,
+            socket_path=DEFAULT_SOCKET_PATH,
+            on_failure=lambda info: log_service_failure("Docker", info),
+        )
 
     logger.info("Docker service ready at %s", socket_url)
     return {"DOCKER_HOST": socket_url}
-
-
-async def _wait_for_socket(supervisor: SupervisorClient) -> None:
-    """Wait for Docker socket to be created and service to be running.
-
-    Caller should wrap with asyncio.timeout() to set deadline.
-    """
-    while True:
-        info = await supervisor.get_process_info(DOCKER_SERVICE)
-
-        if DEFAULT_SOCKET_PATH.exists() and info.statename == ProcessState.RUNNING:
-            return
-
-        # Terminal failure states — no point waiting
-        if info.statename in (ProcessState.FATAL, ProcessState.BACKOFF, ProcessState.EXITED):
-            _log_docker_failure(info)
-            raise TimeoutError(
-                f"Docker service entered {info.statename} (socket_exists={DEFAULT_SOCKET_PATH.exists()}). "
-                f"Check logs for details."
-            )
-
-        await asyncio.sleep(0.1)
-
-
-def _log_docker_failure(info) -> None:
-    """Log diagnostic info for a failed dockerd service."""
-    logger.error("Docker service failed: %s", info.model_dump())
-
-    if info.stdout_logfile:
-        logpath = Path(info.stdout_logfile)
-        if logpath.exists():
-            content = logpath.read_text()
-            if content.strip():
-                logger.error("Docker stdout:\n%s", content)
-
-    if info.stderr_logfile:
-        logpath = Path(info.stderr_logfile)
-        if logpath.exists():
-            content = logpath.read_text()
-            if content.strip():
-                logger.error("Docker stderr:\n%s", content)
