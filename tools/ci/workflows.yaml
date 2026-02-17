@@ -39,6 +39,23 @@ workflows:
   props-backend-image:
     trigger: { kind: bazel_query, query: "$targets intersect set(//props/backend:image)" }
 
+  props-agents-image:
+    trigger:
+      kind: bazel_query
+      query: >-
+        $targets intersect set(
+          //props/agents/critic:image
+          //props/agents/grader:image
+          //props/agents/critic_dev/improve:image
+          //props/agents/critic_dev/optimize:image
+          //props/agents/critic/variants:contract_truthfulness
+          //props/agents/critic/variants:dead_code
+          //props/agents/critic/variants:flag_propagation
+          //props/agents/critic/variants:high_recall
+          //props/agents/critic/variants:verbose_docs
+        )
+    secrets: [BUILDBUDDY_API_KEY]
+
   # Path-based workflows (non-Bazel)
   nix-flake-check:
     trigger: { kind: path, pattern: "^nix/" }

@@ -1,0 +1,110 @@
+# Build and push all props agent container images to the props registry.
+#
+# Uses Bazel to build each OCI image, loads into Docker, then pushes to the
+# user-configured props registry (not GHCR).
+#
+# Required GitHub secrets:
+#   PROPS_REGISTRY_URL      - Registry host, e.g. "props.example.com:8000"
+#   PROPS_REGISTRY_USERNAME - Registry username (PostgreSQL role)
+#   PROPS_REGISTRY_PASSWORD - Registry password
+#
+# Agent images pushed:
+#   critic:latest, critic:{sha}
+#   critic:{variant}, critic:{variant}-{sha}  (5 variants)
+#   grader:latest, grader:{sha}
+#   critic_dev_improve:latest, critic_dev_improve:{sha}
+#   critic_dev_optimize:latest, critic_dev_optimize:{sha}
+#
+# Triggers:
+#   - workflow_call (from ci.yml): when agent image targets are affected
+#   - workflow_dispatch: manual push of all agents
+name: Props Agent Images
+
+on:
+  workflow_call:
+    inputs:
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache (optional)"
+        required: false
+      PROPS_REGISTRY_URL:
+        description: "Props registry host (e.g. props.example.com:8000)"
+        required: true
+      PROPS_REGISTRY_USERNAME:
+        description: "Props registry username"
+        required: true
+      PROPS_REGISTRY_PASSWORD:
+        description: "Props registry password"
+        required: true
+  workflow_dispatch:
+
+concurrency:
+  # Hardcoded name avoids deadlock when called via workflow_call
+  # (${{ github.workflow }} resolves to caller's name)
+  group: props-agents-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Login to Props Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.PROPS_REGISTRY_URL }}
+          username: ${{ secrets.PROPS_REGISTRY_USERNAME }}
+          password: ${{ secrets.PROPS_REGISTRY_PASSWORD }}
+
+      - name: Build and load images
+        run: |
+          bazel run //props/agents/critic:load
+          bazel run //props/agents/grader:load
+          bazel run //props/agents/critic_dev/improve:load
+          bazel run //props/agents/critic_dev/optimize:load
+          bazel run //props/agents/critic/variants:contract_truthfulness_load
+          bazel run //props/agents/critic/variants:dead_code_load
+          bazel run //props/agents/critic/variants:flag_propagation_load
+          bazel run //props/agents/critic/variants:high_recall_load
+          bazel run //props/agents/critic/variants:verbose_docs_load
+
+      - name: Tag and push images
+        env:
+          REGISTRY: ${{ secrets.PROPS_REGISTRY_URL }}
+          SHA: ${{ github.sha }}
+        run: |
+          push() {
+            local local_tag="$1" remote_repo="$2" remote_tag="$3"
+            docker tag "$local_tag" "$REGISTRY/$remote_repo:$remote_tag"
+            docker push "$REGISTRY/$remote_repo:$remote_tag"
+          }
+
+          push critic:latest critic latest
+          push critic:latest critic "$SHA"
+
+          push grader:latest grader latest
+          push grader:latest grader "$SHA"
+
+          push critic_dev_improve:latest critic_dev_improve latest
+          push critic_dev_improve:latest critic_dev_improve "$SHA"
+
+          push critic_dev_optimize:latest critic_dev_optimize latest
+          push critic_dev_optimize:latest critic_dev_optimize "$SHA"
+
+          for variant in contract_truthfulness dead_code flag_propagation high_recall verbose_docs; do
+            push "critic:$variant" critic "$variant"
+            push "critic:$variant" critic "${variant}-${SHA}"
+          done

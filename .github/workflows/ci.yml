@@ -117,6 +117,15 @@ jobs:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-backend-image')
     uses: ./.github/workflows/props-backend-image.yml
+  props-agents-image:
+    needs:
+      - compute-targets
+      - rbe-image
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-agents-image')
+    uses: ./.github/workflows/props-agents-image.yml
+    with:
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+    secrets: inherit
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')
