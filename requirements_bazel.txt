@@ -3073,6 +3073,7 @@ opentelemetry-api==1.39.1 \
     --hash=sha256:2edd8463432a7f8443edce90972169b195e7d6a05500cd29e6d13898187c9950 \
     --hash=sha256:fbde8c80e1b937a2c61f20347e91c0c18a1940cecf012d62e65a7caf08967c9c
     # via
+    #   ducktape (pyproject.toml)
     #   opentelemetry-exporter-prometheus
     #   opentelemetry-instrumentation
     #   opentelemetry-sdk
@@ -3089,7 +3090,9 @@ opentelemetry-instrumentation==0.60b1 \
 opentelemetry-sdk==1.39.1 \
     --hash=sha256:4d5482c478513ecb0a5d938dcc61394e647066e0cc2676bee9f3af3f3f45f01c \
     --hash=sha256:cf4d4563caf7bff906c9f7967e2be22d0d6b349b908be0d90fb21c8e9c995cc6
-    # via opentelemetry-exporter-prometheus
+    # via
+    #   ducktape (pyproject.toml)
+    #   opentelemetry-exporter-prometheus
 opentelemetry-semantic-conventions==0.60b1 \
     --hash=sha256:87c228b5a0669b748c76d76df6c364c369c28f1c465e50f661e39737e84bc953 \
     --hash=sha256:9fa8c8b0c110da289809292b0591220d3a7b53c1526a23021e977d68597893fb

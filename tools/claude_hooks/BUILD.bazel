@@ -61,6 +61,17 @@ py_library(
 )
 
 py_library(
+    name = "tracing",
+    srcs = ["tracing.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
     name = "proxy_credentials",
     srcs = ["proxy_credentials.py"],
     imports = ["../.."],
@@ -267,10 +278,12 @@ py_library(
         ":secrets_setup",
         ":settings",
         ":tmpfs_setup",
+        ":tracing",
         "//env_utils",
         "//tools:build_info",
         "//tools/claude_hooks/supervisor:setup",
         "@pypi//mako",
+        "@pypi//opentelemetry_api",
         "@pypi//pydantic",
     ],
 )
@@ -330,6 +343,7 @@ py_package(
         ":settings",
         ":streaming",
         ":tmpfs_setup",
+        ":tracing",
         "//bazel_util:subprocess",
         "//net_util:net",
         "//tools/claude_hooks/auth_proxy:main",
@@ -350,6 +364,8 @@ py_wheel(
         "cryptography",
         "httpx",
         "mako",
+        "opentelemetry-api",
+        "opentelemetry-sdk",
         "platformdirs",
         "pydantic",
         "pydantic-settings",

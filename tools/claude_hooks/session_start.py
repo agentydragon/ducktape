@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Literal
 
 from mako.template import Template
+from opentelemetry import trace
 from pydantic import BaseModel
 
 from env_utils import env_utils
@@ -46,6 +47,7 @@ from tools.claude_hooks.errors import SkipError
 from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
 from tools.claude_hooks.supervisor import setup as supervisor_setup
+from tools.claude_hooks.tracing import init_tracing, shutdown_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -154,40 +156,48 @@ async def run_cli_mode(hook_input: HookInput, settings: HookSettings) -> None:
     wrapper on PATH and direnv eval for .envrc propagation.
     """
     _collector, log_file = setup_logging(settings, print_banner=False)
+    tracer, trace_file = init_tracing(hook_input.session_id, settings.get_cache_dir())
 
-    logger.info("Session start hook (CLI mode)")
-    logger.info("Hook input: %s", hook_input.model_dump_json())
-    log_entrypoint_debug("session_start")
+    with tracer.start_as_current_span(
+        "session_start_cli", attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source}
+    ):
+        logger.info("Session start hook (CLI mode)")
+        logger.info("Hook input: %s", hook_input.model_dump_json())
+        log_entrypoint_debug("session_start")
 
-    env_file_path = os.environ.get("CLAUDE_ENV_FILE")
-    if not env_file_path:
-        logger.warning("CLAUDE_ENV_FILE not available")
-        return
+        env_file_path = os.environ.get("CLAUDE_ENV_FILE")
+        if not env_file_path:
+            logger.warning("CLAUDE_ENV_FILE not available")
+            shutdown_tracing()
+            return
 
-    session_dir = settings.get_session_dir(Path(env_file_path))
+        session_dir = settings.get_session_dir(Path(env_file_path))
 
-    # Render per-session bazelrc (quiet mode, no proxy)
-    session_bazelrc = _render_session_bazelrc(
-        session_dir,
-        web_proxy=False,
-        proxy_port=None,
-        truststore_path=None,
-        truststore_password=None,
-        local_proxy=None,
-        combined_ca_path=None,
-        local_registry_path=None,
-        buildbuddy_configured=False,
-    )
+        with tracer.start_as_current_span("render_bazelrc"):
+            session_bazelrc = _render_session_bazelrc(
+                session_dir,
+                web_proxy=False,
+                proxy_port=None,
+                truststore_path=None,
+                truststore_password=None,
+                local_proxy=None,
+                combined_ca_path=None,
+                local_registry_path=None,
+                buildbuddy_configured=False,
+            )
 
-    # Set up session bin dir with bazel wrappers
-    bin_dir = _get_session_bin_dir(session_dir)
-    bazelisk_setup.install_wrapper(settings, wrapper_dir=bin_dir)
+        with tracer.start_as_current_span("install_bazel_wrappers"):
+            bin_dir = _get_session_bin_dir(session_dir)
+            bazelisk_setup.install_wrapper(settings, wrapper_dir=bin_dir)
 
-    # Write env file: puts bin dir on PATH, sets SESSION_BAZELRC, evals direnv
-    env_file.write_cli_env_file(Path(env_file_path), wrapper_dir=bin_dir, session_bazelrc=session_bazelrc)
+        with tracer.start_as_current_span("write_env_file"):
+            env_file.write_cli_env_file(Path(env_file_path), wrapper_dir=bin_dir, session_bazelrc=session_bazelrc)
 
-    logger.info("CLI session configured: %s", session_dir)
-    print(f"Claude Code CLI session configured (log: {log_file})")
+        logger.info("CLI session configured: %s", session_dir)
+        print(f"Claude Code CLI session configured (log: {log_file})")
+
+    shutdown_tracing()
+    logger.info("Trace file: %s", trace_file)
 
 
 # ============================================================================
@@ -390,6 +400,11 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     variables.
     """
     collector, log_file = setup_logging(settings)
+    tracer, trace_file = init_tracing(hook_input.session_id, settings.get_cache_dir())
+    root_span = tracer.start_span(
+        "session_start_web", attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source}
+    )
+    root_ctx = trace.set_span_in_context(root_span)
 
     logger.info("Session start hook")
     logger.info("Hook: %s", __file__)
@@ -410,11 +425,23 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     session_dir = settings.get_session_dir(env_file_path)
     logger.info("Session directory: %s", session_dir)
 
+    # --- Traced async helpers ---
+    # Each helper creates its own child span under root_ctx so the parallel
+    # tasks all show up as direct children of the root span.
+
+    async def traced_supervisor_start():
+        with tracer.start_as_current_span("supervisor_start", context=root_ctx):
+            return await supervisor_setup.start(settings)
+
+    async def traced_tmpfs_mount():
+        with tracer.start_as_current_span("tmpfs_mount", context=root_ctx):
+            return await run_in_thread(tmpfs_setup.ensure_tmpfs_mounted)
+
     # Start supervisor (required by proxy and podman)
-    supervisor_task = asyncio.create_task(supervisor_setup.start(settings))
+    supervisor_task = asyncio.create_task(traced_supervisor_start())
 
     # Mount tmpfs (required by podman overlay and Bazel cache)
-    tmpfs_mount_task = asyncio.create_task(run_in_thread(tmpfs_setup.ensure_tmpfs_mounted))
+    tmpfs_mount_task = asyncio.create_task(traced_tmpfs_mount())
 
     # Wrappers that depend on supervisor being ready
     # TODO: Handle upstream dependency failures more gracefully.
@@ -424,21 +451,23 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # of re-raising, so only the original upstream error surfaces once.
     async def setup_proxy_with_supervisor(*, buildbuddy_configured: bool = False) -> proxy_setup.ProxySetup:
         """Set up auth proxy (depends on supervisor)."""
-        supervisor_result = await supervisor_task
-        return await proxy_setup.setup_auth_proxy(
-            settings, supervisor_result.client, buildbuddy_configured=buildbuddy_configured
-        )
+        with tracer.start_as_current_span("setup_proxy", context=root_ctx):
+            supervisor_result = await supervisor_task
+            return await proxy_setup.setup_auth_proxy(
+                settings, supervisor_result.client, buildbuddy_configured=buildbuddy_configured
+            )
 
     async def setup_podman_with_deps() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor + tmpfs mount)."""
-        supervisor_result = await supervisor_task
-        # tmpfs failure is non-fatal — podman falls back to VFS on 9p
-        try:
-            tmpfs_root = await tmpfs_mount_task
-        except Exception as e:
-            logger.warning("tmpfs mount failed, podman will use VFS on 9p: %s", e)
-            tmpfs_root = None
-        return await podman_service.setup_podman(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
+        with tracer.start_as_current_span("setup_podman", context=root_ctx):
+            supervisor_result = await supervisor_task
+            # tmpfs failure is non-fatal — podman falls back to VFS on 9p
+            try:
+                tmpfs_root = await tmpfs_mount_task
+            except Exception as e:
+                logger.warning("tmpfs mount failed, podman will use VFS on 9p: %s", e)
+                tmpfs_root = None
+            return await podman_service.setup_podman(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
 
     async def setup_docker_with_deps() -> docker_service.DockerSetup:
         """Set up Docker (depends on supervisor + tmpfs mount)."""
@@ -461,8 +490,9 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     async def setup_bazel_on_tmpfs() -> tmpfs_setup.TmpfsSetup:
         """Set up Bazel cache on tmpfs (depends on tmpfs mount)."""
-        tmpfs_root = await tmpfs_mount_task
-        return tmpfs_setup.setup_bazel_cache(tmpfs_root)
+        with tracer.start_as_current_span("setup_bazel_tmpfs", context=root_ctx):
+            tmpfs_root = await tmpfs_mount_task
+            return tmpfs_setup.setup_bazel_cache(tmpfs_root)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper as separate tasks.
@@ -470,33 +500,37 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         Always installs the wrapper. Optionally downloads bazelisk unless
         DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK is False.
         """
-        wrapper_path = bazelisk_setup.install_wrapper(settings)
-        skipped = not settings.install_bazelisk
-        if not skipped:
-            bazelisk_setup.install_bazelisk(settings)
-        else:
-            logger.info("Skipping bazelisk download (install_bazelisk=False)")
-        return bazelisk_setup.BazeliskSetup(
-            bazelisk_path=settings.get_bazelisk_path(),
-            wrapper_path=wrapper_path,
-            settings=settings,
-            bazelisk_skipped=skipped,
-        )
+        with tracer.start_as_current_span("install_bazelisk", context=root_ctx):
+            wrapper_path = bazelisk_setup.install_wrapper(settings)
+            skipped = not settings.install_bazelisk
+            if not skipped:
+                bazelisk_setup.install_bazelisk(settings)
+            else:
+                logger.info("Skipping bazelisk download (install_bazelisk=False)")
+            return bazelisk_setup.BazeliskSetup(
+                bazelisk_path=settings.get_bazelisk_path(),
+                wrapper_path=wrapper_path,
+                settings=settings,
+                bazelisk_skipped=skipped,
+            )
 
     # Decrypt age-encrypted secrets from .claude_hooks/secrets/ in the repo checkout.
-    secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
-    secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
+    with tracer.start_as_current_span("setup_secrets", context=root_ctx):
+        secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
+        secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
 
     # Setup kubeconfig if KUBECONFIG_B64 is in decrypted secrets
     if secrets and "KUBECONFIG_B64" in secrets.env_vars:
-        kubeconfig_setup.setup_kubeconfig(cache_dir=settings.get_cache_dir(), env_vars=secrets.env_vars)
+        with tracer.start_as_current_span("setup_kubeconfig", context=root_ctx):
+            kubeconfig_setup.setup_kubeconfig(cache_dir=settings.get_cache_dir(), env_vars=secrets.env_vars)
 
     # Run BuildBuddy setup first so we know if RBE is available
-    buildbuddy_result = await run_in_thread(
-        lambda: buildbuddy_setup.setup_buildbuddy(
-            project_dir, api_key=secrets.env_vars.get("BUILDBUDDY_API_KEY") if secrets else None
+    with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
+        buildbuddy_result = await run_in_thread(
+            lambda: buildbuddy_setup.setup_buildbuddy(
+                project_dir, api_key=secrets.env_vars.get("BUILDBUDDY_API_KEY") if secrets else None
+            )
         )
-    )
     buildbuddy_configured = (
         isinstance(buildbuddy_result, buildbuddy_setup.BuildbuddySetup) and buildbuddy_result.configured
     )
@@ -513,21 +547,34 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     async def setup_mkcert_with_proxy() -> mkcert_setup.MkcertSetup:
         """Set up mkcert (depends on proxy for the combined CA bundle)."""
-        if not settings.install_mkcert:
-            raise SkipError("mkcert disabled (install_mkcert=False)")
-        await proxy_task
-        combined_ca = settings.get_auth_proxy_combined_ca()
-        return mkcert_setup.setup_mkcert(settings, combined_ca if combined_ca.exists() else None)
+        with tracer.start_as_current_span("setup_mkcert", context=root_ctx):
+            if not settings.install_mkcert:
+                raise SkipError("mkcert disabled (install_mkcert=False)")
+            await proxy_task
+            combined_ca = settings.get_auth_proxy_combined_ca()
+            return mkcert_setup.setup_mkcert(settings, combined_ca if combined_ca.exists() else None)
+
+    async def traced_precommit():
+        with tracer.start_as_current_span("install_precommit", context=root_ctx):
+            return await run_in_thread(precommit_setup.install_precommit, project_dir)
+
+    async def traced_nix():
+        with tracer.start_as_current_span("install_nix", context=root_ctx):
+            return await run_in_thread(nix_setup.install_nix, settings)
+
+    async def traced_cli_tools():
+        with tracer.start_as_current_span("install_cli_tools", context=root_ctx):
+            return await run_in_thread(cli_tools_setup.install_cli_tools, settings.get_wrapper_dir())
 
     results = await asyncio.gather(
         proxy_task,
         setup_container_runtime(),
-        run_in_thread(precommit_setup.install_precommit, project_dir),
-        run_in_thread(nix_setup.install_nix, settings),
+        traced_precommit(),
+        traced_nix(),
         run_in_thread(install_bazelisk_wrapper),
         setup_bazel_on_tmpfs(),
         setup_mkcert_with_proxy(),
-        run_in_thread(cli_tools_setup.install_cli_tools, settings.get_wrapper_dir()),
+        traced_cli_tools(),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
@@ -591,24 +638,25 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
     # Render session bazelrc (unified for web mode with proxy configuration)
-    truststore = settings.get_auth_proxy_truststore()
-    proxy_port = settings.get_auth_proxy_port()
-    local_proxy = f"http://localhost:{proxy_port}"
-    local_registry = _get_local_registry_path()
-    if local_registry:
-        logger.info("Found local registry at %s (patched ape for native ELF)", local_registry)
+    with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
+        truststore = settings.get_auth_proxy_truststore()
+        proxy_port = settings.get_auth_proxy_port()
+        local_proxy = f"http://localhost:{proxy_port}"
+        local_registry = _get_local_registry_path()
+        if local_registry:
+            logger.info("Found local registry at %s (patched ape for native ELF)", local_registry)
 
-    session_bazelrc = _render_session_bazelrc(
-        session_dir,
-        web_proxy=True,
-        proxy_port=proxy_port,
-        truststore_path=truststore,
-        truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
-        local_proxy=local_proxy,
-        combined_ca_path=combined_ca,
-        local_registry_path=local_registry,
-        buildbuddy_configured=buildbuddy_configured,
-    )
+        session_bazelrc = _render_session_bazelrc(
+            session_dir,
+            web_proxy=True,
+            proxy_port=proxy_port,
+            truststore_path=truststore,
+            truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
+            local_proxy=local_proxy,
+            combined_ca_path=combined_ca,
+            local_registry_path=local_registry,
+            buildbuddy_configured=buildbuddy_configured,
+        )
 
     nix_paths = nix.paths if isinstance(nix, nix_setup.NixSetup) else []
 
@@ -648,7 +696,8 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     )
 
     # Write environment file ONCE
-    env_file.write_env_file(env_file_path, env_vars)
+    with tracer.start_as_current_span("write_env_file", context=root_ctx):
+        env_file.write_env_file(env_file_path, env_vars)
     logger.info("Wrote environment to %s", env_file_path)
 
     # Emit status to log
@@ -674,17 +723,22 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         elif isinstance(container, podman_service.PodmanSetup):
             podman_setup = container
 
-    emit_session_context(
-        collector=collector,
-        log_file=log_file,
-        project_dir=project_dir,
-        auth_proxy=auth_proxy,
-        docker=docker_setup,
-        podman=podman_setup,
-        precommit=None if isinstance(precommit, BaseException) else precommit,
-        secrets=secrets,
-        mkcert=None if isinstance(mkcert, BaseException) else mkcert,
-    )
+    with tracer.start_as_current_span("emit_session_context", context=root_ctx):
+        emit_session_context(
+            collector=collector,
+            log_file=log_file,
+            project_dir=project_dir,
+            auth_proxy=auth_proxy,
+            docker=docker_setup,
+            podman=podman_setup,
+            precommit=None if isinstance(precommit, BaseException) else precommit,
+            secrets=secrets,
+            mkcert=None if isinstance(mkcert, BaseException) else mkcert,
+        )
+
+    root_span.end()
+    shutdown_tracing()
+    logger.info("Trace file: %s", trace_file)
 
 
 async def async_main() -> None:
