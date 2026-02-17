@@ -163,3 +163,11 @@ class HookSettings(BaseSettings):
     def get_wrapper_path(self) -> Path:
         """Get the wrapper script path."""
         return self.get_wrapper_dir() / "bazel"
+
+    def get_session_dir(self, env_file_path: Path) -> Path:
+        """Get session directory from CLAUDE_ENV_FILE path.
+
+        Both web and CLI modes use the parent directory of CLAUDE_ENV_FILE as the session directory.
+        Session-specific files (bazelrc, bin wrappers) are stored here.
+        """
+        return env_file_path.parent

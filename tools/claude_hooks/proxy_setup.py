@@ -3,8 +3,8 @@
 Handles:
 - Loading the Anthropic TLS inspection CA certificate from the filesystem
 - Creating a Java truststore with the CA for Bazel
+- Creating combined CA bundle for SSL tools
 - Starting the local auth proxy
-- Writing bazelrc configuration
 """
 
 from __future__ import annotations
@@ -18,14 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
-from mako.template import Template
 
 from bazel_util.subprocess import python_env
 from net_util.net import async_wait_for_port, is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
-from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.proxy_vars import get_upstream_proxy_url
-from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
+from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import SupervisorClient
 
 logger = logging.getLogger(__name__)
@@ -331,75 +329,6 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
     logger.info("Auth proxy running successfully")
 
 
-def _get_local_registry_path() -> Path | None:
-    """Get local registry path if it exists in the project directory."""
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
-    if not project_dir:
-        return None
-    local_registry = Path(project_dir) / "tools" / "local_registry"
-    if local_registry.exists() and (local_registry / "bazel_registry.json").exists():
-        return local_registry
-    return None
-
-
-def _write_bazel_config(settings: HookSettings, *, buildbuddy_configured: bool) -> None:
-    """Write Bazel config for auth proxy integration.
-
-    Writes to two locations:
-    1. The auth-proxy bazelrc (always written, used by --bazelrc= in wrapper)
-    2. ~/.bazelrc (only if it doesn't already exist, so non-wrapper bazel
-       invocations also pick up proxy config)
-
-    Args:
-        settings: Hook settings
-        buildbuddy_configured: Whether BuildBuddy RBE was successfully configured
-            (passed from session_start after buildbuddy_setup completes)
-    """
-    truststore = settings.get_auth_proxy_truststore()
-    combined_ca = settings.get_auth_proxy_combined_ca()
-    proxy_rc = settings.get_auth_proxy_rc()
-    proxy_port = settings.get_auth_proxy_port()
-
-    if not truststore.exists():
-        logger.warning("No truststore, skipping bazelrc")
-        return
-
-    local_proxy = f"http://localhost:{proxy_port}"
-
-    # Check for local registry (contains patched ape module for native ELF support)
-    local_registry = _get_local_registry_path()
-    if local_registry:
-        logger.info("Found local registry at %s (patched ape for native ELF)", local_registry)
-
-    # Combined CA bundle must exist at this point (created by _create_combined_ca_bundle)
-    if not combined_ca.exists():
-        raise CaBundleError("Combined CA bundle not found - setup incomplete")
-
-    # Render bazelrc from template
-    template = Template(CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"])
-    result: str = template.render(
-        web_proxy=True,
-        proxy_port=proxy_port,
-        truststore_path=truststore,
-        truststore_password=TRUSTSTORE_PASSWORD,
-        local_proxy=local_proxy,
-        combined_ca_path=combined_ca,
-        local_registry_path=local_registry,
-        buildbuddy_configured=buildbuddy_configured,
-    )
-    write_config(proxy_rc, result, "proxy bazelrc")
-
-    # TODO(unify-web-cli): Remove this ~/.bazelrc write once all bazel invocations
-    # go through the wrapper (which injects --bazelrc= from SESSION_BAZELRC).
-    user_bazelrc = Path.home() / ".bazelrc"
-    if not user_bazelrc.exists():
-        header = "# Written by tools/claude_hooks session_start hook.\n# Delete this file to force regeneration.\n"
-        user_bazelrc.write_text(header + result)
-        logger.info("Wrote proxy bazelrc to %s", user_bazelrc)
-    else:
-        logger.debug("Skipping ~/.bazelrc (already exists)")
-
-
 def _create_combined_ca_bundle(settings: HookSettings) -> None:
     """Create a combined CA bundle with system CAs plus the proxy CA.
 
@@ -453,7 +382,6 @@ async def setup_auth_proxy(
     2. Extract the TLS inspection CA (via auth proxy)
     3. Create Java truststore with the CA
     4. Create combined CA bundle for SSL tools
-    5. Write bazelrc configuration to use the proxy
     """
     port = settings.get_auth_proxy_port()
     combined_ca = settings.get_auth_proxy_combined_ca()
@@ -478,9 +406,6 @@ async def setup_auth_proxy(
 
     # Step 4: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(settings)
-
-    # Step 5: Write bazelrc configuration with BuildBuddy state
-    _write_bazel_config(settings, buildbuddy_configured=buildbuddy_configured)
 
     status = await _snapshot_proxy_status(settings, supervisor, port)
     ca_status = "custom CA" if combined_ca.exists() else "system"

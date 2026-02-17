@@ -24,7 +24,6 @@ from typing import Literal
 from mako.template import Template
 from pydantic import BaseModel
 
-from bazel_util.subprocess import write_shell_wrapper
 from env_utils import env_utils
 from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import (
@@ -86,15 +85,49 @@ class HookInput(BaseModel):
 # ============================================================================
 
 
-def _render_session_bazelrc(session_dir: Path, **template_vars: object) -> Path:
+def _get_local_registry_path() -> Path | None:
+    """Get local registry path if it exists in the project directory.
+
+    Used by bazelrc rendering to configure local registry with patched ape module.
+    """
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    if not project_dir:
+        return None
+    local_registry = Path(project_dir) / "tools" / "local_registry"
+    if local_registry.exists() and (local_registry / "bazel_registry.json").exists():
+        return local_registry
+    return None
+
+
+def _render_session_bazelrc(
+    session_dir: Path,
+    *,
+    web_proxy: bool,
+    proxy_port: int | None,
+    truststore_path: Path | None,
+    truststore_password: str | None,
+    local_proxy: str | None,
+    combined_ca_path: Path | None,
+    local_registry_path: Path | None,
+    buildbuddy_configured: bool,
+) -> Path:
     """Render bazelrc.mako template to session_dir/bazelrc.
 
-    Both modes use the same template with different variables:
-    - CLI: web_proxy=False
-    - Web: web_proxy=True, proxy_port=..., etc.
+    Unified rendering engine for both modes:
+    - CLI mode: web_proxy=False, all optional params are None
+    - Web mode: web_proxy=True with proxy configuration parameters
     """
     template = Template(CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"])
-    result: str = template.render(**template_vars)
+    result: str = template.render(
+        web_proxy=web_proxy,
+        proxy_port=proxy_port,
+        truststore_path=truststore_path,
+        truststore_password=truststore_password,
+        local_proxy=local_proxy,
+        combined_ca_path=combined_ca_path,
+        local_registry_path=local_registry_path,
+        buildbuddy_configured=buildbuddy_configured,
+    )
     bazelrc_path = session_dir / "bazelrc"
     write_config(bazelrc_path, result, "session bazelrc")
     return bazelrc_path
@@ -105,31 +138,6 @@ def _get_session_bin_dir(session_dir: Path) -> Path:
     bin_dir = session_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     return bin_dir
-
-
-def _install_bazel_wrappers(bin_dir: Path) -> None:
-    """Install bazel/bazelisk wrapper scripts into the session bin directory.
-
-    Creates bin/bazel (shell wrapper → bazel_wrapper.py) and bin/bazelisk
-    (symlink → bin/bazel). The shell wrapper exports _BAZEL_WRAPPER_NAME
-    and _BAZEL_WRAPPER_DIR so the Python module can route to the correct
-    binary and skip its own directory when searching PATH.
-    """
-
-    extra_lines = (
-        'export _BAZEL_WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"\nexport _BAZEL_WRAPPER_NAME="$(basename "$0")"'
-    )
-
-    bazel_path = bin_dir / "bazel"
-    write_shell_wrapper(bazel_path, "tools.claude_hooks.bazel_wrapper", extra_lines=extra_lines)
-
-    # Create bazelisk symlink so both names route through the wrapper
-    bazelisk_path = bin_dir / "bazelisk"
-    if bazelisk_path.exists() or bazelisk_path.is_symlink():
-        bazelisk_path.unlink()
-    bazelisk_path.symlink_to(bazel_path)
-
-    logger.info("Installed bazel wrappers in %s", bin_dir)
 
 
 # ============================================================================
@@ -155,14 +163,24 @@ async def run_cli_mode(hook_input: HookInput, settings: HookSettings) -> None:
         logger.warning("CLAUDE_ENV_FILE not available")
         return
 
-    session_dir = Path(env_file_path).parent
+    session_dir = settings.get_session_dir(Path(env_file_path))
 
-    # Render per-session bazelrc (quiet mode)
-    session_bazelrc = _render_session_bazelrc(session_dir, web_proxy=False)
+    # Render per-session bazelrc (quiet mode, no proxy)
+    session_bazelrc = _render_session_bazelrc(
+        session_dir,
+        web_proxy=False,
+        proxy_port=None,
+        truststore_path=None,
+        truststore_password=None,
+        local_proxy=None,
+        combined_ca_path=None,
+        local_registry_path=None,
+        buildbuddy_configured=False,
+    )
 
     # Set up session bin dir with bazel wrappers
     bin_dir = _get_session_bin_dir(session_dir)
-    _install_bazel_wrappers(bin_dir)
+    bazelisk_setup.install_wrapper(settings, wrapper_dir=bin_dir)
 
     # Write env file: puts bin dir on PATH, sets SESSION_BAZELRC, evals direnv
     env_file.write_cli_env_file(Path(env_file_path), wrapper_dir=bin_dir, session_bazelrc=session_bazelrc)
@@ -385,6 +403,10 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     project_dir = env_utils.get_required_env_path("CLAUDE_PROJECT_DIR")
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
 
+    # Session directory (unified for both web and CLI modes)
+    session_dir = settings.get_session_dir(env_file_path)
+    logger.info("Session directory: %s", session_dir)
+
     # Start supervisor (required by proxy and podman)
     supervisor_task = asyncio.create_task(supervisor_setup.start(settings))
 
@@ -547,6 +569,26 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     if not combined_ca.exists():
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
+    # Render session bazelrc (unified for web mode with proxy configuration)
+    truststore = settings.get_auth_proxy_truststore()
+    proxy_port = settings.get_auth_proxy_port()
+    local_proxy = f"http://localhost:{proxy_port}"
+    local_registry = _get_local_registry_path()
+    if local_registry:
+        logger.info("Found local registry at %s (patched ape for native ELF)", local_registry)
+
+    session_bazelrc = _render_session_bazelrc(
+        session_dir,
+        web_proxy=True,
+        proxy_port=proxy_port,
+        truststore_path=truststore,
+        truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
+        local_proxy=local_proxy,
+        combined_ca_path=combined_ca,
+        local_registry_path=local_registry,
+        buildbuddy_configured=buildbuddy_configured,
+    )
+
     nix_paths = nix.paths if isinstance(nix, nix_setup.NixSetup) else []
 
     # Determine bazelisk_path: use system_bazel if install_bazelisk=False, otherwise downloaded bazelisk
@@ -575,7 +617,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         combined_ca=combined_ca,
         bazel_wrapper_dir=settings.get_wrapper_dir(),
         bazelisk_path=bazelisk_path,
-        session_bazelrc=settings.get_auth_proxy_rc(),
+        session_bazelrc=session_bazelrc,
         nix_paths=nix_paths,
         docker_host=docker_host,
         podman_env=podman_env,

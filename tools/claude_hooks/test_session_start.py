@@ -316,9 +316,12 @@ class TestFullSessionStartHook:
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
 
         # Verify key artifacts created
-        # platformdirs respects XDG_CACHE_HOME
+        # Session bazelrc is now in session directory (parent of env_file)
+        session_dir = isolated_dirs.env_file.parent
+        assert (session_dir / "bazelrc").exists(), "bazelrc not created in session directory"
+
+        # Auth proxy artifacts in cache directory
         auth_proxy_dir = isolated_dirs.cache / "claude-hooks" / "auth-proxy"
-        assert (auth_proxy_dir / "bazelrc").exists(), "bazelrc not created"
         assert (auth_proxy_dir / "anthropic_ca.pem").exists(), "CA not extracted"
 
         # Verify supervisor started

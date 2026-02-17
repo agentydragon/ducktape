@@ -112,20 +112,24 @@ _WRAPPER_EXTRA_LINES = (
 )
 
 
-def install_wrapper(settings: HookSettings) -> Path:
+def install_wrapper(settings: HookSettings, *, wrapper_dir: Path | None = None) -> Path:
     """Install wrapper script that sets proxy env vars before calling bazelisk.
 
-    The wrapper is in ~/.cache/claude-hooks/auth-proxy/bin/bazel and calls the real
-    bazelisk at ~/.cache/claude-hooks/auth-proxy/bazelisk.
-    Also creates a bazelisk symlink for pre-commit hooks.
+    The wrapper is in ~/.cache/claude-hooks/auth-proxy/bin/bazel (web mode) or a
+    session-specific bin directory (CLI mode). Also creates a bazelisk symlink.
 
     The wrapper reads configuration from environment variables (set via get_env_script).
     It exports _BAZEL_WRAPPER_NAME and _BAZEL_WRAPPER_DIR so the Python module
     can route to the correct binary (bazel vs bazelisk) and skip its own directory
     when searching PATH.
+
+    Args:
+        settings: Hook settings
+        wrapper_dir: Optional directory for wrappers (defaults to settings.get_wrapper_dir())
     """
-    wrapper_dir = settings.get_wrapper_dir()
-    wrapper_path = settings.get_wrapper_path()
+    if wrapper_dir is None:
+        wrapper_dir = settings.get_wrapper_dir()
+    wrapper_path = wrapper_dir / "bazel"
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
