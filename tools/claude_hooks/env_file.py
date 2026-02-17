@@ -6,13 +6,12 @@ Centralizes all environment variable exports into a single file write.
 from __future__ import annotations
 
 import os
-import shlex
 import shutil
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from bazel_util.subprocess import exports_from_dict
 from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from tools.claude_hooks.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
@@ -48,15 +47,6 @@ def _strip_no_proxy_google() -> dict[str, str] | None:
 
     cleaned = ",".join(filtered)
     return {"NO_PROXY": cleaned, "no_proxy": cleaned}
-
-
-def _exports_from_dict(env_vars: Mapping[str, str | Path]) -> list[str]:
-    """Generate export lines from a dict of env var name -> value.
-
-    Properly shell-escapes values to handle special characters.
-    Accepts both str and Path values.
-    """
-    return [f"export {name}={shlex.quote(str(value))}" for name, value in env_vars.items()]
 
 
 @dataclass
@@ -134,7 +124,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     }
     ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
     exports.extend(["", "# Auth proxy configuration"])
-    exports.extend(_exports_from_dict(auth_proxy_config | ca_config))
+    exports.extend(exports_from_dict(auth_proxy_config | ca_config))
 
     # NOTE: We intentionally do NOT export HTTPS_PROXY/HTTP_PROXY here.
     # Anthropic sets these in the container with fresh JWT credentials.
@@ -150,26 +140,26 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     no_proxy_override = _strip_no_proxy_google()
     if no_proxy_override is not None:
         exports.extend(["", "# NO_PROXY fix: strip *.googleapis.com/*.google.com (breaks Go module downloads)"])
-        exports.extend(_exports_from_dict(no_proxy_override))
+        exports.extend(exports_from_dict(no_proxy_override))
 
     # Docker/Podman configuration
     if vars.docker_env:
         exports.extend(["", "# Docker/Podman configuration"])
-        exports.extend(_exports_from_dict(vars.docker_env))
+        exports.extend(exports_from_dict(vars.docker_env))
 
     # mkcert localhost TLS certificate
     if vars.mkcert_cert and vars.mkcert_key:
         exports.extend(["", "# Localhost TLS certificate (mkcert)"])
-        exports.extend(_exports_from_dict({"MKCERT_CERT": vars.mkcert_cert, "MKCERT_KEY": vars.mkcert_key}))
+        exports.extend(exports_from_dict({"MKCERT_CERT": vars.mkcert_cert, "MKCERT_KEY": vars.mkcert_key}))
 
     # Session metadata
     exports.extend(["", "# Session metadata"])
-    exports.extend(_exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
+    exports.extend(exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
 
     # Age-decrypted secrets
     if vars.secrets_env_vars:
         exports.extend(["", "# Decrypted secrets (from *.age component files)"])
-        exports.extend(_exports_from_dict(vars.secrets_env_vars))
+        exports.extend(exports_from_dict(vars.secrets_env_vars))
 
     content = "\n".join(exports) + "\n"
     write_config(env_file, content, "session environment")
@@ -178,7 +168,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
 def write_cli_env_file(env_file_path: Path, *, wrapper_dir: Path, session_bazelrc: Path) -> None:
     """Write CLI-mode environment: wrapper PATH + bazel config + direnv eval."""
     lines = [f'export PATH="{wrapper_dir}:$PATH"']
-    lines.extend(_exports_from_dict({ENV_SESSION_BAZELRC: session_bazelrc}))
+    lines.extend(exports_from_dict({ENV_SESSION_BAZELRC: session_bazelrc}))
     if shutil.which("direnv"):
         lines.append('eval "$(direnv export bash 2>/dev/null)"')
     content = "\n".join(lines) + "\n"

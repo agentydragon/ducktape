@@ -91,6 +91,7 @@ py_library(
         ":proxy_setup",
         ":proxy_vars",
         ":settings",
+        "//bazel_util:subprocess",
     ],
 )
 

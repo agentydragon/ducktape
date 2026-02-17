@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -62,9 +64,13 @@ async def async_run_python_module(
     return await asyncio.create_subprocess_exec(*cmd, env=python_env(inherit=inherit_env), **kwargs)
 
 
-def _format_exports(env: dict[str, str]) -> str:
-    """Format a dict of env vars as shell export lines."""
-    return "\n".join(f'export {k}="{v}"' for k, v in env.items())
+def exports_from_dict(env: Mapping[str, str | Path]) -> list[str]:
+    """Generate shell export lines from an env var mapping.
+
+    Values are shell-escaped with shlex.quote() to handle special characters.
+    Accepts both str and Path values.
+    """
+    return [f"export {name}={shlex.quote(str(value))}" for name, value in env.items()]
 
 
 def generate_shell_wrapper(module: str, *, baked_env: dict[str, str] | None = None, extra_lines: str = "") -> str:
@@ -83,14 +89,16 @@ def generate_shell_wrapper(module: str, *, baked_env: dict[str, str] | None = No
     env = {"PYTHONPATH": pythonpath}
     if baked_env:
         env.update(baked_env)
-    parts = ["#!/bin/sh", _format_exports(env)]
+    parts = ["#!/bin/sh", *exports_from_dict(env)]
     if extra_lines:
         parts.append(extra_lines)
     parts.append(f'exec "{sys.executable}" -m {module} "$@"')
     return "\n".join(parts) + "\n"
 
 
-def write_shell_wrapper(path: Path, module: str, *, baked_env: dict[str, str] | None = None, extra_lines: str = "") -> Path:
+def write_shell_wrapper(
+    path: Path, module: str, *, baked_env: dict[str, str] | None = None, extra_lines: str = ""
+) -> Path:
     """Write a shell wrapper script and make it executable.
 
     See :func:`generate_shell_wrapper` for argument docs.

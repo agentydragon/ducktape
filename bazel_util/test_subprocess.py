@@ -5,9 +5,16 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import pytest_bazel
 
-from bazel_util.subprocess import generate_shell_wrapper, python_env, run_python_module, write_shell_wrapper
+from bazel_util.subprocess import (
+    exports_from_dict,
+    generate_shell_wrapper,
+    python_env,
+    run_python_module,
+    write_shell_wrapper,
+)
 
 
 def test_python_env_inherit_includes_pythonpath():
@@ -59,7 +66,7 @@ def test_run_python_module_with_pathlike_args(tmp_path: Path):
 def test_generate_shell_wrapper():
     wrapper = generate_shell_wrapper("my.module")
     assert wrapper.startswith("#!/bin/sh\n")
-    assert 'export PYTHONPATH="' in wrapper
+    assert "export PYTHONPATH=" in wrapper
     assert f'exec "{sys.executable}" -m my.module "$@"' in wrapper
 
 
@@ -70,8 +77,23 @@ def test_generate_shell_wrapper_extra_lines():
 
 def test_generate_shell_wrapper_baked_env():
     wrapper = generate_shell_wrapper("my.module", baked_env={"MY_VAR": "/some/path"})
-    assert 'export MY_VAR="/some/path"' in wrapper
-    assert 'export PYTHONPATH="' in wrapper
+    assert "export MY_VAR=/some/path" in wrapper
+    assert "export PYTHONPATH=" in wrapper
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"FOO": "bar"}, ["export FOO=bar"]),
+        ({"BAZ": "/some/path"}, ["export BAZ=/some/path"]),
+        ({"P": "/a:/b"}, ["export P=/a:/b"]),  # colon-separated paths (PYTHONPATH-style)
+        ({"DIR": Path("/some/path")}, ["export DIR=/some/path"]),  # Path values
+        ({"MSG": "hello world"}, ["export MSG='hello world'"]),  # space requires quoting
+        ({"EXPR": "a$b"}, ["export EXPR='a$b'"]),  # $ requires quoting
+    ],
+)
+def test_exports_from_dict(env: dict, expected: list[str]):
+    assert exports_from_dict(env) == expected
 
 
 def test_write_shell_wrapper(tmp_path: Path):

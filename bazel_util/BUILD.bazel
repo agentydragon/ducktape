@@ -27,6 +27,7 @@ py_test(
     srcs = ["test_subprocess.py"],
     deps = [
         ":subprocess",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
