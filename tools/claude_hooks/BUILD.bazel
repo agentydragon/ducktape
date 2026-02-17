@@ -379,6 +379,7 @@ py_wheel(
         "pydantic-settings",
         "pyjwt",
         "pyrage",
+        "pyyaml",
         "supervisor",
         "tenacity",
     ],
