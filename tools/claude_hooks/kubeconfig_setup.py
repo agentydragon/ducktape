@@ -10,6 +10,8 @@ import base64
 import logging
 from pathlib import Path
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,3 +51,33 @@ def setup_kubeconfig(cache_dir: Path, env_vars: dict[str, str]) -> Path | None:
 
     logger.info("Kubeconfig written to %s", kubeconfig_path)
     return kubeconfig_path
+
+
+def patch_kubeconfig_with_proxy_ca(kubeconfig_path: Path, proxy_ca_pem: str) -> None:
+    """Append proxy CA to every cluster's certificate-authority-data in the kubeconfig.
+
+    Needed when a TLS-inspecting proxy sits between kubectl and the API server:
+    the proxy terminates TLS and presents a certificate signed by its own CA,
+    so that CA must be trusted in addition to the cluster's own CA.
+
+    Args:
+        kubeconfig_path: Path to the kubeconfig file to patch (modified in place).
+        proxy_ca_pem: PEM-encoded proxy CA certificate to append.
+    """
+    kubeconfig = yaml.safe_load(kubeconfig_path.read_text())
+    clusters = kubeconfig.get("clusters") or []
+    patched = 0
+    for entry in clusters:
+        cluster = entry.get("cluster") or {}
+        existing_b64 = cluster.get("certificate-authority-data", "")
+        existing_pem = base64.b64decode(existing_b64).decode("utf-8") if existing_b64 else ""
+        combined_pem = existing_pem + proxy_ca_pem if existing_pem else proxy_ca_pem
+        cluster["certificate-authority-data"] = base64.b64encode(combined_pem.encode()).decode()
+        # Remove file-based CA reference if present — data takes precedence but kubectl
+        # treats both being set as an error.
+        cluster.pop("certificate-authority", None)
+        entry["cluster"] = cluster
+        patched += 1
+    kubeconfig_path.write_text(yaml.dump(kubeconfig, default_flow_style=False))
+    kubeconfig_path.chmod(0o600)
+    logger.info("Patched %d cluster(s) in %s with proxy CA", patched, kubeconfig_path)
