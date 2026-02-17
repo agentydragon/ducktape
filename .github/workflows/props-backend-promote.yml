@@ -1,0 +1,43 @@
+# Promote the props-backend container image to :latest after successful CI.
+#
+# When CI completes successfully on devel/main/master, the props-backend-image
+# job has already built and pushed a :<sha> image. This workflow re-tags that
+# image as :latest.
+#
+# On devel/main/master CI uses the "full" strategy (all targets), so
+# props-backend-image always runs and tests always cover //props/....
+# A green CI conclusion therefore implies both passing tests and a built image.
+name: Promote Props Backend to Latest
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [devel, main, master]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/props-backend
+
+jobs:
+  promote:
+    name: Promote to latest
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote SHA image to :latest
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          docker pull "${{ env.IMAGE }}:$SHA"
+          docker tag "${{ env.IMAGE }}:$SHA" "${{ env.IMAGE }}:latest"
+          docker push "${{ env.IMAGE }}:latest"
