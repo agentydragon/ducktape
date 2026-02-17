@@ -1,7 +1,7 @@
 # Bazel Rust lint reusable workflow
 #
 # Runs Rust linting via Bazel aspects:
-# - Rust: clippy
+# - Rust: clippy, rustfmt
 name: Bazel Rust Lint
 
 on:

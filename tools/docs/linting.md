@@ -14,6 +14,7 @@ This document describes the linting and formatting setup across pre-commit, Baze
 | **Starlark (buildifier)**        | `buildifier-lint` hook | -                     | Pre-commit          |
 | **Starlark (buildifier format)** | `buildifier` hook      | N/A                   | Pre-commit          |
 | **Rust (clippy)**                | -                      | `--config=rust-check` | bazel-build         |
+| **Rust (rustfmt)**               | `rustfmt` hook         | `--config=rust-check` | Both                |
 | **Shell (shfmt)**                | `bazel-precommit` hook | N/A                   | Pre-commit          |
 | **Nix (nixfmt)**                 | `nixfmt` hook          | N/A                   | Pre-commit          |
 | **Ansible**                      | syntax-check (fast)    | -                     | ansible-lint (full) |
@@ -123,6 +124,7 @@ Key hooks in `.pre-commit-config.yaml`:
 | `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting               |
 | `bazel-precommit`   | local (Bazel)                | Shell formatting + validations |
 | `prettier`          | local (node)                 | JS/TS/MD/YAML formatting       |
+| `rustfmt`           | local (system)               | Rust formatting                |
 | `nixfmt`            | local (static binary)        | Nix formatting                 |
 | `markdownlint-cli2` | DavidAnson/markdownlint-cli2 | Markdown linting               |
 

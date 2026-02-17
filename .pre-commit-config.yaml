@@ -112,6 +112,15 @@ repos:
     hooks:
       - id: shfmt
 
+  # rustfmt - Rust code formatting
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: rustfmt
+        entry: rustfmt
+        language: system
+        files: "\\.rs$"
+
   # ============================================================================
   # LOCAL HOOKS
   # ============================================================================

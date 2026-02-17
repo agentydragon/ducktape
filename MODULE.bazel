@@ -297,7 +297,7 @@ bazel_dep(name = "rules_rust", version = "0.68.1")  # upgraded from 0.61.0 to fi
 # — rust toolchains —
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
-    edition = "2021",
+    edition = "2024",
     versions = ["1.87.0"],  # trying 1.87.0 to fix proc-macro loading issue
 )
 use_repo(rust, "rust_toolchains")
