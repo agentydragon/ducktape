@@ -462,7 +462,7 @@ manifest:
     supervisor: supervisor
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     termcolor: termcolor
     terminado: terminado
@@ -562,4 +562,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: 707cbce97956f39b12dae8529ad61a9ec34eb234e529162d6c7e1bd77f8f90c5
+integrity: da2cb3f2073d678556b9d78a2105decfd61f632168f15bbf7a1ddad7800141b8
