@@ -119,20 +119,18 @@ struct Cli {
 async fn detect_container_name() -> Option<String> {
     // Try to read container name from /container_info.json
     match tokio::fs::read_to_string("/container_info.json").await {
-        Ok(contents) => {
-            match serde_json::from_str::<serde_json::Value>(&contents) {
-                Ok(json) => {
-                    if let Some(name) = json.get("container_name").and_then(|v| v.as_str()) {
-                        log::debug!("[DEBUG] Read container name from /container_info.json: {name}");
-                        return Some(name.to_string());
-                    }
-                    log::debug!("[DEBUG] container_name field not found in /container_info.json");
+        Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents) {
+            Ok(json) => {
+                if let Some(name) = json.get("container_name").and_then(|v| v.as_str()) {
+                    log::debug!("[DEBUG] Read container name from /container_info.json: {name}");
+                    return Some(name.to_string());
                 }
-                Err(e) => {
-                    log::debug!("[DEBUG] Failed to parse container info JSON: {e}");
-                }
+                log::debug!("[DEBUG] container_name field not found in /container_info.json");
             }
-        }
+            Err(e) => {
+                log::debug!("[DEBUG] Failed to parse container info JSON: {e}");
+            }
+        },
         Err(e) => {
             log::debug!("[DEBUG] Failed to read container info: {e}");
         }
@@ -182,7 +180,9 @@ async fn main() {
                 break c;
             }
             Err(e) => {
-                log::error!("Failed to create cgroup for process api: {e}. Sleeping for 10 seconds...");
+                log::error!(
+                    "Failed to create cgroup for process api: {e}. Sleeping for 10 seconds..."
+                );
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
         }
@@ -219,9 +219,7 @@ async fn main() {
             }
         };
 
-        log::debug!(
-            "[DEBUG] Control server enabled on {addr} (SIGINT handler disabled)"
-        );
+        log::debug!("[DEBUG] Control server enabled on {addr} (SIGINT handler disabled)");
 
         let shutdown_tx_clone = shutdown_tx.clone();
         let shutdown_rx = shutdown_tx.subscribe();
@@ -297,7 +295,11 @@ async fn main() {
 
     let listener = match TcpListener::bind(&cli.addr).await {
         Ok(l) => {
-            log::info!("Listening on: {} with web socket buffer size of {}", cli.addr, cli.max_ws_buffer_size);
+            log::info!(
+                "Listening on: {} with web socket buffer size of {}",
+                cli.addr,
+                cli.max_ws_buffer_size
+            );
             l
         }
         Err(e) => {

@@ -31,10 +31,7 @@ pub enum ExitReason {
     /// Process exited normally with a status code.
     Exited { status: i32 },
     /// Process was killed by a signal.
-    Signaled {
-        signal: i32,
-        core_dumped: bool,
-    },
+    Signaled { signal: i32, core_dumped: bool },
     /// Process timed out and was killed by process_api.
     TimedOut { timeout_secs: u64 },
     /// Process exceeded its per-process memory limit.
@@ -199,15 +196,12 @@ pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
         if let Some(cp) = cgroup_path {
             let procs_path = cp.join("cgroup.procs");
             if procs_path.exists() {
-                match std::fs::read_to_string(&procs_path) {
-                    Ok(contents) => {
-                        if !contents.trim().is_empty() {
-                            log::debug!(
-                                "[DEBUG] Cgroup is not ready. Waiting for process group to finish (PID {pid})"
-                            );
-                        }
+                if let Ok(contents) = std::fs::read_to_string(&procs_path) {
+                    if !contents.trim().is_empty() {
+                        log::debug!(
+                            "[DEBUG] Cgroup is not ready. Waiting for process group to finish (PID {pid})"
+                        );
                     }
-                    Err(_) => {}
                 }
             }
         }
@@ -252,6 +246,7 @@ pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
 ///   "wait_for_child_to_exit received message to stop waiting for process"
 ///   "[DEBUG] Exiting wait_for_child_to_exit for process"
 ///   "[DEBUG] oom killed_rx closed for process"
+#[allow(clippy::too_many_arguments)] // Matches binary's function signature
 pub async fn wait_for_child_to_exit(
     pid: u32,
     timeout: Option<Duration>,
@@ -277,7 +272,9 @@ pub async fn wait_for_child_to_exit(
         // Check if process has exited
         match waitpid(nix_pid, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::Exited(_, status)) => {
-                log::debug!("[DEBUG] wait_for_child_to_exit: Process {pid} exited with status {status}");
+                log::debug!(
+                    "[DEBUG] wait_for_child_to_exit: Process {pid} exited with status {status}"
+                );
                 break ExitReason::Exited { status };
             }
             Ok(WaitStatus::Signaled(_, sig, core_dumped)) => {
@@ -328,12 +325,12 @@ pub async fn wait_for_child_to_exit(
                         "[DEBUG] Killing process tree OOM killed process (PID {pid}) exceeded memory limit of {limit} bytes (usage: {usage})"
                     );
                     kill_and_wait(pid, cgroup_path.as_ref()).await;
-                    let reason = ExitReason::OutOfMemory {
-                        limit_bytes: limit,
-                    };
+                    let reason = ExitReason::OutOfMemory { limit_bytes: limit };
                     log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
                     if exit_status_tx.send(reason).is_err() {
-                        log::debug!("[DEBUG] Failed to send OOM killed status for process (PID {pid})");
+                        log::debug!(
+                            "[DEBUG] Failed to send OOM killed status for process (PID {pid})"
+                        );
                     }
                     return;
                 }
@@ -351,7 +348,9 @@ pub async fn wait_for_child_to_exit(
                     };
                     log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
                     if exit_status_tx.send(reason).is_err() {
-                        log::debug!("[DEBUG] Failed to send OOM killed status for process (PID {pid})");
+                        log::debug!(
+                            "[DEBUG] Failed to send OOM killed status for process (PID {pid})"
+                        );
                     }
                     return;
                 }
@@ -390,7 +389,10 @@ pub fn format_exit_reason(pid: u32, reason: &ExitReason, elapsed_secs: f64) -> S
         ExitReason::Exited { status } => {
             format!("[PID {pid}] {elapsed_secs:.1} seconds: exited with status: {status}")
         }
-        ExitReason::Signaled { signal, core_dumped } => {
+        ExitReason::Signaled {
+            signal,
+            core_dumped,
+        } => {
             format!(
                 "[PID {pid}] {elapsed_secs:.1} seconds: signal: {signal}, core_dumped: {core_dumped}"
             )

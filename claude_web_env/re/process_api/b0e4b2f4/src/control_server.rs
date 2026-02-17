@@ -181,9 +181,7 @@ async fn handle_request(
                     );
                     Ok(Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Full::new(Bytes::from(
-                            "Failed to initiate shutdown\n",
-                        )))
+                        .body(Full::new(Bytes::from("Failed to initiate shutdown\n")))
                         .unwrap())
                 }
             }
@@ -274,33 +272,35 @@ async fn handle_request(
 /// Reads /proc/self/limits for RLIMIT_NPROC, /proc/sys/kernel/pid_max,
 /// runs `ps aux --no-headers` to count total system processes, and
 /// collects tracked process info with cgroup state.
-async fn build_healthcheck_response(proc_map: &ProcessMap, controller: &CgroupController) -> String {
+async fn build_healthcheck_response(
+    proc_map: &ProcessMap,
+    controller: &CgroupController,
+) -> String {
     // Collect tracked process info, constructing ProcController for each
     let process_controllers: Vec<ProcController> = {
         let map = proc_map.lock();
         map.iter()
             .map(|(process_id, entry)| {
-                let cgroup_config = entry.proc_handle.memory_cgroup_path.as_ref().map(|cp| {
-                    CgroupConfig {
-                        process_id: process_id.clone(),
-                        memory_limit_bytes: entry.proc_handle.memory_limit_bytes,
-                        memory_usage_bytes: None,
-                        memory_cgroup_path: Some(cp.display().to_string()),
-                        process_group_pid: entry.proc_handle.process_group_pid,
-                        internal_state: format!("{:?}", entry.internal_state),
-                    }
-                });
+                let cgroup_config =
+                    entry
+                        .proc_handle
+                        .memory_cgroup_path
+                        .as_ref()
+                        .map(|cp| CgroupConfig {
+                            process_id: process_id.clone(),
+                            memory_limit_bytes: entry.proc_handle.memory_limit_bytes,
+                            memory_usage_bytes: None,
+                            memory_cgroup_path: Some(cp.display().to_string()),
+                            process_group_pid: entry.proc_handle.process_group_pid,
+                            internal_state: format!("{:?}", entry.internal_state),
+                        });
                 let process_info = ProcessInfo {
                     process_id: process_id.clone(),
                     pid: entry.pid,
                     reattachable: entry.reattachable,
                     timeout: entry.proc_handle.timeout.map(|d| d.as_secs()),
                     memory_limit_bytes: entry.proc_handle.memory_limit_bytes,
-                    start_time: entry
-                        .proc_handle
-                        .start_time
-                        .elapsed()
-                        .as_secs(),
+                    start_time: entry.proc_handle.start_time.elapsed().as_secs(),
                 };
                 ProcController {
                     cgroup: cgroup_config,

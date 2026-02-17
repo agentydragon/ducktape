@@ -33,10 +33,10 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::sync::{broadcast, oneshot};
 
+use crate::adopter;
 use crate::cgroup::{self, CgroupController, CgroupVersion};
 use crate::pid_tree;
 use crate::state::ProcessMap;
-use crate::adopter;
 
 /// Shared registry of per-process OOM notification channels.
 /// The container OOM monitor and per-process monitors both access this
@@ -148,7 +148,8 @@ pub async fn container_oom_monitor(
         }
 
         // Read container-level memory usage
-        let usage = match cgroup::read_memory_usage(&controller.base_path, controller.version).await {
+        let usage = match cgroup::read_memory_usage(&controller.base_path, controller.version).await
+        {
             Ok(u) => u,
             Err(e) => {
                 log::debug!("[DEBUG] Error getting container memory usage: {e}");
@@ -179,9 +180,11 @@ pub async fn container_oom_monitor(
             let map = proc_map.lock();
             map.iter()
                 .filter_map(|(process_id, entry)| {
-                    entry.proc_handle.memory_cgroup_path.as_ref().map(|path| {
-                        (process_id.clone(), entry.pid, path.clone())
-                    })
+                    entry
+                        .proc_handle
+                        .memory_cgroup_path
+                        .as_ref()
+                        .map(|path| (process_id.clone(), entry.pid, path.clone()))
                 })
                 .collect()
         };
@@ -193,8 +196,7 @@ pub async fn container_oom_monitor(
         let mut largest_cgroup_path: Option<std::path::PathBuf> = None;
 
         for (process_id, pid, cgroup_path) in &process_cgroups {
-            if let Ok(proc_usage) =
-                cgroup::read_memory_usage(cgroup_path, controller.version).await
+            if let Ok(proc_usage) = cgroup::read_memory_usage(cgroup_path, controller.version).await
             {
                 if proc_usage > largest_usage {
                     largest_usage = proc_usage;
@@ -209,15 +211,20 @@ pub async fn container_oom_monitor(
             log::info!(
                 "[DEBUG] container_oom_monitor: Killing process {process_id} (PID {pid}) with memory usage {largest_usage} to free up memory"
             );
-            log::info!(
-                "[process_id={process_id}, pid={pid}] killed by container OOM killer"
-            );
+            log::info!("[process_id={process_id}, pid={pid}] killed by container OOM killer");
 
             // Read cmdline for logging
             let cmdline = read_cmdline(pid).await;
 
             // Write OOM kill event to log file
-            write_oom_kill_log(process_id, pid, largest_usage, container_memory_limit, &cmdline).await;
+            write_oom_kill_log(
+                process_id,
+                pid,
+                largest_usage,
+                container_memory_limit,
+                &cmdline,
+            )
+            .await;
 
             let kill_start = std::time::Instant::now();
 
@@ -328,6 +335,7 @@ pub async fn container_oom_monitor(
 ///
 /// String refs at binary offset 0x1af72a:
 ///   "per_process_memory_monitor: Received shutdown signal, exiting"
+#[allow(clippy::too_many_arguments)] // Matches binary's function signature
 pub async fn per_process_memory_monitor(
     pid: u32,
     process_id: String,
@@ -372,7 +380,7 @@ pub async fn per_process_memory_monitor(
             Ok(_) => {}
             Err(e) => {
                 log::debug!(
-                    "[DEBUG] per_process_memory_monitor: failed to read memory for {process_id}: {e}"
+                    "[DEBUG] per_process_memory_monitor: Failed to check memory usage for process {process_id}: {e}"
                 );
             }
         }

@@ -193,7 +193,10 @@ pub struct WsStreamHandle {
 }
 
 /// Helper to send a ServerMessage as JSON text over the shared WebSocket sender.
-async fn send_msg(ws_tx: &WsStreamHandle, msg: &ServerMessage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn send_msg(
+    ws_tx: &WsStreamHandle,
+    msg: &ServerMessage,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let json = serde_json::to_string(msg)?;
     let mut tx = ws_tx.tx.lock().await;
     tx.send(Message::text(json)).await?;
@@ -201,7 +204,10 @@ async fn send_msg(ws_tx: &WsStreamHandle, msg: &ServerMessage) -> Result<(), Box
 }
 
 /// Helper to send raw binary data over the shared WebSocket sender.
-async fn send_binary(ws_tx: &WsStreamHandle, data: Vec<u8>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn send_binary(
+    ws_tx: &WsStreamHandle,
+    data: Vec<u8>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut tx = ws_tx.tx.lock().await;
     tx.send(Message::binary(data)).await?;
     Ok(())
@@ -243,6 +249,7 @@ async fn forward_stdin(
 ///   "Expected binary message after ExpectStdIn"
 ///   "[DEBUG] Process stream is closed"
 ///   "[DEBUG] Failed to send response:"
+#[allow(clippy::too_many_arguments)] // Matches binary's function signature
 async fn process_ws_message(
     ws_tx: &WsStreamHandle,
     mut ws_rx: futures::stream::SplitStream<WebSocketStream<TcpStream>>,
@@ -270,8 +277,8 @@ async fn process_ws_message(
                             expecting_stdin = false;
                         }
                         let text = msg.into_text().unwrap_or_default();
-                        match serde_json::from_str::<ClientMessage>(&text) {
-                            Ok(client_msg) => match client_msg {
+                        if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
+                            match client_msg {
                                 ClientMessage::SendSignal { signal } => {
                                     handle_send_signal(pid, &signal, ws_tx).await;
                                 }
@@ -287,8 +294,7 @@ async fn process_ws_message(
                                 ClientMessage::StdInEOF => {
                                     stdin_writer = None;
                                 }
-                            },
-                            Err(_) => {}
+                            }
                         }
                     }
                     Some(Ok(msg)) if msg.is_binary() => {
@@ -400,6 +406,7 @@ async fn process_ws_message(
 ///   "First message should be text json CreateProcess"
 ///   "[DEBUG] process_ws_message: Starting WebSocket message processing"
 ///   "[DEBUG] Finished WebSocket message processing for process"
+#[allow(clippy::too_many_arguments)] // Matches binary's function signature
 pub async fn handle_ws_connection(
     ws_stream: WebSocketStream<TcpStream>,
     remote_addr: std::net::SocketAddr,
@@ -474,14 +481,7 @@ pub async fn handle_ws_connection(
             .await;
         }
         FirstMessage::Connect(conn_req) => {
-            handle_process_connection(
-                conn_req,
-                ws_tx,
-                ws_rx,
-                proc_map,
-                container_name,
-            )
-            .await;
+            handle_process_connection(conn_req, ws_tx, ws_rx, proc_map, container_name).await;
         }
     }
 }
@@ -498,6 +498,7 @@ pub async fn handle_ws_connection(
 ///   "[DEBUG] Handling process cleanup for , pid:"
 ///   "stop_waiting_tx is already taken"
 ///   "exit_status_rx is already taken"
+#[allow(clippy::too_many_arguments)] // Matches binary's function signature
 async fn handle_create_process(
     req: CreateProcess,
     mut ws_tx: WsStreamHandle,
@@ -559,7 +560,7 @@ async fn handle_create_process(
     // Set process group (setsid)
     unsafe {
         cmd.pre_exec(|| {
-            nix::unistd::setsid().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            nix::unistd::setsid().map_err(std::io::Error::other)?;
             Ok(())
         });
     }
@@ -586,7 +587,10 @@ async fn handle_create_process(
     let cgroup_path = if let Some(limit) = req.memory_limit_bytes {
         match cgroup::create_process_cgroup(&controller.base_path, pid).await {
             Ok(path) => {
-                log::debug!("[DEBUG] Adding process {process_id} to cgroup {}", path.display());
+                log::debug!(
+                    "[DEBUG] Adding process {process_id} to cgroup {}",
+                    path.display()
+                );
                 let _ = cgroup::add_process_to_cgroup(&path, pid).await;
                 let _ = cgroup::set_memory_limit(&path, controller.version, limit).await;
                 Some(path)
@@ -618,13 +622,7 @@ async fn handle_create_process(
     handle.oom_killed_rx = Some(oom_killed_rx);
 
     // Insert into process map
-    state::insert_process(
-        &proc_map,
-        process_id.clone(),
-        pid,
-        reattachable,
-        handle,
-    );
+    state::insert_process(&proc_map, process_id.clone(), pid, reattachable, handle);
 
     // Send ProcessCreated response
     let _ = send_msg(
@@ -648,15 +646,13 @@ async fn handle_create_process(
             .unwrap_or_default()
             .as_secs(),
     };
-    let cgroup_config = cgroup_path.as_ref().map(|cp| {
-        proc_handle::CgroupConfig {
-            process_id: process_id.clone(),
-            memory_limit_bytes: req.memory_limit_bytes,
-            memory_usage_bytes: None,
-            memory_cgroup_path: Some(cp.display().to_string()),
-            process_group_pid: pid,
-            internal_state: "Attached".to_string(),
-        }
+    let cgroup_config = cgroup_path.as_ref().map(|cp| proc_handle::CgroupConfig {
+        process_id: process_id.clone(),
+        memory_limit_bytes: req.memory_limit_bytes,
+        memory_usage_bytes: None,
+        memory_cgroup_path: Some(cp.display().to_string()),
+        process_group_pid: pid,
+        internal_state: "Attached".to_string(),
     });
     ws_tx.process_info = Some(process_info.clone());
     ws_tx.controller = Some(ProcController {
@@ -666,14 +662,26 @@ async fn handle_create_process(
     });
 
     // Take channels and config from the handle in the map
-    let (start_time, handle_timeout, handle_memory_limit, exit_status_tx, oom_killed_tx, oom_killed_rx, stop_waiting_rx) = {
+    let (
+        start_time,
+        handle_timeout,
+        handle_memory_limit,
+        exit_status_tx,
+        oom_killed_tx,
+        oom_killed_rx,
+        stop_waiting_rx,
+    ) = {
         let mut map = proc_map.lock();
         let entry = map.get_mut(&process_id).expect("just inserted");
         (
             entry.proc_handle.start_time,
             entry.proc_handle.timeout,
             entry.proc_handle.memory_limit_bytes,
-            entry.proc_handle.exit_status_tx.take().expect("exit_status_tx is already taken"),
+            entry
+                .proc_handle
+                .exit_status_tx
+                .take()
+                .expect("exit_status_tx is already taken"),
             entry.proc_handle.oom_killed_tx.take(),
             entry.proc_handle.oom_killed_rx.take(),
             entry.proc_handle.stop_waiting_rx.take(),
@@ -823,9 +831,7 @@ async fn handle_create_process(
         }
     };
 
-    log::debug!(
-        "[DEBUG] Handling process cleanup for {process_id}, pid: {pid}"
-    );
+    log::debug!("[DEBUG] Handling process cleanup for {process_id}, pid: {pid}");
 
     if entry_reattachable {
         log::debug!("[DEBUG] Detaching process: {process_id}");
@@ -834,9 +840,7 @@ async fn handle_create_process(
         } else {
             log::debug!("[DEBUG] Successfully detached process {process_id}");
         }
-        log::debug!(
-            "[DEBUG] Reattachable process {process_id} is done, dropping handle"
-        );
+        log::debug!("[DEBUG] Reattachable process {process_id} is done, dropping handle");
     } else {
         // Signal the wait task to stop and mark as killed
         {
@@ -880,7 +884,10 @@ async fn handle_create_process(
         }
     }
 
-    log::debug!("[DEBUG] After cleaning up process {process_id}, proc_map: {}", state::debug_process_map(&proc_map));
+    log::debug!(
+        "[DEBUG] After cleaning up process {process_id}, proc_map: {}",
+        state::debug_process_map(&proc_map)
+    );
 }
 
 /// Handle a ProcessConnection (reattach) request.
@@ -964,16 +971,10 @@ async fn handle_process_connection(
                 let map = proc_map.lock();
                 map.get(process_id).map(|e| e.proc_handle.pid).unwrap_or(0)
             };
-            log::debug!(
-                "[DEBUG] Reattaching to detached process: {process_id} with PID {pid}"
-            );
+            log::debug!("[DEBUG] Reattaching to detached process: {process_id} with PID {pid}");
 
             if let Err(e) = state::attach_process(&proc_map, process_id) {
-                let _ = send_msg(
-                    &ws_tx,
-                    &ServerMessage::InfraError { error: e },
-                )
-                .await;
+                let _ = send_msg(&ws_tx, &ServerMessage::InfraError { error: e }).await;
                 return;
             }
 

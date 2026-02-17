@@ -72,9 +72,9 @@ pub fn transition_state(
     new_state: ProcessState,
 ) -> Result<(), String> {
     let mut map = proc_map.lock();
-    let entry = map.get_mut(process_id).ok_or_else(|| {
-        format!("process not found: {process_id}")
-    })?;
+    let entry = map
+        .get_mut(process_id)
+        .ok_or_else(|| format!("process not found: {process_id}"))?;
 
     if entry.internal_state != expected_state {
         return Err(format!(
@@ -93,7 +93,12 @@ pub fn attach_process(
     proc_map: &Mutex<HashMap<String, ProcessEntry>>,
     process_id: &str,
 ) -> Result<(), String> {
-    transition_state(proc_map, process_id, ProcessState::Detached, ProcessState::Attached)
+    transition_state(
+        proc_map,
+        process_id,
+        ProcessState::Detached,
+        ProcessState::Attached,
+    )
 }
 
 /// Detach a process (transition from Attached → Detached).
@@ -102,7 +107,12 @@ pub fn detach_process(
     proc_map: &Mutex<HashMap<String, ProcessEntry>>,
     process_id: &str,
 ) -> Result<(), String> {
-    transition_state(proc_map, process_id, ProcessState::Attached, ProcessState::Detached)
+    transition_state(
+        proc_map,
+        process_id,
+        ProcessState::Attached,
+        ProcessState::Detached,
+    )
 }
 
 /// Insert a new process into the map in Attached state.
@@ -136,19 +146,14 @@ pub fn remove_process(
 }
 
 /// Check if a process with the given ID already exists and is running.
-pub fn process_exists(
-    proc_map: &Mutex<HashMap<String, ProcessEntry>>,
-    process_id: &str,
-) -> bool {
+pub fn process_exists(proc_map: &Mutex<HashMap<String, ProcessEntry>>, process_id: &str) -> bool {
     let map = proc_map.lock();
     map.contains_key(process_id)
 }
 
 /// Get the current process map state as a debug string.
 /// Xrefs: "[DEBUG] Current process map:", "Currently tracked processes:"
-pub fn debug_process_map(
-    proc_map: &Mutex<HashMap<String, ProcessEntry>>,
-) -> String {
+pub fn debug_process_map(proc_map: &Mutex<HashMap<String, ProcessEntry>>) -> String {
     let map = proc_map.lock();
     let entries: Vec<String> = map
         .values()
@@ -159,5 +164,9 @@ pub fn debug_process_map(
             )
         })
         .collect();
-    format!("Currently tracked processes: {}\n{}", map.len(), entries.join("\n"))
+    format!(
+        "Currently tracked processes: {}\n{}",
+        map.len(),
+        entries.join("\n")
+    )
 }

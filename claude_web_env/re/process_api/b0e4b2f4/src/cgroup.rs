@@ -133,15 +133,15 @@ pub async fn setup_cgroup_path(version: CgroupVersion) -> Result<PathBuf, String
 
 /// Decompiled from 0x1b54c0..0x1b5616
 /// Xrefs: "src/cgroup.rs" (cgroup helper function)
-pub async fn create_process_cgroup(
-    base_path: &Path,
-    pid: u32,
-) -> Result<PathBuf, String> {
+pub async fn create_process_cgroup(base_path: &Path, pid: u32) -> Result<PathBuf, String> {
     let cgroup_path = base_path.join(pid.to_string());
 
-    fs::create_dir_all(&cgroup_path)
-        .await
-        .map_err(|e| format!("Failed to create process cgroup {}: {e}", cgroup_path.display()))?;
+    fs::create_dir_all(&cgroup_path).await.map_err(|e| {
+        format!(
+            "Failed to create process cgroup {}: {e}",
+            cgroup_path.display()
+        )
+    })?;
 
     Ok(cgroup_path)
 }
@@ -182,9 +182,7 @@ async fn enable_controller_in_subtree(
 ///   "[DEBUG] root current controller", "cgroup.subtree_control",
 ///   "[DEBUG] Set process_api/cgroup.procs permissions to 0o666",
 ///   "[DEBUG] Moved current process (PID ) to "
-pub async fn setup_cgroup(
-    forced_v2: bool,
-) -> Result<CgroupController, String> {
+pub async fn setup_cgroup(forced_v2: bool) -> Result<CgroupController, String> {
     let version = if forced_v2 {
         log::debug!("Forced cgroup v2 mode");
         CgroupVersion::V2
@@ -205,7 +203,10 @@ pub async fn setup_cgroup(
         // Enable controllers in the process_api subtree
         let pa_subtree = base_path.join("cgroup.subtree_control");
         if let Ok(current) = fs::read_to_string(&pa_subtree).await {
-            log::debug!("[DEBUG] process_api: current_controllers: {}", current.trim());
+            log::debug!(
+                "[DEBUG] process_api: current_controllers: {}",
+                current.trim()
+            );
         }
 
         // Enable memory in process_api subtree
@@ -214,7 +215,9 @@ pub async fn setup_cgroup(
                 log::debug!("[DEBUG] Enabled memory controller in process_api cgroup");
             }
             Err(e) => {
-                log::debug!("[DEBUG] Failed to enable memory controller in process_api cgroup: {e}");
+                log::debug!(
+                    "[DEBUG] Failed to enable memory controller in process_api cgroup: {e}"
+                );
             }
         }
     }
@@ -240,23 +243,15 @@ pub async fn setup_cgroup(
             );
         }
         Err(e) => {
-            log::debug!(
-                "[DEBUG] Failed to move current process (PID {my_pid}) to cgroup: {e}"
-            );
+            log::debug!("[DEBUG] Failed to move current process (PID {my_pid}) to cgroup: {e}");
         }
     }
 
-    Ok(CgroupController {
-        version,
-        base_path,
-    })
+    Ok(CgroupController { version, base_path })
 }
 
 /// Add a process to a cgroup by writing its PID to cgroup.procs.
-pub async fn add_process_to_cgroup(
-    cgroup_path: &Path,
-    pid: u32,
-) -> Result<(), String> {
+pub async fn add_process_to_cgroup(cgroup_path: &Path, pid: u32) -> Result<(), String> {
     let procs_path = cgroup_path.join("cgroup.procs");
     fs::write(&procs_path, pid.to_string())
         .await
@@ -306,18 +301,18 @@ pub async fn set_cpu_shares(
 
 /// Decompiled from 0x1328a0..0x132d66
 /// Xrefs: "Cgroup is not ready Waiting for p...", "memory.usage_in_bytes"
-pub async fn read_memory_usage(
-    cgroup_path: &Path,
-    version: CgroupVersion,
-) -> Result<u64, String> {
+pub async fn read_memory_usage(cgroup_path: &Path, version: CgroupVersion) -> Result<u64, String> {
     let usage_file = match version {
         CgroupVersion::V1 => cgroup_path.join("memory.usage_in_bytes"),
         CgroupVersion::V2 => cgroup_path.join("memory.current"),
     };
 
-    let contents = fs::read_to_string(&usage_file)
-        .await
-        .map_err(|e| format!("Failed to read memory usage from {}: {e}", usage_file.display()))?;
+    let contents = fs::read_to_string(&usage_file).await.map_err(|e| {
+        format!(
+            "Failed to read memory usage from {}: {e}",
+            usage_file.display()
+        )
+    })?;
 
     contents
         .trim()
@@ -334,8 +329,14 @@ pub async fn remove_process_cgroup(cgroup_path: &Path) -> Result<(), String> {
             Ok(())
         }
         Err(e) => {
-            log::debug!("Failed to remove cgroup directory: {}: {e}", cgroup_path.display());
-            Err(format!("Failed to remove cgroup {}: {e}", cgroup_path.display()))
+            log::debug!(
+                "Failed to remove cgroup directory: {}: {e}",
+                cgroup_path.display()
+            );
+            Err(format!(
+                "Failed to remove cgroup {}: {e}",
+                cgroup_path.display()
+            ))
         }
     }
 }
