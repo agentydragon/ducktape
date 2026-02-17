@@ -218,11 +218,17 @@ async def _wait_for_socket(supervisor: SupervisorClient) -> None:
 def _log_docker_failure(info) -> None:
     """Log diagnostic info for a failed dockerd service."""
     logger.error("Docker service failed: %s", info.model_dump())
-    for logfile_attr in ("stdout_logfile", "stderr_logfile"):
-        logfile = getattr(info, logfile_attr, None)
-        if logfile:
-            logpath = Path(logfile)
-            if logpath.exists():
-                content = logpath.read_text()
-                if content.strip():
-                    logger.error("Docker %s:\n%s", logfile_attr, content)
+
+    if info.stdout_logfile:
+        logpath = Path(info.stdout_logfile)
+        if logpath.exists():
+            content = logpath.read_text()
+            if content.strip():
+                logger.error("Docker stdout:\n%s", content)
+
+    if info.stderr_logfile:
+        logpath = Path(info.stderr_logfile)
+        if logpath.exists():
+            content = logpath.read_text()
+            if content.strip():
+                logger.error("Docker stderr:\n%s", content)
