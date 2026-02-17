@@ -9,3 +9,5 @@ resources:
   - rolebinding-sandbox.yaml
   - role-props-reader.yaml
   - rolebinding-props-reader.yaml
+  - clusterrole-flux-kustomization-reader.yaml
+  - clusterrolebinding-flux-kustomization-reader.yaml
