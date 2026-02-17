@@ -449,6 +449,14 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             tmpfs_root = None
         return await docker_service.setup_docker(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
 
+    async def setup_container_runtime() -> docker_service.DockerSetup | podman_service.PodmanSetup:
+        """Set up configured container runtime (Docker or Podman)."""
+        if settings.container_runtime == "docker":
+            return await setup_docker_with_deps()
+        if settings.container_runtime == "podman":
+            return await setup_podman_with_deps()
+        raise SkipError(f"Container runtime disabled (container_runtime={settings.container_runtime})")
+
     async def setup_bazel_on_tmpfs() -> tmpfs_setup.TmpfsSetup:
         """Set up Bazel cache on tmpfs (depends on tmpfs mount)."""
         tmpfs_root = await tmpfs_mount_task
@@ -494,7 +502,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
     #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
-    #                     └── setup_docker_with_deps ←── tmpfs_mount_task
+    #                     └── setup_container_runtime (Docker or Podman) ←── tmpfs_mount_task
     #   tmpfs_mount_task ──── setup_bazel_on_tmpfs
     logger.info("Starting parallel installations...")
 
@@ -511,7 +519,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     results = await asyncio.gather(
         proxy_task,
-        setup_docker_with_deps(),
+        setup_container_runtime(),
         run_in_thread(precommit_setup.install_precommit, project_dir),
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
@@ -522,7 +530,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     )
     # Unpack with explicit type annotations for mypy
     auth_proxy: proxy_setup.ProxySetup | BaseException = results[0]
-    docker: docker_service.DockerSetup | BaseException = results[1]
+    container: docker_service.DockerSetup | podman_service.PodmanSetup | BaseException = results[1]
     precommit: precommit_setup.PrecommitSetup | BaseException = results[2]
     nix: nix_setup.NixSetup | BaseException = results[3]
     bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
@@ -554,15 +562,15 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     elif isinstance(nix, BaseException):
         logger.warning("Failed to install nix: %s", nix)
 
-    # Handle Docker result
+    # Handle container runtime result
     docker_env: dict[str, str] | None = None
-    if isinstance(docker, SkipError):
-        logger.info("Docker setup skipped: %s", docker)
-    elif isinstance(docker, BaseException):
-        logger.warning("Failed to configure Docker: %s", docker)
+    if isinstance(container, SkipError):
+        logger.info("Container runtime setup skipped: %s", container)
+    elif isinstance(container, BaseException):
+        logger.warning("Failed to configure container runtime: %s", container)
     else:
         # Socket URL is in docker.env_vars["DOCKER_HOST"]
-        docker_env = docker.env_vars
+        docker_env = container.env_vars
 
     # Generate timestamp
     hook_timestamp = datetime.now()
@@ -650,16 +658,27 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         bazel_status = bazelisk.status
     logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, auth_proxy.status, auth_proxy.ca_status)
     logger.info("Nix: %s", get_nix_status())
-    if not isinstance(docker, BaseException):
-        logger.info("Docker: %s", docker.status)
+    if not isinstance(container, BaseException):
+        runtime_name = "Docker" if isinstance(container, docker_service.DockerSetup) else "Podman"
+        logger.info("%s: %s", runtime_name, container.status)
 
     # Render agent context from structured results
+    # Extract Docker/Podman from container union for template
+    docker_setup = None
+    podman_setup = None
+    if not isinstance(container, BaseException):
+        if isinstance(container, docker_service.DockerSetup):
+            docker_setup = container
+        elif isinstance(container, podman_service.PodmanSetup):
+            podman_setup = container
+
     emit_session_context(
         collector=collector,
         log_file=log_file,
         project_dir=project_dir,
         auth_proxy=auth_proxy,
-        docker=None if isinstance(docker, BaseException) else docker,
+        docker=docker_setup,
+        podman=podman_setup,
         precommit=None if isinstance(precommit, BaseException) else precommit,
         secrets=secrets,
         mkcert=None if isinstance(mkcert, BaseException) else mkcert,

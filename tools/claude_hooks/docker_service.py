@@ -134,8 +134,8 @@ async def setup_docker(settings: HookSettings, supervisor: SupervisorClient, tmp
     Raises:
         SkipError: If install_docker is False in settings.
     """
-    if not settings.install_docker:
-        logger.info("Skipping Docker setup (install_docker=False)")
+    if settings.container_runtime != "docker":
+        logger.info("Skipping Docker setup (container_runtime=%s)", settings.container_runtime)
         raise SkipError("Docker")
 
     socket_url = f"unix://{DEFAULT_SOCKET_PATH}"

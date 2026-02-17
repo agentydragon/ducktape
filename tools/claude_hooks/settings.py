@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
+from typing import Literal
 
 from platformdirs import user_cache_dir, user_config_dir
 from pydantic import Field
@@ -42,8 +43,7 @@ ENV_PODMAN_SOCKET = _env_name("podman_socket")
 ENV_DOCKER_DIR = _env_name("docker_dir")
 ENV_INSTALL_BAZELISK = _env_name("install_bazelisk")
 ENV_INSTALL_NIX = _env_name("install_nix")
-ENV_INSTALL_PODMAN = _env_name("install_podman")
-ENV_INSTALL_DOCKER = _env_name("install_docker")
+ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
 ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_USE_WHEEL = _env_name("use_wheel")
 
@@ -76,8 +76,9 @@ class HookSettings(BaseSettings):
     install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
     install_nix: bool = Field(default=False, description="Install nix package manager")
     install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
-    install_podman: bool = Field(default=False, description="Set up podman container runtime (alternative to Docker)")
-    install_docker: bool = Field(default=True, description="Set up Docker container runtime")
+    container_runtime: Literal["podman", "docker", "none"] = Field(
+        default="podman", description="Container runtime to set up (podman, docker, or none)"
+    )
     system_bazel: Path | None = Field(
         default=None, description="Path to system bazel (used when install_bazelisk=False)"
     )

@@ -221,8 +221,8 @@ async def setup_podman(settings: HookSettings, supervisor: SupervisorClient, tmp
         SkipError: If install_podman is False in settings.
         PodmanInstallError: If podman installation fails.
     """
-    if not settings.install_podman:
-        logger.info("Skipping podman setup (install_podman=False)")
+    if settings.container_runtime != "podman":
+        logger.info("Skipping podman setup (container_runtime=%s)", settings.container_runtime)
         raise SkipError("Podman")
 
     socket_path = _get_socket_path(settings)
