@@ -17,9 +17,6 @@
 #
 # Non-standard import paths (import name doesn't match directory structure)
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
-#
-# Root-level targets with non-standard import paths
-# gazelle:resolve py fmt_util.fmt_util //fmt_util:fmt_util
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")

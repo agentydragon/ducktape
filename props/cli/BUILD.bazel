@@ -1,6 +1,5 @@
 # Props has complex inter-package dependencies that are manually configured
 
-# gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 # =============================================================================

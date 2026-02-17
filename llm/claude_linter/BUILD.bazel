@@ -1,6 +1,3 @@
-# gazelle:resolve py llm.claude_linter.cli //llm/claude_linter:cli
-# gazelle:resolve py llm.claude_linter.cli.cli //llm/claude_linter:cli
-
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/testing:defs.bzl", "py_test")
 
