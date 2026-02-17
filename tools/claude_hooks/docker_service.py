@@ -23,7 +23,7 @@ import asyncio
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from tools.claude_hooks.errors import SkipError
@@ -47,11 +47,7 @@ class DockerSetup:
     socket_url: str
     status: str
     storage_driver: str = "overlayfs"
-    env_vars: dict[str, str] = None
-
-    def __post_init__(self) -> None:
-        if self.env_vars is None:
-            self.env_vars = {}
+    env_vars: dict[str, str] = field(default_factory=dict)
 
 
 def setup_docker_config(settings: HookSettings, tmpfs_root: Path | None) -> tuple[Path, str]:

@@ -9,6 +9,7 @@ py_library(
     deps = [
         "//bazel_util:runfiles",
         "//bazel_util:workspace",
+        "//tools/claude_hooks:kubeconfig_setup",
         "@pypi//kubernetes",
         "@pypi//pydantic",
         "@pypi//pygit2",

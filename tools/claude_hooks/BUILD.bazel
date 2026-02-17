@@ -133,6 +133,10 @@ py_library(
     srcs = ["kubeconfig_setup.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_library(
@@ -201,6 +205,7 @@ py_library(
     deps = [
         ":errors",
         ":managed_files",
+        ":proxy_setup",
         ":proxy_vars",
         ":settings",
         "//tools/claude_hooks/supervisor:client",
@@ -230,7 +235,10 @@ py_library(
     srcs = ["secrets_setup.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pyrage"],
+    deps = [
+        ":kubeconfig_setup",
+        "@pypi//pyrage",
+    ],
 )
 
 # === Libraries for binary sources ===
@@ -456,6 +464,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":conftest",
+        ":kubeconfig_setup",
         ":secrets_setup",
         "@pypi//pyrage",
         "@pypi//pytest",

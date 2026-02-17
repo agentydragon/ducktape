@@ -4,106 +4,48 @@ This directory contains age-encrypted secrets that are decrypted during Claude C
 
 ## Structure
 
-Each `*.age` file decrypts to a JSON object mapping environment variable names to values:
+Each `*.age` file decrypts to one of two JSON formats:
+
+### Flat env vars (legacy, all other secrets)
+
+```json
+{ "ENV_VAR_NAME": "value", "ANOTHER_VAR": "another value" }
+```
+
+All keys are exported as shell environment variables.
+
+### Typed secrets (new format)
+
+```json
+{"type": "<type>", ...fields}
+```
+
+The `"type"` discriminator triggers type-specific handling. Typed secrets are **not** exported
+to the shell — they are consumed internally by the hook.
+
+#### `kubeconfig`
 
 ```json
 {
-  "ENV_VAR_NAME": "value",
-  "ANOTHER_VAR": "another value"
+  "type": "kubeconfig",
+  "server": "https://allegedly.works:6443",
+  "ca_b64": "<base64-encoded cluster CA PEM>",
+  "token": "<ServiceAccount token>"
 }
 ```
+
+The hook builds a kubeconfig YAML from these fields, injecting the Anthropic TLS proxy CA
+alongside the cluster CA so kubectl works through the TLS-inspecting proxy.
 
 ## Kubeconfig Setup
 
-To provide Claude with kubectl access:
-
-### 1. Generate Kubeconfig
-
-```bash
-# Create ServiceAccount token (1 year validity)
-kubectl create token claude-code-web -n default --duration=8760h > /tmp/claude-token.txt
-
-# Get cluster info
-CLUSTER_NAME=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')
-SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
-
-# Get CA certificate
-kubectl config view --raw --minify --flatten \
-  -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' \
-  | base64 -d > /tmp/ca.crt
-
-# Generate kubeconfig
-cat <<EOF > /tmp/claude-kubeconfig.yaml
-apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    certificate-authority-data: $(base64 -w0 < /tmp/ca.crt)
-    server: $SERVER
-  name: $CLUSTER_NAME
-contexts:
-- context:
-    cluster: $CLUSTER_NAME
-    user: claude-code-web
-    namespace: default
-  name: claude-code-web
-current-context: claude-code-web
-users:
-- name: claude-code-web
-  user:
-    token: $(cat /tmp/claude-token.txt)
-EOF
-```
-
-### 2. Encrypt and Store
-
-```bash
-# Base64 encode the kubeconfig
-KUBECONFIG_B64=$(base64 -w0 < /tmp/claude-kubeconfig.yaml)
-
-# Get age public key (from HookSettings or generate one)
-AGE_PUBKEY="age1..."  # Your age public key
-
-# Create secret JSON
-cat <<EOF > /tmp/kubeconfig-secret.json
-{
-  "KUBECONFIG_B64": "$KUBECONFIG_B64"
-}
-EOF
-
-# Encrypt with age
-age -r "$AGE_PUBKEY" -o .claude_hooks/secrets/kubeconfig.age < /tmp/kubeconfig-secret.json
-
-# Clean up
-rm /tmp/claude-kubeconfig.yaml /tmp/kubeconfig-secret.json /tmp/claude-token.txt /tmp/ca.crt
-```
-
-### 3. Integration
-
-The `kubeconfig_setup.py` module automatically:
-
-1. Reads `KUBECONFIG_B64` from decrypted secrets
-2. Writes it to `~/.cache/claude-hooks/kubeconfig`
-3. Sets `KUBECONFIG` environment variable
-4. All kubectl commands in the session use this config
+The kubeconfig secret is regenerated automatically by `bazel run //cluster:bootstrap` after
+cluster deployment. The bootstrap script uses `KubeconfigSecret` from
+<tools/claude_hooks/kubeconfig_setup.py> to build and encrypt the secret.
 
 ## Security
 
 - Secrets are encrypted with age (X25519)
 - Decryption key is provided via `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` env var
-- Kubeconfig provides access to `claude-sandbox` namespace only (by default)
+- The `claude-code-web` ServiceAccount has access to the `claude-sandbox` namespace
 - Resource quotas limit what can be created in the sandbox
-
-## Permissions
-
-The `claude-code-web` ServiceAccount has:
-
-**claude-sandbox namespace (full access):**
-
-- ✅ Create/delete pods, deployments, jobs, secrets
-- ✅ kubectl exec into pods
-- ✅ Full secrets access (create, read, update, delete)
-- ✅ View logs
-- Limited by ResourceQuota: 4 CPU, 8Gi memory, 10 pods max
-
-**No cluster-wide access** by default. To grant cluster-wide read-only access, deploy the separate `claude-rbac-read-only` configuration.

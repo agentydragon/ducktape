@@ -9,6 +9,7 @@ import pyrage
 import pytest
 import pytest_bazel
 
+from tools.claude_hooks.kubeconfig_setup import KubeconfigSecret
 from tools.claude_hooks.secrets_setup import SecretsSetup, setup_secrets
 
 
@@ -113,26 +114,76 @@ def test_empty_dir_returns_empty(
     assert result.skipped_files == []
 
 
-def test_env_exports_format(
+def test_secrets_setup_defaults() -> None:
+    """Verify SecretsSetup defaults."""
+    setup = SecretsSetup()
+    assert setup.env_vars == {}
+    assert setup.kubeconfig is None
+    assert setup.skipped_files == []
+
+
+def test_kubeconfig_typed_secret(
     secrets_dir: Path, age_keypair: tuple[pyrage.x25519.Identity, pyrage.x25519.Recipient]
 ) -> None:
+    """Typed kubeconfig secret is parsed into secrets.kubeconfig, not env_vars."""
     identity, recipient = age_keypair
-    (secrets_dir / "test.age").write_bytes(_encrypt_json({"TOKEN": "abc 123", "KEY": "def"}, recipient))
+    payload = {
+        "type": "kubeconfig",
+        "server": "https://allegedly.works:6443",
+        "ca_b64": "dGVzdC1jYQ==",
+        "token": "my-token",
+    }
+    (secrets_dir / "kubeconfig.age").write_bytes(_encrypt_json(payload, recipient))
 
     result = setup_secrets(age_key=str(identity), secrets_dir=secrets_dir)
 
     assert result is not None
-    # env_exports should produce sorted shell export lines
-    assert "export KEY=" in result.env_exports
-    assert "export TOKEN=" in result.env_exports
+    assert result.kubeconfig == KubeconfigSecret(
+        server="https://allegedly.works:6443", ca_b64="dGVzdC1jYQ==", token="my-token"
+    )
+    # Not exported to shell
+    assert "KUBE" not in result.env_vars
 
 
-def test_secrets_setup_skipped_files_default() -> None:
-    """Verify SecretsSetup defaults."""
-    setup = SecretsSetup()
-    assert setup.env_vars == {}
-    assert setup.skipped_files == []
-    assert setup.env_exports == ""
+def test_kubeconfig_secret_not_in_env_exports(
+    secrets_dir: Path, age_keypair: tuple[pyrage.x25519.Identity, pyrage.x25519.Recipient]
+) -> None:
+    """Kubeconfig secret combined with flat secrets: only flat vars exported."""
+    identity, recipient = age_keypair
+    (secrets_dir / "a.age").write_bytes(
+        _encrypt_json({"type": "kubeconfig", "server": "https://k8s", "ca_b64": "Y2E=", "token": "tok"}, recipient)
+    )
+    (secrets_dir / "b.age").write_bytes(_encrypt_json({"API_KEY": "secret"}, recipient))
+
+    result = setup_secrets(age_key=str(identity), secrets_dir=secrets_dir)
+
+    assert result is not None
+    assert result.kubeconfig is not None
+    assert result.env_vars == {"API_KEY": "secret"}
+
+
+def test_duplicate_kubeconfig_raises(
+    secrets_dir: Path, age_keypair: tuple[pyrage.x25519.Identity, pyrage.x25519.Recipient]
+) -> None:
+    """Two kubeconfig secrets in the same secrets dir raises an error."""
+    identity, recipient = age_keypair
+    kube_payload = {"type": "kubeconfig", "server": "https://k8s", "ca_b64": "Y2E=", "token": "tok"}
+    (secrets_dir / "a.age").write_bytes(_encrypt_json(kube_payload, recipient))
+    (secrets_dir / "b.age").write_bytes(_encrypt_json(kube_payload, recipient))
+
+    with pytest.raises(ValueError, match="Duplicate kubeconfig secret"):
+        setup_secrets(age_key=str(identity), secrets_dir=secrets_dir)
+
+
+def test_unknown_type_raises(
+    secrets_dir: Path, age_keypair: tuple[pyrage.x25519.Identity, pyrage.x25519.Recipient]
+) -> None:
+    """An unknown 'type' value raises ValueError."""
+    identity, recipient = age_keypair
+    (secrets_dir / "weird.age").write_bytes(_encrypt_json({"type": "spaceship", "fuel": "dilithium"}, recipient))
+
+    with pytest.raises(ValueError, match="Unknown secret type"):
+        setup_secrets(age_key=str(identity), secrets_dir=secrets_dir)
 
 
 if __name__ == "__main__":

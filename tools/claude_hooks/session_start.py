@@ -519,11 +519,6 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
         secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
 
-    # Setup kubeconfig if KUBECONFIG_B64 is in decrypted secrets
-    if secrets and "KUBECONFIG_B64" in secrets.env_vars:
-        with tracer.start_as_current_span("setup_kubeconfig", context=root_ctx):
-            kubeconfig_setup.setup_kubeconfig(cache_dir=settings.get_cache_dir(), env_vars=secrets.env_vars)
-
     # Run BuildBuddy setup first so we know if RBE is available
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
         buildbuddy_result = await run_in_thread(
@@ -637,6 +632,18 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     if not combined_ca.exists():
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
+    # Build kubeconfig now that the proxy CA is available to inject alongside the cluster CA.
+    if secrets and secrets.kubeconfig:
+        with tracer.start_as_current_span("setup_kubeconfig", context=root_ctx):
+            proxy_ca_file = settings.get_auth_proxy_ca_file()
+            proxy_ca_pem = proxy_ca_file.read_text() if proxy_ca_file.exists() else None
+            kubeconfig_setup.setup_kubeconfig(
+                cache_dir=settings.get_cache_dir(),
+                secret=secrets.kubeconfig,
+                env_vars=secrets.env_vars,
+                proxy_ca_pem=proxy_ca_pem,
+            )
+
     # Render session bazelrc (unified for web mode with proxy configuration)
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
         truststore = settings.get_auth_proxy_truststore()
@@ -690,7 +697,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         nix_paths=nix_paths,
         docker_env=docker_env,
         hook_timestamp=hook_timestamp,
-        secrets_exports=secrets.env_exports if secrets else None,
+        secrets_env_vars=secrets.env_vars if secrets else None,
         mkcert_cert=mkcert_cert,
         mkcert_key=mkcert_key,
     )

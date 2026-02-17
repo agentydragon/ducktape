@@ -10,7 +10,6 @@ Multi-layer deployment with persistent auth separation:
 """
 
 import argparse
-import base64
 import contextlib
 import json
 import logging
@@ -37,6 +36,7 @@ from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 
 from bazel_util.runfiles import get_required_path
 from bazel_util.workspace import get_build_workspace_directory
+from tools.claude_hooks.kubeconfig_setup import KubeconfigSecret
 
 _TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
 
@@ -689,24 +689,8 @@ def generate_claude_kubeconfig(root: Path) -> None:
     server = cluster_info["server"]
     ca_data = cluster_info["certificate-authority-data"]
 
-    # Build a minimal kubeconfig
-    kubeconfig = {
-        "apiVersion": "v1",
-        "kind": "Config",
-        "clusters": [{"cluster": {"certificate-authority-data": ca_data, "server": server}, "name": "talos-cluster"}],
-        "contexts": [
-            {
-                "context": {"cluster": "talos-cluster", "user": "claude-code-web", "namespace": "default"},
-                "name": "claude-code-web",
-            }
-        ],
-        "current-context": "claude-code-web",
-        "users": [{"name": "claude-code-web", "user": {"token": token}}],
-    }
-
-    kubeconfig_yaml = yaml.dump(kubeconfig, default_flow_style=False)
-    kubeconfig_b64 = base64.b64encode(kubeconfig_yaml.encode()).decode()
-    secret_json = json.dumps({"KUBECONFIG_B64": kubeconfig_b64})
+    secret = KubeconfigSecret(server=server, ca_b64=ca_data, token=token)
+    secret_json = secret.model_dump_json()
 
     # Encrypt with age using the public key from recipients.txt
     recipient_str = recipients_file.read_text().strip()
