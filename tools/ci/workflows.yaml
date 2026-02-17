@@ -17,7 +17,8 @@
 
 workflows:
   # Core Bazel workflows
-  bazel-build:
+  # Build + all quality checks (ruff, ESLint, mypy, clippy, rustfmt) via --config=check
+  bazel-check:
     trigger: { kind: bazel_query, query: "$targets" }
     targets: true
     secrets: [BUILDBUDDY_API_KEY]
@@ -29,21 +30,6 @@ workflows:
     # Bazel's default wildcard exclusion of manual targets.
     trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets) except attr(tags, "manual", $targets)' }
     targets: true
-    secrets: [BUILDBUDDY_API_KEY]
-
-  bazel-lint:
-    trigger: { kind: bazel_query, query: "$targets" }
-    targets: true
-    secrets: [BUILDBUDDY_API_KEY]
-
-  bazel-typecheck:
-    trigger: { kind: bazel_query, query: "$targets" }
-    targets: true
-    secrets: [BUILDBUDDY_API_KEY]
-
-  # Rust-specific (only finance/ has Rust code)
-  bazel-rust-lint:
-    trigger: { kind: bazel_query, query: "$targets intersect //finance/..." }
     secrets: [BUILDBUDDY_API_KEY]
 
   # Image builds

@@ -45,8 +45,8 @@ compute-targets job
       │
       ▼  (downstream jobs restore the same cache key)
   ┌───────────────────────────────────────────┐
-  │ bazel-build / bazel-test / bazel-lint /   │
-  │ bazel-typecheck / pre-commit / ...        │
+  │ bazel-check / bazel-test /                │
+  │ pre-commit / ...                          │
   │   └── restore repository_cache            │
   │       (repos already downloaded, only     │
   │        extraction needed)                 │

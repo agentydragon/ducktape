@@ -25,13 +25,14 @@ Defines all workflows with discriminated union triggers:
 
 ```yaml
 workflows:
-  bazel-build:
-    trigger: { kind: bazel, pattern: "//..." }
+  bazel-check:
+    trigger: { kind: bazel_query, query: "$targets" }
     targets: true
     secrets: [BUILDBUDDY_API_KEY]
 
-  props-e2e-test:
-    trigger: { kind: bazel, pattern: "//props/..." }
+  bazel-test:
+    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets)' }
+    targets: true
     secrets: [BUILDBUDDY_API_KEY]
 
   nix-flake-check:

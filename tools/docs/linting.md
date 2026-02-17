@@ -8,12 +8,12 @@ This document describes the linting and formatting setup across pre-commit, Baze
 | -------------------------------- | ---------------------- | --------------------- | ------------------- |
 | **Python (ruff check)**          | `ruff-check` hook      | `--config=lint`       | Both                |
 | **Python (ruff format)**         | `ruff-format` hook     | N/A                   | Pre-commit          |
-| **Python (mypy)**                | -                      | `--config=typecheck`  | bazel-build         |
-| **JS/TS (eslint)**               | -                      | `--config=lint`       | bazel-build         |
+| **Python (mypy)**                | -                      | `--config=typecheck`  | bazel-check         |
+| **JS/TS (eslint)**               | -                      | `--config=lint`       | bazel-check         |
 | **JS/TS (prettier)**             | `prettier` hook        | N/A                   | Pre-commit          |
 | **Starlark (buildifier)**        | `buildifier-lint` hook | -                     | Pre-commit          |
 | **Starlark (buildifier format)** | `buildifier` hook      | N/A                   | Pre-commit          |
-| **Rust (clippy)**                | -                      | `--config=rust-check` | bazel-build         |
+| **Rust (clippy)**                | -                      | `--config=rust-check` | bazel-check         |
 | **Rust (rustfmt)**               | `rustfmt` hook         | `--config=rust-check` | Both                |
 | **Shell (shfmt)**                | `bazel-precommit` hook | N/A                   | Pre-commit          |
 | **Nix (nixfmt)**                 | `nixfmt` hook          | N/A                   | Pre-commit          |
@@ -65,7 +65,7 @@ bazel build --config=lint //...
 # Type check: mypy
 bazel build --config=typecheck //...
 
-# Combined: ruff + mypy (no eslint - see note)
+# Combined: ruff + eslint + mypy + clippy + rustfmt
 bazel build --config=check //...
 
 # Rust: clippy + rustfmt
@@ -83,12 +83,12 @@ Aspect definitions in `tools/lint/linters.bzl`:
 
 ## GitHub CI Workflows
 
-| Workflow           | What Runs                                              |
-| ------------------ | ------------------------------------------------------ |
-| `pre-commit.yml`   | `pre-commit run --all-files`                           |
-| `bazel-build.yml`  | `bazel build --config=check //...`, `bazel test //...` |
-| `ansible-lint.yml` | Full ansible-lint (thorough mode)                      |
-| `bazel-test.yml`   | `bazel test //...` (includes visual regression)        |
+| Workflow           | What Runs                                       |
+| ------------------ | ----------------------------------------------- |
+| `pre-commit.yml`   | `pre-commit run --all-files`                    |
+| `bazel-check.yml`  | `bazel build --config=check //...`              |
+| `ansible-lint.yml` | Full ansible-lint (thorough mode)               |
+| `bazel-test.yml`   | `bazel test //...` (includes visual regression) |
 
 ## Formatting
 

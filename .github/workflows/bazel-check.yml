@@ -1,13 +1,16 @@
-# Bazel build reusable workflow
+# Bazel check reusable workflow
 #
-# Builds all targets (without lint aspects)
-name: Bazel Build
+# Build + all quality checks in a single pass via --config=check:
+# - Python: ruff (lint), mypy (typecheck)
+# - JS/TS: ESLint
+# - Rust: clippy, rustfmt
+name: Bazel Check
 
 on:
   workflow_call:
     inputs:
       targets:
-        description: "Bazel targets to build (default: //...)"
+        description: "Bazel targets to build and check (default: //...)"
         required: false
         type: string
         default: "//..."
@@ -20,10 +23,17 @@ on:
       BUILDBUDDY_API_KEY:
         description: "BuildBuddy API key for remote cache (optional)"
         required: false
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Bazel targets to build and check (default: //...)"
+        required: false
+        type: string
+        default: "//..."
 
 jobs:
-  build:
-    name: Build
+  check:
+    name: Check
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -53,7 +63,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
           rbe_image: ${{ inputs.rbe_image }}
 
-      - name: Build
+      - name: Build and check
         run: |
           # Use target_pattern_file if artifact exists (avoids shell arg length limits)
           if [[ -f targets.txt ]] && [[ -s targets.txt ]]; then
@@ -63,12 +73,14 @@ jobs:
             # Empty targets.txt means no Bazel targets were affected (e.g.,
             # only workflow YAML files changed). Skip rather than letting
             # bazel exit 4 on zero matched targets.
-            echo "targets.txt is empty, skipping build"
+            echo "targets.txt is empty, skipping check"
             exit 0
           else
             TARGET_ARG="${{ inputs.targets }}"
             echo "Using targets from input: $TARGET_ARG"
           fi
-          bazel build --keep_going \
-            --build_metadata=ROLE=ci --build_metadata=TAGS=build \
+          # --config=check runs: ruff, ESLint, mypy, clippy, rustfmt
+          # --strategy=mypy=local avoids sandbox copying overhead for mypy
+          bazel build --keep_going --config=check --strategy=mypy=local \
+            --build_metadata=ROLE=ci --build_metadata=TAGS=check \
             $TARGET_ARG

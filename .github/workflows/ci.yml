@@ -89,12 +89,12 @@ jobs:
         with:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
-  bazel-build:
+  bazel-check:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-build')
-    uses: ./.github/workflows/bazel-build.yml
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-check')
+    uses: ./.github/workflows/bazel-check.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
@@ -107,35 +107,6 @@ jobs:
     uses: ./.github/workflows/bazel-test.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
-  bazel-lint:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-lint')
-    uses: ./.github/workflows/bazel-lint.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
-  bazel-typecheck:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-typecheck')
-    uses: ./.github/workflows/bazel-typecheck.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
-  bazel-rust-lint:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-rust-lint')
-    uses: ./.github/workflows/bazel-rust-lint.yml
-    with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   rbe-image:
