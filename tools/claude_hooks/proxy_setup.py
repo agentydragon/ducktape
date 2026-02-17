@@ -378,6 +378,7 @@ def _write_bazel_config(settings: HookSettings, *, buildbuddy_configured: bool) 
     # Render bazelrc from template
     template = Template(CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"])
     result: str = template.render(
+        web_proxy=True,
         proxy_port=proxy_port,
         truststore_path=truststore,
         truststore_password=TRUSTSTORE_PASSWORD,
@@ -388,9 +389,8 @@ def _write_bazel_config(settings: HookSettings, *, buildbuddy_configured: bool) 
     )
     write_config(proxy_rc, result, "proxy bazelrc")
 
-    # Also write to ~/.bazelrc so that bazel invocations outside the wrapper
-    # (e.g. raw bazelisk calls) pick up proxy config. Skip if ~/.bazelrc
-    # already exists to avoid clobbering user configuration.
+    # TODO(unify-web-cli): Remove this ~/.bazelrc write once all bazel invocations
+    # go through the wrapper (which injects --bazelrc= from SESSION_BAZELRC).
     user_bazelrc = Path.home() / ".bazelrc"
     if not user_bazelrc.exists():
         header = "# Written by tools/claude_hooks session_start hook.\n# Delete this file to force regeneration.\n"

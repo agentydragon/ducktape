@@ -1,0 +1,4 @@
+# Noop ai_agent config — the per-session bazelrc activates --config=ai_agent,
+# so the workspace must define it. In the real repo this lives in the root .bazelrc.
+build:ai_agent --noshow_loading_progress
+build:ai_agent --noshow_progress

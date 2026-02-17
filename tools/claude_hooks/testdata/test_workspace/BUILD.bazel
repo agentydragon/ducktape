@@ -21,6 +21,7 @@ genrule(
 filegroup(
     name = "workspace_files",
     srcs = [
+        ".bazelrc",
         ".bazelversion",
         "BUILD.bazel",
         "MODULE.bazel",

@@ -1,39 +1,68 @@
-"""Tests for CLI-mode direnv integration.
+"""Tests for CLI-mode environment file generation.
 
-Verifies that write_direnv_env_file writes a dynamic eval snippet
-(not static exports), so .envrc changes mid-session propagate into
-subsequent Bash tool calls.
+Verifies that write_cli_env_file writes the wrapper PATH, SESSION_BAZELRC,
+and direnv eval for .envrc propagation into subsequent Bash tool calls.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import pytest_bazel
 
-from tools.claude_hooks.env_file import write_direnv_env_file
+from tools.claude_hooks.env_file import write_cli_env_file
 
 
-def test_write_direnv_env_file_writes_eval_snippet(tmp_path: Path) -> None:
-    """Env file contains a dynamic direnv eval, not static exports."""
+@pytest.fixture
+def cli_env(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Create env file, wrapper dir, and bazelrc paths for CLI env tests."""
     env_file = tmp_path / "env.sh"
-    write_direnv_env_file(env_file)
+    wrapper_dir = tmp_path / "bin"
+    bazelrc = tmp_path / "bazelrc"
+    bazelrc.write_text("# test")
+    return env_file, wrapper_dir, bazelrc
+
+
+def test_contains_wrapper_path(cli_env: tuple[Path, Path, Path]) -> None:
+    """Env file puts the wrapper directory on PATH."""
+    env_file, wrapper_dir, bazelrc = cli_env
+    write_cli_env_file(env_file, wrapper_dir=wrapper_dir, session_bazelrc=bazelrc)
+
+    content = env_file.read_text()
+    assert str(wrapper_dir) in content
+    assert "PATH=" in content
+
+
+def test_exports_session_bazelrc(cli_env: tuple[Path, Path, Path]) -> None:
+    """Env file exports SESSION_BAZELRC pointing to the rendered bazelrc."""
+    env_file, wrapper_dir, bazelrc = cli_env
+    write_cli_env_file(env_file, wrapper_dir=wrapper_dir, session_bazelrc=bazelrc)
+
+    content = env_file.read_text()
+    assert "SESSION_BAZELRC=" in content
+    assert str(bazelrc) in content
+
+
+def test_includes_direnv_eval(cli_env: tuple[Path, Path, Path]) -> None:
+    """When direnv is available, env file includes dynamic eval."""
+    env_file, wrapper_dir, bazelrc = cli_env
+    with patch("tools.claude_hooks.env_file.shutil.which", return_value="/usr/bin/direnv"):
+        write_cli_env_file(env_file, wrapper_dir=wrapper_dir, session_bazelrc=bazelrc)
 
     content = env_file.read_text()
     assert 'eval "$(direnv export bash 2>/dev/null)"' in content
 
 
-def test_write_direnv_env_file_no_static_exports(tmp_path: Path) -> None:
-    """Env file should NOT contain static export lines (only the eval)."""
-    env_file = tmp_path / "env.sh"
-    write_direnv_env_file(env_file)
+def test_no_direnv_when_missing(cli_env: tuple[Path, Path, Path]) -> None:
+    """When direnv is not installed, env file omits the eval."""
+    env_file, wrapper_dir, bazelrc = cli_env
+    with patch("tools.claude_hooks.env_file.shutil.which", return_value=None):
+        write_cli_env_file(env_file, wrapper_dir=wrapper_dir, session_bazelrc=bazelrc)
 
     content = env_file.read_text()
-    # The only "export" should be inside the eval, not standalone export KEY=VALUE lines
-    for line in content.splitlines():
-        if line.startswith("export "):
-            pytest.fail(f"Found static export line: {line!r}")
+    assert "direnv export" not in content
 
 
 if __name__ == "__main__":

@@ -1,7 +1,14 @@
-"""Bazel wrapper for Claude Code web - sets proxy env vars and ensures services running.
+"""Bazel wrapper for Claude Code — sets up environment and execs bazel.
 
-Reads configuration from environment variables set by bazelisk_setup.py.
-Provides auto-recovery: restarts supervisor and proxy if not running.
+Mode-aware: in web mode (CLAUDE_CODE_REMOTE=true), sets proxy env vars and
+ensures auth proxy is running. In CLI mode, passes through directly.
+Both modes inject --bazelrc=<per-session-bazelrc> via SESSION_BAZELRC.
+
+Routes to the correct binary based on invocation name: if invoked as "bazelisk",
+execs bazelisk; if invoked as "bazel", execs bazel. The shell wrapper sets
+_BAZEL_WRAPPER_NAME from basename($0).
+
+Reads configuration from environment variables set by session_start.py.
 """
 
 import asyncio
@@ -9,11 +16,12 @@ import logging
 import os
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 from env_utils.env_utils import get_required_env, get_required_existing_path
 from tools.claude_hooks import proxy_setup
 from tools.claude_hooks.debug import log_entrypoint_debug
-from tools.claude_hooks.env_file import ENV_AUTH_PROXY_BAZELRC, ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH
+from tools.claude_hooks.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
 from tools.claude_hooks.errors import AuthProxyError
 from tools.claude_hooks.proxy_credentials import check_credential_expiry
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
@@ -21,6 +29,19 @@ from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import SupervisorClient
 
 logger = logging.getLogger(__name__)
+
+# Set by the shell wrapper script from basename($0) and dirname($0)
+_WRAPPER_NAME_ENV = "_BAZEL_WRAPPER_NAME"
+_WRAPPER_DIR_ENV = "_BAZEL_WRAPPER_DIR"
+
+
+def _is_web_mode() -> bool:
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+
+
+def _invocation_name() -> str:
+    """Determine the binary name this wrapper was invoked as (bazel or bazelisk)."""
+    return os.environ.get(_WRAPPER_NAME_ENV, "bazel")
 
 
 def warn_if_credentials_expiring(settings: HookSettings) -> None:
@@ -74,34 +95,62 @@ def _setup_logging(settings: HookSettings) -> None:
     logger.info("bazel_wrapper started")
 
 
+def _resolve_real_binary() -> str:
+    """Resolve the real bazel/bazelisk binary path.
+
+    Web mode: reads BAZELISK_PATH (set by session hook to the downloaded bazelisk).
+    CLI mode: finds the binary matching the invocation name (bazel or bazelisk)
+    on PATH, skipping our own wrapper directory.
+    """
+    env_path = os.environ.get(ENV_BAZELISK_PATH)
+    if env_path:
+        return str(get_required_existing_path(ENV_BAZELISK_PATH))
+
+    # CLI mode: find the real binary matching our invocation name
+    invoked_as = _invocation_name()
+    wrapper_dir = os.environ.get(_WRAPPER_DIR_ENV, "")
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if wrapper_dir and Path(directory).resolve() == Path(wrapper_dir).resolve():
+            continue
+        candidate = Path(directory) / invoked_as
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+
+    raise FileNotFoundError(f"No {invoked_as} found on PATH")
+
+
 def main() -> None:
     """Main entry point."""
     settings = HookSettings()
 
-    # Set up logging early so all debug info is captured to file
     _setup_logging(settings)
-
     log_entrypoint_debug("bazel_wrapper")
 
-    try:
-        logger.info("Calling ensure_proxy_running...")
-        asyncio.run(proxy_setup.ensure_proxy_running(settings, SupervisorClient(settings)))
-        logger.info("ensure_proxy_running completed successfully")
-        warn_if_credentials_expiring(settings)
-    except AuthProxyError as e:
-        logger.error("%s", e)
-        logger.info("To restart: run the session_start hook again")
-        logger.info("Logs: %s/auth-proxy.{log,err.log}", settings.get_supervisor_dir())
-        raise SystemExit(1) from e
+    if _is_web_mode():
+        try:
+            logger.info("Calling ensure_proxy_running...")
+            asyncio.run(proxy_setup.ensure_proxy_running(settings, SupervisorClient(settings)))
+            logger.info("ensure_proxy_running completed successfully")
+            warn_if_credentials_expiring(settings)
+        except AuthProxyError as e:
+            logger.error("%s", e)
+            logger.info("To restart: run the session_start hook again")
+            logger.info("Logs: %s/auth-proxy.{log,err.log}", settings.get_supervisor_dir())
+            raise SystemExit(1) from e
 
-    local_proxy = get_required_env(ENV_AUTH_PROXY_URL)
-    for var in PROXY_ENV_VARS:
-        os.environ[var] = local_proxy
+        local_proxy = get_required_env(ENV_AUTH_PROXY_URL)
+        for var in PROXY_ENV_VARS:
+            os.environ[var] = local_proxy
 
-    bazelrc_path = get_required_env(ENV_AUTH_PROXY_BAZELRC)
-    bazelisk_path = str(get_required_existing_path(ENV_BAZELISK_PATH))
+    # SESSION_BAZELRC is the canonical env var. Fall back to AUTH_PROXY_BAZELRC
+    # for sessions started before the migration (old hook code set that instead).
+    # TODO(unify-web-cli): Remove AUTH_PROXY_BAZELRC fallback once all sessions
+    # have been restarted with the new hook code that sets SESSION_BAZELRC.
+    bazelrc_path = os.environ.get(ENV_SESSION_BAZELRC) or get_required_env("AUTH_PROXY_BAZELRC")
+    real_binary = _resolve_real_binary()
 
-    os.execvp(bazelisk_path, [bazelisk_path, f"--bazelrc={bazelrc_path}", *sys.argv[1:]])
+    logger.info("Execing %s (invoked as %s)", real_binary, _invocation_name())
+    os.execvp(real_binary, [real_binary, f"--bazelrc={bazelrc_path}", *sys.argv[1:]])
 
 
 if __name__ == "__main__":

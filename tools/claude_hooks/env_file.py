@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,7 +20,7 @@ from tools.claude_hooks.settings import ENV_SUPERVISOR_PORT
 # Runtime env var names (written by session hook, read by bazel_wrapper)
 ENV_AUTH_PROXY_PORT = "AUTH_PROXY_PORT"
 ENV_AUTH_PROXY_URL = "AUTH_PROXY_URL"
-ENV_AUTH_PROXY_BAZELRC = "AUTH_PROXY_BAZELRC"
+ENV_SESSION_BAZELRC = "SESSION_BAZELRC"
 ENV_BAZELISK_PATH = "BAZELISK_PATH"
 ENV_BAZEL_REPO_ROOT = "BAZEL_REPO_ROOT"
 
@@ -73,7 +74,7 @@ class EnvVars:
     combined_ca: Path
     bazel_wrapper_dir: Path
     bazelisk_path: Path
-    auth_proxy_rc: Path
+    session_bazelrc: Path
 
     # Nix paths
     nix_paths: list[Path]
@@ -123,7 +124,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         ENV_AUTH_PROXY_PORT: str(vars.proxy_port),
         ENV_AUTH_PROXY_URL: local_proxy,
         ENV_BAZELISK_PATH: vars.bazelisk_path,
-        ENV_AUTH_PROXY_BAZELRC: vars.auth_proxy_rc,
+        ENV_SESSION_BAZELRC: vars.session_bazelrc,
         ENV_BAZEL_REPO_ROOT: vars.repo_root,
         # Supervisor port needed by bazel_wrapper to connect to supervisor
         ENV_SUPERVISOR_PORT: str(vars.supervisor_port),
@@ -174,11 +175,11 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     write_config(env_file, content, "session environment")
 
 
-def write_direnv_env_file(env_file_path: Path) -> None:
-    """Write dynamic direnv eval to CLAUDE_ENV_FILE.
-
-    Instead of static exports, writes an eval that re-runs direnv on each
-    Bash tool call, so .envrc changes mid-session are picked up.
-    """
-    content = 'eval "$(direnv export bash 2>/dev/null)"\n'
-    write_config(env_file_path, content, "direnv environment")
+def write_cli_env_file(env_file_path: Path, *, wrapper_dir: Path, session_bazelrc: Path) -> None:
+    """Write CLI-mode environment: wrapper PATH + bazel config + direnv eval."""
+    lines = [f'export PATH="{wrapper_dir}:$PATH"']
+    lines.extend(_exports_from_dict({ENV_SESSION_BAZELRC: session_bazelrc}))
+    if shutil.which("direnv"):
+        lines.append('eval "$(direnv export bash 2>/dev/null)"')
+    content = "\n".join(lines) + "\n"
+    write_config(env_file_path, content, "CLI environment")

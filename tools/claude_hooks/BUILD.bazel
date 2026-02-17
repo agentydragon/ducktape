@@ -91,6 +91,14 @@ py_library(
 )
 
 py_library(
+    name = "cli_tools_setup",
+    srcs = ["cli_tools_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [":platform_utils"],
+)
+
+py_library(
     name = "bazelisk_setup",
     srcs = ["bazelisk_setup.py"],
     imports = ["../.."],
@@ -227,6 +235,7 @@ py_library(
     deps = [
         ":bazelisk_setup",
         ":buildbuddy_setup",
+        ":cli_tools_setup",
         ":debug",
         ":env_file",
         ":errors",
@@ -285,6 +294,7 @@ py_package(
         ":bazel_wrapper_lib",
         ":bazelisk_setup",
         ":buildbuddy_setup",
+        ":cli_tools_setup",
         ":env_file",
         ":errors",
         ":kubeconfig_setup",

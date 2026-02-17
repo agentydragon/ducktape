@@ -1,7 +1,10 @@
 """Unified session start hook for Claude Code (web and CLI).
 
 Web mode (CLAUDE_CODE_REMOTE=true): Sets up auth proxy and git hooks.
-CLI mode: Loads direnv environment.
+CLI mode: Sets up per-session bazel wrapper with direnv integration.
+
+Both modes render a per-session bazelrc from the unified bazelrc.mako template
+and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 """
 
 from __future__ import annotations
@@ -21,11 +24,13 @@ from typing import Literal
 from mako.template import Template
 from pydantic import BaseModel
 
+from bazel_util.subprocess import write_shell_wrapper
 from env_utils import env_utils
 from tools.build_info import BUILD_COMMIT
 from tools.claude_hooks import (
     bazelisk_setup,
     buildbuddy_setup,
+    cli_tools_setup,
     env_file,
     kubeconfig_setup,
     mkcert_setup,
@@ -38,7 +43,8 @@ from tools.claude_hooks import (
 )
 from tools.claude_hooks.debug import log_entrypoint_debug
 from tools.claude_hooks.errors import SkipError
-from tools.claude_hooks.settings import HookSettings
+from tools.claude_hooks.managed_files import write_config
+from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
 from tools.claude_hooks.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
@@ -76,28 +82,93 @@ class HookInput(BaseModel):
 
 
 # ============================================================================
-# CLI mode: direnv environment loading
+# Shared helpers (used by both web and CLI modes)
 # ============================================================================
 
 
-async def run_cli_mode(hook_input: HookInput) -> None:
-    """CLI mode: write direnv eval into CLAUDE_ENV_FILE.
+def _render_session_bazelrc(session_dir: Path, **template_vars: object) -> Path:
+    """Render bazelrc.mako template to session_dir/bazelrc.
 
-    Writes a dynamic `eval "$(direnv export bash)"` snippet so that
-    every Bash tool call re-evaluates direnv. This means .envrc changes
-    mid-session are picked up automatically.
+    Both modes use the same template with different variables:
+    - CLI: web_proxy=False
+    - Web: web_proxy=True, proxy_port=..., etc.
     """
-    if not shutil.which("direnv"):
-        print("direnv: not installed, skipping", file=sys.stderr)
-        return
+    template = Template(CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"])
+    result: str = template.render(**template_vars)
+    bazelrc_path = session_dir / "bazelrc"
+    write_config(bazelrc_path, result, "session bazelrc")
+    return bazelrc_path
+
+
+def _get_session_bin_dir(session_dir: Path) -> Path:
+    """Create and return the session-scoped bin directory for tools and wrappers."""
+    bin_dir = session_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    return bin_dir
+
+
+def _install_bazel_wrappers(bin_dir: Path) -> None:
+    """Install bazel/bazelisk wrapper scripts into the session bin directory.
+
+    Creates bin/bazel (shell wrapper → bazel_wrapper.py) and bin/bazelisk
+    (symlink → bin/bazel). The shell wrapper exports _BAZEL_WRAPPER_NAME
+    and _BAZEL_WRAPPER_DIR so the Python module can route to the correct
+    binary and skip its own directory when searching PATH.
+    """
+
+    extra_lines = (
+        'export _BAZEL_WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"\nexport _BAZEL_WRAPPER_NAME="$(basename "$0")"'
+    )
+
+    bazel_path = bin_dir / "bazel"
+    write_shell_wrapper(bazel_path, "tools.claude_hooks.bazel_wrapper", extra_lines=extra_lines)
+
+    # Create bazelisk symlink so both names route through the wrapper
+    bazelisk_path = bin_dir / "bazelisk"
+    if bazelisk_path.exists() or bazelisk_path.is_symlink():
+        bazelisk_path.unlink()
+    bazelisk_path.symlink_to(bazel_path)
+
+    logger.info("Installed bazel wrappers in %s", bin_dir)
+
+
+# ============================================================================
+# CLI mode: per-session bazel wrapper with direnv integration
+# ============================================================================
+
+
+async def run_cli_mode(hook_input: HookInput, settings: HookSettings) -> None:
+    """CLI mode: set up per-session bazel wrapper and direnv eval.
+
+    Renders a per-session bazelrc (with --config=ai_agent for quiet output),
+    installs a bazel/bazelisk wrapper, and writes CLAUDE_ENV_FILE with the
+    wrapper on PATH and direnv eval for .envrc propagation.
+    """
+    _collector, log_file = setup_logging(settings, print_banner=False)
+
+    logger.info("Session start hook (CLI mode)")
+    logger.info("Hook input: %s", hook_input.model_dump_json())
+    log_entrypoint_debug("session_start")
 
     env_file_path = os.environ.get("CLAUDE_ENV_FILE")
     if not env_file_path:
-        print("direnv: CLAUDE_ENV_FILE not available", file=sys.stderr)
+        logger.warning("CLAUDE_ENV_FILE not available")
         return
 
-    env_file.write_direnv_env_file(Path(env_file_path))
-    print("direnv: configured (eval on each Bash call)")
+    session_dir = Path(env_file_path).parent
+
+    # Render per-session bazelrc (quiet mode)
+    session_bazelrc = _render_session_bazelrc(session_dir, web_proxy=False)
+
+    # Set up session bin dir with bazel wrappers
+    bin_dir = _get_session_bin_dir(session_dir)
+    _install_bazel_wrappers(bin_dir)
+
+    # Write env file: puts bin dir on PATH, sets SESSION_BAZELRC, evals direnv
+    env_file.write_cli_env_file(Path(env_file_path), wrapper_dir=bin_dir, session_bazelrc=session_bazelrc)
+
+    logger.info("CLI session configured: %s", session_dir)
+    print(f"Claude Code CLI session configured (log: {log_file})")
 
 
 # ============================================================================
@@ -243,10 +314,10 @@ class LogCollector(logging.handlers.MemoryHandler):
         return any(r.levelno == logging.WARNING for r in self.buffer)
 
 
-def setup_logging(settings: HookSettings) -> LogCollector:
+def setup_logging(settings: HookSettings, *, print_banner: bool = True) -> tuple[LogCollector, Path]:
     """Configure root logger so all modules in tools.claude_hooks get handlers.
 
-    Returns LogCollector for use in emit_session_context.
+    Returns (LogCollector, log_file_path) tuple.
     """
     log_file = settings.get_cache_dir() / "session-start.log"
 
@@ -266,10 +337,10 @@ def setup_logging(settings: HookSettings) -> LogCollector:
 
     root_logger.addHandler(collector)
 
-    # Attach log_file to collector so callers can access it
-    collector.log_file = log_file  # type: ignore[attr-defined]
+    if print_banner:
+        print(f"Setup log: {log_file}", file=sys.stderr)
 
-    return collector
+    return collector, log_file
 
 
 # ============================================================================
@@ -297,8 +368,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     Writes CLAUDE_ENV_FILE once at the end with all collected environment
     variables.
     """
-    collector = setup_logging(settings)
-    log_file = collector.log_file  # type: ignore[attr-defined]
+    collector, log_file = setup_logging(settings)
 
     logger.info("Session start hook")
     logger.info("Hook: %s", __file__)
@@ -413,6 +483,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         run_in_thread(install_bazelisk_wrapper),
         setup_bazel_on_tmpfs(),
         setup_mkcert_with_proxy(),
+        run_in_thread(cli_tools_setup.install_cli_tools, settings.get_wrapper_dir()),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
@@ -423,6 +494,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
     tmpfs: tmpfs_setup.TmpfsSetup | BaseException = results[5]
     mkcert: mkcert_setup.MkcertSetup | BaseException = results[6]
+    cli_tools_result: list[str] | BaseException = results[7]
     # buildbuddy was set up earlier (before parallel tasks)
     buildbuddy: buildbuddy_setup.BuildbuddySetup | BaseException = buildbuddy_result
 
@@ -439,6 +511,8 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         logger.info("mkcert setup skipped: %s", mkcert)
     elif isinstance(mkcert, BaseException):
         logger.warning("Failed to set up mkcert: %s", mkcert)
+    if isinstance(cli_tools_result, BaseException):
+        logger.warning("Failed to install CLI tools: %s", cli_tools_result)
 
     # Handle nix result
     if isinstance(nix, SkipError):
@@ -501,7 +575,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         combined_ca=combined_ca,
         bazel_wrapper_dir=settings.get_wrapper_dir(),
         bazelisk_path=bazelisk_path,
-        auth_proxy_rc=settings.get_auth_proxy_rc(),
+        session_bazelrc=settings.get_auth_proxy_rc(),
         nix_paths=nix_paths,
         docker_host=docker_host,
         podman_env=podman_env,
@@ -550,11 +624,12 @@ async def async_main() -> None:
         print(f"Raw input JSON:\n{raw_input}", file=sys.stderr)
         raise
 
+    settings = HookSettings()
+
     if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
-        settings = HookSettings()
         await run_web_mode(hook_input, settings)
     else:
-        await run_cli_mode(hook_input)
+        await run_cli_mode(hook_input, settings)
 
 
 def main() -> None:

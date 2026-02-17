@@ -239,6 +239,16 @@ def _write_output_log(name: str, content: str) -> Path:
     return log_path
 
 
+def _save_bazel_logs(result: subprocess.CompletedProcess[str], label: str) -> None:
+    """Save bazel invocation stdout/stderr to undeclared test outputs."""
+    out_dir = undeclared_outputs_dir() / f"bazel-{label}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if result.stdout:
+        (out_dir / "stdout.log").write_text(result.stdout)
+    if result.stderr:
+        (out_dir / "stderr.log").write_text(result.stderr)
+
+
 async def run_session_start_hook(
     project_dir: Path, source: HookSource = HookSource.STARTUP
 ) -> subprocess.CompletedProcess[str]:
@@ -341,15 +351,22 @@ class TestFullSessionStartHook:
         # back to system bazel if bazelisk isn't installed.
         # --output_base isolates this Bazel from the test-running Bazel.
         supervisor_dir = isolated_dirs.config / "claude-hooks" / "supervisor"
+        bazel_result: subprocess.CompletedProcess[str] | None = None
         try:
             async with asyncio.timeout(60):
-                await shell_helpers.run_with_env_file(
+                bazel_result = await shell_helpers.run_with_env_file(
                     command=f"bazel --output_base={output_base} build //:hello",
                     env_file=isolated_dirs.env_file,
                     cwd=workspace,
-                    check=True,
+                )
+                assert bazel_result.returncode == 0, (
+                    f"Bazel build failed (rc={bazel_result.returncode}):\n"
+                    f"stdout: {bazel_result.stdout}\n"
+                    f"stderr: {bazel_result.stderr}"
                 )
         finally:
+            if bazel_result is not None:
+                _save_bazel_logs(bazel_result, "build-hello")
             # Always collect logs - critical for debugging CI failures
             collect_supervisor_logs(supervisor_dir)
 
