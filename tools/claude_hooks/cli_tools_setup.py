@@ -5,6 +5,11 @@ Each tool is installed independently — failures are logged but don't block
 the session or other tool installs.
 
 Follows the same pattern as bazelisk_setup.py (urllib.request, platform_utils).
+
+TODO(unify-web-cli): Make tool installation truly async — have session_start
+exit before downloads complete, so the hook returns quickly. The bin dir is
+already on PATH, so tools will appear as downloads finish. Needs a background
+daemon or subprocess approach (not just asyncio.gather in-process).
 """
 
 from __future__ import annotations
