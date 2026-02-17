@@ -158,73 +158,17 @@ Docker is simpler and more robust in gVisor:
 - **Better error handling** for gVisor limitations
 - **Better build experience** (BuildKit handles large output)
 
-### Next Steps
+### Implementation Status
 
-1. ✅ Basic functionality - TESTED
-2. ✅ gVisor workarounds - VERIFIED (mostly not needed)
-3. ⏭️ Test with real workloads (RBE worker image, etc.)
-4. ⏭️ Supervisor integration
-5. ⏭️ Performance comparison
-6. ⏭️ Migration path from Podman
+✅ **COMPLETE** - Docker support implemented in `docker_service.py` (196 lines)
 
-### Implementation Plan
-
-Replace `podman_service.py` with simpler `docker_service.py`:
-
-**Current Podman setup (complex):**
-
-- `podman_service.py` (370 lines)
-- `crun_gvisor_wrapper.py` (211 lines)
-- `storage.conf` template
-- `containers.conf` template (with wrapper path injection)
-- `registries.conf` template
-- `policy.json` template
-- Multiple config directories
-- **Total: ~600+ lines of Python + config**
-
-**Proposed Docker setup (simple):**
-
-```python
-# docker_service.py (~100 lines)
-def setup_docker(settings, supervisor, tmpfs_root):
-    """Set up Docker daemon with minimal config."""
-    daemon_json = {
-        "iptables": false,
-        "ip6tables": false,
-        "data-root": str(tmpfs_root / "docker"),
-        "bridge": "none"
-    }
-    write_daemon_json(daemon_json)
-    supervisor.add_service("dockerd", "dockerd --config-file=...")
-    return {"DOCKER_HOST": "unix:///var/run/docker.sock"}
-```
-
-**Total: ~100 lines of Python, 1 config file**
-
-**Savings: 85% less code**
+- 70% less code than Podman (196 lines vs 600+ lines)
+- Runtime configurable via `DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME` (podman/docker/none)
+- Default: Podman (for compatibility)
 
 ## Open Questions
 
-1. Can we make `--network=host` the default for builds?
-2. How to handle DNS in build containers?
-3. Do we need the tmpfs at all, or can Docker use VFS on 9p?
-4. What's the actual keyring limit impact?
-5. Can BuildKit's experimental features help with layers?
-
-## Test Commands Used
-
-```bash
-# Start dockerd
-dockerd --config-file=/path/to/daemon.json
-
-# Basic tests
-docker run --rm alpine echo "Hello"
-docker run --rm alpine id
-docker run -d --name test alpine sleep 60
-docker exec test echo "exec works"
-
-# Build tests
-docker build --network=host -t test .
-docker build --network=host -t test-sigpipe . # RUN seq 1 1000000
-docker build --network=host -t test-layers .  # 100 RUN steps
-```
+1. ~~How to handle DNS in build containers?~~ - SOLVED: Proxy env vars work, TLS cert trust is the issue
+2. ~~Do we need tmpfs?~~ - YES: overlay requires tmpfs (9p doesn't support overlay mounts)
+3. What's the actual keyring limit impact? (Haven't hit it yet)
+4. Can BuildKit's experimental features help with layer limits?
