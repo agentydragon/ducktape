@@ -1,23 +1,19 @@
 # Claude Code Web Container Recreation
-# Optimized for overlay layer caching (~45 layers, within ~47-50 kernel limit)
 #
-# Build with overlay caching (recommended):
-#   mount -t tmpfs -o size=200G,exec tmpfs /tmp/tmpfs-overlay
-#   mkdir -p /tmp/tmpfs-overlay/containers/{storage,run}
-#   cat > /tmp/storage-overlay.conf << 'EOF'
-#   [storage]
-#   driver = "overlay"
-#   runroot = "/tmp/tmpfs-overlay/containers/run"
-#   graphroot = "/tmp/tmpfs-overlay/containers/storage"
-#   EOF
-#   CONTAINERS_STORAGE_CONF=/tmp/storage-overlay.conf \
-#     podman build --network=host --isolation=oci --format=docker \
+# Build (Docker, recommended):
+#   docker build --network=host \
+#     --build-arg http_proxy="$https_proxy" \
+#     --build-arg https_proxy="$https_proxy" \
 #     -t claude-code-web-recreated .
 #
-# Build without caching (VFS, slower but no layer limit):
-#   CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
-#     podman build --layers=false --network=host --isolation=oci \
-#     --format=docker -t claude-code-web-recreated .
+# NOTE: Docker's overlay snapshotter in gVisor is limited to ~35 lowerdir
+# entries (empirical gVisor limit; not a simple string-length issue). Ubuntu
+# 24.04 base contributes 4 base layers, leaving ~31 slots for Dockerfile
+# instructions. This Dockerfile uses 27 build steps (well within the limit).
+# Key technique: all ENV vars are in one instruction (saves ~9 layer slots vs
+# scattered ENVs). If layers are ever added and the build fails with
+# "mount source: overlay... invalid argument", consolidate COPY/RUN/ENV
+# instructions to stay under 31 steps.
 #
 # Prerequisites:
 #   Proprietary binaries must be captured first (run from within live container):
@@ -25,31 +21,52 @@
 #   This writes reference/environment-manager.gz and reference/process_api.gz
 #   which the Dockerfile COPYs and decompresses at build time.
 
-# Layer 1: Base image
 FROM docker.io/library/ubuntu:24.04
 
 LABEL maintainer="Claude Code Recreation"
 LABEL description="Recreated Claude Code web development environment"
 
-# Redirect RUN output to avoid SIGPIPE under gVisor+buildah (requires --format=docker).
-# On failure, copy last 200 lines to fd 3 (the original stderr, saved before redirect).
+# Capture RUN output to /tmp/build-step.log; print last 200 lines on failure.
+# eval "$0" works because Docker invokes SHELL as:
+#   /bin/bash -c "wrapper_code" "actual_RUN_command"
+# where $0 is the actual command.
 SHELL ["/bin/bash", "-c", "exec 3>&2; set -euo pipefail; trap 'rc=$?; tail -200 /tmp/build-step.log >&3; exit $rc' ERR; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=UTC
+# All ENV in one instruction to minimise overlay layer count (gVisor limit ~35).
+# PATH is fully hardcoded (not referencing $PATH) to avoid expansion ambiguity.
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=UTC \
+    NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    RBENV_ROOT=/opt/rbenv \
+    BUN_INSTALL=/root/.bun \
+    UV_PYTHON_PREFERENCE=only-system \
+    MAVEN_HOME=/opt/maven \
+    GRADLE_HOME=/opt/gradle \
+    JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    GOPATH=/root/go \
+    PATH="/root/.local/bin:/root/.cargo/bin:/root/.bun/bin:/opt/rbenv/bin:/opt/rbenv/shims:/opt/node22/bin:/opt/maven/bin:/opt/gradle/bin:/usr/local/go1.25.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # =============================================================================
-# APT SETUP (Layers 2-6)
+# STATIC FILES (Layers 3-4)
 # =============================================================================
 
-# Layer 2: CA certificates for TLS-inspecting proxy
-COPY rootfs/usr/local/share/ca-certificates/*.crt /usr/local/share/ca-certificates/
+# Layer 3: All /etc/ overlay files (apt repos, preferences, keyrings, profile.d)
+# Includes: CA certs for TLS proxy, PPA sources, preferences, docker.asc/list,
+# profile.d scripts. All placed before any RUN step so APT can use them.
+COPY rootfs/etc/ /etc/
 
-# Layer 3: APT source files (PHP PPA, deadsnakes PPA)
-COPY rootfs/etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/
+# Layer 4: All /usr/ overlay files (CA certs for TLS proxy, helper scripts)
+# Includes: /usr/local/share/ca-certificates/*.crt and /usr/local/bin/ scripts.
+# CA certs must be here before the first RUN that runs update-ca-certificates.
+COPY rootfs/usr/ /usr/
 
-# Layer 4: APT preference files (version pins)
-COPY rootfs/etc/apt/preferences.d/* /etc/apt/preferences.d/
+# =============================================================================
+# APT SETUP (Layers 5-9)
+# =============================================================================
 
 # Layer 5: Configure APT snapshot repos + install ca-certificates
 RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
@@ -86,10 +103,6 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     apt-get install --allow-downgrades -y --no-install-recommends ca-certificates && \
     update-ca-certificates && \
     rm /etc/apt/apt.conf.d/99no-verify
-
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 # Layer 6: Core packages (base system, build tools, clang, libs, systemd, podman, fonts, java, postgres, redis)
 # NOTE: apt lists persist from Layer 5 - no apt-get update needed here
@@ -158,9 +171,8 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
     php8.4-igbinary php8.4-redis \
     && rm -rf /var/lib/apt/lists/*
 
-# Layer 8b: Docker CE (from download.docker.com, not snapshot repos)
-COPY rootfs/etc/apt/keyrings/docker.asc /etc/apt/keyrings/docker.asc
-COPY rootfs/etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.list
+# Layer 9: Docker CE (from download.docker.com, not snapshot repos)
+# docker.asc and docker.list are pre-placed in Layer 3 (COPY rootfs/etc/)
 RUN apt-get update && \
     apt-get install --allow-downgrades -y --no-install-recommends \
     containerd.io=2.2.1-1~ubuntu.24.04~noble \
@@ -171,10 +183,10 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # =============================================================================
-# RUNTIME INSTALLATIONS (Layers 9-19)
+# RUNTIME INSTALLATIONS (Layers 10-20)
 # =============================================================================
 
-# Layer 9: Node.js 20, 21, 22 + NVM
+# Layer 10: Node.js 20, 21, 22 + NVM
 RUN mkdir -p /opt && \
     curl -fsSL https://nodejs.org/dist/v20.20.0/node-v20.20.0-linux-x64.tar.xz | \
         tar -xJ -C /opt && mv /opt/node-v20.20.0-linux-x64 /opt/node20 && \
@@ -186,16 +198,14 @@ RUN mkdir -p /opt && \
     curl -fsSL https://github.com/nvm-sh/nvm/archive/refs/tags/v0.40.1.tar.gz | \
         tar -xz --strip-components=1 -C /opt/nvm
 
-ENV PATH="/opt/node22/bin:$PATH"
-
-# Layer 10: npm global packages
+# Layer 11: npm global packages
 RUN npm install -g --ignore-scripts chromedriver@145.0.1 playwright@1.56.1 && \
     npm install -g \
     @anthropic-ai/claude-code@2.1.38 eslint@10.0.0 http-server@14.1.1 \
     nodemon@3.1.11 pnpm@10.29.2 prettier@3.8.1 serve@14.2.5 \
     ts-node@10.9.2 typescript@5.9.3 yarn@1.22.22
 
-# Layer 11: rbenv + Ruby 3.1.6, 3.2.6, 3.3.6 + symlinks
+# Layer 12: rbenv + Ruby 3.1.6, 3.2.6, 3.3.6 + symlinks
 RUN mkdir -p /opt/rbenv /opt/rbenv/plugins/ruby-build && \
     curl -fsSL https://github.com/rbenv/rbenv/archive/refs/heads/master.tar.gz | \
         tar -xz --strip-components=1 -C /opt/rbenv && \
@@ -210,13 +220,10 @@ RUN mkdir -p /opt/rbenv /opt/rbenv/plugins/ruby-build && \
     ln -s /opt/rbenv/versions/3.2.6 /opt/ruby-3.2.6 && \
     ln -s /opt/rbenv/versions/3.3.6 /opt/ruby-3.3.6
 
-ENV RBENV_ROOT=/opt/rbenv
-ENV PATH="$RBENV_ROOT/bin:$RBENV_ROOT/shims:$PATH"
-
-# Layer 12: Initialize rbenv
+# Layer 13: Initialize rbenv
 RUN eval "$(rbenv init -)" && rbenv global 3.3.6 && rbenv rehash
 
-# Layer 13: Go 1.24.7, 1.25.1 + golangci-lint + version scripts
+# Layer 14: Go 1.24.7, 1.25.1 + golangci-lint + version scripts
 RUN curl -fsSL https://go.dev/dl/go1.24.7.linux-amd64.tar.gz | tar -xz -C /usr/local && \
     mv /usr/local/go /usr/local/go1.24.7 && \
     curl -fsSL https://go.dev/dl/go1.25.1.linux-amd64.tar.gz | tar -xz -C /usr/local && \
@@ -226,19 +233,13 @@ RUN curl -fsSL https://go.dev/dl/go1.24.7.linux-amd64.tar.gz | tar -xz -C /usr/l
     chmod +x /usr/local/use-go-1.24.7.sh /usr/local/use-go-1.25.1.sh && \
     curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v2.5.0
 
-ENV PATH="$PATH:/usr/local/go1.25.1/bin"
-ENV GOPATH="/root/go"
-
-# Layer 14: Rust
+# Layer 15: Rust
 RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-ENV PATH="/root/.cargo/bin:$PATH"
 
-# Layer 15: Bun
+# Layer 16: Bun
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.9"
-ENV BUN_INSTALL="/root/.bun"
-ENV PATH="$BUN_INSTALL/bin:$PATH"
 
-# Layer 16: UV + Python tools
+# Layer 17: UV + Python tools
 RUN curl -fsSL https://astral.sh/uv/0.8.17/install.sh | sh && \
     /root/.local/bin/uv tool install black && \
     /root/.local/bin/uv tool install flake8 && \
@@ -247,21 +248,15 @@ RUN curl -fsSL https://astral.sh/uv/0.8.17/install.sh | sh && \
     /root/.local/bin/uv tool install pyright && \
     /root/.local/bin/uv tool install pytest && \
     /root/.local/bin/uv tool install ruff
-ENV PATH="/root/.local/bin:$PATH"
-ENV UV_PYTHON_PREFERENCE=only-system
 
-# Layer 17: Maven + Gradle + Composer
+# Layer 18: Maven + Gradle + Composer
 RUN curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.tar.gz | \
         tar -xz -C /opt && ln -s /opt/apache-maven-3.9.11 /opt/maven && \
     curl -fsSL "https://services.gradle.org/distributions/gradle-8.14.3-bin.zip" -o /tmp/gradle.zip && \
         unzip -q /tmp/gradle.zip -d /opt && ln -s /opt/gradle-8.14.3 /opt/gradle && rm /tmp/gradle.zip && \
     curl -fsSL https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-ENV MAVEN_HOME=/opt/maven
-ENV GRADLE_HOME=/opt/gradle
-ENV PATH="$MAVEN_HOME/bin:$GRADLE_HOME/bin:$PATH"
-
-# Layer 18: pip packages
+# Layer 19: pip packages
 RUN pip3 install --break-system-packages \
     anyio==4.12.1 argcomplete==3.1.4 certifi==2025.11.12 charset-normalizer==3.4.4 \
     conan==2.23.0 colorama==0.4.6 h11==0.16.0 h2==4.3.0 httpcore==1.0.9 httpx==0.28.1 \
@@ -269,7 +264,7 @@ RUN pip3 install --break-system-packages \
     pre-commit PyYAML==6.0.1 requests==2.32.5 toml==0.10.2 typing_extensions==4.15.0 \
     urllib3==2.6.1 virtualenv websockets==16.0 xmltodict==0.13.0 yq==3.1.0
 
-# Layer 19: Symlinks in /usr/local/bin
+# Layer 20: Symlinks in /usr/local/bin
 RUN ln -sf /root/.bun/bin/bun /usr/local/bin/bun && \
     ln -sf /root/.bun/bin/bunx /usr/local/bin/bunx && \
     ln -sf /opt/ruby-3.3.6/bin/bundle /usr/local/bin/bundle && \
@@ -283,23 +278,14 @@ RUN ln -sf /root/.bun/bin/bun /usr/local/bin/bun && \
     ln -sf /usr/bin/python3.11 /usr/local/bin/python3
 
 # =============================================================================
-# SCRIPTS AND CONFIGURATION (Layers 20-28)
+# SCRIPTS AND CONFIGURATION (Layers 21-25)
 # =============================================================================
 
-# Layer 20: Profile scripts (all in one directory copy)
-COPY rootfs/etc/profile.d/ /etc/profile.d/
-
-# Layer 21: Helper scripts
-COPY rootfs/usr/local/bin/use-python rootfs/usr/local/bin/use-node-20 rootfs/usr/local/bin/use-node-21 \
-     rootfs/usr/local/bin/use-node-22 rootfs/usr/local/bin/use-ruby-3.1.6 rootfs/usr/local/bin/use-ruby-3.2.6 \
-     rootfs/usr/local/bin/use-ruby-3.3.6 rootfs/usr/local/bin/create-venv-py3.10 rootfs/usr/local/bin/create-venv-py3.11 \
-     rootfs/usr/local/bin/create-venv-py3.12 rootfs/usr/local/bin/create-venv-py3.13 \
-     rootfs/usr/local/bin/check-tools rootfs/usr/local/bin/use-php-8.4 /usr/local/bin/
-
-# Layer 22: Compressed binaries
+# Layer 21: Compressed proprietary binaries
 COPY reference/environment-manager.gz reference/process_api.gz /tmp/
 
-# Layer 23: Extract binaries + chmod all helper scripts
+# Layer 22: Extract binaries + chmod all helper scripts
+# Helper scripts are pre-placed in /usr/local/bin/ via Layer 4 (COPY rootfs/usr/)
 RUN chmod +x /usr/local/bin/use-python /usr/local/bin/use-node-* /usr/local/bin/use-ruby-* \
         /usr/local/bin/create-venv-* /usr/local/bin/check-tools /usr/local/bin/use-php-8.4 && \
     gunzip -c /tmp/environment-manager.gz > /usr/local/bin/environment-manager && \
@@ -308,35 +294,29 @@ RUN chmod +x /usr/local/bin/use-python /usr/local/bin/use-node-* /usr/local/bin/
     chmod +x /process_api && \
     rm /tmp/*.gz
 
-# Layer 24: Root dotfiles and env script
-COPY rootfs/root/.bashrc rootfs/root/.profile rootfs/root/.wget-hsts rootfs/root/.gitconfig /root/
-COPY rootfs/root/.local/bin/env /root/.local/bin/env
+# Layer 23: Root dotfiles, env script, and Claude config
+# Single COPY replaces 3 separate COPYs for .bashrc/.profile, .local/bin/env, .claude/
+COPY rootfs/root/ /root/
 
-# Layer 25: Root Claude config
-COPY rootfs/root/.claude/ /root/.claude/
-
-# Layer 26: User setup + directories + copy gitconfig
+# Layer 24: User setup + directories + copy gitconfig
 RUN useradd -m -s /bin/bash -u 999 claude && \
     mkdir -p /home/user /home/claude/.claude /home/claude/.ssh /home/claude/scripts && \
     chmod +x /root/.local/bin/env && \
     cp /root/.gitconfig /home/claude/.gitconfig && \
     chown claude:claude /home/claude/.gitconfig
 
-# Layer 27: Claude user home files
-COPY rootfs/home/claude/README.md /home/claude/README.md
-COPY rootfs/home/claude/scripts/README.md /home/claude/scripts/README.md
-COPY rootfs/home/claude/.claude/ /home/claude/.claude/
+# Layer 25: Claude user home files + permissions
+# Single COPY replaces 3 separate COPYs for README.md, scripts/README.md, .claude/
+COPY rootfs/home/claude/ /home/claude/
 
-# Layer 28: Claude user permissions
+# =============================================================================
+# FINAL SETUP (Layers 26-27)
+# =============================================================================
+
+# Layer 26: All permission fixes (claude .claude + SUID/SGID + directory perms)
 RUN chmod +x /home/claude/.claude/stop-hook-git-check.sh && \
-    chown -R claude:claude /home/claude/.claude
-
-# =============================================================================
-# FINAL SETUP (Layers 29-31)
-# =============================================================================
-
-# Layer 29: SUID/SGID bits + directory permissions
-RUN chmod 4755 /usr/bin/chfn /usr/bin/chsh /usr/bin/gpasswd /usr/bin/newgrp \
+    chown -R claude:claude /home/claude/.claude && \
+    chmod 4755 /usr/bin/chfn /usr/bin/chsh /usr/bin/gpasswd /usr/bin/newgrp \
                /usr/bin/passwd /usr/bin/sudo \
                /usr/lib/dbus-1.0/dbus-daemon-launch-helper \
                /usr/lib/polkit-1/polkit-agent-helper-1 && \
@@ -349,17 +329,15 @@ RUN chmod 4755 /usr/bin/chfn /usr/bin/chsh /usr/bin/gpasswd /usr/bin/newgrp \
     chmod 2775 /var/local /var/mail /usr/local/share/fonts && \
     chmod 555 /
 
-# Layer 30: Symlinks + alternatives + runtime directories
+# Layer 27: Symlinks + alternatives + runtime dirs + remove build-time APT sources
+# NOTE: Do NOT strip /usr/share/doc, /usr/share/man, /usr/include, etc.
+# These exist in the live container and should remain for reproducibility.
 RUN ln -sf /proc/mounts /etc/mtab && \
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 130 && \
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 130 && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
-    mkdir -p /root/.local/share/gem /root/.local/lib/python3.11
-
-# Layer 31: Remove build-time APT sources (not present in live container)
-# NOTE: Do NOT strip /usr/share/doc, /usr/share/man, /usr/include, etc.
-# These exist in the live container and should remain for reproducibility.
-RUN rm -f \
+    mkdir -p /root/.local/share/gem /root/.local/lib/python3.11 && \
+    rm -f \
     /etc/apt/sources.list.d/snapshot.sources \
     /etc/apt/sources.list.d/live-archive.sources \
     /etc/apt/preferences.d/snapshot-pin \
@@ -370,14 +348,6 @@ RUN rm -f \
     /etc/apt/preferences.d/ppa-pin \
     /etc/apt/preferences.d/php84-pin \
     /etc/apt/preferences.d/version-drift-pin
-
-# =============================================================================
-# ENVIRONMENT
-# =============================================================================
-
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
 
 WORKDIR /home/user
 
