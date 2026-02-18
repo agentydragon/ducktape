@@ -78,35 +78,29 @@ def _delete_all_manifests(registry_url: str) -> None:
     for agent_type in AgentType:
         repo = agent_type.value
         # List tags for this repo
-        try:
-            resp = httpx.get(f"{registry_url}/v2/{repo}/tags/list", timeout=5.0)
-            if resp.status_code == 404:
-                continue  # Repo doesn't exist yet
-            resp.raise_for_status()
-            tags = resp.json().get("tags") or []
-        except httpx.HTTPError:
-            continue
+        resp = httpx.get(f"{registry_url}/v2/{repo}/tags/list", timeout=5.0)
+        if resp.status_code == 404:
+            continue  # Repo doesn't exist yet
+        resp.raise_for_status()
+        tags = resp.json().get("tags") or []
 
         # Delete each tag's manifest
         for tag in tags:
-            try:
-                # Get manifest digest
-                head_resp = httpx.head(
-                    f"{registry_url}/v2/{repo}/manifests/{tag}",
-                    headers={"Accept": "application/vnd.oci.image.manifest.v1+json"},
-                    timeout=5.0,
-                )
-                if head_resp.status_code != 200:
-                    continue
-                digest = head_resp.headers.get("Docker-Content-Digest")
-                if not digest:
-                    continue
+            # Get manifest digest
+            head_resp = httpx.head(
+                f"{registry_url}/v2/{repo}/manifests/{tag}",
+                headers={"Accept": "application/vnd.oci.image.manifest.v1+json"},
+                timeout=5.0,
+            )
+            if head_resp.status_code != 200:
+                continue
+            digest = head_resp.headers.get("Docker-Content-Digest")
+            if not digest:
+                continue
 
-                # Delete by digest
-                httpx.delete(f"{registry_url}/v2/{repo}/manifests/{digest}", timeout=5.0)
-                logger.debug(f"Deleted {repo}:{tag} ({digest})")
-            except httpx.HTTPError as e:
-                logger.warning(f"Failed to delete {repo}:{tag}: {e}")
+            # Delete by digest
+            httpx.delete(f"{registry_url}/v2/{repo}/manifests/{digest}", timeout=5.0).raise_for_status()
+            logger.debug(f"Deleted {repo}:{tag} ({digest})")
 
 
 @pytest.fixture
