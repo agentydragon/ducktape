@@ -4,58 +4,41 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
 
+from bazel_util.query import run_query as _run_query
+
 logger = logging.getLogger(__name__)
 
-
-def _get_query_log_dir() -> Path:
-    """Get the query log directory, reading env var at call time (not import time)."""
-    return Path(os.environ.get("BAZEL_QUERY_LOG_DIR", "/tmp/bazel-query-logs"))
+_BAZEL_QUERY_LOG_DIR_ENV = "BAZEL_QUERY_LOG_DIR"
+_DEFAULT_QUERY_LOG_DIR = "/tmp/bazel-query-logs"
 
 
-def _run_bazel_query_cmd(cmd: list[str | Path], query: str) -> list[str]:
-    """Run a bazel query command using --query_file to avoid "Argument list too long" errors.
-
-    Query files are saved to BAZEL_QUERY_LOG_DIR for CI artifact capture on failure.
-    Returns list of targets from stdout.
-    Raises CalledProcessError on failure.
-    """
-    # Save query to log directory for CI artifacts
-    query_log_dir = _get_query_log_dir()
+def _make_persist_dir() -> Path:
+    """Create and return a timestamped per-query directory under BAZEL_QUERY_LOG_DIR."""
+    query_log_dir = Path(os.environ.get(_BAZEL_QUERY_LOG_DIR_ENV, _DEFAULT_QUERY_LOG_DIR))
     logger.info(
-        "Saving query to: %s (env BAZEL_QUERY_LOG_DIR=%s)", query_log_dir, os.environ.get("BAZEL_QUERY_LOG_DIR")
+        "Saving query to: %s (env %s=%s)",
+        query_log_dir,
+        _BAZEL_QUERY_LOG_DIR_ENV,
+        os.environ.get(_BAZEL_QUERY_LOG_DIR_ENV),
     )
     query_log_dir.mkdir(parents=True, exist_ok=True)
-    # Each query gets its own subdirectory
     timestamp = datetime.now().strftime("%H%M%S")
     query_dir = query_log_dir / f"{timestamp}_{uuid.uuid4().hex[:8]}"
     query_dir.mkdir()
-    query_file = query_dir / "query"
-    query_file.write_text(query)
-
-    result = subprocess.run([*cmd, f"--query_file={query_file}"], check=False, capture_output=True, text=True)
-
-    (query_dir / "stdout").write_text(result.stdout)
-    (query_dir / "stderr").write_text(result.stderr)
-    (query_dir / "exit_code").write_text(str(result.returncode))
-
-    if result.returncode != 0:
-        logger.error("Query failed (exit %d). stderr:\n%s", result.returncode, result.stderr)
-        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
-
-    return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
+    return query_dir
 
 
 def run_query(query: str) -> list[str]:
-    """Run a bazel query and return matching targets.
+    """Run a bazel query and return matching targets as label strings.
 
     Raises CalledProcessError on failure.
     """
-    return _run_bazel_query_cmd(["bazel", "query"], query)
+    labels = _run_query(query, persist_dir=_make_persist_dir())
+    return [str(label) for label in labels]
 
 
 def query_with_targets(query_template: str, targets: list[str]) -> list[str]:

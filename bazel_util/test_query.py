@@ -119,6 +119,24 @@ def test_package_path_property(label: BazelLabel, expected: Path | None) -> None
 
 
 # ---------------------------------------------------------------------------
+# BazelLabel.__str__
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        (BazelLabel(repo="", package=Path("foo/bar"), name="baz.py"), "//foo/bar:baz.py"),
+        (BazelLabel(repo="", package=Path(), name="root.txt"), "//:root.txt"),
+        (BazelLabel(repo="repo", package=Path("pkg"), name="target"), "@repo//pkg:target"),
+        (BazelLabel(repo="canonical", package=Path("pkg"), name="target"), "@canonical//pkg:target"),
+    ],
+)
+def test_str(label: BazelLabel, expected: str) -> None:
+    assert str(label) == expected
+
+
+# ---------------------------------------------------------------------------
 # run_query
 # ---------------------------------------------------------------------------
 
@@ -126,12 +144,13 @@ def test_package_path_property(label: BazelLabel, expected: Path | None) -> None
 def test_run_query_parses_labels(tmp_path: Path) -> None:
     mock_result = MagicMock()
     mock_result.stdout = "//foo:bar.py\n@ext//pkg:target\n\n"
+    mock_result.returncode = 0
     with patch("bazel_util.query.subprocess.run", return_value=mock_result) as mock_run:
         result = run_query("//...", cwd=tmp_path)
     (cmd,), kwargs = mock_run.call_args
     assert cmd[:2] == ["bazel", "query"]
     assert cmd[2].startswith("--query_file=")
-    assert kwargs == {"capture_output": True, "text": True, "cwd": tmp_path, "check": True}
+    assert kwargs == {"capture_output": True, "text": True, "cwd": tmp_path, "check": False}
     assert result == [
         BazelLabel(repo="", package=Path("foo"), name="bar.py"),
         BazelLabel(repo="ext", package=Path("pkg"), name="target"),
@@ -139,11 +158,26 @@ def test_run_query_parses_labels(tmp_path: Path) -> None:
     assert not any(isinstance(label, str) for label in result)
 
 
+def test_run_query_persist_dir(tmp_path: Path) -> None:
+    persist_dir = tmp_path / "persist"
+    persist_dir.mkdir()
+    mock_result = MagicMock()
+    mock_result.stdout = "//foo:bar\n"
+    mock_result.stderr = ""
+    mock_result.returncode = 0
+    with patch("bazel_util.query.subprocess.run", return_value=mock_result):
+        run_query("//...", persist_dir=persist_dir)
+    assert (persist_dir / "query").read_text() == "//..."
+    assert (persist_dir / "stdout").read_text() == "//foo:bar\n"
+    assert (persist_dir / "exit_code").read_text() == "0"
+
+
 def test_run_query_raises_on_failure(tmp_path: Path) -> None:
-    with (
-        patch("bazel_util.query.subprocess.run", side_effect=CalledProcessError(1, "bazel")),
-        pytest.raises(CalledProcessError),
-    ):
+    mock_result = MagicMock()
+    mock_result.stdout = ""
+    mock_result.stderr = "error"
+    mock_result.returncode = 1
+    with patch("bazel_util.query.subprocess.run", return_value=mock_result), pytest.raises(CalledProcessError):
         run_query("//...", cwd=tmp_path)
 
 

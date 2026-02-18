@@ -80,6 +80,13 @@ class BazelLabel:
         except ValueError:
             return None
 
+    def __str__(self) -> str:
+        """Reconstruct the canonical label string (e.g. ``//foo/bar:baz``)."""
+        # Path("") stringifies as "." in Python, but root package must be "" in a label.
+        pkg = "" if self.package == Path() else str(self.package)
+        repo_prefix = f"@{self.repo}//" if self.repo else "//"
+        return f"{repo_prefix}{pkg}:{self.name}"
+
     @property
     def is_external(self) -> bool:
         """True for labels that live in an external repository."""
@@ -111,11 +118,19 @@ class BazelLabel:
         return self.package
 
 
-def run_query(expr: str, *, cwd: Path) -> list[BazelLabel]:
+def run_query(expr: str, *, cwd: Path | None = None, persist_dir: Path | None = None) -> list[BazelLabel]:
     """Run a ``bazel query`` and return the parsed labels.
 
     The expression is passed via ``--query_file`` to avoid
     ``E2BIG`` / "Argument list too long" errors on large queries.
+
+    Args:
+        expr:        Bazel query expression.
+        cwd:         Working directory for the subprocess.  ``None`` means
+                     inherit the current working directory.
+        persist_dir: When set, save ``query``, ``stdout``, ``stderr`` and
+                     ``exit_code`` files there for CI artifact capture.
+                     The directory must already exist; no subdir is created.
 
     Raises :class:`subprocess.CalledProcessError` if the query exits non-zero,
     with ``.stderr`` containing the captured error text.  Output lines that
@@ -124,9 +139,17 @@ def run_query(expr: str, *, cwd: Path) -> list[BazelLabel]:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery") as query_file:
         query_file.write(expr)
         query_file.flush()
+        if persist_dir is not None:
+            (persist_dir / "query").write_text(expr)
         result = subprocess.run(
-            ["bazel", "query", f"--query_file={query_file.name}"], capture_output=True, text=True, cwd=cwd, check=True
+            ["bazel", "query", f"--query_file={query_file.name}"], capture_output=True, text=True, cwd=cwd, check=False
         )
+    if persist_dir is not None:
+        (persist_dir / "stdout").write_text(result.stdout)
+        (persist_dir / "stderr").write_text(result.stderr)
+        (persist_dir / "exit_code").write_text(str(result.returncode))
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, "bazel", result.stdout, result.stderr)
     return [label for line in result.stdout.splitlines() if line and (label := BazelLabel.try_parse(line)) is not None]
 
 

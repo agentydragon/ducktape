@@ -22,6 +22,7 @@ py_library(
     srcs = ["bazel_query.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
+    deps = ["//bazel_util:query"],
 )
 
 py_library(
