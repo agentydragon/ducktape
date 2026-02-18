@@ -23,6 +23,7 @@ package homebank
 import (
 	"encoding/xml"
 	"io/ioutil"
+	"os"
 	"strconv"
 	"time"
 )
@@ -206,7 +207,9 @@ func WriteHomebankFile(homebank HomebankFile, path string) {
 	if err != nil {
 		panic(err)
 	}
-	util.WriteFileOrDie(path, bytes)
+	if err := os.WriteFile(path, bytes, 0o644); err != nil {
+		panic(err)
+	}
 }
 
 /*

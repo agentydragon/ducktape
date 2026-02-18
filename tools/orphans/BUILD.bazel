@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 
 py_binary(
     name = "find_orphans",
@@ -9,5 +9,15 @@ py_binary(
         "//bazel_util:workspace",
         "@pypi//pathspec",
         "@pypi//pygit2",
+    ],
+)
+
+py_test(
+    name = "test_find_orphans",
+    srcs = ["test_find_orphans.py"],
+    imports = ["../.."],
+    deps = [
+        ":find_orphans",
+        "@pypi//pytest_bazel",
     ],
 )

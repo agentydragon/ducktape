@@ -1,0 +1,11 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "ibdock_example",
+    srcs = ["ibdock_example.go"],
+    importpath = "github.com/agentydragon/worthy/ibdock_example",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//finance/worthy/ibdock",
+    ],
+)

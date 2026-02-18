@@ -492,12 +492,127 @@ go_sdk.download(version = "1.25.6")
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//claude_web_env/re/environment_manager/6b49f1ca/src:go.mod")
+
+# finance/worthy Go dependencies (separate module; go_deps only allows one from_file)
+go_deps.module(
+    path = "github.com/Azure/go-ansiterm",
+    sum = "h1:udKWzYgxTojEKWjV8V+WSxDXJ4NFATAsZjh8iIbsQIg=",
+    version = "v0.0.0-20250102033503-faa5f7b0171c",
+)
+go_deps.module(
+    path = "github.com/Microsoft/go-winio",
+    sum = "h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=",
+    version = "v0.6.2",
+)
+go_deps.module(
+    path = "github.com/containerd/log",
+    sum = "h1:TCJt7ioM2cr/tfR8GPbGf9/VRAX8D2B4PjzCpfX540I=",
+    version = "v0.1.0",
+)
+go_deps.module(
+    path = "github.com/docker/go-units",
+    sum = "h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=",
+    version = "v0.5.0",
+)
+go_deps.module(
+    path = "github.com/fsouza/go-dockerclient",
+    sum = "h1:i6VWBKrFprrqDDK6rEYw0Zp5KsN+cVlqZ/ODaIX2erM=",
+    version = "v1.13.0",
+)
+go_deps.module(
+    path = "github.com/klauspost/compress",
+    sum = "h1:9PJRvfbmTabkOX8moIpXPbMMbYN60bWImDDU7L+/6zw=",
+    version = "v1.18.3",
+)
+go_deps.module(
+    path = "github.com/moby/go-archive",
+    sum = "h1:zg5QDUM2mi0JIM9fdQZWC7U8+2ZfixfTYoHL7rWUcP8=",
+    version = "v0.2.0",
+)
+go_deps.module(
+    path = "github.com/moby/moby/api",
+    sum = "h1:PihqG1ncw4W+8mZs69jlwGXdaYBeb5brF6BL7mPIS/w=",
+    version = "v1.53.0",
+)
+go_deps.module(
+    path = "github.com/moby/moby/client",
+    sum = "h1:Pt4hRMCAIlyjL3cr8M5TrXCwKzguebPAc2do2ur7dEM=",
+    version = "v0.2.2",
+)
+go_deps.module(
+    path = "github.com/moby/moby/v2",
+    sum = "h1:esIpPmQk4oZyPkbu+5hDAE+as2LEKaYxQcWSC5zUGiM=",
+    version = "v2.0.0-beta.6",
+)
+go_deps.module(
+    path = "github.com/moby/patternmatcher",
+    sum = "h1:GmP9lR19aU5GqSSFko+5pRqHi+Ohk1O69aFiKkVGiPk=",
+    version = "v0.6.0",
+)
+go_deps.module(
+    path = "github.com/moby/sys/sequential",
+    sum = "h1:qrx7XFUd/5DxtqcoH1h438hF5TmOvzC/lspjy7zgvCU=",
+    version = "v0.6.0",
+)
+go_deps.module(
+    path = "github.com/moby/sys/user",
+    sum = "h1:jhcMKit7SA80hivmFJcbB1vqmw//wU61Zdui2eQXuMs=",
+    version = "v0.4.0",
+)
+go_deps.module(
+    path = "github.com/moby/sys/userns",
+    sum = "h1:tVLXkFOxVu9A64/yh59slHVv9ahO9UIev4JZusOLG/g=",
+    version = "v0.1.0",
+)
+go_deps.module(
+    path = "github.com/moby/term",
+    sum = "h1:6qk3FJAFDs6i/q3W/pQ97SX192qKfZgGjCQqfCJkgzQ=",
+    version = "v0.5.2",
+)
+go_deps.module(
+    path = "github.com/opencontainers/go-digest",
+    sum = "h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=",
+    version = "v1.0.0",
+)
+go_deps.module(
+    path = "github.com/opencontainers/image-spec",
+    sum = "h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=",
+    version = "v1.1.1",
+)
+go_deps.module(
+    path = "github.com/sirupsen/logrus",
+    sum = "h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=",
+    version = "v1.9.4",
+)
+go_deps.module(
+    path = "golang.org/x/sys",
+    sum = "h1:DBZZqJ2Rkml6QMQsZywtnjnnGvHza6BTfYFWY9kjEWQ=",
+    version = "v0.40.0",
+)
 use_repo(
     go_deps,
+    "com_github_azure_go_ansiterm",
+    "com_github_containerd_log",
+    "com_github_docker_go_units",
+    "com_github_fsouza_go_dockerclient",
     "com_github_google_uuid",
     "com_github_gorilla_websocket",
+    "com_github_klauspost_compress",
     "com_github_mark3labs_mcp_go",
+    "com_github_microsoft_go_winio",
     "com_github_mitchellh_mapstructure",
+    "com_github_moby_go_archive",
+    "com_github_moby_moby_api",
+    "com_github_moby_moby_client",
+    "com_github_moby_moby_v2",
+    "com_github_moby_patternmatcher",
+    "com_github_moby_sys_sequential",
+    "com_github_moby_sys_user",
+    "com_github_moby_sys_userns",
+    "com_github_moby_term",
+    "com_github_opencontainers_go_digest",
+    "com_github_opencontainers_image_spec",
+    "com_github_sirupsen_logrus",
     "com_github_spf13_cobra",
     "io_opentelemetry_go_contrib_bridges_otelslog",
     "io_opentelemetry_go_otel",
@@ -510,4 +625,5 @@ use_repo(
     "io_opentelemetry_go_otel_sdk_metric",
     "org_golang_google_protobuf",
     "org_golang_x_sync",
+    "org_golang_x_sys",
 )

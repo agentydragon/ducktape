@@ -69,8 +69,6 @@ ansible/**
 nix/**
 dotfiles/**
 k8s_old/**
-# finance/worthy uses Go, not Bazelized for Go yet
-finance/worthy/**
 
 # investigations/ - ad-hoc analysis, not buildable
 investigations/**

@@ -1,9 +1,10 @@
-#!/usr/bin/env python3
 """Find git-tracked files that are not inputs to any Bazel target.
 
+Also reports whitelist entries that are no longer needed (dead patterns).
+
 Usage:
-    bazel run //tools/orphans:find_orphans           # List orphans
-    bazel run //tools/orphans:find_orphans -- --check  # Fail if orphans exist
+    bazel run //tools/orphans:find_orphans           # List orphans + dead whitelist entries
+    bazel run //tools/orphans:find_orphans -- --check  # Fail if orphans or dead entries exist
 
 Covers files referenced via labels(srcs/data), plus files auto-discovered by
 rules that don't use explicit srcs (helm_chart via helm_package rule kind).
@@ -101,24 +102,38 @@ def get_git_files(repo_root: Path) -> set[Path]:
     return {Path(entry.path) for entry in index}
 
 
-def load_whitelist(whitelist_path: Path) -> pathspec.PathSpec:
-    """Load whitelist patterns from file."""
-    lines = whitelist_path.read_text().splitlines()
-    return pathspec.PathSpec.from_lines("gitwildmatch", lines)
+def unused_whitelist_patterns(raw_orphans: set[Path], whitelist_lines: list[str]) -> list[str]:
+    """Return whitelist lines that suppress no file in *raw_orphans*.
+
+    A line is considered "unused" when it is a non-comment, non-blank pattern
+    that matches none of the provided raw-orphan paths.  Such entries are dead
+    weight — either the files they referenced were deleted, or they are now
+    fully covered by Bazel targets and no longer appear as orphans.
+    """
+    raw_orphan_strs = [str(p) for p in raw_orphans]
+    unused: list[str] = []
+    for line in whitelist_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        single_spec = pathspec.PathSpec.from_lines("gitwildmatch", [stripped])
+        if not any(single_spec.match_file(p) for p in raw_orphan_strs):
+            unused.append(line)
+    return unused
 
 
-def find_orphans(repo_root: Path, whitelist_path: Path) -> list[Path]:
-    """Find git files not in any Bazel target, excluding whitelisted patterns."""
+def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[str]]:
+    """Return (orphaned_files, unused_whitelist_patterns), querying Bazel once."""
     git_files = get_git_files(repo_root)
     bazel_files = query_bazel_files(repo_root)
     helm_files = query_helm_chart_files(repo_root, git_files)
-    whitelist = load_whitelist(whitelist_path)
+    whitelist_lines = whitelist_path.read_text().splitlines()
+    whitelist = pathspec.PathSpec.from_lines("gitwildmatch", whitelist_lines)
 
-    orphans = git_files - bazel_files - helm_files
-    # Filter out whitelisted patterns
-    orphans = {p for p in orphans if not whitelist.match_file(str(p))}
-
-    return sorted(orphans)
+    raw_orphans = git_files - bazel_files - helm_files
+    orphans = sorted(p for p in raw_orphans if not whitelist.match_file(str(p)))
+    unused = unused_whitelist_patterns(raw_orphans, whitelist_lines)
+    return orphans, unused
 
 
 def main() -> int:
@@ -126,19 +141,31 @@ def main() -> int:
     parser.add_argument(
         "--whitelist", type=Path, default=None, help="Path to whitelist file (default: tools/orphans/whitelist.txt)"
     )
-    parser.add_argument("--check", action="store_true", help="Exit with code 1 if any orphans found")
+    parser.add_argument(
+        "--check", action="store_true", help="Exit with code 1 if any orphans or dead whitelist entries exist"
+    )
     args = parser.parse_args()
 
     repo_root = get_build_workspace_directory()
     whitelist_path = args.whitelist or repo_root / "tools/orphans/whitelist.txt"
 
-    orphans = find_orphans(repo_root, whitelist_path)
+    orphans, unused = run_report(repo_root, whitelist_path)
 
     for orphan in orphans:
         print(orphan)
 
-    if args.check and orphans:
-        print(f"\n{len(orphans)} orphaned files found", file=sys.stderr)
+    if unused:
+        print("\nDead whitelist entries (suppress no orphan):")
+        for pattern in unused:
+            print(f"  {pattern}")
+
+    if args.check and (orphans or unused):
+        counts = []
+        if orphans:
+            counts.append(f"{len(orphans)} orphaned file(s)")
+        if unused:
+            counts.append(f"{len(unused)} dead whitelist entry/entries")
+        print(f"\n{' and '.join(counts)} found", file=sys.stderr)
         return 1
 
     return 0
