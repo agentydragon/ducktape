@@ -1,5 +1,9 @@
 # Save Bazel repository cache (only on cache miss).
-# See .github/docs/bazel-caching.md for design rationale.
+# See .github/docs/bazel_caching.md for design rationale.
+#
+# NOTE: Uses actions/cache/save@v4 which creates a new cache entry even when
+# the key already exists, which can cause duplicate-key 400 errors on restore.
+# This action is currently unused — see .github/docs/bazel_caching.md.
 name: Bazel Repo Cache Save
 description: Save Bazel repository cache (use after bazel-repo-cache action)
 

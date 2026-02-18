@@ -40,11 +40,6 @@ jobs:
           package_prefix: gnome-terminal-profile-switcher
           bazel_target: //gnome_terminal_profile_switcher:wheel
           latest_release_tag: gnome-terminal-profile-switcher-latest
-      - uses: ./.github/actions/bazel-repo-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}
   release:
     needs: check
     if: needs.check.outputs.release_needed == 'true' || inputs.force_release == true

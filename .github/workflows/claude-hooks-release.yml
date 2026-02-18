@@ -59,12 +59,6 @@ jobs:
           bazel_target: //tools/claude_hooks:wheel
           latest_release_tag: claude-hooks-latest
 
-      - uses: ./.github/actions/bazel-repo-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}
-
   # Unit and E2E tests run on all pushes and PRs
   test:
     name: Tests
@@ -117,12 +111,6 @@ jobs:
           reporter: java-junit
           fail-on-error: false
 
-      - uses: ./.github/actions/bazel-repo-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}
-
   # Wheel mode tests - build wheel, install it, and run tests against installed package
   # Runs on all triggers (PRs and pushes) to catch wheel packaging issues early
   wheel-test:
@@ -171,12 +159,6 @@ jobs:
         if: always()
         with:
           artifact-name: wheel-test-logs
-
-      - uses: ./.github/actions/bazel-repo-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}
 
   # Release job - only runs on push to devel/main when release is needed
   release:
@@ -310,9 +292,3 @@ jobs:
             git log --oneline HEAD..origin/${{ github.ref_name }}
             exit 1
           fi
-
-      - uses: ./.github/actions/bazel-repo-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}

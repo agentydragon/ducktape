@@ -40,11 +40,6 @@ jobs:
           package_prefix: headscale-cleanup
           bazel_target: //headscale_cleanup:wheel
           latest_release_tag: headscale-cleanup-latest
-      - uses: ./.github/actions/bazel-repo-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel.outputs.cache-key }}
   release:
     needs: check
     if: needs.check.outputs.release_needed == 'true' || inputs.force_release == true
