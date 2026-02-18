@@ -4,21 +4,21 @@ This document describes the linting and formatting setup across pre-commit, Baze
 
 ## Quick Reference
 
-| Tool                             | Pre-commit             | Bazel Aspect          | GitHub CI           |
-| -------------------------------- | ---------------------- | --------------------- | ------------------- |
-| **Python (ruff check)**          | `ruff-check` hook      | `--config=lint`       | Both                |
-| **Python (ruff format)**         | `ruff-format` hook     | N/A                   | Pre-commit          |
-| **Python (mypy)**                | -                      | `--config=typecheck`  | bazel-check         |
-| **JS/TS (eslint)**               | -                      | `--config=lint`       | bazel-check         |
-| **JS/TS (prettier)**             | `prettier` hook        | N/A                   | Pre-commit          |
-| **Starlark (buildifier)**        | `buildifier-lint` hook | -                     | Pre-commit          |
-| **Starlark (buildifier format)** | `buildifier` hook      | N/A                   | Pre-commit          |
-| **Rust (clippy)**                | -                      | `--config=rust-check` | bazel-check         |
-| **Rust (rustfmt)**               | `rustfmt` hook         | `--config=rust-check` | Both                |
-| **Shell (shfmt)**                | `bazel-precommit` hook | N/A                   | Pre-commit          |
-| **Nix (nixfmt)**                 | `nixfmt` hook          | N/A                   | Pre-commit          |
-| **Ansible**                      | syntax-check (fast)    | -                     | ansible-lint (full) |
-| **Terraform**                    | fmt/validate/tflint    | -                     | Pre-commit          |
+| Tool                             | Pre-commit             | Bazel Aspect | GitHub CI           |
+| -------------------------------- | ---------------------- | ------------ | ------------------- |
+| **Python (ruff check)**          | `ruff-check` hook      | default      | Both                |
+| **Python (ruff format)**         | `ruff-format` hook     | N/A          | Pre-commit          |
+| **Python (mypy)**                | -                      | default      | bazel-check         |
+| **JS/TS (eslint)**               | -                      | default      | bazel-check         |
+| **JS/TS (prettier)**             | `prettier` hook        | N/A          | Pre-commit          |
+| **Starlark (buildifier)**        | `buildifier-lint` hook | -            | Pre-commit          |
+| **Starlark (buildifier format)** | `buildifier` hook      | N/A          | Pre-commit          |
+| **Rust (clippy)**                | -                      | default      | bazel-check         |
+| **Rust (rustfmt)**               | `rustfmt` hook         | default      | Both                |
+| **Shell (shfmt)**                | `bazel-precommit` hook | N/A          | Pre-commit          |
+| **Nix (nixfmt)**                 | `nixfmt` hook          | N/A          | Pre-commit          |
+| **Ansible**                      | syntax-check (fast)    | -            | ansible-lint (full) |
+| **Terraform**                    | fmt/validate/tflint    | -            | Pre-commit          |
 
 ## Configuration Files
 
@@ -56,23 +56,20 @@ Common exclusion patterns (should match across files):
 
 ## Bazel Aspect Configs
 
-Defined in `.bazelrc`:
+Defined in `.bazelrc`. Lint runs by default on every `bazel build`.
 
 ```bash
-# Lint: ruff + eslint
-bazel build --config=lint //...
+# Lint runs by default (ruff + eslint + mypy + clippy + rustfmt):
+bazel build //...
 
-# Type check: mypy
-bazel build --config=typecheck //...
+# Skip lint for faster iterative builds:
+bazel build --config=nolint //...
 
-# Combined: ruff + eslint + mypy + clippy + rustfmt
-bazel build --config=check //...
-
-# Rust: clippy + rustfmt
-bazel build --config=rust-check //finance/...
-
-# ESLint only
-bazel build --config=eslint //props/frontend:all
+# Subset configs (still valid when you only want a specific tool):
+bazel build --config=lint //...        # ruff + eslint only
+bazel build --config=typecheck //...   # mypy only
+bazel build --config=rust-check //finance/...  # clippy + rustfmt only
+bazel build --config=eslint //props/frontend:all  # ESLint only
 ```
 
 Aspect definitions in `tools/lint/linters.bzl`:
@@ -86,7 +83,7 @@ Aspect definitions in `tools/lint/linters.bzl`:
 | Workflow           | What Runs                                       |
 | ------------------ | ----------------------------------------------- |
 | `pre-commit.yml`   | `pre-commit run --all-files`                    |
-| `bazel-check.yml`  | `bazel build --config=check //...`              |
+| `bazel-check.yml`  | `bazel build //...` (lint runs by default)      |
 | `ansible-lint.yml` | Full ansible-lint (thorough mode)               |
 | `bazel-test.yml`   | `bazel test //...` (includes visual regression) |
 

@@ -18,11 +18,13 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 ## Before Hand-off
 
 ```bash
-bazel build --config=check //...
+bazel build //...
 bazel test //...
 ```
 
-This runs ruff + mypy lint checks and all tests. For Rust code, also run `bazel build --config=rust-check //finance/...`.
+This runs ruff + mypy lint checks and all tests (lint runs by default).
+Use `--config=nolint` to skip lint for faster iterative builds.
+For Rust code, lint is also included by default; `--config=rust-check` still works as a standalone Rust-only subset.
 
 If you touched `ansible/`, also follow the checklist in `ansible/AGENTS.md`.
 
@@ -138,7 +140,7 @@ live_openai_py_test(
 
 ### JavaScript / TypeScript (Bazel with rules_js)
 
-Frontend sub-projects use `@aspect_rules_js` with `js_library` targets. ESLint linting is handled by the workspace lint aspect (`--config=check`). Declare precise deps — each `js_library` lists only the files it directly imports; transitive deps propagate automatically via `JsInfo`.
+Frontend sub-projects use `@aspect_rules_js` with `js_library` targets. ESLint linting is handled by the workspace lint aspect (runs by default). Declare precise deps — each `js_library` lists only the files it directly imports; transitive deps propagate automatically via `JsInfo`.
 
 See <props/frontend/AGENTS.md> for frontend-specific conventions.
 

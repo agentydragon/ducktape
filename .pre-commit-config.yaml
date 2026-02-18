@@ -71,7 +71,7 @@ repos:
         args: [--config, ruff.toml]
         files: "\\.py$"
 
-  # TODO: Check if Bazel mypy (bazelisk build --config=check //...) can replace
+  # TODO: Check if Bazel mypy (runs by default via bazel build //...) can replace
   # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
   # correctly and uses a single mypy.ini config.
 

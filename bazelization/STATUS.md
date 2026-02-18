@@ -53,7 +53,7 @@ Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Do
 ### Commands
 
 ```bash
-bazel build --config=check //...        # Lint + typecheck
+bazel build //...                       # Build + lint (runs by default)
 bazel build --config=typecheck //...    # Mypy only
 bazel run //:requirements.update        # Update Python requirements lock
 bazel run //tools/orphans:find_orphans  # Find un-Bazelized files

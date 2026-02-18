@@ -2,7 +2,7 @@
 
 ## Bazel Build
 
-Sub-packages use `js_library` directly (from `@aspect_rules_js`). ESLint linting is handled by the workspace lint aspect (`--config=check`); type checking by `svelte_check_test`.
+Sub-packages use `js_library` directly (from `@aspect_rules_js`). ESLint linting is handled by the workspace lint aspect (runs by default); type checking by `svelte_check_test`.
 
 **Dependency philosophy**: Declare precise deps. No grab-bag filegroups, no globs, no `_ALL_SRCS` constants. Each `js_library` target lists only the files it directly imports. Transitive deps propagate automatically via `JsInfo`.
 

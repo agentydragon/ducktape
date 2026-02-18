@@ -79,10 +79,9 @@ bazelisk run //props/agents/critic_dev/optimize:push
 ## Development
 
 ```bash
-docker compose up -d                       # Start infrastructure
-docker compose down                        # Stop infrastructure
-docker compose logs -f postgres            # View logs
-bazelisk build --config=check //props/...  # Lint + typecheck
+docker compose up -d            # Start infrastructure
+docker compose down             # Stop infrastructure
+docker compose logs -f postgres # View logs
 ```
 
 For frontend hot-reload during development, use `frontend:dev` instead of the

@@ -17,7 +17,7 @@
 
 workflows:
   # Core Bazel workflows
-  # Build + all quality checks (ruff, ESLint, mypy, clippy, rustfmt) via --config=check
+  # Build + all quality checks (ruff, ESLint, mypy, clippy, rustfmt; run by default)
   bazel-check:
     trigger: { kind: bazel_query, query: "$targets" }
     targets: true

@@ -38,13 +38,12 @@ actions:
         //...
 
       # 2. Build + lint + typecheck + rust-check (all quality checks in one pass)
-      # Use local strategy for mypy to avoid sandbox copying overhead
-      # --config=check runs: ruff, ESLint, mypy, clippy, rustfmt
+      # Lint runs by default: ruff, ESLint, mypy, clippy, rustfmt.
+      # Use local strategy for mypy to avoid sandbox copying overhead.
       - >
         build
         --keep_going
         --config=rbe
-        --config=check
         --strategy=mypy=local
         --build_metadata=ROLE=ci
         --build_metadata=TAGS=check

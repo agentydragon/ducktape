@@ -19,9 +19,8 @@ For detailed repository guidance, see: [AGENTS.md](../AGENTS.md) and [STYLE.md](
 **Bazel** is the unified build system. Always use Bazel, never direct `pytest` or `python`:
 
 ```bash
-bazel build //...                    # Build all
+bazel build //...                    # Build all (lint runs by default)
 bazel test //...                     # Run all tests
-bazel build --config=check //...     # Lint (ruff + mypy + eslint)
 bazel run //tools/format             # Format code
 bazel run //tools:gazelle            # Update BUILD files
 ```
@@ -33,11 +32,11 @@ Python 3.12+. Dependencies in `requirements_bazel.txt`.
 Before handing in any work:
 
 ```bash
-bazel build --config=check //...   # Lint (ruff + mypy)
-bazel test //...                   # Run all tests
+bazel build //...   # Build + lint (runs by default)
+bazel test //...    # Run all tests
 ```
 
-For Rust code: `bazel build --config=rust-check //finance/...`
+For Rust code: `bazel build //finance/...`
 
 If you modified `ansible/`, follow the checklist in [ansible/AGENTS.md](../ansible/AGENTS.md).
 

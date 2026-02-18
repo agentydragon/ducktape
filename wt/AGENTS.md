@@ -4,8 +4,6 @@
 
 ## Environment and Tooling
 
-See @../AGENTS.md for standard Bazel workflow (`bazel build --config=check //...`, `bazel test //...`).
-
 Requirements: Bazel (via bazelisk), Python **3.13**+.
 
 ### Extra dependencies / binaries
@@ -16,10 +14,6 @@ Requirements: Bazel (via bazelisk), Python **3.13**+.
 ## Development Commands
 
 - Run the CLI entry point: `bazel run //wt:wt_cli -- --help`
-- Tests: `bazel test //wt/...`
-- Linting: `bazel build --config=lint //wt/...`
-- Type checking: `bazel build --config=typecheck //wt/...`
-- Format: `bazel run //tools/format`
 
 Integration tests marked `integration` or `shell` spawn git repos and daemons; they may need
 relaxed sandboxing to allow UNIX sockets and filesystem operations.

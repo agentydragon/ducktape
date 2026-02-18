@@ -1,6 +1,6 @@
 # Bazel check reusable workflow
 #
-# Build + all quality checks in a single pass via --config=check:
+# Build + all quality checks in a single pass (lint runs by default):
 # - Python: ruff (lint), mypy (typecheck)
 # - JS/TS: ESLint
 # - Rust: clippy, rustfmt
@@ -79,7 +79,7 @@ jobs:
             TARGET_ARG="${{ inputs.targets }}"
             echo "Using targets from input: $TARGET_ARG"
           fi
-          # --config=check runs: ruff, ESLint, mypy, clippy, rustfmt
-          bazel build --keep_going --config=check \
+          # Lint runs by default: ruff, ESLint, mypy, clippy, rustfmt.
+          bazel build --keep_going \
             --build_metadata=ROLE=ci --build_metadata=TAGS=check \
             $TARGET_ARG

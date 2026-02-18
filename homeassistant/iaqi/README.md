@@ -87,14 +87,6 @@ The sensor exposes the following attributes:
 
 ## Development & Testing
 
-See the repository root AGENTS.md for the standard Bazel workflow.
-
-```bash
-bazel build //homeassistant/iaqi/...
-bazel test //homeassistant/iaqi/...
-bazel build --config=check //homeassistant/iaqi/...  # lint + typecheck
-```
-
 ### Test Setup with pytest_homeassistant_custom_component
 
 The tests use `pytest_homeassistant_custom_component` for Home Assistant fixtures (`hass`, `enable_custom_integrations`, etc.). Running these tests under Bazel requires two workarounds in `conftest.py`:

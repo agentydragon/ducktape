@@ -494,8 +494,7 @@ jobs:
       - uses: bazelbuild/setup-bazelisk@v3
       - run: sudo apt-get install -y libdbus-1-dev libgirepository-2.0-dev libcairo2-dev
       - run: |
-          bazel build //...
-          bazel build --config=check //...
+          bazel build //...  # lint runs by default
           bazel test //...
 ```
 

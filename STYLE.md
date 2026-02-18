@@ -20,6 +20,7 @@ Style and convention rules for this repository. Package-specific elaborations be
   - First line: `@README.md` (if README exists)
   - Then: Agent-specific instructions (idioms, "always do X", "never do Y", conventions)
   - Package-specific elaborations of STYLE.md rules go here
+  - **Nesting/inheritance**: Agents read AGENTS.md files from the repo root down to the current package. A sub-folder AGENTS.md must not repeat instructions already covered by a parent AGENTS.md. If `foo/AGENTS.md` says X, `foo/bar/AGENTS.md` should not repeat X. Only document what is new or different at this level.
 - **CLAUDE.md**: Always exactly one line: `@AGENTS.md`
 - **STYLE.md**: Repository-wide rules. If a rule applies across packages, it belongs here, not in a package's AGENTS.md.
 

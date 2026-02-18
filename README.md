@@ -64,7 +64,7 @@ This repository uses **Bazel** as the unified build system for all Python packag
 
 - `requirements_bazel.txt` - Single source of truth for Python dependencies
 - All Python packages have `BUILD.bazel` files defining targets
-- Linting via Bazel aspects (`--config=check` runs ruff + mypy + eslint)
+- Linting via Bazel aspects (runs by default; use `--config=nolint` to skip)
 - Python 3.12+ is the target runtime version
 
 **Adding dependencies:**
@@ -217,7 +217,7 @@ This repository uses **Bazel** as the primary build system. Install the git pre-
 pre-commit install
 ```
 
-This installs the pre-commit framework which runs ruff, buildifier, rustfmt, prettier and other linters on staged files, checks for conflict markers, validates syntax, and more (see `.pre-commit-config.yaml`). For ESLint and mypy, run `bazel build --config=check //...`.
+This installs the pre-commit framework which runs ruff, buildifier, rustfmt, prettier and other linters on staged files, checks for conflict markers, validates syntax, and more (see `.pre-commit-config.yaml`). ESLint and mypy run automatically on every `bazel build` (use `--config=nolint` to skip).
 
 ### Lint/Format Exclusions
 
@@ -242,7 +242,7 @@ To exclude a file/directory:
 BuildBuddy Workflows provides fast, Bazel-native CI with remote execution. The `buildbuddy.yaml` configuration runs:
 
 - `bazel test //...` - Run all tests (excluding `live_openai_api`)
-- `bazel build --config=check //...` - Unified quality checks (ruff, ESLint, mypy, clippy, rustfmt)
+- `bazel build //...` - Unified quality checks (ruff, ESLint, mypy, clippy, rustfmt; runs by default)
 
 **Setup**:
 
