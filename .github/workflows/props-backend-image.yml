@@ -41,7 +41,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build and load image
-        run: bazel run --config=ci //props/backend:load
+        run: bazel run //props/backend:load
 
       - name: Compute image tags
         id: meta

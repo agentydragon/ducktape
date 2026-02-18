@@ -81,7 +81,7 @@ jobs:
 
       - name: Run unit tests (sandboxed)
         run: |
-          bazel test --keep_going --config=ci \
+          bazel test --keep_going \
             --test_output=all \
             --nocache_test_results \
             --test_tag_filters=-e2e \
@@ -92,7 +92,7 @@ jobs:
       - name: Run e2e tests (no sandbox for podman)
         run: |
           # E2E tests need --spawn_strategy=local so podman can create Unix sockets
-          bazel test --config=ci \
+          bazel test \
             --test_output=all \
             --nocache_test_results \
             --test_tag_filters=e2e \
@@ -148,7 +148,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build --config=ci --remote_download_toplevel //tools/claude_hooks:wheel
+        run: bazel build --remote_download_toplevel //tools/claude_hooks:wheel
 
       - name: Install wheel
         run: uv tool install bazel-bin/tools/claude_hooks/claude_hooks-*.whl
@@ -158,7 +158,7 @@ jobs:
           # E2E tests run against the installed wheel (DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1).
           # PATH is passed through so podman (pre-installed on GitHub runners) is available.
           # --spawn_strategy=local is required for podman to create Unix sockets.
-          bazel test --config=ci //tools/claude_hooks:test_session_start \
+          bazel test //tools/claude_hooks:test_session_start \
             --test_output=all \
             --nocache_test_results \
             --spawn_strategy=local \

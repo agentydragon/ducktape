@@ -35,6 +35,13 @@ runs:
         api_key: ${{ inputs.buildbuddy_api_key }}
         rbe_image: ${{ inputs.rbe_image }}
 
+    - name: Enable CI quiet mode
+      shell: bash
+      run: |
+        echo "" >> "$HOME/.bazelrc"
+        echo "# CI quiet mode (auto-added by setup-bazel)" >> "$HOME/.bazelrc"
+        echo "common --config=ci" >> "$HOME/.bazelrc"
+
     - name: Setup Bazel cache
       id: cache
       uses: ./.github/actions/bazel-repo-cache
