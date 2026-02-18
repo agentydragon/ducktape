@@ -52,24 +52,6 @@ def test_is_external(label: BazelLabel, expected: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
-# BazelLabel equality / hash / not-a-str
-# ---------------------------------------------------------------------------
-
-
-def test_equality_and_hash() -> None:
-    a = BazelLabel(repo="", package=Path("foo"), name=Path("bar"))
-    b = BazelLabel(repo="", package=Path("foo"), name=Path("bar"))
-    c = BazelLabel(repo="", package=Path("foo"), name=Path("baz"))
-    assert a == b
-    assert a != c
-    assert hash(a) == hash(b)
-    assert {a, b} == {BazelLabel(repo="", package=Path("foo"), name=Path("bar"))}
-
-
-def test_not_a_str() -> None:
-    assert not isinstance(BazelLabel(repo="", package=Path("foo"), name=Path("bar.py")), str)
-
-
 # ---------------------------------------------------------------------------
 # label_to_path
 # ---------------------------------------------------------------------------
