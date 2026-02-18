@@ -183,21 +183,11 @@ class HookSettings(BaseSettings):
         return self.session_dir / "docker"
 
     def get_container_storage_dir(self) -> Path:
-        """Shared tmpfs-backed storage root for all container runtimes.
+        """Tmpfs-backed storage root for the active container runtime (Docker or Podman).
 
-        Docker uses container-storage/docker/ as data-root; Podman uses
-        container-storage/podman/ as graphroot.  A single tmpfs is mounted
-        here regardless of which runtime is active.
+        Only one runtime is ever active per session, so no subdirectory split is needed.
         """
         return self.session_dir / "container-storage"
-
-    def get_docker_data_dir(self) -> Path:
-        """Get Docker data-root directory (tmpfs-backed for overlay storage)."""
-        return self.get_container_storage_dir() / "docker"
-
-    def get_podman_overlay_dir(self) -> Path:
-        """Get Podman overlay storage directory (tmpfs-backed for layer caching)."""
-        return self.get_container_storage_dir() / "podman"
 
     def get_bazel_cache_dir(self) -> Path:
         """Get Bazel cache directory (tmpfs-backed, pointed to via startup --output_user_root in session bazelrc)."""

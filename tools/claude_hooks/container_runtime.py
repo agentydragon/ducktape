@@ -149,7 +149,7 @@ def _configure_docker(settings: HookSettings, tmpfs_mounted: bool) -> _RuntimeSp
     docker_dir = settings.get_docker_dir()
     docker_dir.mkdir(parents=True, exist_ok=True)
 
-    data_root = settings.get_docker_data_dir()
+    data_root = settings.get_container_storage_dir()
     driver = "overlay" if tmpfs_mounted else "vfs"
     data_root.mkdir(parents=True, exist_ok=True)
     logger.info("Using %s storage at %s", driver, data_root)
@@ -246,7 +246,7 @@ def _configure_podman(settings: HookSettings, tmpfs_mounted: bool) -> _RuntimeSp
 
     podman_config: Traversable = importlib.resources.files("tools.claude_hooks.config.podman")
 
-    storage_root = settings.get_podman_overlay_dir()
+    storage_root = settings.get_container_storage_dir()
     driver = "overlay" if tmpfs_mounted else "vfs"
     storage_dir = storage_root / "storage"
     runroot_dir = storage_root / "run"
