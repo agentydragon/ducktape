@@ -2,9 +2,12 @@ package supabase
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/auth"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp"
@@ -14,25 +17,35 @@ import (
 // MigrationResponse is the API response type for migration list/apply operations.
 //
 // Binary: type:.eq.supabase.MigrationResponse (new in b71486df).
-// TODO(re): field names and JSON tags not recovered from binary.
+// TODO(re): JSON field names inferred from Supabase Management API docs; not confirmed from binary.
 type MigrationResponse struct {
-	// TODO(re): fields not recovered
+	Version string `json:"version"`
+	Name    string `json:"name"`
 }
 
 // TypesResponse is the API response type for type generation.
 //
 // Binary: supabase.TypesResponse (referenced in GenerateTypes handler).
-// TODO(re): field names and JSON tags not recovered from binary.
+// TODO(re): JSON field name inferred from Supabase Management API docs; not confirmed from binary.
 type TypesResponse struct {
-	// TODO(re): fields not recovered
+	Types string `json:"types"`
 }
 
 // QueryErrorResponse is the API error response for query failures.
 //
 // Binary: supabase.QueryErrorResponse (referenced in RunQuery handler).
-// TODO(re): field names and JSON tags not recovered from binary.
+// TODO(re): fields not recovered from binary.
 type QueryErrorResponse struct {
 	// TODO(re): fields not recovered
+}
+
+// emptyMigrationsContent is the static TextContent returned when no migrations exist.
+//
+// Binary: global TextContent at VA 0xF6D050 in new binary (b71486df).
+// TextContent{Type:"text", Text:"No migrations have been applied yet."} (36 chars).
+var emptyMigrationsContent = mcplib.TextContent{
+	Type: "text",
+	Text: "No migrations have been applied yet.",
 }
 
 // SupabaseMCPServer implements mcp.MCPServer for Supabase database management.
@@ -93,24 +106,66 @@ func (s *SupabaseMCPServer) getProjectDir() string {
 //
 // Binary: supabase.(*SupabaseMCPServer).GetTools (new in b71486df).
 // Tools: apply_migration, run_query, list_migrations, generate_types.
-// TODO(re): exact tool descriptions and parameter schemas not recovered.
+//
+// Tool descriptions and parameter descriptions recovered from binary strings.
 func (s *SupabaseMCPServer) GetTools() []mcp.ToolConfig {
 	return []mcp.ToolConfig{
 		{
-			Tool:    mcplib.NewTool("apply_migration" /* TODO(re): description and params not recovered */),
+			Tool: mcplib.NewTool("apply_migration",
+				mcplib.WithDescription("Apply a SQL migration to the Supabase database. Creates a versioned migration file and automatically regenerates TypeScript types. Use this for all schema changes: CREATE TABLE, ALTER TABLE, RLS policies, functions, triggers."),
+				mcplib.WithString("sql",
+					mcplib.Required(),
+					mcplib.Description("The SQL to execute (CREATE TABLE, ALTER TABLE, CREATE POLICY, CREATE FUNCTION, etc.)"),
+				),
+				mcplib.WithString("name",
+					mcplib.Description("Short descriptive name for this migration (e.g., 'create_todos_table'). Auto-generated if omitted."),
+				),
+			),
 			Handler: s.handleMigrate,
 		},
 		{
-			Tool:    mcplib.NewTool("run_query" /* TODO(re): description and params not recovered */),
+			Tool: mcplib.NewTool("run_query",
+				mcplib.WithDescription("Execute a SQL query against the Supabase database. Use for inspecting schema, checking data, seeding test data, or debugging. For schema changes, prefer the migrate tool instead."),
+				mcplib.WithString("sql",
+					mcplib.Required(),
+					mcplib.Description("The SQL query to execute"),
+				),
+			),
 			Handler: s.handleQuery,
 		},
 		{
-			Tool:    mcplib.NewTool("list_migrations" /* TODO(re): description not recovered */),
+			Tool: mcplib.NewTool("list_migrations",
+				mcplib.WithDescription("List all migrations that have been applied to the database."),
+			),
 			Handler: s.handleListMigrations,
 		},
 		{
-			Tool:    mcplib.NewTool("generate_types" /* TODO(re): description not recovered */),
+			Tool: mcplib.NewTool("generate_types",
+				mcplib.WithDescription("Regenerate TypeScript types from the current database schema. Usually called automatically after migrate, but can be called manually if needed."),
+			),
 			Handler: s.handleGenerateTypes,
+		},
+	}
+}
+
+// errorResult creates a CallToolResult representing an error.
+//
+// Binary: supabase.mcpError confirmed as inlined in handlers (not a separate symbol in nm output).
+// Creates TextContent{Type:"text", Text:msg} with IsError=true.
+func errorResult(msg string) *mcplib.CallToolResult {
+	return &mcplib.CallToolResult{
+		Content: []mcplib.Content{
+			mcplib.TextContent{Type: "text", Text: msg},
+		},
+		IsError: true,
+	}
+}
+
+// textResult creates a successful CallToolResult with text content.
+func textResult(msg string) *mcplib.CallToolResult {
+	return &mcplib.CallToolResult{
+		Content: []mcplib.Content{
+			mcplib.TextContent{Type: "text", Text: msg},
 		},
 	}
 }
@@ -118,50 +173,175 @@ func (s *SupabaseMCPServer) GetTools() []mcp.ToolConfig {
 // handleMigrate handles the apply_migration MCP tool call.
 //
 // Binary: supabase.(*SupabaseMCPServer).handleMigrate (new in b71486df).
-// Validates migration name against migrationNamePattern.
-// Calls client.ApplyMigration.
-// TODO(re): parameter extraction and response formatting not recovered.
+// Flow recovered from disassembly and string evidence.
+//
+// Error strings (binary evidence):
+//   - "sql is required: %v" (19 chars)
+//   - "Migration name must contain only letters, numbers, and underscores" (65 chars)
+//   - "Migration failed: %v" (20 chars)
+//   - "\nWarning: type generation failed: %v"
+//   - "\nWarning: failed to write types file"
+//   - "\nTypeScript types regenerated at src/lib/database.types.ts"
+//   - "Migration '%s' applied successfully.%s%s" (41 chars)
+//
+// Log strings (binary evidence):
+//   - "Applying migration" with keys "name", "sql_length"
+//   - "Migration failed" (error level)
+//   - "Type generation failed after migration (non-fatal)" (warning)
+//   - "PostgREST reload notification failed (non-fatal)" (warning)
+//   - "Migration applied successfully" with key "name"
 func (s *SupabaseMCPServer) handleMigrate(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	// TODO(re): extract "name" and "sql" parameters from req.Params
-	// TODO(re): validate name against migrationNamePattern
-	// TODO(re): call s.client.ApplyMigration(ctx, name, sql)
-	// TODO(re): return success/error result
-	return &mcplib.CallToolResult{}, nil
+	sql, err := req.RequireString("sql")
+	if err != nil {
+		return errorResult(fmt.Sprintf("sql is required: %v", err)), nil
+	}
+
+	// Name is optional; auto-generate if not provided.
+	name, _ := req.GetArguments()["name"].(string)
+	if name == "" {
+		name = fmt.Sprintf("migration_%d", time.Now().UnixNano())
+	}
+
+	// Normalize to basename to prevent path traversal.
+	name = filepath.Base(name)
+
+	if !migrationNamePattern.MatchString(name) {
+		return errorResult("Migration name must contain only letters, numbers, and underscores"), nil
+	}
+
+	slog.Info("Applying migration", "name", name, "sql_length", len(sql))
+
+	if err := s.client.ApplyMigration(ctx, name, sql); err != nil {
+		slog.Error("Migration failed", "error", err)
+		return errorResult(fmt.Sprintf("Migration failed: %v", err)), nil
+	}
+
+	// Generate TypeScript types (non-fatal if it fails).
+	var typesMsg string
+	types, err := s.client.GenerateTypes(ctx)
+	if err != nil {
+		slog.Warn("Type generation failed after migration (non-fatal)", "error", err)
+		typesMsg = fmt.Sprintf("\nWarning: type generation failed: %v", err)
+	} else {
+		typesPath := filepath.Join(s.getProjectDir(), "src", "lib", "database.types.ts")
+		if mkErr := os.MkdirAll(filepath.Dir(typesPath), 0755); mkErr != nil {
+			typesMsg = "\nWarning: failed to write types file"
+		} else if writeErr := os.WriteFile(typesPath, []byte(types), 0644); writeErr != nil {
+			typesMsg = "\nWarning: failed to write types file"
+		} else {
+			typesMsg = "\nTypeScript types regenerated at src/lib/database.types.ts"
+		}
+	}
+
+	// Notify PostgREST to reload schema (non-fatal).
+	// TODO(re): pgrstMsg construction not confirmed; binary shows third %s arg always "".
+	pgrstMsg := ""
+	if _, err := s.client.RunQuery(ctx, "NOTIFY pgrst, 'reload schema'"); err != nil {
+		slog.Warn("PostgREST reload notification failed (non-fatal)", "error", err)
+	}
+
+	slog.Info("Migration applied successfully", "name", name)
+
+	return textResult(fmt.Sprintf("Migration '%s' applied successfully.%s%s", name, typesMsg, pgrstMsg)), nil
 }
 
 // handleQuery handles the run_query MCP tool call.
 //
 // Binary: supabase.(*SupabaseMCPServer).handleQuery (new in b71486df).
-// Validates sql parameter: "sql must not be empty".
-// Calls client.RunQuery.
-// TODO(re): parameter extraction and response formatting not recovered.
+// Flow recovered from disassembly and string evidence.
+//
+// Error strings (binary evidence):
+//   - "sql is required: %v" (19 chars)
+//   - "sql must not be empty" (21 chars)
+//   - "Query failed: %v" (16 chars)
+//
+// Log strings (binary evidence):
+//   - "Executing query" with key "sql_length" (integer value len(sql))
 func (s *SupabaseMCPServer) handleQuery(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	// TODO(re): extract "sql" parameter from req.Params
-	// TODO(re): call s.client.RunQuery(ctx, sql)
-	// TODO(re): format query results as MCP content
-	return &mcplib.CallToolResult{}, nil
+	sql, err := req.RequireString("sql")
+	if err != nil {
+		return errorResult(fmt.Sprintf("sql is required: %v", err)), nil
+	}
+
+	if sql == "" {
+		return errorResult("sql must not be empty"), nil
+	}
+
+	slog.Info("Executing query", "sql_length", len(sql))
+
+	result, err := s.client.RunQuery(ctx, sql)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Query failed: %v", err)), nil
+	}
+
+	// Pretty-print JSON result; fall back to raw string on parse error.
+	var parsed interface{}
+	if jsonErr := json.Unmarshal([]byte(result), &parsed); jsonErr == nil {
+		if formatted, marshalErr := json.MarshalIndent(parsed, "", "  "); marshalErr == nil {
+			return textResult(string(formatted)), nil
+		}
+	}
+	return textResult(result), nil
 }
 
 // handleListMigrations handles the list_migrations MCP tool call.
 //
 // Binary: supabase.(*SupabaseMCPServer).handleListMigrations (new in b71486df).
-// Calls client.ListMigrations and returns the list.
-// TODO(re): response formatting not recovered.
+// Flow recovered from disassembly and string evidence.
+//
+// Error strings (binary evidence):
+//   - "Failed to list migrations: %v" (29 chars)
+//   - "Failed to format migrations: %v" (31 chars)
+//
+// Static content (binary evidence, VA 0xF6D050):
+//   - "No migrations have been applied yet." (36 chars) returned when list is empty.
 func (s *SupabaseMCPServer) handleListMigrations(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	// TODO(re): call s.client.ListMigrations(ctx)
-	// TODO(re): format migration list as MCP content
-	return &mcplib.CallToolResult{}, nil
+	migrations, err := s.client.ListMigrations(ctx)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Failed to list migrations: %v", err)), nil
+	}
+
+	if len(migrations) == 0 {
+		return &mcplib.CallToolResult{
+			Content: []mcplib.Content{emptyMigrationsContent},
+		}, nil
+	}
+
+	formatted, err := json.MarshalIndent(migrations, "", "  ")
+	if err != nil {
+		return errorResult(fmt.Sprintf("Failed to format migrations: %v", err)), nil
+	}
+
+	return textResult(string(formatted)), nil
 }
 
 // handleGenerateTypes handles the generate_types MCP tool call.
 //
 // Binary: supabase.(*SupabaseMCPServer).handleGenerateTypes (new in b71486df).
-// Calls client.GenerateTypes with the project directory.
-// Error strings observed: "Failed to write types file" (26 chars), "Type generation failed: %v" (26 chars).
-// TODO(re): file path and response formatting not recovered.
+// Flow recovered from disassembly and string evidence.
+//
+// Error strings (binary evidence):
+//   - "Type generation failed: %v" (26 chars)
+//   - "Failed to write types file" (26 chars)
+//
+// TODO(re): "Failed to create types directory: %v" — inferred; not directly confirmed in binary.
+// TODO(re): success message text not recovered from binary.
 func (s *SupabaseMCPServer) handleGenerateTypes(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	// TODO(re): call s.client.GenerateTypes(ctx, s.getProjectDir())
-	// TODO(re): on write error: "Failed to write types file"
-	// TODO(re): on API error: "Type generation failed: %v"
-	return &mcplib.CallToolResult{}, nil
+	types, err := s.client.GenerateTypes(ctx)
+	if err != nil {
+		return errorResult(fmt.Sprintf("Type generation failed: %v", err)), nil
+	}
+
+	typesPath := filepath.Join(s.getProjectDir(), "src", "lib", "database.types.ts")
+	if err := os.MkdirAll(filepath.Dir(typesPath), 0755); err != nil {
+		// TODO(re): error string "Failed to create types directory: %v" inferred; not confirmed.
+		return errorResult(fmt.Sprintf("Failed to create types directory: %v", err)), nil
+	}
+
+	if err := os.WriteFile(typesPath, []byte(types), 0644); err != nil {
+		return errorResult(fmt.Sprintf("Failed to write types file: %v", err)), nil
+	}
+
+	// TODO(re): success message text not recovered from binary.
+	return textResult(fmt.Sprintf("TypeScript types generated successfully at %s", typesPath)), nil
 }

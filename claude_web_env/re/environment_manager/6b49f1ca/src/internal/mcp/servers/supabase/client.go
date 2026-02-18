@@ -16,7 +16,9 @@ package supabase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -51,27 +53,28 @@ func newClient(pat, projectRef, anonKey string) *Client {
 
 // doRequest makes an authenticated HTTP request to the Supabase Management API.
 //
-// Binary address: 0xb139e0 (approximate, new in b71486df).
+// Binary address: supabase.(*Client).doRequest (new in b71486df).
 // Sets Authorization: Bearer <PAT> header.
 // URL format: "https://api.supabase.com/v1" + path.
 // Sets Content-Type: application/json when body is non-empty.
-func (c *Client) doRequest(ctx context.Context, method, path, body string) (*http.Response, error) {
+// Reads and returns response body as string; returns error on status >= 400.
+//
+// Error strings (binary evidence):
+//   - "create request: %w" (18 chars)
+//   - "http request: %w" (16 chars)
+//   - "read response: %w" (17 chars)
+//   - "API error %d: %s" (16 chars)
+func (c *Client) doRequest(ctx context.Context, method, path, body string) (string, error) {
 	url := "https://api.supabase.com/v1" + path
 
-	var bodyReader *strings.Reader
+	var bodyReader io.Reader
 	if body != "" {
 		bodyReader = strings.NewReader(body)
 	}
 
-	var req *http.Request
-	var err error
-	if bodyReader != nil {
-		req, err = http.NewRequestWithContext(ctx, method, url, bodyReader)
-	} else {
-		req, err = http.NewRequestWithContext(ctx, method, url, nil)
-	}
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return "", fmt.Errorf("create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.pat)
@@ -81,38 +84,72 @@ func (c *Client) doRequest(ctx context.Context, method, path, body string) (*htt
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("supabase request failed: %w", err)
+		return "", fmt.Errorf("http request: %w", err)
 	}
-	return resp, nil
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, respBody)
+	}
+
+	return string(respBody), nil
 }
 
 // ApplyMigration applies a SQL migration to the Supabase project database.
 //
 // Binary: supabase.(*Client).ApplyMigration (new in b71486df).
-// Validates migration name against migrationNamePattern.
-// POST /projects/{ref}/database/migrations.
-// TODO(re): request/response format not fully recovered; marshal error: "marshal migration: %w"
+// POST /projects/{ref}/database/migrations with JSON body {"name": name, "query": sql}.
+//
+// Error strings (binary evidence):
+//   - "marshal migration: %w" (21 chars)
+//   - "apply migration: %w" (19 chars)
 func (c *Client) ApplyMigration(ctx context.Context, name, sql string) error {
-	// TODO(re): validate name against migrationNamePattern before proceeding
-	// TODO(re): marshal migration name+sql to JSON body
-	// TODO(re): POST /projects/{ref}/database/migrations
-	// TODO(re): check response status; return error on failure
-	return fmt.Errorf("TODO(re): ApplyMigration not reconstructed")
+	body := map[string]string{
+		"name":  name,
+		"query": sql,
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal migration: %w", err)
+	}
+
+	path := fmt.Sprintf("/projects/%s/database/migrations", c.projectRef)
+	_, err = c.doRequest(ctx, http.MethodPost, path, string(bodyJSON))
+	if err != nil {
+		return fmt.Errorf("apply migration: %w", err)
+	}
+	return nil
 }
 
 // RunQuery executes a SQL query against the Supabase project database.
 //
 // Binary: supabase.(*Client).RunQuery (new in b71486df).
-// Validates that sql is not empty: "sql must not be empty" (20 chars).
-// POST /projects/{ref}/database/query.
-// TODO(re): response type not recovered; QueryErrorResponse parsed on error.
-func (c *Client) RunQuery(ctx context.Context, query string) (interface{}, error) {
-	if query == "" {
-		return nil, fmt.Errorf("sql must not be empty")
+// POST /projects/{ref}/database/query with JSON body {"query": query}.
+// Returns raw response body string.
+//
+// Error strings (binary evidence):
+//   - "marshal query: %w" (17 chars)
+//   - "run query: %w" (13 chars)
+func (c *Client) RunQuery(ctx context.Context, query string) (string, error) {
+	body := map[string]string{
+		"query": query,
 	}
-	// TODO(re): POST /projects/{ref}/database/query with JSON body
-	// TODO(re): parse QueryErrorResponse on non-2xx response
-	return nil, fmt.Errorf("TODO(re): RunQuery not reconstructed")
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return "", fmt.Errorf("marshal query: %w", err)
+	}
+
+	path := fmt.Sprintf("/projects/%s/database/query", c.projectRef)
+	result, err := c.doRequest(ctx, http.MethodPost, path, string(bodyJSON))
+	if err != nil {
+		return "", fmt.Errorf("run query: %w", err)
+	}
+	return result, nil
 }
 
 // ListMigrations lists the applied migrations for the Supabase project.
@@ -120,22 +157,43 @@ func (c *Client) RunQuery(ctx context.Context, query string) (interface{}, error
 // Binary: supabase.(*Client).ListMigrations (new in b71486df).
 // GET /projects/{ref}/database/migrations.
 // Returns []MigrationResponse.
-// TODO(re): response parsing not recovered.
+//
+// Error strings (binary evidence):
+//   - "list migrations: %w" (19 chars)
+//   - "parse migrations: %w" (20 chars)
 func (c *Client) ListMigrations(ctx context.Context) ([]MigrationResponse, error) {
-	// TODO(re): GET /projects/{ref}/database/migrations
-	// TODO(re): parse JSON response into []MigrationResponse
-	return nil, fmt.Errorf("TODO(re): ListMigrations not reconstructed")
+	path := fmt.Sprintf("/projects/%s/database/migrations", c.projectRef)
+	body, err := c.doRequest(ctx, http.MethodGet, path, "")
+	if err != nil {
+		return nil, fmt.Errorf("list migrations: %w", err)
+	}
+
+	var migrations []MigrationResponse
+	if err := json.Unmarshal([]byte(body), &migrations); err != nil {
+		return nil, fmt.Errorf("parse migrations: %w", err)
+	}
+	return migrations, nil
 }
 
-// GenerateTypes generates TypeScript type definitions for the Supabase project.
+// GenerateTypes generates TypeScript type definitions for the Supabase project schema.
 //
 // Binary: supabase.(*Client).GenerateTypes (new in b71486df).
-// Writes output to a file in the project directory.
-// Error strings: "Failed to write types file" (26 chars), "Type generation failed: %v" (26 chars).
-// TODO(re): exact API endpoint and file write logic not recovered.
-func (c *Client) GenerateTypes(ctx context.Context, projectDir string) error {
-	// TODO(re): GET Supabase types generation endpoint
-	// TODO(re): write response to file; error: "Failed to write types file"
-	// TODO(re): on API failure: "Type generation failed: %v"
-	return fmt.Errorf("TODO(re): GenerateTypes not reconstructed")
+// GET /projects/{ref}/types/typescript.
+// Returns the TypeScript types string.
+//
+// Error strings (binary evidence):
+//   - "generate types: %w" (18 chars)
+//   - "parse types response: %w" (23 chars)
+func (c *Client) GenerateTypes(ctx context.Context) (string, error) {
+	path := fmt.Sprintf("/projects/%s/types/typescript", c.projectRef)
+	body, err := c.doRequest(ctx, http.MethodGet, path, "")
+	if err != nil {
+		return "", fmt.Errorf("generate types: %w", err)
+	}
+
+	var resp TypesResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return "", fmt.Errorf("parse types response: %w", err)
+	}
+	return resp.Types, nil
 }
