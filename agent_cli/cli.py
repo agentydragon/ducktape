@@ -54,17 +54,6 @@ TRANSCRIPT_OPT = typer.Option(
 )
 
 
-def _print_enabled(servers: list[str]) -> None:
-    print("MCP servers enabled:", ", ".join(servers) if servers else "<none>")
-    print("Tip: prefer HTTP specs; inproc factory specs are embedded over HTTP")
-
-
-def _build_cfg_and_print(mcp_configs: list[Path]):
-    cfg = build_mcp_config(mcp_configs)
-    _print_enabled(list(cfg.mcpServers.keys()))
-    return cfg
-
-
 @app.command("run")
 @async_run
 async def run(
@@ -80,7 +69,10 @@ async def run(
     console = Console()
     console.print("[bold green]Agent ready.[/] Ctrl-D to exit.", highlight=False)
 
-    cfg = _build_cfg_and_print(mcp_configs)
+    cfg = build_mcp_config(mcp_configs)
+    servers = list(cfg.mcpServers.keys())
+    print("MCP servers enabled:", ", ".join(servers) if servers else "<none>")
+    print("Tip: prefer HTTP specs; inproc factory specs are embedded over HTTP")
 
     # Build model client
     client = build_client(model)
