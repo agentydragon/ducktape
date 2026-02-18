@@ -1,5 +1,5 @@
 # Editor and OS
-*.swp
+*.sw?
 .DS_Store
 .idea
 .vscode
@@ -39,7 +39,6 @@ uv.lock
 **/.ansible/
 ansible/collections/
 **/.cache/
-.cache
 **/.tmp/
 **/.uv-cache/
 **/.pre-commit-cache/
