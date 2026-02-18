@@ -86,7 +86,6 @@ worktrees
 .profile
 .ripgreprc
 .zprofile
-.zshrc
 .mcp.json
 .idea
 .vscode
