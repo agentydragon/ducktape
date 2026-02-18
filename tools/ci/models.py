@@ -77,8 +77,6 @@ class ReleaseConfig(BaseModel):
     @property
     def wheel_path(self) -> str:
         label = BazelLabel.parse(self.bazel_target)
-        if label is None:
-            raise ValueError(f"Invalid Bazel label: {self.bazel_target!r}")
         return f"bazel-bin/{label.package}" if label.package.parts else "bazel-bin"
 
 

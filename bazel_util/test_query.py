@@ -9,30 +9,55 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from bazel_util.query import BazelLabel, label_to_package, label_to_path, run_query
+from bazel_util.query import BazelLabel, run_query
 
 # ---------------------------------------------------------------------------
-# BazelLabel.parse
+# BazelLabel.parse — valid inputs
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("//foo/bar:baz.py", BazelLabel(repo="", package=Path("foo/bar"), name=Path("baz.py"))),
-        ("//:root.txt", BazelLabel(repo="", package=Path(), name=Path("root.txt"))),
-        ("//a/b/c:d/e.rs", BazelLabel(repo="", package=Path("a/b/c"), name=Path("d/e.rs"))),
-        ("@repo//pkg:target", BazelLabel(repo="repo", package=Path("pkg"), name=Path("target"))),
-        ("@@canonical//pkg:target", BazelLabel(repo="canonical", package=Path("pkg"), name=Path("target"))),
-        # bare package ref — no colon
-        ("//foo/bar", None),
-        # no // prefix
-        ("foo:bar", None),
-        ("", None),
+        ("//foo/bar:baz.py", BazelLabel(repo="", package=Path("foo/bar"), name="baz.py")),
+        ("//:root.txt", BazelLabel(repo="", package=Path(), name="root.txt")),
+        ("//a/b/c:d/e.rs", BazelLabel(repo="", package=Path("a/b/c"), name="d/e.rs")),
+        ("@repo//pkg:target", BazelLabel(repo="repo", package=Path("pkg"), name="target")),
+        ("@@canonical//pkg:target", BazelLabel(repo="canonical", package=Path("pkg"), name="target")),
     ],
 )
-def test_parse(raw: str, expected: BazelLabel | None) -> None:
+def test_parse_valid(raw: str, expected: BazelLabel) -> None:
     assert BazelLabel.parse(raw) == expected
+
+
+# ---------------------------------------------------------------------------
+# BazelLabel.parse — invalid inputs raise ValueError
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "//foo/bar",  # bare package ref — no colon
+        "foo:bar",  # no // prefix
+        "",  # empty
+        "@repo",  # @ but no //
+        "@@canonical",  # @@ but no //
+    ],
+)
+def test_parse_invalid_raises(raw: str) -> None:
+    with pytest.raises(ValueError, match=repr(raw) if raw else ""):
+        BazelLabel.parse(raw)
+
+
+# ---------------------------------------------------------------------------
+# BazelLabel.try_parse — returns None for invalid inputs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("raw", ["//foo/bar", "foo:bar", ""])
+def test_try_parse_invalid_returns_none(raw: str) -> None:
+    assert BazelLabel.try_parse(raw) is None
 
 
 # ---------------------------------------------------------------------------
@@ -43,8 +68,8 @@ def test_parse(raw: str, expected: BazelLabel | None) -> None:
 @pytest.mark.parametrize(
     ("label", "expected"),
     [
-        (BazelLabel(repo="", package=Path("foo"), name=Path("bar")), False),
-        (BazelLabel(repo="some_repo", package=Path("foo"), name=Path("bar")), True),
+        (BazelLabel(repo="", package=Path("foo"), name="bar"), False),
+        (BazelLabel(repo="some_repo", package=Path("foo"), name="bar"), True),
     ],
 )
 def test_is_external(label: BazelLabel, expected: bool) -> None:
@@ -52,46 +77,45 @@ def test_is_external(label: BazelLabel, expected: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# label_to_path
+# BazelLabel.path property
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("label", "expected"),
     [
-        (BazelLabel(repo="", package=Path("foo/bar"), name=Path("baz.py")), Path("foo/bar/baz.py")),
-        (BazelLabel(repo="", package=Path("foo/bar"), name=Path("sub/qux.go")), Path("foo/bar/sub/qux.go")),
-        (BazelLabel(repo="", package=Path(), name=Path("root.txt")), Path("root.txt")),
+        (BazelLabel(repo="", package=Path("foo/bar"), name="baz.py"), Path("foo/bar/baz.py")),
+        (BazelLabel(repo="", package=Path("foo/bar"), name="sub/qux.go"), Path("foo/bar/sub/qux.go")),
+        (BazelLabel(repo="", package=Path(), name="root.txt"), Path("root.txt")),
         (
-            BazelLabel(repo="", package=Path("cluster/scripts"), name=Path("get-passwords")),
+            BazelLabel(repo="", package=Path("cluster/scripts"), name="get-passwords"),
             Path("cluster/scripts/get-passwords"),
         ),
         # external → None
-        (BazelLabel(repo="repo", package=Path("foo"), name=Path("bar.py")), None),
+        (BazelLabel(repo="repo", package=Path("foo"), name="bar.py"), None),
     ],
 )
-def test_label_to_path(label: BazelLabel, expected: Path | None) -> None:
-    assert label_to_path(label) == expected
+def test_path_property(label: BazelLabel, expected: Path | None) -> None:
+    assert label.path == expected
 
 
 # ---------------------------------------------------------------------------
-# label_to_package
+# BazelLabel.package_path property
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("label", "expected"),
     [
-        (BazelLabel(repo="", package=Path("cluster/charts/attic"), name=Path("attic")), Path("cluster/charts/attic")),
-        (BazelLabel(repo="", package=Path(), name=Path("root")), Path()),
-        (BazelLabel(repo="", package=Path("tools/orphans"), name=Path("find_orphans")), Path("tools/orphans")),
+        (BazelLabel(repo="", package=Path("cluster/charts/attic"), name="attic"), Path("cluster/charts/attic")),
+        (BazelLabel(repo="", package=Path(), name="root"), Path()),
+        (BazelLabel(repo="", package=Path("tools/orphans"), name="find_orphans"), Path("tools/orphans")),
         # external → None
-        (BazelLabel(repo="repo", package=Path("foo"), name=Path("bar")), None),
+        (BazelLabel(repo="repo", package=Path("foo"), name="bar"), None),
     ],
 )
-def test_label_to_package(label: BazelLabel, expected: Path | None) -> None:
-    assert label_to_package(label) == expected
+def test_package_path_property(label: BazelLabel, expected: Path | None) -> None:
+    assert label.package_path == expected
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +133,8 @@ def test_run_query_parses_labels(tmp_path: Path) -> None:
     assert cmd[2].startswith("--query_file=")
     assert kwargs == {"capture_output": True, "text": True, "cwd": tmp_path, "check": True}
     assert result == [
-        BazelLabel(repo="", package=Path("foo"), name=Path("bar.py")),
-        BazelLabel(repo="ext", package=Path("pkg"), name=Path("target")),
+        BazelLabel(repo="", package=Path("foo"), name="bar.py"),
+        BazelLabel(repo="ext", package=Path("pkg"), name="target"),
     ]
     assert not any(isinstance(label, str) for label in result)
 

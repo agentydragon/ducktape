@@ -15,7 +15,7 @@ from pathlib import Path
 import pathspec
 import pygit2
 
-from bazel_util.query import label_to_path, run_query
+from bazel_util.query import run_query
 from bazel_util.workspace import get_build_workspace_directory
 
 
@@ -34,7 +34,7 @@ def query_bazel_files(repo_root: Path) -> set[Path]:
     except subprocess.CalledProcessError as e:
         print(f"Warning: bazel query failed: {e.stderr}", file=sys.stderr)
         return set()
-    return {p for label in labels if (p := label_to_path(label))}
+    return {p for label in labels if (p := label.path)}
 
 
 def get_git_files(repo_root: Path) -> set[Path]:
