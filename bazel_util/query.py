@@ -121,6 +121,7 @@ class BazelLabel:
 def run_query(expr: str, *, cwd: Path | None = None, persist_dir: Path | None = None) -> list[BazelLabel]:
     """Run a ``bazel query`` and return the parsed labels.
 
+    ``--output=label`` ensures every output line is a parseable label.
     The expression is passed via ``--query_file`` to avoid
     ``E2BIG`` / "Argument list too long" errors on large queries.
 
@@ -133,8 +134,7 @@ def run_query(expr: str, *, cwd: Path | None = None, persist_dir: Path | None = 
                      The directory must already exist; no subdir is created.
 
     Raises :class:`subprocess.CalledProcessError` if the query exits non-zero,
-    with ``.stderr`` containing the captured error text.  Output lines that
-    cannot be parsed as labels are silently skipped.
+    with ``.stderr`` containing the captured error text.
     """
     with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery") as query_file:
         query_file.write(expr)
@@ -142,7 +142,11 @@ def run_query(expr: str, *, cwd: Path | None = None, persist_dir: Path | None = 
         if persist_dir is not None:
             (persist_dir / "query").write_text(expr)
         result = subprocess.run(
-            ["bazel", "query", f"--query_file={query_file.name}"], capture_output=True, text=True, cwd=cwd, check=False
+            ["bazel", "query", "--output=label", f"--query_file={query_file.name}"],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            check=False,
         )
     if persist_dir is not None:
         (persist_dir / "stdout").write_text(result.stdout)
@@ -150,14 +154,4 @@ def run_query(expr: str, *, cwd: Path | None = None, persist_dir: Path | None = 
         (persist_dir / "exit_code").write_text(str(result.returncode))
     if result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, "bazel", result.stdout, result.stderr)
-    return [label for line in result.stdout.splitlines() if line and (label := BazelLabel.try_parse(line)) is not None]
-
-
-def label_to_path(label: BazelLabel) -> Path | None:
-    """Deprecated: use ``label.path`` instead."""
-    return label.path
-
-
-def label_to_package(label: BazelLabel) -> Path | None:
-    """Deprecated: use ``label.package_path`` instead."""
-    return label.package_path
+    return [BazelLabel.parse(line) for line in result.stdout.splitlines() if line]

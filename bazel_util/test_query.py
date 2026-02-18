@@ -11,10 +11,6 @@ import pytest_bazel
 
 from bazel_util.query import BazelLabel, run_query
 
-# ---------------------------------------------------------------------------
-# BazelLabel.parse — valid inputs
-# ---------------------------------------------------------------------------
-
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
@@ -28,11 +24,6 @@ from bazel_util.query import BazelLabel, run_query
 )
 def test_parse_valid(raw: str, expected: BazelLabel) -> None:
     assert BazelLabel.parse(raw) == expected
-
-
-# ---------------------------------------------------------------------------
-# BazelLabel.parse — invalid inputs raise ValueError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -50,19 +41,9 @@ def test_parse_invalid_raises(raw: str) -> None:
         BazelLabel.parse(raw)
 
 
-# ---------------------------------------------------------------------------
-# BazelLabel.try_parse — returns None for invalid inputs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("raw", ["//foo/bar", "foo:bar", ""])
 def test_try_parse_invalid_returns_none(raw: str) -> None:
     assert BazelLabel.try_parse(raw) is None
-
-
-# ---------------------------------------------------------------------------
-# BazelLabel.is_external
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -74,11 +55,6 @@ def test_try_parse_invalid_returns_none(raw: str) -> None:
 )
 def test_is_external(label: BazelLabel, expected: bool) -> None:
     assert label.is_external is expected
-
-
-# ---------------------------------------------------------------------------
-# BazelLabel.path property
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -99,11 +75,6 @@ def test_path_property(label: BazelLabel, expected: Path | None) -> None:
     assert label.path == expected
 
 
-# ---------------------------------------------------------------------------
-# BazelLabel.package_path property
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     ("label", "expected"),
     [
@@ -116,11 +87,6 @@ def test_path_property(label: BazelLabel, expected: Path | None) -> None:
 )
 def test_package_path_property(label: BazelLabel, expected: Path | None) -> None:
     assert label.package_path == expected
-
-
-# ---------------------------------------------------------------------------
-# BazelLabel.__str__
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -136,11 +102,6 @@ def test_str(label: BazelLabel, expected: str) -> None:
     assert str(label) == expected
 
 
-# ---------------------------------------------------------------------------
-# run_query
-# ---------------------------------------------------------------------------
-
-
 def test_run_query_parses_labels(tmp_path: Path) -> None:
     mock_result = MagicMock()
     mock_result.stdout = "//foo:bar.py\n@ext//pkg:target\n\n"
@@ -148,8 +109,8 @@ def test_run_query_parses_labels(tmp_path: Path) -> None:
     with patch("bazel_util.query.subprocess.run", return_value=mock_result) as mock_run:
         result = run_query("//...", cwd=tmp_path)
     (cmd,), kwargs = mock_run.call_args
-    assert cmd[:2] == ["bazel", "query"]
-    assert cmd[2].startswith("--query_file=")
+    assert cmd[:3] == ["bazel", "query", "--output=label"]
+    assert cmd[3].startswith("--query_file=")
     assert kwargs == {"capture_output": True, "text": True, "cwd": tmp_path, "check": False}
     assert result == [
         BazelLabel(repo="", package=Path("foo"), name="bar.py"),

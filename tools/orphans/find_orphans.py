@@ -8,7 +8,6 @@ Usage:
 """
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,11 +28,7 @@ def query_bazel_files(repo_root: Path) -> set[Path]:
     expr = (
         "kind('source file',  labels(srcs, //...) union labels(data, //...)  union deps(kind('helm_package', //...)))"
     )
-    try:
-        labels = run_query(expr, cwd=repo_root)
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: bazel query failed: {e.stderr}", file=sys.stderr)
-        return set()
+    labels = run_query(expr, cwd=repo_root)
     return {p for label in labels if (p := label.path)}
 
 
@@ -43,25 +38,6 @@ def get_git_files(repo_root: Path) -> set[Path]:
     index = repo.index
     index.read()
     return {Path(entry.path) for entry in index}
-
-
-def unused_whitelist_patterns(raw_orphans: set[Path], whitelist_lines: list[str]) -> list[str]:
-    """Return whitelist lines that suppress no file in *raw_orphans*.
-
-    A line is considered "unused" when it is a non-comment, non-blank pattern
-    that matches none of the provided raw-orphan paths.  Such entries are dead
-    weight — either the files they referenced were deleted, or they are now
-    fully covered by Bazel targets and no longer appear as orphans.
-    """
-    unused: list[str] = []
-    for line in whitelist_lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        single_spec = pathspec.PathSpec.from_lines("gitwildmatch", [stripped])
-        if not any(single_spec.match_file(p) for p in raw_orphans):
-            unused.append(line)
-    return unused
 
 
 def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[str]]:
