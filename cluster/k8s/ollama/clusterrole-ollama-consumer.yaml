@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ollama-api-consumer
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - ollama-api-key
+      - props-ollama-api-key
+      - openclaw-ollama-api-key
+    verbs: ["get"]

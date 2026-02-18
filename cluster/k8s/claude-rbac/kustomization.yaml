@@ -11,3 +11,4 @@ resources:
   - rolebinding-props-reader.yaml
   - clusterrole-flux-kustomization-reader.yaml
   - clusterrolebinding-flux-kustomization-reader.yaml
+  - rolebinding-ollama-consumer.yaml

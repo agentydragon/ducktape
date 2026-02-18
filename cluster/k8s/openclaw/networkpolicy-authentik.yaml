@@ -1,0 +1,19 @@
+# Allow ingress from authentik namespace (outpost proxy → OpenClaw gateway).
+# Additive with the operator's default-deny NetworkPolicy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-authentik-ingress
+  namespace: openclaw
+spec:
+  podSelector: {}
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+      ports:
+        - port: 18789
+          protocol: TCP
+  policyTypes:
+    - Ingress

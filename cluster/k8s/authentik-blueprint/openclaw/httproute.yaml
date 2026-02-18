@@ -1,0 +1,23 @@
+# HTTPRoute for OpenClaw via Authentik proxy outpost.
+# Traffic flows: Gateway → outpost (auth) → OpenClaw backend.
+# The outpost service (ak-outpost-openclaw-outpost) is auto-created by Authentik
+# in the authentik namespace when the Terraform module deploys the outpost.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: openclaw
+  namespace: authentik
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "openclaw.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: ak-outpost-openclaw-outpost
+          port: 9000
+      timeouts:
+        request: "600s"
+        backendRequest: "600s"

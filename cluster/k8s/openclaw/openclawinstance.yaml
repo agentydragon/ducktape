@@ -1,0 +1,62 @@
+apiVersion: openclaw.rocks/v1alpha1
+kind: OpenClawInstance
+metadata:
+  name: openclaw
+  namespace: openclaw
+spec:
+  env:
+    - name: OLLAMA_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-ollama-api-key
+          key: api-key
+    - name: OLLAMA_BASE_URL
+      value: "https://ollama.allegedly.works/v1"
+
+  config:
+    raw:
+      agents:
+        defaults:
+          model:
+            primary: "ollama/gpt-oss:20b"
+      gateway:
+        # Trusted-proxy auth: Authentik outpost authenticates users and passes
+        # identity via X-Authentik-Username header. OpenClaw trusts this header
+        # from IPs in trustedProxies. Security relies on two layers:
+        # 1. NetworkPolicy (networkpolicy-authentik.yaml) restricts port 18789
+        #    ingress to only the authentik namespace — no pod outside authentik
+        #    can reach the gateway to spoof the header.
+        # 2. trustedProxies limits header trust to the pod CIDR (Talos default).
+        trustedProxies:
+          - "10.244.0.0/16"
+        auth:
+          mode: "trusted-proxy"
+          trustedProxy:
+            userHeader: "X-Authentik-Username"
+
+  storage:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: proxmox-csi-retain
+
+  chromium:
+    enabled: true
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+
+  nodeSelector:
+    topology.kubernetes.io/region: proxmox
+
+  security:
+    rbac:
+      automountServiceAccountToken: true
+
+  gateway:
+    # No token secret needed — auth handled by Authentik trusted-proxy mode
+    existingSecret: ""

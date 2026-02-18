@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-blueprint-openclaw
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/authentik-blueprint/openclaw
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: authentik-blueprint-openclaw
+      namespace: flux-system
+  dependsOn:
+    - name: tofu-controller
+    - name: authentik-token
+    - name: authentik-blueprint-users
+    - name: gateway

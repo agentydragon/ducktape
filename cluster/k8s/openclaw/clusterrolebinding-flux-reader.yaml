@@ -1,12 +1,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: flux-kustomization-reader
+  name: openclaw-flux-kustomization-reader
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: flux-kustomization-reader
 subjects:
   - kind: ServiceAccount
-    name: claude-code-web
-    namespace: default
+    name: openclaw
+    namespace: openclaw

@@ -79,6 +79,10 @@ resources:
   - kagent-namespace/flux-kustomization.yaml
   - kagent/flux-kustomization.yaml
   - kagent-secrets/flux-kustomization.yaml
+  - openclaw-operator/flux-kustomization.yaml
+  - openclaw-namespace/flux-kustomization.yaml
+  - openclaw-secrets/flux-kustomization.yaml
+  - openclaw/flux-kustomization.yaml
   - authentik-blueprint/gitea-provider/flux-kustomization.yaml
   - authentik-blueprint/gitea-secret/flux-kustomization.yaml
   - authentik-blueprint/matrix-provider/flux-kustomization.yaml
@@ -93,4 +97,5 @@ resources:
   - authentik-blueprint/kagent/flux-kustomization.yaml
   - authentik-blueprint/hubble/flux-kustomization.yaml
   - authentik-blueprint/loki/flux-kustomization.yaml
+  - authentik-blueprint/openclaw/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml

@@ -49,6 +49,18 @@ Handles preflight validation (git clean, pre-commit, `tofu validate`), layered d
 
 **Timing**: ~15-20 min. Slowest: Proxmox disk import (7-9 min), K8s API wait (5-10 min).
 
+## Testing
+
+Always run the full cluster test suite after changes:
+
+```bash
+bazel test //cluster/...
+```
+
+This includes cluster validation scripts, Helm lint tests, and Terraform format/lint/validate
+for all `tofu` modules under `cluster/`. When adding new Terraform modules, always create
+`BUILD.bazel` targets for format, lint, and validate checks.
+
 ## Task Delegation
 
 Delegate complex diagnostics, multi-step investigations, and independent workstreams to

@@ -1,0 +1,49 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: authentik-blueprint-openclaw
+  namespace: flux-system
+spec:
+  interval: 15m
+  path: ./cluster/terraform/gitops/sso/openclaw
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "authentik-blueprint-openclaw"
+        namespace        = "flux-system"
+      }
+
+  vars:
+    - name: authentik_url
+      value: "http://authentik-server.authentik:80"
+    - name: openclaw_url
+      value: "https://openclaw.allegedly.works"
+
+  varsFrom:
+    - kind: Secret
+      name: authentik-api-token
+      varsKeys:
+        - authentik_token
+      optional: false
+
+  runnerPodTemplate:
+    spec:
+      volumes:
+        - name: cluster-ca
+          configMap:
+            name: cluster-internal-ca-bundle
+      volumeMounts:
+        - name: cluster-ca
+          mountPath: /etc/ssl/certs/cluster-ca
+          readOnly: true
+      env:
+        - name: SSL_CERT_FILE
+          value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
