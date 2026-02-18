@@ -119,7 +119,6 @@ bazel run //tools:gazelle -- --mode=diff  # Preview changes
 ```bash
 bazel build //finance/worthy:rust_main
 bazel test //finance/worthy/...
-bazel build --config=rust-check //finance/...  # Rust linting
 ```
 
 **Adding dependencies:**

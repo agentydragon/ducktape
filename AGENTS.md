@@ -24,7 +24,6 @@ bazel test //...
 
 This runs ruff + mypy lint checks and all tests (lint runs by default).
 Use `--config=nolint` to skip lint for faster iterative builds.
-For Rust code, lint is also included by default; `--config=rust-check` still works as a standalone Rust-only subset.
 
 If you touched `ansible/`, also follow the checklist in `ansible/AGENTS.md`.
 

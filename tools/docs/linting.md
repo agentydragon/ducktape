@@ -64,12 +64,6 @@ bazel build //...
 
 # Skip lint for faster iterative builds:
 bazel build --config=nolint //...
-
-# Subset configs (still valid when you only want a specific tool):
-bazel build --config=lint //...        # ruff + eslint only
-bazel build --config=typecheck //...   # mypy only
-bazel build --config=rust-check //finance/...  # clippy + rustfmt only
-bazel build --config=eslint //props/frontend:all  # ESLint only
 ```
 
 Aspect definitions in `tools/lint/linters.bzl`:

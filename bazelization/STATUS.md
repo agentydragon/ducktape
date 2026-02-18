@@ -54,7 +54,6 @@ Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Do
 
 ```bash
 bazel build //...                       # Build + lint (runs by default)
-bazel build --config=typecheck //...    # Mypy only
 bazel run //:requirements.update        # Update Python requirements lock
 bazel run //tools/orphans:find_orphans  # Find un-Bazelized files
 bazel run //tools:gazelle               # Update BUILD files
@@ -64,16 +63,16 @@ bazel run //tools/lint:buildifier       # Format BUILD files
 
 ### Linter Configuration
 
-| Tool         | Config                            | Bazel Command                                   |
-| ------------ | --------------------------------- | ----------------------------------------------- |
-| Ruff         | `ruff.toml`                       | `bazel lint //...`                              |
-| mypy         | `mypy.ini`                        | `bazel build --config=typecheck //...`          |
-| ESLint       | `props/frontend/eslint.config.js` | `bazel lint //...`                              |
-| Prettier     | `props/frontend/.prettierrc`      | `bazel test //props/frontend:prettier_test`     |
-| svelte-check | `props/frontend/tsconfig.json`    | `bazel test //props/frontend:svelte_check_test` |
-| buildifier   | `tools/lint/BUILD.bazel`          | `bazel run //tools/lint:buildifier`             |
-| yamllint     | `.yamllint.yaml`                  | `bazel test //ansible:yamllint_test`            |
-| nixfmt       | N/A                               | Pre-commit hook only                            |
+| Tool         | Config                         | Bazel Command                                   |
+| ------------ | ------------------------------ | ----------------------------------------------- |
+| Ruff         | `ruff.toml`                    | `bazel build //...` (default)                   |
+| mypy         | `mypy.ini`                     | `bazel build //...` (default)                   |
+| ESLint       | `eslint.config.js`             | `bazel build //...` (default)                   |
+| Prettier     | `props/frontend/.prettierrc`   | `bazel test //props/frontend:prettier_test`     |
+| svelte-check | `props/frontend/tsconfig.json` | `bazel test //props/frontend:svelte_check_test` |
+| buildifier   | `tools/lint/BUILD.bazel`       | `bazel run //tools/lint:buildifier`             |
+| yamllint     | `.yamllint.yaml`               | `bazel test //ansible:yamllint_test`            |
+| nixfmt       | N/A                            | Pre-commit hook only                            |
 
 Ruff uses a custom `rules_multitool` lockfile (`tools/multitool/lockfile.json`) to override the older version bundled in `aspect_rules_lint`. Mypy uses `rules_mypy` v0.40.0 with `follow_imports = silent` and `ignore_missing_imports = True`.
 

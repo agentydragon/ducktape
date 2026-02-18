@@ -22,18 +22,6 @@ build --nolegacy_external_runfiles
 # MODULE.bazel and don't use version ranges, the lockfile provides minimal benefit.
 common --lockfile_mode=off
 
-# Lint configuration (Python ruff + JS/TS eslint)
-# Run with: bazel build --config=lint //...
-build:lint --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%eslint
-build:lint --output_groups=+rules_lint_report
-
-# Type checking configuration
-# Run with: bazel build --config=typecheck //...
-# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant)
-build:typecheck --@rules_python//python/config_settings:python_version=3.13
-build:typecheck --aspects=//tools/lint:linters.bzl%mypy_aspect
-build:typecheck --output_groups=+mypy
-
 # Lint + typecheck enabled by default on all builds.
 # Combines lint (ruff, ESLint), typecheck (mypy), and Rust checks (clippy, rustfmt).
 # Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant).
@@ -45,26 +33,6 @@ build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 # Skip lint/typecheck. Bazel evaluates aspects lazily, so removing their
 # output groups prevents the aspect actions from running.
 build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
-
-# Rust linting (clippy)
-# Run with: bazel build --config=clippy //finance/worthy:all
-build:clippy --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
-build:clippy --output_groups=+clippy_checks
-
-# Rust formatting check
-# Run with: bazel build --config=rustfmt //finance/worthy:all
-build:rustfmt --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
-build:rustfmt --output_groups=+rustfmt_checks
-
-# Combined Rust lint + format
-# Run with: bazel build --config=rust-check //finance/worthy:all
-build:rust-check --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
-build:rust-check --output_groups=+clippy_checks,+rustfmt_checks
-
-# ESLint only (for JS/TS without Python)
-# Run with: bazel build --config=eslint //props/frontend:all
-build:eslint --aspects=//tools/lint:linters.bzl%eslint
-build:eslint --output_groups=+rules_lint_report
 
 # Remote Build Execution (BuildBuddy)
 # Activated by: setup_buildbuddy.sh, buildbuddy.yaml, bazelrc.mako (Claude Code web)
@@ -106,24 +74,6 @@ build --stamp --workspace_status_command=tools/stamp.sh
 #
 # Subprocess-spawning code uses bazel_subprocess.py to propagate PYTHONPATH.
 common --@rules_python//python/config_settings:bootstrap_impl=script
-
-# Props e2e test environment passthrough
-# These only pass through when the vars are set in the environment
-# For props e2e tests: set up infrastructure, export vars, then run bazel test
-test --test_env=PGHOST
-test --test_env=PGPORT
-test --test_env=PGUSER
-test --test_env=PGPASSWORD
-test --test_env=PGDATABASE
-test --test_env=AGENT_PGHOST
-test --test_env=PROPS_REGISTRY_PROXY_HOST
-test --test_env=PROPS_REGISTRY_PROXY_PORT
-test --test_env=PROPS_DOCKER_NETWORK
-test --test_env=PROPS_E2E_HOST_HOSTNAME
-# Note: DOCKER_HOST is intentionally NOT passed through. RBE Firecracker
-# workers always use the default Docker socket (unix:///var/run/docker.sock).
-# Passing through DOCKER_HOST from the host causes failures in Claude Code
-# (where it's a podman socket) and other environments with non-standard Docker.
 
 # Quiet output mode — reduces progress spam for non-interactive contexts.
 # --curses=no: disable curses UI

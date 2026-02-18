@@ -26,7 +26,6 @@ export default [
       "**/generated/**",
       // Build scripts (Node.js tooling, not app code)
       "**/*.config.mjs",
-      "**/generate-schema.mjs",
     ],
   },
 
