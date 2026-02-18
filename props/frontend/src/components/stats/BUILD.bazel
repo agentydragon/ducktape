@@ -1,0 +1,81 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//props/frontend:defs.bzl", "visual_test")
+
+package(default_visibility = [
+    "//props/frontend:__pkg__",
+    "//props/frontend:__subpackages__",
+])
+
+# Stats component libraries with explicit deps
+
+js_library(
+    name = "CreditBadge",
+    srcs = ["CreditBadge.svelte"],
+)
+
+js_library(
+    name = "OccurrenceStats",
+    srcs = ["OccurrenceStats.svelte"],
+)
+
+js_library(
+    name = "DistributionChart",
+    srcs = ["DistributionChart.svelte"],
+)
+
+js_library(
+    name = "CoverageHeatmap",
+    srcs = ["CoverageHeatmap.svelte"],
+    deps = ["//props/frontend/src/lib:formatters"],
+)
+
+js_library(
+    name = "SummaryCards",
+    srcs = ["SummaryCards.svelte"],
+    deps = [
+        "//props/frontend/src/lib:DefinitionIdLink",
+        "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:types",
+    ],
+)
+
+js_library(
+    name = "DefinitionsTable",
+    srcs = ["DefinitionsTable.svelte"],
+    deps = [
+        "//props/frontend/src/lib:DefinitionIdLink",
+        "//props/frontend/src/lib:colors",
+        "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:types",
+    ],
+)
+
+# Visual regression tests
+
+visual_test(
+    name = "visual_CoverageHeatmap",
+    srcs = ["visual_test_CoverageHeatmap.mjs"],
+    baseline = "baselines/CoverageHeatmap-chromium-linux.png",
+    deps = [":CoverageHeatmap"],
+)
+
+visual_test(
+    name = "visual_DistributionChartRecall",
+    srcs = ["visual_test_DistributionChartRecall.mjs"],
+    baseline = "baselines/DistributionChartRecall-chromium-linux.png",
+    deps = [":DistributionChart"],
+)
+
+visual_test(
+    name = "visual_DistributionChartTP",
+    srcs = ["visual_test_DistributionChartTP.mjs"],
+    baseline = "baselines/DistributionChartTP-chromium-linux.png",
+    deps = [":DistributionChart"],
+)
+
+visual_test(
+    name = "visual_OccurrenceStatsTable",
+    srcs = ["visual_test_OccurrenceStatsTable.mjs"],
+    baseline = "baselines/OccurrenceStatsTable-chromium-linux.png",
+    deps = [":OccurrenceStats"],
+)

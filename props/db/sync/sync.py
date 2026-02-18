@@ -1,4 +1,4 @@
-"""Sync specimens and model metadata to database."""
+"""Sync specimens to database."""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ import tarfile
 from collections.abc import Callable, Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
+from typing import TypeVar
 
 import yaml
-from opentelemetry import trace
 from pydantic import BaseModel
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
@@ -34,22 +33,14 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.stats import SyncStats
 from props.db.sync.yaml_loader import SyncFalsePositive, SyncTruePositive, YAMLIssue
 
-if TYPE_CHECKING:
-    from props.config import PropsConfig
-
 logger = logging.getLogger(__name__)
-tracer = trace.get_tracer(__name__)
 
 
 class SpecimenData(BaseModel):
-    """Specimen data YAML blob structure.
-
-    Contains the snapshot slug, split designation, and merged issues from all YAML files.
-    """
+    """Specimen data YAML blob structure."""
 
     snapshot_slug: SnapshotSlug
     split: Split
@@ -58,10 +49,7 @@ class SpecimenData(BaseModel):
 
 @dataclass
 class SpecimenBundle:
-    """Bundle artifacts for a single specimen.
-
-    Holds parsed specimen data and path to code tar.
-    """
+    """Bundle artifacts for a single specimen."""
 
     code_tar: Path
     data: SpecimenData
@@ -73,17 +61,7 @@ class SpecimenBundle:
 
     @staticmethod
     def from_paths(code_tar: Path, data_yaml: Path) -> SpecimenBundle:
-        """Create a SpecimenBundle from code tar and data YAML paths.
-
-        Parses the data YAML immediately to avoid redundant parsing.
-
-        Args:
-            code_tar: Path to uncompressed code tar
-            data_yaml: Path to merged data YAML (snapshot_slug + split + issues)
-
-        Returns:
-            SpecimenBundle with parsed data
-        """
+        """Create a SpecimenBundle from code tar and data YAML paths."""
         with data_yaml.open() as f:
             specimen_data = SpecimenData.model_validate(yaml.safe_load(f))
         return SpecimenBundle(code_tar=code_tar, data=specimen_data)
@@ -93,6 +71,8 @@ def _add_ranges_to_occurrence(
     orm_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM, files: dict[Path, list[LineRange] | None]
 ) -> None:
     """Add OccurrenceRangeORM objects to an occurrence from a files dict."""
+    tp_id = orm_occ.tp_id if isinstance(orm_occ, TruePositiveOccurrenceORM) else None
+    fp_id = orm_occ.fp_id if isinstance(orm_occ, FalsePositiveOccurrenceORM) else None
     for file_path, ranges in files.items():
         if ranges is None:
             continue
@@ -100,8 +80,8 @@ def _add_ranges_to_occurrence(
             orm_occ.ranges.append(
                 OccurrenceRangeORM(
                     snapshot_slug=orm_occ.snapshot_slug,
-                    tp_id=getattr(orm_occ, "tp_id", None),
-                    fp_id=getattr(orm_occ, "fp_id", None),
+                    tp_id=tp_id,
+                    fp_id=fp_id,
                     occurrence_id=orm_occ.occurrence_id,
                     file_path=file_path,
                     range_id=range_id,
@@ -112,71 +92,53 @@ def _add_ranges_to_occurrence(
             )
 
 
-def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> SyncStats:
-    """Sync snapshot_files table from snapshot content archives in DB."""
-
-    # Get existing files from DB for ONLY the slugs being synced (not all snapshots!)
-    # This prevents deleting files from other snapshots when syncing multiple specimens sequentially
+def sync_snapshot_files_to_db(session: Session, slug: SnapshotSlug, archive_bytes: bytes) -> SyncStats:
+    """Sync snapshot_files table from a snapshot's code tar archive."""
     existing_keys: set[tuple[SnapshotSlug, str]] = {
         (row[0], row[1])
         for row in session.execute(
-            select(SnapshotFile.snapshot_slug, SnapshotFile.file_path).where(SnapshotFile.snapshot_slug.in_(slugs))
+            select(SnapshotFile.snapshot_slug, SnapshotFile.file_path).where(SnapshotFile.snapshot_slug == slug)
         )
     }
+
+    # Extract UTF-8 files from tar; skip directories and non-UTF-8 content.
+    file_rows: list[dict] = []
     seen_keys: set[tuple[SnapshotSlug, str]] = set()
+    buffer = io.BytesIO(archive_bytes)
+    with tarfile.open(fileobj=buffer, mode="r") as tar:
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+            if (f := tar.extractfile(member)) is None:
+                continue
+            try:
+                content = f.read().decode("utf-8")
+            except UnicodeDecodeError:
+                logger.warning("Skipping non-UTF-8 file: %r in %s", member.name, slug)
+                continue
+            line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+            seen_keys.add((slug, member.name))
+            file_rows.append({"snapshot_slug": slug, "file_path": member.name, "line_count": line_count})
 
-    total = 0
-    added = 0
-    updated = 0
-    deleted = 0
+    # Bulk upsert all files in one statement.
+    stmt = insert(SnapshotFile).values(file_rows)
+    session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[SnapshotFile.snapshot_slug, SnapshotFile.file_path],
+            set_={"line_count": stmt.excluded.line_count},
+        )
+    )
 
-    for slug in slugs:
-        # Get content from database
-        snapshot = session.query(Snapshot).filter_by(slug=slug).one()
-        if snapshot.content is None:
-            logger.warning(f"Snapshot {slug} has no content, skipping file sync")
-            continue
+    # Bulk delete orphaned files in one query.
+    orphaned = existing_keys - seen_keys
+    session.query(SnapshotFile).filter(
+        tuple_(SnapshotFile.snapshot_slug, SnapshotFile.file_path).in_(list(orphaned))
+    ).delete(synchronize_session=False)
 
-        # Extract file list from tar archive
-        buffer = io.BytesIO(snapshot.content)
-        with tarfile.open(fileobj=buffer, mode="r") as tar:
-            for member in tar.getmembers():
-                if not member.isfile():
-                    continue
-
-                relative = member.name
-                key = (slug, relative)
-                seen_keys.add(key)
-
-                # Read file content to count lines
-                f = tar.extractfile(member)
-                if f is None:
-                    continue
-                content = f.read().decode("utf-8", errors="replace")
-                line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-
-                # Upsert line_count via ON CONFLICT to avoid ORM instance usage
-                stmt = (
-                    insert(SnapshotFile)
-                    .values(snapshot_slug=slug, file_path=relative, line_count=line_count)
-                    .on_conflict_do_update(
-                        index_elements=[SnapshotFile.snapshot_slug, SnapshotFile.file_path],
-                        set_={"line_count": line_count},
-                    )
-                )
-                session.execute(stmt)
-                if key in existing_keys:
-                    updated += 1
-                else:
-                    added += 1
-
-                total += 1
-
-    # Delete orphaned files
-    for snapshot_slug, file_path in existing_keys - seen_keys:
-        session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, file_path=file_path).delete()
-        deleted += 1
-
+    added = len(seen_keys - existing_keys)
+    updated = len(seen_keys & existing_keys)
+    deleted = len(orphaned)
+    total = len(seen_keys)
     session.flush()
     logger.info(f"Snapshot files synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
@@ -465,8 +427,10 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
     session.execute(stmt)
     session.flush()
 
-    # Sync snapshot files from the tar we just stored
-    sync_snapshot_files_to_db(session, [slug])
+    # Sync snapshot files using the bytes already in memory, bypassing the DB read.
+    # The Core INSERT above does not update the ORM identity map, so re-reading snapshot.content
+    # from the session would be unreliable for freshly upserted rows.
+    sync_snapshot_files_to_db(session, slug, archive_bytes)
 
     # Convert issues dict to sync TruePositive/FalsePositive objects
     true_positives: list[SyncTruePositive] = []
@@ -479,7 +443,6 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
         else:
             false_positives.append(issue.to_false_positive(fp_id=issue_id, snapshot_slug=slug))
 
-    # Sync issues to DB (similar to sync_issues_to_db logic for one specimen)
     existing_issues = {
         (i.snapshot_slug, i.tp_id): i for i in session.query(TruePositive).filter_by(snapshot_slug=slug).all()
     }
@@ -520,46 +483,18 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
             existing_fp = existing_fps[fp_key]
             _sync_fp_issue(session, existing_fp, fp)
 
-    # Delete orphaned issues (in DB but not in bundle)
-    for key in set(existing_issues.keys()) - seen_issue_keys:
-        session.delete(existing_issues[key])
-    for key in set(existing_fps.keys()) - seen_fp_keys:
-        session.delete(existing_fps[key])
+    # Delete orphaned issues (in DB but not in bundle) in bulk.
+    if orphaned_tp_keys := existing_issues.keys() - seen_issue_keys:
+        session.query(TruePositive).filter(
+            tuple_(TruePositive.snapshot_slug, TruePositive.tp_id).in_(list(orphaned_tp_keys))
+        ).delete(synchronize_session=False)
+    if orphaned_fp_keys := existing_fps.keys() - seen_fp_keys:
+        session.query(FalsePositive).filter(
+            tuple_(FalsePositive.snapshot_slug, FalsePositive.fp_id).in_(list(orphaned_fp_keys))
+        ).delete(synchronize_session=False)
 
     session.flush()
 
     _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
 
     logger.info(f"Synced specimen from bundle: {slug}")
-
-
-@dataclass
-class SyncMetadataResult:
-    """Result from sync_metadata."""
-
-    model_metadata_stats: SyncStats
-
-
-def sync_metadata(session: Session, *, config: PropsConfig | None = None, dry_run: bool = False) -> SyncMetadataResult:
-    """Sync model metadata to database.
-
-    Specimens are synced separately via sync_specimen (called from specimen tests
-    and `props db sync-specimen`).
-
-    Args:
-        session: Database session
-        config: Optional props config for custom model metadata
-        dry_run: If True, rollback all changes instead of committing
-    """
-    with tracer.start_as_current_span("sync_metadata"):
-        print("Syncing model metadata...")
-        model_metadata_stats = sync_model_metadata_with_session(session, config)
-        print(f"  {model_metadata_stats.summary_text}")
-
-        if dry_run:
-            logger.info("DRY-RUN: Rolling back all changes")
-            session.rollback()
-        else:
-            session.commit()
-
-        return SyncMetadataResult(model_metadata_stats=model_metadata_stats)

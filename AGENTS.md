@@ -125,6 +125,12 @@ live_openai_py_test(
 - `env_utils.env_utils.get_optional_env(name, default=None)` — get optional env var.
 - `env_utils.env_utils.get_optional_env_path(name)` — get optional env var as `Path`.
 
+### JavaScript / TypeScript (Bazel with rules_js)
+
+Frontend sub-projects use `@aspect_rules_js` with `js_library` targets. ESLint linting is handled by the workspace lint aspect (`--config=check`). Declare precise deps — each `js_library` lists only the files it directly imports; transitive deps propagate automatically via `JsInfo`.
+
+See <props/frontend/AGENTS.md> for frontend-specific conventions.
+
 ### Deployment
 
 ```bash

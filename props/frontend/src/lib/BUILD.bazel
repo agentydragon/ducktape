@@ -1,0 +1,163 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+
+package(default_visibility = [
+    "//props/frontend:__pkg__",
+    "//props/frontend:__subpackages__",
+])
+
+# OpenAPI TypeScript schema generation
+js_run_binary(
+    name = "_generate_schema_run",
+    srcs = ["//props/frontend:openapi_schema_local"],
+    outs = ["api/schema.d.ts"],
+    args = [
+        "openapi.json",
+        "src/lib/api/schema.d.ts",
+    ],
+    chdir = "props/frontend",
+    tool = "//props/frontend:generate_schema_bin",
+)
+
+js_library(
+    name = "schema",
+    srcs = [":_generate_schema_run"],
+    tags = ["no-lint"],
+)
+
+# Standalone utilities (no local deps)
+
+js_library(
+    name = "router",
+    srcs = ["router.ts"],
+)
+
+js_library(
+    name = "colors",
+    srcs = ["colors.ts"],
+)
+
+js_library(
+    name = "fileTypes",
+    srcs = ["fileTypes.ts"],
+)
+
+js_library(
+    name = "highlighting",
+    srcs = ["highlighting.ts"],
+)
+
+js_library(
+    name = "expansionState",
+    srcs = ["expansionState.svelte.ts"],
+)
+
+js_library(
+    name = "token",
+    srcs = ["stores/token.ts"],
+)
+
+js_library(
+    name = "JobIdLink",
+    srcs = ["JobIdLink.svelte"],
+)
+
+# Utilities with deps
+
+js_library(
+    name = "types",
+    srcs = ["types.ts"],
+    deps = [":schema"],
+)
+
+js_library(
+    name = "client",
+    srcs = ["api/client.ts"],
+    deps = [
+        ":schema",
+        ":token",
+    ],
+)
+
+js_library(
+    name = "formatters",
+    srcs = ["formatters.ts"],
+    deps = [
+        ":client",
+        ":types",
+    ],
+)
+
+js_library(
+    name = "status",
+    srcs = ["status.ts"],
+    deps = [":client"],
+)
+
+js_library(
+    name = "runsFeed",
+    srcs = ["stores/runsFeed.ts"],
+    deps = [
+        ":client",
+        ":token",
+    ],
+)
+
+# Link components
+
+js_library(
+    name = "CritiqueIssueLink",
+    srcs = ["CritiqueIssueLink.svelte"],
+    deps = [":router"],
+)
+
+js_library(
+    name = "FileLink",
+    srcs = ["FileLink.svelte"],
+    deps = [":router"],
+)
+
+js_library(
+    name = "IssueIdLink",
+    srcs = ["IssueIdLink.svelte"],
+    deps = [":router"],
+)
+
+js_library(
+    name = "OccurrenceLink",
+    srcs = ["OccurrenceLink.svelte"],
+    deps = [":router"],
+)
+
+js_library(
+    name = "RunIdLink",
+    srcs = ["RunIdLink.svelte"],
+    deps = [":router"],
+)
+
+js_library(
+    name = "DefinitionIdLink",
+    srcs = ["DefinitionIdLink.svelte"],
+    deps = [
+        ":formatters",
+        ":router",
+    ],
+)
+
+js_library(
+    name = "SnapshotLink",
+    srcs = ["SnapshotLink.svelte"],
+    deps = [
+        ":formatters",
+        ":router",
+    ],
+)
+
+js_library(
+    name = "ExampleLink",
+    srcs = ["ExampleLink.svelte"],
+    deps = [
+        ":client",
+        ":formatters",
+        ":router",
+    ],
+)

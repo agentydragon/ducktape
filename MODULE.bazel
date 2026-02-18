@@ -132,6 +132,7 @@ oci.pull(
 use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "postgres_16", "postgres_16_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
+bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.3")
 bazel_dep(name = "rules_nodejs", version = "6.7.3")

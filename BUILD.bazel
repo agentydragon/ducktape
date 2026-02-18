@@ -68,7 +68,9 @@ js_library(
         ":node_modules/eslint-plugin-react",
         ":node_modules/eslint-plugin-svelte",
         ":node_modules/globals",
+        ":node_modules/svelte",  # peer dep of svelte-eslint-parser & eslint-plugin-svelte
         ":node_modules/svelte-eslint-parser",
+        ":node_modules/typescript",  # peer dep of @typescript-eslint/parser & plugin
     ],
 )
 

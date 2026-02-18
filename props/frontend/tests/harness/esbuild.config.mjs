@@ -15,7 +15,7 @@ await esbuild.build({
   entryPoints: [resolve(__dirname, 'harness.ts')],
   bundle: true,
   outdir,
-  format: 'esm',
+  format: 'iife',
   minify: false,
   sourcemap: true,
   target: ['es2022'],

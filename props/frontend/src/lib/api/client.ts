@@ -2,7 +2,7 @@ import createClient from "openapi-fetch";
 import type { paths, components } from "./schema";
 import { getToken, onAuthFailed } from "$lib/stores/token";
 
-// Create typed API client (types from Bazel: //props/frontend:generate_schema)
+// Create typed API client (types from Bazel: //props/frontend/src/lib:schema)
 export const api = createClient<paths>({ baseUrl: "" });
 
 // Attach admin token as Bearer header to every request

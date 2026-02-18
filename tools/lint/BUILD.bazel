@@ -33,10 +33,23 @@ py_binary(
 
 # ESLint binary for JS/TS linting
 # Used by lint_eslint_aspect in linters.bzl
-# Set BAZEL_BINDIR to allow running outside Bazel build actions
+#
+# Unlike Prettier (which is invoked directly via `bazel run`), ESLint is
+# invoked by the lint_eslint_aspect which sets BAZEL_BINDIR to ctx.bin_dir.path
+# in the action env. Do NOT set BAZEL_BINDIR here — the binary's env export
+# would override the aspect's, causing `cd` to the execroot instead of bin dir,
+# which breaks source file resolution for copy_files_to_bin_actions copies.
+#
+# The --config flag points ESLint at the config in runfiles rather than the
+# source tree. This ensures plugin resolution works in sandboxed execution where
+# node_modules doesn't exist at the execroot. See aspect-build/rules_lint#176.
 eslint_bin.eslint_binary(
     name = "eslint",
-    env = {"BAZEL_BINDIR": "."},
+    data = ["//:eslintrc"],
+    fixed_args = [
+        "--config",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:eslintrc)",
+    ],
 )
 
 # Prettier binary for JS/TS/Svelte formatting

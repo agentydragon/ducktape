@@ -85,7 +85,7 @@
     return currentPath.startsWith(path);
   }
 
-  // Route matching
+  // Route matching — $pathname is already the clean path (no query string).
   const currentRoute = $derived.by(() => {
     const path = $pathname;
 

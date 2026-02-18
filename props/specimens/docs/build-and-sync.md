@@ -20,7 +20,7 @@ Bazel requires `BUILD.bazel` files in directories it manages. Since specimen `co
 
 `SpecimenBundle` (dataclass in `props/db/sync/sync.py`) holds `slug`, `code_tar`, and `data_yaml` paths. `sync_specimen()` reads the bundle artifacts and syncs snapshot, snapshot files, issues, and critic scopes to the DB. Both `test_specimen.py` and the `props db sync-specimen` CLI use this same function.
 
-`sync_metadata()` syncs model metadata only (called by `props db sync`).
+Model metadata is synced by `sync_model_metadata_with_session()` (called during `props db recreate` and at backend startup).
 
 ## External Specimens
 

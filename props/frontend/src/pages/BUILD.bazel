@@ -1,0 +1,101 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//props/frontend:defs.bzl", "visual_test")
+
+package(default_visibility = [
+    "//props/frontend:__pkg__",
+    "//props/frontend:__subpackages__",
+])
+
+# Page libraries with explicit deps
+
+js_library(
+    name = "RunDetailPage",
+    srcs = ["RunDetailPage.svelte"],
+    deps = ["//props/frontend/src/components:RunDetail"],
+)
+
+js_library(
+    name = "RunsPage",
+    srcs = ["RunsPage.svelte"],
+    deps = [
+        "//props/frontend/src/components:RunsBrowser",
+        "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:types",
+    ],
+)
+
+js_library(
+    name = "DefinitionDetailPage",
+    srcs = ["DefinitionDetailPage.svelte"],
+    deps = [
+        "//props/frontend/src/components:DefinitionDetail",
+        "//props/frontend/src/lib:client",
+    ],
+)
+
+js_library(
+    name = "ExamplesPage",
+    srcs = ["ExamplesPage.svelte"],
+    deps = [
+        "//props/frontend/src/components:ExampleDetail",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:router",
+    ],
+)
+
+js_library(
+    name = "SnapshotsPage",
+    srcs = ["SnapshotsPage.svelte"],
+    deps = [
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:colors",
+        "//props/frontend/src/lib:router",
+    ],
+)
+
+js_library(
+    name = "OverviewPage",
+    srcs = ["OverviewPage.svelte"],
+    deps = [
+        "//props/frontend/src/components:JobsList",
+        "//props/frontend/src/components:RunList",
+        "//props/frontend/src/components:TabButton",
+        "//props/frontend/src/components/stats:CoverageHeatmap",
+        "//props/frontend/src/components/stats:DefinitionsTable",
+        "//props/frontend/src/components/stats:DistributionChart",
+        "//props/frontend/src/components/stats:SummaryCards",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:types",
+    ],
+)
+
+js_library(
+    name = "SnapshotDetailPage",
+    srcs = ["SnapshotDetailPage.svelte"],
+    deps = [
+        "//props/frontend/src/components:BackButton",
+        "//props/frontend/src/components:Breadcrumb",
+        "//props/frontend/src/components:CopyButton",
+        "//props/frontend/src/components:FileTree",
+        "//props/frontend/src/components:FileViewer",
+        "//props/frontend/src/components:TabButton",
+        "//props/frontend/src/components/stats:CreditBadge",
+        "//props/frontend/src/components/stats:OccurrenceStats",
+        "//props/frontend/src/lib:OccurrenceLink",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:colors",
+        "//props/frontend/src/lib:expansionState",
+        "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:router",
+    ],
+)
+
+# Visual regression tests
+
+visual_test(
+    name = "visual_SnapshotDetail",
+    srcs = ["visual_test_SnapshotDetail.mjs"],
+    baseline = "baselines/SnapshotDetail-chromium-linux.png",
+    deps = [":SnapshotDetailPage"],
+)

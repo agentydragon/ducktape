@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { pathname, resolve } from "$lib/router";
+  import { searchParams, resolve } from "$lib/router";
   import { toast } from "svelte-sonner";
   import { splitBadgeClass } from "$lib/colors";
   import { formatLocationAnchor } from "$lib/formatters";
@@ -35,14 +35,7 @@
     return { snapshotSlug, issueId, occurrenceId };
   });
 
-  // Parse query params for file
-  const queryParams = $derived.by(() => {
-    const path = $pathname;
-    const queryStart = path.indexOf("?");
-    if (queryStart === -1) return new URLSearchParams();
-    return new URLSearchParams(path.slice(queryStart + 1));
-  });
-  const targetFile = $derived(queryParams.get("file") || undefined);
+  const targetFile = $derived($searchParams.get("file") || undefined);
 
   // svelte-ignore state_referenced_locally
   let snapshot: SnapshotDetailResponse | null = $state(initialSnapshot ?? null);

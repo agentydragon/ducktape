@@ -196,6 +196,7 @@ py_test(
 
 py_test(
     name = "test_e2e",
+    size = "medium",
     srcs = ["test_e2e.py"],
     data = [
         ":image",
@@ -226,6 +227,7 @@ py_test(
 
 py_test(
     name = "test_e2e_sleep_wake",
+    size = "medium",
     srcs = ["test_e2e_sleep_wake.py"],
     data = [
         ":image",

@@ -1,0 +1,210 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//props/frontend:defs.bzl", "visual_test")
+
+package(default_visibility = [
+    "//props/frontend:__pkg__",
+    "//props/frontend:__subpackages__",
+])
+
+# Component libraries with explicit deps
+
+js_library(
+    name = "TabButton",
+    srcs = ["TabButton.svelte"],
+)
+
+js_library(
+    name = "CopyButton",
+    srcs = ["CopyButton.svelte"],
+)
+
+js_library(
+    name = "BackButton",
+    srcs = ["BackButton.svelte"],
+    deps = ["//props/frontend/src/lib:router"],
+)
+
+js_library(
+    name = "Breadcrumb",
+    srcs = ["Breadcrumb.svelte"],
+    deps = ["//props/frontend/src/lib:router"],
+)
+
+js_library(
+    name = "LLMRequestViewer",
+    srcs = ["LLMRequestViewer.svelte"],
+    deps = ["//props/frontend/src/lib:client"],
+)
+
+js_library(
+    name = "FileTree",
+    srcs = ["FileTree.svelte"],
+    deps = [
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:fileTypes",
+    ],
+)
+
+js_library(
+    name = "GradingEdges",
+    srcs = ["GradingEdges.svelte"],
+    deps = [
+        "//props/frontend/src/lib:CritiqueIssueLink",
+        "//props/frontend/src/lib:OccurrenceLink",
+        "//props/frontend/src/lib:client",
+    ],
+)
+
+js_library(
+    name = "JobsList",
+    srcs = ["JobsList.svelte"],
+    deps = [
+        "//props/frontend/src/lib:DefinitionIdLink",
+        "//props/frontend/src/lib:JobIdLink",
+        "//props/frontend/src/lib:runsFeed",
+    ],
+)
+
+js_library(
+    name = "RunList",
+    srcs = ["RunList.svelte"],
+    deps = [
+        "//props/frontend/src/lib:DefinitionIdLink",
+        "//props/frontend/src/lib:RunIdLink",
+        "//props/frontend/src/lib:runsFeed",
+        "//props/frontend/src/lib:status",
+    ],
+)
+
+js_library(
+    name = "IssueComment",
+    srcs = ["IssueComment.svelte"],
+    deps = [
+        ":CopyButton",
+        "//props/frontend/src/lib:OccurrenceLink",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:colors",
+        "//props/frontend/src/lib:formatters",
+    ],
+)
+
+js_library(
+    name = "FileViewer",
+    srcs = ["FileViewer.svelte"],
+    deps = [
+        ":IssueComment",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:fileTypes",
+        "//props/frontend/src/lib:highlighting",
+        "//props/frontend/src/lib:router",
+        "//props/frontend/src/lib:types",
+    ],
+)
+
+js_library(
+    name = "DefinitionDetail",
+    srcs = ["DefinitionDetail.svelte"],
+    deps = [
+        ":BackButton",
+        ":Breadcrumb",
+        ":RunsBrowser",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:colors",
+        "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:types",
+    ],
+)
+
+js_library(
+    name = "ExampleDetail",
+    srcs = ["ExampleDetail.svelte"],
+    deps = [
+        ":BackButton",
+        ":Breadcrumb",
+        "//props/frontend/src/lib:DefinitionIdLink",
+        "//props/frontend/src/lib:FileLink",
+        "//props/frontend/src/lib:SnapshotLink",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:colors",
+        "//props/frontend/src/lib:formatters",
+    ],
+)
+
+js_library(
+    name = "RunsBrowser",
+    srcs = ["RunsBrowser.svelte"],
+    deps = [
+        ":BackButton",
+        "//props/frontend/src/lib:DefinitionIdLink",
+        "//props/frontend/src/lib:ExampleLink",
+        "//props/frontend/src/lib:RunIdLink",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:status",
+        "//props/frontend/src/lib:types",
+    ],
+)
+
+js_library(
+    name = "RunDetail",
+    srcs = ["RunDetail.svelte"],
+    deps = [
+        ":BackButton",
+        ":Breadcrumb",
+        ":FileViewer",
+        ":GradingEdges",
+        ":LLMRequestViewer",
+        "//props/frontend/src/lib:DefinitionIdLink",
+        "//props/frontend/src/lib:ExampleLink",
+        "//props/frontend/src/lib:RunIdLink",
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:status",
+    ],
+)
+
+js_library(
+    name = "RunTriggerModal",
+    srcs = ["RunTriggerModal.svelte"],
+    deps = [
+        "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:router",
+    ],
+)
+
+# Visual regression tests
+
+visual_test(
+    name = "visual_DefinitionDetail",
+    srcs = ["visual_test_DefinitionDetail.mjs"],
+    baseline = "baselines/DefinitionDetail-chromium-linux.png",
+    deps = [":DefinitionDetail"],
+)
+
+visual_test(
+    name = "visual_FileViewerAnnotated",
+    srcs = ["visual_test_FileViewerAnnotated.mjs"],
+    baseline = "baselines/FileViewerAnnotated-chromium-linux.png",
+    deps = [":FileViewer"],
+)
+
+visual_test(
+    name = "visual_FileViewerGroundTruth",
+    srcs = ["visual_test_FileViewerGroundTruth.mjs"],
+    baseline = "baselines/FileViewerGroundTruth-chromium-linux.png",
+    deps = [":FileViewer"],
+)
+
+visual_test(
+    name = "visual_LLMRequests",
+    srcs = ["visual_test_LLMRequests.mjs"],
+    baseline = "baselines/LLMRequests-chromium-linux.png",
+    deps = [":LLMRequestViewer"],
+)
+
+visual_test(
+    name = "visual_RunsBrowser",
+    srcs = ["visual_test_RunsBrowser.mjs"],
+    baseline = "baselines/RunsBrowser-chromium-linux.png",
+    deps = [":RunsBrowser"],
+)

@@ -1,4 +1,4 @@
-// Re-export types from generated schema (Bazel: //props/frontend:generate_schema)
+// Re-export types from generated schema (Bazel: //props/frontend/src/lib:schema)
 import type { components } from "./api/schema";
 
 export type OverviewResponse = components["schemas"]["OverviewResponse"];

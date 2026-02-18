@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { pathname } from "$lib/router";
+  import { searchParams } from "$lib/router";
   import ExampleDetail from "$components/ExampleDetail.svelte";
   import { fetchExampleDetail, type ExampleDetailResponse, type ExampleKind } from "$lib/api/client";
 
@@ -15,17 +15,9 @@
   let loading = $state(!initialData);
   let error: string | null = $state(null);
 
-  // Parse query params from hash URL
-  const queryParams = $derived.by(() => {
-    const path = $pathname;
-    const queryStart = path.indexOf("?");
-    if (queryStart === -1) return new URLSearchParams();
-    return new URLSearchParams(path.slice(queryStart + 1));
-  });
-
-  const snapshotSlug = $derived(queryParams.get("snapshot_slug") ?? "");
-  const exampleKind = $derived((queryParams.get("example_kind") ?? "whole_snapshot") as ExampleKind);
-  const filesHash = $derived(queryParams.get("files_hash"));
+  const snapshotSlug = $derived($searchParams.get("snapshot_slug") ?? "");
+  const exampleKind = $derived(($searchParams.get("example_kind") ?? "whole_snapshot") as ExampleKind);
+  const filesHash = $derived($searchParams.get("files_hash"));
 
   async function loadData(slug: string, kind: ExampleKind, hash: string | null) {
     loading = true;

@@ -1,44 +1,52 @@
-// Simple hash-based router for Svelte 5
+// Hash-based router for Svelte 5.
+// Uses the URL constructor for proper parsing — no manual string splitting.
 import { writable, derived } from "svelte/store";
 
-// Current hash path (without the #)
-function createRouter() {
-  const path = writable(window.location.hash.slice(1) || "/");
+function parseHash(hash: string): { pathname: string; searchParams: URLSearchParams } {
+  // Parse hash fragment (e.g. "#/runs?definition=sha256:...") as a URL.
+  const fragment = hash.slice(1) || "/";
+  const url = new URL(fragment, "http://x");
+  return { pathname: url.pathname, searchParams: url.searchParams };
+}
 
-  // Listen for hash changes
+function createRouter() {
+  const hash = writable(window.location.hash);
+
   if (typeof window !== "undefined") {
     window.addEventListener("hashchange", () => {
-      path.set(window.location.hash.slice(1) || "/");
+      hash.set(window.location.hash);
     });
   }
 
   return {
-    subscribe: path.subscribe,
-    navigate: (to: string) => {
+    hash: { subscribe: hash.subscribe },
+    navigate(to: string) {
       window.location.hash = to;
     },
   };
 }
 
-export const router = createRouter();
+const router = createRouter();
+const parsed = derived(router.hash, parseHash);
 
-// Derived store for current pathname
-export const pathname = derived(router, ($r) => $r);
+// Clean pathname (no query string). Use for route matching and nav highlighting.
+export const pathname = derived(parsed, ($p) => $p.pathname);
 
-// Navigate programmatically
+// Current query params as URLSearchParams.
+export const searchParams = derived(parsed, ($p) => $p.searchParams);
+
 export function goto(path: string) {
   router.navigate(path);
 }
 
-// Resolve paths (replaces $app/paths.resolve)
-// With hash routing, base is always empty
+// Resolve a path to a full href (prefixes with #).
 export function resolve(path: string): string {
   return "#" + path;
 }
 
-// Parse route params from path
+// Parse SvelteKit-style route params from a path pattern.
+// e.g. parseParams("/runs/[runId]", "/runs/abc") → { runId: "abc" }
 export function parseParams(pattern: string, path: string): Record<string, string> | null {
-  // Convert pattern like '/runs/:runId' to regex
   const paramNames: string[] = [];
   const regexStr = pattern
     .replace(/\[\.\.\.(\w+)\]/g, (_, name) => {
@@ -50,9 +58,7 @@ export function parseParams(pattern: string, path: string): Record<string, strin
       return "([^/]+)";
     });
 
-  const regex = new RegExp("^" + regexStr + "$");
-  const match = path.match(regex);
-
+  const match = path.match(new RegExp("^" + regexStr + "$"));
   if (!match) return null;
 
   const params: Record<string, string> = {};
