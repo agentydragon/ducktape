@@ -110,14 +110,13 @@ def unused_whitelist_patterns(raw_orphans: set[Path], whitelist_lines: list[str]
     weight — either the files they referenced were deleted, or they are now
     fully covered by Bazel targets and no longer appear as orphans.
     """
-    raw_orphan_strs = [str(p) for p in raw_orphans]
     unused: list[str] = []
     for line in whitelist_lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         single_spec = pathspec.PathSpec.from_lines("gitwildmatch", [stripped])
-        if not any(single_spec.match_file(p) for p in raw_orphan_strs):
+        if not any(single_spec.match_file(p) for p in raw_orphans):
             unused.append(line)
     return unused
 
@@ -133,7 +132,6 @@ def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[
     helm_files = query_helm_chart_files(repo_root, git_files)
 
     raw_orphans = git_files - bazel_files - helm_files
-    raw_orphan_strs = [str(p) for p in raw_orphans]
 
     whitelist_lines = whitelist_path.read_text().splitlines()
 
@@ -144,11 +142,11 @@ def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[
         if stripped and not stripped.startswith("#"):
             patterns.append((line, pathspec.PathSpec.from_lines("gitwildmatch", [stripped])))
 
-    def _is_whitelisted(path_str: str) -> bool:
-        return any(spec.match_file(path_str) for _, spec in patterns)
+    def _is_whitelisted(path: Path) -> bool:
+        return any(spec.match_file(path) for _, spec in patterns)
 
-    orphans = sorted(p for p in raw_orphans if not _is_whitelisted(str(p)))
-    unused = [line for line, spec in patterns if not any(spec.match_file(p) for p in raw_orphan_strs)]
+    orphans = sorted(p for p in raw_orphans if not _is_whitelisted(p))
+    unused = [line for line, spec in patterns if not any(spec.match_file(p) for p in raw_orphans)]
     return orphans, unused
 
 
