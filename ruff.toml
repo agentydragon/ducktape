@@ -13,8 +13,9 @@ target-version = "py313"
 # .gitattributes is the source of truth; this list must stay in sync.
 # Reason: tools/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
 # See README.md "Lint/Format Exclusions" section for details.
+# Note: third_party is handled via per-file-ignores below (not here), so that
+# the Bazel lint aspect can find the files without "No Python files found" warnings.
 exclude = [
-    "**/third_party",
     "k8s_old",
     "tana/export/references",
     "props/testing/fixtures/testdata",
