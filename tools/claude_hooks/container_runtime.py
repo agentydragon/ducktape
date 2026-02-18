@@ -35,6 +35,8 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
+import httpx
+
 from tools.claude_hooks.errors import SkipError
 from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
@@ -106,6 +108,23 @@ async def _is_service_healthy(supervisor: SupervisorClient, service_name: str, s
     try:
         return await supervisor.is_service_running(service_name)
     except Exception:
+        return False
+
+
+async def _is_docker_socket_responsive(socket_path: Path) -> bool:
+    """Return True if a dockerd is already listening on the socket.
+
+    Handles the case where the environment injects a pre-existing dockerd
+    (e.g. the Claude Code web sandbox starts with one) that is not managed
+    by this session's supervisor instance.
+    """
+    if not socket_path.exists():
+        return False
+    try:
+        async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(uds=str(socket_path)), timeout=1.0) as client:
+            response = await client.get("http://localhost/_ping")
+            return response.status_code == 200
+    except (OSError, httpx.HTTPError, httpx.TransportError):
         return False
 
 
@@ -339,6 +358,18 @@ async def setup_container_runtime(
             runtime=runtime,
             socket_url=socket_url,
             status=status,
+            storage_driver=spec.storage_driver,
+            env_vars=spec.client_env_vars,
+        )
+
+    # Check for a pre-existing daemon not managed by this supervisor (e.g. the
+    # Claude Code web sandbox injects a dockerd before the hook runs).
+    if runtime == "docker" and await _is_docker_socket_responsive(spec.socket_path):
+        logger.info("Pre-existing dockerd responsive on %s, using it", spec.socket_path)
+        return ContainerRuntimeSetup(
+            runtime=runtime,
+            socket_url=socket_url,
+            status="pre-existing",
             storage_driver=spec.storage_driver,
             env_vars=spec.client_env_vars,
         )

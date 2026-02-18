@@ -128,11 +128,11 @@ async def setup_mkcert(settings: HookSettings, combined_ca: Path | None) -> Mkce
         logger.info("Generating localhost certificate...")
         with tracer.start_as_current_span("mkcert_generate_cert"):
             proc = await asyncio.create_subprocess_exec(
-                str(mkcert_bin),
+                mkcert_bin,
                 "-cert-file",
-                str(cert_path),
+                cert_path,
                 "-key-file",
-                str(key_path),
+                key_path,
                 "localhost",
                 "127.0.0.1",
                 "::1",

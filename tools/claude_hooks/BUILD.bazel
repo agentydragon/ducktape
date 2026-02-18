@@ -213,6 +213,7 @@ py_library(
         ":settings",
         "//tools/claude_hooks/supervisor:client",
         "//tools/claude_hooks/supervisor:service_utils",
+        "@pypi//httpx",
     ],
 )
 
