@@ -216,6 +216,17 @@
       }
     ]
   },
+  "nixfmt": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/NixOS/nixfmt/releases/download/v1.2.0/nixfmt",
+        "sha256": "aa43e06e2e98d07f9393a8dc73978e0df79bad15d7f84fcd838e15557eb056ee",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
   "ruff": {
     "binaries": [
       {

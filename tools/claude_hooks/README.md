@@ -72,7 +72,7 @@ The hook runs at the start of each Claude Code web session and:
 10. Installs nix via `nix_setup.py` (for nix eval, flake operations)
 
 Note: flux, kustomize, kubeseal, helm are now Bazel-managed via `@multitool//tools/*`.
-Nix formatting uses a static nixfmt binary downloaded by `tools/precommit/run-nixfmt.sh`.
+Nix formatting uses a static nixfmt binary downloaded by `tools/precommit/run_nixfmt.sh`.
 
 ### Environment Configuration
 

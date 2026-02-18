@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Pre-commit hook wrapper for nixfmt using a static binary from GitHub releases.
 # Downloads the binary on first use and caches it in the pre-commit environment.
+# Version and checksum are read from tools/multitool/lockfile.json.
 # TODO: Support non-Linux platforms (macOS/aarch64) — currently only ships linux-x86_64.
 set -euo pipefail
 
-NIXFMT_VERSION="1.2.0"
-NIXFMT_SHA256="aa43e06e2e98d07f9393a8dc73978e0df79bad15d7f84fcd838e15557eb056ee"
-NIXFMT_URL="https://github.com/NixOS/nixfmt/releases/download/v${NIXFMT_VERSION}/nixfmt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCKFILE="${SCRIPT_DIR}/../multitool/lockfile.json"
+
+NIXFMT_URL="$(jq -r '.nixfmt.binaries[] | select(.os == "linux" and .cpu == "x86_64") | .url' "$LOCKFILE")"
+NIXFMT_SHA256="$(jq -r '.nixfmt.binaries[] | select(.os == "linux" and .cpu == "x86_64") | .sha256' "$LOCKFILE")"
+NIXFMT_VERSION="$(printf '%s' "$NIXFMT_URL" | sed 's|.*/v\([^/]*\)/.*|\1|')"
 
 # Cache directory: use XDG_CACHE_HOME if set, otherwise ~/.cache
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/nixfmt-bin"

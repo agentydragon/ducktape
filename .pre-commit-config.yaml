@@ -80,7 +80,7 @@ repos:
     hooks:
       - id: nixfmt
         name: nixfmt
-        entry: tools/precommit/run-nixfmt.sh
+        entry: tools/precommit/run_nixfmt.sh
         language: system
         files: "\\.nix$"
 
@@ -159,7 +159,7 @@ repos:
       # NOTE: formatting moved to standard hooks (buildifier, ruff, shfmt - see above)
       - id: bazel-precommit
         name: bazel precommit (validate)
-        entry: tools/precommit/run-precommit.sh
+        entry: tools/precommit/run_precommit.sh
         language: system
         pass_filenames: true
         # Triggers on: test files (pytest-main), cluster files (validations), terraform (centralization)

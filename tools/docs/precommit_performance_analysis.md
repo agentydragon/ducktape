@@ -47,7 +47,7 @@ to Bazel client lock serialization.
 
 Replaced `pygit2.status()` (12s, stats every file) with `pygit2.index` (0.02s, reads index).
 
-### 3. Script-path runner (`tools/precommit/run-precommit.sh`)
+### 3. Script-path runner (`tools/precommit/run_precommit.sh`)
 
 Uses `bazel run --script_path` to generate a runner script that executes without holding
 the Bazel client lock. This allows pre-commit's parallel batch execution to work.
