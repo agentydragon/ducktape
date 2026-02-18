@@ -14,6 +14,8 @@ from typing import Annotated, Literal
 import yaml
 from pydantic import BaseModel, Discriminator, Field, Tag
 
+from bazel_util.query import BazelLabel
+
 
 class AlwaysTrigger(BaseModel):
     """Workflow that always runs."""
@@ -60,16 +62,6 @@ class WorkflowConfig(BaseModel):
     secrets: list[str] = Field(default_factory=list)
 
 
-def _parse_bazel_package(label: str) -> str:
-    """Extract the package path from a Bazel label.
-
-    Examples:
-        "//:wheel" -> ""
-        "//headscale_cleanup:wheel" -> "headscale_cleanup"
-    """
-    return label.removeprefix("//").split(":")[0]
-
-
 class ReleaseConfig(BaseModel):
     """Configuration for a package release workflow.
 
@@ -84,8 +76,10 @@ class ReleaseConfig(BaseModel):
 
     @property
     def wheel_path(self) -> str:
-        package = _parse_bazel_package(self.bazel_target)
-        return f"bazel-bin/{package}" if package else "bazel-bin"
+        label = BazelLabel.parse(self.bazel_target)
+        if label is None:
+            raise ValueError(f"Invalid Bazel label: {self.bazel_target!r}")
+        return f"bazel-bin/{label.package}" if label.package.parts else "bazel-bin"
 
 
 class WorkflowManifest(BaseModel):

@@ -5,9 +5,6 @@ Also reports whitelist entries that are no longer needed (dead patterns).
 Usage:
     bazel run //tools/orphans:find_orphans           # List orphans + dead whitelist entries
     bazel run //tools/orphans:find_orphans -- --check  # Fail if orphans or dead entries exist
-
-Covers files referenced via labels(srcs/data), plus files auto-discovered by
-rules that don't use explicit srcs (helm_chart via helm_package rule kind).
 """
 
 import argparse
@@ -18,80 +15,26 @@ from pathlib import Path
 import pathspec
 import pygit2
 
+from bazel_util.query import label_to_path, run_query
 from bazel_util.workspace import get_build_workspace_directory
 
 
-def label_to_path(label: str) -> Path | None:
-    """Convert Bazel label to file path.
-
-    //pkg:path/to/file.py -> pkg/path/to/file.py
-    //:file.py -> file.py
-
-    Returns None for non-file labels (external deps, target names).
-    """
-    if label.startswith("@") or ":" not in label:
-        return None
-
-    label = label.removeprefix("//")
-    pkg, file = label.split(":", 1)
-
-    # Skip target names (no extension, starts with underscore)
-    if file.startswith("_") and "." not in file:
-        return None
-
-    return Path(pkg) / file if pkg else Path(file)
-
-
 def query_bazel_files(repo_root: Path) -> set[Path]:
-    """Query all files referenced in Bazel srcs and data attributes."""
-    result = subprocess.run(
-        ["bazel", "query", "labels(srcs, //...) union labels(data, //...)"],
-        capture_output=True,
-        text=True,
-        cwd=repo_root,
-        check=False,
-    )
-    if result.returncode != 0:
-        print(f"Warning: bazel query failed: {result.stderr}", file=sys.stderr)
-        return set()
+    """Query all source files covered by Bazel targets.
 
-    paths = set()
-    for label in result.stdout.strip().split("\n"):
-        if label and (path := label_to_path(label)):
-            paths.add(path)
-    return paths
-
-
-def query_helm_chart_files(repo_root: Path, git_files: set[Path]) -> set[Path]:
-    """Find git-tracked files inside helm chart packages.
-
-    helm_chart (helm_package) auto-discovers Chart.yaml, values.yaml, and
-    templates/ — these don't appear in labels(srcs, //...).  We query for
-    helm_package targets, derive their package directories, and claim all
-    git-tracked files under those directories.
+    Covers explicit srcs/data attributes plus helm_chart (helm_package) targets
+    whose files are auto-discovered and don't appear in labels(srcs, //...).
+    Both sets are retrieved in a single bazel query invocation.
     """
-    result = subprocess.run(
-        ["bazel", "query", 'kind("helm_package", //...)'], capture_output=True, text=True, cwd=repo_root, check=False
+    expr = (
+        "kind('source file',  labels(srcs, //...) union labels(data, //...)  union deps(kind('helm_package', //...)))"
     )
-    if result.returncode != 0 or not result.stdout.strip():
+    try:
+        labels = run_query(expr, cwd=repo_root)
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: bazel query failed: {e.stderr}", file=sys.stderr)
         return set()
-
-    chart_dirs: list[Path] = []
-    for label in result.stdout.strip().split("\n"):
-        if not label or not label.startswith("//"):
-            continue
-        # //cluster/charts/attic:attic -> cluster/charts/attic
-        pkg = label.removeprefix("//").split(":")[0]
-        if pkg:
-            chart_dirs.append(Path(pkg))
-
-    covered = set()
-    for git_file in git_files:
-        for chart_dir in chart_dirs:
-            if git_file == chart_dir or str(git_file).startswith(str(chart_dir) + "/"):
-                covered.add(git_file)
-                break
-    return covered
+    return {p for label in labels if (p := label_to_path(label))}
 
 
 def get_git_files(repo_root: Path) -> set[Path]:
@@ -129,9 +72,8 @@ def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[
     """
     git_files = get_git_files(repo_root)
     bazel_files = query_bazel_files(repo_root)
-    helm_files = query_helm_chart_files(repo_root, git_files)
 
-    raw_orphans = git_files - bazel_files - helm_files
+    raw_orphans = git_files - bazel_files
 
     whitelist_lines = whitelist_path.read_text().splitlines()
 

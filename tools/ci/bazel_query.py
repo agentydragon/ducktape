@@ -55,7 +55,7 @@ def run_query(query: str) -> list[str]:
 
     Raises CalledProcessError on failure.
     """
-    return _run_bazel_query_cmd(["bazelisk", "query"], query)
+    return _run_bazel_query_cmd(["bazel", "query"], query)
 
 
 def query_with_targets(query_template: str, targets: list[str]) -> list[str]:

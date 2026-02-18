@@ -41,6 +41,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//bazel_util:query",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],

@@ -4,6 +4,12 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
+    name = "query",
+    srcs = ["query.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "subprocess",
     srcs = ["subprocess.py"],
     visibility = ["//visibility:public"],
@@ -27,6 +33,16 @@ py_test(
     srcs = ["test_subprocess.py"],
     deps = [
         ":subprocess",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_query",
+    srcs = ["test_query.py"],
+    deps = [
+        ":query",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
