@@ -67,10 +67,12 @@ jobs:
           which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
 
           # Verify BuildBuddy remote cache configuration
+          # buildbuddy.bazelrc contains `build --config=rbe` which expands to
+          # --remote_executor, --remote_cache, etc. via .bazelrc build:rbe stanza.
           if [[ -f ~/.config/bazel/buildbuddy.bazelrc ]]; then
-            echo "BuildBuddy: configured (remote cache + RBE enabled)"
-            grep -q "remote_executor" ~/.config/bazel/buildbuddy.bazelrc && echo "  - Remote execution: enabled"
-            grep -q "remote_cache" ~/.config/bazel/buildbuddy.bazelrc && echo "  - Remote cache: enabled"
+            echo "BuildBuddy: configured"
+            grep -q "config=rbe" ~/.config/bazel/buildbuddy.bazelrc && echo "  - Remote execution (RBE): enabled"
+            grep -q "remote_header=x-buildbuddy-api-key" ~/.config/bazel/buildbuddy.bazelrc && echo "  - Remote cache: enabled"
           else
             echo "BuildBuddy: not configured (BUILDBUDDY_API_KEY not available)"
           fi

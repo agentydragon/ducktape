@@ -60,6 +60,16 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
           rbe_image: ${{ inputs.rbe_image }}
 
+      - name: Show RBE status
+        run: |
+          # buildbuddy.bazelrc uses `build --config=rbe` (expands to --remote_executor,
+          # --remote_cache, etc. via .bazelrc build:rbe stanza).
+          if [[ -f ~/.config/bazel/buildbuddy.bazelrc ]] && grep -q "config=rbe" ~/.config/bazel/buildbuddy.bazelrc; then
+            echo "RBE: enabled (tests will run on remote BuildBuddy workers)"
+          else
+            echo "RBE: disabled (tests will run locally — BUILDBUDDY_API_KEY not configured)"
+          fi
+
       - name: Run tests
         id: tests
         run: |
