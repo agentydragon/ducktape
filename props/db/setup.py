@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
+@tracer.start_as_current_span("ensure_database_exists")
 def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, drop_existing: bool = False) -> None:
     """Ensure a PostgreSQL database exists.
 
@@ -38,80 +39,79 @@ def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, d
     Note: Does not terminate connections. Tests use unique database names so no
           conflicts in setup. Connection termination remains in test teardown only.
     """
-    with tracer.start_as_current_span("ensure_database_exists"):
-        postgres_config = base_config.with_database("postgres")
-        engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
+    postgres_config = base_config.with_database("postgres")
+    engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
-        with engine.connect() as conn:
-            if drop_existing:
-                # Fail fast if other sessions are connected to the target DB to surface
-                # cross-test interference instead of a vague DROP failure.
-                active_sessions = conn.execute(
-                    text(
-                        """
-                        select pid, usename, application_name, client_addr
-                        from pg_stat_activity
-                        where datname = :dbname and pid <> pg_backend_pid()
-                        """
-                    ),
-                    {"dbname": database_name},
-                ).fetchall()
+    with engine.connect() as conn:
+        if drop_existing:
+            # Fail fast if other sessions are connected to the target DB to surface
+            # cross-test interference instead of a vague DROP failure.
+            active_sessions = conn.execute(
+                text(
+                    """
+                    select pid, usename, application_name, client_addr
+                    from pg_stat_activity
+                    where datname = :dbname and pid <> pg_backend_pid()
+                    """
+                ),
+                {"dbname": database_name},
+            ).fetchall()
 
-                if active_sessions:
-                    details = ", ".join(
-                        f"pid={pid} user={user} app={app or '-'} addr={addr or '-'}"
-                        for pid, user, app, addr in active_sessions
-                    )
-                    raise RuntimeError(
-                        "Test database in use by other sessions; aborting drop. "
-                        f"database={database_name}; sessions=[{details}]"
-                    )
+            if active_sessions:
+                details = ", ".join(
+                    f"pid={pid} user={user} app={app or '-'} addr={addr or '-'}"
+                    for pid, user, app, addr in active_sessions
+                )
+                raise RuntimeError(
+                    "Test database in use by other sessions; aborting drop. "
+                    f"database={database_name}; sessions=[{details}]"
+                )
 
-                # Idempotent drop (for test setup)
-                conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+            # Idempotent drop (for test setup)
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
 
-            # Check if database exists
-            result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
+        # Check if database exists
+        result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
 
-            if not result.fetchone():
-                # Create using safe identifier quoting
-                raw_conn = conn.connection
-                cursor = raw_conn.cursor()
-                cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
-                cursor.close()
+        if not result.fetchone():
+            # Create using safe identifier quoting
+            raw_conn = conn.connection
+            cursor = raw_conn.cursor()
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
+            cursor.close()
 
-        engine.dispose()
+    engine.dispose()
 
 
+@tracer.start_as_current_span("upgrade_database")
 def upgrade_database(engine: Engine) -> None:
     """Run Alembic migrations to HEAD (idempotent, non-destructive).
 
     Safe to call on every startup — Alembic checks the alembic_version table
     and only applies pending migrations.
     """
-    with tracer.start_as_current_span("upgrade_database"):
-        logger.info("Running Alembic migrations...")
-        config = Config()
-        config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    logger.info("Running Alembic migrations...")
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
 
-        with engine.begin() as conn:
-            config.attributes["connection"] = conn
-            command.upgrade(config, "head")
+    with engine.begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
 
-        logger.info("Alembic migrations complete")
+    logger.info("Alembic migrations complete")
 
 
+@tracer.start_as_current_span("recreate_database")
 def recreate_database(engine: Engine) -> None:
     """Recreate database from scratch (drop all + migrate).
 
     This is destructive: drops all existing tables, views, and policies,
     then runs all migrations from scratch. For tests only.
     """
-    with tracer.start_as_current_span("recreate_database"):
-        logger.info("Recreating database from scratch...")
-        _drop_all(engine)
-        upgrade_database(engine)
-        logger.info("Database recreation complete")
+    logger.info("Recreating database from scratch...")
+    _drop_all(engine)
+    upgrade_database(engine)
+    logger.info("Database recreation complete")
 
 
 def _drop_all(engine: Engine) -> None:

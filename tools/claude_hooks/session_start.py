@@ -459,25 +459,25 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
             await mount_tmpfs_at(bazel_cache_dir)
             return tmpfs_setup.setup_bazel_cache(bazel_cache_dir)
 
+    @tracer.start_as_current_span("install_bazelisk", context=root_ctx)
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper as separate tasks.
 
         Always installs the wrapper. Optionally downloads bazelisk unless
         DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK is False.
         """
-        with tracer.start_as_current_span("install_bazelisk", context=root_ctx):
-            wrapper_path = bazelisk_setup.install_wrapper(settings)
-            skipped = not settings.install_bazelisk
-            if not skipped:
-                bazelisk_setup.install_bazelisk(settings)
-            else:
-                logger.info("Skipping bazelisk download (install_bazelisk=False)")
-            return bazelisk_setup.BazeliskSetup(
-                bazelisk_path=settings.get_bazelisk_path(),
-                wrapper_path=wrapper_path,
-                settings=settings,
-                bazelisk_skipped=skipped,
-            )
+        wrapper_path = bazelisk_setup.install_wrapper(settings)
+        skipped = not settings.install_bazelisk
+        if not skipped:
+            bazelisk_setup.install_bazelisk(settings)
+        else:
+            logger.info("Skipping bazelisk download (install_bazelisk=False)")
+        return bazelisk_setup.BazeliskSetup(
+            bazelisk_path=settings.get_bazelisk_path(),
+            wrapper_path=wrapper_path,
+            settings=settings,
+            bazelisk_skipped=skipped,
+        )
 
     # Decrypt age-encrypted secrets from .claude_hooks/secrets/ in the repo checkout.
     with tracer.start_as_current_span("setup_secrets", context=root_ctx):

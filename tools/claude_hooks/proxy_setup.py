@@ -149,6 +149,7 @@ def _is_anthropic_tls_inspection_ca(cert: x509.Certificate) -> bool:
     return org == ANTHROPIC_CA_ORG and ANTHROPIC_CA_CN_SUBSTRING in cn
 
 
+@tracer.start_as_current_span("proxy_extract_ca")
 def _extract_proxy_ca(settings: HookSettings) -> None:
     """Load the TLS inspection CA certificate from the filesystem.
 
@@ -332,6 +333,7 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
     logger.info("Auth proxy running successfully")
 
 
+@tracer.start_as_current_span("proxy_create_bundle")
 def _create_combined_ca_bundle(settings: HookSettings) -> None:
     """Create a combined CA bundle with system CAs plus the proxy CA.
 
@@ -403,16 +405,14 @@ async def setup_auth_proxy(
         await ensure_proxy_running(settings, supervisor)
 
     # Step 2: Load the TLS inspection CA from filesystem
-    with tracer.start_as_current_span("proxy_extract_ca"):
-        _extract_proxy_ca(settings)
+    _extract_proxy_ca(settings)
 
     # Step 3: Create Java truststore with the CA
     with tracer.start_as_current_span("proxy_create_truststore"):
         await _create_java_truststore(settings)
 
     # Step 4: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
-    with tracer.start_as_current_span("proxy_create_bundle"):
-        _create_combined_ca_bundle(settings)
+    _create_combined_ca_bundle(settings)
 
     status = await _snapshot_proxy_status(settings, supervisor, port)
     ca_status = "custom CA" if combined_ca.exists() else "system"
