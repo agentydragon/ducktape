@@ -148,6 +148,7 @@ py_library(
     deps = [
         ":platform_utils",
         ":settings",
+        "@pypi//opentelemetry_api",
     ],
 )
 
@@ -187,6 +188,7 @@ py_library(
         "//tools/claude_hooks/supervisor:client",
         "@pypi//cryptography",
         "@pypi//mako",
+        "@pypi//opentelemetry_api",
     ],
 )
 

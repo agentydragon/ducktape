@@ -1,24 +1,27 @@
 """Install mkcert and generate a trusted localhost TLS certificate.
 
-mkcert creates a local Certificate Authority and installs it into system
-trust stores, then generates certificates signed by that CA. This gives
-localhost a valid TLS certificate trusted by curl, Python, Node, etc.
+mkcert creates a local Certificate Authority and generates certificates
+signed by that CA. This gives localhost a valid TLS certificate trusted
+by curl, Python, Node, etc. via the combined CA bundle (SSL_CERT_FILE).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import stat
-import subprocess
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+from opentelemetry import trace
 
 from tools.claude_hooks.platform_utils import get_platform
 from tools.claude_hooks.settings import HookSettings
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 MKCERT_VERSION = "1.4.4"
 
@@ -50,7 +53,13 @@ def _get_download_url() -> str:
     )
 
 
-def _download_mkcert(settings: HookSettings) -> Path:
+def _fetch_url_bytes(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=60) as response:
+        data: bytes = response.read()
+    return data
+
+
+async def _download_mkcert(settings: HookSettings) -> Path:
     """Download mkcert binary if not already present."""
     mkcert_dir = _get_mkcert_dir(settings)
     mkcert_path = _get_mkcert_binary(settings)
@@ -64,20 +73,23 @@ def _download_mkcert(settings: HookSettings) -> Path:
     url = _get_download_url()
     logger.info("Downloading mkcert from %s", url)
 
-    with urllib.request.urlopen(url, timeout=60) as response:
-        mkcert_path.write_bytes(response.read())
-
+    data = await asyncio.to_thread(_fetch_url_bytes, url)
+    mkcert_path.write_bytes(data)
     mkcert_path.chmod(mkcert_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     logger.info("Installed mkcert to %s", mkcert_path)
     return mkcert_path
 
 
-def _append_ca_to_bundle(root_ca: Path, combined_ca: Path) -> None:
+def append_mkcert_ca_to_bundle(ca_root: Path, combined_ca: Path) -> None:
     """Append mkcert root CA to the combined CA bundle.
 
     The combined CA bundle is recreated from scratch on each hook run
     (system CAs + proxy CA), so we always need to re-append.
     """
+    root_ca = ca_root / "rootCA.pem"
+    if not root_ca.exists():
+        logger.warning("mkcert root CA not found at %s, skipping bundle append", root_ca)
+        return
     ca_content = root_ca.read_text()
     with combined_ca.open("a") as f:
         f.write("\n# mkcert local CA\n")
@@ -85,12 +97,18 @@ def _append_ca_to_bundle(root_ca: Path, combined_ca: Path) -> None:
     logger.info("Appended mkcert root CA to %s", combined_ca)
 
 
-def setup_mkcert(settings: HookSettings, combined_ca: Path | None) -> MkcertSetup:
-    """Install mkcert, generate trusted localhost certificate.
+async def setup_mkcert(settings: HookSettings, combined_ca: Path | None) -> MkcertSetup:
+    """Generate a trusted localhost TLS certificate via mkcert.
 
-    Downloads mkcert, installs a local CA into system trust stores,
-    generates a certificate for localhost/127.0.0.1/::1, and appends
-    the root CA to the combined CA bundle so Python/curl/Node trust it.
+    Downloads the mkcert binary if needed, generates a certificate for
+    localhost/127.0.0.1/::1, and optionally appends the root CA to the
+    combined CA bundle so Python/curl/Node trust it via SSL_CERT_FILE.
+
+    Note: `mkcert -install` (system trust store installation) is intentionally
+    skipped. We rely on the combined CA bundle (SSL_CERT_FILE) for tool trust,
+    which doesn't require browser or OS trust store integration. mkcert
+    automatically creates rootCA.pem in CAROOT when generating the first cert,
+    so -install is not needed to produce the CA file.
     """
     mkcert_dir = _get_mkcert_dir(settings)
     mkcert_dir.mkdir(parents=True, exist_ok=True)
@@ -104,22 +122,12 @@ def setup_mkcert(settings: HookSettings, combined_ca: Path | None) -> MkcertSetu
     env = {**os.environ, "CAROOT": str(ca_root)}
 
     if not cert_path.exists() or not key_path.exists():
-        mkcert_bin = _download_mkcert(settings)
+        with tracer.start_as_current_span("mkcert_download_binary"):
+            mkcert_bin = await _download_mkcert(settings)
 
-        # Install local CA into system trust stores
-        logger.info("Installing mkcert local CA (CAROOT=%s)...", ca_root)
-        result = subprocess.run([str(mkcert_bin), "-install"], env=env, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            # -install can fail if certutil (libnss3-tools) is missing;
-            # the CA still works for non-browser tools via the combined bundle
-            logger.warning("mkcert -install returned %d: %s", result.returncode, result.stderr.strip())
-        else:
-            logger.info("mkcert CA installed into system trust stores")
-
-        # Generate localhost certificate
         logger.info("Generating localhost certificate...")
-        subprocess.run(
-            [
+        with tracer.start_as_current_span("mkcert_generate_cert"):
+            proc = await asyncio.create_subprocess_exec(
                 str(mkcert_bin),
                 "-cert-file",
                 str(cert_path),
@@ -128,17 +136,17 @@ def setup_mkcert(settings: HookSettings, combined_ca: Path | None) -> MkcertSetu
                 "localhost",
                 "127.0.0.1",
                 "::1",
-            ],
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                raise RuntimeError(f"mkcert certificate generation failed: {stderr.decode().strip()}")
         logger.info("Generated localhost cert: %s", cert_path)
 
-    # Append mkcert root CA to combined CA bundle so Python/curl/Node trust localhost
-    root_ca = ca_root / "rootCA.pem"
-    if combined_ca and combined_ca.exists() and root_ca.exists():
-        _append_ca_to_bundle(root_ca, combined_ca)
+    with tracer.start_as_current_span("mkcert_append_bundle"):
+        if combined_ca and combined_ca.exists():
+            append_mkcert_ca_to_bundle(ca_root, combined_ca)
 
     return MkcertSetup(cert_path=cert_path, key_path=key_path, ca_root=ca_root, status=f"installed ({cert_path})")

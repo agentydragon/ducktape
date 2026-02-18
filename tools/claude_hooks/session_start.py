@@ -506,14 +506,26 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
     # Create proxy task with BuildBuddy configuration state
     proxy_task = asyncio.create_task(setup_proxy_with_supervisor(buildbuddy_configured=buildbuddy_configured))
 
-    async def setup_mkcert_with_proxy() -> mkcert_setup.MkcertSetup:
-        """Set up mkcert (depends on proxy for the combined CA bundle)."""
+    async def mkcert_generate_certs() -> mkcert_setup.MkcertSetup:
+        """Generate mkcert certs (no proxy dependency — runs immediately in parallel)."""
         with tracer.start_as_current_span("setup_mkcert", context=root_ctx):
             if not settings.install_mkcert:
                 raise SkipError("mkcert disabled (install_mkcert=False)")
+            # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
+            return await mkcert_setup.setup_mkcert(settings, combined_ca=None)
+
+    # Start cert generation immediately, without waiting for the proxy.
+    mkcert_task = asyncio.create_task(mkcert_generate_certs())
+
+    async def mkcert_append_bundle() -> mkcert_setup.MkcertSetup:
+        """Append mkcert CA to the combined CA bundle (depends on proxy + cert gen)."""
+        with tracer.start_as_current_span("mkcert_append_bundle", context=root_ctx):
+            mkcert_result = await mkcert_task
             await proxy_task
             combined_ca = settings.get_auth_proxy_combined_ca()
-            return mkcert_setup.setup_mkcert(settings, combined_ca if combined_ca.exists() else None)
+            if combined_ca.exists():
+                mkcert_setup.append_mkcert_ca_to_bundle(mkcert_result.ca_root, combined_ca)
+            return mkcert_result
 
     async def traced_precommit():
         with tracer.start_as_current_span("install_precommit", context=root_ctx):
@@ -534,7 +546,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
         traced_nix(),
         run_in_thread(install_bazelisk_wrapper),
         setup_bazel_on_tmpfs(),
-        setup_mkcert_with_proxy(),
+        mkcert_append_bundle(),
         traced_cli_tools(),
         return_exceptions=True,
     )
