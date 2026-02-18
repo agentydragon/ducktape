@@ -4,7 +4,7 @@ load("//tools/testing:defs.bzl", "py_test")
 # Source of truth for CI workflow definitions
 exports_files(["workflows.yaml"])
 
-# Generated workflow files consumed by test_generate_ci_check
+# Generated workflow files consumed by test_generate_ci
 filegroup(
     name = "generated_workflows",
     srcs = [
@@ -61,9 +61,11 @@ py_library(
     ],
 )
 
+# === Exec stubs ===
+
 py_library(
-    name = "check_release_lib",
-    srcs = ["check_release_lib.py"],
+    name = "check_release",
+    srcs = ["check_release.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -76,9 +78,8 @@ py_library(
 )
 
 py_library(
-    name = "ci_decide_lib",
-    srcs = ["ci_decide_lib.py"],
-    data = [":workflows.yaml"],
+    name = "ci_decide",
+    srcs = ["ci_decide.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -91,24 +92,6 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],
-)
-
-# === Exec stubs ===
-
-py_library(
-    name = "check_release",
-    srcs = ["check_release.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [":check_release_lib"],
-)
-
-py_library(
-    name = "ci_decide",
-    srcs = ["ci_decide.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [":ci_decide_lib"],
 )
 
 py_library(
@@ -137,8 +120,8 @@ py_binary(
 # === Tests ===
 
 py_test(
-    name = "test_generate_ci_check",
-    srcs = ["test_generate_ci_check.py"],
+    name = "test_generate_ci",
+    srcs = ["test_generate_ci.py"],
     data = [
         ":generated_workflows",
         ":workflows.yaml",
@@ -147,5 +130,6 @@ py_test(
     deps = [
         ":generate_ci",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

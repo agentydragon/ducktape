@@ -3,18 +3,12 @@
 Generates ci.yml and per-package release workflow files,
 eliminating duplication in job definitions.
 
-The generated YAML may differ in formatting from what prettier produces.
-The pre-commit hook will normalize formatting on commit; the --check mode
-compares parsed models to ignore such differences.
-
 Usage:
     bazel run //tools/ci:generate_ci_bin
-    bazel run //tools/ci:generate_ci_bin -- --check  # Verify files are up to date
 """
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import yaml
@@ -258,19 +252,6 @@ def generate_release_config(name: str, config: ReleaseConfig) -> Workflow:
     )
 
 
-class OutOfDateError(Exception):
-    """CI workflow file is out of date."""
-
-
-def check_workflow(path: Path, expected: Workflow) -> None:
-    """Check if a workflow file is semantically up to date."""
-    if not path.exists():
-        raise FileNotFoundError(f"{path} does not exist")
-    current = Workflow.model_validate(yaml.safe_load(path.read_text()))
-    if current != expected:
-        raise OutOfDateError(f"{path} is out of date. Run 'bazel run //tools/ci:generate_ci_bin' to update.")
-
-
 def write_workflow(path: Path, workflow: Workflow) -> None:
     """Write a workflow file."""
     path.write_text(generate_ci_yml(workflow))
@@ -279,28 +260,12 @@ def write_workflow(path: Path, workflow: Workflow) -> None:
 
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Generate workflow files from workflows.yaml")
-    parser.add_argument("--check", action="store_true", help="Check if workflow files are semantically up to date")
-    args = parser.parse_args()
-
     manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
 
-    # Build expected workflow models
-    expected: dict[str, Workflow] = {"ci": generate_ci_config(manifest)}
-    for name, config in manifest.releases.items():
-        expected[f"{name}-release"] = generate_release_config(name, config)
-
-    if args.check:
-        # Check mode reads from runfiles (Bazel sandbox)
-        check_dir = REPO_ROOT / ".github" / "workflows"
-        for name, workflow in expected.items():
-            check_workflow(check_dir / f"{name}.yml", workflow)
-        print(f"All {len(expected)} workflow files are up to date")
-        return
-
     out_dir = get_build_workspace_directory() / ".github" / "workflows"
-    for name, workflow in expected.items():
-        write_workflow(out_dir / f"{name}.yml", workflow)
+    write_workflow(out_dir / "ci.yml", generate_ci_config(manifest))
+    for name, config in manifest.releases.items():
+        write_workflow(out_dir / f"{name}-release.yml", generate_release_config(name, config))
 
 
 if __name__ == "__main__":
