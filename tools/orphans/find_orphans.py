@@ -123,16 +123,32 @@ def unused_whitelist_patterns(raw_orphans: set[Path], whitelist_lines: list[str]
 
 
 def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[str]]:
-    """Return (orphaned_files, unused_whitelist_patterns), querying Bazel once."""
+    """Return (orphaned_files, unused_whitelist_lines), querying Bazel once.
+
+    Each non-blank, non-comment whitelist pattern is parsed exactly once and
+    reused for both orphan filtering and dead-entry detection.
+    """
     git_files = get_git_files(repo_root)
     bazel_files = query_bazel_files(repo_root)
     helm_files = query_helm_chart_files(repo_root, git_files)
-    whitelist_lines = whitelist_path.read_text().splitlines()
-    whitelist = pathspec.PathSpec.from_lines("gitwildmatch", whitelist_lines)
 
     raw_orphans = git_files - bazel_files - helm_files
-    orphans = sorted(p for p in raw_orphans if not whitelist.match_file(str(p)))
-    unused = unused_whitelist_patterns(raw_orphans, whitelist_lines)
+    raw_orphan_strs = [str(p) for p in raw_orphans]
+
+    whitelist_lines = whitelist_path.read_text().splitlines()
+
+    # Parse each pattern once; reuse for both filtering and dead-entry detection.
+    patterns: list[tuple[str, pathspec.PathSpec]] = []
+    for line in whitelist_lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            patterns.append((line, pathspec.PathSpec.from_lines("gitwildmatch", [stripped])))
+
+    def _is_whitelisted(path_str: str) -> bool:
+        return any(spec.match_file(path_str) for _, spec in patterns)
+
+    orphans = sorted(p for p in raw_orphans if not _is_whitelisted(str(p)))
+    unused = [line for line, spec in patterns if not any(spec.match_file(p) for p in raw_orphan_strs)]
     return orphans, unused
 
 
