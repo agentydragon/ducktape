@@ -20,5 +20,6 @@ py_library(
         "//tana/domain:constants",
         "//tana/domain:nodes",
         "//tana/domain:types",
+        "//tana/graph",
     ],
 )
