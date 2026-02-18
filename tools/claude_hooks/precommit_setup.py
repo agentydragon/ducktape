@@ -24,12 +24,13 @@ class PrecommitInstallingHooks(BaseModel):
 
     kind: Literal["installing_hooks"] = "installing_hooks"
     pid: int
+    log_path: Path
 
 
 PrecommitSetup = PrecommitNotInstalled | PrecommitInstallingHooks
 
 
-def install_precommit(project_dir: Path) -> PrecommitSetup:
+def install_precommit(project_dir: Path, session_dir: Path) -> PrecommitSetup:
     """Install git pre-commit hook and eagerly pre-install hook environments.
 
     If `pre-commit` is not on PATH, installs it via pip first.
@@ -81,15 +82,10 @@ def install_precommit(project_dir: Path) -> PrecommitSetup:
     # the first commit pays the cost of creating the venv and downloading ansible.
     # pre-commit uses flock on ~/.cache/pre-commit/.lock, so this is safe to run
     # concurrently with a hook-triggered run.
-    log_dir = Path.home() / ".cache" / "claude-hooks"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_fh = (log_dir / "pre-commit-install-hooks.log").open("w")
+    log_path = session_dir / "pre-commit-install-hooks.log"
+    log_fh = log_path.open("w")
     proc = subprocess.Popen(
         [precommit, "install-hooks"], cwd=project_dir, stdout=log_fh, stderr=subprocess.STDOUT, start_new_session=True
     )
-    logger.info(
-        "Started background pre-commit install-hooks (pid %d), log: %s",
-        proc.pid,
-        log_dir / "pre-commit-install-hooks.log",
-    )
-    return PrecommitInstallingHooks(pid=proc.pid)
+    logger.info("Started background pre-commit install-hooks (pid %d), log: %s", proc.pid, log_path)
+    return PrecommitInstallingHooks(pid=proc.pid, log_path=log_path)

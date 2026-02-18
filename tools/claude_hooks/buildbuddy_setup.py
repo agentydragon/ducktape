@@ -23,6 +23,14 @@ def setup_buildbuddy(project_dir: Path, *, api_key: str | None = None) -> Buildb
 
     Writes config to ~/.config/bazel/buildbuddy.bazelrc and ensures
     ~/.bazelrc has the try-import line.
+
+    TODO: Make this session-local. Instead of writing to the user-global
+    ~/.config/bazel/buildbuddy.bazelrc and modifying ~/.bazelrc, generate the
+    BuildBuddy bazelrc content directly and write it to session_dir/buildbuddy.bazelrc,
+    then include it via an extra ``--bazelrc=`` flag injected by the wrapper (or by
+    appending a ``try-import`` line to the session bazelrc template). That would keep
+    BuildBuddy config fully within the session directory and avoid touching global Bazel
+    config files.
     """
     if not api_key:
         logger.info("BuildBuddy API key not provided, skipping setup")

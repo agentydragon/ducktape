@@ -31,12 +31,11 @@ from tools.claude_hooks import (
     bazelisk_setup,
     buildbuddy_setup,
     cli_tools_setup,
-    docker_service,
+    container_runtime,
     env_file,
     kubeconfig_setup,
     mkcert_setup,
     nix_setup,
-    podman_service,
     precommit_setup,
     proxy_setup,
     secrets_setup,
@@ -113,6 +112,7 @@ def _render_session_bazelrc(
     combined_ca_path: Path | None,
     local_registry_path: Path | None,
     buildbuddy_configured: bool,
+    bazel_cache_dir: Path | None = None,
 ) -> Path:
     """Render bazelrc.mako template to session_dir/bazelrc.
 
@@ -130,6 +130,7 @@ def _render_session_bazelrc(
         combined_ca_path=combined_ca_path,
         local_registry_path=local_registry_path,
         buildbuddy_configured=buildbuddy_configured,
+        bazel_cache_dir=bazel_cache_dir,
     )
     bazelrc_path = session_dir / "bazelrc"
     write_config(bazelrc_path, result, "session bazelrc")
@@ -276,8 +277,7 @@ def emit_session_context(
     log_file: Path,
     project_dir: Path,
     auth_proxy: proxy_setup.ProxySetup,
-    docker: docker_service.DockerSetup | None,
-    podman: podman_service.PodmanSetup | None,
+    container: container_runtime.ContainerRuntimeSetup | None,
     precommit: precommit_setup.PrecommitSetup | None,
     secrets: secrets_setup.SecretsSetup | None,
     mkcert: mkcert_setup.MkcertSetup | None = None,
@@ -298,8 +298,7 @@ def emit_session_context(
         build_commit=BUILD_COMMIT,
         status=status,
         proxy=auth_proxy,
-        docker=docker,
-        podman=podman,
+        container=container,
         precommit=precommit,
         PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
         mkcert=mkcert,
@@ -413,15 +412,18 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
         with tracer.start_as_current_span("supervisor_start", context=root_ctx):
             return await supervisor_setup.start(settings)
 
-    async def traced_tmpfs_mount():
-        with tracer.start_as_current_span("tmpfs_mount", context=root_ctx):
-            return await run_in_thread(tmpfs_setup.ensure_tmpfs_mounted)
-
     # Start supervisor (required by proxy and podman)
     supervisor_task = asyncio.create_task(traced_supervisor_start())
 
-    # Mount tmpfs (required by podman overlay and Bazel cache)
-    tmpfs_mount_task = asyncio.create_task(traced_tmpfs_mount())
+    async def mount_tmpfs_at(path: Path) -> bool:
+        """Mount a tmpfs at the given path. Returns True on success, False on failure."""
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            await run_in_thread(tmpfs_setup.ensure_tmpfs_mounted, path)
+            return True
+        except Exception as e:
+            logger.warning("tmpfs mount failed at %s, will fall back to 9p: %s", path, e)
+            return False
 
     # Wrappers that depend on supervisor being ready
     # TODO: Handle upstream dependency failures more gracefully.
@@ -437,42 +439,25 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
                 settings, supervisor_result.client, buildbuddy_configured=buildbuddy_configured
             )
 
-    async def setup_podman_with_deps() -> podman_service.PodmanSetup:
-        """Set up podman (depends on supervisor + tmpfs mount)."""
-        with tracer.start_as_current_span("setup_podman", context=root_ctx):
+    async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
+        """Set up configured container runtime (depends on supervisor + per-component tmpfs)."""
+        with tracer.start_as_current_span("setup_container_runtime", context=root_ctx):
+            storage_dir = container_runtime.get_storage_dir(settings)
+            if storage_dir is None:
+                raise SkipError(f"Container runtime disabled (container_runtime={settings.container_runtime})")
             supervisor_result = await supervisor_task
-            # tmpfs failure is non-fatal — podman falls back to VFS on 9p
-            try:
-                tmpfs_root = await tmpfs_mount_task
-            except Exception as e:
-                logger.warning("tmpfs mount failed, podman will use VFS on 9p: %s", e)
-                tmpfs_root = None
-            return await podman_service.setup_podman(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
-
-    async def setup_docker_with_deps() -> docker_service.DockerSetup:
-        """Set up Docker (depends on supervisor + tmpfs mount)."""
-        supervisor_result = await supervisor_task
-        # tmpfs failure is non-fatal — Docker falls back to VFS on 9p
-        try:
-            tmpfs_root = await tmpfs_mount_task
-        except Exception as e:
-            logger.warning("tmpfs mount failed, Docker will use VFS on 9p: %s", e)
-            tmpfs_root = None
-        return await docker_service.setup_docker(settings, supervisor_result.client, tmpfs_root=tmpfs_root)
-
-    async def setup_container_runtime() -> docker_service.DockerSetup | podman_service.PodmanSetup:
-        """Set up configured container runtime (Docker or Podman)."""
-        if settings.container_runtime == "docker":
-            return await setup_docker_with_deps()
-        if settings.container_runtime == "podman":
-            return await setup_podman_with_deps()
-        raise SkipError(f"Container runtime disabled (container_runtime={settings.container_runtime})")
+            # tmpfs failure is non-fatal — runtime falls back to VFS on 9p
+            tmpfs_mounted = await mount_tmpfs_at(storage_dir)
+            return await container_runtime.setup_container_runtime(
+                settings, supervisor_result.client, tmpfs_mounted=tmpfs_mounted
+            )
 
     async def setup_bazel_on_tmpfs() -> tmpfs_setup.TmpfsSetup:
-        """Set up Bazel cache on tmpfs (depends on tmpfs mount)."""
+        """Set up Bazel cache (mounts dedicated tmpfs under session dir)."""
         with tracer.start_as_current_span("setup_bazel_tmpfs", context=root_ctx):
-            tmpfs_root = await tmpfs_mount_task
-            return tmpfs_setup.setup_bazel_cache(tmpfs_root)
+            bazel_cache_dir = settings.get_bazel_cache_dir()
+            await mount_tmpfs_at(bazel_cache_dir)
+            return tmpfs_setup.setup_bazel_cache(bazel_cache_dir)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper as separate tasks.
@@ -513,8 +498,9 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
     #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
-    #                     └── setup_container_runtime (Docker or Podman) ←── tmpfs_mount_task
-    #   tmpfs_mount_task ──── setup_bazel_on_tmpfs
+    #                     └── setup_container_runtime (Docker or Podman)
+    #                         (each runtime mounts its own tmpfs internally)
+    #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
 
     # Create proxy task with BuildBuddy configuration state
@@ -531,7 +517,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
 
     async def traced_precommit():
         with tracer.start_as_current_span("install_precommit", context=root_ctx):
-            return await run_in_thread(precommit_setup.install_precommit, project_dir)
+            return await run_in_thread(precommit_setup.install_precommit, project_dir, settings.session_dir)
 
     async def traced_nix():
         with tracer.start_as_current_span("install_nix", context=root_ctx):
@@ -543,7 +529,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
 
     results = await asyncio.gather(
         proxy_task,
-        setup_container_runtime(),
+        setup_container_runtime_task(),
         traced_precommit(),
         traced_nix(),
         run_in_thread(install_bazelisk_wrapper),
@@ -554,7 +540,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
     )
     # Unpack with explicit type annotations for mypy
     auth_proxy: proxy_setup.ProxySetup | BaseException = results[0]
-    container: docker_service.DockerSetup | podman_service.PodmanSetup | BaseException = results[1]
+    container: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
     precommit: precommit_setup.PrecommitSetup | BaseException = results[2]
     nix: nix_setup.NixSetup | BaseException = results[3]
     bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
@@ -593,7 +579,6 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
     elif isinstance(container, BaseException):
         logger.warning("Failed to configure container runtime: %s", container)
     else:
-        # Socket URL is in docker.env_vars["DOCKER_HOST"]
         docker_env = container.env_vars
 
     # Generate timestamp
@@ -643,6 +628,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
             combined_ca_path=combined_ca,
             local_registry_path=local_registry,
             buildbuddy_configured=buildbuddy_configured,
+            bazel_cache_dir=tmpfs.bazel_cache if isinstance(tmpfs, tmpfs_setup.TmpfsSetup) else None,
         )
 
     nix_paths = nix.paths if isinstance(nix, nix_setup.NixSetup) else []
@@ -698,18 +684,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
     logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, auth_proxy.status, auth_proxy.ca_status)
     logger.info("Nix: %s", get_nix_status())
     if not isinstance(container, BaseException):
-        runtime_name = "Docker" if isinstance(container, docker_service.DockerSetup) else "Podman"
-        logger.info("%s: %s", runtime_name, container.status)
-
-    # Render agent context from structured results
-    # Extract Docker/Podman from container union for template
-    docker_setup = None
-    podman_setup = None
-    if not isinstance(container, BaseException):
-        if isinstance(container, docker_service.DockerSetup):
-            docker_setup = container
-        elif isinstance(container, podman_service.PodmanSetup):
-            podman_setup = container
+        logger.info("%s: %s", container.runtime.capitalize(), container.status)
 
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
         emit_session_context(
@@ -717,8 +692,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
             log_file=log_file,
             project_dir=project_dir,
             auth_proxy=auth_proxy,
-            docker=docker_setup,
-            podman=podman_setup,
+            container=None if isinstance(container, BaseException) else container,
             precommit=None if isinstance(precommit, BaseException) else precommit,
             secrets=secrets,
             mkcert=None if isinstance(mkcert, BaseException) else mkcert,

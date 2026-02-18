@@ -135,15 +135,6 @@ class HookSettings(BaseSettings):
             return self.podman_dir
         return self.session_dir / "podman"
 
-    def get_containers_config_dir(self) -> Path:
-        """Get user-level containers config directory (~/.config/containers).
-
-        Used for policy.json which has hardcoded lookup paths:
-        1. $HOME/.config/containers/policy.json (user-level, we use this)
-        2. /etc/containers/policy.json (system-level, we avoid)
-        """
-        return Path(user_config_dir(appname="containers", ensure_exists=False))
-
     # Auth proxy file paths (centralized to avoid duplication)
     def get_auth_proxy_combined_ca(self) -> Path:
         """Get path to combined CA bundle (system CAs + proxy CA)."""
@@ -190,3 +181,15 @@ class HookSettings(BaseSettings):
         if self.docker_dir is not None:
             return self.docker_dir
         return self.session_dir / "docker"
+
+    def get_docker_data_dir(self) -> Path:
+        """Get Docker data-root directory (tmpfs-backed for overlay storage)."""
+        return self.get_docker_dir() / "data"
+
+    def get_podman_overlay_dir(self) -> Path:
+        """Get Podman overlay storage directory (tmpfs-backed for layer caching)."""
+        return self.get_podman_dir() / "overlay"
+
+    def get_bazel_cache_dir(self) -> Path:
+        """Get Bazel cache directory (tmpfs-backed, pointed to via startup --output_user_root in session bazelrc)."""
+        return self.session_dir / "bazel-cache"

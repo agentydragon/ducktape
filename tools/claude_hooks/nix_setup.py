@@ -64,9 +64,6 @@ def _write_nix_conf(settings: HookSettings) -> Path:
     return nix_conf_path
 
 
-NIX_INSTALL_SCRIPT = Path("/tmp/nix-install.sh")
-
-
 def install_nix(settings: HookSettings) -> NixSetup:
     """Install nix if not present.
 
@@ -86,8 +83,9 @@ def install_nix(settings: HookSettings) -> NixSetup:
     nix_store_bin = find_nix_bin()
     if not nix_store_bin:
         logger.info("Installing nix...")
+        nix_install_script = settings.session_dir / "nix-install.sh"
         with urllib.request.urlopen("https://nixos.org/nix/install", timeout=60) as response:
-            NIX_INSTALL_SCRIPT.write_bytes(response.read())
+            nix_install_script.write_bytes(response.read())
 
         # The nix-env step fails in gVisor containers due to a PTY bug.
         # nix-env opens /dev/ptmx, forks a sandbox process, then reads from the PTY master.
@@ -105,7 +103,7 @@ def install_nix(settings: HookSettings) -> NixSetup:
         # Skip nix-env entirely. The installer already unpacked Nix to /nix/store.
         # We use the store path directly instead of relying on profiles.
         run_streaming(
-            ["sh", "-x", NIX_INSTALL_SCRIPT, "--no-daemon", "--no-channel-add", "--no-modify-profile"],
+            ["sh", "-x", nix_install_script, "--no-daemon", "--no-channel-add", "--no-modify-profile"],
             check=False,  # Installer may fail on nix-env step, that's OK
         )
 
