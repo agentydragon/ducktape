@@ -148,6 +148,7 @@ py_library(
     deps = [
         ":platform_utils",
         ":settings",
+        "@pypi//httpx",
         "@pypi//opentelemetry_api",
     ],
 )

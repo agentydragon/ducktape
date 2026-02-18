@@ -11,10 +11,10 @@ import asyncio
 import logging
 import os
 import stat
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 from opentelemetry import trace
 
 from tools.claude_hooks.platform_utils import get_platform
@@ -53,12 +53,6 @@ def _get_download_url() -> str:
     )
 
 
-def _fetch_url_bytes(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=60) as response:
-        data: bytes = response.read()
-    return data
-
-
 async def _download_mkcert(settings: HookSettings) -> Path:
     """Download mkcert binary if not already present."""
     mkcert_dir = _get_mkcert_dir(settings)
@@ -73,7 +67,11 @@ async def _download_mkcert(settings: HookSettings) -> Path:
     url = _get_download_url()
     logger.info("Downloading mkcert from %s", url)
 
-    data = await asyncio.to_thread(_fetch_url_bytes, url)
+    async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        data = response.content
+
     mkcert_path.write_bytes(data)
     mkcert_path.chmod(mkcert_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     logger.info("Installed mkcert to %s", mkcert_path)
