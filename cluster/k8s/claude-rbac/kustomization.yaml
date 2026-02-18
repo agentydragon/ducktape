@@ -12,3 +12,5 @@ resources:
   - clusterrole-flux-kustomization-reader.yaml
   - clusterrolebinding-flux-kustomization-reader.yaml
   - rolebinding-ollama-consumer.yaml
+  - role-gatus-reader.yaml
+  - rolebinding-gatus-reader.yaml

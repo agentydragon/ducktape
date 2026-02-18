@@ -3,4 +3,4 @@ kind: Kustomization
 
 resources:
   - helmrelease.yaml
-  - httproute.yaml
+  # HTTPRoute is in authentik-proxy-routes/gatus-httproute.yaml (SSO-protected via Authentik outpost).

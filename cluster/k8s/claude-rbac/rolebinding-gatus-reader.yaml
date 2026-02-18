@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-gatus-reader
+  namespace: gatus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gatus-reader
+subjects:
+  - kind: ServiceAccount
+    name: claude-code-web
+    namespace: default

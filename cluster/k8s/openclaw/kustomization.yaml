@@ -5,3 +5,4 @@ resources:
   - clusterrolebinding-flux-reader.yaml
   - rolebinding-ollama-consumer.yaml
   - networkpolicy-authentik.yaml
+  - rolebinding-gatus-reader.yaml
