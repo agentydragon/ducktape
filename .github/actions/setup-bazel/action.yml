@@ -47,3 +47,15 @@ runs:
       uses: ./.github/actions/bazel-repo-cache
       with:
         extra_hash: ${{ inputs.extra_hash }}
+
+    - name: Show RBE status
+      shell: bash
+      run: |
+        # Check the effective Bazel configuration for remote_executor.
+        # bazel info --announce_rc expands all configs (including --config=rbe
+        # from buildbuddy.bazelrc) and prints the resolved flag set.
+        if bazel info --announce_rc 2>&1 | grep -q "remote_executor"; then
+          echo "RBE: enabled (actions will run on remote BuildBuddy workers)"
+        else
+          echo "RBE: disabled (actions will run locally — BUILDBUDDY_API_KEY not configured)"
+        fi

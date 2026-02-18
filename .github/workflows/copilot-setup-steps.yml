@@ -66,16 +66,6 @@ jobs:
           which tofu && echo "OpenTofu version: $(tofu --version | head -1)" || echo "OpenTofu: not installed"
           which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
 
-          # Verify BuildBuddy remote cache configuration by checking the effective
-          # Bazel configuration. bazel info --announce_rc expands all configs
-          # (including --config=rbe from buildbuddy.bazelrc) and prints the
-          # resolved flag set. remote_executor only appears when RBE is active.
-          if bazel info --announce_rc 2>&1 | grep -q "remote_executor"; then
-            echo "BuildBuddy: configured (RBE + remote cache enabled)"
-          else
-            echo "BuildBuddy: not configured (BUILDBUDDY_API_KEY not available)"
-          fi
-
           # Verify Bazel toolchain auto-detection
           if grep -q "BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0" ~/.bazelrc 2>/dev/null; then
             echo "Bazel toolchain: auto-detection enabled"
