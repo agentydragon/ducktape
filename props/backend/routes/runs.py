@@ -31,7 +31,7 @@ from props.backend.auth import (
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType, CriticTypeConfig, TargetMetric, TypeConfig
-from props.core.eval_api_models import RunCriticRequest, RunCriticResponse
+from props.core.eval_api_models import RunCriticRequest, StartCriticResponse
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG
 from props.core.splits import Split
@@ -697,13 +697,13 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
 
 
 @router.post("/critic")
-async def run_critic(
+async def start_critic(
     request: Request,
     body: RunCriticRequest,
     admin_db: AdminDb,
     auth: Annotated[tuple[CallerType, UUID | None], Depends(require_critic_run_access)],
-) -> RunCriticResponse:
-    """Run critic agent using an agent package.
+) -> StartCriticResponse:
+    """Start a critic agent using an agent package. Returns immediately with critic_run_id.
 
     Uses admin_db: this is a privileged API that starts container workloads.
 
@@ -712,7 +712,8 @@ async def run_critic(
     - VALID split: restrictions depend on target_metric mode
     - TEST split: completely off-limits
 
-    Returns critic_run_id. Use wait_until_graded() to poll DB for grading completion.
+    The critic runs asynchronously. Poll GET /api/runs/{critic_run_id} or use the
+    WebSocket feed for status, then use wait_until_graded() once the run exits.
     """
     _, parent_run_id = auth
     registry = get_registry(request)
@@ -732,14 +733,15 @@ async def run_critic(
         if not example:
             raise HTTPException(status_code=404, detail=f"Example not found: {body.example.model_dump()}")
 
-    # Resolve image ref and execute critic run
+    # Resolve image ref
     try:
         image = await registry.resolve_image(AgentType.CRITIC, body.definition_id)
     except ImageResolutionError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # Start critic in the background — returns immediately
     try:
-        critic_run_id = await registry.run_critic(
+        critic_run_id = await registry.start_critic(
             image=image,
             example=body.example,
             model=body.critic_model,
@@ -750,13 +752,7 @@ async def run_critic(
     except BudgetExceededError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Get final status — read attributes inside session to avoid DetachedInstanceError
-    with admin_db.session() as session:
-        critic_run = session.get(AgentRun, critic_run_id)
-        assert critic_run is not None
-        return RunCriticResponse(
-            critic_run_id=critic_run_id, status=critic_run.status, container_exit_code=critic_run.container_exit_code
-        )
+    return StartCriticResponse(critic_run_id=critic_run_id)
 
 
 # --- Run Detail Endpoints ---

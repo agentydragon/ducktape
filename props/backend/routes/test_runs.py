@@ -1,4 +1,4 @@
-"""Tests for run_critic endpoint and agent_run_budget_status view.
+"""Tests for start_critic endpoint and agent_run_budget_status view.
 
 Tests the HTTP error mapping for budget exceeded, image resolution failures,
 and the agent_run_budget_status DB view with real Postgres.
@@ -138,7 +138,7 @@ def test_budget_view_includes_child_costs(synced_db: Database, parent_run: UUID)
 
 @pytest.fixture
 def run_critic_client(synced_db: Database):
-    """FastAPI TestClient with mocked registry for testing run_critic endpoint.
+    """FastAPI TestClient with mocked registry for testing start_critic endpoint.
 
     Creates a minimal FastAPI app with just the runs router, overriding
     dependencies to avoid needing Docker/lifespan infrastructure.
@@ -160,7 +160,7 @@ def test_run_critic_budget_exceeded_returns_422(run_critic_client) -> None:
     client, mock_registry = run_critic_client
 
     mock_registry.resolve_image.return_value = FAKE_RESOLVED
-    mock_registry.run_critic.side_effect = BudgetExceededError(
+    mock_registry.start_critic.side_effect = BudgetExceededError(
         "Cannot spawn child with $5.00 budget: parent has $0.75 remaining ($1.25 spent of $2.00)"
     )
 
@@ -178,9 +178,9 @@ def test_run_critic_budget_exceeded_returns_422(run_critic_client) -> None:
     assert response.status_code == 422
     assert "Cannot spawn child" in response.json()["detail"]
     assert "$5.00" in response.json()["detail"]
-    # Verify resolved image was passed to run_critic
-    mock_registry.run_critic.assert_called_once()
-    assert mock_registry.run_critic.call_args.kwargs["image"] is FAKE_RESOLVED
+    # Verify resolved image was passed to start_critic
+    mock_registry.start_critic.assert_called_once()
+    assert mock_registry.start_critic.call_args.kwargs["image"] is FAKE_RESOLVED
 
 
 def test_run_critic_image_resolution_error_returns_422(run_critic_client) -> None:
@@ -223,7 +223,34 @@ def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:
     assert "not found" in response.json()["detail"].lower()
     # Snapshot validation happens before image resolution
     mock_registry.resolve_image.assert_not_called()
-    mock_registry.run_critic.assert_not_called()
+    mock_registry.start_critic.assert_not_called()
+
+
+def test_run_critic_returns_critic_run_id(run_critic_client) -> None:
+    """POST /api/runs/critic returns critic_run_id immediately (non-blocking)."""
+    client, mock_registry = run_critic_client
+
+    expected_run_id = uuid4()
+    mock_registry.resolve_image.return_value = FAKE_RESOLVED
+    mock_registry.start_critic.return_value = expected_run_id
+
+    response = client.post(
+        "/api/runs/critic",
+        json={
+            "definition_id": FAKE_CRITIC_DIGEST,
+            "example": {"kind": "whole_snapshot", "snapshot_slug": "test-fixtures/train1"},
+            "critic_model": BUDGET_TEST_MODEL,
+            "timeout_seconds": 60,
+            "budget_usd": 1.0,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["critic_run_id"] == str(expected_run_id)
+    # Non-blocking: no status or container_exit_code in response
+    assert "status" not in body
+    assert "container_exit_code" not in body
 
 
 if __name__ == "__main__":

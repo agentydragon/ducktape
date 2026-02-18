@@ -13,6 +13,7 @@ py_library(
         "//mcp_infra/exec:matchers",
         "//openai_utils:model",
         "//props/agents/critic_dev:loop",
+        "//props/core:eval_api_models",
         "//props/testing",
         "@pypi//pyhamcrest",
     ],

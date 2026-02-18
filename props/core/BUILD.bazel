@@ -54,6 +54,7 @@ py_library(
     deps = [
         ":ids",
         ":splits",
+        "//openai_utils:pydantic_strict_mode",
         "//props/core/models:examples",
         "//props/db:models",
         "@pypi//pydantic",

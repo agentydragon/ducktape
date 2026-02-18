@@ -358,7 +358,6 @@ class ImprovementReminderHandler(BaseHandler):
 async def run_agent_loop(
     system_prompt: str,
     eval_client: CriticRunClient,
-    critic_model: str,
     db: Database,
     agent_run_id: UUID,
     type_config: CriticDevOptimizeTypeConfig | CriticDevImproveTypeConfig,
@@ -369,7 +368,7 @@ async def run_agent_loop(
     For improve: auto-terminates when a candidate beats baseline.
     """
     state = LoopState()
-    tool_provider = create_tool_provider(state, eval_client, critic_model, db)
+    tool_provider = create_tool_provider(state, eval_client, db)
     bound_model = create_bound_model_from_env(db)
 
     handlers: list[BaseHandler] = [
@@ -441,8 +440,6 @@ async def main() -> int:
         logger.error("Unexpected type_config: %s", type(type_config).__name__)
         return 1
 
-    critic_model = type_config.critic_model
-
     async with CriticRunClient.from_env() as eval_client:
         system_prompt = render_system_prompt(
             "props/agents/critic_dev/prompt.md.mako", db, helpers={"type_config": type_config}
@@ -451,7 +448,6 @@ async def main() -> int:
         exit_code = await run_agent_loop(
             system_prompt=system_prompt,
             eval_client=eval_client,
-            critic_model=critic_model,
             db=db,
             agent_run_id=agent_run_id,
             type_config=type_config,

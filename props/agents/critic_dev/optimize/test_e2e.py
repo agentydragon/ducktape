@@ -26,9 +26,8 @@ import logging
 import pytest
 import pytest_bazel
 
-from agent_core.testing.responses import PlayGen, tool_roundtrip
+from agent_core.testing.responses import PlayGen
 from props.agents.critic.testing.mocks import CriticMock
-from props.agents.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -38,7 +37,8 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
 from props.core.agent_types import AgentType, TargetMetric
-from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
+from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
+from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
 from props.db.examples import Example
@@ -136,23 +136,30 @@ async def test_optimizer_orchestrates_critic(
     def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request (system message)
 
-        # Call run_critic tool (DirectToolProvider tool that calls REST API)
+        # Start critic (non-blocking, returns immediately with critic_run_id)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        run_critic_args = RunCriticToolArgs(
-            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=1.0
+        start_response: StartCriticResponse = yield from m.start_critic_roundtrip(
+            RunCriticRequest(
+                definition_id=DefinitionId(digests["critic"]),
+                example=example,
+                timeout_seconds=120,
+                budget_usd=1.0,
+                critic_model=ORCHESTRATION_CRITIC_MODEL,
+            )
         )
-
-        call = m.tool_call("run_critic", run_critic_args)
-        run_critic_response: RunCriticResponse = yield from tool_roundtrip(call, RunCriticResponse)
-
-        critic_run_id = run_critic_response.critic_run_id
+        critic_run_id = start_response.critic_run_id
         logger.info(f"Orchestration optimizer got critic_run_id: {critic_run_id}")
 
-        # Call wait_until_graded_tool (DirectToolProvider tool that polls database)
-        wait_args = WaitUntilGradedToolArgs(critic_run_id=str(critic_run_id), timeout_seconds=60)
-        wait_call = m.tool_call("wait_until_graded_tool", wait_args)
-        grading_response: GradingStatusResponse = yield from tool_roundtrip(wait_call, GradingStatusResponse)
+        # Wait for critic container to finish
+        completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
+            critic_run_id, timeout_seconds=120
+        )
+        logger.info(f"Critic completed: status={completed.status}")
 
+        # Wait for grading (polls database directly inside container)
+        grading_response: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(
+            critic_run_id, timeout_seconds=60
+        )
         total_credit = grading_response.total_credit or 0.0
         max_credit = grading_response.max_credit or 0
         recall = total_credit / max_credit if max_credit > 0 else 0.0

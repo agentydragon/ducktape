@@ -3,6 +3,10 @@
 %>\
 ${include_doc("props/agents/critic_dev/prompt_base.md.mako")}
 
+## Critic Model
+
+Use `critic_model="${type_config.critic_model}"` when calling `start_critic`. The backend validates this and will reject unauthorized models.
+
 % if isinstance(type_config, CriticDevOptimizeTypeConfig):
 ## Your Goal
 

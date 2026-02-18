@@ -6,7 +6,9 @@ used by both optimize and improve modes.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from enum import StrEnum, auto
 from pathlib import Path
@@ -20,10 +22,9 @@ from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.agents.critic_dev.eval_client import CriticRunClient
 from props.agents.critic_dev.grading import wait_until_graded
-from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
-from props.core.ids import DefinitionId
-from props.core.models.examples import ExampleSpec
+from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.db.database import Database
+from props.db.models import AgentRun, AgentRunStatus
 from props.db.snapshot_io import fetch_snapshot_to_path
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,8 @@ logger = logging.getLogger(__name__)
 # Reminder sent when agent outputs text instead of using tools
 TEXT_OUTPUT_REMINDER = (
     "You must use tools to optimize prompts. Do not output text directly. "
-    "Use run_critic and wait_until_graded to evaluate agents, then keep iterating."
+    "Use start_critic, wait_until_critic_completed, and wait_until_graded to evaluate agents, "
+    "then keep iterating."
 )
 
 # Default workspace path
@@ -49,15 +51,11 @@ class ReportFailureArgs(OpenAIStrictModeBaseModel):
     message: str = Field(..., description="Description of why optimization could not be completed")
 
 
-class RunCriticToolArgs(OpenAIStrictModeBaseModel):
-    """Arguments for run_critic tool (subset of RunCriticRequest for agent use)."""
+class WaitUntilCriticCompletedArgs(OpenAIStrictModeBaseModel):
+    """Arguments for wait_until_critic_completed tool."""
 
-    definition_id: DefinitionId = Field(
-        description="Image ref: OCI digest (sha256:...) for custom images, or 'latest' for builtin"
-    )
-    example: ExampleSpec = Field(description="Example to evaluate")
-    timeout_seconds: int = Field(description="Max seconds before container is killed")
-    budget_usd: float = Field(description="Max USD cost for this agent")
+    critic_run_id: UUID = Field(description="agent_run_id of the critic run to wait for")
+    timeout_seconds: int = Field(ge=1, le=600, description="Max time to wait in seconds (1-600)")
 
 
 class WaitUntilGradedToolArgs(OpenAIStrictModeBaseModel):
@@ -99,9 +97,7 @@ class LoopState:
 # =============================================================================
 
 
-def create_tool_provider(
-    state: LoopState, eval_client: CriticRunClient, critic_model: str, db: Database
-) -> DirectToolProvider:
+def create_tool_provider(state: LoopState, eval_client: CriticRunClient, db: Database) -> DirectToolProvider:
     """Create tool provider with shared tools (no submit)."""
     provider = DirectToolProvider()
 
@@ -127,27 +123,50 @@ def create_tool_provider(
         logger.info("Reported failure: %s", args.message)
 
     @provider.tool
-    async def run_critic(args: RunCriticToolArgs) -> RunCriticResponse:
-        """Run critic agent on an example.
+    async def start_critic(args: RunCriticRequest) -> StartCriticResponse:
+        """Start a critic agent on an example. Returns immediately with critic_run_id.
 
-        Returns critic_run_id. Use wait_until_graded to get grading results.
+        After calling this, use wait_until_critic_completed to wait for the critic to
+        finish, then use wait_until_graded to wait for grading results.
         """
-        logger.info(f"Running critic: definition={args.definition_id}, example={args.example}")
-        response = await eval_client.run_critic(
-            definition_id=args.definition_id,
-            example=args.example,
-            timeout_seconds=args.timeout_seconds,
-            budget_usd=args.budget_usd,
-            critic_model=critic_model,
-        )
-        logger.info(f"Critic run completed: {response.critic_run_id}, status={response.status}")
+        logger.info(f"Starting critic: definition={args.definition_id}, example={args.example}")
+        response = await eval_client.start_critic(args)
+        logger.info(f"Critic started: {response.critic_run_id}")
         return response
+
+    @provider.tool
+    async def wait_until_critic_completed(args: WaitUntilCriticCompletedArgs) -> CriticRunStatus:
+        """Wait until a critic run has exited or timed out.
+
+        Polls the database until the critic run status is no longer IN_PROGRESS.
+        Call start_critic first, then this tool, then wait_until_graded.
+
+        Raises TimeoutError if the critic does not complete within timeout_seconds.
+        """
+        logger.info(f"Waiting for critic to complete: {args.critic_run_id}")
+        deadline = time.monotonic() + args.timeout_seconds
+        poll_interval = 5.0
+
+        while time.monotonic() < deadline:
+            with db.session() as session:
+                run = session.get(AgentRun, args.critic_run_id)
+                if run is None:
+                    raise ValueError(f"Critic run {args.critic_run_id} not found")
+                if run.status != AgentRunStatus.IN_PROGRESS:
+                    logger.info(f"Critic completed: {args.critic_run_id}, status={run.status}")
+                    return CriticRunStatus(
+                        critic_run_id=args.critic_run_id, status=run.status, container_exit_code=run.container_exit_code
+                    )
+            await asyncio.sleep(poll_interval)
+
+        raise TimeoutError(f"Critic run {args.critic_run_id} did not complete within {args.timeout_seconds}s")
 
     @provider.tool
     async def wait_until_graded_tool(args: WaitUntilGradedToolArgs) -> GradingStatusResponse:
         """Wait for a critic run to be fully graded.
 
         Polls the database directly until grading is complete or timeout.
+        The critic run must have already completed (use wait_until_critic_completed first).
         """
         logger.info(f"Waiting for grading: {args.critic_run_id}")
         response = await wait_until_graded(

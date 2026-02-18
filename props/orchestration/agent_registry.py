@@ -35,6 +35,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -134,6 +135,8 @@ class AgentRegistry:
         self._backend_url = backend_url
         self._agent_base_env = agent_base_env
         self._registry_config = registry_config
+        # Track running background critic tasks by agent_run_id to prevent GC and allow lookup
+        self._running_critics: dict[UUID, asyncio.Task[None]] = {}
 
     async def close(self) -> None:
         await self._executor.close()
@@ -348,7 +351,7 @@ class AgentRegistry:
         parent_run_id: UUID | None,
         budget_usd: float,
     ) -> UUID:
-        """Run a critic agent. Returns agent run ID (query DB for status)."""
+        """Run a critic agent. Blocks until the container exits. Returns agent run ID."""
         if parent_run_id is not None:
             self._validate_spawn_budget(parent_run_id, budget_usd)
 
@@ -361,6 +364,44 @@ class AgentRegistry:
             verify_snapshot=example.snapshot_slug,
         )
         await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
+        return agent_run_id
+
+    async def start_critic(
+        self,
+        *,
+        image: ResolvedImage,
+        example: ExampleSpec,
+        model: str,
+        timeout_seconds: int,
+        parent_run_id: UUID | None,
+        budget_usd: float,
+    ) -> UUID:
+        """Start a critic agent in the background. Returns agent_run_id immediately.
+
+        The container runs asynchronously. Poll /api/runs/{agent_run_id} or query the
+        DB directly for status updates. Use wait_until_graded() after the run exits.
+        """
+        if parent_run_id is not None:
+            self._validate_spawn_budget(parent_run_id, budget_usd)
+
+        agent_run_id = self._create_run(
+            image=image,
+            model=model,
+            type_config=CriticTypeConfig(example=example),
+            budget_usd=budget_usd,
+            parent_run_id=parent_run_id,
+            verify_snapshot=example.snapshot_slug,
+        )
+
+        async def _run() -> None:
+            try:
+                await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
+            except Exception:
+                logger.exception("Unhandled error in background critic run %s", agent_run_id)
+
+        task = asyncio.create_task(_run(), name=f"critic-{agent_run_id}")
+        self._running_critics[agent_run_id] = task
+        task.add_done_callback(lambda _: self._running_critics.pop(agent_run_id, None))
         return agent_run_id
 
     async def run_critic_dev_optimize(

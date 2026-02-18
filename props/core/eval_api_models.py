@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.splits import Split
@@ -23,7 +24,7 @@ from props.db.models import AgentRunStatus
 # =============================================================================
 
 
-class RunCriticRequest(BaseModel):
+class RunCriticRequest(OpenAIStrictModeBaseModel):
     """Request to run a critic agent."""
 
     definition_id: DefinitionId = Field(description="Image ref: OCI digest (sha256:...) or tag (e.g., 'latest')")
@@ -38,8 +39,18 @@ class RunCriticRequest(BaseModel):
 # =============================================================================
 
 
-class RunCriticResponse(BaseModel):
-    """Response from running a critic agent."""
+class StartCriticResponse(BaseModel):
+    """Response from starting a critic agent (non-blocking).
+
+    The critic runs asynchronously. Poll /api/runs/{critic_run_id} or use the
+    WebSocket feed for status updates, then call wait_until_graded once it exits.
+    """
+
+    critic_run_id: UUID = Field(description="agent_run_id of the critic agent run")
+
+
+class CriticRunStatus(BaseModel):
+    """Status of a critic run returned after polling for completion."""
 
     critic_run_id: UUID = Field(description="agent_run_id of the critic agent run")
     status: AgentRunStatus = Field(description="Final status of the critic run")
