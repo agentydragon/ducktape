@@ -11,7 +11,6 @@ runs into a single cluster:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from uuid import uuid4
 
@@ -118,27 +117,16 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
         assert get_drift(test_snapshot, db).grading, "grading_pending should have rows"
 
         # Start snapshot grader
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(
-                image=stack.resolved_images["grader"], snapshot_slug=test_snapshot, model=stack.model
-            ),
-            name="snapshot-grader",
+        grader_handle = await stack.registry.start_snapshot_grader(
+            image=stack.resolved_images["grader"], snapshot_slug=test_snapshot, model=stack.model
         )
 
         # Wait for clustering to complete
-        try:
-            await asyncio.wait_for(clustering_done.wait(), timeout=90)
-        except TimeoutError:
-            if grader_task.done():
-                exc = grader_task.exception()
-                if exc:
-                    raise RuntimeError(f"Snapshot grader failed: {exc}") from exc
-            raise AssertionError("Clustering did not complete within timeout")
-
-        # Cancel grader
-        grader_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await grader_task
+        async with grader_handle:
+            try:
+                await asyncio.wait_for(clustering_done.wait(), timeout=90)
+            except TimeoutError:
+                raise AssertionError("Clustering did not complete within timeout")
 
         # Assert cluster was created with 2 members
         with db.session() as session:

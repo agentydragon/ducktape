@@ -1,37 +1,22 @@
 ---
 name: test_props
-description: Manual live props deployment testing — sets up Podman infrastructure (postgres, registry, backend) and runs real agent containers with a real OpenAI API key. NOT for standard Bazel tests (use `bazel test //props/...` for those).
-argument-hint: "[workflow: setup|critic|grader|improver|all]"
+description: Manual live props deployment testing — sets up Podman infrastructure (postgres, registry, backend) and runs real agent containers. NOT for standard Bazel tests (use `bazel test //props/...` for those).
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, Task
 ---
 
 # Test Props Live Deployment
 
-Manual live deployment testing. Sets up Podman infrastructure, initializes the database,
-runs the backend, pushes agent images, and tests agent workflows with real OpenAI calls.
+Knowledge base for manually running the props critic and grader evaluation stack.
+Covers infrastructure setup, database lifecycle, agent image push, running critics,
+grading, and exporting results.
 
-**Not for standard tests** — use `bazel test //props/...` for unit, integration, and e2e
-Bazel tests. This skill is for manual live deployment verification only.
+**Not for standard tests** — use `bazel test //props/...` for unit, integration, and
+e2e Bazel tests. This skill is for manual live deployment and evaluation runs.
 
-**Argument:** `$ARGUMENTS` (default: `all`)
-
-- `setup` - Only set up infrastructure, database, backend, and push images
-- `critic` - Run a critic on a snapshot and verify output
-- `grader` - Verify graders are running and grading
-- `improver` - Test improver agent
-- `all` - Full setup + test all workflows
-
-## Background
-
-For evaluation workflow docs (model selection, file-set examples, export/import):
+For evaluation workflow background:
 
 - @props/docs/openai_evaluation/evaluation.md
 - @props/docs/local_llm_evaluation/evaluation.md
-
-## Prerequisites
-
-- `OPENAI_API_KEY` must be in environment
-- Podman must be running (claude_hooks handles this)
 
 ## Environment Detection
 
@@ -49,83 +34,142 @@ gVisor requires:
 
 - `PROPS_DOCKER_NETWORK=host` (agent containers must use host networking)
 - `--annotation run.oci.keep_original_groups=1` on all podman containers
-- `DOCKER_HOST` must be set (check `$DOCKER_HOST` env var)
+- Verify `$DOCKER_HOST` is set (the session hook sets this)
 
-## Phase 1: Infrastructure Setup
+## Infrastructure Setup
 
-1. Check if podman containers `props-postgres` and `props-registry` are running:
+Start Postgres (port 5433) and the OCI registry (port 5050):
 
-   ```bash
-   podman ps --format "{{.Names}}"
-   ```
+```bash
+bash .claude/skills/test_props/start_infra.sh
+```
 
-   If not running, start them:
+Set PG environment variables for subsequent commands:
 
-   ```bash
-   bash .claude/skills/test_props/start_infra_podman.sh
-   ```
+```bash
+export PGHOST=127.0.0.1
+export PGPORT=5433
+export PGUSER=postgres
+export PGPASSWORD=$(cat props/.devenv/state/pg_password)
+export PGDATABASE=eval_results
+```
 
-2. Set environment variables:
+## Database Lifecycle
 
-   ```bash
-   export PGHOST=127.0.0.1
-   export PGPORT=5433
-   export PGUSER=postgres
-   export PGPASSWORD=$(cat props/.devenv/state/pg_password)
-   export PGDATABASE=eval_results
-   export ADGN_PROPS_SPECIMENS_ROOT=$(git rev-parse --show-toplevel)/props/specimens
-   ```
+### Fresh schema
 
-3. Initialize database. Use `db recreate` which drops and recreates the schema
-   from scratch, then syncs all data:
+`db recreate` drops all schema objects (tables, views, functions, policies), then
+runs Alembic migrations to recreate the schema from scratch and syncs model
+metadata. **Does not sync specimens.**
 
-   ```bash
-   PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
-   PGPASSWORD=$(cat props/.devenv/state/pg_password) \
-   PGDATABASE=eval_results \
-   ADGN_PROPS_SPECIMENS_ROOT=$(git rev-parse --show-toplevel)/props/specimens \
-   bazel run //props/cli:cli -- db recreate --yes
-   ```
+```bash
+PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
+PGPASSWORD=$(cat props/.devenv/state/pg_password) \
+PGDATABASE=eval_results \
+bazel run //props/cli:cli -- db recreate --yes
+```
 
-## Phase 2: Start Backend
+### Migrations and specimen sync via backend lifespan
 
-1. Check if backend is already running:
+When `auto_migrate = true` is set in the config file, the backend runs
+`alembic upgrade head` on startup (idempotent — only applies pending migrations).
 
-   ```bash
-   curl -s http://127.0.0.1:8000/health
-   ```
+When `auto_sync_specimens = true` is set, the backend scans `/specimens` and syncs
+all specimens on startup. Before starting the backend, symlink the repo's specimens
+directory:
 
-   If not running, build and start it in the background:
+```bash
+ln -sf "$(git rev-parse --show-toplevel)/props/specimens" /specimens
+```
 
-   ```bash
-   bazel build //props/backend:backend_bin
-   ```
+The `config.ollama.toml` in this skill directory enables both flags.
 
-   Then start with all required env vars:
+### Importing an existing dump
 
-   ```bash
-   PROPS_CONFIG_FILE=.claude/skills/test_props/config.podman.toml \
-   PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
-   PGPASSWORD=$(cat props/.devenv/state/pg_password) \
-   PGDATABASE=eval_results \
-   ADGN_PROPS_SPECIMENS_ROOT=$(git rev-parse --show-toplevel)/props/specimens \
-   PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5050 \
-   PROPS_DOCKER_NETWORK=host \
-   DOCKER_HOST=$DOCKER_HOST \
-   bazel-bin/props/backend/backend_bin serve > /tmp/backend.log 2>&1 &
-   ```
+To continue from a saved dump (e.g., from a previous session):
 
-   **Note**: `PROPS_DOCKER_NETWORK=host` is required on gVisor (Claude Code on
-   the Web) because the default Docker bridge network (`props-agents`) doesn't
-   work under gVisor's netavark. On native environments, `host` also works fine.
+1. Recreate schema (via `db recreate`).
+2. Sync specimens — start backend with `auto_sync_specimens = true` (and the `/specimens`
+   symlink in place), or run `bazel run //props/cli:cli -- db sync-specimen` per specimen.
+3. Import the dump:
 
-## Phase 3: Push Agent Images
+```bash
+# OpenAI evaluation results:
+zstd -dc props/docs/openai_evaluation/results.sql.zst \
+  | psql --set ON_ERROR_STOP=on -d eval_results
 
-Push images to the **registry proxy** (port 8000), not the direct registry
-(port 5050). The proxy records agent definitions and the grader supervisor
+# Local LLM (ollama) results:
+zstd -dc props/docs/local_llm_evaluation/results.sql.zst \
+  | psql --set ON_ERROR_STOP=on -d eval_results
+```
+
+The dump excludes ground-truth tables (snapshots, file_sets, true_positives, etc.)
+that come from specimens. Specimens must be in the DB before importing.
+
+## Backend Startup
+
+### With remote Ollama (gpt-oss:20b)
+
+Retrieve the Ollama API key from k8s:
+
+```bash
+export OLLAMA_API_KEY=$(kubectl get secret ollama-api-key -n claude-sandbox \
+  -o jsonpath='{.data.api-key}' | base64 -d)
+```
+
+Symlink specimens and build:
+
+```bash
+ln -sf "$(git rev-parse --show-toplevel)/props/specimens" /specimens
+bazel build //props/backend:backend_bin
+```
+
+Start in background:
+
+```bash
+PROPS_CONFIG_FILE=.claude/skills/test_props/config.ollama.toml \
+PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
+PGPASSWORD=$(cat props/.devenv/state/pg_password) \
+PGDATABASE=eval_results \
+PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5050 \
+PROPS_DOCKER_NETWORK=host \
+DOCKER_HOST=$DOCKER_HOST \
+OLLAMA_API_KEY=$OLLAMA_API_KEY \
+bazel-bin/props/backend/backend_bin serve > /tmp/backend.log 2>&1 &
+```
+
+The backend logs the admin token on startup:
+
+```bash
+grep "Admin token" /tmp/backend.log
+```
+
+Check health: `curl -s http://127.0.0.1:8000/health`
+
+### With OpenAI
+
+Use `config.podman.toml` and set `OPENAI_API_KEY` + `OPENAI_BASE_URL`:
+
+```bash
+PROPS_CONFIG_FILE=.claude/skills/test_props/config.podman.toml \
+OPENAI_API_KEY=$OPENAI_API_KEY \
+OPENAI_BASE_URL=https://api.openai.com/v1 \
+PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
+PGPASSWORD=$(cat props/.devenv/state/pg_password) \
+PGDATABASE=eval_results \
+PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5050 \
+PROPS_DOCKER_NETWORK=host \
+DOCKER_HOST=$DOCKER_HOST \
+bazel-bin/props/backend/backend_bin serve > /tmp/backend.log 2>&1 &
+```
+
+## Push Agent Images
+
+Push images to the **registry proxy** (port 8000), not the upstream registry
+(port 5050). The proxy records agent definitions; the grader supervisor
 listens for grader tag changes.
 
-First, set up Docker auth for the registry proxy:
+Set up Docker auth for the registry proxy:
 
 ```bash
 PG_PASSWORD=$(cat props/.devenv/state/pg_password)
@@ -140,145 +184,125 @@ cat > ~/.docker/config.json <<EOF
 EOF
 ```
 
-Then push each agent type using Bazel `oci_push` targets:
+Push both agent types:
 
 ```bash
 bazel run //props/agents/critic:push
 bazel run //props/agents/grader:push
 ```
 
-These push to `localhost:8000/<type>:latest` using credentials from
-`~/.docker/config.json`.
+These push to `localhost:8000/<type>:latest`. The grader supervisor starts grader
+containers automatically when the grader image is pushed.
 
-## Phase 4: Test Workflows
+## Running Critics
 
-### Critic
-
-First, find the critic image digest:
-
-```sql
-SELECT digest FROM agent_definitions WHERE agent_type = 'critic';
-```
-
-Run a critic on a snapshot via the API:
+Get the admin token and run a critic via the API. The call blocks until the
+critic container exits.
 
 ```bash
 PG_PASSWORD=$(cat props/.devenv/state/pg_password)
 AUTH_TOKEN=$(echo -n "postgres:$PG_PASSWORD" | base64)
-CRITIC_DIGEST="<digest from above>"
 
+# File-set example: rank-1 example (33 TPs, 39 occurrences, fastest to run)
 curl -s -X POST http://127.0.0.1:8000/api/runs/critic \
   -H "Authorization: Bearer $AUTH_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"definition_id\": \"$CRITIC_DIGEST\",
-    \"example\": {\"kind\": \"whole_snapshot\", \"snapshot_slug\": \"<slug>\"},
-    \"critic_model\": \"gpt-5-mini\",
-    \"timeout_seconds\": 300,
-    \"budget_usd\": 5.0
-  }"
-```
-
-**Note**: This call blocks until the critic container exits.
-
-**Verify critic completion:**
-
-1. Poll until the critic run completes:
-
-   ```sql
-   SELECT agent_run_id, status FROM agent_runs
-   WHERE agent_run_id = '<run_id>';
-   ```
-
-   Wait until `status = 'exited'`.
-
-2. Check that `reported_issues` has findings:
-
-   ```sql
-   SELECT COUNT(*) FROM reported_issues
-   WHERE agent_run_id = '<run_id>';
-   ```
-
-   There should be at least one reported issue.
-
-3. Issues should have valid file paths and line ranges:
-
-   ```sql
-   SELECT ri.issue_id, ri.title, rio.locations
-   FROM reported_issues ri
-   JOIN reported_issue_occurrences rio
-     ON rio.agent_run_id = ri.agent_run_id AND rio.reported_issue_id = ri.issue_id
-   WHERE ri.agent_run_id = '<run_id>';
-   ```
-
-### Grader
-
-Graders start automatically when the grader image is pushed. Verify:
-
-```sql
-SELECT agent_run_id, status, type_config->>'snapshot_slug' as snapshot
-FROM agent_runs WHERE type_config->>'agent_type' = 'grader';
-```
-
-There should be one grader per snapshot, all `in_progress`.
-
-**Verify grading after critic:**
-
-Once the critic run completes and graders are running, verify that grading
-happens — the grader should create `grading_edges` for the critic's issues.
-
-1. Check `grading_pending` for drift (missing grading edges):
-
-   ```sql
-   SELECT COUNT(*) FROM grading_pending
-   WHERE critique_run_id = '<critic_run_id>';
-   ```
-
-2. Poll until the count reaches 0. This means all grading edges have been
-   created — every reported issue has been compared against every relevant
-   ground truth occurrence.
-
-3. Verify `grading_edges` exist:
-
-   ```sql
-   SELECT ge.critique_run_id, ge.critique_issue_id,
-          ge.tp_id, ge.fp_id, ge.grade
-   FROM grading_edges ge
-   WHERE ge.critique_run_id = '<critic_run_id>';
-   ```
-
-   There should be at least one grading edge per reported issue.
-
-### Improver
-
-Start an improver run and verify it proposes critic modifications:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/runs/start \
-  -H "Authorization: Basic $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
   -d '{
-    "agent_type": "improver",
-    "model": "gpt-5-mini",
-    "example": {"type": "whole_snapshot", "snapshot_slug": "<slug>"}
+    "definition_id": "latest",
+    "example": {
+      "kind": "file_set",
+      "snapshot_slug": "ducktape/2025-09-03-00",
+      "files_hash": "8e2209f20bd1df0c5bc4073dfff739fe"
+    },
+    "critic_model": "gpt-oss-20b",
+    "timeout_seconds": 1800,
+    "budget_usd": 0.0
   }'
 ```
 
+Top file-set examples (file-set runs are faster than whole-snapshot):
+
+| Rank | Snapshot                       | `files_hash`                       | TPs | Occurrences |
+| ---- | ------------------------------ | ---------------------------------- | --- | ----------- |
+| 1    | `ducktape/2025-09-03-00`       | `8e2209f20bd1df0c5bc4073dfff739fe` | 33  | 39          |
+| 2    | `ducktape/2025-11-20-00`       | `bb8aff17944a6348a8089790457e3094` | 15  | 31          |
+| 3    | `ducktape/2025-11-26-00`       | `6e416fb1d095abc7fdc79131434c7dac` | 20  | 21          |
+| 4    | `ducktape/2025-11-21-00`       | `15702f4d16234db852e973e31323fbdd` | 21  | 21          |
+| 5    | `gmail-archiver/2025-12-17-00` | `9e218584782810e5a65195da8f63931a` | 14  | 21          |
+
+`budget_usd = 0.0` for Ollama (local cluster inference is free).
+
+## Monitoring Runs
+
+```bash
+# All runs with status
+psql -c "SELECT agent_run_id, type_config->>'agent_type' AS type, model, status,
+         container_exit_code FROM agent_runs ORDER BY created_at"
+
+# Reported issues for a specific critic run
+psql -c "SELECT COUNT(*) FROM reported_issues WHERE agent_run_id = '<run_id>'"
+
+# Grading edges (populated by grader after critic finishes)
+psql -c "SELECT ge.critique_run_id, ge.critique_issue_id,
+         ge.tp_id, ge.fp_id, ge.grade
+         FROM grading_edges ge
+         WHERE ge.critique_run_id = '<critic_run_id>'"
+
+# Grading pending (count should reach 0 when grading is complete)
+psql -c "SELECT COUNT(*) FROM grading_pending WHERE critique_run_id = '<critic_run_id>'"
+```
+
+## Grader Supervisor
+
+The `GraderSupervisor` is enabled by `grader_model` in the config file. It starts
+automatically when the backend starts and listens for `grader_definition_changed`
+pg_notify events. When a grader image is pushed, it (re)starts grader containers
+for all active snapshots.
+
+Graders run continuously, watching for new critic runs to grade. After a critic
+completes, the grader picks up the new reported issues and creates `grading_edges`.
+
+If graders don't appear after pushing the image, check:
+
+1. Was the image pushed to the proxy (port 8000), not directly to the registry (port 5050)?
+2. Backend logs: `grep -i grader /tmp/backend.log`
+
+## Exporting Results
+
+Export run results (excluding ground-truth and infrastructure tables) for import
+in a future session. The export excludes specimen data (snapshots, file_sets,
+true_positives, etc.) since those come from specimens on import.
+
+```bash
+# For ollama/local LLM evaluation:
+pg_dump eval_results \
+  --data-only --no-owner --no-privileges \
+  --exclude-table=true_positives \
+  --exclude-table=true_positive_occurrences \
+  --exclude-table=false_positives \
+  --exclude-table=false_positive_occurrences \
+  --exclude-table=fp_occurrence_relevant_files \
+  --exclude-table=occurrence_ranges \
+  --exclude-table=critic_scopes_expected_to_recall \
+  --exclude-table=file_sets \
+  --exclude-table=file_set_members \
+  --exclude-table=snapshots \
+  --exclude-table=snapshot_files \
+  --exclude-table=model_metadata \
+  --exclude-table=agent_role_salt \
+  --exclude-table=alembic_version \
+  -f props/docs/local_llm_evaluation/results.sql \
+  && zstd --rm --ultra -22 props/docs/local_llm_evaluation/results.sql
+```
+
+`llm_requests` stores full conversation transcripts (O(N²) growth across turns).
+zstd compresses cross-row redundancy far better than per-row gzip.
+
 ## Troubleshooting
-
-### Graders not starting
-
-The grader supervisor defers spawning until the HTTP backend is ready. If
-graders don't appear:
-
-1. Ensure the grader image was pushed to the **proxy** (port 8000)
-2. Check backend logs for `Grader definition changed` / `Starting graders`
-3. Restart the backend if needed
 
 ### Image resolution errors
 
-Add insecure registry entries to
-`~/.cache/claude-hooks/podman/registries.conf`:
+Add insecure registry entries to `~/.cache/claude-hooks/podman/registries.conf`:
 
 ```toml
 [[registry]]
@@ -297,14 +321,24 @@ insecure = true
 Use hex-only passwords in `props/.devenv/state/pg_password` (no `/`, `+`, `=`
 characters that break asyncpg DSN parsing).
 
+### Ollama API key
+
+Retrieve fresh from k8s if the current key doesn't work:
+
+```bash
+kubectl get secret ollama-api-key -n claude-sandbox \
+  -o jsonpath='{.data.api-key}' | base64 -d
+```
+
 ## Key Architecture Points
 
 - **Registry proxy**: Integrated into the backend. Push images to port 8000
-  (backend), which proxies to port 5050 (upstream registry) and records
-  agent definitions.
+  (backend), which proxies to port 5050 (upstream registry) and records agent
+  definitions.
 - **Grader supervisor**: Listens for `grader_definition_changed` pg_notify.
   When a grader tag is pushed, all grader containers are (re)started.
 - **Agent containers**: Run with host networking, per-agent PostgreSQL roles,
   and RLS-scoped database access.
-- **Model selection**: Use at least gpt-5 level models for meaningful results.
-  Config file: `.claude/skills/test_props/config.podman.toml`.
+- **Model config**: `config.ollama.toml` (this skill directory) configures
+  `gpt-oss:20b` via the remote ollama cluster at `ollama.allegedly.works`.
+  The cluster serves the model with 131072-token context (`OLLAMA_NUM_CTX=131072`).

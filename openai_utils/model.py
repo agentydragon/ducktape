@@ -171,37 +171,10 @@ class FunctionCallItem(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-# ------------------------------
-# Function call output content types (Pydantic wrappers for OpenAI types)
-# ------------------------------
-
-
-class FunctionOutputTextContent(BaseModel):
-    """Text content in function call output (sent to OpenAI API as input_text)."""
-
-    type: Literal["input_text"] = "input_text"
-    text: str
-    model_config = ConfigDict(extra="allow")
-
-
-class FunctionOutputImageContent(BaseModel):
-    """Image content in function call output (sent to OpenAI API as input_image)."""
-
-    type: Literal["input_image"] = "input_image"
-    image_url: str | None = None
-    file_id: str | None = None
-    detail: Literal["low", "high", "auto"] | None = None
-    model_config = ConfigDict(extra="allow")
-
-
-FunctionCallOutputContent = FunctionOutputTextContent | FunctionOutputImageContent
-FunctionCallOutputType = str | list[FunctionCallOutputContent]
-
-
 class FunctionCallOutputItem(BaseModel):
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
-    output: FunctionCallOutputType
+    output: str
     model_config = ConfigDict(extra="allow")
 
 

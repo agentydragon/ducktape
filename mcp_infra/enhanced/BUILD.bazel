@@ -7,6 +7,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//agent_core:pydantic_utils",
         "//mcp_infra:flat_tool",
         "//openai_utils:json_schema",
         "@pypi//fastmcp",

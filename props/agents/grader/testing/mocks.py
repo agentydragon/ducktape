@@ -6,7 +6,7 @@ from uuid import UUID
 
 from more_itertools import one
 
-from agent_core.testing.responses import DecoratorMock, _extract_text_from_content_list, tool_roundtrip
+from agent_core.testing.responses import DecoratorMock, tool_roundtrip
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest
 from props.agents.grader.drift_handler import Drift
 from props.agents.grader.tools import (
@@ -15,18 +15,16 @@ from props.agents.grader.tools import (
     EdgeSpec,
     FillRemainingArgs,
     InsertEdgesArgs,
+    ReportFailureArgs,
     SleepArgs,
 )
 
 
 def _extract_raw_output(req: ResponsesRequest, call: FunctionCallItem) -> str:
     """Extract raw string output for a function call from request."""
-    output = one(
+    return one(
         item for item in req.input if isinstance(item, FunctionCallOutputItem) and item.call_id == call.call_id
     ).output
-    if isinstance(output, str):
-        return output
-    return _extract_text_from_content_list(output, call.call_id)
 
 
 class GraderMock(DecoratorMock):
@@ -46,6 +44,10 @@ class GraderMock(DecoratorMock):
                 )
             yield from m.sleep_forever("Graded all pending edges")
     """
+
+    def report_failure(self, message: str) -> FunctionCallItem:
+        """Return a report_failure tool call item (terminal - grader exits after this)."""
+        return self.tool_call("report_failure", ReportFailureArgs(message=message))
 
     def sleep(self, summary: str) -> FunctionCallItem:
         """Signal that grading is complete and grader should sleep."""

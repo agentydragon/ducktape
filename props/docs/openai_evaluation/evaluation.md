@@ -123,7 +123,12 @@ Exports: `agent_definitions`, `agent_runs`, `reported_issues`,
 
 To continue from an exported dump in a new session:
 
-1. Set up a running props stack (PostgreSQL + `db recreate` to sync ground truth)
+1. Set up a running props stack (PostgreSQL infrastructure, schema, and specimens).
+   The schema is created by `db recreate` (or `auto_migrate = true` in the config).
+   Specimens must be synced before importing (via `auto_sync_specimens = true` in
+   the config with `/specimens` symlinked to `props/specimens`, or via
+   `bazel run //props/cli:cli -- db sync-specimen` per specimen). The dump excludes
+   specimen tables — they must be present in the DB for FK consistency.
 2. Import:
 
 ```bash

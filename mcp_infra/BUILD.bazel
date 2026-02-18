@@ -70,6 +70,7 @@ py_library(
     srcs = ["flat_tool.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//agent_core:pydantic_utils",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",

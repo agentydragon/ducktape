@@ -1,0 +1,40 @@
+# Props configuration for the remote Ollama cluster (ollama.allegedly.works).
+# Used by the test_props skill when running critics and graders with gpt-oss:20b.
+# Pointed to by PROPS_CONFIG_FILE env var when starting the backend.
+#
+# Requires OLLAMA_API_KEY in environment:
+#   export OLLAMA_API_KEY=$(kubectl get secret ollama-api-key -n claude-sandbox \
+#     -o jsonpath='{.data.api-key}' | base64 -d)
+
+backend_url = "http://127.0.0.1:8000"
+grader_model = "gpt-oss-20b"
+
+# Automatically run Alembic migrations on startup (idempotent, non-destructive).
+auto_migrate = true
+
+# Automatically sync all specimens from /specimens on startup.
+# Symlink /specimens to props/specimens before starting the backend:
+#   ln -sf $(git rev-parse --show-toplevel)/props/specimens /specimens
+auto_sync_specimens = true
+
+[agent_env]
+PGHOST = "127.0.0.1"
+PGPORT = "5433"
+PGDATABASE = "eval_results"
+
+[upstreams.ollama]
+url = "https://ollama.allegedly.works/v1"
+api_key_env = "OLLAMA_API_KEY"
+
+# gpt-oss:20b — 20B MoE model (4 of 32 experts active), 128k native context.
+# The cluster configures OLLAMA_NUM_CTX=131072, so the full context is available.
+# Zero cost — inference is on our own hardware.
+[[models]]
+name = "gpt-oss-20b"
+upstream = "ollama"
+upstream_model = "gpt-oss:20b"
+input_usd_per_1m_tokens = 0.0
+cached_input_usd_per_1m_tokens = 0.0
+output_usd_per_1m_tokens = 0.0
+context_window_tokens = 131072
+max_output_tokens = 8192

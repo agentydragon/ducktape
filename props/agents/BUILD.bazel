@@ -24,6 +24,7 @@ py_library(
         ":schema",
         "//mako_utils:preprocessor",
         "//openai_utils:model",
+        "//openai_utils:retry",
         "//props/db:database",
         "//props/db:models",
         "//props/db:queries",

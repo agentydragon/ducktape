@@ -45,9 +45,6 @@ from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
     FunctionCallOutputItem,
-    FunctionCallOutputType,
-    FunctionOutputImageContent,
-    FunctionOutputTextContent,
     FunctionToolParam,
     InputItem,
     OpenAIModelProto,
@@ -205,27 +202,6 @@ def _abort_result(reason: str = DEFAULT_ABORT_ERROR) -> ToolResult:
 # Size limits (bytes)
 MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024  # 10 MiB
 
-_ERROR_PREFIX = FunctionOutputTextContent(text="ERROR")
-
-# Data URL format constants
-_DATA_URL_PREFIX = "data:"
-_BASE64_SEPARATOR = ";base64,"
-
-
-def _parse_data_url(url: str) -> ImageContent:
-    """Parse a data URL into ImageContent. Raises ValueError if invalid."""
-    if not url.startswith(_DATA_URL_PREFIX) or _BASE64_SEPARATOR not in url:
-        url_preview = url[:50] if url else "None"
-        raise ValueError(f"Unsupported image_url format: {url_preview}...")
-    header, data = url.split(_BASE64_SEPARATOR, 1)
-    mime_type = header.removeprefix(_DATA_URL_PREFIX)
-    return ImageContent(mime_type=mime_type, data=data)
-
-
-def _make_data_url(mime_type: str, base64_data: str) -> str:
-    """Create a data URL from mime type and base64 data."""
-    return f"{_DATA_URL_PREFIX}{mime_type}{_BASE64_SEPARATOR}{base64_data}"
-
 
 def _check_size(result: str) -> None:
     if len(result) > MAX_TOOL_RESULT_BYTES:
@@ -245,18 +221,11 @@ def _content_is_redundant(content: list[ResultContent], sc: ToolOutputData) -> b
         return False
 
 
-def _content_block_to_openai(block: ResultContent) -> FunctionOutputTextContent | FunctionOutputImageContent:
-    if isinstance(block, TextContent):
-        return FunctionOutputTextContent(text=block.text)
-    if isinstance(block, ImageContent):
-        return FunctionOutputImageContent(image_url=_make_data_url(block.mime_type, block.data))
-    raise TypeError(f"Unsupported content block type: {type(block).__name__}")
+def _tool_result_to_openai(result: ToolResult) -> str:
+    """Convert ToolResult to a string for the OpenAI Responses API function_call_output.
 
-
-def _tool_result_to_openai(result: ToolResult) -> FunctionCallOutputType:
-    """Convert ToolResult to OpenAI output format.
-
-    When is_error=True, always returns a list with "ERROR" prefix block.
+    The Responses API only accepts strings in output (not content block arrays).
+    Errors are prefixed with "ERROR\\n" so the model can recognise them.
     """
     sc = result.structured_content
     content = list(result.content) if result.content else []
@@ -267,44 +236,35 @@ def _tool_result_to_openai(result: ToolResult) -> FunctionCallOutputType:
         json_str = pydantic_core.to_json(sc, fallback=str).decode("utf-8")
         _check_size(json_str)
         if is_error:
-            return [_ERROR_PREFIX, FunctionOutputTextContent(text=json_str)]
+            return f"ERROR\n{json_str}"
         return json_str
 
-    # Case 2: Content blocks present
+    # Case 2: Content blocks present — flatten to string
     if content:
-        items = [_content_block_to_openai(block) for block in content]
+        parts = []
         if is_error:
-            items.insert(0, _ERROR_PREFIX)
-        return items
+            parts.append("ERROR")
+        for block in content:
+            if isinstance(block, TextContent):
+                parts.append(block.text)
+            elif isinstance(block, ImageContent):
+                raise NotImplementedError(
+                    f"Image content ({block.mime_type}) cannot be serialized as a function call output string"
+                )
+        text = "\n".join(parts)
+        _check_size(text)
+        return text
 
     # Case 3: Empty
-    if is_error:
-        return [_ERROR_PREFIX]
-    return ""
+    return "ERROR" if is_error else ""
 
 
-def _openai_to_tool_result(output: FunctionCallOutputType) -> ToolResult:
-    """Convert OpenAI FunctionCallOutputItem.output format to ToolResult."""
-    content: list[ResultContent] = []
+def _openai_to_tool_result(output: str) -> ToolResult:
+    """Convert OpenAI FunctionCallOutputItem.output to ToolResult."""
     structured_content: ToolOutputData | None = None
-
-    if isinstance(output, str):
-        # Try to parse as JSON for structured_content
-        with contextlib.suppress(json.JSONDecodeError):
-            structured_content = json.loads(output)
-        content.append(TextContent(text=output))
-    else:
-        for item in output:
-            if isinstance(item, FunctionOutputTextContent):
-                content.append(TextContent(text=item.text))
-            elif isinstance(item, FunctionOutputImageContent):
-                if not isinstance(item.image_url, str):
-                    raise ValueError(f"image_url must be a string, got {type(item.image_url)}")
-                content.append(_parse_data_url(item.image_url))
-            else:
-                raise ValueError(f"Unsupported content type in tool output: {type(item)}")
-
-    return ToolResult(content=content, structured_content=structured_content, is_error=False)
+    with contextlib.suppress(json.JSONDecodeError):
+        structured_content = json.loads(output)
+    return ToolResult(content=[TextContent(text=output)], structured_content=structured_content, is_error=False)
 
 
 def _normalize_call_arguments(arguments: str | dict[str, Any] | list[Any] | None) -> str | None:

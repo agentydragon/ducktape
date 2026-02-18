@@ -21,8 +21,6 @@ Uses the in-container architecture with:
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import textwrap
 
@@ -145,13 +143,11 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         opt_image = stack.resolved_images["critic_dev_optimize"]
 
         # Start snapshot grader in background
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(
-                image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-            )
+        grader_handle = await stack.registry.start_snapshot_grader(
+            image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
         )
 
-        try:
+        async with grader_handle:
             # Run critic-dev optimizer
             run_id = await stack.registry.run_critic_dev_optimize(
                 image=opt_image,
@@ -167,11 +163,6 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
                 assert optimizer_run.status == AgentRunStatus.EXITED, f"Expected COMPLETED, got {optimizer_run.status}"
-
-        finally:
-            grader_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await grader_task
 
 
 # Custom Python script that replaces the critic's main.py in the image.
@@ -340,13 +331,11 @@ async def test_po_creates_custom_critic_image(
         grader_image_resolved = stack.resolved_images["grader"]
         opt_image = stack.resolved_images["critic_dev_optimize"]
 
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(
-                image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-            )
+        grader_handle = await stack.registry.start_snapshot_grader(
+            image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
         )
 
-        try:
+        async with grader_handle:
             run_id = await stack.registry.run_critic_dev_optimize(
                 image=opt_image,
                 budget=1.0,
@@ -369,11 +358,6 @@ async def test_po_creates_custom_critic_image(
                 critic_run_id = issues[0].agent_run_id
                 edges = session.query(GradingEdge).filter_by(critique_run_id=critic_run_id).all()
                 assert len(edges) > 0, "Expected grading edges for the custom critic run"
-
-        finally:
-            grader_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await grader_task
 
 
 @pytest.mark.timeout(180)

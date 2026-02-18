@@ -47,9 +47,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, get_type_hints, overload
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_core import to_jsonable_python
 
+from agent_core.pydantic_utils import format_validation_error
 from agent_core.tool_provider import ToolResult, ToolSchema
 from openai_utils.json_schema import OpenAICompatibleSchema
 
@@ -153,7 +154,10 @@ class DirectToolProvider:
         if tool is None:
             return ToolResult.error(f"Unknown tool: {name}")
 
-        validated_args = tool.parameters.model_validate(arguments)
+        try:
+            validated_args = tool.parameters.model_validate(arguments)
+        except ValidationError as e:
+            return ToolResult.error(format_validation_error(e))
 
         # Call tool function, wrapping errors as ToolResult.error
         try:

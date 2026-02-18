@@ -19,8 +19,6 @@ Note: Grading is handled by snapshot graders (not tested here).
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 
 import pytest
@@ -213,13 +211,11 @@ async def test_optimizer_orchestrates_critic(
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
         # Start snapshot grader in background - it will sleep until there's drift
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(
-                image=stack.resolved_images["grader"], snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-            )
+        grader_handle = await stack.registry.start_snapshot_grader(
+            image=stack.resolved_images["grader"], snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
         )
 
-        try:
+        async with grader_handle:
             # Run critic-dev optimizer - this triggers the full orchestration
             # The snapshot grader running in background will process edges when critic completes
             run_id = await stack.registry.run_critic_dev_optimize(
@@ -265,11 +261,6 @@ async def test_optimizer_orchestrates_critic(
                     logger.info(f"Critic {crid} has {len(edges)} grading edges")
                     # The critic mock creates 1 issue, and fill_remaining creates edges for each GT occurrence
                     assert len(edges) >= 0, "Grading edges should be created"
-
-        finally:
-            grader_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await grader_task
 
 
 if __name__ == "__main__":

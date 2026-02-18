@@ -1,6 +1,7 @@
-"""Squashed schema for props database.
+"""Initial complete schema for props database.
 
-This is a complete schema migration that replaces all previous migrations.
+This is the base migration. Future schema changes are added as incremental
+Alembic migrations on top of this one (see other files in this directory).
 Incorporates:
 - Unified agent_runs table (replaces legacy critic_runs, grader_runs, etc.)
 - stats_with_ci composite type for statistics with 95% confidence intervals

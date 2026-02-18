@@ -20,11 +20,12 @@ from sqlalchemy import select
 
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
-from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
+from agent_core.handler import RedirectOnTextMessageHandler
 from agent_core.logging_handler import LoggingHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
+from openai_utils.errors import ContextLengthExceededError
 from openai_utils.model import SystemMessage
 from props.agents.grader.drift_handler import Drift, get_drift as get_drift_fn
 from props.agents.grader.notification_handler import GraderNotificationsHandler
@@ -96,6 +97,10 @@ TEXT_OUTPUT_REMINDER = (
 _WORKSPACE = Path("/workspace")
 
 
+class GraderAbortError(BaseException):
+    """Raised by report_failure to terminate the grader with exit code 1."""
+
+
 class GraderState:
     """Tracks grader state for pg_notify wake/sleep coordination.
 
@@ -106,7 +111,6 @@ class GraderState:
     def __init__(self, snapshot_slug: SnapshotSlug):
         self.snapshot_slug = snapshot_slug
         self.wake_event = asyncio.Event()
-        self.failed = False
         self.notification_queue: list[GradingPendingNotification] = []
 
     def notification_callback(
@@ -300,8 +304,7 @@ def _create_grader_tool_provider(
     @provider.tool
     def report_failure(args: ReportFailureArgs) -> None:
         """Report that grading could not be completed. Terminates the grader."""
-        state.failed = True
-        logger.info("Reported failure: %s", args.message)
+        raise GraderAbortError(args.message)
 
     @provider.tool
     async def sleep(args: SleepArgs) -> str:
@@ -446,31 +449,25 @@ def _create_grader_tool_provider(
 
 
 async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state: GraderState, db: Database) -> None:
-    """Run the grader agent loop.
+    """Run a single grader agent loop with fresh context.
 
-    Runs a single persistent agent loop. The sleep tool awaits pg_notify
-    in-process, so the agent retains context across sleep/wake cycles.
-    Only returns when report_failure is called (sets state.failed).
+    Raises GraderAbortError if report_failure is called. Raises
+    ContextLengthExceededError when the conversation history grows too large
+    for the model's context window — the caller should restart with fresh context.
     """
-    # TODO: Handle context growth across sleep/wake cycles. Options:
-    # - Transcript compaction (summarize old tool results, keep recent)
-    # - Context clear + agent restart when approaching limit
     with db.session() as session:
         grader_run_id = get_current_agent_run_id(session)
 
     tool_provider = _create_grader_tool_provider(grader_run_id, snapshot_slug, state, db)
     bound_model = create_bound_model_from_env(db)
 
-    handlers: list[BaseHandler] = [
-        LoggingHandler(logger),
-        AbortIf(lambda: state.failed),
-        GraderNotificationsHandler(state.notification_queue),
-        RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
-    ]
-
     agent = await Agent.create(
         tool_provider=tool_provider,
-        handlers=handlers,
+        handlers=[
+            LoggingHandler(logger),
+            GraderNotificationsHandler(state.notification_queue),
+            RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
+        ],
         client=bound_model,
         parallel_tool_calls=False,
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -478,16 +475,15 @@ async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state
 
     agent.process_message(SystemMessage.text(system_prompt))
     await agent.run()
-    logger.error("Grading failed via report_failure")
 
 
 async def _run_grader_loop(snapshot_slug: SnapshotSlug, system_prompt: str, db: Database) -> None:
     """Set up pg_notify listener and run the agent loop.
 
-    Waits for drift before starting the agent loop — avoids wasting an LLM
-    call when no grading work exists yet.  Only returns when report_failure
-    is called (always a failure).  Normal operation is an infinite sleep/wake
-    loop inside the agent.
+    Waits for drift before starting the agent loop. Restarts the agent from
+    scratch when context length is exceeded — grading is idempotent since
+    already-graded edges are excluded via grading_pending. Raises GraderAbortError
+    when report_failure is called.
     """
     state = GraderState(snapshot_slug)
 
@@ -496,18 +492,22 @@ async def _run_grader_loop(snapshot_slug: SnapshotSlug, system_prompt: str, db: 
     logger.info(f"Listening on channel '{GRADING_PENDING_CHANNEL}' for {snapshot_slug}")
 
     try:
-        # Wait for initial drift before starting the (expensive) agent loop.
-        if not get_drift_fn(snapshot_slug, db).has_pending:
-            logger.info("No pending drift yet — waiting for pg_notify")
-            while True:
+        while True:
+            # Wait for pending work before (re)starting the agent loop.
+            while not get_drift_fn(snapshot_slug, db).has_pending:
+                logger.info("No pending work — waiting for pg_notify")
                 state.wake_event.clear()
                 await state.wake_event.wait()
-                if get_drift_fn(snapshot_slug, db).has_pending:
-                    break
-                logger.debug("Spurious wake — still no pending work")
-            logger.info("Initial drift detected, starting agent loop")
 
-        await _run_agent_loop(system_prompt, snapshot_slug, state, db)
+            logger.info("Pending work detected, starting agent loop")
+            try:
+                await _run_agent_loop(system_prompt, snapshot_slug, state, db)
+            except ContextLengthExceededError:
+                logger.warning(
+                    "Context length exceeded; restarting agent loop from scratch "
+                    "(already-graded edges will be skipped via grading_pending)"
+                )
+                # Outer loop re-checks drift and restarts with fresh context
     finally:
         await listener_conn.remove_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
         await listener_conn.close()
@@ -536,9 +536,12 @@ async def main() -> int:
     )
 
     logger.info("Starting grader loop")
-    await _run_grader_loop(snapshot_slug, system_prompt, db)
-    # _run_grader_loop only returns on report_failure
-    return 1
+    try:
+        await _run_grader_loop(snapshot_slug, system_prompt, db)
+    except GraderAbortError as e:
+        logger.error("Grading failed: %s", e)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

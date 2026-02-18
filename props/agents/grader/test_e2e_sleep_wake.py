@@ -16,7 +16,6 @@ Test flow:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from uuid import uuid4
 
@@ -130,73 +129,58 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
         assert get_drift(test_snapshot, db).grading, "grading_pending should have rows"
 
         # --- Start snapshot grader ---
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(
-                image=stack.resolved_images["grader"], snapshot_slug=test_snapshot, model=stack.model
-            ),
-            name="snapshot-grader",
+        grader_handle = await stack.registry.start_snapshot_grader(
+            image=stack.resolved_images["grader"], snapshot_slug=test_snapshot, model=stack.model
         )
 
-        # --- Wait for round 1 to complete via explicit signal ---
-        try:
-            await asyncio.wait_for(round_1_complete.wait(), timeout=90)
-        except TimeoutError:
-            if grader_task.done():
-                exc = grader_task.exception()
-                if exc:
-                    raise RuntimeError(f"Snapshot grader failed: {exc}") from exc
-            raise AssertionError("Round 1 did not complete within timeout")
+        async with grader_handle:
+            # --- Wait for round 1 to complete via explicit signal ---
+            try:
+                await asyncio.wait_for(round_1_complete.wait(), timeout=90)
+            except TimeoutError:
+                raise AssertionError("Round 1 did not complete within timeout")
 
-        # Verify round 1 TP edges
-        with db.session() as session:
-            tp_edge_1 = (
-                session.query(GradingEdge)
-                .filter_by(critique_run_id=critic_1_id, critique_issue_id="issue-1")
-                .filter(GradingEdge.credit > 0)
-                .first()
-            )
-            assert tp_edge_1 is not None, "No TP edge with credit>0 for round 1"
-            assert tp_edge_1.credit == pytest.approx(0.1)
-            logger.info(f"Round 1 TP edge verified: credit={tp_edge_1.credit}")
-
-        # --- Insert critic-2 while grader is sleeping (triggers pg_notify) ---
-        critic_2_id = uuid4()
-        with db.session() as session:
-            critic_2 = make_fake_critic_run(
-                session=session,
-                example=all_files_scope,
-                model=stack.model,
-                status=AgentRunStatus.EXITED,
-                agent_run_id=critic_2_id,
-            )
-            session.add(critic_2)
-            session.flush()
-            session.add(ReportedIssue(agent_run_id=critic_2_id, issue_id="issue-2", rationale="Critic 2 issue"))
-            session.add(
-                ReportedIssueOccurrence(
-                    agent_run_id=critic_2_id,
-                    reported_issue_id="issue-2",
-                    locations=[LocationAnchor(file="subtract.py", start_line=1, end_line=1)],
+            # Verify round 1 TP edges
+            with db.session() as session:
+                tp_edge_1 = (
+                    session.query(GradingEdge)
+                    .filter_by(critique_run_id=critic_1_id, critique_issue_id="issue-1")
+                    .filter(GradingEdge.credit > 0)
+                    .first()
                 )
-            )
-            session.commit()
+                assert tp_edge_1 is not None, "No TP edge with credit>0 for round 1"
+                assert tp_edge_1.credit == pytest.approx(0.1)
+                logger.info(f"Round 1 TP edge verified: credit={tp_edge_1.credit}")
 
-        logger.info("Critic-2 inserted, waiting for grader to wake and grade")
+            # --- Insert critic-2 while grader is sleeping (triggers pg_notify) ---
+            critic_2_id = uuid4()
+            with db.session() as session:
+                critic_2 = make_fake_critic_run(
+                    session=session,
+                    example=all_files_scope,
+                    model=stack.model,
+                    status=AgentRunStatus.EXITED,
+                    agent_run_id=critic_2_id,
+                )
+                session.add(critic_2)
+                session.flush()
+                session.add(ReportedIssue(agent_run_id=critic_2_id, issue_id="issue-2", rationale="Critic 2 issue"))
+                session.add(
+                    ReportedIssueOccurrence(
+                        agent_run_id=critic_2_id,
+                        reported_issue_id="issue-2",
+                        locations=[LocationAnchor(file="subtract.py", start_line=1, end_line=1)],
+                    )
+                )
+                session.commit()
 
-        # --- Wait for round 2 to complete via explicit signal ---
-        try:
-            await asyncio.wait_for(round_2_complete.wait(), timeout=90)
-        except TimeoutError:
-            if grader_task.done():
-                exc = grader_task.exception()
-                if exc:
-                    raise RuntimeError(f"Snapshot grader failed: {exc}") from exc
-            raise AssertionError("Round 2 did not complete within timeout")
+            logger.info("Critic-2 inserted, waiting for grader to wake and grade")
 
-        # --- Cleanup ---
-        grader_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await grader_task
+            # --- Wait for round 2 to complete via explicit signal ---
+            try:
+                await asyncio.wait_for(round_2_complete.wait(), timeout=90)
+            except TimeoutError:
+                raise AssertionError("Round 2 did not complete within timeout")
 
         # Verify both edges exist with correct credits
         with db.session() as session:

@@ -23,9 +23,7 @@ from openai_utils.builders import ItemFactory
 from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
-    FunctionCallOutputContent,
     FunctionCallOutputItem,
-    FunctionOutputTextContent,
     InputTokensDetails,
     OpenAIModelProto,
     OutputTokensDetails,
@@ -157,25 +155,11 @@ def openai_mock(fn: MockScriptFn) -> GeneratorRunner:
     return GeneratorRunner(gen, factory)
 
 
-def _extract_text_from_content_list(content: list[FunctionCallOutputContent], call_id: str) -> str:
-    """Extract text from a list of FunctionCallOutputContent items.
-
-    When _tool_result_to_openai returns list format (content blocks with no structured_content),
-    concatenate text items to recover the original string.
-    """
-    texts: list[str] = []
-    for item in content:
-        if not isinstance(item, FunctionOutputTextContent):
-            raise TypeError(f"Expected all text content for {call_id=}, got {type(item).__name__}: {item}")
-        texts.append(item.text)
-    return "".join(texts)
-
-
 def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output_type: type[T]) -> T:
     """Extract typed output for a specific function call from the request.
 
     Finds the FunctionCallOutputItem matching call.call_id in the request's input,
-    parses its structuredContent as output_type.
+    parses its output as output_type.
     """
     matches = [item for item in req.input if isinstance(item, FunctionCallOutputItem) and item.call_id == call.call_id]
 
@@ -184,11 +168,7 @@ def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output
     if len(matches) > 1:
         raise ValueError(f"Multiple outputs found for call_id={call.call_id}: expected exactly 1, got {len(matches)}")
 
-    output = matches[0].output
-    json_str = output if isinstance(output, str) else _extract_text_from_content_list(output, call.call_id)
-
-    # OpenAI format returns the structured content directly (not wrapped).
-    return TypeAdapter(output_type).validate_python(json.loads(json_str))
+    return TypeAdapter(output_type).validate_python(json.loads(matches[0].output))
 
 
 def tool_roundtrip[T](call: FunctionCallItem, output_type: type[T]) -> Generator[FunctionCallItem, ResponsesRequest, T]:

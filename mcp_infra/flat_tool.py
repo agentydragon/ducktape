@@ -6,7 +6,6 @@ This module is separate to avoid circular dependencies between mcp_infra and mcp
 from __future__ import annotations
 
 import inspect
-import json
 from collections.abc import Callable
 from typing import Any
 
@@ -17,6 +16,8 @@ from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.types import Audio, File, Image
 from mcp.types import ContentBlock
 from pydantic import BaseModel, ConfigDict, ValidationError
+
+from agent_core.pydantic_utils import format_validation_error
 
 
 class _EmptyModel(BaseModel):
@@ -47,10 +48,7 @@ class FlatTool[InputModelT: BaseModel, OutputT](Tool):
         try:
             payload = self.input_model(**arguments)
         except ValidationError as e:
-            errors = json.loads(e.json())
-            for err in errors:
-                err.pop("url", None)
-            raise ToolError(json.dumps(errors, indent=2)) from e
+            raise ToolError(format_validation_error(e)) from e
 
         # Call original function
         if self.input_model is _EmptyModel:

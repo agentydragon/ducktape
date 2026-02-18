@@ -36,8 +36,7 @@ from props.db.notifications import (
     GraderDefinitionChangedNotification,
     SnapshotCreatedNotification,
 )
-from props.orchestration.agent_registry import ImageResolutionError, ResolvedImage
-from props.orchestration.executor import ContainerHandle
+from props.orchestration.agent_registry import AgentRunHandle, ImageResolutionError, ResolvedImage
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry
@@ -65,7 +64,7 @@ class GraderSupervisor:
         self._db_config = db_config
         self._model = model
         self._db = db
-        self._handles: dict[SnapshotSlug, ContainerHandle] = {}
+        self._handles: dict[SnapshotSlug, AgentRunHandle] = {}
         self._listener_conn: asyncpg.Connection[Any] | None = None
         self._shutdown = False
         self._background_tasks: set[asyncio.Task[None]] = set()

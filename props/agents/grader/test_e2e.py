@@ -17,7 +17,6 @@ Test flow:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from uuid import uuid4
 
@@ -111,28 +110,17 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
         drift = get_drift(test_snapshot, db)
         assert drift.grading, "grading_pending should have rows but is empty"
 
-        # Start snapshot grader in background task
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(
-                image=stack.resolved_images["grader"], snapshot_slug=test_snapshot, model=stack.model
-            ),
-            name="snapshot-grader",
+        # Start snapshot grader
+        grader_handle = await stack.registry.start_snapshot_grader(
+            image=stack.resolved_images["grader"], snapshot_slug=test_snapshot, model=stack.model
         )
 
         # Wait for grading + clustering to complete
-        try:
-            await asyncio.wait_for(grading_done.wait(), timeout=90)
-        except TimeoutError:
-            if grader_task.done():
-                exc = grader_task.exception()
-                if exc:
-                    raise RuntimeError(f"Snapshot grader failed: {exc}") from exc
-            raise AssertionError("Grading did not complete within timeout")
-
-        # Cancel grader
-        grader_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await grader_task
+        async with grader_handle:
+            try:
+                await asyncio.wait_for(grading_done.wait(), timeout=90)
+            except TimeoutError:
+                raise AssertionError("Grading did not complete within timeout")
 
         # Assert grading happened
         with db.session() as session:

@@ -1,18 +1,40 @@
 # Running Props Evaluation with a Local LLM
 
 End-to-end procedure for running the props critic and grader against committed
-specimen snapshots using a local open-weight LLM served via llama-server.
+specimen snapshots using an open-weight LLM.
 
 See <benchmarks.md> for model performance data.
 
-## Prerequisites
+## Remote Ollama Cluster (Recommended)
 
-- A running props stack: PostgreSQL, OCI registry, backend with agent images
-  pushed. The `/test_props setup` skill automates this.
-- Enough free RAM for the model + KV cache (see memory estimates below) plus
-  ~2 GiB for the props stack containers
+The repo ships a `config.ollama.toml` in `.claude/skills/test_props/` that
+points to the shared Ollama cluster at `ollama.allegedly.works`. The cluster
+runs `gpt-oss:20b` with `OLLAMA_NUM_CTX=131072` (128k context).
 
-## Tested Models
+**Prerequisites:**
+
+- A running props stack — see the `test_props` skill for infrastructure setup
+- `OLLAMA_API_KEY` from k8s: `kubectl get secret ollama-api-key -n claude-sandbox -o jsonpath='{.data.api-key}' | base64 -d`
+
+Start the backend with the Ollama config:
+
+```bash
+export OLLAMA_API_KEY=$(kubectl get secret ollama-api-key -n claude-sandbox \
+  -o jsonpath='{.data.api-key}' | base64 -d)
+
+PROPS_CONFIG_FILE=.claude/skills/test_props/config.ollama.toml \
+OLLAMA_API_KEY=$OLLAMA_API_KEY \
+# ... (see test_props skill for full backend startup command)
+bazel-bin/props/backend/backend_bin serve > /tmp/backend.log 2>&1 &
+```
+
+The model name is `gpt-oss-20b` (as defined in `config.ollama.toml`).
+
+## Self-Hosted llama-server (Local Machine)
+
+For running inference locally rather than via the cluster, use `llama-server`.
+
+### Tested Models
 
 | Model       | GGUF (Q4_K_M)              | Download | RAM (loaded) |   tg128 | Tool calling |
 | ----------- | -------------------------- | -------: | -----------: | ------: | ------------ |
@@ -23,7 +45,7 @@ See <benchmarks.md> for model performance data.
 leaves headroom for all services. gpt-oss-20b is faster at generation but
 tight on RAM.
 
-## Memory Estimates (Qwen3-8B)
+### Memory Estimates (Qwen3-8B)
 
 Model weights: ~4.7 GB. Process overhead (compute buffers, allocator): ~3.5 GB.
 The remaining budget goes to the KV cache, whose size depends on context length
@@ -44,7 +66,7 @@ The critic agent's system prompt and tool definitions consume ~2K tokens, so
 4096 total context is too small for useful code analysis. **Use 32768** (the
 model's full native context window).
 
-## Step 1: Download and Start llama-server
+### Step 1: Download and Start llama-server
 
 ```bash
 mkdir -p /tmp/benchmark
@@ -59,7 +81,7 @@ tar -xzf /tmp/benchmark/llama-server.tar.gz -C /tmp/benchmark
 > **Note**: `curl -sL | tar` fails because GitHub redirects to a different
 > domain. Download to a file first, then extract.
 
-## Step 2: Download the GGUF Model
+### Step 2: Download the GGUF Model
 
 Download to `/tmp` (disk-backed), **not** `/dev/shm` (tmpfs). Files on `/dev/shm`
 are evicted when the process that mmapped them exits.
@@ -74,7 +96,7 @@ curl -L --progress-bar -o /tmp/benchmark/gpt-oss-20b-Q4_K_M.gguf \
   "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q4_K_M.gguf"
 ```
 
-## Step 3: Start Inference Server
+### Step 3: Start Inference Server
 
 ```bash
 MODEL_FILE=/tmp/benchmark/Qwen3-8B-Q4_K_M.gguf  # or gpt-oss-20b-Q4_K_M.gguf
@@ -103,7 +125,7 @@ Wait for health: `curl -s http://127.0.0.1:11434/health`
 The model name reported by `/v1/models` is the GGUF filename (e.g.,
 `Qwen3-8B-Q4_K_M.gguf`). This must match `upstream_model` in the config.
 
-## Step 4: Configure the Props Backend for Local LLM
+### Step 4: Configure the Props Backend for Local LLM
 
 Copy <props_config.toml> and edit `upstream_model` to match your GGUF filename:
 
@@ -123,11 +145,11 @@ The config defines:
 Pass `PROPS_CONFIG_FILE=/tmp/props-ollama-config.toml` and
 `OLLAMA_DUMMY_KEY=dummy` when starting the backend.
 
-## Step 5: Run a Critic
+## Running a Critic
 
 ```bash
 ADMIN_TOKEN="<from backend logs>"
-MODEL_NAME="local-llm"  # matches [[models]] name in config
+MODEL_NAME="local-llm"  # or "gpt-oss-20b" for the remote cluster config
 
 curl -s -X POST "http://localhost:8000/api/runs/critic" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \

@@ -65,6 +65,7 @@ py_library(
         "//agent_core:loop_control",
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
+        "//openai_utils:errors",
         "//openai_utils:model",
         "//props/agents:runtime",
         "//props/core:ids",
@@ -279,6 +280,34 @@ py_test(
         "//props/db:models",
         "//props/db:snapshots",
         "//props/testing:assertions",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_report_failure",
+    size = "medium",
+    srcs = ["test_e2e_report_failure.py"],
+    data = [
+        ":image",
+    ],
+    imports = ["../../.."],
+    requires_docker = True,
+    tags = [
+        "e2e",
+    ],
+    deps = [
+        ":conftest",
+        "//agent_core/testing:responses",
+        "//props:conftest",
+        "//props/agents/grader/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",

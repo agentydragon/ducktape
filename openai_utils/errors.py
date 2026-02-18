@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import ParamSpec, TypeVar
 
-from openai import BadRequestError
+from openai import APIStatusError, BadRequestError
 
 
 @dataclass(slots=True)
@@ -38,4 +38,12 @@ async def translate_context_length(call: Callable[P, Awaitable[T]], *args: P.arg
     except BadRequestError as exc:
         if exc.code == "context_length_exceeded":
             raise ContextLengthExceededError(message=str(exc), request_id=exc.request_id, code=exc.code) from exc
+        raise
+    except APIStatusError as exc:
+        # Ollama returns HTTP 413 when the request body exceeds its context window.
+        # OpenAI's Python SDK maps 413 to APIStatusError (not BadRequestError).
+        if exc.status_code == 413:
+            raise ContextLengthExceededError(
+                message=f"Request too large (HTTP 413): {exc}", code="request_too_large"
+            ) from exc
         raise

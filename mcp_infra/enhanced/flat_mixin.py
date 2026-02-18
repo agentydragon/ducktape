@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import json
 import logging
 from collections.abc import Callable
 from types import UnionType
@@ -12,6 +11,7 @@ from mcp import types as mcp_types
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from agent_core.pydantic_utils import format_validation_error
 from mcp_infra.flat_tool import FlatTool, _EmptyModel
 from openai_utils.json_schema import openai_json_schema
 
@@ -91,11 +91,8 @@ class FlatModelMixin(FastMCP):
             ) = await super()._call_tool_mcp(key, arguments)
             return result
         except ValidationError as e:
-            errors = json.loads(e.json())
-            for err in errors:
-                err.pop("url", None)
             return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=json.dumps(errors, indent=2))], isError=True
+                content=[mcp_types.TextContent(type="text", text=format_validation_error(e))], isError=True
             )
 
     def flat_model(
