@@ -1,5 +1,5 @@
 # Claude Code Web Container Versions
-# Captured: 2026-02-18T12:32:36.257853+00:00
+# Captured: 2026-02-18T13:19:36.934447+00:00
 # Use 'uv run --script tools/capture_versions.py --diff <prev>.yaml' to compare
 
 os:
@@ -754,7 +754,7 @@ claude_env_vars:
   CLAUDECODE: 1
   CLAUDE_AFTER_LAST_COMPACT: true
   CLAUDE_AUTO_BACKGROUND_TASKS: true
-  CLAUDE_CODE_BASE_REF: devel
+  CLAUDE_CODE_BASE_REF: claude/docker-code-reconstruction-MWkmn
   CLAUDE_CODE_DEBUG: true
   CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES: true
   CLAUDE_CODE_ENTRYPOINT: remote
