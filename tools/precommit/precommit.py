@@ -40,6 +40,9 @@ if _RUNFILES_OPT is None:
     raise RuntimeError("Could not create runfiles")
 _RUNFILES: runfiles.Runfiles = _RUNFILES_OPT
 
+# Attributes that mark a file as ignored — matches rules_lint behavior and tools/format/formatter.py.
+_LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
+
 
 def resolve_bin(rlocation: str) -> str:
     """Resolve a runfiles path to an absolute path."""
@@ -49,15 +52,33 @@ def resolve_bin(rlocation: str) -> str:
     return path
 
 
+def _is_lint_ignored(repo: pygit2.Repository, path: Path) -> bool:
+    return any(repo.get_attr(str(path), attr) in (True, "true") for attr in _LINT_IGNORED_ATTRS)
+
+
+@dataclass
+class Skipped:
+    pass
+
+
+@dataclass
+class Failed:
+    elapsed: float
+    output: str
+
+
+@dataclass
+class Passed:
+    elapsed: float
+
+
+ValidationOutcome = Skipped | Failed | Passed
+
+
 @dataclass
 class ValidationResult:
-    """Result of a validation check."""
-
     name: str
-    elapsed: float
-    success: bool
-    output: str = ""
-    skipped: bool = False
+    outcome: ValidationOutcome
 
 
 def is_test_file(p: Path) -> bool:
@@ -83,21 +104,18 @@ def is_terraform_module(p: Path) -> bool:
 async def run_pytest_main_check(files: list[Path], repo_root: Path, repo: pygit2.Repository) -> ValidationResult:
     """Check that test files have pytest_bazel.main() calls."""
     name = "pytest-main-check"
-    test_files = [f for f in files if is_test_file(f)]
+    test_files = [f for f in files if is_test_file(f) and not _is_lint_ignored(repo, f)]
     if not test_files:
-        return ValidationResult(name, elapsed=0.0, success=True, skipped=True)
-    lint_ignored = {Path(f) for f in test_files if repo.get_attr(str(f), "rules-lint-ignored") in (True, "true")}
-    test_files = [f for f in test_files if f not in lint_ignored]
-    if not test_files:
-        return ValidationResult(name, elapsed=0.0, success=True, skipped=True)
+        return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
     results = await check_files_async(test_files, repo_root)
     elapsed = time.perf_counter() - start
 
     failed = [r for r in results if not r.passed]
-    output = "\n".join(f"{r.file_path}: {r.reason}" for r in failed) if failed else ""
-    return ValidationResult(name, elapsed, success=not failed, output=output)
+    if failed:
+        return ValidationResult(name, Failed(elapsed, "\n".join(f"{r.file_path}: {r.reason}" for r in failed)))
+    return ValidationResult(name, Passed(elapsed))
 
 
 async def run_subprocess_validation(
@@ -110,7 +128,7 @@ async def run_subprocess_validation(
 ) -> ValidationResult:
     """Run a subprocess validation if any files match the filter."""
     if not any(file_filter(f) for f in files):
-        return ValidationResult(name, elapsed=0.0, success=True, skipped=True)
+        return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
     validate_bin = resolve_bin(bin_rlocation)
@@ -122,21 +140,24 @@ async def run_subprocess_validation(
     elapsed = time.perf_counter() - start
 
     output = (stdout + stderr).decode()
-    return ValidationResult(name, elapsed, success=proc.returncode == 0, output=output)
+    if proc.returncode == 0:
+        return ValidationResult(name, Passed(elapsed))
+    return ValidationResult(name, Failed(elapsed, output))
 
 
 async def run_terraform_centralization_check(files: list[Path], repo_root: Path) -> ValidationResult:
     """Check terraform modules don't define provider versions."""
     name = "tf-centralization"
     if not any(is_terraform_module(f) for f in files):
-        return ValidationResult(name, elapsed=0.0, success=True, skipped=True)
+        return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
     violations = find_violations(repo_root)
     elapsed = time.perf_counter() - start
 
-    output = "\n".join(str(v) for v in violations) if violations else ""
-    return ValidationResult(name, elapsed, success=not violations, output=output)
+    if violations:
+        return ValidationResult(name, Failed(elapsed, "\n".join(str(v) for v in violations)))
+    return ValidationResult(name, Passed(elapsed))
 
 
 async def run_filename_convention_check(repo: pygit2.Repository) -> ValidationResult:
@@ -145,8 +166,9 @@ async def run_filename_convention_check(repo: pygit2.Repository) -> ValidationRe
     start = time.perf_counter()
     violations = check_filename_conventions(repo)
     elapsed = time.perf_counter() - start
-    output = "\n".join(violations) if violations else ""
-    return ValidationResult(name, elapsed, success=not violations, output=output)
+    if violations:
+        return ValidationResult(name, Failed(elapsed, "\n".join(violations)))
+    return ValidationResult(name, Passed(elapsed))
 
 
 async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Repository) -> list[ValidationResult]:
@@ -212,14 +234,16 @@ async def main_async() -> int:
 
     validate_failed = []
     for vresult in validate_results:
-        if vresult.skipped:
-            continue
-        status = "✓" if vresult.success else "✗"
-        print(f"{status} {vresult.name}: {vresult.elapsed:.1f}s")
-        if not vresult.success:
-            validate_failed.append(vresult)
-            if vresult.output:
-                print(vresult.output, file=sys.stderr)
+        match vresult.outcome:
+            case Skipped():
+                pass
+            case Passed(elapsed=elapsed):
+                print(f"✓ {vresult.name}: {elapsed:.1f}s")
+            case Failed(elapsed=elapsed, output=output):
+                print(f"✗ {vresult.name}: {elapsed:.1f}s")
+                validate_failed.append(vresult)
+                if output:
+                    print(output, file=sys.stderr)
 
     elapsed_total = time.perf_counter() - start_total
     print(f"\nTotal: {elapsed_total:.1f}s")
