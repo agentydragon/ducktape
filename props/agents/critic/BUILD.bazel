@@ -107,6 +107,7 @@ py_python3_symlink(
 
 py_test(
     name = "test_critic_sql_integration",
+    size = "medium",
     srcs = ["test_critic_sql_integration.py"],
     imports = ["../../.."],
     requires_docker = True,

@@ -214,6 +214,7 @@ py_library(
 
 py_test(
     name = "test_stats",
+    size = "medium",
     srcs = ["test_stats.py"],
     imports = ["../../.."],
     requires_docker = True,
