@@ -86,6 +86,8 @@ worktrees
 .profile
 .ripgreprc
 .zprofile
+.zshrc
+!claude_web_env/rootfs/root/.zshrc
 .mcp.json
 .idea
 .vscode
