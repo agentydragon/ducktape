@@ -22,7 +22,7 @@ outputs:
     description: "Whether GitHub Actions cache was restored"
     value: ${{ steps.cache.outputs.cache-hit }}
   cache-key:
-    description: "Cache key (for bazel-repo-cache-save)"
+    description: "Cache key"
     value: ${{ steps.cache.outputs.cache-key }}
 
 runs:

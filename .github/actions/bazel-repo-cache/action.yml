@@ -14,7 +14,7 @@ outputs:
     description: "Whether the cache was restored"
     value: ${{ steps.cache-restore.outputs.cache-hit }}
   cache-key:
-    description: "The cache key (use this for bazel-repo-cache-save)"
+    description: "The cache key"
     value: ${{ steps.cache-key.outputs.key }}
 
 runs:
