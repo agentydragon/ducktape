@@ -30,10 +30,9 @@ cd claude_web_env
 
 This script:
 
-1. Sets up tmpfs storage (if needed)
-2. Builds the Dockerfile with VFS storage (~20 min)
-3. Captures manifests from live and built images
-4. Generates `diff_report.md`
+1. Builds the Dockerfile with Docker (`docker build --network=host`)
+2. Captures manifests from live and built images (exports built image via `docker export | tar -x`)
+3. Generates `diff_report.md`
 
 If you only need to regenerate the diff (image already built):
 
@@ -47,9 +46,31 @@ If you only need to regenerate the diff (image already built):
 
 ### Tool Availability
 
-- **podman 4.9.3 + buildah 1.33.7**: Available and working
-- **docker / buildx / BuildKit**: NOT available in the sandbox
+- **docker 29.2.1 + BuildKit**: Available and working (default runtime)
+- **podman 4.9.3 + buildah 1.33.7**: Available but superseded by Docker
 - **fuse-overlayfs**: Installed but broken (gVisor lacks `FUSE_CAP_READDIRPLUS`)
+
+Docker is simpler in gVisor: no crun-gvisor-wrapper, no setgroups annotation, no
+freezer mock, no keyring injection needed. Docker data-root is on tmpfs at
+`/mnt/bazel-tmpfs/docker` (configured by session hooks).
+
+**Proxy requirement**: The gVisor sandbox has no direct internet access. All
+outbound traffic goes through the egress proxy in `$https_proxy`. Docker build
+containers do not inherit env vars from the build host, so the proxy must be
+passed explicitly as `--build-arg https_proxy=... --build-arg http_proxy=...`.
+`build_and_diff.sh` handles this automatically. Docker excludes predefined proxy
+ARG names from the cache key, so session-specific JWT proxy URLs don't break
+layer caching.
+
+**Layer limit**: Docker's overlay snapshotter in gVisor is limited to ~35 lowerdir
+entries (empirical gVisor limit; NOT a string-length issue — lowerdir uses relative
+paths like `51/fs`). Ubuntu 24.04 base = 4 layers; Dockerfile may have at most ~31
+layer-creating instructions (SHELL, RUN, COPY, WORKDIR each count; ENV/LABEL/CMD
+are metadata-only and do NOT count). Key technique: put ALL ENV variables in a
+single ENV instruction (saves ~9 layer slots vs scattered ENVs). The Dockerfile
+currently uses 27 BuildKit steps (well within the limit). If a build fails with
+`mount source: overlay... invalid argument`, consolidate COPY/RUN/ENV to reduce
+step count. See PLAN.md for details.
 
 ### Container Update Procedure
 
