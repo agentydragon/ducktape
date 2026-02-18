@@ -79,7 +79,7 @@ def cmd_db_recreate(
     # Ensure databases exist before trying to connect
     typer.echo("Ensuring databases exist...")
     db: Database = ctx.obj
-    ensure_database_exists(db.config, db.config.database, drop_existing=False)
+    ensure_database_exists(db.config, db.config.database)
 
     # Recreate schema and sync model metadata
     console = Console()

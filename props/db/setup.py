@@ -27,54 +27,15 @@ tracer = trace.get_tracer(__name__)
 
 
 @tracer.start_as_current_span("ensure_database_exists")
-def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, drop_existing: bool = False) -> None:
-    """Ensure a PostgreSQL database exists.
-
-    Args:
-        base_config: Config with connection params (database name will be replaced)
-        database_name: Name of database to create
-        drop_existing: If True, drop and recreate (for test setup).
-                      If False, create only if missing (for production).
-
-    Note: Does not terminate connections. Tests use unique database names so no
-          conflicts in setup. Connection termination remains in test teardown only.
-    """
+def ensure_database_exists(base_config: DatabaseConfig, database_name: str) -> None:
+    """Ensure a PostgreSQL database exists, creating it if absent."""
     postgres_config = base_config.with_database("postgres")
     engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
     with engine.connect() as conn:
-        if drop_existing:
-            # Fail fast if other sessions are connected to the target DB to surface
-            # cross-test interference instead of a vague DROP failure.
-            active_sessions = conn.execute(
-                text(
-                    """
-                    select pid, usename, application_name, client_addr
-                    from pg_stat_activity
-                    where datname = :dbname and pid <> pg_backend_pid()
-                    """
-                ),
-                {"dbname": database_name},
-            ).fetchall()
-
-            if active_sessions:
-                details = ", ".join(
-                    f"pid={pid} user={user} app={app or '-'} addr={addr or '-'}"
-                    for pid, user, app, addr in active_sessions
-                )
-                raise RuntimeError(
-                    "Test database in use by other sessions; aborting drop. "
-                    f"database={database_name}; sessions=[{details}]"
-                )
-
-            # Idempotent drop (for test setup)
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
-
-        # Check if database exists
         result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
 
         if not result.fetchone():
-            # Create using safe identifier quoting
             raw_conn = conn.connection
             cursor = raw_conn.cursor()
             cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))

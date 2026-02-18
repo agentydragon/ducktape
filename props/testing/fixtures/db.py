@@ -103,6 +103,17 @@ def _terminate_and_drop_db(postgres_engine, db_name: str) -> None:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
 
 
+def _setup_test_database(postgres_base_config: DatabaseConfig, db_name: str) -> tuple[Database, Engine]:
+    """Drop (if exists), create, and migrate a test database. Returns (database, postgres_engine)."""
+    postgres_config = postgres_base_config.with_database("postgres")
+    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
+    _terminate_and_drop_db(postgres_engine, db_name)
+    ensure_database_exists(postgres_base_config, db_name)
+    database = Database(postgres_base_config.with_database(db_name))
+    database.recreate()
+    return database, postgres_engine
+
+
 def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
     """Sanitize pytest node ID for use in PostgreSQL database name."""
     # Keep only alphanumeric and underscore; replace other chars with underscore
@@ -133,15 +144,7 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
     sanitized_id = _sanitize_test_id(test_node_id)
     db_name = f"props_test_{sanitized_id}"
 
-    ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
-
-    test_config = postgres_base_config.with_database(db_name)
-
-    postgres_config = postgres_base_config.with_database("postgres")
-    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
-
-    database = Database(test_config)
-    database.recreate()
+    database, postgres_engine = _setup_test_database(postgres_base_config, db_name)
 
     try:
         yield database
@@ -149,6 +152,7 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
         database.dispose()
         keep_db = request.config.getoption("--keep-db") or os.environ.get("KEEP_TEST_DB") == "1"
         if keep_db:
+            test_config = postgres_base_config.with_database(db_name)
             print(f"\n\n=== KEEPING TEST DATABASE: {db_name} ===")
             print(f"Database config: {test_config}")
             print(f"Connect with: psql {test_config.url}")
@@ -196,14 +200,8 @@ async def _session_synced_db(
     Uses the session-scoped postgres container.
     """
     db_name = "props_test_session_shared"
-    ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
-    test_config = postgres_base_config.with_database(db_name)
 
-    postgres_config = postgres_base_config.with_database("postgres")
-    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
-
-    database = Database(test_config)
-    database.recreate()
+    database, postgres_engine = _setup_test_database(postgres_base_config, db_name)
     _sync_test_fixtures(database, session_monkeypatch)
 
     try:
