@@ -142,10 +142,6 @@ hash_may_differ:
   # build.info embeds a build timestamp that differs between built and live
   - /etc/cloud/build.info
 
-  # environment-manager is a proprietary binary captured from live; version
-  # may drift between when it was captured and when the live container runs
-  - /usr/local/bin/environment-manager
-
 # ─── Only in live ────────────────────────────────────────────────────────
 # Paths expected only in the live container (runtime state that cannot be
 # reproduced from build-time sources).
@@ -199,9 +195,6 @@ only_in_live:
   # Docker daemon installs containerd plugins here at runtime
   - /opt/containerd
   - "/opt/containerd/**"
-
-  # zsh config present in live container (runtime shell config)
-  - /root/.zshrc
 
 # ─── Only in built ───────────────────────────────────────────────────────
 # Paths expected only in the built image (build artifacts not present at runtime).

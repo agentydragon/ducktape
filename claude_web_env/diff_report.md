@@ -7,11 +7,17 @@
 |                      | Count   | %        |
 | -------------------- | ------- | -------- |
 | Identical            | 120,695 | 17.7%    |
-| Excluded (expected)  | 562,198 | 82.3%    |
-| **Real differences** | **4**   | **0.0%** |
+| Excluded (expected)  | 562,197 | 82.3%    |
+| **Real differences** | **5**   | **0.0%** |
 | Total                | 682,897 |          |
 
 ## Real Differences
+
+### Only in live (1)
+
+**root-home** (1)
+
+- `/root/.zshrc`
 
 ### Content changed (hash differs) (4)
 
@@ -31,14 +37,14 @@
 ## Excluded (expected differences)
 
 - excluded: 523,997
-- expected_only_left: 24,589
+- expected_only_left: 24,588
 - expected_only_right: 12,966
 - hash_excluded: 646
 
 ## Exclusion Pattern Utilization
 
-102 patterns excluded 562,198 paths (562,198 attributed to specific patterns). 8 patterns matched 0 paths.
-Ratio: 25.5x patterns per real diff.
+100 patterns excluded 562,197 paths (562,197 attributed to specific patterns). 7 patterns matched 0 paths.
+Ratio: 20.0x patterns per real diff.
 
 ### `skip_paths` (28 patterns, 523,997 hits, 2 unused)
 
@@ -117,16 +123,15 @@ Ratio: 25.5x patterns per real diff.
 |      1 | `/var/lib/dpkg/triggers/**`              |
 |      0 | `/etc/hostname` **UNUSED**               |
 
-### `hash_may_differ` (4 patterns, 2 hits, 2 unused)
+### `hash_may_differ` (3 patterns, 2 hits, 1 unused)
 
-| Hits | Pattern                                         |
-| ---: | ----------------------------------------------- |
-|    1 | `/etc/cloud/build.info`                         |
-|    1 | `/etc/ssl/certs/ca-certificates.crt`            |
-|    0 | `/etc/ld.so.cache` **UNUSED**                   |
-|    0 | `/usr/local/bin/environment-manager` **UNUSED** |
+| Hits | Pattern                              |
+| ---: | ------------------------------------ |
+|    1 | `/etc/cloud/build.info`              |
+|    1 | `/etc/ssl/certs/ca-certificates.crt` |
+|    0 | `/etc/ld.so.cache` **UNUSED**        |
 
-### `only_in_live` (25 patterns, 83 hits, 2 unused)
+### `only_in_live` (24 patterns, 82 hits, 2 unused)
 
 | Hits | Pattern                                     |
 | ---: | ------------------------------------------- |
@@ -150,7 +155,6 @@ Ratio: 25.5x patterns per real diff.
 |    1 | `/root/.docker`                             |
 |    1 | `/root/.gradle`                             |
 |    1 | `/root/.launchpadlib`                       |
-|    1 | `/root/.zshrc`                              |
 |    1 | `/usr/bin/python`                           |
 |    1 | `/var/lib/dpkg/alternatives/python`         |
 |    0 | `/.dockerenv` **UNUSED**                    |
