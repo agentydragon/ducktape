@@ -1,4 +1,0 @@
-# htpasswd file for Bazel remote cache, contains passwords for
-# agentydragon-laptop and gitlab-runner. Not committed. If it gets lost,
-# it's not a huge deal, the passwords can be easily regenerated.
-bazel_remote_cache.htpasswd
