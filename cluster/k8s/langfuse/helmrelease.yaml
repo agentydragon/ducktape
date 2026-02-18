@@ -1,0 +1,92 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  interval: 24h
+  url: https://langfuse.github.io/langfuse-k8s
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  interval: 15m
+  timeout: 20m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: langfuse
+      version: ">=1.0.0 <2.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: langfuse
+        namespace: langfuse
+  values:
+    langfuse:
+      nextauth:
+        url: "https://langfuse.allegedly.works"
+        secret:
+          secretKeyRef:
+            name: langfuse-secrets
+            key: nextauth-secret
+      salt:
+        secretKeyRef:
+          name: langfuse-secrets
+          key: salt
+      encryptionKey:
+        secretKeyRef:
+          name: langfuse-secrets
+          key: encryption-key
+
+    # TODO(reliability): Move PostgreSQL to hcloud-volumes on VPS for
+    # durability and cross-node HA. Currently on Proxmox — acceptable
+    # for non-critical observability data.
+    postgresql:
+      deploy: true
+      auth:
+        existingSecret: langfuse-secrets
+        secretKeys:
+          adminPasswordKey: postgres-password
+          userPasswordKey: postgres-password
+      primary:
+        nodeSelector:
+          topology.kubernetes.io/region: proxmox
+        persistence:
+          storageClass: proxmox-csi-retain
+          size: 10Gi
+
+    # TODO(reliability): ClickHouse replication (3-node cluster) for
+    # durability. Currently single-node on Proxmox.
+    clickhouse:
+      deploy: true
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      persistence:
+        storageClass: proxmox-csi-retain
+        size: 20Gi
+
+    redis:
+      deploy: true
+      # TODO(reliability): Move Redis to VPS or add Sentinel/cluster mode.
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+
+    # TODO(reliability): Replace bundled MinIO with multi-node MinIO or
+    # external S3 (Cloudflare R2 / Hetzner Object Storage) for durability.
+    minio:
+      deploy: true
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      persistence:
+        storageClass: proxmox-csi-retain
+        size: 20Gi
+
+    # Ingress disabled — using Gateway API HTTPRoute
+    ingress:
+      enabled: false

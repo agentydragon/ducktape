@@ -1,0 +1,25 @@
+# Langfuse API keys for LiteLLM integration.
+# These must be manually seeded in Vault after initial Langfuse setup.
+# See cluster/k8s/props/plan.md for the required manual step.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: langfuse-api-keys
+  namespace: ollama
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: langfuse-api-keys
+    creationPolicy: Owner
+  data:
+    - secretKey: LANGFUSE_PUBLIC_KEY
+      remoteRef:
+        key: kv/langfuse/api-keys
+        property: public_key
+    - secretKey: LANGFUSE_SECRET_KEY
+      remoteRef:
+        key: kv/langfuse/api-keys
+        property: secret_key

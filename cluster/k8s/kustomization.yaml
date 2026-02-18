@@ -73,6 +73,9 @@ resources:
   - ollama-namespace/flux-kustomization.yaml
   - ollama-secrets/flux-kustomization.yaml
   - ollama/flux-kustomization.yaml
+  - langfuse-namespace/flux-kustomization.yaml
+  - langfuse-secrets/flux-kustomization.yaml
+  - langfuse/flux-kustomization.yaml
   - props-namespace/flux-kustomization.yaml
   - props-secrets/flux-kustomization.yaml
   - props/flux-kustomization.yaml

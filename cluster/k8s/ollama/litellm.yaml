@@ -35,8 +35,17 @@ spec:
             api_base: http://ollama.ollama.svc.cluster.local:11434
       general_settings:
         master_key: os.environ/LITELLM_MASTER_KEY
+      litellm_settings:
+        success_callback: ["langfuse"]
+      environment_variables:
+        LANGFUSE_HOST: "http://langfuse-web.langfuse.svc.cluster.local:3000"
     masterkeySecretName: ollama-api-key
     masterkeySecretKey: api-key
+    # Inject LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY from ESO-synced secret.
+    # The secret won't exist until Langfuse API keys are seeded in Vault —
+    # see cluster/k8s/props/plan.md for the required manual step.
+    environmentSecrets:
+      - langfuse-api-keys
     # No standalone database needed for simple proxying
     db:
       deployStandalone: false
