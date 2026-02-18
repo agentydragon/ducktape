@@ -17,10 +17,10 @@ import (
 // MigrationResponse is the API response type for migration list/apply operations.
 //
 // Binary: type:.eq.supabase.MigrationResponse (new in b71486df).
-// TODO(re): JSON field names inferred from Supabase Management API docs; not confirmed from binary.
+// JSON field names confirmed from binary string scan: json:"name" and json:"created_at".
 type MigrationResponse struct {
-	Version string `json:"version"`
-	Name    string `json:"name"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
 }
 
 // TypesResponse is the API response type for type generation.

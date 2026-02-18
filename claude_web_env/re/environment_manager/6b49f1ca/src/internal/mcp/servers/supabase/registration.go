@@ -80,7 +80,7 @@ func configureServer(logger *slog.Logger, name string, envCfg interface{}, authC
 		"anon_key", authCtx.GetSupabaseAnonKey(),
 	)
 
-	client := newClient(
+	client := NewClient(
 		authCtx.GetSupabasePAT(),
 		authCtx.GetSupabaseProjectRef(),
 		authCtx.GetSupabaseAnonKey(),

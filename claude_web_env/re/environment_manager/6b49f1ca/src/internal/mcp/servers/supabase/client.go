@@ -6,6 +6,7 @@
 // Source path: .../environment-manager/internal/mcp/servers/supabase/
 //
 // New symbols in b71486df (vs 6b49f1ca):
+//   - supabase.NewClient (exported constructor)
 //   - supabase.(*Client).ApplyMigration
 //   - supabase.(*Client).GenerateTypes
 //   - supabase.(*Client).ListMigrations
@@ -40,9 +41,11 @@ type Client struct {
 	anonKey    string       // Supabase anon key (from AuthContext.GetSupabaseAnonKey)
 }
 
-// newClient creates a new Supabase API client.
-// Binary: called from configureServer.
-func newClient(pat, projectRef, anonKey string) *Client {
+// NewClient creates a new Supabase API client.
+//
+// Binary: supabase.NewClient (exported symbol in b71486df; confirmed by nm and go tool objdump).
+// Called from configureServer in registration.go.
+func NewClient(pat, projectRef, anonKey string) *Client {
 	return &Client{
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		pat:        pat,
@@ -58,6 +61,7 @@ func newClient(pat, projectRef, anonKey string) *Client {
 // URL format: "https://api.supabase.com/v1" + path.
 // Sets Content-Type: application/json when body is non-empty.
 // Reads and returns response body as string; returns error on status >= 400.
+// On non-2xx: calls json.Unmarshal into QueryErrorResponse before returning error.
 //
 // Error strings (binary evidence):
 //   - "create request: %w" (18 chars)
@@ -94,6 +98,11 @@ func (c *Client) doRequest(ctx context.Context, method, path, body string) (stri
 	}
 
 	if resp.StatusCode >= 400 {
+		// Binary calls json.Unmarshal into QueryErrorResponse before returning error.
+		// TODO(re): QueryErrorResponse fields not recovered; structured error message
+		// format unknown. Unmarshal performed but result not used in error formatting.
+		var errResp QueryErrorResponse
+		_ = json.Unmarshal(respBody, &errResp)
 		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, respBody)
 	}
 
