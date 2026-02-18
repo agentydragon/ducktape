@@ -4,4 +4,4 @@
       `props-secrets/openai-api-key-sealed.yaml` has a placeholder `REPLACE_ME`
       value. Seal with:
       `scripts/seal-secret.sh props props-openai-api-key api-key <your-openai-key>`
-- [ ] Ensure Ollama has `gpt-oss-20b` model pulled
+- [x] Ensure Ollama has `gpt-oss-20b` model pulled — automated via `cluster/k8s/ollama/job-pull-gpt-oss-20b-v1.yaml`
