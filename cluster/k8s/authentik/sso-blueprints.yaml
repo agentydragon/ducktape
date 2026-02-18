@@ -121,6 +121,7 @@ data:
           protocol_provider: !KeyOf gitea-provider
           meta_description: "Gitea Git Repository Management"
           meta_publisher: "Gitea"
+          meta_icon: "https://cdn.simpleicons.org/gitea"
           open_in_new_tab: true
 
   # --- Grafana OAuth2 SSO ---
@@ -163,6 +164,7 @@ data:
           protocol_provider: !KeyOf grafana-provider
           meta_description: "Grafana Monitoring and Observability"
           meta_publisher: "Grafana Labs"
+          meta_icon: "https://cdn.simpleicons.org/grafana"
           open_in_new_tab: true
 
   # --- Harbor OAuth2 SSO ---
@@ -205,6 +207,7 @@ data:
           protocol_provider: !KeyOf harbor-provider
           meta_description: "Harbor Container Registry"
           meta_publisher: "Harbor"
+          meta_icon: "https://cdn.simpleicons.org/harbor"
           open_in_new_tab: true
 
   # --- Matrix OAuth2 SSO ---
@@ -247,6 +250,7 @@ data:
           protocol_provider: !KeyOf matrix-provider
           meta_description: "Matrix Chat (Element Web)"
           meta_launch_url: "https://chat.allegedly.works"
+          meta_icon: "https://cdn.simpleicons.org/element"
           open_in_new_tab: true
 
   # --- Vault OAuth2/OIDC SSO ---
@@ -291,6 +295,7 @@ data:
           protocol_provider: !KeyOf vault-provider
           meta_description: "HashiCorp Vault Secrets Management"
           meta_publisher: "HashiCorp"
+          meta_icon: "https://cdn.simpleicons.org/vault"
           open_in_new_tab: true
 
   # --- Loki Proxy SSO ---
@@ -387,6 +392,7 @@ data:
           protocol_provider: !KeyOf hubble-provider
           meta_description: "Cilium Hubble Network Observability"
           meta_launch_url: "https://hubble.allegedly.works"
+          meta_icon: "https://cdn.simpleicons.org/cilium"
           open_in_new_tab: true
 
       - model: authentik_policies.policybinding
