@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/anthropic",
     visibility = ["//claude_web_env/re/environment_manager/6b49f1ca/src:__subpackages__"],
     deps = [
+        "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/auth",
         "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/config",
         "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/envtype",
         "//claude_web_env/re/environment_manager/6b49f1ca/src/internal/envtype/anthropic/install_scripts",

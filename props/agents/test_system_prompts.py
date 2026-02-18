@@ -15,6 +15,8 @@ import importlib.resources
 import pytest_bazel
 
 from props.agents.runtime import render_template_string
+from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig, TargetMetric
+from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 from test_util.undeclared_outputs import undeclared_outputs_dir
 
@@ -62,14 +64,35 @@ def test_grader_prompt(db: Database):
 
 
 def test_critic_dev_optimize_prompt(db: Database):
-    rendered = _render(db, "props/agents/critic_dev/prompt.md.mako", helpers={"mode": "optimize"})
+    rendered = _render(
+        db,
+        "props/agents/critic_dev/prompt.md.mako",
+        helpers={
+            "type_config": CriticDevOptimizeTypeConfig(
+                target_metric=TargetMetric.WHOLE_REPO,
+                optimizer_model="claude-opus-4-5",
+                critic_model="claude-sonnet-4-5",
+            )
+        },
+    )
     _write_output("critic_dev_optimize.md", rendered)
     assert "engineer" in rendered.lower()
     assert "recall" in rendered.lower()
 
 
 def test_critic_dev_improve_prompt(db: Database):
-    rendered = _render(db, "props/agents/critic_dev/prompt.md.mako", helpers={"mode": "improve"})
+    rendered = _render(
+        db,
+        "props/agents/critic_dev/prompt.md.mako",
+        helpers={
+            "type_config": CriticDevImproveTypeConfig(
+                baseline_image_digests=["sha256:abc123"],
+                allowed_examples=[WholeSnapshotExample(snapshot_slug="test/s")],
+                improvement_model="claude-opus-4-5",
+                critic_model="claude-sonnet-4-5",
+            )
+        },
+    )
     _write_output("critic_dev_improve.md", rendered)
     assert "allowed_examples" in rendered
 

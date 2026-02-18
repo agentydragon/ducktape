@@ -465,7 +465,12 @@ class AgentRegistry:
         if parent_run_id is not None:
             self._validate_spawn_budget(parent_run_id, budget_usd)
 
-        agent_run_id = self._create_run(
+        agent_run_id = uuid4()
+        slug_seg = _slug_to_container_segment(example.snapshot_slug)
+        container_name = f"critic-{slug_seg}-{str(agent_run_id)[:8]}"
+
+        self._create_run(
+            agent_run_id,
             image=image,
             model=model,
             type_config=CriticTypeConfig(example=example),
@@ -476,7 +481,10 @@ class AgentRegistry:
 
         async def _run() -> None:
             try:
-                await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
+                handle = await self._start_agent(
+                    agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds, name=container_name
+                )
+                await handle
             except Exception:
                 logger.exception("Unhandled error in background critic run %s", agent_run_id)
 

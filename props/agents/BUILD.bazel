@@ -63,6 +63,7 @@ py_test(
     deps = [
         ":runtime",
         "//props:conftest",
+        "//props/core:agent_types",
         "//props/db:database",
         "//test_util:undeclared_outputs",
         "@pypi//mako",
