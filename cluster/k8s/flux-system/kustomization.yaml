@@ -3,6 +3,9 @@ kind: Kustomization
 resources:
   - gotk-components.yaml
   - gotk-sync.yaml
+  - image-repository.yaml
+  - image-policy.yaml
+  - image-update-automation.yaml
 patches:
   - target:
       kind: GitRepository

@@ -1,0 +1,14 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: props-backend
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: props-backend
+  filterTags:
+    # Tags pushed by CI: YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
+    pattern: '^\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

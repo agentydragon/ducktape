@@ -22,7 +22,7 @@ spec:
       topology.kubernetes.io/region: proxmox
     image:
       repository: ghcr.io/agentydragon/props-backend
-      tag: latest
+      tag: latest # {"$imagepolicy": "flux-system:props-backend:tag"}
       pullPolicy: Always
     config:
       auto_migrate: true

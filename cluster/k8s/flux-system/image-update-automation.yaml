@@ -1,0 +1,24 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageUpdateAutomation
+metadata:
+  name: props-backend
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  git:
+    checkout:
+      ref:
+        branch: devel
+    commit:
+      author:
+        name: flux-image-automation
+        email: flux@allegedly.works
+      messageTemplate: 'chore: update props-backend to {{range .Updated.Images}}{{.}}{{end}}'
+    push:
+      branch: devel
+  update:
+    strategy: Setters
+    path: ./cluster/k8s/props
