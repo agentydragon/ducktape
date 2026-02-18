@@ -98,25 +98,6 @@ def stage_tracked_changes(repo: pygit2.Repository) -> None:
     repo.index.write()
 
 
-async def _run_editor_flow(
-    repo: pygit2.Repository,
-    msg: str,
-    previous: str | None,
-    context: str | None,
-    *,
-    verbose: bool,
-    cached: bool,
-    elapsed: float,
-):
-    content = render_editor_content(
-        repo, msg, cached=cached, elapsed_s=elapsed, verbose=verbose, user_context=context, previous_message=previous
-    )
-    new_msg = await run_editor(repo, content)
-    if new_msg is None:
-        raise SystemExit(1)
-    return new_msg
-
-
 @app.command("commit")
 @async_run
 async def commit(
@@ -194,9 +175,18 @@ async def commit(
 
     elapsed = time.monotonic()
     if not accept_ai:
-        ai_msg = await _run_editor_flow(
-            repo, ai_msg, prev_msg, message, verbose=verbose, cached=was_cached, elapsed=elapsed
+        content = render_editor_content(
+            repo,
+            ai_msg,
+            cached=was_cached,
+            elapsed_s=elapsed,
+            verbose=verbose,
+            user_context=message,
+            previous_message=prev_msg,
         )
+        ai_msg = await run_editor(repo, content)
+        if ai_msg is None:
+            raise SystemExit(1)
 
     cmd = ["git", "commit", "-m", ai_msg, "--no-verify"]
     if amend:

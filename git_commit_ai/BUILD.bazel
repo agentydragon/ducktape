@@ -147,13 +147,13 @@ py_library(
 )
 
 py_test(
-    name = "test_amend",
-    srcs = ["test_amend.py"],
+    name = "test_cli",
+    srcs = ["test_cli.py"],
     deps = [
         ":conftest",
         ":git_commit_ai",
+        "//git_commit_ai/testing:git_repo_utils",
         "@pypi//pygit2",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -167,17 +167,5 @@ py_test(
         ":editor",
         "@pypi//pytest_bazel",
         "@pypi//syrupy",
-    ],
-)
-
-py_test(
-    name = "test_stage_all",
-    srcs = ["test_stage_all.py"],
-    deps = [
-        ":conftest",
-        ":git_commit_ai",
-        "//git_commit_ai/testing:git_repo_utils",
-        "@pypi//pygit2",
-        "@pypi//pytest_bazel",
     ],
 )

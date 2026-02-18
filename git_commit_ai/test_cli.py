@@ -1,4 +1,4 @@
-"""Tests for -a/--all flag staging behavior."""
+"""Tests for git_commit_ai CLI utilities."""
 
 from __future__ import annotations
 
@@ -7,8 +7,26 @@ from pathlib import Path
 import pygit2
 import pytest_bazel
 
-from git_commit_ai.cli import stage_tracked_changes
+from git_commit_ai.cli import build_cache_key, stage_tracked_changes
 from git_commit_ai.testing.git_repo_utils import RepoHelper
+
+
+def test_cache_key_includes_amend_status():
+    """Cache key differentiates between new and amend commits."""
+    model_name = "sonnet"
+    head_oid = pygit2.Oid(hex="abc123def456abc123def456abc123def456abc1")
+    diff = "test diff content"
+
+    key_new = build_cache_key(
+        model_name, include_all=False, previous_message=None, head_oid=head_oid, diff=diff, user_context=None
+    )
+    key_amend = build_cache_key(
+        model_name, include_all=False, previous_message="some msg", head_oid=head_oid, diff=diff, user_context=None
+    )
+
+    assert key_new != key_amend
+    assert ":new:" in key_new
+    assert ":amend:" in key_amend
 
 
 def test_stage_all_includes_modified_files(temp_repo: RepoHelper) -> None:

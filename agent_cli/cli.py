@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -24,12 +23,6 @@ from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
 
-# Defaults via environment with sensible fallbacks
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
-SYSTEM_INSTRUCTIONS = os.getenv(
-    "SYSTEM_INSTRUCTIONS", "You are a code agent. Use tools to execute commands. Respond with helpful, concise text."
-)
-
 app = typer.Typer(help="Mini Codex CLI — run an agent REPL.", no_args_is_help=True)
 
 # Configure logging via shared callback (default: INFO level)
@@ -37,8 +30,13 @@ app.callback()(make_logging_callback())
 
 
 # Typer Option defaults must not be created in function signatures (ruff B008)
-MODEL_OPT = typer.Option(DEFAULT_MODEL, "--model", help="Model name (OPENAI_MODEL)")
-SYSTEM_OPT = typer.Option(SYSTEM_INSTRUCTIONS, "--system", help="System instructions (SYSTEM_INSTRUCTIONS)")
+MODEL_OPT = typer.Option("gpt-5.1-codex-mini", "--model", help="Model name", envvar="OPENAI_MODEL")
+SYSTEM_OPT = typer.Option(
+    "You are a code agent. Use tools to execute commands. Respond with helpful, concise text.",
+    "--system",
+    help="System instructions",
+    envvar="SYSTEM_INSTRUCTIONS",
+)
 MCP_CONFIGS_OPT = typer.Option(
     [],
     "--mcp-config",
