@@ -10,7 +10,6 @@ import re
 import sys
 from pathlib import Path
 
-MODULES_DIR = Path("cluster/terraform/modules")
 REQUIRED_PROVIDERS_RE = re.compile(r"required_providers\s*\{")
 VERSION_CONSTRAINT_RE = re.compile(r"^\s*version\s*=", re.MULTILINE)
 
@@ -20,14 +19,15 @@ def has_version_in_required_providers(content: str) -> bool:
     return bool(REQUIRED_PROVIDERS_RE.search(content) and VERSION_CONSTRAINT_RE.search(content))
 
 
-def find_violations() -> list[Path]:
+def find_violations(base_dir: Path) -> list[Path]:
     """Find .tf files in modules with provider version constraints."""
-    if not MODULES_DIR.exists():
+    modules_dir = base_dir / "cluster/terraform/modules"
+    if not modules_dir.exists():
         return []
 
     return [
         tf_file
-        for tf_file in MODULES_DIR.rglob("*.tf")
+        for tf_file in modules_dir.rglob("*.tf")
         if tf_file.name != "terraform.tf"
         and ".terraform" not in tf_file.parts
         and has_version_in_required_providers(tf_file.read_text())
@@ -35,7 +35,7 @@ def find_violations() -> list[Path]:
 
 
 def main() -> int:
-    if violations := find_violations():
+    if violations := find_violations(Path.cwd()):
         print("FATAL: Provider version constraints found in modules (should be in root terraform.tf):")
         for path in violations:
             print(f"  {path}")

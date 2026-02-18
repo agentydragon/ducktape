@@ -164,9 +164,9 @@ def check_file(file_path: Path, repo_root: Path) -> CheckResult:
     if should_skip:
         return CheckResult(file_path, True, f"skipped: {skip_reason}")
 
-    # Read file content
+    # Read file content (file_path may be relative to repo_root)
     try:
-        content = file_path.read_text()
+        content = (repo_root / file_path).read_text()
     except OSError as e:
         return CheckResult(file_path, False, f"error reading file: {e}")
 
