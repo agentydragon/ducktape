@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/auth"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/anthropic/install_scripts"
@@ -990,6 +991,57 @@ func copyDir(src, dst string) error {
 		return fmt.Errorf("failed to copy directory %s to %s: %w", src, dst, err)
 	}
 
+	return nil
+}
+
+// writeSupabaseEnvFiles writes Supabase credentials as environment variable
+// files into the project work directory.
+//
+// Binary: new method in b71486df, anthropicEnvironmentType.
+// Writes two files in workDir:
+//   - .env:       VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+//   - .env.local: DATABASE_URL (postgresql connection string)
+//
+// Logs "supabase_env_files_written" with project_ref on success.
+func (e *anthropicEnvironmentType) writeSupabaseEnvFiles(
+	ctx context.Context,
+	logger *slog.Logger,
+	workDir string,
+) error {
+	authCtx, ok := e.authContext.(*auth.AuthContext)
+	if !ok || authCtx == nil {
+		return fmt.Errorf("auth context is not an *auth.AuthContext")
+	}
+
+	projectRef := authCtx.GetSupabaseProjectRef()
+	anonKey := authCtx.GetSupabaseAnonKey()
+
+	// Write .env with Vite/frontend Supabase variables.
+	// Format string: "VITE_SUPABASE_URL=https://%s.supabase.co\nVITE_SUPABASE_ANON_KEY=%s\n" (67 chars)
+	envContent := fmt.Sprintf(
+		"VITE_SUPABASE_URL=https://%s.supabase.co\nVITE_SUPABASE_ANON_KEY=%s\n",
+		projectRef, anonKey,
+	)
+	envPath := filepath.Join(workDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
+		return fmt.Errorf("write .env: %w", err)
+	}
+
+	dbPass := authCtx.GetSupabaseDBPass()
+
+	// Write .env.local with DATABASE_URL for server-side / migration use.
+	// Format: "DATABASE_URL=postgresql://postgres:%s@db.%s.supabase.co:5432/postgres\n" (70 chars)
+	dbContent := fmt.Sprintf(
+		"DATABASE_URL=postgresql://postgres:%s@db.%s.supabase.co:5432/postgres\n",
+		dbPass, projectRef,
+	)
+	envLocalPath := filepath.Join(workDir, ".env.local")
+	if err := os.WriteFile(envLocalPath, []byte(dbContent), 0600); err != nil {
+		return fmt.Errorf("write .env.local: %w", err)
+	}
+
+	logger.Info("supabase_env_files_written", "project_ref", projectRef)
+	_ = ctx
 	return nil
 }
 

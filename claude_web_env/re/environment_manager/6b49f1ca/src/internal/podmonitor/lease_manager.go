@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -735,4 +736,27 @@ func (lm *LeaseManager) updateHealthFile() {
 			"path", lm.healthFilePath,
 		)
 	}
+}
+
+// getClaudeCodeStuckThreshold returns the threshold duration for detecting a
+// stuck Claude Code process. Reads CLAUDE_CODE_STUCK_THRESHOLD_SECONDS env var;
+// defaults to 600 seconds if unset or invalid.
+//
+// Binary: new function in b71486df, podmonitor package.
+// Default: 0x8BB2C97000 ns = 600,000,000,000 ns = 600s.
+// Env var: CLAUDE_CODE_STUCK_THRESHOLD_SECONDS (36 chars).
+// Log message on invalid: uses slog.Warn with "value" and "default_seconds"=600.
+func getClaudeCodeStuckThreshold() time.Duration {
+	const defaultThreshold = 600 * time.Second
+	s := os.Getenv("CLAUDE_CODE_STUCK_THRESHOLD_SECONDS")
+	if len(s) == 0 {
+		return defaultThreshold
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		slog.Warn("invalid CLAUDE_CODE_STUCK_THRESHOLD_SECONDS, using default",
+			"value", s, "default_seconds", 600)
+		return defaultThreshold
+	}
+	return time.Duration(n) * time.Second
 }

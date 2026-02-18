@@ -84,11 +84,3 @@ func getSandboxSettings() interface{} {
 		EnableWeakerNestedSandbox: true,
 	}
 }
-
-// noopStopper is a no-op implementation of a stopper interface.
-type noopStopper struct{}
-
-// Stop is a no-op.
-//
-// Binary: 0xb76e80 - (*noopStopper).Stop
-func (n *noopStopper) Stop() {}

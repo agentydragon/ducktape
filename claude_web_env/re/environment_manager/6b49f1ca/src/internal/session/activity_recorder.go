@@ -26,6 +26,14 @@ type ActivityRecorder interface {
 // Used when session ingress is not available.
 type NoopActivityRecorder struct{}
 
+// noopStopper is a no-op implementation of util.Stopper.
+// Moved from cmd package to session package in binary b71486df.
+// Binary: go:itab.*session.noopStopper,util.Stopper
+type noopStopper struct{}
+
+// Stop is a no-op.
+func (n *noopStopper) Stop() {}
+
 // RecordActivity does nothing.
 func (n *NoopActivityRecorder) RecordActivity(category api.LogCategory, eventType string) error {
 	return nil

@@ -12,32 +12,13 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/anthropics/anthropic/api-go/environment-manager/internal/api"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/claude"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/logger"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/orchestrator"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/sandbox"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/session"
-	"github.com/anthropics/anthropic/api-go/environment-manager/internal/util"
 	"github.com/spf13/cobra"
 )
-
-// noopActivityRecorder is a no-op implementation of session.ActivityRecorder
-// used during setup when no real activity recording is needed.
-//
-// Binary: itab at 0xf630f0
-type noopActivityRecorder struct{}
-
-func (n *noopActivityRecorder) RecordActivity(_ api.LogCategory, _ string) error { return nil }
-func (n *noopActivityRecorder) RecordFailureResult(_ api.LogCategory, _ string, _ string) error {
-	return nil
-}
-func (n *noopActivityRecorder) RecordLongRunningActivity(_ api.LogCategory, _ string) *util.PeriodicInvoker {
-	return nil
-}
-
-// Compile-time check that noopActivityRecorder implements session.ActivityRecorder.
-var _ session.ActivityRecorder = (*noopActivityRecorder)(nil)
 
 // AddSetupCommand adds the "setup" subcommand to the root cobra command.
 // The setup command initializes an environment by installing Claude Code
@@ -415,8 +396,8 @@ func installClaudeCode(ctx context.Context, log *slog.Logger, claudeCodeVersion 
 	}
 
 	// Binary: 0xb78078 - claude.InstallOrUpdateClaudeCode
-	// Uses a noopActivityRecorder (itab at 0xf630f0)
-	_, err := claude.InstallOrUpdateClaudeCode(log, ctx, claudeCodeVersion, claudeDefaultPath, &noopActivityRecorder{}, nil)
+	// Uses session.NoopActivityRecorder (itab: go:itab.*session.NoopActivityRecorder,session.ActivityRecorder)
+	_, err := claude.InstallOrUpdateClaudeCode(log, ctx, claudeCodeVersion, claudeDefaultPath, &session.NoopActivityRecorder{}, nil)
 	if err != nil {
 		// Binary: 0xb78085-0xb780c0 - fmt.Errorf
 		return fmt.Errorf("failed to install Claude Code: %w", err)

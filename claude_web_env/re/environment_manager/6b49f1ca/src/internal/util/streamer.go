@@ -8,8 +8,9 @@
 //     0 ("stdout", 6 chars) and 1 ("stderr", 6 chars), default "unknown" (7 chars).
 //   - process.Execute disassembly: OutputStreamer is passed as an interface pair
 //     (itab + data) and called with (ctx, StreamType, []byte) returning error.
-//   - noopStopper itab: go:itab.*cmd.noopStopper,util.Stopper confirms Stopper
+//   - noopStopper itab: go:itab.*session.noopStopper,util.Stopper (b71486df) confirms Stopper
 //     is an interface with a single Stop() method.
+//     (Old binary 6b49f1ca had go:itab.*cmd.noopStopper,util.Stopper)
 
 package util
 
@@ -44,12 +45,19 @@ type OutputStreamer func(ctx context.Context, streamType StreamType, data []byte
 // Stopper is an interface for stopping a long-running component.
 //
 // Reconstructed from itab entries:
-//   go:itab.*cmd.noopStopper,util.Stopper (0xf5a380)
+//   go:itab.*session.noopStopper,util.Stopper (b71486df, new location)
 //   go:itab.*util.PeriodicInvoker,util.Stopper (0xf5b480)
 //
-// The noopStopper.Stop method (0xb76e80) is a single RET instruction,
+// The noopStopper.Stop method is a single RET instruction,
 // confirming the interface has only a Stop() method with no parameters
 // or return values.
 type Stopper interface {
 	Stop()
 }
+
+// ClaudeCodeVersion holds the installed Claude Code version string.
+// Binary: util.ClaudeCodeVersion (new BSS global in b71486df).
+// Set during Claude Code installation (claude package or setup command).
+// Used for version reporting and stuck-process detection thresholds.
+// TODO(re): exact write site not recovered; likely set in claude.InstallOrUpdateClaudeCode.
+var ClaudeCodeVersion string
