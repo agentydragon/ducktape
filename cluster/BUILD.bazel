@@ -3,14 +3,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/testing:defs.bzl", "py_test")
 
-# Shared terraform provider template — single source of truth for provider versions.
-# Not a module itself; referenced here so it's tracked by the orphans report.
-filegroup(
-    name = "terraform_providers",
-    srcs = ["terraform.tf"],
-    visibility = ["//cluster/terraform:__subpackages__"],
-)
-
 py_library(
     name = "bootstrap_lib",
     srcs = ["bootstrap.py"],
