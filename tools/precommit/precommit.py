@@ -28,28 +28,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pygit2
-from python.runfiles import runfiles
 
+from bazel_util.runfiles import get_required_path
 from bazel_util.workspace import get_build_workspace_directory
 from tools.check_pytest_main import check_files_async
 from tools.precommit.check_filename_conventions import check_filename_conventions
 from tools.precommit.check_terraform_centralization import find_violations
 
-_RUNFILES_OPT = runfiles.Create()
-if _RUNFILES_OPT is None:
-    raise RuntimeError("Could not create runfiles")
-_RUNFILES: runfiles.Runfiles = _RUNFILES_OPT
-
 # Attributes that mark a file as ignored — matches rules_lint behavior and tools/format/formatter.py.
 _LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
-
-
-def resolve_bin(rlocation: str) -> str:
-    """Resolve a runfiles path to an absolute path."""
-    path = _RUNFILES.Rlocation(rlocation)
-    if not path or not Path(path).exists():
-        raise RuntimeError(f"Could not resolve {rlocation}")
-    return path
 
 
 def _is_lint_ignored(repo: pygit2.Repository, path: Path) -> bool:
@@ -131,7 +118,7 @@ async def run_subprocess_validation(
         return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
-    validate_bin = resolve_bin(bin_rlocation)
+    validate_bin = get_required_path(bin_rlocation)
     cmd = [validate_bin] + (extra_args or [])
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=repo_root
