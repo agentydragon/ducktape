@@ -160,8 +160,6 @@ split-on-trailing-comma = false
 "py_detectors/det_*.py" = ["N802"]
 # Test fixtures are intentionally bad code for detector testing
 "py_detectors/tests/fixtures/**" = ["ALL"]
-# Vendored third-party code - don't lint
-"**/third_party/**" = ["ALL"]
 "prompts/scans/scan_*.py" = ["N802"]
 # Lazy import for orchestration-only dependency (not available in container)
 "props/core/db/sync/sync.py" = ["PLC0415"]

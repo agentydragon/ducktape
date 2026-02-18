@@ -8,9 +8,6 @@
 # TODO: Install a zsh-specific formatter to handle .zsh files properly
 *.zsh rules-lint-ignored=true
 
-# Third-party code - don't lint or reformat external code
-**/third_party/** rules-lint-ignored=true
-
 # Test data files - inputs to tests, not source code
 claude/claude_hooks/testdata/** rules-lint-ignored=true
 props/testing/fixtures/testdata/** rules-lint-ignored=true
