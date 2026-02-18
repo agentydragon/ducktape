@@ -80,7 +80,6 @@ jobs:
             echo "Using targets from input: $TARGET_ARG"
           fi
           # --config=check runs: ruff, ESLint, mypy, clippy, rustfmt
-          # --strategy=mypy=local avoids sandbox copying overhead for mypy
-          bazel build --keep_going --config=check --strategy=mypy=local \
+          bazel build --keep_going --config=check \
             --build_metadata=ROLE=ci --build_metadata=TAGS=check \
             $TARGET_ARG
