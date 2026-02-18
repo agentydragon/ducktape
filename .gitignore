@@ -5,6 +5,7 @@
 # Build tools and dependencies
 /bazel-*
 MODULE.bazel.lock
+!tools/local_registry/**/MODULE.bazel.lock
 **/node_modules/
 **/.aspect/
 
@@ -80,10 +81,13 @@ worktrees
 # Claude Code sandbox phantom dotfiles
 # Bug: https://github.com/anthropics/claude-code/issues/17258
 .bashrc
+!claude_web_env/rootfs/root/.bashrc
 .bash_profile
 .gitconfig
+!claude_web_env/rootfs/root/.gitconfig
 .gitmodules
 .profile
+!claude_web_env/rootfs/root/.profile
 .ripgreprc
 .zprofile
 .zshrc
