@@ -17,9 +17,22 @@ Usage:
     tools/check_pytest_main.py --all
 
 Detection method:
-    Parses BUILD.bazel files with regex to find custom main= parameters.
-    Works in all environments: workspace, Bazel sandbox, CI, GitHub Actions.
-    No Bazel server or query dependencies needed.
+    Queries Bazel for all py_test targets and their srcs/main attributes via
+    bazel_util.query. Two concurrent queries are run:
+      - labels(srcs, kind(py_test, //...))  — all py_test source files
+      - labels(srcs, attr(main, ".+", kind(py_test, //...)))  — sources in
+        targets with a custom main= entry point
+
+    Falls back to regex parsing of BUILD.bazel files when Bazel is unavailable
+    (sandbox environments, no running server, etc.).
+
+    The Bazel query approach correctly handles Starlark macros that expand to
+    py_test (e.g. live_openai_py_test), and correctly skips files that are not
+    part of any py_test target (e.g. specimen/snapshot code in props/).
+
+    Files marked as lint-ignored in .gitattributes (rules-lint-ignored=true,
+    linguist-generated=true, or gitlab-generated=true) are excluded from
+    checking. This is the authoritative way to exclude files like specimen code.
 
 TODO: Add XML analysis safety net that checks JUnit XML test results
       after Bazel test execution to detect tests that collected 0 tests.
@@ -38,14 +51,21 @@ import argparse
 import asyncio
 import os
 import re
+import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple
 
-from bazel_util.workspace import get_build_workspace_directory
+import pygit2
 
-# Pre-compiled regex patterns for performance
+from bazel_util.query import run_query
+from bazel_util.workspace import get_build_workspace_directory
+from tools.precommit.lint_ignored import is_lint_ignored, try_open_repo
+
+# Pre-compiled regex patterns for BUILD file fallback
 _TEST_FUNC_PATTERN = re.compile(r"^\s*(async\s+)?def\s+test_\w+", re.MULTILINE)
 _PY_TEST_BLOCK_PATTERN = re.compile(r"py_test\s*\([^)]*?srcs\s*=\s*\[[^\]]*?\][^)]*?\)", re.DOTALL)
 _MAIN_PARAM_PATTERN = re.compile(r'main\s*=\s*"([^"]+)"')
@@ -63,6 +83,53 @@ class CheckResult(NamedTuple):
     reason: str
 
 
+@dataclass
+class BazelPyTestIndex:
+    """Index of py_test srcs built from bazel query output.
+
+    Covers all py_test targets reachable from //... in the workspace.
+    """
+
+    # Resolved absolute paths of all source files in any py_test's srcs
+    known_srcs: set[Path] = field(default_factory=set)
+    # Subset of known_srcs that are in a py_test with a custom main= attribute.
+    # Files in this set don't need pytest_bazel.main() because the custom main
+    # handles test dispatch.
+    exempt_srcs: set[Path] = field(default_factory=set)
+
+
+def try_build_bazel_index(repo_root: Path) -> BazelPyTestIndex | None:
+    """Query Bazel for all py_test targets and build a src-file index.
+
+    Runs two concurrent bazel queries via bazel_util.query.run_query:
+      - All source files that are srcs of some py_test target
+      - Source files that are srcs of a py_test with a custom main= attribute
+
+    Returns None if bazel is unavailable, the server is not running, or the
+    query otherwise fails (e.g. inside a Bazel sandbox test action).
+    """
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            all_fut = executor.submit(run_query, "labels(srcs, kind(py_test, //...))", cwd=repo_root)
+            exempt_fut = executor.submit(
+                run_query, "labels(srcs, attr(main, '.+', kind(py_test, //...)))", cwd=repo_root
+            )
+            all_srcs_labels = all_fut.result()
+            exempt_srcs_labels = exempt_fut.result()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+    index = BazelPyTestIndex()
+    for label in all_srcs_labels:
+        if label.path is not None:
+            index.known_srcs.add((repo_root / label.path).resolve())
+    for label in exempt_srcs_labels:
+        if label.path is not None:
+            index.exempt_srcs.add((repo_root / label.path).resolve())
+
+    return index
+
+
 def has_test_functions(content: str) -> bool:
     """Check if Python content has test functions."""
     return bool(_TEST_FUNC_PATTERN.search(content))
@@ -75,50 +142,40 @@ def has_pytest_bazel_main(content: str) -> bool:
 
 @lru_cache(maxsize=256)
 def _read_build_file(build_file: Path) -> str | None:
-    """Read and cache BUILD file contents."""
+    """Read and cache BUILD file contents (used by the fallback path)."""
     try:
         return build_file.read_text()
     except OSError:
         return None
 
 
-def parse_build_file_for_target(build_file: Path, test_file: Path) -> dict | None:
-    """Find py_test target that includes test_file in its srcs.
+def _parse_build_file_for_custom_main(build_file: Path, test_file: Path) -> bool:
+    """Return True if the py_test block covering test_file has a custom main= param.
 
-    Returns dict with 'main' key if custom main= parameter found.
+    Fallback used when bazel query is unavailable.
     """
     content = _read_build_file(build_file)
     if content is None:
-        return None
+        return False
 
     test_filename = test_file.name
-
-    # Calculate relative path from BUILD file directory
     build_dir = build_file.parent
     try:
-        rel_path = test_file.relative_to(build_dir)
-        rel_path_str = str(rel_path)
+        rel_path_str = str(test_file.relative_to(build_dir))
     except ValueError:
         rel_path_str = test_filename
 
-    # Find all py_test blocks
     for match in _PY_TEST_BLOCK_PATTERN.finditer(content):
         block = match.group(0)
+        if (f'"{test_filename}"' in block or f'"{rel_path_str}"' in block) and _MAIN_PARAM_PATTERN.search(block):
+            return True
 
-        # Check if this target includes our test file (by filename or relative path)
-        if f'"{test_filename}"' in block or f'"{rel_path_str}"' in block:
-            # Check if it has main= parameter
-            main_match = _MAIN_PARAM_PATTERN.search(block)
-            if main_match:
-                return {"main": main_match.group(1)}
-
-    return None
+    return False
 
 
-def find_build_file(test_file: Path, repo_root: Path) -> Path | None:
-    """Find BUILD.bazel file for test_file by walking up directories."""
+def _find_build_file(test_file: Path, repo_root: Path) -> Path | None:
+    """Find the nearest BUILD.bazel file by walking up from test_file."""
     current = test_file.parent
-
     while current >= repo_root:
         build_file = current / "BUILD.bazel"
         if build_file.exists():
@@ -126,30 +183,26 @@ def find_build_file(test_file: Path, repo_root: Path) -> Path | None:
         if current == repo_root:
             break
         current = current.parent
-
     return None
 
 
 def should_skip_file(file_path: Path) -> tuple[bool, str]:
     """Check if file should be skipped from checking.
 
-    Returns (should_skip, reason).
+    Returns (should_skip, reason). Does not check gitattributes — that
+    filtering happens at the file-list level in main() and find_all_test_files().
     """
-    # Skip conftest.py files
     if file_path.name == "conftest.py":
         return True, "conftest.py (fixture file)"
 
     file_path_str = str(file_path)
 
-    # Skip files in external/ directory
     if "external/" in file_path_str:
         return True, "external dependency"
 
-    # Skip bazel output directories
     if any(part.startswith("bazel-") for part in file_path.parts):
         return True, "bazel output directory"
 
-    # Skip common test helper patterns
     for pattern in _HELPER_PATTERNS:
         if pattern.search(file_path_str):
             return True, f"test helper (matches {pattern.pattern})"
@@ -157,63 +210,81 @@ def should_skip_file(file_path: Path) -> tuple[bool, str]:
     return False, ""
 
 
-def check_file(file_path: Path, repo_root: Path) -> CheckResult:
+def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex | None) -> CheckResult:
     """Check if test file has required pytest_bazel.main() entry point."""
-    # Skip certain files
     should_skip, skip_reason = should_skip_file(file_path)
     if should_skip:
         return CheckResult(file_path, True, f"skipped: {skip_reason}")
 
-    # Read file content (file_path may be relative to repo_root)
     try:
         content = (repo_root / file_path).read_text()
     except OSError as e:
         return CheckResult(file_path, False, f"error reading file: {e}")
 
-    # Check if file has test functions
     if not has_test_functions(content):
         return CheckResult(file_path, True, "no test functions")
 
-    # Check if has pytest_bazel.main()
     if has_pytest_bazel_main(content):
         return CheckResult(file_path, True, "has pytest_bazel.main()")
 
-    # Check if BUILD file specifies custom main=
-    build_file = find_build_file(file_path, repo_root)
-    if build_file:
-        target_info = parse_build_file_for_target(build_file, file_path)
-        if target_info and "main" in target_info:
-            return CheckResult(file_path, True, f"uses custom main={target_info['main']}")
+    # Determine whether the file is exempt from needing pytest_bazel.main().
+    abs_path = (repo_root / file_path).resolve() if not file_path.is_absolute() else file_path.resolve()
+
+    if bazel_index is not None:
+        # Bazel query path: authoritative source of truth.
+        if abs_path not in bazel_index.known_srcs:
+            # File is not part of any py_test target — skip it.
+            return CheckResult(file_path, True, "not a py_test src (not a Bazel target)")
+        if abs_path in bazel_index.exempt_srcs:
+            return CheckResult(file_path, True, "exempt: py_test uses custom main= (bazel query)")
+    else:
+        # Fallback: regex parse the nearest BUILD.bazel file.
+        build_file = _find_build_file(file_path, repo_root)
+        if build_file and _parse_build_file_for_custom_main(build_file, file_path):
+            return CheckResult(file_path, True, "exempt: py_test uses custom main= (BUILD parse)")
 
     # Check if using pytest.main() directly (custom runner)
     if "pytest.main(" in content:
         return CheckResult(file_path, True, "uses pytest.main() (custom runner)")
 
-    # Missing entry point!
     return CheckResult(file_path, False, "has test functions but missing pytest_bazel.main() entry point")
 
 
-def find_all_test_files(repo_root: Path) -> list[Path]:
-    """Find all test_*.py files in repository."""
-    test_files = []
+def find_all_test_files(
+    repo_root: Path, bazel_index: BazelPyTestIndex | None, git_repo: pygit2.Repository | None
+) -> list[Path]:
+    """Return the list of test files to check.
 
-    for py_file in repo_root.rglob("test_*.py"):
-        # Skip bazel output directories
-        if any(part.startswith("bazel-") for part in py_file.parts):
-            continue
+    When a bazel_index is available, returns only the files that are actual
+    py_test srcs (skipping specimen/snapshot code and other non-Bazel files).
+    Falls back to rglob when the index is unavailable.
 
-        # Skip external dependencies
-        if "external/" in str(py_file):
-            continue
+    In both cases, files marked as lint-ignored via .gitattributes are excluded.
+    """
+    if bazel_index is not None:
+        # Only check files that are actually registered py_test srcs.
+        candidates = [p for p in bazel_index.known_srcs if p.name.startswith("test_") and p.name.endswith(".py")]
+    else:
+        candidates = []
+        for py_file in repo_root.rglob("test_*.py"):
+            if any(part.startswith("bazel-") for part in py_file.parts):
+                continue
+            if "external/" in str(py_file):
+                continue
+            candidates.append(py_file)
 
-        test_files.append(py_file)
+    if git_repo is None:
+        return candidates
 
-    return test_files
+    # Filter out files marked as lint-ignored in .gitattributes.
+    return [p for p in candidates if not is_lint_ignored(git_repo, p.relative_to(repo_root))]
 
 
-async def check_files_async(files: list[Path], repo_root: Path) -> list[CheckResult]:
+async def check_files_async(
+    files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex | None
+) -> list[CheckResult]:
     """Check files in parallel using asyncio."""
-    return list(await asyncio.gather(*[asyncio.to_thread(check_file, f, repo_root) for f in files]))
+    return list(await asyncio.gather(*[asyncio.to_thread(check_file, f, repo_root, bazel_index) for f in files]))
 
 
 def main() -> int:
@@ -224,35 +295,53 @@ def main() -> int:
     )
     parser.add_argument("--all", action="store_true", help="Check all test_*.py files in repository")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show all results including passes")
+    parser.add_argument(
+        "--no-bazel-query",
+        action="store_true",
+        help="Skip bazel query and use BUILD file regex parsing (useful in sandbox environments)",
+    )
 
     args = parser.parse_args()
 
-    # Determine files to check
     workspace_root = get_build_workspace_directory()
 
+    # Try to open the git repo for gitattributes filtering. Returns None if not
+    # in a git repo (e.g. inside a Bazel sandbox test action).
+    git_repo = try_open_repo(workspace_root)
+
+    # Run bazel query only for --all mode. Per-file/pre-commit mode uses BUILD
+    # file parsing, which is fast enough and gitattributes filtering already
+    # excludes non-Bazel files (specimens, generated code, etc.).
+    bazel_index: BazelPyTestIndex | None = None
+    if args.all and not args.no_bazel_query:
+        bazel_index = try_build_bazel_index(workspace_root)
+        if bazel_index is None and args.verbose:
+            print("Note: bazel query unavailable, falling back to BUILD file parsing", file=sys.stderr)
+
     if args.all:
-        files = find_all_test_files(workspace_root)
+        files = find_all_test_files(workspace_root, bazel_index, git_repo)
         print(f"Checking {len(files)} test files in repository...", file=sys.stderr)
     elif args.files:
-        # Resolve relative paths against workspace root
         files = [(workspace_root / f) if not f.is_absolute() else f for f in args.files]
+        if git_repo is not None:
+            files = [f for f in files if not is_lint_ignored(git_repo, f.relative_to(workspace_root))]
     else:
-        # Read from stdin (for pre-commit)
         lines = sys.stdin.read().strip().split("\n")
-        files = [(workspace_root / line.strip()) for line in lines if line.strip()]
+        files_raw = [(workspace_root / line.strip()) for line in lines if line.strip()]
+        if git_repo is not None:
+            files = [f for f in files_raw if not is_lint_ignored(git_repo, f.relative_to(workspace_root))]
+        else:
+            files = files_raw
 
     if not files:
         print("No files to check", file=sys.stderr)
         return 0
 
-    # Check files in parallel
-    results = asyncio.run(check_files_async(files, workspace_root))
+    results = asyncio.run(check_files_async(files, workspace_root, bazel_index))
 
-    # Categorize results
     passed = [r for r in results if r.passed]
     failed = [r for r in results if not r.passed]
 
-    # Show results
     if args.verbose:
         for result in passed:
             print(f"✓ {result.file_path}: {result.reason}")
@@ -260,7 +349,6 @@ def main() -> int:
     for result in failed:
         print(f"❌ {result.file_path}: {result.reason}", file=sys.stderr)
 
-    # Summary
     if failed:
         print(f"\n{len(failed)} file(s) missing pytest_bazel.main()", file=sys.stderr)
         print("\nTo fix, add this to the end of each failing test file:", file=sys.stderr)

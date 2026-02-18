@@ -34,13 +34,7 @@ from bazel_util.workspace import get_build_workspace_directory
 from tools.check_pytest_main import check_files_async
 from tools.precommit.check_filename_conventions import check_filename_conventions
 from tools.precommit.check_terraform_centralization import find_violations
-
-# Attributes that mark a file as ignored — matches rules_lint behavior and tools/format/formatter.py.
-_LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
-
-
-def _is_lint_ignored(repo: pygit2.Repository, path: Path) -> bool:
-    return any(repo.get_attr(str(path), attr) in (True, "true") for attr in _LINT_IGNORED_ATTRS)
+from tools.precommit.lint_ignored import is_lint_ignored
 
 
 @dataclass
@@ -91,12 +85,12 @@ def is_terraform_module(p: Path) -> bool:
 async def run_pytest_main_check(files: list[Path], repo_root: Path, repo: pygit2.Repository) -> ValidationResult:
     """Check that test files have pytest_bazel.main() calls."""
     name = "pytest-main-check"
-    test_files = [f for f in files if is_test_file(f) and not _is_lint_ignored(repo, f)]
+    test_files = [f for f in files if is_test_file(f) and not is_lint_ignored(repo, f)]
     if not test_files:
         return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
-    results = await check_files_async(test_files, repo_root)
+    results = await check_files_async(test_files, repo_root, bazel_index=None)
     elapsed = time.perf_counter() - start
 
     failed = [r for r in results if not r.passed]

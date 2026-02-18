@@ -47,6 +47,14 @@ py_binary(
     deps = [":check_terraform_centralization"],
 )
 
+py_library(
+    name = "lint_ignored",
+    srcs = ["lint_ignored.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
+)
+
 # Unified precommit: custom validations in one Bazel invocation
 py_binary(
     name = "precommit",
@@ -60,6 +68,7 @@ py_binary(
     deps = [
         ":check_filename_conventions",
         ":check_terraform_centralization",
+        ":lint_ignored",
         "//bazel_util:runfiles",
         "//bazel_util:workspace",
         "//tools:check_pytest_main",
