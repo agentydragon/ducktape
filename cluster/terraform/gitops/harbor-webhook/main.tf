@@ -37,18 +37,14 @@ locals {
   flux_webhook_url = "${var.flux_webhook_base_url}/hook/${sha256(local.token)}"
 }
 
-resource "harbor_webhook_policy" "flux_receiver" {
-  name        = "flux-image-receiver"
-  project_id  = data.harbor_project.props.id
-  description = "Notifies Flux webhook receiver on image push, triggering immediate ImageRepository rescan"
-  enabled     = true
-
-  targets {
-    type             = "http"
-    address          = local.flux_webhook_url
-    auth_header      = local.token
-    skip_cert_verify = false
-  }
-
-  event_types = ["PUSH_ARTIFACT"]
+resource "harbor_project_webhook" "flux_receiver" {
+  name             = "flux-image-receiver"
+  project_id       = data.harbor_project.props.id
+  description      = "Notifies Flux webhook receiver on image push, triggering immediate ImageRepository rescan"
+  enabled          = true
+  notify_type      = "http"
+  address          = local.flux_webhook_url
+  auth_header      = local.token
+  skip_cert_verify = false
+  events_types     = ["PUSH_ARTIFACT"]
 }
