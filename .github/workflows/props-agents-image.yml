@@ -71,15 +71,15 @@ jobs:
 
       - name: Build and load images
         run: |
-          bazel run //props/agents/critic:load
-          bazel run //props/agents/grader:load
-          bazel run //props/agents/critic_dev/improve:load
-          bazel run //props/agents/critic_dev/optimize:load
-          bazel run //props/agents/critic/variants:contract_truthfulness_load
-          bazel run //props/agents/critic/variants:dead_code_load
-          bazel run //props/agents/critic/variants:flag_propagation_load
-          bazel run //props/agents/critic/variants:high_recall_load
-          bazel run //props/agents/critic/variants:verbose_docs_load
+          bazel run --config=ci //props/agents/critic:load
+          bazel run --config=ci //props/agents/grader:load
+          bazel run --config=ci //props/agents/critic_dev/improve:load
+          bazel run --config=ci //props/agents/critic_dev/optimize:load
+          bazel run --config=ci //props/agents/critic/variants:contract_truthfulness_load
+          bazel run --config=ci //props/agents/critic/variants:dead_code_load
+          bazel run --config=ci //props/agents/critic/variants:flag_propagation_load
+          bazel run --config=ci //props/agents/critic/variants:high_recall_load
+          bazel run --config=ci //props/agents/critic/variants:verbose_docs_load
 
       - name: Tag and push images
         env:
@@ -89,7 +89,7 @@ jobs:
           push() {
             local local_tag="$1" remote_repo="$2" remote_tag="$3"
             docker tag "$local_tag" "$REGISTRY/$remote_repo:$remote_tag"
-            docker push "$REGISTRY/$remote_repo:$remote_tag"
+            docker push --quiet "$REGISTRY/$remote_repo:$remote_tag"
           }
 
           push critic:latest critic latest

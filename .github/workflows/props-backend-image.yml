@@ -41,7 +41,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build and load image
-        run: bazel run //props/backend:load
+        run: bazel run --config=ci //props/backend:load
 
       - name: Compute image tags
         id: meta
@@ -65,5 +65,5 @@ jobs:
           IFS=',' read -ra TAG_LIST <<< "${{ steps.meta.outputs.tags }}"
           for tag in "${TAG_LIST[@]}"; do
             docker tag props-backend:latest "$tag"
-            docker push "$tag"
+            docker push --quiet "$tag"
           done
