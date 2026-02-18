@@ -2,6 +2,17 @@
 
 This file provides guidance to LLM agents for working with this repository.
 
+## Target Platform
+
+Unless stated otherwise, this repository targets **Linux**. When writing code, scripts, or configuration, default to Linux assumptions (paths, syscalls, packaging, etc.).
+
+Some components are macOS-specific and only relevant on macOS:
+
+- **Seatbelt** (`sandbox-exec`) — macOS kernel sandbox. Do not apply to Linux code.
+- **Sandboxer** — macOS-specific sandboxing tooling. Linux equivalents use different mechanisms (seccomp, namespaces, etc.).
+
+If a component is macOS-only, document it explicitly. Do not silently assume macOS conventions.
+
 @STYLE.md
 
 ## Before Hand-off
