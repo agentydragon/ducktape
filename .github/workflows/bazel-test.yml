@@ -62,9 +62,10 @@ jobs:
 
       - name: Show RBE status
         run: |
-          # buildbuddy.bazelrc uses `build --config=rbe` (expands to --remote_executor,
-          # --remote_cache, etc. via .bazelrc build:rbe stanza).
-          if [[ -f ~/.config/bazel/buildbuddy.bazelrc ]] && grep -q "config=rbe" ~/.config/bazel/buildbuddy.bazelrc; then
+          # Check the effective Bazel configuration for remote_executor.
+          # bazel info --announce_rc expands all configs (including --config=rbe
+          # from buildbuddy.bazelrc) and prints the resolved flag set.
+          if bazel info --announce_rc 2>&1 | grep -q "remote_executor"; then
             echo "RBE: enabled (tests will run on remote BuildBuddy workers)"
           else
             echo "RBE: disabled (tests will run locally — BUILDBUDDY_API_KEY not configured)"
