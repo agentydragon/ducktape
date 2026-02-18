@@ -50,6 +50,8 @@ resources:
   - applications/harbor/flux-kustomization.yaml
   - applications/harbor-secrets/flux-kustomization.yaml
   - harbor-proxy-cache/flux-kustomization.yaml
+  - harbor-ci/flux-kustomization.yaml
+  - harbor-webhook/flux-kustomization.yaml
   - gitea-namespace/flux-kustomization.yaml
   - applications/gitea/flux-kustomization.yaml
   - applications/gitea-admin-token/flux-kustomization.yaml

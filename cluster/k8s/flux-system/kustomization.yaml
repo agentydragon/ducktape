@@ -6,6 +6,12 @@ resources:
   - image-repository.yaml
   - image-policy.yaml
   - image-update-automation.yaml
+  - harbor-robot-secret.yaml
+  - harbor-webhook-token-secret.yaml
+  - github-webhook-token-secret.yaml
+  - harbor-webhook-receiver.yaml
+  - github-webhook-receiver.yaml
+  - flux-webhook-httproute.yaml
 patches:
   - target:
       kind: GitRepository

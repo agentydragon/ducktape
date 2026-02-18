@@ -1,0 +1,24 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: harbor-ci
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/harbor-ci
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m
+  wait: true
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: harbor-ci
+      namespace: flux-system
+  dependsOn:
+    - name: harbor # Harbor API must be available to create projects/robots
+    - name: tofu-controller
+    - name: vault-token

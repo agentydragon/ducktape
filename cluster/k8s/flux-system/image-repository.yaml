@@ -4,5 +4,7 @@ metadata:
   name: props-backend
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/props-backend
+  image: registry.allegedly.works/props/props-backend
   interval: 5m
+  secretRef:
+    name: harbor-ci-robot

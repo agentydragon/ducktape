@@ -1,0 +1,25 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: harbor-webhook
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/harbor-webhook
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m
+  wait: true
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: harbor-webhook
+      namespace: flux-system
+  dependsOn:
+    - name: harbor-ci # props project must exist before webhook can reference it
+    - name: harbor
+    - name: tofu-controller
+    - name: vault-token

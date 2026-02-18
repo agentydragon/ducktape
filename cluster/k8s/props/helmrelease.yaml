@@ -21,9 +21,11 @@ spec:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
     image:
-      repository: ghcr.io/agentydragon/props-backend
+      repository: registry.allegedly.works/props/props-backend
       tag: latest # {"$imagepolicy": "flux-system:props-backend:tag"}
       pullPolicy: Always
+    imagePullSecrets:
+      - name: harbor-ci-robot
     config:
       auto_migrate: true
       auto_sync_specimens: true

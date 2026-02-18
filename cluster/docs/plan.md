@@ -1,6 +1,6 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-16
+**Last Updated**: 2026-02-18
 
 ## 🔥 Immediate Next Steps
 
@@ -54,6 +54,34 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 ### Suspended Kustomizations
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
+
+### Next Actions (Harbor CI + Flux Webhook, 2026-02-18)
+
+The Harbor-as-registry + webhook receiver change is deployed to `devel` but requires
+two manual steps before CI pushes will reach the cluster:
+
+1. **Add GitHub secrets** `HARBOR_ROBOT_USERNAME` and `HARBOR_ROBOT_TOKEN` to the
+   `agentydragon/ducktape` repository. Retrieve values after the `harbor-ci` Terraform
+   applies (watch `kubectl get terraform harbor-ci -n flux-system`):
+
+   ```bash
+   vault kv get -field=username kv/harbor/ci-robot   # → HARBOR_ROBOT_USERNAME
+   vault kv get -field=password kv/harbor/ci-robot   # → HARBOR_ROBOT_TOKEN
+   ```
+
+   Then set them in GitHub: Settings → Secrets → Actions.
+
+2. **Register GitHub webhook** for instant GitRepository reconciliation (eliminates
+   the 1-minute Flux poll). Run once after `harbor-ci` Terraform applies:
+   ```bash
+   TOKEN=$(kubectl get secret github-webhook-token -n flux-system -o jsonpath='{.data.token}' | base64 -d)
+   HASH=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
+   gh api repos/agentydragon/ducktape/hooks --method POST \
+     -f "config[url]=https://flux-webhook.allegedly.works/hook/$HASH" \
+     -f "config[secret]=$TOKEN" \
+     -f "config[content_type]=json" \
+     -f "events[]=push"
+   ```
 
 ### Next Actions
 
@@ -231,10 +259,11 @@ for failover. Chicken-and-egg: bootstrap needs direct IP, post-bootstrap rewrite
 `persistent-auth/terraform.tfstate` is the SSOT for sealed-secrets keypair — local file only,
 no backup. Options: rclone+Google Drive, encrypted S3, git-crypt, or manual backup script.
 
-### TODO: GitHub Webhook for Instant Reconciliation
+### GitHub Webhook for Instant Reconciliation ✅ (pending manual registration)
 
-Flux polls git on 1m interval. Add Flux `Receiver` + GitHub webhook for instant reconciliation
-on push. See <https://fluxcd.io/flux/guides/webhook-receivers/>.
+Flux `Receiver` resources and HTTPRoute deployed at `flux-webhook.allegedly.works`.
+Harbor webhook auto-configured by `harbor-webhook` Terraform. GitHub webhook requires
+one manual `gh api` call — see "Next Actions (Harbor CI + Flux Webhook)" above.
 
 ### TODO: Flux Kustomization Dependency Graph UI
 

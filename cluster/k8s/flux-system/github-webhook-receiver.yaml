@@ -1,0 +1,31 @@
+---
+# Flux Receiver: GitHub push to devel → immediate GitRepository reconciliation
+#
+# When GitHub sends a push webhook for the devel branch, Flux immediately
+# reconciles the flux-system GitRepository instead of waiting for the 1-minute
+# poll interval.
+#
+# After deploying, register the GitHub webhook (run once):
+#   TOKEN=$(kubectl get secret github-webhook-token -n flux-system -o jsonpath='{.data.token}' | base64 -d)
+#   HASH=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
+#   gh api repos/agentydragon/ducktape/hooks --method POST \
+#     -f "config[url]=https://flux-webhook.allegedly.works/hook/$HASH" \
+#     -f "config[secret]=$TOKEN" \
+#     -f "config[content_type]=json" \
+#     -f "events[]=push"
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: github
+  namespace: flux-system
+spec:
+  type: github
+  events:
+    - push
+  secretRef:
+    name: github-webhook-token
+  resources:
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: flux-system
+      namespace: flux-system

@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - openai-api-key-sealed.yaml
   - ollama-api-key-externalsecret.yaml
+  - harbor-robot-secret.yaml

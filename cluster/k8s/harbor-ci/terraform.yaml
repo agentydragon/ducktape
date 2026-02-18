@@ -1,0 +1,33 @@
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: harbor-ci
+  namespace: flux-system
+spec:
+  interval: 15m
+  path: ./cluster/terraform/gitops/harbor-ci
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix = "harbor-ci"
+        namespace     = "flux-system"
+      }
+
+  vars:
+    - name: vault_address
+      value: "http://instance.vault.svc.cluster.local:8200"
+  varsFrom:
+    - kind: Secret
+      name: vault-token
+      varsKeys:
+        - vault_token
+      optional: false
