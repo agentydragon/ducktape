@@ -19,6 +19,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
+import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -30,7 +31,6 @@ from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandle
 from agent_core.logging_handler import LoggingHandler
 from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, LoopDecision, NoAction
 from openai_utils.model import SystemMessage, UserMessage
-from props.agents.critic_dev.eval_client import CriticRunClient
 from props.agents.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoopState, LoopStatus, create_tool_provider
 from props.agents.runtime import create_bound_model_from_env, get_current_agent_run, render_system_prompt, setup_logging
 from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig
@@ -357,7 +357,7 @@ class ImprovementReminderHandler(BaseHandler):
 
 async def run_agent_loop(
     system_prompt: str,
-    eval_client: CriticRunClient,
+    http_client: httpx.AsyncClient,
     db: Database,
     agent_run_id: UUID,
     type_config: CriticDevOptimizeTypeConfig | CriticDevImproveTypeConfig,
@@ -368,7 +368,7 @@ async def run_agent_loop(
     For improve: auto-terminates when a candidate beats baseline.
     """
     state = LoopState()
-    tool_provider = create_tool_provider(state, eval_client, db)
+    tool_provider = create_tool_provider(state, http_client, db)
     bound_model = create_bound_model_from_env(db)
 
     handlers: list[BaseHandler] = [
@@ -440,14 +440,17 @@ async def main() -> int:
         logger.error("Unexpected type_config: %s", type(type_config).__name__)
         return 1
 
-    async with CriticRunClient.from_env() as eval_client:
+    backend_url = os.environ.get("PROPS_BACKEND_URL", "http://props-backend:8000")
+    async with httpx.AsyncClient(
+        base_url=backend_url, auth=(db.config.user, db.config.password), timeout=httpx.Timeout(60.0, connect=30.0)
+    ) as http_client:
         system_prompt = render_system_prompt(
             "props/agents/critic_dev/prompt.md.mako", db, helpers={"type_config": type_config}
         )
 
         exit_code = await run_agent_loop(
             system_prompt=system_prompt,
-            eval_client=eval_client,
+            http_client=http_client,
             db=db,
             agent_run_id=agent_run_id,
             type_config=type_config,

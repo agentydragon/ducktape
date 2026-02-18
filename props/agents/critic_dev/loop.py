@@ -14,13 +14,13 @@ from enum import StrEnum, auto
 from pathlib import Path
 from uuid import UUID
 
+import httpx
 from pydantic import Field
 
 from agent_core.direct_provider import DirectToolProvider
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from props.agents.critic_dev.eval_client import CriticRunClient
 from props.agents.critic_dev.grading import wait_until_graded
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.db.database import Database
@@ -97,7 +97,7 @@ class LoopState:
 # =============================================================================
 
 
-def create_tool_provider(state: LoopState, eval_client: CriticRunClient, db: Database) -> DirectToolProvider:
+def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: Database) -> DirectToolProvider:
     """Create tool provider with shared tools (no submit)."""
     provider = DirectToolProvider()
 
@@ -130,7 +130,9 @@ def create_tool_provider(state: LoopState, eval_client: CriticRunClient, db: Dat
         finish, then use wait_until_graded to wait for grading results.
         """
         logger.info(f"Starting critic: definition={args.definition_id}, example={args.example}")
-        response = await eval_client.start_critic(args)
+        resp = await http_client.post("/api/runs/critic", json=args.model_dump(mode="json"))
+        resp.raise_for_status()
+        response = StartCriticResponse.model_validate(resp.json())
         logger.info(f"Critic started: {response.critic_run_id}")
         return response
 
