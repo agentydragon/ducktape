@@ -163,6 +163,7 @@ py_test(
 
 py_test(
     name = "test_grading_edges_constraints",
+    size = "medium",
     srcs = ["test_grading_edges_constraints.py"],
     imports = ["../../.."],
     requires_docker = True,

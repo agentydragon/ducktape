@@ -114,6 +114,7 @@ py_test(
 
 py_test(
     name = "test_sync_occurrence_update",
+    size = "medium",
     srcs = ["test_sync_occurrence_update.py"],
     imports = ["../../.."],
     requires_docker = True,
