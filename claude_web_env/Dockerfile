@@ -104,7 +104,7 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list && \
     update-ca-certificates && \
     rm /etc/apt/apt.conf.d/99no-verify
 
-# Layer 6: Core packages (base system, build tools, clang, libs, systemd, podman, fonts, java, postgres, redis)
+# Layer 6: Core packages (base system, build tools, clang, libs, systemd, fonts, java, postgres, redis)
 # NOTE: apt lists persist from Layer 5 - no apt-get update needed here
 RUN apt-get install --allow-downgrades -y --no-install-recommends \
     software-properties-common gnupg2 curl \
@@ -130,10 +130,8 @@ RUN apt-get install --allow-downgrades -y --no-install-recommends \
     libglib2.0-dev libglib2.0-dev-bin libglib2.0-0t64 libglib2.0-bin libglib2.0-data \
     x11proto-core-dev git \
     gnupg gnupg-utils gpg gpg-agent gpgconf gpgsm gpgv dirmngr keyboxd \
-    jq ripgrep strace valgrind vim xvfb yq \
+    jq ripgrep strace valgrind vim xvfb yq zsh \
     systemd systemd-dev systemd-sysv libsystemd0 libsystemd-shared libudev1 libpam-systemd \
-    podman buildah crun conmon catatonit fuse-overlayfs fuse3 \
-    slirp4netns passt netavark aardvark-dns uidmap containernetworking-plugins \
     fonts-dejavu-core fonts-dejavu-mono fonts-freefont-ttf fonts-ipafont-gothic \
     fonts-liberation fonts-noto-color-emoji fonts-opensymbol fonts-tlwg-loma-otf \
     fonts-unifont fonts-wqy-zenhei xfonts-cyrillic xfonts-scalable \
