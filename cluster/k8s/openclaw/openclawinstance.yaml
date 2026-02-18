@@ -18,7 +18,7 @@ spec:
       agents:
         defaults:
           model:
-            primary: "ollama/gpt-oss:20b"
+            primary: "gpt-oss-20b-128k"
       gateway:
         # Trusted-proxy auth: Authentik outpost authenticates users and passes
         # identity via X-Authentik-Username header. OpenClaw trusts this header

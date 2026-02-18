@@ -14,5 +14,5 @@ spec:
         request: "600s"
         backendRequest: "600s"
       backendRefs:
-        - name: ollama
-          port: 8080
+        - name: litellm
+          port: 4000

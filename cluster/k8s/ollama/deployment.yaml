@@ -68,40 +68,7 @@ spec:
               port: ollama
             initialDelaySeconds: 10
             periodSeconds: 10
-        - name: auth-proxy
-          image: openresty/openresty:alpine
-          ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-          volumeMounts:
-            - name: auth-config
-              mountPath: /usr/local/openresty/nginx/conf/nginx.conf
-              subPath: nginx.conf
-              readOnly: true
-            - name: api-key
-              mountPath: /etc/ollama-secrets
-              readOnly: true
-          resources:
-            requests:
-              cpu: 10m
-              memory: 16Mi
-            limits:
-              cpu: 100m
-              memory: 64Mi
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
       volumes:
         - name: models
           persistentVolumeClaim:
             claimName: llm-models
-        - name: auth-config
-          configMap:
-            name: ollama-auth-proxy-config
-        - name: api-key
-          secret:
-            secretName: ollama-api-key

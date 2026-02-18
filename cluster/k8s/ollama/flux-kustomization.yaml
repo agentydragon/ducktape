@@ -15,6 +15,11 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cert-manager-issuer-config
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: litellm
+      namespace: ollama
   dependsOn:
     - name: cert-manager-issuer-config
     - name: ollama-namespace

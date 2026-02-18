@@ -2,8 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - pvc.yaml
-  - auth-proxy-config.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
   - clusterrole-ollama-consumer.yaml
+  - job-pull-gpt-oss-20b-v1.yaml
+  - litellm.yaml

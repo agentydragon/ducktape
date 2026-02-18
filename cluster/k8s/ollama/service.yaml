@@ -11,6 +11,6 @@ spec:
     app: ollama
   ports:
     - name: http
-      port: 8080
-      targetPort: http
+      port: 11434
+      targetPort: ollama
       protocol: TCP

@@ -40,12 +40,12 @@ spec:
         namespace: "props"
       upstreams:
         ollama:
-          url: "http://ollama.ollama.svc.cluster.local:8080/v1"
+          url: "http://litellm.ollama.svc.cluster.local:4000/v1"
           api_key_env: "OLLAMA_API_KEY"
       models:
-        - name: "gpt-oss-20b"
+        - name: "gpt-oss-20b-128k"
           upstream: "ollama"
-          upstream_model: "gpt-oss-20b"
+          upstream_model: "gpt-oss-20b-128k"
           input_usd_per_1m_tokens: 0
           cached_input_usd_per_1m_tokens: 0
           output_usd_per_1m_tokens: 0
