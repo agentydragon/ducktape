@@ -10,18 +10,17 @@ LOCKFILE="${SCRIPT_DIR}/../multitool/lockfile.json"
 
 NIXFMT_URL="$(jq -r '.nixfmt.binaries[] | select(.os == "linux" and .cpu == "x86_64") | .url' "$LOCKFILE")"
 NIXFMT_SHA256="$(jq -r '.nixfmt.binaries[] | select(.os == "linux" and .cpu == "x86_64") | .sha256' "$LOCKFILE")"
-NIXFMT_VERSION="$(printf '%s' "$NIXFMT_URL" | sed 's|.*/v\([^/]*\)/.*|\1|')"
 
 # Cache directory: use XDG_CACHE_HOME if set, otherwise ~/.cache
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/nixfmt-bin"
-NIXFMT_BIN="${CACHE_DIR}/nixfmt-${NIXFMT_VERSION}"
+NIXFMT_BIN="${CACHE_DIR}/nixfmt-${NIXFMT_SHA256}"
 
 if [[ ! -x "$NIXFMT_BIN" ]]; then
   mkdir -p "$CACHE_DIR"
   TMP="$(mktemp "${CACHE_DIR}/nixfmt-download.XXXXXX")"
   trap 'rm -f "$TMP"' EXIT
 
-  echo "Downloading nixfmt v${NIXFMT_VERSION}..." >&2
+  echo "Downloading nixfmt..." >&2
   curl -fsSL -o "$TMP" "$NIXFMT_URL"
 
   ACTUAL_SHA256="$(sha256sum "$TMP" | cut -d' ' -f1)"
@@ -35,7 +34,7 @@ if [[ ! -x "$NIXFMT_BIN" ]]; then
   chmod +x "$TMP"
   mv "$TMP" "$NIXFMT_BIN"
   trap - EXIT
-  echo "Cached nixfmt v${NIXFMT_VERSION} at ${NIXFMT_BIN}" >&2
+  echo "Cached nixfmt at ${NIXFMT_BIN}" >&2
 fi
 
 exec "$NIXFMT_BIN" "$@"
