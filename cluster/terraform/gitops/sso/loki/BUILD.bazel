@@ -1,0 +1,17 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "authentik": "goauthentik/authentik:~>2025.12.0",
+    },
+    tf_version = "1.9.8",
+)
+
+tf_module(
+    name = "loki",
+    providers = [
+        "authentik",
+    ],
+    providers_versions = ":providers",
+)

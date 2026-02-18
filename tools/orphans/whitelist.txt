@@ -173,9 +173,6 @@ TODO
 **/todo-*
 **/pytest-todo
 
-# Shared terraform provider template (not a module itself)
-cluster/terraform.tf
-
 # gatelet Makefile (not Python, but tracked here)
 experimental/gatelet/Makefile
 
