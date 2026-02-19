@@ -99,12 +99,19 @@ async def run_pytest_main_check(
     start = time.perf_counter()
 
     if bazel_index is not None:
-        # --all mode: Bazel is the source of truth for which files are py_test srcs.
-        candidates = [p.relative_to(repo_root) for p in bazel_index.known_srcs]
+        if not files:
+            # --all mode: check every registered py_test src.
+            candidates = [p.relative_to(repo_root) for p in bazel_index.known_srcs]
+        else:
+            # per-file mode: intersect passed files with known py_test srcs.
+            candidates = [f for f in files if (repo_root / f).resolve() in bazel_index.known_srcs]
     else:
+        # Bazel index unavailable: fall back to name heuristic + content guard.
         candidates = [f for f in files if is_test_file(f)]
 
-    test_files = [f for f in candidates if not is_lint_ignored(repo, f)]
+    # conftest.py files are fixture configuration — pytest doesn't run them as
+    # test modules so they don't need pytest_bazel.main().
+    test_files = [f for f in candidates if f.name != "conftest.py" and not is_lint_ignored(repo, f)]
 
     if not test_files:
         return ValidationResult(name, Skipped())
@@ -223,11 +230,9 @@ async def main_async() -> int:
 
     all_mode = len(sys.argv) > 1 and sys.argv[1] == "--all"
 
-    # In --all mode build the Bazel index so we check every registered py_test
-    # src rather than just the changed files.
-    bazel_index: BazelPyTestIndex | None = None
-    if all_mode:
-        bazel_index = try_build_bazel_index(repo_root)
+    # Build the Bazel index for all modes: in per-file mode it lets us intersect
+    # the passed files with known py_test srcs instead of falling back to name heuristics.
+    bazel_index = try_build_bazel_index(repo_root)
 
     # Get files to process: --all skips the file list (index drives the check),
     # otherwise use argv files or fall back to all tracked files.

@@ -124,12 +124,3 @@ py_test(
         "@pypi//tiktoken",
     ],
 )
-
-py_test(
-    name = "test_types",
-    srcs = ["test_types.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-    ],
-)

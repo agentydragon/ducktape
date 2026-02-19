@@ -24,6 +24,7 @@ TODO: Add XML analysis safety net that checks JUnit XML test results
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -88,6 +89,13 @@ def try_build_bazel_index(repo_root: Path) -> BazelPyTestIndex | None:
     return index
 
 
+_TEST_FUNC_PATTERN = re.compile(r"^\s*(?:async\s+)?def\s+test_", re.MULTILINE)
+
+
+def has_test_functions(content: str) -> bool:
+    return bool(_TEST_FUNC_PATTERN.search(content))
+
+
 def has_pytest_bazel_main(content: str) -> bool:
     """Check if content has pytest_bazel.main() call."""
     return "pytest_bazel.main()" in content
@@ -99,6 +107,12 @@ def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex |
 
     if has_pytest_bazel_main(content):
         return CheckResult(file_path, True, "has pytest_bazel.main()")
+
+    # In per-file mode (no Bazel index), only flag files that actually contain
+    # test functions — files with "test_" in their name that are helpers or
+    # utility modules should not require pytest_bazel.main().
+    if bazel_index is None and not has_test_functions(content):
+        return CheckResult(file_path, True, "no test functions")
 
     if bazel_index is not None:
         abs_path = (repo_root / file_path).resolve()
