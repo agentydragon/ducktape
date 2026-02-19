@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, TypeVar
+from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
@@ -47,9 +47,6 @@ from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.splits import Split
 from props.db.snapshots import LocationAnchor
-
-T = TypeVar("T", bound=BaseModel)
-
 
 # Reusable SQLAlchemy Enum type for ExampleKind
 # Use this instead of mapped_column(String) for proper Python enum conversion
@@ -137,7 +134,7 @@ class AgentRunStatus(StrEnum):
     TIMED_OUT = "timed_out"
 
 
-class PydanticColumn(TypeDecorator[T]):
+class PydanticColumn[T: BaseModel](TypeDecorator[T]):
     """SQLAlchemy column type that automatically serializes/deserializes any Pydantic model.
 
     Usage:
@@ -222,10 +219,7 @@ class PathColumn(TypeDecorator[Path]):
         return Path(value)
 
 
-E = TypeVar("E", bound=StrEnum)
-
-
-class StrEnumColumn(TypeDecorator[E]):
+class StrEnumColumn[E: StrEnum](TypeDecorator[E]):
     """Generic SQLAlchemy column type for StrEnum types.
 
     Uses PostgreSQL ENUM type with values derived from the Python enum.

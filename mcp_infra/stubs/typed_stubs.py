@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import types
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, TypeVar, cast, get_origin, get_type_hints
+from typing import Any, cast, get_origin, get_type_hints
 
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
@@ -13,9 +11,6 @@ from pydantic import BaseModel, TypeAdapter
 
 from mcp_infra.client_helpers import extract_error_detail_from_fastmcp
 from mcp_infra.enhanced.flat_mixin import FlatTool
-
-T_In = TypeVar("T_In", bound=BaseModel)
-T_Out = TypeVar("T_Out")
 
 
 def _structured_content(result: FastMCPCallToolResult, *, tool_name: str) -> dict[str, Any]:
@@ -33,7 +28,7 @@ class ToolStub[T_Out]:
         self._name = name
         self._out_type = out_type
 
-    async def __call__(self, payload: T_In) -> T_Out:
+    async def __call__[T_In: BaseModel](self, payload: T_In) -> T_Out:
         args = payload.model_dump(exclude_none=False)
         result = await self._session.call_tool(name=self._name, arguments=args)
 
@@ -111,7 +106,7 @@ class TypedClient:
         self._session = session
         self._models: dict[str, ToolModels] = {}
 
-    def stub(self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
+    def stub[T_Out](self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
         return ToolStub(self._session, name, out_type)
 
     @property
@@ -119,7 +114,7 @@ class TypedClient:
         return self._models
 
     @classmethod
-    def from_server(cls, server: FastMCP, session: Client) -> TypedClient:
+    def from_server(cls, server: FastMCP, session: Client) -> "TypedClient":
         """Create a TypedClient introspecting FastMCP's tool registry.
 
         Requires a server created via FastMCP. Introspects FlatTool instances

@@ -10,15 +10,13 @@ import ast
 import inspect
 import textwrap
 from collections.abc import Awaitable
-from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, cast, get_args, get_origin, get_type_hints
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
     from fastmcp.client import Client
 
 from mcp_infra.stubs.typed_stubs import TypedClient
-
-TServerStub = TypeVar("TServerStub", bound="ServerStub")
 
 
 class ServerStub:
@@ -123,9 +121,8 @@ class ServerStub:
             setattr(self, name, _call.__get__(self, self.__class__))
 
     @classmethod
-    def from_server(cls: type[TServerStub], server: FastMCP, session: Client) -> TServerStub:
+    def from_server[TServerStub: "ServerStub"](cls: type[TServerStub], server: FastMCP, session: Client) -> TServerStub:
         """Create a typed stub from a FastMCP server and session."""
-        # TypeVar bound to ServerStub ensures cls() accepts TypedClient
         return cast(TServerStub, cls(TypedClient.from_server(server, session)))
 
     def _stub(self, name: str, output_type: type):

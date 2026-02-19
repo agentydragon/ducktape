@@ -8,9 +8,7 @@ All IDs are Pydantic-validated. NewTypes provide compile-time type safety
 (mypy distinguishes them) while remaining strings at runtime (work as JSON dict keys).
 """
 
-from __future__ import annotations
-
-from typing import Annotated, NewType, TypeAlias
+from typing import Annotated, NewType
 
 from pydantic import PlainSerializer, StringConstraints
 
@@ -19,8 +17,7 @@ _STR_IDENTITY_SERIALIZER = PlainSerializer(lambda x: x, return_type=str, when_us
 
 # Base issue ID type (used in specimens, critique definitions)
 # Pattern: lowercase alphanumeric, underscore, hyphen only (5-40 characters)
-# ruff: noqa: UP040 - TypeAlias required for mypy compatibility with complex Annotated types
-BaseIssueID: TypeAlias = Annotated[
+type BaseIssueID = Annotated[
     str, StringConstraints(pattern=r"^[a-z0-9_-]+$", min_length=5, max_length=40), _STR_IDENTITY_SERIALIZER
 ]
 
@@ -31,8 +28,7 @@ BaseIssueID: TypeAlias = Annotated[
 #   - date-sequence: typically YYYY-MM-DD-NN or YYYY-MM-DD-name (e.g., "2025-11-26-00", "2025-08-30-internal_db")
 # Constraint: EXACTLY ONE SLASH for consistent directory depth in runs/
 #
-# ruff: noqa: UP040 - TypeAlias required for mypy compatibility
-_SnapshotSlugBase: TypeAlias = Annotated[
+type _SnapshotSlugBase = Annotated[
     str,
     StringConstraints(
         pattern=r"^[a-z0-9_-]+/[a-z0-9_-]+$",

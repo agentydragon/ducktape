@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 import inspect
 import logging
 from collections.abc import Callable
 from types import UnionType
-from typing import Annotated, Any, TypeVar, Union, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
 
 from fastmcp.server import FastMCP
 from mcp import types as mcp_types
@@ -19,9 +17,6 @@ from openai_utils.json_schema import openai_json_schema
 __all__ = ["FlatModelMixin", "FlatTool"]
 
 logger = logging.getLogger(__name__)
-
-InputModelT = TypeVar("InputModelT", bound=BaseModel)
-OutputT = TypeVar("OutputT")
 
 
 def _collect_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
@@ -95,7 +90,7 @@ class FlatModelMixin(FastMCP):
                 content=[mcp_types.TextContent(type="text", text=format_validation_error(e))], isError=True
             )
 
-    def flat_model(
+    def flat_model[InputModelT: BaseModel, OutputT](
         self,
         *,
         name: str | None = None,

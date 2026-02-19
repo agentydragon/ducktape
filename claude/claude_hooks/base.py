@@ -5,7 +5,7 @@ import logging
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import yaml
 from platformdirs import user_config_dir, user_state_dir
@@ -33,10 +33,6 @@ from claude_hooks.inputs import (
     UserPromptSubmitInput,
 )
 from claude_hooks.logging_context import set_hook_context, setup_hook_logging
-
-# Type variables for generic hook handling
-InputT = TypeVar("InputT", bound=BaseHookInput)
-OutputT = TypeVar("OutputT", bound=HookAction)
 
 
 class HookBase[InputT: BaseHookInput, OutputT: HookAction](ABC):

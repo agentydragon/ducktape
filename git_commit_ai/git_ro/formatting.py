@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from enum import IntEnum
 from pathlib import Path
-from typing import Annotated, TypeVar
+from typing import Annotated
 
 import pygit2
 from pydantic import BaseModel, Field
@@ -51,9 +49,6 @@ class StringListPage(BaseModel):
     total_items: int
     truncated: bool
     next_offset: int | None = None
-
-
-T = TypeVar("T")
 
 
 def _calc_window(total: int, start: int, size: int) -> tuple[int, int, bool, int | None]:

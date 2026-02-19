@@ -1,10 +1,7 @@
 """OpenAI adapter exceptions and translation helpers."""
 
-from __future__ import annotations
-
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import ParamSpec, TypeVar
 
 from openai import APIStatusError, BadRequestError
 
@@ -26,11 +23,7 @@ class ContextLengthExceededError(Exception):
         return base
 
 
-P = ParamSpec("P")
-T = TypeVar("T")
-
-
-async def translate_context_length(call: Callable[P, Awaitable[T]], *args: P.args, **kwargs: P.kwargs) -> T:
+async def translate_context_length[**P, T](call: Callable[P, Awaitable[T]], *args: P.args, **kwargs: P.kwargs) -> T:
     """Execute an OpenAI SDK call and translate context-length errors."""
 
     try:

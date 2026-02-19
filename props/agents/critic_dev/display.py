@@ -1,10 +1,8 @@
 """Display utilities for critic-dev CLI commands."""
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 from rich import box
 from rich.table import Table
@@ -12,8 +10,6 @@ from rich.table import Table
 SHORT_SHA_LENGTH = 6
 
 JustifyMethod = Literal["left", "right", "center", "full", "default"]
-T = TypeVar("T")
-V = TypeVar("V")
 
 
 def short_sha(sha: str) -> str:

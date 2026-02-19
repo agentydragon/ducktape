@@ -5,9 +5,6 @@ Provides consistent date handling across CLI and API components.
 
 import datetime
 from collections.abc import Callable
-from typing import TypeVar
-
-T = TypeVar("T")
 
 
 def parse_date(date_string: str | None = None) -> datetime.datetime:

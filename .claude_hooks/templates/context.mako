@@ -28,3 +28,4 @@ Ollama: OpenAI-compatible LLM inference at `https://ollama.allegedly.works/v1` (
   Write access: POST create works (issues, comments), but PATCH update returns 403. Writes cannot be reverted with this token.
   Note: GitHub API requests frequently get transient 401s from the TLS-inspecting egress proxy. Retry on 401 with backoff (sleep 2-5s between retries). Parse JSON defensively — a 401 returns an empty body.
 % endif
+Bazel: `bazel build //...` / `bazel test //...` (full repo) are slow in web sessions. When a repo-wide scan is needed, run a few smaller serial invocations (e.g. `//agent_core/...`, then `//props/...`) rather than one large `//...`.

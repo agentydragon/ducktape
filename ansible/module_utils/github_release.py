@@ -10,11 +10,7 @@ import json
 import re
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, TypeVar
-
-# Type variables for better type hints
-T = TypeVar("T")
-R = TypeVar("R")
+from typing import Any
 
 
 class ActionError(Exception):

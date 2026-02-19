@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import functools
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
+from typing import Any, cast
 
 import httpx
 import openai
@@ -14,9 +12,6 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from openai_utils.errors import translate_context_length
 from openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
-
-if TYPE_CHECKING:
-    pass
 
 # Default retry policy: 5 attempts, exponential backoff with jitter (~0.5s..60s)
 _DEFAULT_ATTEMPTS = 10
@@ -30,10 +25,6 @@ _RETRY_ON: Iterable[type[BaseException]] = (
     httpx.TimeoutException,
     httpx.ConnectError,
 )
-
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 
 def retry_decorator(
@@ -50,7 +41,7 @@ def retry_decorator(
         retry=retry_if_exception_type(tuple(retry_exceptions)),
     )
 
-    def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+    def decorator[**P, T](func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
         wrapped = tenacity_decorator(func)
 
         @functools.wraps(func)

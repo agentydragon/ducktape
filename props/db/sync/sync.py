@@ -9,7 +9,6 @@ import tarfile
 from collections.abc import Callable, Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
 
 import yaml
 from pydantic import BaseModel
@@ -144,10 +143,6 @@ def sync_snapshot_files_to_db(session: Session, slug: SnapshotSlug, archive_byte
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-_OccORM = TypeVar("_OccORM", TruePositiveOccurrenceORM, FalsePositiveOccurrenceORM)
-_OccPydantic = TypeVar("_OccPydantic", TruePositiveOccurrence, FalsePositiveOccurrence)
-
-
 def _reconstruct_occ_common(
     db_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM,
 ) -> tuple[dict[Path, list[LineRange]], set[Path] | None]:
@@ -201,12 +196,15 @@ def _fp_occ_from_orm(db_occ: FalsePositiveOccurrenceORM) -> FalsePositiveOccurre
     )
 
 
-def _sync_occurrences(
+def _sync_occurrences[
+    OccORM: (TruePositiveOccurrenceORM, FalsePositiveOccurrenceORM),
+    OccPydantic: (TruePositiveOccurrence, FalsePositiveOccurrence),
+](
     session: Session,
-    db_occs: list[_OccORM],
-    yaml_occs: list[_OccPydantic],
-    from_orm: Callable[[_OccORM], _OccPydantic],
-    add_occ: Callable[[_OccPydantic], None],
+    db_occs: list[OccORM],
+    yaml_occs: list[OccPydantic],
+    from_orm: Callable[[OccORM], OccPydantic],
+    add_occ: Callable[[OccPydantic], None],
 ) -> bool:
     """Diff occurrences by id; delete+re-add only changed ones. Returns True if anything changed."""
     changed = False

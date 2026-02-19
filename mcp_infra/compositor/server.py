@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from enum import Enum, auto
 
 # Import will be circular at module load, so use TYPE_CHECKING
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
@@ -45,8 +45,6 @@ if TYPE_CHECKING:
     from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T", bound=FastMCP)
 
 
 class ChildNotificationHandler(MessageHandler):
@@ -375,7 +373,7 @@ class BaseCompositor(FastMCP):
         # Register and notify
         await self._mount_common(validated_prefix, mount)
 
-    async def mount_inproc(self, prefix: MCPMountPrefix, server: T, *, pinned: bool = False) -> Mounted[T]:
+    async def mount_inproc[T: FastMCP](self, prefix: MCPMountPrefix, server: T, *, pinned: bool = False) -> Mounted[T]:
         """Mount in-process FastMCP server and return Mounted wrapper.
 
         Exception-safe: if mount fails, no server is registered and no resources leak.
