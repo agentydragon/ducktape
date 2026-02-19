@@ -6,3 +6,4 @@ resources:
   - hubble-httproute.yaml
   - openclaw-httproute.yaml
   - gatus-httproute.yaml
+  - grocy-httproute.yaml

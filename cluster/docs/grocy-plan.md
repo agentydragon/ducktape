@@ -154,6 +154,22 @@ Authentik auto-creates the `ak-outpost-grocy-outpost` Deployment and Service in 
 
 ---
 
+## TODO: Grocy API token for agent access
+
+After Grocy is running, provision an API token so OpenClaw and Claude can interact with the
+Grocy REST API programmatically:
+
+1. Log in to `https://grocy.allegedly.works` and navigate to **Manage API keys** in the user
+   menu (top-right).
+2. Create a new API key for agent use (e.g., name it `openclaw` or `claude-agent`).
+3. Store the token in Vault at `kv/grocy/api-key` (property `api_key`).
+4. Create an ExternalSecret to expose it to workloads that need it — e.g., mount into the
+   OpenClaw pod as `GROCY_API_KEY`, or retrieve from Vault directly via the Vault API.
+
+The Grocy REST API is available at `https://grocy.allegedly.works/api/`.
+
+---
+
 ## Traffic flow (post-deploy)
 
 ```text

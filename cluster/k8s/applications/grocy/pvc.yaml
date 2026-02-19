@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grocy-config
+  namespace: grocy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: proxmox-csi-retain
+  resources:
+    requests:
+      storage: 5Gi
