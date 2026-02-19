@@ -72,8 +72,8 @@ investigations/**
 # Website (Hakyll, not Bazelized)
 website/**
 
-# Home automation configs
-homeassistant/**
+# Home automation YAML configs (Python source is Bazelized; BUILD/gitignore/sh/md covered by type patterns)
+homeassistant/**/*.yaml
 
 # Claude workspace metadata
 .claude/**
