@@ -24,7 +24,6 @@ TODO: Add XML analysis safety net that checks JUnit XML test results
 from __future__ import annotations
 
 import asyncio
-import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -32,9 +31,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 from bazel_util.query import run_query
-
-# Number of worker threads for parallel file checking
-_MAX_WORKERS = min(32, (os.cpu_count() or 4) + 4)
 
 
 class CheckResult(NamedTuple):
@@ -97,43 +93,15 @@ def has_pytest_bazel_main(content: str) -> bool:
     return "pytest_bazel.main()" in content
 
 
-def should_skip_file(file_path: Path) -> tuple[bool, str]:
-    """Check if file should be skipped from checking.
-
-    Returns (should_skip, reason). Gitattributes filtering is the caller's
-    responsibility and happens before files reach this function.
-    """
-    if file_path.name == "conftest.py":
-        return True, "conftest.py (fixture file)"
-
-    file_path_str = str(file_path)
-
-    if "external/" in file_path_str:
-        return True, "external dependency"
-
-    if any(part.startswith("bazel-") for part in file_path.parts):
-        return True, "bazel output directory"
-
-    return False, ""
-
-
 def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex | None) -> CheckResult:
     """Check if test file has required pytest_bazel.main() entry point."""
-    should_skip, skip_reason = should_skip_file(file_path)
-    if should_skip:
-        return CheckResult(file_path, True, f"skipped: {skip_reason}")
-
-    try:
-        content = (repo_root / file_path).read_text()
-    except OSError as e:
-        return CheckResult(file_path, False, f"error reading file: {e}")
+    content = (repo_root / file_path).read_text()
 
     if has_pytest_bazel_main(content):
         return CheckResult(file_path, True, "has pytest_bazel.main()")
 
-    abs_path = (repo_root / file_path).resolve() if not file_path.is_absolute() else file_path.resolve()
-
     if bazel_index is not None:
+        abs_path = (repo_root / file_path).resolve()
         if abs_path not in bazel_index.known_srcs:
             return CheckResult(file_path, True, "not a py_test src (not a Bazel target)")
         if abs_path in bazel_index.exempt_srcs:

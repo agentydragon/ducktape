@@ -34,7 +34,12 @@ from bazel_util.workspace import get_build_workspace_directory
 from tools.check_pytest_main import BazelPyTestIndex, check_files_async, try_build_bazel_index
 from tools.precommit.check_filename_conventions import check_filename_conventions
 from tools.precommit.check_terraform_centralization import find_violations
-from tools.precommit.lint_ignored import is_lint_ignored
+
+_LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
+
+
+def is_lint_ignored(repo: pygit2.Repository, path: Path) -> bool:
+    return any(repo.get_attr(str(path), attr) in (True, "true") for attr in _LINT_IGNORED_ATTRS)
 
 
 @dataclass
@@ -94,16 +99,12 @@ async def run_pytest_main_check(
     start = time.perf_counter()
 
     if bazel_index is not None:
-        # --all mode: check every registered py_test src, filtered by gitattributes.
-        test_files = [
-            p
-            for p in bazel_index.known_srcs
-            if p.name.startswith("test_")
-            and p.name.endswith(".py")
-            and not is_lint_ignored(repo, p.relative_to(repo_root))
-        ]
+        # --all mode: Bazel is the source of truth for which files are py_test srcs.
+        candidates = [p.relative_to(repo_root) for p in bazel_index.known_srcs]
     else:
-        test_files = [f for f in files if is_test_file(f) and not is_lint_ignored(repo, f)]
+        candidates = [f for f in files if is_test_file(f)]
+
+    test_files = [f for f in candidates if not is_lint_ignored(repo, f)]
 
     if not test_files:
         return ValidationResult(name, Skipped())
