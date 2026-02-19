@@ -1,15 +1,11 @@
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["pydantic>=2.0"]
-# ///
 """Capture live container version information for comparison across updates.
 
 Collects runtime versions, package versions, environment-manager metadata,
 environment variables, and key binary hashes into a structured YAML artifact.
 
 Usage:
-    uv run --script tools/capture_versions.py > versions.yaml
-    uv run --script tools/capture_versions.py --diff previous-versions.yaml
+    bazel run //claude_web_env/tools:capture_versions -- > versions.yaml
+    bazel run //claude_web_env/tools:capture_versions -- --diff previous-versions.yaml
 
 The output is deterministic and diffable. Future sessions can compare against
 a previous capture to identify what changed in the container image.
@@ -296,7 +292,7 @@ def main() -> None:
 
     print("# Claude Code Web Container Versions")
     print(f"# Captured: {captured}")
-    print("# Use 'uv run --script tools/capture_versions.py --diff <prev>.yaml' to compare")
+    print("# Use 'bazel run //claude_web_env/tools:capture_versions -- --diff <prev>.yaml' to compare")
     print()
     print(yaml_dump(data))
 

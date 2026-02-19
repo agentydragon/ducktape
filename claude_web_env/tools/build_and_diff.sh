@@ -81,7 +81,7 @@ build_image() {
 
 capture_live_manifest() {
   log_info "Capturing live manifest..."
-  uv run --script tools/capture_manifest.py >live-manifest.ndjson
+  bazel run //claude_web_env/tools:capture_manifest -- >live-manifest.ndjson
   log_info "Live manifest: $(wc -l <live-manifest.ndjson) entries"
 }
 
@@ -92,20 +92,20 @@ capture_built_manifest() {
 
   # Docker lacks podman's `podman mount` command. Export the container
   # filesystem as a tar archive and extract to a temp directory, then run
-  # capture_manifest.py on the extracted tree.
+  # capture_manifest on the extracted tree.
   TMPDIR=$(mktemp -d /tmp/built-rootfs-XXXXXX)
   log_info "Extracting built image filesystem to $TMPDIR..."
   docker export "$CONTAINER_NAME" | tar -x --numeric-owner -C "$TMPDIR"
   docker rm "$CONTAINER_NAME"
 
-  uv run --script tools/capture_manifest.py "$TMPDIR" >built-manifest.ndjson
+  bazel run //claude_web_env/tools:capture_manifest -- "$TMPDIR" >built-manifest.ndjson
   rm -rf "$TMPDIR"
   log_info "Built manifest: $(wc -l <built-manifest.ndjson) entries"
 }
 
 generate_diff_report() {
   log_info "Generating diff report..."
-  uv run --script tools/diff_manifests.py \
+  bazel run //claude_web_env/tools:diff_manifests -- \
     live-manifest.ndjson built-manifest.ndjson \
     --exclusions exclusions.yaml -o diff_report.md
   log_info "Diff report written to diff_report.md"
@@ -131,7 +131,7 @@ main() {
 
   log_info "Capturing version snapshot..."
   VERSIONS_FILE="reference/versions-$(date -u +%Y-%m-%d).yaml"
-  uv run --script tools/capture_versions.py >"$VERSIONS_FILE"
+  bazel run //claude_web_env/tools:capture_versions -- >"$VERSIONS_FILE"
   log_info "Version snapshot saved to $VERSIONS_FILE"
 
   capture_live_manifest

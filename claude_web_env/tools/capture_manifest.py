@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["pydantic", "pyyaml"]
-# ///
 """Capture a full filesystem manifest as NDJSON.
 
 Captures EVERYTHING — no skip directories. Exclusions are applied only at diff
@@ -12,8 +7,8 @@ Uses a thread pool to parallelize SHA256 hashing for ~3-5x speedup on
 I/O-heavy filesystems.
 
 Usage:
-    ./capture_manifest.py > manifest.ndjson
-    ./capture_manifest.py /some/root > manifest.ndjson
+    bazel run //claude_web_env/tools:capture_manifest -- > manifest.ndjson
+    bazel run //claude_web_env/tools:capture_manifest -- /some/root > manifest.ndjson
 """
 
 import grp

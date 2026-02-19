@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["pydantic", "pyyaml"]
-# ///
 """Compare two NDJSON filesystem manifests with narrow exclusion support.
 
 Default: bit-for-bit comparison. Exclusions are loaded from a YAML/JSON config
@@ -19,9 +14,9 @@ file and apply *very narrow* rules:
       (proprietary binaries not reproducible from public sources).
 
 Usage:
-    ./diff_manifests.py live.ndjson built.ndjson
-    ./diff_manifests.py live.ndjson built.ndjson --exclusions exclusions.yaml
-    ./diff_manifests.py live.ndjson built.ndjson -o report.md
+    bazel run //claude_web_env/tools:diff_manifests -- live.ndjson built.ndjson
+    bazel run //claude_web_env/tools:diff_manifests -- live.ndjson built.ndjson --exclusions exclusions.yaml
+    bazel run //claude_web_env/tools:diff_manifests -- live.ndjson built.ndjson -o report.md
 """
 
 import argparse

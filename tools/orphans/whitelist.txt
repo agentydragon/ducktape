@@ -130,7 +130,7 @@ props/compose.yaml
 
 # claude_web_env: re/ is mostly Bazelized reverse-engineered source; one orphaned Go file
 # and go module files are orphaned (BUILD.bazel/md/toml covered by type patterns)
-claude_web_env/docs/**
+# claude_web_env/docs/** omitted — all files there are *.md, covered by the *.md pattern above
 claude_web_env/re/environment_manager/6b49f1ca/src/internal/tunnel/factory.go
 claude_web_env/re/**/go.mod
 claude_web_env/re/**/go.sum
