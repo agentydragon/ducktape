@@ -24,8 +24,6 @@ TODO: Add XML analysis safety net that checks JUnit XML test results
 from __future__ import annotations
 
 import asyncio
-import re
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,26 +55,18 @@ class BazelPyTestIndex:
     exempt_srcs: set[Path] = field(default_factory=set)
 
 
-def try_build_bazel_index(repo_root: Path) -> BazelPyTestIndex | None:
+def build_bazel_index(repo_root: Path) -> BazelPyTestIndex:
     """Query Bazel for all py_test targets and build a src-file index.
 
     Runs two concurrent bazel queries via bazel_util.query.run_query:
       - All source files that are srcs of some py_test target
       - Source files that are srcs of a py_test with a custom main= attribute
-
-    Returns None if bazel is unavailable, the server is not running, or the
-    query otherwise fails.
     """
-    try:
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            all_fut = executor.submit(run_query, "labels(srcs, kind(py_test, //...))", cwd=repo_root)
-            exempt_fut = executor.submit(
-                run_query, "labels(srcs, attr(main, '.+', kind(py_test, //...)))", cwd=repo_root
-            )
-            all_srcs_labels = all_fut.result()
-            exempt_srcs_labels = exempt_fut.result()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        all_fut = executor.submit(run_query, "labels(srcs, kind(py_test, //...))", cwd=repo_root)
+        exempt_fut = executor.submit(run_query, "labels(srcs, attr(main, '.+', kind(py_test, //...)))", cwd=repo_root)
+        all_srcs_labels = all_fut.result()
+        exempt_srcs_labels = exempt_fut.result()
 
     index = BazelPyTestIndex()
     for label in all_srcs_labels:
@@ -89,47 +79,31 @@ def try_build_bazel_index(repo_root: Path) -> BazelPyTestIndex | None:
     return index
 
 
-_TEST_FUNC_PATTERN = re.compile(r"^\s*(?:async\s+)?def\s+test_", re.MULTILINE)
-
-
-def has_test_functions(content: str) -> bool:
-    return bool(_TEST_FUNC_PATTERN.search(content))
-
-
 def has_pytest_bazel_main(content: str) -> bool:
     """Check if content has pytest_bazel.main() call."""
     return "pytest_bazel.main()" in content
 
 
-def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex | None) -> CheckResult:
+def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex) -> CheckResult:
     """Check if test file has required pytest_bazel.main() entry point."""
     content = (repo_root / file_path).read_text()
 
     if has_pytest_bazel_main(content):
         return CheckResult(file_path, True, "has pytest_bazel.main()")
 
-    # In per-file mode (no Bazel index), only flag files that actually contain
-    # test functions — files with "test_" in their name that are helpers or
-    # utility modules should not require pytest_bazel.main().
-    if bazel_index is None and not has_test_functions(content):
-        return CheckResult(file_path, True, "no test functions")
-
-    if bazel_index is not None:
-        abs_path = (repo_root / file_path).resolve()
-        if abs_path not in bazel_index.known_srcs:
-            return CheckResult(file_path, True, "not a py_test src (not a Bazel target)")
-        if abs_path in bazel_index.exempt_srcs:
-            return CheckResult(file_path, True, "exempt: py_test uses custom main= (bazel query)")
+    abs_path = (repo_root / file_path).resolve()
+    if abs_path not in bazel_index.known_srcs:
+        return CheckResult(file_path, True, "not a py_test src (not a Bazel target)")
+    if abs_path in bazel_index.exempt_srcs:
+        return CheckResult(file_path, True, "exempt: py_test uses custom main= (bazel query)")
 
     # Check if using pytest.main() directly (custom runner)
     if "pytest.main(" in content:
         return CheckResult(file_path, True, "uses pytest.main() (custom runner)")
 
-    return CheckResult(file_path, False, "has test functions but missing pytest_bazel.main() entry point")
+    return CheckResult(file_path, False, "missing pytest_bazel.main() entry point")
 
 
-async def check_files_async(
-    files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex | None
-) -> list[CheckResult]:
+async def check_files_async(files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex) -> list[CheckResult]:
     """Check files in parallel using asyncio."""
     return list(await asyncio.gather(*[asyncio.to_thread(check_file, f, repo_root, bazel_index) for f in files]))

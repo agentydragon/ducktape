@@ -31,7 +31,7 @@ import pygit2
 
 from bazel_util.runfiles import get_required_path
 from bazel_util.workspace import get_build_workspace_directory
-from tools.check_pytest_main import BazelPyTestIndex, check_files_async, try_build_bazel_index
+from tools.check_pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from tools.precommit.check_filename_conventions import check_filename_conventions
 from tools.precommit.check_terraform_centralization import find_violations
 
@@ -67,10 +67,6 @@ class ValidationResult:
     outcome: ValidationOutcome
 
 
-def is_test_file(p: Path) -> bool:
-    return p.suffix == ".py" and "test_" in p.name
-
-
 def is_cluster_validated(p: Path) -> bool:
     if p.is_relative_to("cluster/k8s") and p.suffix in (".yaml", ".yml"):
         return True
@@ -88,26 +84,18 @@ def is_terraform_module(p: Path) -> bool:
 
 
 async def run_pytest_main_check(
-    files: list[Path], repo_root: Path, repo: pygit2.Repository, bazel_index: BazelPyTestIndex | None
+    files: list[Path], repo_root: Path, repo: pygit2.Repository, bazel_index: BazelPyTestIndex
 ) -> ValidationResult:
-    """Check that test files have pytest_bazel.main() calls.
-
-    When bazel_index is provided (--all mode), checks all known py_test srcs.
-    Otherwise checks only the passed files that look like test files.
-    """
+    """Check that test files have pytest_bazel.main() calls."""
     name = "pytest-main-check"
     start = time.perf_counter()
 
-    if bazel_index is not None:
-        if not files:
-            # --all mode: check every registered py_test src.
-            candidates = [p.relative_to(repo_root) for p in bazel_index.known_srcs]
-        else:
-            # per-file mode: intersect passed files with known py_test srcs.
-            candidates = [f for f in files if (repo_root / f).resolve() in bazel_index.known_srcs]
+    if not files:
+        # --all mode: check every registered py_test src.
+        candidates = [p.relative_to(repo_root) for p in bazel_index.known_srcs]
     else:
-        # Bazel index unavailable: fall back to name heuristic + content guard.
-        candidates = [f for f in files if is_test_file(f)]
+        # per-file mode: intersect passed files with known py_test srcs.
+        candidates = [f for f in files if (repo_root / f).resolve() in bazel_index.known_srcs]
 
     # conftest.py files are fixture configuration — pytest doesn't run them as
     # test modules so they don't need pytest_bazel.main().
@@ -179,7 +167,7 @@ async def run_filename_convention_check(repo: pygit2.Repository) -> ValidationRe
 
 
 async def run_validate(
-    files: list[Path], repo_root: Path, repo: pygit2.Repository, bazel_index: BazelPyTestIndex | None
+    files: list[Path], repo_root: Path, repo: pygit2.Repository, bazel_index: BazelPyTestIndex
 ) -> list[ValidationResult]:
     """Run all validations on files."""
     return list(
@@ -230,9 +218,7 @@ async def main_async() -> int:
 
     all_mode = len(sys.argv) > 1 and sys.argv[1] == "--all"
 
-    # Build the Bazel index for all modes: in per-file mode it lets us intersect
-    # the passed files with known py_test srcs instead of falling back to name heuristics.
-    bazel_index = try_build_bazel_index(repo_root)
+    bazel_index = build_bazel_index(repo_root)
 
     # Get files to process: --all skips the file list (index drives the check),
     # otherwise use argv files or fall back to all tracked files.
