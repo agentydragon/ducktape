@@ -62,8 +62,11 @@ nix/**
 dotfiles/**
 k8s_old/**
 
-# k8s cluster configs (declarative YAML manifests, never Bazelized)
-cluster/**
+# k8s cluster manifests (declarative YAML, never Bazelized; scripts/charts/terraform are Bazelized)
+cluster/k8s/**
+cluster/terraform.tf
+cluster/scripts/get-passwords
+cluster/docs/iam-policy-route53.json
 
 # investigations/ - ad-hoc analysis, not buildable
 investigations/**
@@ -125,10 +128,10 @@ tools/multitool/lockfile.json
 # Props docker compose (infra config, not Bazelized)
 props/compose.yaml
 
-# claude_web_env: re/ is mostly Bazelized reverse-engineered source; only Go files
+# claude_web_env: re/ is mostly Bazelized reverse-engineered source; one orphaned Go file
 # and go module files are orphaned (BUILD.bazel/md/toml covered by type patterns)
 claude_web_env/docs/**
-claude_web_env/re/**/*.go
+claude_web_env/re/environment_manager/6b49f1ca/src/internal/tunnel/factory.go
 claude_web_env/re/**/go.mod
 claude_web_env/re/**/go.sum
 claude_web_env/reference/**
