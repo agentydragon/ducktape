@@ -111,15 +111,15 @@ homeassistant/**/*.yaml
 # is not part of the chart content — whitelist it)
 *.helmignore
 
-# Props specimens (committed code snapshots, not buildable)
-props/specimens/**
-
 # Props docker compose (infra config, not Bazelized)
 props/compose.yaml
 
-# claude_web_env: claude_web_env/re/ is Bazelized; exclude only the rest
+# claude_web_env: re/ is mostly Bazelized reverse-engineered source; only Go files
+# and go module files are orphaned (BUILD.bazel/md/toml covered by type patterns)
 claude_web_env/docs/**
-claude_web_env/re/**
+claude_web_env/re/**/*.go
+claude_web_env/re/**/go.mod
+claude_web_env/re/**/go.sum
 claude_web_env/reference/**
 claude_web_env/rootfs/**
 claude_web_env/tools/**
@@ -137,8 +137,8 @@ tools/local_registry/**
 
 # Data/archive files
 *.edn
-*.mako
-*.tanapaste
+# Tana paste export reference files
+tana/export/references/**
 
 # Git hooks and server-side hooks
 **/hooks/pre-receive*
