@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -53,78 +53,80 @@ def _strip_no_proxy_google() -> dict[str, str] | None:
 class EnvVars:
     """Collected environment variables for session.
 
-    All environment variables that need to be exported are collected
-    throughout the session hook setup and written once at the end.
+    Used in both web and CLI modes. Web mode sets all fields; CLI mode
+    sets only bazel_wrapper_dir, session_bazelrc, and with_direnv.
     """
 
-    # Per-session directory (exported so subprocesses like bazel_wrapper inherit it)
-    session_dir: Path
-
-    # Auth proxy and Bazel configuration
-    proxy_port: int
-    supervisor_port: int  # Needed by bazel_wrapper to connect to supervisor
-    repo_root: Path
-    combined_ca: Path
+    # Required in all modes
     bazel_wrapper_dir: Path
-    bazelisk_path: Path
     session_bazelrc: Path
 
-    # Nix paths
-    nix_paths: list[Path]
+    # Web mode: per-session directory
+    session_dir: Path | None = None
 
-    # Podman/Docker environment variables (e.g., DOCKER_HOST, DOCKER_CERT_PATH)
-    docker_env: dict[str, str] | None
+    # Web mode: auth proxy and Bazel configuration
+    proxy_port: int | None = None
+    supervisor_port: int | None = None
+    repo_root: Path | None = None
+    combined_ca: Path | None = None
+    bazelisk_path: Path | None = None
 
-    # Session metadata
-    hook_timestamp: datetime
+    # Additional PATH entries (Nix); empty in CLI mode
+    nix_paths: list[Path] = field(default_factory=list)
 
-    # mkcert localhost TLS certificate
-    mkcert_cert: Path | None
-    mkcert_key: Path | None
+    # Container runtime env vars (web mode)
+    docker_env: dict[str, str] | None = None
 
-    # Age-decrypted env var secrets (formatted and exported by write_env_file)
-    secrets_env_vars: dict[str, str] | None
+    # Session metadata timestamp (web mode)
+    hook_timestamp: datetime | None = None
+
+    # mkcert localhost TLS certificate (web mode)
+    mkcert_cert: Path | None = None
+    mkcert_key: Path | None = None
+
+    # Age-decrypted env var secrets (web mode)
+    secrets_env_vars: dict[str, str] | None = None
+
+    # CLI mode: include direnv eval for .envrc propagation
+    with_direnv: bool = False
 
 
 def write_env_file(env_file: Path, vars: EnvVars) -> None:
     """Write environment variables to file.
 
     This is the SINGLE write point for all session environment variables.
-    All env vars are collected during setup and written once at the end.
-
-    Args:
-        env_file: Path to environment file (CLAUDE_ENV_FILE)
-        vars: Collected environment variables
+    Works for both web mode (all fields set) and CLI mode (minimal fields).
     """
-    exports = [
-        "# Environment configured by session start hook",
-        f"# Timestamp: {vars.hook_timestamp.isoformat()}",
-        "",
-        "# Bazel tooling",
-        f'export PATH="{vars.bazel_wrapper_dir}:$PATH"',
-    ]
+    path_str = ":".join(
+        filter(None, [str(vars.bazel_wrapper_dir), *(str(p) for p in vars.nix_paths), os.environ.get("PATH")])
+    )
 
-    # Add nix to PATH
-    if vars.nix_paths:
-        nix_path_str = ":".join(str(p) for p in vars.nix_paths)
-        exports.append(f'export PATH="{nix_path_str}:$PATH"')
+    exports: list[str] = ["# Environment configured by session start hook"]
+    if vars.hook_timestamp:
+        exports.append(f"# Timestamp: {vars.hook_timestamp.isoformat()}")
+    exports.extend(
+        ["", "# Bazel tooling", *exports_from_dict({"PATH": path_str, ENV_SESSION_BAZELRC: vars.session_bazelrc})]
+    )
 
-    # Auth proxy configuration
-    local_proxy = f"http://localhost:{vars.proxy_port}"
-
-    auth_proxy_config: dict[str, str | Path] = {
-        ENV_SESSION_DIR: vars.session_dir,
-        ENV_AUTH_PROXY_PORT: str(vars.proxy_port),
-        ENV_AUTH_PROXY_URL: local_proxy,
-        ENV_BAZELISK_PATH: vars.bazelisk_path,
-        ENV_SESSION_BAZELRC: vars.session_bazelrc,
-        ENV_BAZEL_REPO_ROOT: vars.repo_root,
-        # Supervisor port needed by bazel_wrapper to connect to supervisor
-        ENV_SUPERVISOR_PORT: str(vars.supervisor_port),
-    }
-    ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
-    exports.extend(["", "# Auth proxy configuration"])
-    exports.extend(exports_from_dict(auth_proxy_config | ca_config))
+    if vars.proxy_port is not None:
+        assert vars.session_dir is not None
+        assert vars.supervisor_port is not None
+        assert vars.repo_root is not None
+        assert vars.combined_ca is not None
+        assert vars.bazelisk_path is not None
+        local_proxy = f"http://localhost:{vars.proxy_port}"
+        auth_proxy_config: dict[str, str | Path] = {
+            ENV_SESSION_DIR: vars.session_dir,
+            ENV_AUTH_PROXY_PORT: str(vars.proxy_port),
+            ENV_AUTH_PROXY_URL: local_proxy,
+            ENV_BAZELISK_PATH: vars.bazelisk_path,
+            ENV_BAZEL_REPO_ROOT: vars.repo_root,
+            # Supervisor port needed by bazel_wrapper to connect to supervisor
+            ENV_SUPERVISOR_PORT: str(vars.supervisor_port),
+        }
+        ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
+        exports.extend(["", "# Auth proxy configuration"])
+        exports.extend(exports_from_dict(auth_proxy_config | ca_config))
 
     # NOTE: We intentionally do NOT export HTTPS_PROXY/HTTP_PROXY here.
     # Anthropic sets these in the container with fresh JWT credentials.
@@ -142,34 +144,24 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.extend(["", "# NO_PROXY fix: strip *.googleapis.com/*.google.com (breaks Go module downloads)"])
         exports.extend(exports_from_dict(no_proxy_override))
 
-    # Docker/Podman configuration
     if vars.docker_env:
         exports.extend(["", "# Docker/Podman configuration"])
         exports.extend(exports_from_dict(vars.docker_env))
 
-    # mkcert localhost TLS certificate
     if vars.mkcert_cert and vars.mkcert_key:
         exports.extend(["", "# Localhost TLS certificate (mkcert)"])
         exports.extend(exports_from_dict({"MKCERT_CERT": vars.mkcert_cert, "MKCERT_KEY": vars.mkcert_key}))
 
-    # Session metadata
-    exports.extend(["", "# Session metadata"])
-    exports.extend(exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
+    if vars.hook_timestamp:
+        exports.extend(["", "# Session metadata"])
+        exports.extend(exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
 
-    # Age-decrypted secrets
     if vars.secrets_env_vars:
         exports.extend(["", "# Decrypted secrets (from *.age component files)"])
         exports.extend(exports_from_dict(vars.secrets_env_vars))
 
+    if vars.with_direnv and shutil.which("direnv"):
+        exports.append('eval "$(direnv export bash 2>/dev/null)"')
+
     content = "\n".join(exports) + "\n"
     write_config(env_file, content, "session environment")
-
-
-def write_cli_env_file(env_file_path: Path, *, wrapper_dir: Path, session_bazelrc: Path) -> None:
-    """Write CLI-mode environment: wrapper PATH + bazel config + direnv eval."""
-    lines = [f'export PATH="{wrapper_dir}:$PATH"']
-    lines.extend(exports_from_dict({ENV_SESSION_BAZELRC: session_bazelrc}))
-    if shutil.which("direnv"):
-        lines.append('eval "$(direnv export bash 2>/dev/null)"')
-    content = "\n".join(lines) + "\n"
-    write_config(env_file_path, content, "CLI environment")

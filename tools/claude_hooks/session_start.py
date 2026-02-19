@@ -176,8 +176,11 @@ async def run_cli_mode(hook_input: HookInput, settings: HookSettings, env_file_p
             bazelisk_setup.install_wrapper(settings)
 
         with tracer.start_as_current_span("write_env_file"):
-            env_file.write_cli_env_file(
-                env_file_path, wrapper_dir=settings.get_wrapper_dir(), session_bazelrc=session_bazelrc
+            env_file.write_env_file(
+                env_file_path,
+                env_file.EnvVars(
+                    bazel_wrapper_dir=settings.get_wrapper_dir(), session_bazelrc=session_bazelrc, with_direnv=True
+                ),
             )
 
         logger.info("CLI session configured: %s", settings.session_dir)
@@ -665,20 +668,20 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
         mkcert_key = mkcert.key_path
 
     env_vars = env_file.EnvVars(
+        bazel_wrapper_dir=settings.get_wrapper_dir(),
+        session_bazelrc=session_bazelrc,
         session_dir=settings.session_dir,
         proxy_port=settings.get_auth_proxy_port(),
         supervisor_port=settings.get_supervisor_port(),
         repo_root=project_dir,
         combined_ca=combined_ca,
-        bazel_wrapper_dir=settings.get_wrapper_dir(),
         bazelisk_path=bazelisk_path,
-        session_bazelrc=session_bazelrc,
         nix_paths=nix_paths,
         docker_env=docker_env,
         hook_timestamp=hook_timestamp,
-        secrets_env_vars=secrets.env_vars if secrets else None,
         mkcert_cert=mkcert_cert,
         mkcert_key=mkcert_key,
+        secrets_env_vars=secrets.env_vars if secrets else None,
     )
 
     # Write environment file ONCE

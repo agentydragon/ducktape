@@ -23,6 +23,7 @@ filegroup(
     srcs = [
         ".bazelrc",
         ".bazelversion",
+        ".claude_hooks/secrets/test_component.age",
         "BUILD.bazel",
         "MODULE.bazel",
     ],

@@ -397,7 +397,7 @@ class TestFullSessionStartHook:
 
         # Symlink .claude_hooks/ from testdata into the test project dir (read-only, no copy needed).
         # Can't point CLAUDE_PROJECT_DIR at runfiles directly because the hook writes to .git/hooks/.
-        test_secrets_src = Path(__file__).parent / "testdata" / "test_secrets" / ".claude_hooks"
+        test_secrets_src = Path(__file__).parent / "testdata" / "test_workspace" / ".claude_hooks"
         (isolated_dirs.project / ".claude_hooks").symlink_to(test_secrets_src)
 
         monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_AGE_KEY", test_age_key)

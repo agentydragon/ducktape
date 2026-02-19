@@ -44,7 +44,6 @@ py_library(
     srcs = ["settings.py"],
     data = [
         "config/bazelrc.mako",
-        "config/env.mako",
         "config/nix.conf",
         "//tools/claude_hooks/config/podman:containers.conf",
         "//tools/claude_hooks/config/podman:crun_gvisor_wrapper.py",
@@ -401,7 +400,6 @@ py_test(
     size = "medium",
     srcs = ["test_session_start.py"],
     data = [
-        "testdata/test_secrets/.claude_hooks/secrets/test_component.age",
         ":session_start",
         "//third_party/jdk:cacerts",
         "//third_party/jdk:keytool",
