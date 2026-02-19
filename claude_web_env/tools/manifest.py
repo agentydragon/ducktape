@@ -8,6 +8,7 @@ from __future__ import annotations
 import fnmatch
 import sys
 from pathlib import Path
+from typing import IO
 
 import yaml
 from pydantic import BaseModel
@@ -138,6 +139,6 @@ def parse_ndjson(path: str) -> dict[str, Entry]:
     return entries
 
 
-def write_entry(entry: Entry, out: object = sys.stdout) -> None:
+def write_entry(entry: Entry, out: IO[str] = sys.stdout) -> None:
     """Write a single Entry as an NDJSON line."""
-    out.write(entry.to_ndjson_line() + "\n")  # type: ignore[union-attr]
+    out.write(entry.to_ndjson_line() + "\n")

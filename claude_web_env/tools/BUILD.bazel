@@ -1,0 +1,56 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "manifest",
+    srcs = ["manifest.py"],
+    imports = ["../.."],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "capture_manifest_lib",
+    srcs = ["capture_manifest.py"],
+    imports = ["../.."],
+    deps = [":manifest"],
+)
+
+py_binary(
+    name = "capture_manifest",
+    imports = ["../.."],
+    main_module = "claude_web_env.tools.capture_manifest",
+    deps = [":capture_manifest_lib"],
+)
+
+py_library(
+    name = "capture_versions_lib",
+    srcs = ["capture_versions.py"],
+    imports = ["../.."],
+    deps = ["@pypi//pydantic"],
+)
+
+py_binary(
+    name = "capture_versions",
+    imports = ["../.."],
+    main_module = "claude_web_env.tools.capture_versions",
+    deps = [":capture_versions_lib"],
+)
+
+py_library(
+    name = "diff_manifests_lib",
+    srcs = ["diff_manifests.py"],
+    imports = ["../.."],
+    deps = [
+        ":manifest",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "diff_manifests",
+    imports = ["../.."],
+    main_module = "claude_web_env.tools.diff_manifests",
+    deps = [":diff_manifests_lib"],
+)

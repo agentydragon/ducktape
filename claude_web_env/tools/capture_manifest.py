@@ -25,7 +25,7 @@ import sys
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
-from manifest import Entry, write_entry
+from claude_web_env.tools.manifest import Entry, write_entry
 
 MAX_HASH_SIZE = 50 * 1024 * 1024  # 50 MB
 HASH_WORKERS = 8  # parallel hash threads

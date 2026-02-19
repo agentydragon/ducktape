@@ -81,7 +81,7 @@ environment variables), follow this procedure to bring the reconstruction in syn
 
 ```bash
 cd claude_web_env
-uv run --script tools/capture_versions.py > reference/versions-$(date +%Y-%m-%d).yaml
+bazel run //claude_web_env/tools:capture_versions -- > reference/versions-$(date +%Y-%m-%d).yaml
 ```
 
 This creates a structured YAML snapshot of all runtime versions, npm packages,
@@ -90,7 +90,7 @@ binary hashes, environment variables, and environment-manager metadata.
 #### 2. Compare against previous capture
 
 ```bash
-uv run --script tools/capture_versions.py --diff reference/versions-YYYY-MM-DD.yaml
+bazel run //claude_web_env/tools:capture_versions -- --diff reference/versions-YYYY-MM-DD.yaml
 ```
 
 This shows a unified diff of what changed. Use this to identify which Dockerfile

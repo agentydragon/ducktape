@@ -136,7 +136,6 @@ claude_web_env/re/**/go.mod
 claude_web_env/re/**/go.sum
 claude_web_env/reference/**
 claude_web_env/rootfs/**
-claude_web_env/tools/**
 claude_web_env/exclusions.yaml
 
 # Compressed data files

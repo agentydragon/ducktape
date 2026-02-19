@@ -29,8 +29,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from manifest import Entry, Exclusions, load_exclusions, parse_ndjson
 from pydantic import BaseModel
+
+from claude_web_env.tools.manifest import Entry, Exclusions, load_exclusions, parse_ndjson
 
 REAL_DIFF_STATUSES = {"only_left", "only_right", "type_changed", "content_changed", "link_changed", "metadata_changed"}
 

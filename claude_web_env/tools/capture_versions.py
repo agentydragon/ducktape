@@ -63,7 +63,7 @@ def collect_node_versions() -> dict[str, str]:
 
 def collect_npm_globals() -> dict[str, str]:
     """Collect globally installed npm package versions."""
-    packages = {}
+    packages: dict[str, str] = {}
     node22_modules = Path("/opt/node22/lib/node_modules")
     if not node22_modules.exists():
         return packages
