@@ -5,3 +5,4 @@ resources:
   - postgres-service.yaml
   - helmrelease.yaml
   - httproute.yaml
+  - setup-job.yaml

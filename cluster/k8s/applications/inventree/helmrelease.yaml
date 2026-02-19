@@ -67,6 +67,11 @@ spec:
     plugins:
       enabled: true
 
+    # Auto-enable rai_plugin without requiring a UI toggle.
+    # INVENTREE_PLUGINS_MANDATORY makes the plugin always active (like builtin mandatory plugins).
+    env:
+      INVENTREE_PLUGINS_MANDATORY: "raiplugin"
+
     # Pin server to Proxmox nodes (PVE)
     nodeSelector:
       topology.kubernetes.io/region: proxmox

@@ -317,13 +317,6 @@ After InvenTree is deployed and operational, provision API tokens for service in
 Steps: Log in as admin → User Management → API Tokens → Create token per service account.
 Store tokens in Vault at `kv/inventree/api-tokens/{service}`.
 
-### TODO: Enable rai_plugin in InvenTree
-
-After first deployment, log in as admin and:
-
-1. Go to Admin → Plugins → Enable `rai_plugin` (InvenTree auto-discovers it via entry point)
-2. Go to Settings → Authentication → Enable SSO
-
 ### TODO: Deploy Velero for PVC Backup
 
 Scheduled backups of PVCs (Harbor, Gitea, Loki, Postgres). Critical application data
