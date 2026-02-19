@@ -32,11 +32,10 @@ class PatternStats:
 def query_bazel_files(repo_root: Path) -> set[Path]:
     """Query all source files covered by Bazel targets.
 
-    Covers explicit srcs/data attributes plus two special cases:
-    - helm_chart (helm_package) targets whose files are auto-discovered and
-      don't appear in labels(srcs, //...).
-    - create_data_blob targets which use issue_files (not srcs/data) to hold
-      YAML issue files for specimen testing.
+    Uses labels(srcs/data, //...) for standard attributes, and adds full
+    deps() traversal for rules that hold source files in non-standard
+    attributes (helm_package auto-discovers chart files; create_data_blob
+    uses issue_files rather than srcs/data for specimen YAML).
     All sets are retrieved in a single bazel query invocation.
     """
     expr = (
@@ -44,7 +43,7 @@ def query_bazel_files(repo_root: Path) -> set[Path]:
         "  labels(srcs, //...)"
         "  union labels(data, //...)"
         "  union deps(kind('helm_package', //...))"
-        "  union labels(issue_files, kind('create_data_blob', //...))"
+        "  union deps(kind('create_data_blob', //...))"
         ")"
     )
     labels = run_query(expr, cwd=repo_root)
