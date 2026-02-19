@@ -23,9 +23,6 @@ Detection method:
       - labels(srcs, attr(main, ".+", kind(py_test, //...)))  — sources in
         targets with a custom main= entry point
 
-    Falls back to regex parsing of BUILD.bazel files when Bazel is unavailable
-    (sandbox environments, no running server, etc.).
-
     The Bazel query approach correctly handles Starlark macros that expand to
     py_test (e.g. live_openai_py_test), and correctly skips files that are not
     part of any py_test target (e.g. specimen/snapshot code in props/).
@@ -55,7 +52,6 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple
 
@@ -65,10 +61,8 @@ from bazel_util.query import run_query
 from bazel_util.workspace import get_build_workspace_directory
 from tools.precommit.lint_ignored import is_lint_ignored, try_open_repo
 
-# Pre-compiled regex patterns for BUILD file fallback
+# Pre-compiled regex patterns
 _TEST_FUNC_PATTERN = re.compile(r"^\s*(async\s+)?def\s+test_\w+", re.MULTILINE)
-_PY_TEST_BLOCK_PATTERN = re.compile(r"py_test\s*\([^)]*?srcs\s*=\s*\[[^\]]*?\][^)]*?\)", re.DOTALL)
-_MAIN_PARAM_PATTERN = re.compile(r'main\s*=\s*"([^"]+)"')
 _HELPER_PATTERNS = [re.compile(r"test_helpers?\.py$"), re.compile(r"test_utils?\.py$"), re.compile(r"testing/.*\.py$")]
 
 # Number of worker threads for parallel file checking
@@ -140,52 +134,6 @@ def has_pytest_bazel_main(content: str) -> bool:
     return "pytest_bazel.main()" in content
 
 
-@lru_cache(maxsize=256)
-def _read_build_file(build_file: Path) -> str | None:
-    """Read and cache BUILD file contents (used by the fallback path)."""
-    try:
-        return build_file.read_text()
-    except OSError:
-        return None
-
-
-def _parse_build_file_for_custom_main(build_file: Path, test_file: Path) -> bool:
-    """Return True if the py_test block covering test_file has a custom main= param.
-
-    Fallback used when bazel query is unavailable.
-    """
-    content = _read_build_file(build_file)
-    if content is None:
-        return False
-
-    test_filename = test_file.name
-    build_dir = build_file.parent
-    try:
-        rel_path_str = str(test_file.relative_to(build_dir))
-    except ValueError:
-        rel_path_str = test_filename
-
-    for match in _PY_TEST_BLOCK_PATTERN.finditer(content):
-        block = match.group(0)
-        if (f'"{test_filename}"' in block or f'"{rel_path_str}"' in block) and _MAIN_PARAM_PATTERN.search(block):
-            return True
-
-    return False
-
-
-def _find_build_file(test_file: Path, repo_root: Path) -> Path | None:
-    """Find the nearest BUILD.bazel file by walking up from test_file."""
-    current = test_file.parent
-    while current >= repo_root:
-        build_file = current / "BUILD.bazel"
-        if build_file.exists():
-            return build_file
-        if current == repo_root:
-            break
-        current = current.parent
-    return None
-
-
 def should_skip_file(file_path: Path) -> tuple[bool, str]:
     """Check if file should be skipped from checking.
 
@@ -237,11 +185,6 @@ def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex |
             return CheckResult(file_path, True, "not a py_test src (not a Bazel target)")
         if abs_path in bazel_index.exempt_srcs:
             return CheckResult(file_path, True, "exempt: py_test uses custom main= (bazel query)")
-    else:
-        # Fallback: regex parse the nearest BUILD.bazel file.
-        build_file = _find_build_file(file_path, repo_root)
-        if build_file and _parse_build_file_for_custom_main(build_file, file_path):
-            return CheckResult(file_path, True, "exempt: py_test uses custom main= (BUILD parse)")
 
     # Check if using pytest.main() directly (custom runner)
     if "pytest.main(" in content:
@@ -295,11 +238,6 @@ def main() -> int:
     )
     parser.add_argument("--all", action="store_true", help="Check all test_*.py files in repository")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show all results including passes")
-    parser.add_argument(
-        "--no-bazel-query",
-        action="store_true",
-        help="Skip bazel query and use BUILD file regex parsing (useful in sandbox environments)",
-    )
 
     args = parser.parse_args()
 
@@ -309,14 +247,14 @@ def main() -> int:
     # in a git repo (e.g. inside a Bazel sandbox test action).
     git_repo = try_open_repo(workspace_root)
 
-    # Run bazel query only for --all mode. Per-file/pre-commit mode uses BUILD
-    # file parsing, which is fast enough and gitattributes filtering already
-    # excludes non-Bazel files (specimens, generated code, etc.).
+    # Run bazel query only for --all mode. Per-file/pre-commit mode skips the
+    # query for speed; gitattributes filtering already excludes non-Bazel files
+    # (specimens, generated code, etc.) before files reach this tool.
     bazel_index: BazelPyTestIndex | None = None
-    if args.all and not args.no_bazel_query:
+    if args.all:
         bazel_index = try_build_bazel_index(workspace_root)
         if bazel_index is None and args.verbose:
-            print("Note: bazel query unavailable, falling back to BUILD file parsing", file=sys.stderr)
+            print("Note: bazel query unavailable, using rglob file discovery", file=sys.stderr)
 
     if args.all:
         files = find_all_test_files(workspace_root, bazel_index, git_repo)

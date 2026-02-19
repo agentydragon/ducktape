@@ -7,7 +7,6 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//:filter_wheels.bzl", "filter_system_packages")
-load("//tools/testing:defs.bzl", "py_test")
 load(":build_info.bzl", "build_info")
 
 # Copy workspace status file for Python to parse at runtime
@@ -44,36 +43,6 @@ py_binary(
     main_module = "tools.check_pytest_main",
     visibility = ["//visibility:public"],
     deps = [":check_pytest_main"],
-)
-
-# Validate all test files in repository
-py_test(
-    name = "validate_pytest_main",
-    srcs = ["check_pytest_main.py"],
-    args = [
-        "--all",
-        "--no-bazel-query",
-    ],
-    data = glob(
-        [
-            "**/*.py",
-            "**/BUILD.bazel",
-        ],
-        exclude = ["bazel-*/**"],
-    ),
-    imports = [".."],
-    main = "check_pytest_main.py",
-    tags = [
-        "lint",
-        "manual",  # Run explicitly, not in wildcard test patterns
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//bazel_util:query",
-        "//bazel_util:workspace",
-        "//tools/precommit:lint_ignored",
-        "@pypi//pygit2",
-    ],
 )
 
 # === Gazelle (Python BUILD file generator) ===
