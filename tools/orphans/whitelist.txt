@@ -11,7 +11,6 @@ MODULE.bazel
 
 # Config files
 *.toml
-*.json
 *.lock
 *.ini
 .editorconfig
@@ -50,8 +49,8 @@ Dockerfile
 # Shell scripts (many are standalone utilities)
 *.sh
 
-# Age-encrypted secrets
-*.age
+# Age-encrypted secrets (only in .claude_hooks/secrets/)
+.claude_hooks/secrets/*.age
 
 # Nginx configs
 *.conf
@@ -87,13 +86,16 @@ homeassistant/**/*.yaml
 # Markdown posts
 *.markdown
 
-# JavaScript (various places)
-*.js
-*.ts
-*.tsx
+# JavaScript / TypeScript
+eslint.config.js
+finance/worthy/worthy/graph.js
+sysrw/js/system_rewrite_apply.js
+
+# rspcache admin UI (Vite/React frontend, not Bazelized)
+experimental/rspcache/admin_ui/**
 
 # Template files
-*.j2
+sysrw/templates/report.html.j2
 
 # Text files (notes, todos, etc.)
 *.txt
@@ -110,6 +112,15 @@ homeassistant/**/*.yaml
 # Helm charts (files auto-discovered by helm_chart rule, but .helmignore
 # is not part of the chart content — whitelist it)
 *.helmignore
+
+# npm manifests (never Bazel targets)
+**/package.json
+
+# JSON config/example files
+agent_cli/example.mcp.json
+claude_web_env/diff-report.json
+mcp_starter/example_config.json
+tools/multitool/lockfile.json
 
 # Props docker compose (infra config, not Bazelized)
 props/compose.yaml
