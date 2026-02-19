@@ -3,7 +3,7 @@
 
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@pypi//:requirements.bzl", "all_whl_requirements")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//:filter_wheels.bzl", "filter_system_packages")
@@ -23,26 +23,12 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-# Library for checking pytest_bazel.main() calls (importable)
 py_library(
     name = "check_pytest_main",
     srcs = ["check_pytest_main.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
-    deps = [
-        "//bazel_util:query",
-        "//bazel_util:workspace",
-        "//tools/precommit:lint_ignored",
-        "@pypi//pygit2",
-    ],
-)
-
-# Guard against missing pytest_bazel.main() calls in test files
-py_binary(
-    name = "run_check_pytest_main",
-    main_module = "tools.check_pytest_main",
-    visibility = ["//visibility:public"],
-    deps = [":check_pytest_main"],
+    deps = ["//bazel_util:query"],
 )
 
 # === Gazelle (Python BUILD file generator) ===

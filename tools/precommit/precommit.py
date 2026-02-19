@@ -31,7 +31,7 @@ import pygit2
 
 from bazel_util.runfiles import get_required_path
 from bazel_util.workspace import get_build_workspace_directory
-from tools.check_pytest_main import check_files_async
+from tools.check_pytest_main import BazelPyTestIndex, check_files_async, try_build_bazel_index
 from tools.precommit.check_filename_conventions import check_filename_conventions
 from tools.precommit.check_terraform_centralization import find_violations
 from tools.precommit.lint_ignored import is_lint_ignored
@@ -82,15 +82,33 @@ def is_terraform_module(p: Path) -> bool:
     return p.suffix == ".tf" and p.is_relative_to("cluster/terraform/modules")
 
 
-async def run_pytest_main_check(files: list[Path], repo_root: Path, repo: pygit2.Repository) -> ValidationResult:
-    """Check that test files have pytest_bazel.main() calls."""
+async def run_pytest_main_check(
+    files: list[Path], repo_root: Path, repo: pygit2.Repository, bazel_index: BazelPyTestIndex | None
+) -> ValidationResult:
+    """Check that test files have pytest_bazel.main() calls.
+
+    When bazel_index is provided (--all mode), checks all known py_test srcs.
+    Otherwise checks only the passed files that look like test files.
+    """
     name = "pytest-main-check"
-    test_files = [f for f in files if is_test_file(f) and not is_lint_ignored(repo, f)]
+    start = time.perf_counter()
+
+    if bazel_index is not None:
+        # --all mode: check every registered py_test src, filtered by gitattributes.
+        test_files = [
+            p
+            for p in bazel_index.known_srcs
+            if p.name.startswith("test_")
+            and p.name.endswith(".py")
+            and not is_lint_ignored(repo, p.relative_to(repo_root))
+        ]
+    else:
+        test_files = [f for f in files if is_test_file(f) and not is_lint_ignored(repo, f)]
+
     if not test_files:
         return ValidationResult(name, Skipped())
 
-    start = time.perf_counter()
-    results = await check_files_async(test_files, repo_root, bazel_index=None)
+    results = await check_files_async(test_files, repo_root, bazel_index)
     elapsed = time.perf_counter() - start
 
     failed = [r for r in results if not r.passed]
@@ -152,11 +170,13 @@ async def run_filename_convention_check(repo: pygit2.Repository) -> ValidationRe
     return ValidationResult(name, Passed(elapsed))
 
 
-async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Repository) -> list[ValidationResult]:
+async def run_validate(
+    files: list[Path], repo_root: Path, repo: pygit2.Repository, bazel_index: BazelPyTestIndex | None
+) -> list[ValidationResult]:
     """Run all validations on files."""
     return list(
         await asyncio.gather(
-            run_pytest_main_check(files, repo_root, repo),
+            run_pytest_main_check(files, repo_root, repo, bazel_index),
             run_terraform_centralization_check(files, repo_root),
             run_filename_convention_check(repo),
             # Unified cluster validation: kustomize + helm + CRD layering + deps
@@ -200,8 +220,22 @@ async def main_async() -> int:
     repo = pygit2.Repository(str(repo_root))
     t1 = time.perf_counter()
 
-    # Get files to process
-    files = [Path(f) for f in sys.argv[1:]] if len(sys.argv) > 1 else get_all_files(repo)
+    all_mode = len(sys.argv) > 1 and sys.argv[1] == "--all"
+
+    # In --all mode build the Bazel index so we check every registered py_test
+    # src rather than just the changed files.
+    bazel_index: BazelPyTestIndex | None = None
+    if all_mode:
+        bazel_index = try_build_bazel_index(repo_root)
+
+    # Get files to process: --all skips the file list (index drives the check),
+    # otherwise use argv files or fall back to all tracked files.
+    if all_mode:
+        files: list[Path] = []
+    elif len(sys.argv) > 1:
+        files = [Path(f) for f in sys.argv[1:]]
+    else:
+        files = get_all_files(repo)
     t2 = time.perf_counter()
 
     if profile:
@@ -210,8 +244,11 @@ async def main_async() -> int:
     start_total = time.perf_counter()
 
     # Run validations
-    print(f"Validating {len(files)} files...")
-    validate_results = await run_validate(files, repo_root, repo)
+    if all_mode:
+        print("Checking all py_test srcs in repository...")
+    else:
+        print(f"Validating {len(files)} files...")
+    validate_results = await run_validate(files, repo_root, repo, bazel_index)
 
     validate_failed = []
     for vresult in validate_results:
