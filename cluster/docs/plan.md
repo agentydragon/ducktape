@@ -83,6 +83,10 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 - [x] **Fix `dns-records` terraform** — Added `allow_overwrite` for glue records,
       `import` block for domain registration, `lifecycle { ignore_changes }` for
       non-nameserver attributes. IAM policy minimized to 4 actions. Applied successfully.
+- [ ] **Grocy: provision API token for agent access** — after first login, create an API key
+      in the Grocy UI (user menu → Manage API keys), store it at `kv/grocy/api-key` in Vault,
+      then wire via ExternalSecret into OpenClaw (`GROCY_API_KEY`) and/or expose for Claude.
+      REST API base: `https://grocy.allegedly.works/api/`.
 - [ ] **Test all SSO flows** — Gitea verified working. Run `scripts/check-authentik-login.py`.
       Remaining to test: Harbor, Grafana, Matrix, Vault OIDC login via browser.
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
@@ -170,18 +174,19 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Applications (already configured)
 
-| App            | Purpose            | SSO |
-| -------------- | ------------------ | --- |
-| Harbor         | Container registry | ✅  |
-| Gitea          | Git hosting        | ✅  |
-| Matrix/Element | Chat               | ✅  |
-| Nix cache      | Binary cache       | -   |
-| BuildBuddy     | Remote build exec  | -   |
-| Headscale      | Tailscale control  | -   |
-| Ollama         | LLM inference      | -   |
-| Website        | Static placeholder | -   |
-| OpenClaw       | AI coding agent    | ✅  |
-| Gatus          | Health monitoring  | ✅  |
+| App            | Purpose                | SSO |
+| -------------- | ---------------------- | --- |
+| Harbor         | Container registry     | ✅  |
+| Gitea          | Git hosting            | ✅  |
+| Matrix/Element | Chat                   | ✅  |
+| Nix cache      | Binary cache           | -   |
+| BuildBuddy     | Remote build exec      | -   |
+| Headscale      | Tailscale control      | -   |
+| Ollama         | LLM inference          | -   |
+| Website        | Static placeholder     | -   |
+| OpenClaw       | AI coding agent        | ✅  |
+| Gatus          | Health monitoring      | ✅  |
+| Grocy          | Household/grocery mgmt | ✅  |
 
 ## Applications (disabled - need flux-kustomization.yaml)
 
