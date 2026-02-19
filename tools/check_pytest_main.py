@@ -47,7 +47,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -60,10 +59,6 @@ import pygit2
 from bazel_util.query import run_query
 from bazel_util.workspace import get_build_workspace_directory
 from tools.precommit.lint_ignored import is_lint_ignored, try_open_repo
-
-# Pre-compiled regex patterns
-_TEST_FUNC_PATTERN = re.compile(r"^\s*(async\s+)?def\s+test_\w+", re.MULTILINE)
-_HELPER_PATTERNS = [re.compile(r"test_helpers?\.py$"), re.compile(r"test_utils?\.py$"), re.compile(r"testing/.*\.py$")]
 
 # Number of worker threads for parallel file checking
 _MAX_WORKERS = min(32, (os.cpu_count() or 4) + 4)
@@ -124,11 +119,6 @@ def try_build_bazel_index(repo_root: Path) -> BazelPyTestIndex | None:
     return index
 
 
-def has_test_functions(content: str) -> bool:
-    """Check if Python content has test functions."""
-    return bool(_TEST_FUNC_PATTERN.search(content))
-
-
 def has_pytest_bazel_main(content: str) -> bool:
     """Check if content has pytest_bazel.main() call."""
     return "pytest_bazel.main()" in content
@@ -151,10 +141,6 @@ def should_skip_file(file_path: Path) -> tuple[bool, str]:
     if any(part.startswith("bazel-") for part in file_path.parts):
         return True, "bazel output directory"
 
-    for pattern in _HELPER_PATTERNS:
-        if pattern.search(file_path_str):
-            return True, f"test helper (matches {pattern.pattern})"
-
     return False, ""
 
 
@@ -168,9 +154,6 @@ def check_file(file_path: Path, repo_root: Path, bazel_index: BazelPyTestIndex |
         content = (repo_root / file_path).read_text()
     except OSError as e:
         return CheckResult(file_path, False, f"error reading file: {e}")
-
-    if not has_test_functions(content):
-        return CheckResult(file_path, True, "no test functions")
 
     if has_pytest_bazel_main(content):
         return CheckResult(file_path, True, "has pytest_bazel.main()")
