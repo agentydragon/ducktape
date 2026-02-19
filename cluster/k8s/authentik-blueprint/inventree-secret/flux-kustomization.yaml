@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-blueprint-inventree-secret
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/authentik-blueprint/inventree-secret"
+  prune: true
+  wait: true
+  # Health check ensures OIDC secret is synced from Vault before InvenTree starts
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: inventree-oauth-client-secret
+      namespace: inventree
+  dependsOn:
+    - name: authentik-blueprint-sso-secrets # Vault data exists
+    - name: external-secrets-config # Ensure ClusterSecretStore exists

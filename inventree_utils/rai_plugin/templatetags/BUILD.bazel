@@ -9,6 +9,7 @@ py_library(
     srcs = ["custom_tags.py"],
     # TODO: Add Django to requirements_bazel.txt to make hermetic
     tags = ["manual"],
+    visibility = ["//inventree_utils/rai_plugin:__pkg__"],
 )
 
 py_test(

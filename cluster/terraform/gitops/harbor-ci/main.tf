@@ -2,7 +2,8 @@
 #
 # Creates:
 #   - props project (private, for hosting CI-pushed images)
-#   - ci robot account with push+pull on the props project
+#   - inventree project (private, for hosting the custom InvenTree image)
+#   - ci robot account with push+pull on both projects
 #   - webhook token for the Flux harbor Receiver
 #   - github webhook token for the Flux github Receiver
 #
@@ -33,15 +34,43 @@ resource "harbor_project" "props" {
   public = false
 }
 
-# Project-level robot account for CI push + cluster pull
+# Private project for the custom InvenTree image
+resource "harbor_project" "inventree" {
+  name   = "inventree"
+  public = false
+}
+
+# Project-level robot account for CI push + cluster pull (both projects)
 resource "harbor_robot_account" "ci" {
   name        = "ci"
-  description = "CI/CD robot account — pushes props-backend images from GitHub Actions, used as imagePullSecret in the props namespace"
-  level       = "project"
+  description = "CI/CD robot account — pushes images from GitHub Actions, used as imagePullSecret in app namespaces"
+  level       = "system"
 
   permissions {
     kind      = "project"
     namespace = harbor_project.props.name
+
+    access {
+      action   = "push"
+      resource = "repository"
+    }
+    access {
+      action   = "pull"
+      resource = "repository"
+    }
+    access {
+      action   = "read"
+      resource = "artifact"
+    }
+    access {
+      action   = "create"
+      resource = "tag"
+    }
+  }
+
+  permissions {
+    kind      = "project"
+    namespace = harbor_project.inventree.name
 
     access {
       action   = "push"

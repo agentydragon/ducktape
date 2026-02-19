@@ -1,0 +1,30 @@
+---
+# SSO providers secret for InvenTree — consumed by the Helm chart via global.ssoConfig.providerSecretName.
+# The Helm chart mounts this as env INVENTREE_SSO_PROVIDERS; InvenTree reads it as JSON.
+# Format: {"openid_connect":{"APPS":[{"provider_id":...,"client_id":...,"secret":...,"settings":{...}}]}}
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: inventree-sso-providers
+  namespace: inventree
+spec:
+  refreshInterval: 24h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: inventree-sso-providers
+    creationPolicy: Owner
+    template:
+      data:
+        providers: |
+          {"openid_connect":{"APPS":[{"provider_id":"authentik","name":"Log in via Authentik","client_id":"{{ .client_id }}","secret":"{{ .client_secret }}","settings":{"server_url":"https://auth.allegedly.works/application/o/inventree/"}}]}}
+  data:
+    - secretKey: client_id
+      remoteRef:
+        key: sso/inventree
+        property: client_id
+    - secretKey: client_secret
+      remoteRef:
+        key: sso/inventree
+        property: client_secret

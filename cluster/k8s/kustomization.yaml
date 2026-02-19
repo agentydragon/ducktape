@@ -95,6 +95,10 @@ resources:
   - authentik-blueprint/harbor-secret/flux-kustomization.yaml
   - authentik-blueprint/matrix-secret/flux-kustomization.yaml
   - authentik-blueprint/vault-secret/flux-kustomization.yaml
+  - authentik-blueprint/inventree-secret/flux-kustomization.yaml
+  - inventree-namespace/flux-kustomization.yaml
+  - applications/inventree-secrets/flux-kustomization.yaml
+  - applications/inventree/flux-kustomization.yaml
   - authentik-proxy-routes/flux-kustomization.yaml
   - harbor-oidc-config/flux-kustomization.yaml
   - user-agentydragon-namespace/flux-kustomization.yaml

@@ -1,0 +1,10 @@
+# Create inventree namespace so ExternalSecret can be deployed
+# This breaks the circular dependency:
+#   inventree depends on authentik-blueprint-inventree-secret
+#   authentik-blueprint-inventree-secret needs inventree namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inventree
+  labels:
+    pod-security.kubernetes.io/enforce: baseline

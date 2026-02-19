@@ -1,0 +1,29 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: inventree-admin
+  namespace: flux-system
+spec:
+  interval: 15m
+  approvePlan: "auto"
+  path: ./cluster/terraform/gitops/inventree-admin
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "inventree-admin"
+        namespace        = "flux-system"
+      }
+  vars:
+    - name: vault_address
+      value: "http://instance.vault.svc.cluster.local:8200"
+  varsFrom:
+    - kind: Secret
+      name: vault-token
+      varsKeys:
+        - vault_token
+      optional: false

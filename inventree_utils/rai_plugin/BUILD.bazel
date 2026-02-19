@@ -1,0 +1,27 @@
+# gazelle:ignore
+# InvenTree plugin - requires Django from InvenTree environment (not in @pypi)
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+
+py_library(
+    name = "plugin",
+    srcs = ["plugin.py"],
+    tags = ["manual"],
+)
+
+py_wheel(
+    name = "rai_plugin_wheel",
+    distribution = "inventree_rai_plugin",
+    entry_points = {
+        "inventree_plugins": ["rai_plugin = rai_plugin.plugin:RaiPlugin"],
+    },
+    # Strip inventree_utils/ so wheel contains rai_plugin/plugin.py etc.
+    strip_path_prefixes = ["inventree_utils/"],
+    tags = ["manual"],
+    version = "1.0.0",
+    deps = [
+        ":plugin",
+        "//inventree_utils/rai_plugin/templatetags:custom_tags",
+    ],
+)

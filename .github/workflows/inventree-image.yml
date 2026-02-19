@@ -1,0 +1,71 @@
+# Build and push the custom InvenTree container image to Harbor.
+#
+# Builds the rai_plugin as a wheel via Bazel, then bakes it into
+# inventree/inventree:stable via Docker. Pushes to registry.allegedly.works.
+#
+# Triggers:
+#   - workflow_dispatch: manual trigger (tags :latest too)
+#   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
+#
+# After push, update the HelmRelease image tag to deploy the new image.
+name: InvenTree Image
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: inventree-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: registry.allegedly.works/inventree/inventree
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+
+      - name: Build rai_plugin wheel
+        run: bazel build //inventree_utils/rai_plugin:rai_plugin_wheel
+
+      - name: Copy wheel to Docker build context
+        run: cp bazel-bin/inventree_utils/rai_plugin/inventree_rai_plugin-1.0.0-py3-none-any.whl inventree_utils/rai_plugin/
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          # Timestamp prefix makes tags sortable for Flux ImagePolicy (alphabetical order)
+          TS="$(date -u +%Y%m%d%H%M%S)"
+          SEMVER_TAG="${TS}-${SHA:0:7}"
+          TAGS="${{ env.IMAGE }}:$SHA,${{ env.IMAGE }}:$SEMVER_TAG"
+          if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
+            TAGS="$TAGS,${{ env.IMAGE }}:latest"
+          fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "semver_tag=$SEMVER_TAG" >> $GITHUB_OUTPUT
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: registry.allegedly.works
+          username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
+          password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: inventree_utils/rai_plugin
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
