@@ -90,8 +90,8 @@ def run_report(repo_root: Path, whitelist_path: Path) -> tuple[list[Path], list[
     stats = [
         PatternStats(
             pattern=pattern,
-            orphaned=sum(1 for p in raw_orphans if spec.match_file(p)),
-            bazel_covered=sum(1 for p in covered_files if spec.match_file(p)),
+            orphaned=sum(spec.match_file(p) for p in raw_orphans),
+            bazel_covered=sum(spec.match_file(p) for p in covered_files),
         )
         for pattern, spec in specs
     ]
