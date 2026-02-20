@@ -80,32 +80,6 @@ ACL_CAN_PUSH_TAGS: set[AgentType] = set()  # Admin only
 ACL_CAN_RUN_CRITICS: set[AgentType] = _CRITIC_DEV_TYPES
 
 
-@dataclass(frozen=True)
-class CredentialValidationResult:
-    """Result of credential validation.
-
-    If is_valid=True:
-    - agent_run_id is None → admin credentials
-    - agent_run_id is not None → agent credentials
-    """
-
-    is_valid: bool
-    agent_run_id: UUID | None = None
-    error: str | None = None
-
-    @classmethod
-    def invalid(cls, error: str) -> CredentialValidationResult:
-        return cls(is_valid=False, error=error)
-
-    @classmethod
-    def admin(cls) -> CredentialValidationResult:
-        return cls(is_valid=True)
-
-    @classmethod
-    def agent(cls, agent_run_id: UUID) -> CredentialValidationResult:
-        return cls(is_valid=True, agent_run_id=agent_run_id)
-
-
 def extract_agent_run_id_from_username(username: str) -> UUID | None:
     """Extract agent_run_id from username if it matches agent_{uuid} pattern.
 
@@ -123,11 +97,13 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
         return None
 
 
-def validate_postgres_credentials(
-    username: str, password: str, db_config: DatabaseConfig
-) -> CredentialValidationResult:
-    """Validate credentials by attempting Postgres connection."""
-    # First, try to extract agent run ID from username pattern
+def validate_postgres_credentials(username: str, password: str, db_config: DatabaseConfig) -> UUID | None:
+    """Validate credentials against Postgres.
+
+    Returns agent_run_id if agent (extracted from username), None if admin.
+    Raises HTTPException 401 if credentials invalid.
+    """
+    # Extract agent run ID from username pattern (None means admin)
     agent_run_id = extract_agent_run_id_from_username(username)
 
     # Validate credentials against Postgres
@@ -143,12 +119,9 @@ def validate_postgres_credentials(
             pass  # Connection succeeded
     except psycopg.OperationalError as e:
         logger.warning(f"Postgres auth failed for user {username}: {e}")
-        return CredentialValidationResult.invalid("Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Credentials valid - determine access level
-    if agent_run_id is not None:
-        return CredentialValidationResult.agent(agent_run_id)
-    return CredentialValidationResult.admin()
+    return agent_run_id
 
 
 def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
@@ -196,26 +169,20 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
         raise HTTPException(status_code=401, detail="Invalid authorization format")
 
     username, password = parsed
-    result = validate_postgres_credentials(username, password, admin_db.config)
-    if not result.is_valid:
-        logger.warning(f"Invalid postgres credentials for user: {username}")
-        raise HTTPException(status_code=401, detail=result.error or "Invalid credentials")
+    agent_run_id = validate_postgres_credentials(username, password, admin_db.config)
 
-    # Admin: no agent_run_id
-    if result.agent_run_id is None:
+    # Admin: validate_postgres_credentials returned None
+    if agent_run_id is None:
         return AdminIdentity(username=username, password=password)
 
     # Agent: look up agent_type from database
     with admin_db.session() as session:
-        agent_run = session.get(AgentRun, result.agent_run_id)
+        agent_run = session.get(AgentRun, agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
 
         return AgentIdentity(
-            agent_type=agent_run.type_config.agent_type,
-            agent_run_id=result.agent_run_id,
-            username=username,
-            password=password,
+            agent_type=agent_run.type_config.agent_type, agent_run_id=agent_run_id, username=username, password=password
         )
 
 
