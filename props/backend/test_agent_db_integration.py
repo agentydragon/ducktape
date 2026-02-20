@@ -29,18 +29,22 @@ pytestmark = [pytest.mark.integration]
 
 
 @pytest_asyncio.fixture
-async def critic_agent_creds(synced_db: Database) -> AsyncGenerator[AgentCredentials]:
+async def critic_agent_creds(synced_db: Database) -> AsyncGenerator[tuple[AgentCredentials, CriticTypeConfig]]:
     """Create critic agent credentials with a real Postgres role."""
     type_config = CriticTypeConfig(example={"snapshot_slug": "test-fixtures/train1", "kind": "whole_snapshot"})
-    yield await make_agent_credentials(synced_db, type_config, FAKE_CRITIC_DIGEST)
+    creds = await make_agent_credentials(synced_db, type_config, FAKE_CRITIC_DIGEST)
+    yield creds, type_config
 
 
-async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_agent_creds: AgentCredentials) -> None:
+async def test_agent_db_returns_rls_scoped_database(
+    synced_db: Database, critic_agent_creds: tuple[AgentCredentials, CriticTypeConfig]
+) -> None:
     """get_agent_db with agent auth returns a Database that enforces RLS.
 
     Writes a critic run for a VALID split snapshot as admin, then verifies
     the agent Database cannot see it (critics can only see their own runs).
     """
+    creds, type_config = critic_agent_creds
     # Setup: create a critic run for VALID split as admin
     valid_run_id = uuid4()
     with synced_db.session() as session:
@@ -62,10 +66,10 @@ async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_
 
     # Exercise: get_agent_db with agent auth
     auth = AgentIdentity(
-        agent_type=critic_agent_creds.agent_type,
+        agent_type=type_config.agent_type,
         agent_run_id=uuid4(),  # The auth context run_id (doesn't need to match creds run)
-        username=critic_agent_creds.username,
-        password=critic_agent_creds.password,
+        username=creds.username,
+        password=creds.password,
     )
     gen = get_agent_db(admin_db=synced_db, auth=auth)
     agent_db = next(gen)
@@ -82,18 +86,18 @@ async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_
             next(gen)
 
 
-async def test_agent_db_can_see_own_run(synced_db: Database, critic_agent_creds: AgentCredentials) -> None:
+async def test_agent_db_can_see_own_run(
+    synced_db: Database, critic_agent_creds: tuple[AgentCredentials, CriticTypeConfig]
+) -> None:
     """Agent Database can see the agent's own run record."""
+    creds, type_config = critic_agent_creds
     # The fixture already created a run for this agent's role.
     # Find the run_id from the username (agent_{uuid}).
-    agent_run_id_str = critic_agent_creds.username.removeprefix("agent_")
+    agent_run_id_str = creds.username.removeprefix("agent_")
     agent_run_id = UUID(agent_run_id_str)
 
     auth = AgentIdentity(
-        agent_type=critic_agent_creds.agent_type,
-        agent_run_id=agent_run_id,
-        username=critic_agent_creds.username,
-        password=critic_agent_creds.password,
+        agent_type=type_config.agent_type, agent_run_id=agent_run_id, username=creds.username, password=creds.password
     )
     gen = get_agent_db(admin_db=synced_db, auth=auth)
     agent_db = next(gen)
