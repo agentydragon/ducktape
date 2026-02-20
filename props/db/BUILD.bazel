@@ -144,21 +144,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "session",
-    srcs = ["session.py"],
-    data = ["//props/db/migrations"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":config",
-        ":models",
-        "@pypi//alembic",
-        "@pypi//psycopg2_binary",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 # =============================================================================
 # Tests
 # =============================================================================
@@ -185,7 +170,6 @@ assert_no_deps(
         "//props/db:notifications",
         "//props/db:queries",
         "//props/db:query_builders",
-        "//props/db:session",
         "//props/db:setup",
         "//props/db:snapshot_io",
         "//props/db:snapshots",

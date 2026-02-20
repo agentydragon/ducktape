@@ -94,7 +94,7 @@ class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
 
     Note: We use Text as the impl type because PostgreSQL composite types
     don't have a direct SQLAlchemy type. The actual type coercion is handled
-    by register_composite() in session.py.
+    by register_composite() in database.py.
     """
 
     # Use Text as a placeholder - the actual type is stats_with_ci in PostgreSQL
