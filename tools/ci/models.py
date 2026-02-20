@@ -59,7 +59,7 @@ class WorkflowConfig(BaseModel):
     trigger: WorkflowTrigger
     targets: bool = False
     inputs: dict[str, str] = Field(default_factory=dict)
-    secrets: list[str] = Field(default_factory=list)
+    secrets: Literal["inherit"] | None = None
 
 
 class ReleaseConfig(BaseModel):

@@ -111,7 +111,7 @@ RBE_IMAGE_JOB = "rbe-image"
 
 def _uses_rbe(name: str, config: WorkflowConfig) -> bool:
     """Whether this workflow uses BuildBuddy RBE and should receive rbe_image."""
-    return name != RBE_IMAGE_JOB and "BUILDBUDDY_API_KEY" in config.secrets
+    return name != RBE_IMAGE_JOB and config.secrets == "inherit"
 
 
 def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: bool) -> Job:
@@ -141,7 +141,7 @@ def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: 
         if_cond=if_cond,
         uses=f"./.github/workflows/{name}.yml",
         with_args=with_args if with_args else None,
-        secrets="inherit" if config.secrets else None,
+        secrets=config.secrets,
     )
 
 

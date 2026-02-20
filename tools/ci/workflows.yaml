@@ -10,7 +10,7 @@
 #
 # Job options:
 #   targets: Pass affected targets to the workflow (default: false)
-#   secrets: List of secrets to pass (default: [BUILDBUDDY_API_KEY])
+#   secrets: inherit - pass all caller secrets to the workflow (also implies RBE wiring)
 #   inputs: Additional inputs to pass to the workflow
 #
 # Workflow file changes automatically trigger their workflow.
@@ -21,7 +21,7 @@ workflows:
   bazel-check:
     trigger: { kind: bazel_query, query: "$targets" }
     targets: true
-    secrets: [BUILDBUDDY_API_KEY]
+    secrets: inherit
 
   bazel-test:
     # Java (keytool) is provided hermetically via //third_party/jdk.
@@ -30,7 +30,7 @@ workflows:
     # Bazel's default wildcard exclusion of manual targets.
     trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets) except attr(tags, "manual", $targets)' }
     targets: true
-    secrets: [BUILDBUDDY_API_KEY]
+    secrets: inherit
 
   # Image builds
   rbe-image:
@@ -38,7 +38,7 @@ workflows:
 
   props-backend-image:
     trigger: { kind: bazel_query, query: "$targets intersect set(//props/backend:image)" }
-    secrets: [BUILDBUDDY_API_KEY]
+    secrets: inherit
 
   props-agents-image:
     trigger:
@@ -55,7 +55,7 @@ workflows:
           //props/agents/critic/variants:high_recall
           //props/agents/critic/variants:verbose_docs
         )
-    secrets: [BUILDBUDDY_API_KEY]
+    secrets: inherit
 
   # Path-based workflows (non-Bazel)
   nix-flake-check:
