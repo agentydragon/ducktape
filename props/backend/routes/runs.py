@@ -22,6 +22,7 @@ from sqlalchemy import func
 
 from props.backend.auth import (
     AgentDb,
+    AgentIdentity,
     RequestIdentity,
     parse_credentials,
     require_admin_access,
@@ -701,7 +702,7 @@ async def start_critic(
     request: Request,
     body: RunCriticRequest,
     admin_db: AdminDb,
-    auth: Annotated[tuple[RequestIdentity, UUID | None], Depends(require_critic_run_access)],
+    auth: Annotated[RequestIdentity, Depends(require_critic_run_access)],
 ) -> StartCriticResponse:
     """Start a critic agent using an agent package. Returns immediately with critic_run_id.
 
@@ -715,7 +716,7 @@ async def start_critic(
     The critic runs asynchronously. Poll GET /api/runs/{critic_run_id} or use the
     WebSocket feed for status, then use wait_until_graded() once the run exits.
     """
-    _, parent_run_id = auth
+    parent_run_id = auth.agent_run_id if isinstance(auth, AgentIdentity) else None
     registry = get_registry(request)
 
     # Validate snapshot and example

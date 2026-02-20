@@ -22,11 +22,11 @@ from props.backend.auth import (
     ACL_CAN_PUSH_REGISTRY,
     ACL_CAN_PUSH_TAGS,
     ACL_CAN_READ_REGISTRY,
+    AgentIdentity,
     AnonymousIdentity,
     Auth,
     RequestIdentity,
     can_run_agent_type,
-    get_request_identity,
 )
 from props.backend.deps import AdminDb
 from props.core.oci_utils import is_digest
@@ -160,7 +160,7 @@ async def v2_check(auth: Auth) -> Response:
     Per OCI distribution spec, returns 401 with WWW-Authenticate for
     unauthenticated callers so Docker/crane know to send credentials.
     """
-    if not auth.is_authenticated:
+    if isinstance(auth, AnonymousIdentity):
         return Response(status_code=401, headers={**_OCI_VERSION_HEADER, "WWW-Authenticate": 'Basic realm="props"'})
     return Response(content=b"{}", status_code=200, headers=_OCI_VERSION_HEADER)
 
@@ -175,7 +175,8 @@ def _deny(identity: RequestIdentity, action: str) -> HTTPException:
 @router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
 async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
     """Push a manifest — records agent definition on success."""
-    identity, agent_run_id = get_request_identity(auth, admin_db)
+    identity = auth
+    agent_run_id = auth.agent_run_id if isinstance(auth, AgentIdentity) else None
     if not can_run_agent_type(identity, ACL_CAN_PUSH_REGISTRY):
         raise _deny(identity, "push to registry")
 
@@ -207,7 +208,7 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
 @router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PATCH", "PUT"], include_in_schema=False)
 async def registry_proxy(request: Request, path: str, auth: Auth, admin_db: AdminDb) -> Response:
     """Proxy OCI registry requests with method-based ACL (read for GET/HEAD, write for mutations)."""
-    identity, _ = get_request_identity(auth, admin_db)
+    identity = auth
     if request.method in ("GET", "HEAD"):
         if not can_run_agent_type(identity, ACL_CAN_READ_REGISTRY):
             raise _deny(identity, "read from registry")

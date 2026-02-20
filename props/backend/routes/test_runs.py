@@ -148,7 +148,7 @@ def run_critic_client(synced_db: Database):
     app = FastAPI()
     app.include_router(runs.router, prefix="/api/runs")
     app.dependency_overrides[get_admin_db] = lambda: synced_db
-    app.dependency_overrides[require_critic_run_access] = lambda: (AdminIdentity(), uuid4())
+    app.dependency_overrides[require_critic_run_access] = lambda: AdminIdentity(username="admin", password="admin")
     app.state.registry = mock_registry
 
     client = TestClient(app, raise_server_exceptions=False)

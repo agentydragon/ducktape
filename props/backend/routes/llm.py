@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from openai_utils.model import ResponseUsage
-from props.backend.auth import Auth
+from props.backend.auth import AgentIdentity, Auth
 from props.backend.deps import AdminDb, Config
 from props.config import PropsConfig, UpstreamConfig
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
@@ -117,11 +117,8 @@ def require_llm_access(auth: Auth, admin_db: AdminDb) -> tuple[UUID, str, float]
 
     Returns (agent_run_id, allowed_model, budget_usd) or raises HTTPException.
     """
-    if not auth.is_authenticated:
+    if not isinstance(auth, AgentIdentity):
         raise HTTPException(status_code=401, detail="Authorization required")
-
-    if auth.agent_run_id is None:
-        raise HTTPException(status_code=401, detail="Invalid agent token format")
 
     with admin_db.session() as session:
         agent_run = session.get(AgentRun, auth.agent_run_id)

@@ -10,15 +10,16 @@ import pytest
 import pytest_bazel
 from fastapi import HTTPException
 
-from props.backend.auth import AuthContext, get_agent_db
+from props.backend.auth import AdminIdentity, AgentIdentity, AnonymousIdentity, get_agent_db
 from props.db.config import DatabaseConfig
 from props.db.database import Database
+from props.db.models import AgentType
 
 
 def test_get_agent_db_admin_returns_admin_db(exhaust_generator):
     """Admin users get the shared admin database connection."""
     admin_db = MagicMock(spec=Database)
-    auth = AuthContext.admin(username="postgres", password="secret")
+    auth = AdminIdentity(username="postgres", password="secret")
 
     gen = get_agent_db(admin_db=admin_db, auth=auth)
     db = exhaust_generator(gen)
@@ -28,7 +29,7 @@ def test_get_agent_db_admin_returns_admin_db(exhaust_generator):
 def test_get_agent_db_anonymous_raises_401():
     """Anonymous (unauthenticated) callers get 401."""
     admin_db = MagicMock(spec=Database)
-    auth = AuthContext.anonymous()
+    auth = AnonymousIdentity()
 
     gen = get_agent_db(admin_db=admin_db, auth=auth)
     with pytest.raises(HTTPException) as exc_info:
@@ -43,7 +44,9 @@ def test_get_agent_db_agent_calls_per_request():
     admin_db = MagicMock(spec=Database)
     admin_db.config = admin_config
 
-    auth = AuthContext.agent(username=f"agent_{run_id}", password="agent_pass", agent_run_id=run_id)
+    auth = AgentIdentity(
+        agent_type=AgentType.CRITIC_DEV_OPTIMIZE, agent_run_id=run_id, username=f"agent_{run_id}", password="agent_pass"
+    )
 
     mock_agent_db = MagicMock(spec=Database)
     with patch.object(Database, "per_request", return_value=mock_agent_db) as mock_pr:
@@ -74,7 +77,9 @@ def test_get_agent_db_agent_disposes_on_cleanup():
     admin_db = MagicMock(spec=Database)
     admin_db.config = admin_config
 
-    auth = AuthContext.agent(username=f"agent_{run_id}", password="agent_pass", agent_run_id=run_id)
+    auth = AgentIdentity(
+        agent_type=AgentType.CRITIC_DEV_OPTIMIZE, agent_run_id=run_id, username=f"agent_{run_id}", password="agent_pass"
+    )
 
     mock_agent_db = MagicMock(spec=Database)
     with patch.object(Database, "per_request", return_value=mock_agent_db):

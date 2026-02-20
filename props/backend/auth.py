@@ -11,8 +11,8 @@ Tokens contain base64-encoded username:password. Both schemes are supported:
 
 This module provides:
 - Credential validation with access level determination
-- Caller type determination for ACL enforcement
-- FastAPI dependency for per-request auth (get_auth_context)
+- Request identity resolution with DB lookup for agent types
+- FastAPI dependency for per-request auth (get_request_identity)
 - Dependency functions for ACL enforcement (require_admin_access, require_critic_run_access)
 """
 
@@ -56,6 +56,9 @@ class AnonymousIdentity:
 class AdminIdentity:
     """Admin user with full access."""
 
+    username: str
+    password: str
+
 
 @dataclass(frozen=True)
 class AgentIdentity:
@@ -63,6 +66,8 @@ class AgentIdentity:
 
     agent_type: AgentType
     agent_run_id: UUID
+    username: str
+    password: str
 
 
 RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity
@@ -175,43 +180,18 @@ def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
         return None
 
 
-@dataclass
-class AuthContext:
-    """Authentication context resolved per-request by the get_auth_context dependency."""
-
-    is_authenticated: bool = False
-    is_admin: bool = False
-    username: str | None = None
-    password: str | None = None
-    agent_run_id: UUID | None = None
-
-    @classmethod
-    def anonymous(cls) -> AuthContext:
-        return cls(is_authenticated=False)
-
-    @classmethod
-    def admin(cls, username: str, password: str) -> AuthContext:
-        return cls(is_authenticated=True, is_admin=True, username=username, password=password)
-
-    @classmethod
-    def agent(cls, username: str, password: str, agent_run_id: UUID) -> AuthContext:
-        return cls(
-            is_authenticated=True, is_admin=False, username=username, password=password, agent_run_id=agent_run_id
-        )
-
-
-def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
-    """FastAPI dependency that parses Authorization header and validates credentials.
+def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity:
+    """FastAPI dependency that parses Authorization header, validates credentials, and returns request identity.
 
     Raises HTTPException 401 for malformed or invalid credentials.
-    Returns anonymous for unauthenticated requests (downstream ACL decides access).
-    FastAPI caches the result per-request, so downstream dependencies that
-    also Depends(get_auth_context) reuse the same AuthContext.
+    Returns AnonymousIdentity for unauthenticated requests (downstream ACL decides access).
+    For agents, looks up agent_type from database.
+    FastAPI caches the result per-request.
     """
     authorization = request.headers.get("authorization")
 
     if not authorization:
-        return AuthContext.anonymous()
+        return AnonymousIdentity()
 
     parsed = parse_credentials(authorization)
     if not parsed:
@@ -222,36 +202,27 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
     if not result.is_valid:
         logger.warning(f"Invalid postgres credentials for user: {username}")
         raise HTTPException(status_code=401, detail=result.error or "Invalid credentials")
-    if result.access_level == AccessLevel.AGENT:
-        assert result.agent_run_id is not None
-        return AuthContext.agent(username, password, result.agent_run_id)
-    return AuthContext.admin(username, password)
 
+    if result.access_level == AccessLevel.ADMIN:
+        return AdminIdentity(username=username, password=password)
 
-# Type alias for auth context dependency (use in FastAPI route signatures)
-Auth = Annotated[AuthContext, Depends(get_auth_context)]
-
-
-def get_request_identity(auth: AuthContext, db: Database) -> tuple[RequestIdentity, UUID | None]:
-    """Determine request identity from auth context. Does DB lookup for agent users."""
-    if not auth.is_authenticated:
-        return AnonymousIdentity(), None
-
-    if auth.is_admin:
-        return AdminIdentity(), None
-
-    # For agents, look up run in database to determine type
-    if auth.agent_run_id is None:
-        raise HTTPException(status_code=500, detail="Agent auth missing run ID")
-    with db.session() as session:
-        agent_run = session.get(AgentRun, auth.agent_run_id)
+    # For agents: look up agent_type from database
+    assert result.agent_run_id is not None
+    with admin_db.session() as session:
+        agent_run = session.get(AgentRun, result.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
 
-        return (
-            AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=auth.agent_run_id),
-            auth.agent_run_id,
+        return AgentIdentity(
+            agent_type=agent_run.type_config.agent_type,
+            agent_run_id=result.agent_run_id,
+            username=username,
+            password=password,
         )
+
+
+# Type alias for request identity dependency (use in FastAPI route signatures)
+Auth = Annotated[RequestIdentity, Depends(get_request_identity)]
 
 
 # =============================================================================
@@ -259,18 +230,16 @@ def get_request_identity(auth: AuthContext, db: Database) -> tuple[RequestIdenti
 # =============================================================================
 
 
-def require_critic_run_access(auth: Auth, admin_db: AdminDb) -> tuple[RequestIdentity, UUID | None]:
+def require_critic_run_access(auth: Auth) -> RequestIdentity:
     """FastAPI dependency requiring critic run access. Raises HTTPException 403 if not allowed."""
-    identity, agent_run_id = get_request_identity(auth, admin_db)
-    if not can_run_agent_type(identity, ACL_CAN_RUN_CRITICS):
-        raise HTTPException(status_code=403, detail=f"{identity} not allowed to run critics")
-    return identity, agent_run_id
+    if not can_run_agent_type(auth, ACL_CAN_RUN_CRITICS):
+        raise HTTPException(status_code=403, detail=f"{auth} not allowed to run critics")
+    return auth
 
 
-def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
+def require_admin_access(auth: Auth) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
-    identity, _ = get_request_identity(auth, admin_db)
-    if not isinstance(identity, AdminIdentity):
+    if not isinstance(auth, AdminIdentity):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
@@ -289,16 +258,15 @@ def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
 
     Yields the Database and disposes per-request agent connections on cleanup.
     """
-    if not auth.is_authenticated:
+    if isinstance(auth, AnonymousIdentity):
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    if auth.is_admin:
+    if isinstance(auth, AdminIdentity):
         yield admin_db
         return
 
-    if not auth.username or not auth.password:
-        raise HTTPException(status_code=500, detail="Agent auth missing credentials")
-
+    # Must be AgentIdentity
+    assert isinstance(auth, AgentIdentity)
     agent_config = admin_db.config.with_user(auth.username, auth.password)
     agent_db = Database.per_request(agent_config)
     try:
