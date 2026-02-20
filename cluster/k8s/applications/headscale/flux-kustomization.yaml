@@ -27,3 +27,4 @@ spec:
     - name: gateway
     - name: cert-manager-environment
     - name: local-path-provisioner
+    - name: authentik-blueprint-headscale-secret # OIDC client secret must exist before deploy

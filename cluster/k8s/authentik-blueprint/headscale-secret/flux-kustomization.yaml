@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-blueprint-headscale-secret
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/authentik-blueprint/headscale-secret"
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: headscale-oidc-client-secret
+      namespace: headscale
+  dependsOn:
+    - name: headscale-namespace # headscale namespace exists
+    - name: external-secrets-config # ClusterSecretStore exists
+    - name: authentik-blueprint-sso-secrets # Vault data exists

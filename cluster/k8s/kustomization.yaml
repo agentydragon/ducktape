@@ -103,6 +103,7 @@ resources:
   - authentik-blueprint/matrix-secret/flux-kustomization.yaml
   - authentik-blueprint/vault-secret/flux-kustomization.yaml
   - authentik-blueprint/inventree-secret/flux-kustomization.yaml
+  - authentik-blueprint/headscale-secret/flux-kustomization.yaml
   - inventree-namespace/flux-kustomization.yaml
   - applications/inventree-secrets/flux-kustomization.yaml
   - applications/inventree/flux-kustomization.yaml

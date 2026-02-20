@@ -19,6 +19,12 @@ spec:
   install:
     remediation:
       retries: 3
+  valuesFrom:
+    # Injects headscale.config.oidc.client_secret from Vault (via ExternalSecret).
+    # client_secret is kept out of ConfigMaps by merging it here at deploy time.
+    - kind: Secret
+      name: headscale-oidc-client-secret
+      valuesKey: values.yaml
   chart:
     spec:
       chart: headscale
@@ -48,6 +54,18 @@ spec:
         log:
           format: text
           level: info
+        # OIDC authentication via Authentik — client_secret injected via valuesFrom
+        oidc:
+          only_start_if_oidc_is_available: true
+          issuer: "https://auth.allegedly.works/application/o/headscale/"
+          client_id: "headscale"
+          scope: ["openid", "profile", "email"]
+          strip_email_domain: true
+          expiry: "180d"
+          use_expiry_from_token: false
+          pkce:
+            enabled: true
+            method: S256
 
     persistence:
       enabled: true
