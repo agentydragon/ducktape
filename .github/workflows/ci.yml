@@ -108,6 +108,7 @@ jobs:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-backend-image')
     uses: ./.github/workflows/props-backend-image.yml
+    secrets: inherit
   props-agents-image:
     needs:
       - compute-targets
