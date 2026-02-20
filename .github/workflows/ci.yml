@@ -105,9 +105,13 @@ jobs:
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')
     uses: ./.github/workflows/rbe-image.yml
   props-backend-image:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-backend-image')
+    needs:
+      - compute-targets
+      - rbe-image
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-backend-image')
     uses: ./.github/workflows/props-backend-image.yml
+    with:
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   props-agents-image:
     needs:

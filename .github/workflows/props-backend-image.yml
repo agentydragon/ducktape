@@ -14,6 +14,19 @@ name: Props Backend Image
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      BUILDBUDDY_API_KEY:
+        required: false
+      HARBOR_ROBOT_USERNAME:
+        required: true
+      HARBOR_ROBOT_TOKEN:
+        required: true
 
 concurrency:
   # Use hardcoded name to avoid deadlock when called via workflow_call
@@ -39,6 +52,7 @@ jobs:
         id: bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          rbe_image: ${{ inputs.rbe_image }}
 
       - name: Build and load image
         run: bazel run //props/backend:load

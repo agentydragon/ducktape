@@ -39,7 +39,6 @@ workflows:
   props-backend-image:
     trigger: { kind: bazel_query, query: "$targets intersect set(//props/backend:image)" }
     secrets: [BUILDBUDDY_API_KEY]
-    rbe: false
 
   props-agents-image:
     trigger:
