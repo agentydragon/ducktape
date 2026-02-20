@@ -22,7 +22,6 @@ import base64
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
@@ -35,13 +34,6 @@ from props.db.database import Database
 from props.db.models import AgentRun, AgentType
 
 logger = logging.getLogger(__name__)
-
-
-class AccessLevel(StrEnum):
-    """Access level for authenticated users."""
-
-    ADMIN = "admin"  # Full access (postgres user)
-    AGENT = "agent"  # Agent access (agent_{uuid} pattern)
 
 
 # --- Request identity: discriminated union ---
@@ -90,8 +82,14 @@ ACL_CAN_RUN_CRITICS: set[AgentType] = _CRITIC_DEV_TYPES
 
 @dataclass(frozen=True)
 class CredentialValidationResult:
+    """Result of credential validation.
+
+    If is_valid=True:
+    - agent_run_id is None → admin credentials
+    - agent_run_id is not None → agent credentials
+    """
+
     is_valid: bool
-    access_level: AccessLevel | None = None
     agent_run_id: UUID | None = None
     error: str | None = None
 
@@ -101,11 +99,11 @@ class CredentialValidationResult:
 
     @classmethod
     def admin(cls) -> CredentialValidationResult:
-        return cls(is_valid=True, access_level=AccessLevel.ADMIN)
+        return cls(is_valid=True)
 
     @classmethod
     def agent(cls, agent_run_id: UUID) -> CredentialValidationResult:
-        return cls(is_valid=True, access_level=AccessLevel.AGENT, agent_run_id=agent_run_id)
+        return cls(is_valid=True, agent_run_id=agent_run_id)
 
 
 def extract_agent_run_id_from_username(username: str) -> UUID | None:
@@ -203,11 +201,11 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
         logger.warning(f"Invalid postgres credentials for user: {username}")
         raise HTTPException(status_code=401, detail=result.error or "Invalid credentials")
 
-    if result.access_level == AccessLevel.ADMIN:
+    # Admin: no agent_run_id
+    if result.agent_run_id is None:
         return AdminIdentity(username=username, password=password)
 
-    # For agents: look up agent_type from database
-    assert result.agent_run_id is not None
+    # Agent: look up agent_type from database
     with admin_db.session() as session:
         agent_run = session.get(AgentRun, result.agent_run_id)
         if agent_run is None:
