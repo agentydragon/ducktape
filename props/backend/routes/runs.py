@@ -16,22 +16,14 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 
-from props.backend.auth import (
-    AgentDb,
-    AgentIdentity,
-    RequestIdentity,
-    parse_credentials,
-    require_admin_access,
-    require_critic_run_access,
-    validate_postgres_credentials,
-)
+from props.backend.auth import AgentDb, AgentIdentity, RequestIdentity, require_admin_access, require_critic_run_access
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import get_snapshot_or_404
-from props.core.agent_types import AgentType, CriticTypeConfig, TargetMetric, TypeConfig
+from props.core.agent_types import AgentType, TargetMetric, TypeConfig
 from props.core.eval_api_models import RunCriticRequest, StartCriticResponse
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG
@@ -920,27 +912,6 @@ def get_run_llm_requests(run_id: UUID, agent_db: AgentDb) -> LLMRequestsResponse
         return LLMRequestsResponse(requests=[LLMRequestInfo.model_validate(req) for req in requests])
 
 
-# --- WebSocket for Runs Feed (list updates) ---
-
-
-class WsFeedRunsMessage(BaseModel):
-    """WebSocket message containing recent runs."""
-
-    type: Literal["runs"] = "runs"
-    runs: list[RunInfo]
-
-
-class WsFeedJobsMessage(BaseModel):
-    """WebSocket message containing active jobs."""
-
-    type: Literal["jobs"] = "jobs"
-    jobs: list[JobInfo]
-
-
-# Track active feed connections
-_feed_connections: set[WebSocket] = set()
-
-
 def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
     """Convert AgentRun ORM to RunInfo."""
     return RunInfo(
@@ -955,93 +926,6 @@ def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
     )
 
 
-def _get_recent_runs(session, limit: int = 20) -> list[RunInfo]:
-    """Get recent runs with split info."""
-    runs = session.query(AgentRun).order_by(AgentRun.updated_at.desc()).limit(limit).all()
-
-    # Pre-fetch all snapshots to avoid N+1 queries
-    snapshot_slugs = {
-        run.type_config.example.snapshot_slug for run in runs if isinstance(run.type_config, CriticTypeConfig)
-    }
-    snapshots = session.query(Snapshot).filter(Snapshot.slug.in_(snapshot_slugs)).all() if snapshot_slugs else []
-    snapshot_by_slug = {s.slug: s for s in snapshots}
-
-    # Build result with looked-up splits
-    result = []
-    for run in runs:
-        split = None
-        if isinstance(run.type_config, CriticTypeConfig):
-            snapshot_slug = run.type_config.example.snapshot_slug
-            if snapshot_slug in snapshot_by_slug:
-                split = snapshot_by_slug[snapshot_slug].split
-        result.append(_build_run_info(run, split))
-    return result
-
-
 def _get_active_jobs() -> list[JobInfo]:
     """Get active validation jobs from in-memory store."""
     return [JobInfo.model_validate(job, from_attributes=True) for job in _jobs.values()]
-
-
-@router.websocket("/feed")
-async def runs_feed(websocket: WebSocket) -> None:
-    """WebSocket endpoint for live runs/jobs feed.
-
-    Sends initial state then streams updates when runs or jobs change.
-    Requires admin token as ?token= query parameter.
-    """
-    db: Database = websocket.app.state.admin_db
-
-    # Validate token from query parameter
-    token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=4001, reason="Missing token")
-        return
-    parsed = parse_credentials(f"Bearer {token}")
-    if not parsed:
-        await websocket.close(code=4001, reason="Invalid token")
-        return
-    username, password = parsed
-    result = validate_postgres_credentials(username, password, db.config)
-    if not result.is_valid:
-        await websocket.close(code=4001, reason="Invalid credentials")
-        return
-
-    await websocket.accept()
-    _feed_connections.add(websocket)
-
-    try:
-        # Send initial state
-        with db.session() as session:
-            runs = _get_recent_runs(session)
-            jobs = _get_active_jobs()
-            await websocket.send_json(WsFeedRunsMessage(runs=runs).model_dump(mode="json"))
-            await websocket.send_json(WsFeedJobsMessage(jobs=jobs).model_dump(mode="json"))
-            last_updated = max((r.updated_at for r in runs), default=datetime.min)
-            last_job_state = [(j.job_id, j.completed, j.failed) for j in jobs]
-
-        # Poll for changes
-        while True:
-            await asyncio.sleep(1.0)
-
-            with db.session() as session:
-                # Check for new/updated runs
-                current_runs = _get_recent_runs(session)
-                current_updated = max((r.updated_at for r in current_runs), default=datetime.min)
-
-                if current_updated > last_updated:
-                    await websocket.send_json(WsFeedRunsMessage(runs=current_runs).model_dump(mode="json"))
-                    last_updated = current_updated
-
-                # Check for job changes
-                current_jobs = _get_active_jobs()
-                current_job_state = [(j.job_id, j.completed, j.failed) for j in current_jobs]
-
-                if current_job_state != last_job_state:
-                    await websocket.send_json(WsFeedJobsMessage(jobs=current_jobs).model_dump(mode="json"))
-                    last_job_state = current_job_state
-
-    except WebSocketDisconnect:
-        logger.debug("Feed WebSocket disconnected")
-    finally:
-        _feed_connections.discard(websocket)
