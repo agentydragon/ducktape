@@ -22,7 +22,7 @@ from sqlalchemy import func
 
 from props.backend.auth import (
     AgentDb,
-    CallerType,
+    RequestIdentity,
     parse_credentials,
     require_admin_access,
     require_critic_run_access,
@@ -701,7 +701,7 @@ async def start_critic(
     request: Request,
     body: RunCriticRequest,
     admin_db: AdminDb,
-    auth: Annotated[tuple[CallerType, UUID | None], Depends(require_critic_run_access)],
+    auth: Annotated[tuple[RequestIdentity, UUID | None], Depends(require_critic_run_access)],
 ) -> StartCriticResponse:
     """Start a critic agent using an agent package. Returns immediately with critic_run_id.
 

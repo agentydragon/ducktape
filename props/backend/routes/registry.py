@@ -22,11 +22,11 @@ from props.backend.auth import (
     ACL_CAN_PUSH_REGISTRY,
     ACL_CAN_PUSH_TAGS,
     ACL_CAN_READ_REGISTRY,
-    AnonymousCaller,
+    AnonymousIdentity,
     Auth,
-    CallerType,
-    get_caller_type,
-    has_access,
+    RequestIdentity,
+    can_run_agent_type,
+    get_request_identity,
 )
 from props.backend.deps import AdminDb
 from props.core.oci_utils import is_digest
@@ -165,22 +165,22 @@ async def v2_check(auth: Auth) -> Response:
     return Response(content=b"{}", status_code=200, headers=_OCI_VERSION_HEADER)
 
 
-def _deny(caller: CallerType, action: str) -> HTTPException:
+def _deny(identity: RequestIdentity, action: str) -> HTTPException:
     """Return 401 for anonymous callers (triggers auth challenge), 403 for authenticated."""
-    if isinstance(caller, AnonymousCaller):
+    if isinstance(identity, AnonymousIdentity):
         return HTTPException(status_code=401, headers={"WWW-Authenticate": 'Basic realm="props"'})
-    return HTTPException(status_code=403, detail=f"{caller} not allowed to {action}")
+    return HTTPException(status_code=403, detail=f"{identity} not allowed to {action}")
 
 
 @router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
 async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
     """Push a manifest — records agent definition on success."""
-    caller, agent_run_id = get_caller_type(auth, admin_db)
-    if not has_access(caller, ACL_CAN_PUSH_REGISTRY):
-        raise _deny(caller, "push to registry")
+    identity, agent_run_id = get_request_identity(auth, admin_db)
+    if not can_run_agent_type(identity, ACL_CAN_PUSH_REGISTRY):
+        raise _deny(identity, "push to registry")
 
-    if not is_digest(ref) and not has_access(caller, ACL_CAN_PUSH_TAGS):
-        raise _deny(caller, "push by tag")
+    if not is_digest(ref) and not can_run_agent_type(identity, ACL_CAN_PUSH_TAGS):
+        raise _deny(identity, "push by tag")
 
     body = await request.body()
     response = await _proxy_to_upstream(request)
@@ -207,10 +207,10 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
 @router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PATCH", "PUT"], include_in_schema=False)
 async def registry_proxy(request: Request, path: str, auth: Auth, admin_db: AdminDb) -> Response:
     """Proxy OCI registry requests with method-based ACL (read for GET/HEAD, write for mutations)."""
-    caller, _ = get_caller_type(auth, admin_db)
+    identity, _ = get_request_identity(auth, admin_db)
     if request.method in ("GET", "HEAD"):
-        if not has_access(caller, ACL_CAN_READ_REGISTRY):
-            raise _deny(caller, "read from registry")
-    elif not has_access(caller, ACL_CAN_PUSH_REGISTRY):
-        raise _deny(caller, "push to registry")
+        if not can_run_agent_type(identity, ACL_CAN_READ_REGISTRY):
+            raise _deny(identity, "read from registry")
+    elif not can_run_agent_type(identity, ACL_CAN_PUSH_REGISTRY):
+        raise _deny(identity, "push to registry")
     return await _proxy_to_upstream(request)

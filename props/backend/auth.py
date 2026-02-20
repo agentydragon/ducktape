@@ -44,34 +44,35 @@ class AccessLevel(StrEnum):
     AGENT = "agent"  # Agent access (agent_{uuid} pattern)
 
 
-# --- Caller type: discriminated union ---
+# --- Request identity: discriminated union ---
 
 
 @dataclass(frozen=True)
-class AnonymousCaller:
-    """Unauthenticated caller (e.g., for /v2/ check)."""
+class AnonymousIdentity:
+    """Unauthenticated request."""
 
 
 @dataclass(frozen=True)
-class AdminCaller:
-    """Admin caller (postgres user) — full access."""
+class AdminIdentity:
+    """Admin user with full access."""
 
 
 @dataclass(frozen=True)
-class AgentCaller:
-    """Agent caller with a specific agent type."""
+class AgentIdentity:
+    """Agent with specific type and run ID."""
 
     agent_type: AgentType
+    agent_run_id: UUID
 
 
-CallerType = AnonymousCaller | AdminCaller | AgentCaller
+RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity
 
 
-def has_access(caller: CallerType, allowed_agent_types: set[AgentType]) -> bool:
-    """Check if caller has access. Admin always allowed; agents checked against the set."""
-    if isinstance(caller, AdminCaller):
+def can_run_agent_type(identity: RequestIdentity, allowed_types: set[AgentType]) -> bool:
+    """Check if identity's agent type is in the allowed set. Admin always allowed."""
+    if isinstance(identity, AdminIdentity):
         return True
-    return isinstance(caller, AgentCaller) and caller.agent_type in allowed_agent_types
+    return isinstance(identity, AgentIdentity) and identity.agent_type in allowed_types
 
 
 # ACL permission sets — agent types that can perform each operation (admin always allowed)
@@ -231,13 +232,13 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
 Auth = Annotated[AuthContext, Depends(get_auth_context)]
 
 
-def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID | None]:
-    """Determine caller type from auth context. Does DB lookup for agent users."""
+def get_request_identity(auth: AuthContext, db: Database) -> tuple[RequestIdentity, UUID | None]:
+    """Determine request identity from auth context. Does DB lookup for agent users."""
     if not auth.is_authenticated:
-        return AnonymousCaller(), None
+        return AnonymousIdentity(), None
 
     if auth.is_admin:
-        return AdminCaller(), None
+        return AdminIdentity(), None
 
     # For agents, look up run in database to determine type
     if auth.agent_run_id is None:
@@ -247,7 +248,10 @@ def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID |
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
 
-        return AgentCaller(agent_type=agent_run.type_config.agent_type), auth.agent_run_id
+        return (
+            AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=auth.agent_run_id),
+            auth.agent_run_id,
+        )
 
 
 # =============================================================================
@@ -255,18 +259,18 @@ def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID |
 # =============================================================================
 
 
-def require_critic_run_access(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
+def require_critic_run_access(auth: Auth, admin_db: AdminDb) -> tuple[RequestIdentity, UUID | None]:
     """FastAPI dependency requiring critic run access. Raises HTTPException 403 if not allowed."""
-    caller, agent_run_id = get_caller_type(auth, admin_db)
-    if not has_access(caller, ACL_CAN_RUN_CRITICS):
-        raise HTTPException(status_code=403, detail=f"{caller} not allowed to run critics")
-    return caller, agent_run_id
+    identity, agent_run_id = get_request_identity(auth, admin_db)
+    if not can_run_agent_type(identity, ACL_CAN_RUN_CRITICS):
+        raise HTTPException(status_code=403, detail=f"{identity} not allowed to run critics")
+    return identity, agent_run_id
 
 
 def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
-    caller, _ = get_caller_type(auth, admin_db)
-    if not isinstance(caller, AdminCaller):
+    identity, _ = get_request_identity(auth, admin_db)
+    if not isinstance(identity, AdminIdentity):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 

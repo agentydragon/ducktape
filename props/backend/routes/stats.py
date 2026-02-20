@@ -446,13 +446,6 @@ class CoverageResponse(BaseModel):
     cells: list[CoverageCell]
 
 
-def _row_to_example_spec(snapshot_slug: SnapshotSlug, example_kind: ExampleKind, files_hash: str | None) -> ExampleSpec:
-    if example_kind == ExampleKind.WHOLE_SNAPSHOT:
-        return WholeSnapshotExample(snapshot_slug=snapshot_slug)
-    assert files_hash is not None, f"FILE_SET row has None files_hash: {snapshot_slug}"
-    return SingleFileSetExample(snapshot_slug=snapshot_slug, files_hash=files_hash)
-
-
 def _build_tp_counts_by_example(session: Session, split: Split) -> dict[ExampleSpec, int]:
     tp_count_results = (
         session.query(
@@ -466,7 +459,12 @@ def _build_tp_counts_by_example(session: Session, split: Split) -> dict[ExampleS
         .all()
     )
     return {
-        _row_to_example_spec(r.snapshot_slug, r.example_kind, r.files_hash): r.n_occurrences for r in tp_count_results
+        (
+            WholeSnapshotExample(snapshot_slug=r.snapshot_slug)
+            if r.example_kind == ExampleKind.WHOLE_SNAPSHOT
+            else SingleFileSetExample(snapshot_slug=r.snapshot_slug, files_hash=r.files_hash)
+        ): r.n_occurrences
+        for r in tp_count_results
     }
 
 
