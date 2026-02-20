@@ -60,11 +60,6 @@ class WorkflowConfig(BaseModel):
     targets: bool = False
     inputs: dict[str, str] = Field(default_factory=dict)
     secrets: list[str] = Field(default_factory=list)
-    # Whether this workflow uses BuildBuddy RBE and should receive rbe_image as
-    # an input and depend on the rbe-image job. Defaults to True when
-    # BUILDBUDDY_API_KEY is in secrets, but can be set False for workflows that
-    # use BuildBuddy only for remote caching (not RBE image execution).
-    rbe: bool | None = None
 
 
 class ReleaseConfig(BaseModel):

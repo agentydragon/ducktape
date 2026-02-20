@@ -111,11 +111,7 @@ RBE_IMAGE_JOB = "rbe-image"
 
 def _uses_rbe(name: str, config: WorkflowConfig) -> bool:
     """Whether this workflow uses BuildBuddy RBE and should receive rbe_image."""
-    if name == RBE_IMAGE_JOB:
-        return False
-    if config.rbe is not None:
-        return config.rbe
-    return "BUILDBUDDY_API_KEY" in config.secrets
+    return name != RBE_IMAGE_JOB and "BUILDBUDDY_API_KEY" in config.secrets
 
 
 def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: bool) -> Job:
