@@ -4,11 +4,18 @@
 % if secrets:
 % if "GITHUB_TOKEN" in secrets.env_vars:
 `GITHUB_TOKEN`: GitHub PAT for the `agentydragon-agent` bot account. Used by `gh` CLI automatically.
-  **PR workflow** (two options — the bot is NOT a collaborator on `agentydragon/ducktape`):
-  Option A (origin, via Claude proxy): `git push -u origin <branch>`, then `gh pr create --repo agentydragon/ducktape --head <branch-name> --base devel`.
-    The `origin` remote pushes to `agentydragon/ducktape` through the Claude Code integration proxy.
-  Option B (fork): `git remote add fork https://github.com/agentydragon-agent/ducktape.git` (if not already configured),
-    `git push fork <branch>`, then `gh pr create --repo agentydragon/ducktape --head agentydragon-agent:<branch-name> --base devel`.
+  **PR workflow** (bot is NOT a collaborator on `agentydragon/ducktape`, so use the fork):
+  ```bash
+  # 1. Add fork remote with GITHUB_TOKEN auth (one-time)
+  git remote add fork "https://agentydragon-agent:${GITHUB_TOKEN}@github.com/agentydragon-agent/ducktape.git"
+
+  # 2. Push branch to fork
+  git push -u fork <branch-name>
+
+  # 3. Create PR from fork to main repo
+  gh pr create --repo agentydragon/ducktape --head agentydragon-agent:<branch-name> --base devel
+  ```
+  The `origin` remote pushes to `agentydragon/ducktape` through the Claude Code integration proxy, but you can't create PRs directly (bot isn't a collaborator). Fork + GITHUB_TOKEN is the working workflow.
 % endif
 Ollama: OpenAI-compatible LLM inference at `https://ollama.allegedly.works/v1` (2x RTX 5090). Served via LiteLLM proxy.
   Available model: `gpt-oss-20b-128k` (OpenAI gpt-oss 20B, 128K context, Apache 2.0).
