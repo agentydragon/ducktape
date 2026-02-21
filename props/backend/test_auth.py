@@ -44,8 +44,10 @@ def test_get_agent_db_agent_calls_per_request():
     admin_db = MagicMock(spec=Database)
     admin_db.config = admin_config
 
+    username = f"agent_{run_id}"
+    password = "agent_pass"
     auth = AgentIdentity(
-        agent_type=AgentType.CRITIC_DEV_OPTIMIZE, agent_run_id=run_id, username=f"agent_{run_id}", password="agent_pass"
+        agent_type=AgentType.CRITIC_DEV_OPTIMIZE, agent_run_id=run_id, username=username, password=password
     )
 
     mock_agent_db = MagicMock(spec=Database)
@@ -56,8 +58,8 @@ def test_get_agent_db_agent_calls_per_request():
         # Verify per_request was called with agent credentials
         mock_pr.assert_called_once()
         config = mock_pr.call_args[0][0]
-        assert config.user == f"agent_{run_id}"
-        assert config.password == "agent_pass"
+        assert config.user == username
+        assert config.password == password
         assert config.host == "localhost"
         assert config.database == "testdb"
 
@@ -77,8 +79,10 @@ def test_get_agent_db_agent_disposes_on_cleanup():
     admin_db = MagicMock(spec=Database)
     admin_db.config = admin_config
 
+    username = f"agent_{run_id}"
+    password = "agent_pass"
     auth = AgentIdentity(
-        agent_type=AgentType.CRITIC_DEV_OPTIMIZE, agent_run_id=run_id, username=f"agent_{run_id}", password="agent_pass"
+        agent_type=AgentType.CRITIC_DEV_OPTIMIZE, agent_run_id=run_id, username=username, password=password
     )
 
     mock_agent_db = MagicMock(spec=Database)
