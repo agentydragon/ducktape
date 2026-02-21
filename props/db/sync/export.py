@@ -31,12 +31,7 @@ class LiteralStr(str):
     __slots__ = ()
 
 
-def _literal_str_representer(dumper: yaml.Dumper, data: LiteralStr) -> yaml.Node:
-    """Represent LiteralStr as YAML literal block style."""
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
-
-
-yaml.add_representer(LiteralStr, _literal_str_representer)
+yaml.add_representer(LiteralStr, lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|"))
 
 
 def _get_file_set_paths(session: Session, snapshot_slug: SnapshotSlug, files_hash: str) -> list[str]:

@@ -104,25 +104,20 @@ def _get_engine(config: DatabaseConfig | None = None):
         _session_factory.configure(bind=_engine)
 
         # Verify connection immediately
-        _check_connection_internal(timeout_secs=2)
+        if _engine is None:
+            raise RuntimeError("Database engine not initialized - call init_db() first")
+        logger.debug("Validating database connection (timeout: 2s)...")
+        test_engine = create_engine(
+            _engine.url.render_as_string(hide_password=False), echo=False, connect_args={"connect_timeout": 2}
+        )
+        try:
+            with test_engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            logger.debug("Database connection validated")
+        finally:
+            test_engine.dispose()
 
         return _engine
-
-
-def _check_connection_internal(timeout_secs: int = 2) -> None:
-    """Internal connection check (assumes _engine is set)."""
-    if _engine is None:
-        raise RuntimeError("Database engine not initialized - call init_db() first")
-    logger.debug(f"Validating database connection (timeout: {timeout_secs}s)...")
-    test_engine = create_engine(
-        _engine.url.render_as_string(hide_password=False), echo=False, connect_args={"connect_timeout": timeout_secs}
-    )
-    try:
-        with test_engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.debug("Database connection validated")
-    finally:
-        test_engine.dispose()
 
 
 def dispose_db() -> None:

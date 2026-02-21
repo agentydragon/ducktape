@@ -11,6 +11,7 @@ import pytest_bazel
 from fastapi import HTTPException
 
 from props.backend.auth import AuthContext, get_agent_db
+from props.core.agent_types import AgentType
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 
@@ -43,7 +44,9 @@ def test_get_agent_db_agent_calls_per_request():
     admin_db = MagicMock(spec=Database)
     admin_db.config = admin_config
 
-    auth = AuthContext.agent(username=f"agent_{run_id}", password="agent_pass", agent_run_id=run_id)
+    auth = AuthContext.agent(
+        username=f"agent_{run_id}", password="agent_pass", agent_type=AgentType.CRITIC, agent_run_id=run_id
+    )
 
     mock_agent_db = MagicMock(spec=Database)
     with patch.object(Database, "per_request", return_value=mock_agent_db) as mock_pr:
@@ -74,7 +77,9 @@ def test_get_agent_db_agent_disposes_on_cleanup():
     admin_db = MagicMock(spec=Database)
     admin_db.config = admin_config
 
-    auth = AuthContext.agent(username=f"agent_{run_id}", password="agent_pass", agent_run_id=run_id)
+    auth = AuthContext.agent(
+        username=f"agent_{run_id}", password="agent_pass", agent_type=AgentType.CRITIC, agent_run_id=run_id
+    )
 
     mock_agent_db = MagicMock(spec=Database)
     with patch.object(Database, "per_request", return_value=mock_agent_db):

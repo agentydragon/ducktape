@@ -104,15 +104,6 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 - [ ] **Gatus: remove direct HTTPRoute** — Once Authentik proxy outpost is confirmed working,
       remove the direct HTTPRoute from `k8s/gatus/` (proxy route in `authentik-proxy-routes/`
       takes over)
-- [ ] **Nix cache: initialize Attic cache** — Attic server is running but has no caches
-      created (empty `cache` table). `cache.allegedly.works/nix-cache-info` returns 404
-      because Attic serves that endpoint per-cache at `/<name>/nix-cache-info`. Fix: run
-      `atticadm make-token` to generate an admin JWT, then `attic cache create main` and
-      `attic cache configure main --public`. Either add an init Job to the chart/kustomization
-      or run interactively once. The `atticadm` binary may not be in the current image
-      (`ghcr.io/zhaofengli/attic:latest`) — check and potentially use a different tag or
-      generate the token from the JWT secret directly. Gatus probe should use
-      `cache.allegedly.works/main/nix-cache-info` once cache exists.
 - [ ] **Deploy headscale**, test with a device
 - [ ] **OpenClaw: eliminate one-time token entry** — currently the user must retrieve
       the auto-generated gateway token (`kubectl get secret openclaw-gateway-token ...`)

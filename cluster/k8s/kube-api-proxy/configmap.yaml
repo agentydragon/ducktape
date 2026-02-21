@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-api-proxy-config
+  namespace: kube-api-proxy
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /dev/stderr warn;
+    events {
+        worker_connections 1024;
+    }
+    stream {
+        upstream kube_apiserver {
+            server 127.0.0.1:6443;
+        }
+        server {
+            listen 16443 ssl;
+            ssl_certificate /etc/nginx/tls/tls.crt;
+            ssl_certificate_key /etc/nginx/tls/tls.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            proxy_pass kube_apiserver;
+            proxy_ssl on;
+            proxy_ssl_verify off;
+        }
+    }

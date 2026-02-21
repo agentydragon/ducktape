@@ -6,7 +6,7 @@ metadata:
   namespace: headlamp
 spec:
   interval: 24h
-  url: https://kubernetes-sigs.github.io/headlamp/
+  url: https://headlamp-k8s.github.io/headlamp/
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

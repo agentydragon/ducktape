@@ -1,0 +1,61 @@
+---
+# One-shot job to configure InvenTree settings that cannot be set via env vars.
+# Runs after InvenTree is ready; idempotent (PUT to a setting that is already True is a no-op).
+# Managed by Flux — ttlSecondsAfterFinished causes auto-deletion after 5min so Flux can re-apply.
+#
+# Configures:
+#   - LOGIN_ENABLE_SSO=True         (show SSO button on login page)
+#   - LOGIN_ENABLE_SSO_REG=True     (allow SSO self-registration)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: inventree-configure
+  namespace: inventree
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 30
+  template:
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      imagePullSecrets:
+        - name: harbor-ci-robot
+      restartPolicy: OnFailure
+      containers:
+        - name: configure
+          image: registry.allegedly.works/inventree/inventree:latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              BASE_URL="http://inventree"
+
+              # Wait for InvenTree API to respond
+              echo "Waiting for InvenTree at ${BASE_URL}/api/ ..."
+              until wget -q -O /dev/null "${BASE_URL}/api/"; do
+                echo "  not ready, retrying in 10s..."
+                sleep 10
+              done
+              echo "InvenTree is ready."
+
+              AUTH="$(printf '%s:%s' "${INVENTREE_ADMIN_USER}" "${INVENTREE_ADMIN_PASSWORD}" | base64 -w0)"
+
+              put_setting() {
+                KEY="$1"
+                VALUE="$2"
+                echo "Setting ${KEY}=${VALUE} ..."
+                wget -q -O /dev/null \
+                  --method=PUT \
+                  --header="Content-Type: application/json" \
+                  --header="Authorization: Basic ${AUTH}" \
+                  --body-data="{\"value\":\"${VALUE}\"}" \
+                  "${BASE_URL}/api/settings/global/${KEY}/"
+              }
+
+              put_setting LOGIN_ENABLE_SSO True
+              put_setting LOGIN_ENABLE_SSO_REG True
+              echo "Done — SSO enabled."
+          envFrom:
+            - secretRef:
+                name: inventree-admin-password

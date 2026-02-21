@@ -42,36 +42,52 @@ class AccessLevel(StrEnum):
 
     ADMIN = "admin"  # Full access (postgres user)
     AGENT = "agent"  # Agent access (agent_{uuid} pattern)
+    EVALUATOR = "evaluator"  # Evaluator access (evaluator role)
 
 
-# --- Caller type: discriminated union ---
-
-
-@dataclass(frozen=True)
-class AnonymousCaller:
-    """Unauthenticated caller (e.g., for /v2/ check)."""
+# --- Request identity: discriminated union ---
 
 
 @dataclass(frozen=True)
-class AdminCaller:
-    """Admin caller (postgres user) — full access."""
+class AnonymousIdentity:
+    """Unauthenticated request."""
 
 
 @dataclass(frozen=True)
-class AgentCaller:
-    """Agent caller with a specific agent type."""
+class AdminIdentity:
+    """Admin user with full access."""
+
+
+@dataclass(frozen=True)
+class AgentIdentity:
+    """Agent with specific type and run ID."""
 
     agent_type: AgentType
+    agent_run_id: UUID
 
 
-CallerType = AnonymousCaller | AdminCaller | AgentCaller
+@dataclass(frozen=True)
+class EvaluatorIdentity:
+    """Evaluator with read and run permissions."""
 
 
-def has_access(caller: CallerType, allowed_agent_types: set[AgentType]) -> bool:
-    """Check if caller has access. Admin always allowed; agents checked against the set."""
-    if isinstance(caller, AdminCaller):
+RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity | EvaluatorIdentity
+
+
+def can_run_agent_type(identity: RequestIdentity, allowed_types: set[AgentType]) -> bool:
+    """Check if identity's agent type is in the allowed set. Admin always allowed."""
+    if isinstance(identity, AdminIdentity):
         return True
-    return isinstance(caller, AgentCaller) and caller.agent_type in allowed_agent_types
+    return isinstance(identity, AgentIdentity) and identity.agent_type in allowed_types
+
+
+def can_access_level(identity: RequestIdentity, allowed_levels: set[AccessLevel]) -> bool:
+    """Check if identity has one of the allowed access levels."""
+    if isinstance(identity, AdminIdentity):
+        return AccessLevel.ADMIN in allowed_levels
+    if isinstance(identity, EvaluatorIdentity):
+        return AccessLevel.EVALUATOR in allowed_levels
+    return False
 
 
 # ACL permission sets — agent types that can perform each operation (admin always allowed)
@@ -80,6 +96,9 @@ ACL_CAN_READ_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
 ACL_CAN_PUSH_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
 ACL_CAN_PUSH_TAGS: set[AgentType] = set()  # Admin only
 ACL_CAN_RUN_CRITICS: set[AgentType] = _CRITIC_DEV_TYPES
+
+# Caller types allowed to perform each operation (evaluated with has_access_caller)
+ACL_CAN_RUN_VALIDATION_AGENTS: set[AccessLevel] = {AccessLevel.ADMIN, AccessLevel.EVALUATOR}
 
 
 @dataclass(frozen=True)
@@ -100,6 +119,10 @@ class CredentialValidationResult:
     @classmethod
     def agent(cls, agent_run_id: UUID) -> CredentialValidationResult:
         return cls(is_valid=True, access_level=AccessLevel.AGENT, agent_run_id=agent_run_id)
+
+    @classmethod
+    def evaluator(cls) -> CredentialValidationResult:
+        return cls(is_valid=True, access_level=AccessLevel.EVALUATOR)
 
 
 def extract_agent_run_id_from_username(username: str) -> UUID | None:
@@ -125,6 +148,7 @@ def validate_postgres_credentials(
     """Validate credentials by attempting Postgres connection."""
     # First, try to extract agent run ID from username pattern
     agent_run_id = extract_agent_run_id_from_username(username)
+    is_evaluator = username == "evaluator"
 
     # Validate credentials against Postgres
     try:
@@ -144,6 +168,8 @@ def validate_postgres_credentials(
     # Credentials valid - determine access level
     if agent_run_id is not None:
         return CredentialValidationResult.agent(agent_run_id)
+    if is_evaluator:
+        return CredentialValidationResult.evaluator()
     return CredentialValidationResult.admin()
 
 
@@ -174,29 +200,39 @@ def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
         return None
 
 
-@dataclass
-class AuthContext:
-    """Authentication context resolved per-request by the get_auth_context dependency."""
+@dataclass(frozen=True)
+class Credentials:
+    """Postgres connection credentials."""
 
-    is_authenticated: bool = False
-    is_admin: bool = False
-    username: str | None = None
-    password: str | None = None
-    agent_run_id: UUID | None = None
+    username: str
+    password: str
+
+
+@dataclass(frozen=True)
+class AuthContext:
+    """Authentication context: credentials + identity resolved per-request."""
+
+    credentials: Credentials | None
+    identity: RequestIdentity
 
     @classmethod
     def anonymous(cls) -> AuthContext:
-        return cls(is_authenticated=False)
+        return cls(credentials=None, identity=AnonymousIdentity())
 
     @classmethod
     def admin(cls, username: str, password: str) -> AuthContext:
-        return cls(is_authenticated=True, is_admin=True, username=username, password=password)
+        return cls(credentials=Credentials(username, password), identity=AdminIdentity())
 
     @classmethod
-    def agent(cls, username: str, password: str, agent_run_id: UUID) -> AuthContext:
+    def agent(cls, username: str, password: str, agent_type: AgentType, agent_run_id: UUID) -> AuthContext:
         return cls(
-            is_authenticated=True, is_admin=False, username=username, password=password, agent_run_id=agent_run_id
+            credentials=Credentials(username, password),
+            identity=AgentIdentity(agent_type=agent_type, agent_run_id=agent_run_id),
         )
+
+    @classmethod
+    def evaluator(cls, username: str, password: str) -> AuthContext:
+        return cls(credentials=Credentials(username, password), identity=EvaluatorIdentity())
 
 
 def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
@@ -221,9 +257,20 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
     if not result.is_valid:
         logger.warning(f"Invalid postgres credentials for user: {username}")
         raise HTTPException(status_code=401, detail=result.error or "Invalid credentials")
+
     if result.access_level == AccessLevel.AGENT:
         assert result.agent_run_id is not None
-        return AuthContext.agent(username, password, result.agent_run_id)
+        # Look up agent type from database
+        with admin_db.session() as session:
+            agent_run = session.get(AgentRun, result.agent_run_id)
+            if agent_run is None:
+                raise HTTPException(status_code=401, detail="Invalid agent token")
+            agent_type = agent_run.type_config.agent_type
+        return AuthContext.agent(username, password, agent_type, result.agent_run_id)
+
+    if result.access_level == AccessLevel.EVALUATOR:
+        return AuthContext.evaluator(username, password)
+
     return AuthContext.admin(username, password)
 
 
@@ -231,43 +278,43 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
 Auth = Annotated[AuthContext, Depends(get_auth_context)]
 
 
-def get_caller_type(auth: AuthContext, db: Database) -> tuple[CallerType, UUID | None]:
-    """Determine caller type from auth context. Does DB lookup for agent users."""
-    if not auth.is_authenticated:
-        return AnonymousCaller(), None
-
-    if auth.is_admin:
-        return AdminCaller(), None
-
-    # For agents, look up run in database to determine type
-    if auth.agent_run_id is None:
-        raise HTTPException(status_code=500, detail="Agent auth missing run ID")
-    with db.session() as session:
-        agent_run = session.get(AgentRun, auth.agent_run_id)
-        if agent_run is None:
-            raise HTTPException(status_code=401, detail="Invalid agent token")
-
-        return AgentCaller(agent_type=agent_run.type_config.agent_type), auth.agent_run_id
-
-
 # =============================================================================
 # Dependency functions for ACL enforcement
 # =============================================================================
 
 
-def require_critic_run_access(auth: Auth, admin_db: AdminDb) -> tuple[CallerType, UUID | None]:
+def require_critic_run_access(auth: Auth) -> tuple[RequestIdentity, UUID | None]:
     """FastAPI dependency requiring critic run access. Raises HTTPException 403 if not allowed."""
-    caller, agent_run_id = get_caller_type(auth, admin_db)
-    if not has_access(caller, ACL_CAN_RUN_CRITICS):
-        raise HTTPException(status_code=403, detail=f"{caller} not allowed to run critics")
-    return caller, agent_run_id
+    if not can_run_agent_type(auth.identity, ACL_CAN_RUN_CRITICS):
+        raise HTTPException(status_code=403, detail=f"{auth.identity} not allowed to run critics")
+
+    agent_run_id = None
+    if isinstance(auth.identity, AgentIdentity):
+        agent_run_id = auth.identity.agent_run_id
+
+    return auth.identity, agent_run_id
 
 
-def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
+def require_admin_access(auth: Auth) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
-    caller, _ = get_caller_type(auth, admin_db)
-    if not isinstance(caller, AdminCaller):
+    if not isinstance(auth.identity, AdminIdentity):
         raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def require_evaluator_or_admin_access(auth: Auth) -> tuple[RequestIdentity, UUID | None]:
+    """FastAPI dependency requiring evaluator or admin access.
+
+    Allows both admin and evaluator to trigger validation/optimization/improvement runs.
+    Raises HTTPException 403 if neither.
+    """
+    if not isinstance(auth.identity, (AdminIdentity, EvaluatorIdentity)):
+        raise HTTPException(status_code=403, detail="Evaluator or admin access required")
+
+    agent_run_id = None
+    if isinstance(auth.identity, AgentIdentity):
+        agent_run_id = auth.identity.agent_run_id
+
+    return auth.identity, agent_run_id
 
 
 # =============================================================================
@@ -276,26 +323,26 @@ def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
 
 
 def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
-    """Get Database using agent credentials for RLS enforcement.
+    """Get Database using caller's credentials for RLS enforcement.
 
-    For agent callers: Creates per-request Database with agent's Postgres
+    For agent/evaluator callers: Creates per-request Database with their Postgres
     credentials. RLS policies automatically enforce access control.
     For admin callers: Returns the shared admin Database instance.
     For anonymous: Raises 401.
 
-    Yields the Database and disposes per-request agent connections on cleanup.
+    Yields the Database and disposes per-request connections on cleanup.
     """
-    if not auth.is_authenticated:
+    if isinstance(auth.identity, AnonymousIdentity):
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    if auth.is_admin:
+    if isinstance(auth.identity, AdminIdentity):
         yield admin_db
         return
 
-    if not auth.username or not auth.password:
-        raise HTTPException(status_code=500, detail="Agent auth missing credentials")
+    if auth.credentials is None:
+        raise HTTPException(status_code=500, detail="Auth missing credentials")
 
-    agent_config = admin_db.config.with_user(auth.username, auth.password)
+    agent_config = admin_db.config.with_user(auth.credentials.username, auth.credentials.password)
     agent_db = Database.per_request(agent_config)
     try:
         yield agent_db

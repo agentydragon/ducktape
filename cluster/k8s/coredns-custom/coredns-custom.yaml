@@ -1,0 +1,47 @@
+---
+# CoreDNS ConfigMap patch to forward allegedly.works to PowerDNS
+# This allows cert-manager to resolve ns1/ns2.allegedly.works glue records
+# during DNS-01 ACME challenge validation
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |-
+    # Forward allegedly.works zone to PowerDNS ClusterIP service
+    # Uses fixed ClusterIP (pinned in powerdns helmrelease) for stable config across recreates
+    allegedly.works:53 {
+        errors
+        cache 30
+        forward . 10.96.53.53
+    }
+
+    # Default configuration for all other domains
+    .:53 {
+        errors
+        health {
+            lameduck 5s
+        }
+        ready
+        log . {
+            class error
+        }
+        prometheus :9153
+
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+            pods insecure
+            fallthrough in-addr.arpa ip6.arpa
+            ttl 30
+        }
+        forward . /etc/resolv.conf {
+           max_concurrent 1000
+        }
+        cache 30 {
+           disable success cluster.local
+           disable denial cluster.local
+        }
+        loop
+        reload
+        loadbalance
+    }

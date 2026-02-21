@@ -10,6 +10,7 @@ rules:
       - pods/log
       - services
       - configmaps
+      - secrets
       - persistentvolumeclaims
       - events
     verbs: ["get", "list", "watch"]

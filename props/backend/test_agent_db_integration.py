@@ -16,7 +16,7 @@ import pytest_asyncio
 import pytest_bazel
 
 from props.backend.auth import AuthContext, get_agent_db
-from props.core.agent_types import CriticTypeConfig
+from props.core.agent_types import AgentType, CriticTypeConfig
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus
@@ -64,6 +64,7 @@ async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_
     auth = AuthContext.agent(
         username=critic_agent_creds.username,
         password=critic_agent_creds.password,
+        agent_type=AgentType.CRITIC,
         agent_run_id=uuid4(),  # The auth context run_id (doesn't need to match creds run)
     )
     gen = get_agent_db(admin_db=synced_db, auth=auth)
@@ -89,7 +90,10 @@ async def test_agent_db_can_see_own_run(synced_db: Database, critic_agent_creds:
     agent_run_id = UUID(agent_run_id_str)
 
     auth = AuthContext.agent(
-        username=critic_agent_creds.username, password=critic_agent_creds.password, agent_run_id=agent_run_id
+        username=critic_agent_creds.username,
+        password=critic_agent_creds.password,
+        agent_type=AgentType.CRITIC,
+        agent_run_id=agent_run_id,
     )
     gen = get_agent_db(admin_db=synced_db, auth=auth)
     agent_db = next(gen)

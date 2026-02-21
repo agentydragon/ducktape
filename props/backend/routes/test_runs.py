@@ -14,7 +14,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from props.backend.auth import AdminCaller, require_critic_run_access
+from props.backend.auth import AdminIdentity, require_critic_run_access
 from props.backend.deps import get_admin_db
 from props.backend.routes import runs
 from props.core.agent_types import CriticTypeConfig
@@ -148,7 +148,7 @@ def run_critic_client(synced_db: Database):
     app = FastAPI()
     app.include_router(runs.router, prefix="/api/runs")
     app.dependency_overrides[get_admin_db] = lambda: synced_db
-    app.dependency_overrides[require_critic_run_access] = lambda: (AdminCaller(), uuid4())
+    app.dependency_overrides[require_critic_run_access] = lambda: (AdminIdentity(), uuid4())
     app.state.registry = mock_registry
 
     client = TestClient(app, raise_server_exceptions=False)

@@ -67,14 +67,10 @@ spec:
     plugins:
       enabled: true
 
+    # Auto-enable rai_plugin without requiring a UI toggle.
+    # INVENTREE_PLUGINS_MANDATORY makes the plugin always active (like builtin mandatory plugins).
     env:
-      # Auto-enable rai_plugin (always active, like builtin mandatory plugins)
       INVENTREE_PLUGINS_MANDATORY: "raiplugin"
-      # SSO settings (env vars override DB, read-only in UI)
-      INVENTREE_LOGIN_ENABLE_SSO: "true"
-      INVENTREE_LOGIN_ENABLE_SSO_REG: "true"
-      # Trust X-Forwarded-Proto from Gateway (TLS terminates at Envoy)
-      INVENTREE_USE_X_FORWARDED_PROTO: "true"
 
     # Pin server to Proxmox nodes (PVE)
     nodeSelector:

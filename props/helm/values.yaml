@@ -88,6 +88,13 @@ backup:
     size: 5Gi
     storageClassName: ""
 
+# External Secrets configuration for evaluator credentials
+externalSecret:
+  enabled: false
+  secretStore:
+    name: vault-backend
+    kind: ClusterSecretStore
+
 # PostgreSQL subchart configuration
 # The bitnami subchart auto-generates and manages its own password secret.
 postgresql:
