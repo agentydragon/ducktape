@@ -1,8 +1,9 @@
 """Shared authentication utilities and FastAPI dependencies for backend APIs.
 
 Authentication uses Bearer or Basic tokens with Postgres credentials validation:
-- Admin users: Any valid Postgres user (non-agent_* username)
+- Admin users: Any valid Postgres user (non-agent_* non-evaluator username)
 - Agent users: Format agent_{uuid} with temp credentials
+- Evaluator users: username == "evaluator" with dedicated password
 
 Tokens contain base64-encoded username:password. Both schemes are supported:
 - Bearer: OpenAI SDK sends api_key as Bearer token; agent containers encode creds this way
@@ -13,7 +14,7 @@ This module provides:
 - Credential validation with access level determination
 - Request identity resolution with DB lookup for agent types
 - FastAPI dependency for per-request auth (get_request_identity)
-- Dependency functions for ACL enforcement (require_admin_access, require_critic_run_access)
+- Dependency functions for ACL enforcement (require_admin_access, require_critic_run_access, require_evaluator_or_admin_access)
 """
 
 from __future__ import annotations
@@ -62,12 +63,19 @@ class AgentIdentity:
     password: str
 
 
-RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity
+@dataclass(frozen=True)
+class EvaluatorIdentity:
+    """Evaluator with read and run permissions."""
+
+
+RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity | EvaluatorIdentity
 
 
 def can_run_agent_type(identity: RequestIdentity, allowed_types: set[AgentType]) -> bool:
-    """Check if identity's agent type is in the allowed set. Admin always allowed."""
+    """Check if identity's agent type is in the allowed set. Admin and evaluator always allowed."""
     if isinstance(identity, AdminIdentity):
+        return True
+    if isinstance(identity, EvaluatorIdentity):
         return True
     return isinstance(identity, AgentIdentity) and identity.agent_type in allowed_types
 
@@ -100,10 +108,10 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
 def validate_postgres_credentials(username: str, password: str, db_config: DatabaseConfig) -> UUID | None:
     """Validate credentials against Postgres.
 
-    Returns agent_run_id if agent (extracted from username), None if admin.
+    Returns agent_run_id if agent (extracted from username), None if admin or evaluator.
     Raises HTTPException 401 if credentials invalid.
     """
-    # Extract agent run ID from username pattern (None means admin)
+    # Extract agent run ID from username pattern (None means admin or evaluator)
     agent_run_id = extract_agent_run_id_from_username(username)
 
     # Validate credentials against Postgres
@@ -157,6 +165,7 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
     Raises HTTPException 401 for malformed or invalid credentials.
     Returns AnonymousIdentity for unauthenticated requests (downstream ACL decides access).
     For agents, looks up agent_type from database.
+    For evaluators (username == "evaluator"), returns EvaluatorIdentity.
     FastAPI caches the result per-request.
     """
     authorization = request.headers.get("authorization")
@@ -170,6 +179,10 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
 
     username, password = parsed
     agent_run_id = validate_postgres_credentials(username, password, admin_db.config)
+
+    # Check if evaluator
+    if username == "evaluator":
+        return EvaluatorIdentity()
 
     # Admin: validate_postgres_credentials returned None
     if agent_run_id is None:
@@ -208,6 +221,17 @@ def require_admin_access(auth: Auth) -> None:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+def require_evaluator_or_admin_access(auth: Auth) -> RequestIdentity:
+    """FastAPI dependency requiring evaluator or admin access.
+
+    Allows both admin and evaluator identities to run validation/optimization/improvement runs.
+    Raises HTTPException 403 if neither.
+    """
+    if not isinstance(auth, (AdminIdentity, EvaluatorIdentity)):
+        raise HTTPException(status_code=403, detail="Evaluator or admin access required")
+    return auth
+
+
 # =============================================================================
 # Agent credential passthrough
 # =============================================================================
@@ -219,6 +243,7 @@ def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
     For agent callers: Creates per-request Database with agent's Postgres
     credentials. RLS policies automatically enforce access control.
     For admin callers: Returns the shared admin Database instance.
+    For evaluator callers: Returns the shared admin Database instance.
     For anonymous: Raises 401.
 
     Yields the Database and disposes per-request agent connections on cleanup.
@@ -227,6 +252,10 @@ def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
         raise HTTPException(status_code=401, detail="Authentication required")
 
     if isinstance(auth, AdminIdentity):
+        yield admin_db
+        return
+
+    if isinstance(auth, EvaluatorIdentity):
         yield admin_db
         return
 
