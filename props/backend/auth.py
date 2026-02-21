@@ -1,8 +1,9 @@
 """Shared authentication utilities and FastAPI dependencies for backend APIs.
 
 Authentication uses Bearer or Basic tokens with Postgres credentials validation:
-- Admin users: Any valid Postgres user (non-agent_* username)
+- Admin users: Any valid Postgres user (non-agent_* non-evaluator username)
 - Agent users: Format agent_{uuid} with temp credentials
+- Evaluator users: username == "evaluator" with dedicated password
 
 Tokens contain base64-encoded username:password. Both schemes are supported:
 - Bearer: OpenAI SDK sends api_key as Bearer token; agent containers encode creds this way
@@ -11,9 +12,9 @@ Tokens contain base64-encoded username:password. Both schemes are supported:
 
 This module provides:
 - Credential validation with access level determination
-- Caller type determination for ACL enforcement
-- FastAPI dependency for per-request auth (get_auth_context)
-- Dependency functions for ACL enforcement (require_admin_access, require_critic_run_access)
+- Request identity resolution with DB lookup for agent types
+- FastAPI dependency for per-request auth (get_request_identity)
+- Dependency functions for ACL enforcement (require_admin_access, require_critic_run_access, require_evaluator_or_admin_access)
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ import base64
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
@@ -37,14 +37,6 @@ from props.db.models import AgentRun, AgentType
 logger = logging.getLogger(__name__)
 
 
-class AccessLevel(StrEnum):
-    """Access level for authenticated users."""
-
-    ADMIN = "admin"  # Full access (postgres user)
-    AGENT = "agent"  # Agent access (agent_{uuid} pattern)
-    EVALUATOR = "evaluator"  # Evaluator access (evaluator role)
-
-
 # --- Request identity: discriminated union ---
 
 
@@ -57,6 +49,9 @@ class AnonymousIdentity:
 class AdminIdentity:
     """Admin user with full access."""
 
+    username: str
+    password: str
+
 
 @dataclass(frozen=True)
 class AgentIdentity:
@@ -64,6 +59,8 @@ class AgentIdentity:
 
     agent_type: AgentType
     agent_run_id: UUID
+    username: str
+    password: str
 
 
 @dataclass(frozen=True)
@@ -75,25 +72,12 @@ RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity | EvaluatorI
 
 
 def can_run_agent_type(identity: RequestIdentity, allowed_types: set[AgentType]) -> bool:
-    """Check if identity's agent type is in the allowed set. Admin always allowed."""
-    match identity:
-        case AdminIdentity():
-            return True
-        case AgentIdentity(agent_type=agent_type):
-            return agent_type in allowed_types
-        case _:
-            return False
-
-
-def can_access_level(identity: RequestIdentity, allowed_levels: set[AccessLevel]) -> bool:
-    """Check if identity has one of the allowed access levels."""
-    match identity:
-        case AdminIdentity():
-            return AccessLevel.ADMIN in allowed_levels
-        case EvaluatorIdentity():
-            return AccessLevel.EVALUATOR in allowed_levels
-        case _:
-            return False
+    """Check if identity's agent type is in the allowed set. Admin and evaluator always allowed."""
+    if isinstance(identity, AdminIdentity):
+        return True
+    if isinstance(identity, EvaluatorIdentity):
+        return True
+    return isinstance(identity, AgentIdentity) and identity.agent_type in allowed_types
 
 
 # ACL permission sets — agent types that can perform each operation (admin always allowed)
@@ -102,33 +86,6 @@ ACL_CAN_READ_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
 ACL_CAN_PUSH_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
 ACL_CAN_PUSH_TAGS: set[AgentType] = set()  # Admin only
 ACL_CAN_RUN_CRITICS: set[AgentType] = _CRITIC_DEV_TYPES
-
-# Caller types allowed to perform each operation (evaluated with has_access_caller)
-ACL_CAN_RUN_VALIDATION_AGENTS: set[AccessLevel] = {AccessLevel.ADMIN, AccessLevel.EVALUATOR}
-
-
-@dataclass(frozen=True)
-class CredentialValidationResult:
-    is_valid: bool
-    access_level: AccessLevel | None = None
-    agent_run_id: UUID | None = None
-    error: str | None = None
-
-    @classmethod
-    def invalid(cls, error: str) -> CredentialValidationResult:
-        return cls(is_valid=False, error=error)
-
-    @classmethod
-    def admin(cls) -> CredentialValidationResult:
-        return cls(is_valid=True, access_level=AccessLevel.ADMIN)
-
-    @classmethod
-    def agent(cls, agent_run_id: UUID) -> CredentialValidationResult:
-        return cls(is_valid=True, access_level=AccessLevel.AGENT, agent_run_id=agent_run_id)
-
-    @classmethod
-    def evaluator(cls) -> CredentialValidationResult:
-        return cls(is_valid=True, access_level=AccessLevel.EVALUATOR)
 
 
 def extract_agent_run_id_from_username(username: str) -> UUID | None:
@@ -148,13 +105,14 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
         return None
 
 
-def validate_postgres_credentials(
-    username: str, password: str, db_config: DatabaseConfig
-) -> CredentialValidationResult:
-    """Validate credentials by attempting Postgres connection."""
-    # First, try to extract agent run ID from username pattern
+def validate_postgres_credentials(username: str, password: str, db_config: DatabaseConfig) -> UUID | None:
+    """Validate credentials against Postgres.
+
+    Returns agent_run_id if agent (extracted from username), None if admin or evaluator.
+    Raises HTTPException 401 if credentials invalid.
+    """
+    # Extract agent run ID from username pattern (None means admin or evaluator)
     agent_run_id = extract_agent_run_id_from_username(username)
-    is_evaluator = username == "evaluator"
 
     # Validate credentials against Postgres
     try:
@@ -169,14 +127,9 @@ def validate_postgres_credentials(
             pass  # Connection succeeded
     except psycopg.OperationalError as e:
         logger.warning(f"Postgres auth failed for user {username}: {e}")
-        return CredentialValidationResult.invalid("Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Credentials valid - determine access level
-    if agent_run_id is not None:
-        return CredentialValidationResult.agent(agent_run_id)
-    if is_evaluator:
-        return CredentialValidationResult.evaluator()
-    return CredentialValidationResult.admin()
+    return agent_run_id
 
 
 def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
@@ -212,6 +165,7 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
     Raises HTTPException 401 for malformed or invalid credentials.
     Returns AnonymousIdentity for unauthenticated requests (downstream ACL decides access).
     For agents, looks up agent_type from database.
+    For evaluators (username == "evaluator"), returns EvaluatorIdentity.
     FastAPI caches the result per-request.
     """
     authorization = request.headers.get("authorization")
@@ -224,24 +178,25 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
         raise HTTPException(status_code=401, detail="Invalid authorization format")
 
     username, password = parsed
-    result = validate_postgres_credentials(username, password, admin_db.config)
-    if not result.is_valid:
-        logger.warning(f"Invalid postgres credentials for user: {username}")
-        raise HTTPException(status_code=401, detail=result.error or "Invalid credentials")
+    agent_run_id = validate_postgres_credentials(username, password, admin_db.config)
 
-    if result.access_level == AccessLevel.ADMIN:
-        return AdminIdentity()
-
-    if result.access_level == AccessLevel.EVALUATOR:
+    # Check if evaluator
+    if username == "evaluator":
         return EvaluatorIdentity()
 
-    # For agents: look up agent_type from database
-    assert result.agent_run_id is not None
+    # Admin: validate_postgres_credentials returned None
+    if agent_run_id is None:
+        return AdminIdentity(username=username, password=password)
+
+    # Agent: look up agent_type from database
     with admin_db.session() as session:
-        agent_run = session.get(AgentRun, result.agent_run_id)
+        agent_run = session.get(AgentRun, agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
-        return AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=result.agent_run_id)
+
+        return AgentIdentity(
+            agent_type=agent_run.type_config.agent_type, agent_run_id=agent_run_id, username=username, password=password
+        )
 
 
 # Type alias for request identity dependency (use in FastAPI route signatures)
@@ -282,12 +237,13 @@ def require_evaluator_or_admin_access(auth: Auth) -> RequestIdentity:
 # =============================================================================
 
 
-def get_agent_db(request: Request, admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
+def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
     """Get Database using agent credentials for RLS enforcement.
 
     For agent callers: Creates per-request Database with agent's Postgres
     credentials. RLS policies automatically enforce access control.
     For admin callers: Returns the shared admin Database instance.
+    For evaluator callers: Returns the shared admin Database instance.
     For anonymous: Raises 401.
 
     Yields the Database and disposes per-request agent connections on cleanup.
@@ -299,18 +255,13 @@ def get_agent_db(request: Request, admin_db: AdminDb, auth: Auth) -> Iterator[Da
         yield admin_db
         return
 
-    # Agent caller: extract credentials from request to create per-request database
+    if isinstance(auth, EvaluatorIdentity):
+        yield admin_db
+        return
+
+    # Must be AgentIdentity
     assert isinstance(auth, AgentIdentity)
-    authorization = request.headers.get("authorization")
-    if not authorization:
-        raise HTTPException(status_code=500, detail="Agent auth missing credentials")
-
-    parsed = parse_credentials(authorization)
-    if not parsed:
-        raise HTTPException(status_code=500, detail="Agent auth missing credentials")
-
-    username, password = parsed
-    agent_config = admin_db.config.with_user(username, password)
+    agent_config = admin_db.config.with_user(auth.username, auth.password)
     agent_db = Database.per_request(agent_config)
     try:
         yield agent_db
