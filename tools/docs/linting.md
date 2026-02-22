@@ -4,21 +4,21 @@ This document describes the linting and formatting setup across pre-commit, Baze
 
 ## Quick Reference
 
-| Tool                             | Pre-commit             | Bazel Aspect | GitHub CI           |
-| -------------------------------- | ---------------------- | ------------ | ------------------- |
-| **Python (ruff check)**          | `ruff-check` hook      | default      | Both                |
-| **Python (ruff format)**         | `ruff-format` hook     | N/A          | Pre-commit          |
-| **Python (mypy)**                | -                      | default      | bazel-check         |
-| **JS/TS (eslint)**               | -                      | default      | bazel-check         |
-| **JS/TS (prettier)**             | `prettier` hook        | N/A          | Pre-commit          |
-| **Starlark (buildifier)**        | `buildifier-lint` hook | -            | Pre-commit          |
-| **Starlark (buildifier format)** | `buildifier` hook      | N/A          | Pre-commit          |
-| **Rust (clippy)**                | -                      | default      | bazel-check         |
-| **Rust (rustfmt)**               | `fmt` hook             | default      | Both                |
-| **Shell (shfmt)**                | `shfmt` hook           | N/A          | Pre-commit          |
-| **Nix (nixfmt)**                 | `nixfmt` hook          | N/A          | Pre-commit          |
-| **Ansible**                      | syntax-check (fast)    | -            | ansible-lint (full) |
-| **Terraform (tflint/validate)**  | `checkov_diff`/`tflint`| Bazel tests  | Both                |
+| Tool                             | Pre-commit              | Bazel Aspect | GitHub CI           |
+| -------------------------------- | ----------------------- | ------------ | ------------------- |
+| **Python (ruff check)**          | `ruff-check` hook       | default      | Both                |
+| **Python (ruff format)**         | `ruff-format` hook      | N/A          | Pre-commit          |
+| **Python (mypy)**                | -                       | default      | bazel-check         |
+| **JS/TS (eslint)**               | -                       | default      | bazel-check         |
+| **JS/TS (prettier)**             | `prettier` hook         | N/A          | Pre-commit          |
+| **Starlark (buildifier)**        | `buildifier-lint` hook  | -            | Pre-commit          |
+| **Starlark (buildifier format)** | `buildifier` hook       | N/A          | Pre-commit          |
+| **Rust (clippy)**                | -                       | default      | bazel-check         |
+| **Rust (rustfmt)**               | `fmt` hook              | default      | Both                |
+| **Shell (shfmt)**                | `shfmt` hook            | N/A          | Pre-commit          |
+| **Nix (nixfmt)**                 | `nixfmt` hook           | N/A          | Pre-commit          |
+| **Ansible**                      | syntax-check (fast)     | -            | ansible-lint (full) |
+| **Terraform (tflint/validate)**  | `checkov_diff`/`tflint` | Bazel tests  | Both                |
 
 ## Configuration Files
 
@@ -96,17 +96,17 @@ All hooks respect `.gitattributes` and `.pre-commit-config.yaml` exclusions.
 
 Key hooks in `.pre-commit-config.yaml`:
 
-| Hook                | Source                       | Purpose                        |
-| ------------------- | ---------------------------- | ------------------------------ |
-| `ruff-check`        | astral-sh/ruff-pre-commit    | Python linting                 |
-| `ruff-format`       | astral-sh/ruff-pre-commit    | Python formatting              |
-| `buildifier`        | keith/pre-commit-buildifier  | Starlark formatting            |
-| `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting               |
-| `bazel-precommit`   | local (Bazel)                | Validations only               |
-| `prettier`          | local (node)                 | JS/TS/MD/YAML formatting       |
-| `fmt`               | doublify/pre-commit-rust     | Rust formatting                |
-| `nixfmt`            | local (static binary)        | Nix formatting                 |
-| `markdownlint-cli2` | DavidAnson/markdownlint-cli2 | Markdown linting               |
+| Hook                | Source                       | Purpose                  |
+| ------------------- | ---------------------------- | ------------------------ |
+| `ruff-check`        | astral-sh/ruff-pre-commit    | Python linting           |
+| `ruff-format`       | astral-sh/ruff-pre-commit    | Python formatting        |
+| `buildifier`        | keith/pre-commit-buildifier  | Starlark formatting      |
+| `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting         |
+| `bazel-precommit`   | local (Bazel)                | Validations only         |
+| `prettier`          | local (node)                 | JS/TS/MD/YAML formatting |
+| `fmt`               | doublify/pre-commit-rust     | Rust formatting          |
+| `nixfmt`            | local (static binary)        | Nix formatting           |
+| `markdownlint-cli2` | DavidAnson/markdownlint-cli2 | Markdown linting         |
 
 Cluster-specific hooks run only on `cluster/` files:
 
