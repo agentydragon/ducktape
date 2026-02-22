@@ -508,6 +508,7 @@ in
       # System utilities
       scrcpy # Android screen mirroring
       virt-viewer # SPICE/VNC viewer for virtual machines (Proxmox viewer)
+      localsend # Local file sharing across devices (LAN)
 
       # Learning
       anki
