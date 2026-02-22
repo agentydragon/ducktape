@@ -89,4 +89,61 @@ Raw data: `niah_results_gpt-oss-20b-128k_20260222_011419.jsonl` (125 samples).
 (`_005853.jsonl` is a discarded pilot run that used non-streaming and got all zeros
 due to LiteLLM stripping reasoning tokens from non-streaming responses.)
 
+### NIAH Extended Context — gpt-oss-20b-128k at 256k tokens (2026-02-22)
+
+**Context**: `OLLAMA_NUM_CTX=131072` (128k) was active at benchmark time. Per-request
+`num_ctx=295040` override was sent, but the server default caps effective KV cache size.
+3 samples per cell; seed=100.
+
+|  ctx | p10 (0–20%) | p30 (20–40%) | p50 (40–60%) | p70 (60–80%) | p90 (80–100%) | mean |
+| ---: | ----------: | -----------: | -----------: | -----------: | ------------: | ---: |
+| 256k |    0% (0/3) |     0% (0/3) |     0% (0/3) |    67% (2/3) |    100% (3/3) |  33% |
+
+**Finding: severe recall degradation — only the last ~35% of the 256k context is accessible.**
+Needles at depths 0–60% are invisible to the model; only needles near the end are found.
+
+This confirms the user's hypothesis: Ollama caps effective context at `OLLAMA_NUM_CTX`
+even when a larger `num_ctx` is requested per-query. The model sees at most the last 128k
+tokens of a 256k prompt. After the `OLLAMA_NUM_CTX=1048576` deployment (pending Flux merge),
+this should recover to 100% recall up to 1M tokens.
+
+Raw data: `niah_results_gpt-oss-20b-128k_20260222_020916.jsonl` (15 samples).
+
+### NIAH Extended Context — gpt-oss-20b-128k at 512k tokens (2026-02-22)
+
+**Context**: `OLLAMA_NUM_CTX=131072` (128k) active; effective KV cache truncates input.
+3 samples per cell; seed=101.
+
+|  ctx | p10 (0–20%) | p30 (20–40%) | p50 (40–60%) | p70 (60–80%) | p90 (80–100%) | mean |
+| ---: | ----------: | -----------: | -----------: | -----------: | ------------: | ---: |
+| 512k |    0% (0/3) |     0% (0/3) |     0% (0/3) |     0% (0/3) |     33% (1/3) |   7% |
+
+**Finding: at 512k context, only the deepest p90 needles are accessible (~7% recall).**
+The kept region is the last 128k/512k = 25% of the document.
+Needles at depth <75% are invisible; only the very end of the document is processed.
+
+Raw data: `niah_results_gpt-oss-20b-128k_20260222_022504.jsonl` (15 samples).
+
+### Summary: OLLAMA_NUM_CTX truncation effect
+
+With `OLLAMA_NUM_CTX=131072` (128k), Ollama hard-truncates long prompts to the last 128k tokens
+regardless of the per-request `num_ctx` override:
+
+| Context size | Accessible fraction | Mean NIAH recall |
+| -----------: | ------------------: | ---------------: |
+|         128k |                100% |             100% |
+|         256k |                ~50% |              33% |
+|         512k |                ~25% |               7% |
+
+After merging and deploying `OLLAMA_NUM_CTX=1048576`, re-run:
+
+```
+bazel run //experimental/benchmark_ollama:niah -- \
+  --models gpt-oss-20b-128k \
+  --context-sizes 256000 512000 1000000 \
+  --log-dir /path/to/experimental/benchmark_ollama \
+  --benchmarks-md /path/to/experimental/benchmark_ollama/benchmarks.md \
+  --seed 200
+```
+
 <!-- Results appended by niah.py -->

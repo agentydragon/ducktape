@@ -18,7 +18,10 @@ py_library(
     name = "niah_lib",
     srcs = ["niah.py"],
     imports = ["../.."],
-    deps = ["@pypi//openai"],
+    deps = [
+        "//bazel_util:workspace",
+        "@pypi//openai",
+    ],
 )
 
 py_binary(

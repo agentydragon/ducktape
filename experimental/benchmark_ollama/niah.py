@@ -43,6 +43,8 @@ from pathlib import Path
 
 import openai
 
+from bazel_util.workspace import get_build_working_directory
+
 logger = logging.getLogger(__name__)
 
 OLLAMA_BASE_URL = "https://ollama.allegedly.works/v1"
@@ -318,7 +320,9 @@ def main() -> None:
     rng = random.Random(args.seed)
     client = make_client()
 
-    log_dir = args.log_dir or Path()
+    build_wd = get_build_working_directory()
+    raw_log_dir = args.log_dir or Path()
+    log_dir = raw_log_dir if raw_log_dir.is_absolute() else build_wd / raw_log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
