@@ -48,11 +48,11 @@ spec:
           resources:
             requests:
               nvidia.com/gpu: 2
-              memory: 32Gi
+              memory: 24Gi
               cpu: "2"
             limits:
               nvidia.com/gpu: 2
-              memory: 64Gi
+              memory: 28Gi
           volumeMounts:
             - name: models
               mountPath: /models
