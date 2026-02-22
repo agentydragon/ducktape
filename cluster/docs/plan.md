@@ -101,9 +101,6 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 - [ ] **Gatus: LiteLLM inference health probe** — Add a Gatus endpoint that sends a
       lightweight chat completion request to `ollama.allegedly.works` and verifies a
       valid response. Proves the full LiteLLM→Ollama inference pipeline is working.
-- [ ] **Gatus: remove direct HTTPRoute** — Once Authentik proxy outpost is confirmed working,
-      remove the direct HTTPRoute from `k8s/gatus/` (proxy route in `authentik-proxy-routes/`
-      takes over)
 - [ ] **Nix cache: initialize Attic cache** — Attic server is running but has no caches
       created (empty `cache` table). `cache.allegedly.works/nix-cache-info` returns 404
       because Attic serves that endpoint per-cache at `/<name>/nix-cache-info`. Fix: run
