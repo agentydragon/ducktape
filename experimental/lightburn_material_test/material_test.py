@@ -47,26 +47,16 @@ class CutParam(StrEnum):
     NUM_PASSES = "num_passes"
 
 
-_PARAM_LABEL: dict[CutParam, str] = {
-    CutParam.POWER: "Power",
-    CutParam.POWER_MIN: "Power min",
-    CutParam.POWER_MAX: "Power max",
-    CutParam.SPEED: "Speed",
-    CutParam.KERF: "Kerf",
-    CutParam.Z_OFFSET: "Z",
-    CutParam.Z_PER_PASS: "Z/pass",
-    CutParam.NUM_PASSES: "Passes",
-}
-
-_PARAM_UNIT: dict[CutParam, str] = {
-    CutParam.POWER: "%",
-    CutParam.POWER_MIN: "%",
-    CutParam.POWER_MAX: "%",
-    CutParam.SPEED: "mm/s",
-    CutParam.KERF: "mm",
-    CutParam.Z_OFFSET: "mm",
-    CutParam.Z_PER_PASS: "mm",
-    CutParam.NUM_PASSES: "",
+# (label, unit) for each cut parameter
+_PARAM: dict[CutParam, tuple[str, str]] = {
+    CutParam.POWER: ("Power", "%"),
+    CutParam.POWER_MIN: ("Power min", "%"),
+    CutParam.POWER_MAX: ("Power max", "%"),
+    CutParam.SPEED: ("Speed", "mm/s"),
+    CutParam.KERF: ("Kerf", "mm"),
+    CutParam.Z_OFFSET: ("Z", "mm"),
+    CutParam.Z_PER_PASS: ("Z/pass", "mm"),
+    CutParam.NUM_PASSES: ("Passes", ""),
 }
 
 
@@ -275,8 +265,7 @@ def _auto_subtitle(config: GridConfig) -> str:
         v = _get_param(base, param)
         if param == CutParam.NUM_PASSES and v == 1:
             continue
-        unit = _PARAM_UNIT[param]
-        label = _PARAM_LABEL[param]
+        label, unit = _PARAM[param]
         parts.append(f"{label}={fmt_val(v)}{' ' + unit if unit else ''}")
     return ", ".join(parts)
 
@@ -294,8 +283,7 @@ def _full_subtitle(config: GridConfig) -> str:
 
 def _auto_label(param: CutParam) -> str:
     """Build an axis label from a CutParam (e.g. POWER_MAX → 'Power max [%]')."""
-    label = _PARAM_LABEL[param]
-    unit = _PARAM_UNIT[param]
+    label, unit = _PARAM[param]
     return f"{label} [{unit}]" if unit else label
 
 
