@@ -119,6 +119,12 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       and enter it once in the UI settings. Investigate options: operator exposing token
       in bootstrap config, gateway-side token injection into served HTML, or upstream
       PR to accept `"trusted-proxy"` in `sharedAuthOk` (message-handler.ts:385-387).
+- [ ] **Headlamp: per-user OIDC auth** — Currently uses a shared `cluster-admin` ServiceAccount
+      (`inCluster: true`). Switch to OIDC so Kubernetes API calls are made under the
+      authenticated user's identity with per-user RBAC: 1. Configure k3s `--oidc-issuer-url` (Authentik OIDC endpoint) and `--oidc-client-id` 2. Update Headlamp HelmRelease to use OIDC flow (pointing at Authentik) 3. Create `ClusterRoleBinding`s mapping Authentik groups → Kubernetes roles
+      (e.g. `authentik Admins` → `cluster-admin`)
+      Benefit: audit logs show real usernames; compromised Authentik session can't
+      exceed RBAC permissions; no single shared all-powerful SA token.
 - [ ] **Ollama: per-user auth** — OpenClaw currently talks directly to Ollama (no auth,
       dummy `OLLAMA_API_KEY` env var). Wire up proper auth: either re-introduce LiteLLM
       proxy with API key (once OpenClaw's OpenAI streaming handler supports
@@ -201,6 +207,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | OpenClaw       | AI coding agent        | ✅  |
 | Gatus          | Health monitoring      | ✅  |
 | Grocy          | Household/grocery mgmt | ✅  |
+| Headlamp       | Kubernetes cluster UI  | ✅  |
 
 ## Applications (disabled - need flux-kustomization.yaml)
 
