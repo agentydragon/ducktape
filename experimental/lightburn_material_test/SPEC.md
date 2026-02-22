@@ -113,93 +113,87 @@ cut setting. The border is padded a configurable amount outside the grid cells.
 Each grid cell gets its own `CutSetting` because the combination of X and Y parameter
 values is unique per cell. Layer 0 uses a distinct, low-power cut setting for marking.
 
-## CLI Interface
+## Usage
 
 ```
-material_test.py \
-  --x-param power_max --x-values "12,13.5,15,16.5,18" \
-  --y-param z_per_pass --y-values "-0.5,-0.6,-0.7,-0.8" \
-  --speed 15 --z-offset -0.1 --kerf 0.1 --num-passes 3 \
-  --cell-size 15 --gap 8 \
-  --x-label "Power [%]" --y-label "ΔZ/pass [mm]" \
-  --title "6.08mm ply, Lauan" \
-  --show-cell-text \
-  --border --border-power 20 --border-speed 100 \
-  --font "Arial" \
-  -o material_test.lbrn2
+bazel run //experimental/lightburn_material_test:material_test -- config.toml [-o output.lbrn2]
 ```
 
-### Full parameter reference
+All parameters are supplied via a TOML configuration file. The output path defaults to the
+config filename with `.lbrn2` extension. See `example_config.toml` for a fully annotated
+example.
 
-**Axis selection:**
+### TOML config reference
 
-| Flag                   | Description                       |
-| ---------------------- | --------------------------------- |
-| `--x-param NAME`       | Parameter to vary along X axis    |
-| `--x-values V1,V2,...` | Comma-separated values for X axis |
-| `--y-param NAME`       | Parameter to vary along Y axis    |
-| `--y-values V1,V2,...` | Comma-separated values for Y axis |
+**Top-level:**
 
-**Constant cut parameters (defaults apply if omitted):**
+| Key             | Default | Description                                         |
+| --------------- | ------- | --------------------------------------------------- |
+| `title`         | `""`    | Main title printed above the grid                   |
+| `subtitle`      | `""`    | Extra text prepended to the auto-generated subtitle |
+| `auto_subtitle` | `true`  | Append constant-parameter summary to subtitle       |
 
-| Flag              | Default | Description                       |
-| ----------------- | ------- | --------------------------------- |
-| `--power PCT`     | 80      | Base power, sets both min and max |
-| `--power-min PCT` | —       | Override min power specifically   |
-| `--power-max PCT` | —       | Override max power specifically   |
-| `--speed MM_S`    | 100     | Cut speed (mm/s)                  |
-| `--kerf MM`       | 0       | Kerf compensation (mm)            |
-| `--z-offset MM`   | 0       | Initial Z offset (mm)             |
-| `--z-per-pass MM` | 0       | Z step per pass (mm)              |
-| `--num-passes N`  | 1       | Number of passes                  |
+**`[x]` and `[y]` — axis configuration:**
 
-**Geometry:**
+| Key                | Default | Description                                                        |
+| ------------------ | ------- | ------------------------------------------------------------------ |
+| `param`            | —       | Parameter to scan (`power`, `power_max`, `speed`, `z_per_pass`, …) |
+| `values`           | —       | List of values to sweep, e.g. `[10, 20, 30]`                       |
+| `label`            | auto    | Axis label; omit to auto-generate from param name and unit         |
+| `show_annotations` | `true`  | Show per-tick value labels and the axis label                      |
 
-| Flag             | Default | Description                  |
-| ---------------- | ------- | ---------------------------- |
-| `--cell-size MM` | 15      | Square cell side length (mm) |
-| `--gap MM`       | 8       | Gap between cells (mm)       |
+**`[cut]` — constant cut parameters:**
 
-**Annotations:**
+| Key          | Default | Description                            |
+| ------------ | ------- | -------------------------------------- |
+| `power`      | —       | Shorthand: sets both `power_min`/`max` |
+| `power_min`  | 80      | Minimum power (%)                      |
+| `power_max`  | 80      | Maximum power (%)                      |
+| `speed`      | 100     | Cut speed (mm/s)                       |
+| `kerf`       | 0       | Kerf compensation (mm)                 |
+| `z_offset`   | 0       | Initial Z offset (mm)                  |
+| `z_per_pass` | 0       | Z step per pass (mm, typically ≤ 0)    |
+| `num_passes` | 1       | Number of passes                       |
 
-| Flag                 | Default | Description                          |
-| -------------------- | ------- | ------------------------------------ |
-| `--x-label TEXT`     | `""`    | X-axis label (e.g. `"Power [%]"`)    |
-| `--y-label TEXT`     | `""`    | Y-axis label (e.g. `"ΔZ/pass [mm]"`) |
-| `--no-x-annotations` | off     | Suppress per-column value labels     |
-| `--no-y-annotations` | off     | Suppress per-row value labels        |
-| `--show-cell-text`   | off     | Print param values inside each cell  |
+**`[geometry]`:**
 
-**Title:**
+| Key         | Default | Description                     |
+| ----------- | ------- | ------------------------------- |
+| `cell_size` | 15      | Square cell side length (mm)    |
+| `gap`       | 8       | Gap between adjacent cells (mm) |
 
-| Flag                 | Default | Description                                      |
-| -------------------- | ------- | ------------------------------------------------ |
-| `--title TEXT`       | `""`    | Main title                                       |
-| `--subtitle TEXT`    | `""`    | Extra subtitle text (prepended to auto-subtitle) |
-| `--no-auto-subtitle` | off     | Suppress auto-generated constant-param subtitle  |
+**`[annotations]`:**
 
-**Border:**
+| Key              | Default | Description                           |
+| ---------------- | ------- | ------------------------------------- |
+| `show_cell_text` | `false` | Print X and Y values inside each cell |
 
-| Flag                  | Default | Description                     |
-| --------------------- | ------- | ------------------------------- |
-| `--border`            | off     | Draw border rectangle           |
-| `--border-padding MM` | 3       | Padding between grid and border |
-| `--border-power PCT`  | 10      | Border layer max power          |
-| `--border-speed MM_S` | 200     | Border layer speed              |
+**`[border]`:**
 
-**Text cut settings:**
+| Key       | Default | Description                             |
+| --------- | ------- | --------------------------------------- |
+| `enabled` | `false` | Draw a border rectangle around the grid |
+| `padding` | 3       | Padding outside the grid cells (mm)     |
+| `power`   | 10      | Border layer power (%)                  |
+| `speed`   | 200     | Border layer speed (mm/s)               |
 
-| Flag                | Default | Description                     |
-| ------------------- | ------- | ------------------------------- |
-| `--text-power PCT`  | 15      | Power for text/annotation layer |
-| `--text-speed MM_S` | 200     | Speed for text/annotation layer |
+**`[text_layer]`:**
 
-**Font and output:**
+| Key     | Default | Description                        |
+| ------- | ------- | ---------------------------------- |
+| `power` | 15      | Text/annotation layer power (%)    |
+| `speed` | 200     | Text/annotation layer speed (mm/s) |
 
-| Flag                 | Default               | Description              |
-| -------------------- | --------------------- | ------------------------ |
-| `--font NAME`        | `Arial`               | Font family for all text |
-| `-o / --output FILE` | `material_test.lbrn2` | Output file path         |
+**`[font]`:**
+
+| Key          | Default | Description                        |
+| ------------ | ------- | ---------------------------------- |
+| `name`       | `Arial` | Font family for all text           |
+| `h_title`    | 10      | Title text height (mm)             |
+| `h_subtitle` | 7       | Subtitle text height (mm)          |
+| `h_label`    | 6       | Axis label text height (mm)        |
+| `h_value`    | 5       | Axis value annotation height (mm)  |
+| `h_cell`     | 4       | In-cell parameter text height (mm) |
 
 ## Layout Diagram
 
