@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-gpt-oss-ctx-v1
+  namespace: ollama
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      volumes:
+        - name: modelfiles
+          configMap:
+            name: gpt-oss-modelfiles
+      containers:
+        - name: create
+          image: ollama/ollama:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              # Wait until base model is available (pull job may still be running)
+              until ollama list | grep -q "gpt-oss:20b"; do
+                echo "Waiting for gpt-oss:20b to be available..."
+                sleep 30
+              done
+              echo "Base model ready. Creating context-extended variants..."
+              ollama create gpt-oss-256k -f /modelfiles/Modelfile-256k
+              ollama create gpt-oss-512k -f /modelfiles/Modelfile-512k
+              echo "Done."
+          env:
+            - name: OLLAMA_HOST
+              value: "http://ollama.ollama.svc.cluster.local:11434"
+          volumeMounts:
+            - name: modelfiles
+              mountPath: /modelfiles

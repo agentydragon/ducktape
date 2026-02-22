@@ -44,6 +44,16 @@ spec:
             extra_body:
               options:
                 num_ctx: 1048576
+        # RoPE-scaled variants (Modelfile-based): proper position interpolation
+        # for context beyond the model's native 128k training window.
+        - model_name: gpt-oss-20b-256k
+          litellm_params:
+            model: ollama/gpt-oss-256k
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+        - model_name: gpt-oss-20b-512k
+          litellm_params:
+            model: ollama/gpt-oss-512k
+            api_base: http://ollama.ollama.svc.cluster.local:11434
         - model_name: gpt-oss-120b-128k
           litellm_params:
             model: ollama/gpt-oss:120b
