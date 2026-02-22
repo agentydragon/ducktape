@@ -38,6 +38,7 @@ import random
 import secrets
 import statistics
 import time
+import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -62,12 +63,32 @@ DEPTH_BUCKETS: dict[str, tuple[float, float]] = {
 DEFAULT_CONTEXT_SIZES = [4_000, 16_000, 32_000, 64_000, 128_000]
 SAMPLES_PER_CELL = 5
 
-# Haystack filler: repetitive but plausible prose.
-_HAYSTACK_SENTENCE = (
-    "The project team reviewed the quarterly reports and discussed upcoming milestones "
-    "in the weekly planning session before adjourning for lunch. "
-)
 _CHARS_PER_TOKEN = 4.5  # rough chars-per-token for English wordpiece tokenisers
+
+# War and Peace (Tolstoy) from Project Gutenberg — ~3.3 MB, covers all context sizes.
+_GUTENBERG_URL = "https://www.gutenberg.org/files/2600/2600-0.txt"
+_HAYSTACK_CACHE_PATH = Path.home() / ".cache" / "niah_haystack_war_and_peace.txt"
+_haystack_cache: list[str] = []
+
+
+def get_haystack_text() -> str:
+    """Return War and Peace text, downloading and caching on first call."""
+    if not _haystack_cache:
+        _haystack_cache.append(_load_haystack_text())
+    return _haystack_cache[0]
+
+
+def _load_haystack_text() -> str:
+    if _HAYSTACK_CACHE_PATH.exists():
+        return _HAYSTACK_CACHE_PATH.read_text(encoding="utf-8")
+    print("Downloading haystack text from Project Gutenberg...", flush=True)
+    _HAYSTACK_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(_GUTENBERG_URL) as resp:
+        text = resp.read().decode("utf-8")
+    _HAYSTACK_CACHE_PATH.write_text(text, encoding="utf-8")
+    print(f"Cached to {_HAYSTACK_CACHE_PATH} ({len(text):,} chars)", flush=True)
+    return text
+
 
 NEEDLE_TEMPLATE = "IMPORTANT: The secret passcode hidden in this document is [{code}]. Remember this passcode."
 QUESTION = (
@@ -97,8 +118,13 @@ def make_client() -> openai.OpenAI:
 
 
 def make_haystack(target_chars: int) -> str:
-    repeats = target_chars // len(_HAYSTACK_SENTENCE) + 1
-    return (_HAYSTACK_SENTENCE * repeats)[:target_chars]
+    """Return target_chars of War and Peace text, tiling if needed."""
+    source = get_haystack_text()
+    if len(source) >= target_chars:
+        return source[:target_chars]
+    # Tile in case target exceeds the book length (shouldn't happen with W&P at 3.3 MB).
+    repeats = target_chars // len(source) + 1
+    return (source * repeats)[:target_chars]
 
 
 def build_prompt(context_size_tokens: int, needle_code: str, depth_frac: float) -> str:
