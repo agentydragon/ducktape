@@ -29,6 +29,11 @@ spec:
   values:
     replicaCount: 1
 
+    # Use in-cluster ServiceAccount for Kubernetes API access.
+    # The chart creates a ClusterRoleBinding to cluster-admin by default,
+    # so no token needs to be pasted in the UI.
+    inCluster: true
+
     ingress:
       enabled: false
 
