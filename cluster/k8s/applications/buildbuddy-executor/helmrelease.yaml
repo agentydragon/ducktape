@@ -46,7 +46,7 @@ spec:
       valuesKey: api-key
       targetPath: config.executor.api_key
   values:
-    replicaCount: 2
+    replicaCount: 0
     resources:
       requests:
         cpu: 1

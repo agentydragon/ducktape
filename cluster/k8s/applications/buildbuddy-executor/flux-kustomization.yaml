@@ -4,9 +4,6 @@ metadata:
   name: buildbuddy-executor
   namespace: flux-system
 spec:
-  # Suspended: GPU worker node was running out of RAM (3×4Gi executor pods prevented
-  # ollama from scheduling). Re-enable when node has more memory headroom.
-  suspend: true
   interval: 10m
   timeout: 5m
   sourceRef:
