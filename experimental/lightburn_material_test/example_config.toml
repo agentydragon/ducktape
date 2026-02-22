@@ -1,0 +1,67 @@
+# Material Test Grid — Example Configuration
+# Run: python material_test.py example_config.toml [-o output.lbrn2]
+# See SPEC.md for full documentation.
+
+# Optional title and subtitle shown above the grid.
+# subtitle is prepended to the auto-generated constant-parameter summary.
+title = "6.08mm ply, Lauan"
+subtitle = ""
+auto_subtitle = true   # append "Z=-0.1, kerf=0.1 mm, ..." to subtitle
+
+# ── X axis (columns) ──────────────────────────────────────────────────────────
+[x]
+# Parameter to scan across columns.
+# Values: power, power_min, power_max, speed, kerf, z_offset, z_per_pass, num_passes
+param = "power_max"
+values = [12, 13.5, 15, 16.5, 18]
+label = "Power [%]"          # printed below the column values
+show_annotations = true      # show per-column value labels above grid
+
+# ── Y axis (rows) ─────────────────────────────────────────────────────────────
+[y]
+param = "z_per_pass"
+values = [-0.5, -0.6, -0.7, -0.8]
+label = "\u0394Z/pass [mm]"  # ΔZ/pass [mm] — rotated 90° CCW to the left of grid
+show_annotations = true
+
+# ── Constant cut parameters ───────────────────────────────────────────────────
+# These apply to every cell; x/y axis values override their entry here per cell.
+[cut]
+# power = 80          # shorthand: sets both power_min and power_max
+power_min = 10        # %
+power_max = 80        # %  (will be overridden by x axis)
+speed = 15            # mm/s
+kerf = 0.1            # mm
+z_offset = -0.1       # mm, initial Z offset for this layer
+z_per_pass = 0.0      # mm  (will be overridden by y axis)
+num_passes = 3
+
+# ── Grid geometry ─────────────────────────────────────────────────────────────
+[geometry]
+cell_size = 15   # mm, square side length
+gap = 8          # mm, gap between adjacent cells
+
+# ── In-cell annotations ───────────────────────────────────────────────────────
+[annotations]
+show_cell_text = true   # print x and y parameter values inside each cell
+
+# ── Border ────────────────────────────────────────────────────────────────────
+[border]
+enabled = true
+padding = 3      # mm outside the grid cells
+power = 10       # %
+speed = 200      # mm/s
+
+# ── Text/annotation layer ─────────────────────────────────────────────────────
+[text_layer]
+power = 15       # % — low power just for marking
+speed = 200      # mm/s
+
+# ── Font and text sizes ───────────────────────────────────────────────────────
+[font]
+name = "Arial"
+h_title = 10     # mm, title text height
+h_subtitle = 7   # mm
+h_label = 6      # mm, axis labels
+h_value = 5      # mm, axis value annotations
+h_cell = 4       # mm, in-cell parameter text
