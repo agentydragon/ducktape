@@ -1,0 +1,8 @@
+FROM gpt-oss:20b
+
+# Extend context to 256k via linear RoPE position interpolation.
+# rope_freq_scale = native_ctx / target_ctx = 128k / 256k = 0.5
+# Note: NTK-aware scaling (rope_freq_base) would be better but requires
+# knowing the model's native base from the GGUF metadata.
+PARAMETER num_ctx 262144
+PARAMETER rope_freq_scale 0.5
