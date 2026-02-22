@@ -14,21 +14,20 @@ spec:
         - name: modelfiles
           configMap:
             name: gpt-oss-modelfiles
+        - name: scripts
+          configMap:
+            name: gpt-oss-scripts
+            defaultMode: 0755
       containers:
         - name: setup
           image: ollama/ollama:latest
           command:
-            - /bin/sh
-            - -c
-            - |
-              set -e
-              ollama pull gpt-oss:20b
-              ollama pull gpt-oss:120b
-              ollama create gpt-oss-256k -f /modelfiles/Modelfile-256k
-              ollama create gpt-oss-512k -f /modelfiles/Modelfile-512k
+            - /scripts/setup-gpt-oss-v1.sh
           env:
             - name: OLLAMA_HOST
               value: "http://ollama.ollama.svc.cluster.local:11434"
           volumeMounts:
             - name: modelfiles
               mountPath: /modelfiles
+            - name: scripts
+              mountPath: /scripts

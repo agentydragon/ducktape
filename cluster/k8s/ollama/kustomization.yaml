@@ -16,3 +16,8 @@ configMapGenerator:
     files:
       - Modelfile-256k
       - Modelfile-512k
+  - name: gpt-oss-scripts
+    options:
+      disableNameSuffixHash: true
+    files:
+      - setup-gpt-oss-v1.sh
