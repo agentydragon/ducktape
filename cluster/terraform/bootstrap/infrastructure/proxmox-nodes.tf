@@ -192,7 +192,7 @@ resource "proxmox_virtual_environment_vm" "talos" {
     iothread     = true
     ssd          = true
     discard      = "on"
-    size         = 40
+    size         = 300
     file_format  = "raw"
     import_from  = proxmox_virtual_environment_download_file.talos_disk.id
   }
