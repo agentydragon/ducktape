@@ -31,6 +31,7 @@ Environment:
 """
 
 import argparse
+import functools
 import json
 import logging
 import os
@@ -68,17 +69,11 @@ _CHARS_PER_TOKEN = 4.5  # rough chars-per-token for English wordpiece tokenisers
 # War and Peace (Tolstoy) from Project Gutenberg — ~3.3 MB, covers all context sizes.
 _GUTENBERG_URL = "https://www.gutenberg.org/files/2600/2600-0.txt"
 _HAYSTACK_CACHE_PATH = Path.home() / ".cache" / "niah_haystack_war_and_peace.txt"
-_haystack_cache: list[str] = []
 
 
+@functools.cache
 def get_haystack_text() -> str:
     """Return War and Peace text, downloading and caching on first call."""
-    if not _haystack_cache:
-        _haystack_cache.append(_load_haystack_text())
-    return _haystack_cache[0]
-
-
-def _load_haystack_text() -> str:
     if _HAYSTACK_CACHE_PATH.exists():
         return _HAYSTACK_CACHE_PATH.read_text(encoding="utf-8")
     print("Downloading haystack text from Project Gutenberg...", flush=True)
