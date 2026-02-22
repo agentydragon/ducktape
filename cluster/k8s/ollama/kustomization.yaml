@@ -7,4 +7,5 @@ resources:
   - httproute.yaml
   - clusterrole-ollama-consumer.yaml
   - job-pull-gpt-oss-20b-v1.yaml
+  - job-pull-gpt-oss-120b-v1.yaml
   - litellm.yaml
