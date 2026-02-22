@@ -1,0 +1,32 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "benchmark_ollama_lib",
+    srcs = ["benchmark_ollama.py"],
+    imports = ["../.."],
+    deps = ["@pypi//openai"],
+)
+
+py_binary(
+    name = "benchmark_ollama",
+    imports = ["../.."],
+    main_module = "experimental.benchmark_ollama.benchmark_ollama",
+    deps = [":benchmark_ollama_lib"],
+)
+
+py_library(
+    name = "niah_lib",
+    srcs = ["niah.py"],
+    imports = ["../.."],
+    deps = [
+        "//bazel_util:workspace",
+        "@pypi//openai",
+    ],
+)
+
+py_binary(
+    name = "niah",
+    imports = ["../.."],
+    main_module = "experimental.benchmark_ollama.niah",
+    deps = [":niah_lib"],
+)
