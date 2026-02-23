@@ -25,7 +25,9 @@ from experimental.lightburn_material_test.material_test import (
     BorderConfig,
     CutConfig,
     CutParam,
+    CutParams,
     GridConfig,
+    TextLayerConfig,
     _full_subtitle,
     fmt_val,
     generate,
@@ -207,6 +209,97 @@ def test_cut_config_power_shorthand_does_not_override_explicit():
     cc = CutConfig(power=60, power_max=80)
     assert cc.power_min == 60
     assert cc.power_max == 60
+
+
+# ── CutParams / TextLayerConfig / BorderConfig ─────────────────────────────────
+
+
+def test_cut_params_power_shorthand():
+    p = CutParams(power=42.0)
+    assert p.power_min == 42.0
+    assert p.power_max == 42.0
+
+
+def test_cut_params_to_cut_setting_full():
+    """to_cut_setting propagates all cut fields."""
+    p = CutParams(power_min=5.0, power_max=95.0, speed=50.0, kerf=0.1, z_offset=-0.5, z_per_pass=-0.2, num_passes=4)
+    cs = p.to_cut_setting(index=3, name="TestLayer")
+    assert cs.index == 3
+    assert cs.name == "TestLayer"
+    assert cs.min_power == 5.0
+    assert cs.max_power == 95.0
+    assert cs.speed == 50.0
+    assert cs.kerf == 0.1
+    assert cs.z_offset == -0.5
+    assert cs.z_per_pass == -0.2
+    assert cs.num_passes == 4
+
+
+def test_text_layer_config_defaults():
+    tlc = TextLayerConfig()
+    assert tlc.power_min == 15.0
+    assert tlc.power_max == 15.0
+    assert tlc.speed == 200.0
+
+
+def test_text_layer_config_full_params():
+    """TextLayerConfig accepts the full cut parameter set."""
+    tlc = TextLayerConfig(power_min=5.0, power_max=10.0, speed=150.0, kerf=0.05, z_offset=-0.1, num_passes=2)
+    cs = tlc.to_cut_setting(0, "Text")
+    assert cs.min_power == 5.0
+    assert cs.max_power == 10.0
+    assert cs.kerf == 0.05
+    assert cs.z_offset == -0.1
+    assert cs.num_passes == 2
+
+
+def test_border_config_defaults():
+    bc = BorderConfig()
+    assert bc.power_min == 10.0
+    assert bc.power_max == 10.0
+    assert bc.speed == 200.0
+    assert bc.enabled is False
+    assert bc.padding == 3.0
+
+
+def test_border_config_full_params():
+    """BorderConfig accepts the full cut parameter set."""
+    bc = BorderConfig(enabled=True, padding=5.0, power_min=8.0, power_max=12.0, speed=100.0, kerf=0.1, num_passes=2)
+    cs = bc.to_cut_setting(7, "Border")
+    assert cs.min_power == 8.0
+    assert cs.max_power == 12.0
+    assert cs.kerf == 0.1
+    assert cs.num_passes == 2
+
+
+def test_generate_text_layer_full_params_applied():
+    """Full cut params specified on text_layer are reflected in generated layer 0."""
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX, values=[10.0]),
+        y=AxisConfig(param=CutParam.SPEED, values=[50.0]),
+        text_layer=TextLayerConfig(power_min=3.0, power_max=7.0, speed=150.0, kerf=0.02),
+    )
+    project = generate(cfg)
+    text_cs = project.cut_settings[0]
+    assert text_cs.min_power == 3.0
+    assert text_cs.max_power == 7.0
+    assert text_cs.speed == 150.0
+    assert text_cs.kerf == 0.02
+
+
+def test_generate_border_full_params_applied():
+    """Full cut params specified on border are reflected in the border layer."""
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX, values=[10.0]),
+        y=AxisConfig(param=CutParam.SPEED, values=[50.0]),
+        border=BorderConfig(enabled=True, power_min=2.0, power_max=8.0, speed=120.0, z_offset=-0.3),
+    )
+    project = generate(cfg)
+    border_cs = next(cs for cs in project.cut_settings if cs.name == "Border")
+    assert border_cs.min_power == 2.0
+    assert border_cs.max_power == 8.0
+    assert border_cs.speed == 120.0
+    assert border_cs.z_offset == -0.3
 
 
 def test_grid_config_from_toml():
