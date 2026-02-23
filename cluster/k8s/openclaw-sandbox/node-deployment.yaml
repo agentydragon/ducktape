@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-node
+  namespace: openclaw-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openclaw-node
+  template:
+    metadata:
+      labels:
+        app: openclaw-node
+    spec:
+      serviceAccountName: default
+      automountServiceAccountToken: true
+      containers:
+        - name: node
+          image: ghcr.io/openclaw/openclaw:latest
+          command: ["openclaw", "node", "run"]
+          args:
+            - "--host"
+            - "$(GATEWAY_HOST)"
+            - "--port"
+            - "$(GATEWAY_PORT)"
+          env:
+            - name: GATEWAY_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: openclaw-node-config
+                  key: gateway-host
+            - name: GATEWAY_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: openclaw-node-config
+                  key: gateway-port
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: node-data
+              mountPath: /root/.openclaw
+      volumes:
+        - name: node-data
+          persistentVolumeClaim:
+            claimName: openclaw-node-data
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox

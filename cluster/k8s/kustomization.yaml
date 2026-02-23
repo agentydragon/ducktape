@@ -103,6 +103,8 @@ resources:
   - openclaw-namespace/flux-kustomization.yaml
   - openclaw-secrets/flux-kustomization.yaml
   - openclaw/flux-kustomization.yaml
+  - openclaw-sandbox/flux-kustomization.yaml
+  - openclaw-sandbox-secrets/flux-kustomization.yaml
   - authentik-blueprint/sso-secrets/flux-kustomization.yaml
   - authentik-sso-secrets/flux-kustomization.yaml
   - authentik-blueprint/gitea-secret/flux-kustomization.yaml

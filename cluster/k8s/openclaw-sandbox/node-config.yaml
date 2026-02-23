@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openclaw-node-config
+  namespace: openclaw-sandbox
+data:
+  gateway-host: "openclaw.openclaw.svc.cluster.local"
+  gateway-port: "18789"

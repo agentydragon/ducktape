@@ -14,8 +14,5 @@ resources:
   - rolebinding-ollama-consumer.yaml
   - role-gatus-reader.yaml
   - rolebinding-gatus-reader.yaml
-  - rolebinding-sandbox-openclaw.yaml
-  - rolebinding-props-reader-openclaw.yaml
-  - rolebinding-gatus-reader-openclaw.yaml
   - clusterrole-cluster-diagnostics-reader.yaml
   - clusterrolebinding-cluster-diagnostics-reader.yaml

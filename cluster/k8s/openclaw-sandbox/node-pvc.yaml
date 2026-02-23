@@ -1,0 +1,13 @@
+# Persists node credentials (/root/.openclaw) across pod restarts so the
+# device registration token survives without re-approval.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-node-data
+  namespace: openclaw-sandbox
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

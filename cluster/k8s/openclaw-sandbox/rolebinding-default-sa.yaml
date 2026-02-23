@@ -1,0 +1,16 @@
+# Tool pods spawned by the agent (via kubectl from the clawd node) auto-mount
+# this SA token, giving them full access within openclaw-sandbox with zero
+# special pod spec required.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openclaw-sandbox-admin-default
+  namespace: openclaw-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openclaw-sandbox-admin
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: openclaw-sandbox
