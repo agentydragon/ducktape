@@ -5,7 +5,6 @@ namespace: props
 
 resources:
   - postgresql.yaml
-  - configmap.yaml
   - deployment.yaml
   - service.yaml
   - registry-deployment.yaml
@@ -15,3 +14,10 @@ resources:
   - backup-pvc.yaml
   - httproute.yaml
   - rolebinding-ollama-consumer.yaml
+
+configMapGenerator:
+  - name: props-config
+    options:
+      disableNameSuffixHash: true
+    files:
+      - config.toml
