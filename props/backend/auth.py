@@ -1,7 +1,8 @@
 """Shared authentication utilities and FastAPI dependencies for backend APIs.
 
 Authentication uses Bearer or Basic tokens with Postgres credentials validation:
-- Admin users: Any valid Postgres user (non-agent_* username)
+- Admin users: Any valid Postgres user (non-agent_* username, not 'evaluator')
+- Evaluator users: Username 'evaluator' — read-only DB access, can launch agents
 - Agent users: Format agent_{uuid} with temp credentials
 
 Tokens contain base64-encoded username:password. Both schemes are supported:
@@ -13,7 +14,7 @@ This module provides:
 - Credential validation with access level determination
 - Request identity resolution with DB lookup for agent types
 - FastAPI dependency for per-request auth (get_request_identity)
-- Dependency functions for ACL enforcement (require_admin_access, require_critic_run_access)
+- Dependency functions for ACL enforcement (require_admin_access, etc.)
 """
 
 from __future__ import annotations
@@ -36,7 +37,31 @@ from props.db.models import AgentRun, AgentType
 logger = logging.getLogger(__name__)
 
 
-# --- Request identity: discriminated union ---
+# --- Role markers (the varying part of each identity) ---
+
+
+@dataclass(frozen=True)
+class AdminRole:
+    """Full admin access."""
+
+
+@dataclass(frozen=True)
+class EvaluatorRole:
+    """Read-only DB access (BYPASSRLS + SELECT-only), can launch any agent type."""
+
+
+@dataclass(frozen=True)
+class AgentRole:
+    """Agent run with specific type."""
+
+    agent_type: AgentType
+    agent_run_id: UUID
+
+
+Role = AdminRole | EvaluatorRole | AgentRole
+
+
+# --- Request identity ---
 
 
 @dataclass(frozen=True)
@@ -45,47 +70,36 @@ class AnonymousIdentity:
 
 
 @dataclass(frozen=True)
-class AdminIdentity:
-    """Admin user with full access."""
+class AuthenticatedIdentity:
+    """Authenticated request with Postgres credentials and a role."""
 
     username: str
     password: str
+    role: Role
 
 
-@dataclass(frozen=True)
-class AgentIdentity:
-    """Agent with specific type and run ID."""
-
-    agent_type: AgentType
-    agent_run_id: UUID
-    username: str
-    password: str
+RequestIdentity = AnonymousIdentity | AuthenticatedIdentity
 
 
-RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity
-
-
-def can_run_agent_type(identity: RequestIdentity, allowed_types: set[AgentType]) -> bool:
-    """Check if identity's agent type is in the allowed set. Admin always allowed."""
-    if isinstance(identity, AdminIdentity):
-        return True
-    return isinstance(identity, AgentIdentity) and identity.agent_type in allowed_types
-
-
-# ACL permission sets — agent types that can perform each operation (admin always allowed)
 _CRITIC_DEV_TYPES = {AgentType.CRITIC_DEV_OPTIMIZE, AgentType.CRITIC_DEV_IMPROVE}
-ACL_CAN_READ_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
-ACL_CAN_PUSH_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
-ACL_CAN_PUSH_TAGS: set[AgentType] = set()  # Admin only
-ACL_CAN_RUN_CRITICS: set[AgentType] = _CRITIC_DEV_TYPES
+
+
+def is_admin_or_evaluator(identity: RequestIdentity) -> bool:
+    """Admin or evaluator — full read access, can launch any agent type."""
+    return isinstance(identity, AuthenticatedIdentity) and isinstance(identity.role, (AdminRole, EvaluatorRole))
+
+
+def is_critic_dev_agent(identity: RequestIdentity) -> bool:
+    """Critic_dev agent (optimize or improve) — can push/pull registry and run critics."""
+    return (
+        isinstance(identity, AuthenticatedIdentity)
+        and isinstance(identity.role, AgentRole)
+        and identity.role.agent_type in _CRITIC_DEV_TYPES
+    )
 
 
 def extract_agent_run_id_from_username(username: str) -> UUID | None:
-    """Extract agent_run_id from username if it matches agent_{uuid} pattern.
-
-    Uses the same pattern as TempUserManager.generate_username() which creates
-    usernames in the format "agent_{uuid}".
-    """
+    """Extract agent_run_id from username if it matches agent_{uuid} pattern."""
     prefix = "agent_"
     if not username.startswith(prefix):
         return None
@@ -100,13 +114,11 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
 def validate_postgres_credentials(username: str, password: str, db_config: DatabaseConfig) -> UUID | None:
     """Validate credentials against Postgres.
 
-    Returns agent_run_id if agent (extracted from username), None if admin.
+    Returns agent_run_id if agent (extracted from username), None if non-agent.
     Raises HTTPException 401 if credentials invalid.
     """
-    # Extract agent run ID from username pattern (None means admin)
     agent_run_id = extract_agent_run_id_from_username(username)
 
-    # Validate credentials against Postgres
     try:
         with psycopg.connect(
             host=db_config.host,
@@ -116,7 +128,7 @@ def validate_postgres_credentials(username: str, password: str, db_config: Datab
             password=password,
             connect_timeout=5,
         ):
-            pass  # Connection succeeded
+            pass
     except psycopg.OperationalError as e:
         logger.warning(f"Postgres auth failed for user {username}: {e}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -171,9 +183,10 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
     username, password = parsed
     agent_run_id = validate_postgres_credentials(username, password, admin_db.config)
 
-    # Admin: validate_postgres_credentials returned None
     if agent_run_id is None:
-        return AdminIdentity(username=username, password=password)
+        # Non-agent: admin or evaluator
+        role: Role = EvaluatorRole() if username == "evaluator" else AdminRole()
+        return AuthenticatedIdentity(username=username, password=password, role=role)
 
     # Agent: look up agent_type from database
     with admin_db.session() as session:
@@ -181,8 +194,10 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
 
-        return AgentIdentity(
-            agent_type=agent_run.type_config.agent_type, agent_run_id=agent_run_id, username=username, password=password
+        return AuthenticatedIdentity(
+            username=username,
+            password=password,
+            role=AgentRole(agent_type=agent_run.type_config.agent_type, agent_run_id=agent_run_id),
         )
 
 
@@ -197,48 +212,53 @@ Auth = Annotated[RequestIdentity, Depends(get_request_identity)]
 
 def require_critic_run_access(auth: Auth) -> RequestIdentity:
     """FastAPI dependency requiring critic run access. Raises HTTPException 403 if not allowed."""
-    if not can_run_agent_type(auth, ACL_CAN_RUN_CRITICS):
+    if not (is_admin_or_evaluator(auth) or is_critic_dev_agent(auth)):
         raise HTTPException(status_code=403, detail=f"{auth} not allowed to run critics")
     return auth
 
 
 def require_admin_access(auth: Auth) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
-    if not isinstance(auth, AdminIdentity):
+    if not (isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AdminRole)):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+def require_evaluator_or_admin_access(auth: Auth) -> None:
+    """FastAPI dependency allowing admin or evaluator access."""
+    if not (isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, (AdminRole, EvaluatorRole))):
+        raise HTTPException(status_code=403, detail="Admin or evaluator access required")
+
+
 # =============================================================================
-# Agent credential passthrough
+# Credential passthrough for DB access
 # =============================================================================
 
 
-def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
-    """Get Database using agent credentials for RLS enforcement.
+def get_caller_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
+    """Get Database using caller's credentials for RLS/permission enforcement.
 
-    For agent callers: Creates per-request Database with agent's Postgres
-    credentials. RLS policies automatically enforce access control.
-    For admin callers: Returns the shared admin Database instance.
-    For anonymous: Raises 401.
-
-    Yields the Database and disposes per-request agent connections on cleanup.
+    Admin: returns the shared admin Database (full access, bypasses RLS).
+    Evaluator: per-request Database with evaluator's Postgres role (BYPASSRLS + SELECT-only).
+    Agent: per-request Database with agent's Postgres role (RLS-scoped access).
+    Anonymous: raises 401.
     """
     if isinstance(auth, AnonymousIdentity):
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    if isinstance(auth, AdminIdentity):
+    assert isinstance(auth, AuthenticatedIdentity)
+
+    if isinstance(auth.role, AdminRole):
         yield admin_db
         return
 
-    # Must be AgentIdentity
-    assert isinstance(auth, AgentIdentity)
-    agent_config = admin_db.config.with_user(auth.username, auth.password)
-    agent_db = Database.per_request(agent_config)
+    # Evaluator or agent: per-request DB with their own credentials
+    user_config = admin_db.config.with_user(auth.username, auth.password)
+    user_db = Database.per_request(user_config)
     try:
-        yield agent_db
+        yield user_db
     finally:
-        agent_db.dispose()
+        user_db.dispose()
 
 
-# Type alias for agent database dependency (use in route signatures where RLS applies)
-AgentDb = Annotated[Database, Depends(get_agent_db)]
+# Type alias for caller-scoped database dependency (use in route signatures where RLS applies)
+CallerDb = Annotated[Database, Depends(get_caller_db)]

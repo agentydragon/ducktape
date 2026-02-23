@@ -3,7 +3,22 @@ kind: Kustomization
 
 namespace: props
 
+configMapGenerator:
+  - name: props-config
+    files:
+      - config.toml
+    options:
+      disableNameSuffixHash: true
+
 resources:
-  - helmrelease.yaml
+  - deployment.yaml
+  - service.yaml
+  - bitnami-helmrepository.yaml
+  - postgresql-helmrelease.yaml
+  - registry-deployment.yaml
+  - registry-service.yaml
+  - registry-pvc.yaml
+  - backup-cronjob.yaml
+  - backup-pvc.yaml
   - httproute.yaml
   - rolebinding-ollama-consumer.yaml

@@ -11,7 +11,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from props.backend.auth import get_agent_db
+from props.backend.auth import get_caller_db
 from props.backend.routes import stats
 from props.core.models.examples import ExampleSpec
 from props.db.database import Database
@@ -29,7 +29,7 @@ def stats_client(synced_db: Database) -> TestClient:
     app.state.admin_db = synced_db
     # Override agent DB dependency to use admin connection (no RLS restriction).
     # RLS scoping is tested separately in test_split_based_rls.
-    app.dependency_overrides[get_agent_db] = lambda: synced_db
+    app.dependency_overrides[get_caller_db] = lambda: synced_db
     return TestClient(app, raise_server_exceptions=False)
 
 

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from props.backend.auth import AgentDb
+from props.backend.auth import CallerDb
 from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType
 from props.core.ids import SnapshotSlug
@@ -69,8 +69,8 @@ def to_split_scope_stats(row: RecallByDefinitionSplitKind, total_available: int)
 
 
 @router.get("/overview")
-def get_overview(agent_db: AgentDb) -> OverviewResponse:
-    with agent_db.session() as session:
+def get_overview(caller_db: CallerDb) -> OverviewResponse:
+    with caller_db.session() as session:
         example_counts = count_available_examples_by_scope_all(session, [Split.TRAIN, Split.VALID])
 
         # Get ALL critic definitions, not just those with stats
@@ -133,8 +133,8 @@ class DefinitionDetailResponse(BaseModel):
 
 
 @router.get("/definitions/{image_digest}")
-def get_definition_detail(image_digest: str, agent_db: AgentDb) -> DefinitionDetailResponse:
-    with agent_db.session() as session:
+def get_definition_detail(image_digest: str, caller_db: CallerDb) -> DefinitionDetailResponse:
+    with caller_db.session() as session:
         definition = session.query(AgentDefinition).filter_by(digest=image_digest).first()
         if not definition:
             raise HTTPException(status_code=404, detail=f"Definition not found: {image_digest}")
@@ -212,9 +212,9 @@ class ExampleDetailResponse(BaseModel):
 
 @router.get("/examples")
 def get_example_detail(
-    snapshot_slug: SnapshotSlug, example_kind: ExampleKind, agent_db: AgentDb, files_hash: str | None = None
+    snapshot_slug: SnapshotSlug, example_kind: ExampleKind, caller_db: CallerDb, files_hash: str | None = None
 ) -> ExampleDetailResponse:
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         # Validate and fetch the example
         query = session.query(Example).filter_by(snapshot_slug=snapshot_slug, example_kind=example_kind)
 
@@ -324,14 +324,14 @@ class OccurrenceStatsResponse(BaseModel):
 
 @router.get("/occurrences")
 def get_occurrences(
-    agent_db: AgentDb,
+    caller_db: CallerDb,
     snapshot_slug: SnapshotSlug | None = None,
     split: Split | None = None,
     limit: int = 100,
     sort_by: str = "mean_credit",
     sort_dir: str = "asc",
 ) -> OccurrenceStatsResponse:
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         query = session.query(
             TpOccurrenceCredit.snapshot_slug,
             TpOccurrenceCredit.split,
@@ -389,8 +389,8 @@ class DistributionsResponse(BaseModel):
 
 
 @router.get("/distributions")
-def get_distributions(split: Split, agent_db: AgentDb) -> DistributionsResponse:
-    with agent_db.session() as session:
+def get_distributions(split: Split, caller_db: CallerDb) -> DistributionsResponse:
+    with caller_db.session() as session:
         results = query_recall_by_example(session, split=split)
 
         # Group by example, find max recall across definitions
@@ -469,8 +469,8 @@ def _build_tp_counts_by_example(session: Session, split: Split) -> dict[ExampleS
 
 
 @router.get("/coverage")
-def get_coverage(split: Split, agent_db: AgentDb, limit_definitions: int = 15) -> CoverageResponse:
-    with agent_db.session() as session:
+def get_coverage(split: Split, caller_db: CallerDb, limit_definitions: int = 15) -> CoverageResponse:
+    with caller_db.session() as session:
         results = query_recall_by_example(session, split=split)
 
         # Group: example -> {definition_digest -> recall}

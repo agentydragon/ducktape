@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: props
+  namespace: props
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: props
+      component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: props
+        component: backend
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      imagePullSecrets:
+        - name: harbor-ci-robot
+      containers:
+        - name: props
+          image: registry.allegedly.works/props/props-backend:devel-20260223120158-adea93a # {"$imagepolicy": "flux-system:props-backend:tag"}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: PROPS_CONFIG_FILE
+              value: /etc/props/config.toml
+            - name: PGHOST
+              value: props-postgresql
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: eval_results
+            - name: PGUSER
+              value: postgres
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-postgresql
+                  key: postgres-password
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: props-openai-api-key
+                  key: api-key
+            - name: OLLAMA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: props-ollama-api-key
+                  key: api-key
+            - name: PROPS_EVALUATOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-evaluator-credentials
+                  key: password
+            - name: PROPS_REGISTRY_UPSTREAM_URL
+              value: http://props-registry:5000
+            - name: PROPS_REGISTRY_HOST
+              value: props
+            - name: PROPS_REGISTRY_PORT
+              value: "8000"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/props
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: props-config

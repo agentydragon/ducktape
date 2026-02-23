@@ -59,7 +59,7 @@ class Database:
     def per_request(cls, config: DatabaseConfig) -> Database:
         """Create Database for per-request use (no startup verification).
 
-        Used by get_agent_db for agent credential passthrough. Caller must
+        Used by get_caller_db for caller credential passthrough. Caller must
         call dispose() when done.
         """
         db = cls.__new__(cls)

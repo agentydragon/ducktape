@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: props-registry
+  namespace: props
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: props
+      component: registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: props
+        component: registry
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: registry
+          image: registry:2
+          ports:
+            - containerPort: 5000
+          env:
+            - name: REGISTRY_HTTP_RELATIVEURLS
+              value: "true"
+          volumeMounts:
+            - name: registry-storage
+              mountPath: /var/lib/registry
+      volumes:
+        - name: registry-storage
+          persistentVolumeClaim:
+            claimName: props-registry

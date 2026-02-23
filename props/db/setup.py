@@ -8,6 +8,7 @@ Extracted from database.py to separate concerns:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -73,6 +74,25 @@ def recreate_database(engine: Engine) -> None:
     _drop_all(engine)
     upgrade_database(engine)
     logger.info("Database recreation complete")
+
+
+def ensure_evaluator_role(db_config: DatabaseConfig) -> None:
+    """Sync evaluator Postgres role password with PROPS_EVALUATOR_PASSWORD env var.
+
+    The evaluator_base role and evaluator login user are created by the migration.
+    This handles password updates on re-deploy (migrations run only once).
+    No-op if PROPS_EVALUATOR_PASSWORD is not set.
+    """
+    password = os.environ.get("PROPS_EVALUATOR_PASSWORD")
+    if not password:
+        return
+    engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER ROLE evaluator PASSWORD :pw"), {"pw": password})
+        logger.info("Evaluator role password synced")
+    finally:
+        engine.dispose()
 
 
 def _drop_all(engine: Engine) -> None:

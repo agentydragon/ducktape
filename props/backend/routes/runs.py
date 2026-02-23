@@ -20,7 +20,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 
-from props.backend.auth import AgentDb, AgentIdentity, RequestIdentity, require_admin_access, require_critic_run_access
+from props.backend.auth import (
+    AgentRole,
+    AuthenticatedIdentity,
+    CallerDb,
+    RequestIdentity,
+    require_critic_run_access,
+    require_evaluator_or_admin_access,
+)
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType, TargetMetric, TypeConfig
@@ -337,13 +344,13 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
 
 
 @router.get("/active")
-def list_active_runs(request: Request, agent_db: AgentDb) -> ActiveRunsResponse:
+def list_active_runs(request: Request, caller_db: CallerDb) -> ActiveRunsResponse:
     """List all active agent runs.
 
     Queries database for runs with IN_PROGRESS status.
     RLS policies filter visible runs based on caller's database role.
     """
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         db_runs = (
             session.query(AgentRun)
             .filter(AgentRun.status == AgentRunStatus.IN_PROGRESS)
@@ -356,7 +363,7 @@ def list_active_runs(request: Request, agent_db: AgentDb) -> ActiveRunsResponse:
     return ActiveRunsResponse(runs=result)
 
 
-@router.get("/jobs", dependencies=[Depends(require_admin_access)])
+@router.get("/jobs", dependencies=[Depends(require_evaluator_or_admin_access)])
 def list_jobs() -> JobsResponse:
     """List all validation jobs."""
     return JobsResponse(jobs=_get_active_jobs())
@@ -364,7 +371,7 @@ def list_jobs() -> JobsResponse:
 
 @router.get("")
 def list_runs(
-    agent_db: AgentDb,
+    caller_db: CallerDb,
     status: AgentRunStatus | None = None,
     image_digest: str | None = None,
     agent_type: AgentType | None = None,
@@ -379,7 +386,7 @@ def list_runs(
     """
     limit = min(limit, 500)  # Cap at 500
 
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         query = session.query(AgentRun)
 
         if status:
@@ -418,7 +425,7 @@ def list_runs(
         )
 
 
-@router.post("/validation", dependencies=[Depends(require_admin_access)])
+@router.post("/validation", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_validation_runs(
     request: Request, body: ValidationRunRequest, admin_db: AdminDb
 ) -> ValidationRunResponse:
@@ -548,7 +555,7 @@ class OptimizeRunResponse(BaseModel):
     agent_run_id: UUID
 
 
-@router.post("/optimize", dependencies=[Depends(require_admin_access)])
+@router.post("/optimize", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> OptimizeRunResponse:
     """Launch a critic developer optimize agent."""
     registry = get_registry(request)
@@ -584,7 +591,7 @@ class ImproveRunResponse(BaseModel):
     n_examples_selected: int
 
 
-@router.post("/improve", dependencies=[Depends(require_admin_access)])
+@router.post("/improve", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_db: AdminDb) -> ImproveRunResponse:
     """Launch a critic developer improve agent.
 
@@ -708,7 +715,9 @@ async def start_critic(
     The critic runs asynchronously. Poll GET /api/runs/{critic_run_id} or use the
     WebSocket feed for status, then use wait_until_graded() once the run exits.
     """
-    parent_run_id = auth.agent_run_id if isinstance(auth, AgentIdentity) else None
+    parent_run_id = (
+        auth.role.agent_run_id if isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AgentRole) else None
+    )
     registry = get_registry(request)
 
     # Validate snapshot and example
@@ -752,9 +761,9 @@ async def start_critic(
 
 
 @router.get("/{run_id}")
-def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
+def get_run(run_id: UUID, caller_db: CallerDb) -> AgentRunDetail:
     """Get details of a specific agent run. RLS enforces access."""
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -895,9 +904,9 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
 
 
 @router.get("/{run_id}/llm_requests")
-def get_run_llm_requests(run_id: UUID, agent_db: AgentDb) -> LLMRequestsResponse:
+def get_run_llm_requests(run_id: UUID, caller_db: CallerDb) -> LLMRequestsResponse:
     """Get LLM requests for a specific agent run. RLS filters visible requests."""
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")

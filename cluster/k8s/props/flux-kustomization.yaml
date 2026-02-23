@@ -17,7 +17,11 @@ spec:
     - name: gateway
     - name: harbor # Props image hosted on registry.allegedly.works
   healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: props
+      namespace: props
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
-      name: props
+      name: props-postgresql
       namespace: props

@@ -31,7 +31,7 @@ from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
 from props.db.database import Database
-from props.db.setup import upgrade_database
+from props.db.setup import ensure_evaluator_role, upgrade_database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, sync_specimen
 from props.orchestration.agent_registry import AgentRegistry
@@ -98,6 +98,7 @@ def _make_lifespan(deps: BackendDeps):
 
         if deps.config.auto_migrate:
             upgrade_database(db.engine)
+        ensure_evaluator_role(db_config)
 
         # Sync model metadata on boot (ensures custom models from config are in DB)
         with db.session() as session:

@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: props-backup
+  namespace: props
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            topology.kubernetes.io/region: proxmox
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: docker.io/bitnami/postgresql:17
+              env:
+                - name: PGHOST
+                  value: props-postgresql
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  value: eval_results
+                - name: PGUSER
+                  value: postgres
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: props-postgresql
+                      key: postgres-password
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  BACKUP_FILE="/backups/props_$(date +%Y%m%d_%H%M%S).sql.gz"
+                  echo "Backing up to $BACKUP_FILE"
+                  pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" "$PGDATABASE" | gzip > "$BACKUP_FILE"
+                  echo "Backup complete: $BACKUP_FILE"
+                  find /backups -name "props_*.sql.gz" -mtime +7 -delete
+                  echo "Old backups cleaned up"
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backups
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: props-backup
