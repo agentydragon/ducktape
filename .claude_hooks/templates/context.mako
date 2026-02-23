@@ -7,7 +7,7 @@
   **PR workflow** (bot is NOT a collaborator on `agentydragon/ducktape`, so use the fork):
   ```bash
   # 1. Add fork remote with GITHUB_TOKEN auth (one-time)
-  git remote add fork "https://agentydragon-agent:${GITHUB_TOKEN}@github.com/agentydragon-agent/ducktape.git"
+  git remote add fork "https://agentydragon-agent:${'$'}{GITHUB_TOKEN}@github.com/agentydragon-agent/ducktape.git"
 
   # 2. Push branch to fork
   git push -u fork <branch-name>
