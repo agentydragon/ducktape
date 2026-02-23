@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: props-registry
+  labels:
+    app: props-registry
+    app.kubernetes.io/component: registry
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: proxmox-csi-retain
+  resources:
+    requests:
+      storage: 50Gi

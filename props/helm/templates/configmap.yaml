@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ include "props.fullname" . }}-config
-  labels:
-    {{- include "props.labels" . | nindent 4 }}
-data:
-  config.toml: |
-    {{- .Values.config | toToml | nindent 4 }}

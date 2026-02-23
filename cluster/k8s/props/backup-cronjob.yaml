@@ -1,30 +1,27 @@
-{{- if .Values.backup.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "props.fullname" . }}-backup
+  name: props-backup
   labels:
-    {{- include "props.labels" . | nindent 4 }}
+    app: props-backup
     app.kubernetes.io/component: backup
 spec:
-  schedule: {{ .Values.backup.schedule | quote }}
+  schedule: "0 3 * * *"
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
       template:
         metadata:
           labels:
-            {{- include "props.selectorLabels" . | nindent 12 }}
+            app: props-backup
             app.kubernetes.io/component: backup
         spec:
           restartPolicy: OnFailure
-          {{- with .Values.nodeSelector }}
           nodeSelector:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            topology.kubernetes.io/region: proxmox
           containers:
             - name: backup
-              image: "{{ .Values.postgresql.image.registry | default "docker.io" }}/{{ .Values.postgresql.image.repository | default "bitnami/postgresql" }}:{{ .Values.postgresql.image.tag | default "17" }}"
+              image: docker.io/bitnami/postgresql:17
               command:
                 - /bin/bash
                 - -c
@@ -36,31 +33,26 @@ spec:
                   pg_dump -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" | gzip > "${BACKUP_FILE}"
                   echo "Backup complete: $(du -h "${BACKUP_FILE}" | cut -f1)"
                   # Clean up old backups
-                  DELETED=$(find /backups -name "props_*.sql.gz" -mtime +{{ .Values.backup.retention.days }} -delete -print | wc -l)
-                  echo "Deleted ${DELETED} backups older than {{ .Values.backup.retention.days }} days"
+                  DELETED=$(find /backups -name "props_*.sql.gz" -mtime +7 -delete -print | wc -l)
+                  echo "Deleted ${DELETED} backups older than 7 days"
               env:
                 - name: PGHOST
-                  value: {{ include "props.fullname" . }}-postgresql
+                  value: props-postgresql
                 - name: PGPORT
                   value: "5432"
                 - name: PGDATABASE
-                  value: {{ .Values.postgresql.auth.database | quote }}
+                  value: eval_results
                 - name: PGUSER
-                  value: {{ .Values.postgresql.auth.username | quote }}
+                  value: postgres
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: {{ include "props.fullname" . }}-postgresql
+                      name: props-postgresql
                       key: postgres-password
               volumeMounts:
-                {{- if .Values.backup.persistence.enabled }}
                 - name: backups
                   mountPath: /backups
-                {{- end }}
           volumes:
-            {{- if .Values.backup.persistence.enabled }}
             - name: backups
               persistentVolumeClaim:
-                claimName: {{ include "props.fullname" . }}-backup
-            {{- end }}
-{{- end }}
+                claimName: props-backup
