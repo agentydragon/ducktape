@@ -383,6 +383,33 @@ Low priority. Weave GitOps or Capacitor for visualizing kustomization DAG.
 tokens, Nix signing key. Minimum: rclone to encrypted cloud storage. Better: S3 backend
 with OpenTofu native state encryption + versioning.
 
+### TODO: Headscale HA (survive single VPS failure)
+
+Currently Headscale runs as a single pod with a `local-path` PVC on whichever VPS node
+it schedules to. If that node goes down, Headscale goes down until K8s reschedules the
+pod on the surviving VPS (which requires the PVC to be migrated or recreated, since
+`local-path` is node-local).
+
+Goal: Headscale survives losing one VPS without manual intervention.
+
+Options (in order of preference):
+
+1. **PostgreSQL backend via CNPG** — Headscale supports `db.type = postgres`. Create a
+   CNPG cluster (`headscale-db`) with 2 instances across both VPS nodes. Remove the
+   local-path PVC. Headscale pod becomes stateless (no local storage) and can reschedule
+   freely to the surviving VPS. This is the cleanest path and matches the Authentik/
+   PowerDNS pattern.
+2. **ReadWriteMany PVC** — Use an NFS or similar RWX storage class so the PVC can be
+   mounted by a pod on any node. Heavier to set up, less clean.
+
+Implementation for option 1:
+
+- Add `k8s/headscale-db/` CNPG cluster (2 instances, `local-path`, Hetzner VPS nodes)
+- Add a CNPG-sourced ExternalSecret or direct env ref for the DB password
+- Update Headscale HelmRelease: `headscale.config.db.type = postgres`, set DSN from CNPG
+  secret, disable `persistence.enabled`
+- Add `headscale-db` flux-kustomization dependency to `headscale`
+
 ### TODO: Deploy etcd Backup
 
 Deploy [talos-backup](https://github.com/siderolabs/talos-backup) CronJob with age
