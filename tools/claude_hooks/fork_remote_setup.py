@@ -10,15 +10,23 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 
+import pygit2
+
 logger = logging.getLogger(__name__)
+
+
+class ForkRemoteAction(StrEnum):
+    ADDED = "added"
+    UPDATED = "updated"
+    ALREADY_CORRECT = "already_correct"
+    FORK_NOT_FOUND = "fork_not_found"
 
 
 @dataclass
@@ -28,8 +36,7 @@ class ForkRemoteSetup:
     username: str
     repo_name: str
     fork_exists: bool
-    # action is set only when fork_exists is True
-    action: str  # "added", "updated", "already_correct", "fork_not_found"
+    action: ForkRemoteAction
 
 
 def _github_api_get(path: str, github_token: str) -> dict[str, Any]:
@@ -63,16 +70,17 @@ def _check_fork_exists(username: str, repo_name: str, github_token: str) -> bool
 
 
 def _get_repo_name_from_origin(project_dir: Path) -> str | None:
-    """Extract repo name from git origin remote URL."""
-    result = subprocess.run(
-        ["git", "remote", "get-url", "origin"], check=False, capture_output=True, text=True, cwd=project_dir
-    )
-    if result.returncode != 0:
+    """Extract repo name from the git origin remote URL."""
+    try:
+        repo = pygit2.Repository(str(project_dir))
+    except pygit2.GitError:
         return None
-    origin_url = result.stdout.strip()
-    # Matches both HTTPS (owner/repo.git) and SSH (owner:repo.git) URL forms.
-    match = re.search(r"[/:]([^/:]+?)(?:\.git)?$", origin_url)
-    return match.group(1) if match else None
+    origin = next((r for r in repo.remotes if r.name == "origin"), None)
+    if origin is None or origin.url is None:
+        return None
+    url = origin.url.rstrip("/")
+    url = url.removesuffix(".git")
+    return url.split("/")[-1]
 
 
 def ensure_fork_remote(github_token: str, project_dir: Path) -> ForkRemoteSetup:
@@ -90,23 +98,23 @@ def ensure_fork_remote(github_token: str, project_dir: Path) -> ForkRemoteSetup:
 
     if not _check_fork_exists(username, repo_name, github_token):
         logger.warning("Fork not found at https://github.com/%s/%s — create it there first", username, repo_name)
-        return ForkRemoteSetup(username=username, repo_name=repo_name, fork_exists=False, action="fork_not_found")
+        return ForkRemoteSetup(
+            username=username, repo_name=repo_name, fork_exists=False, action=ForkRemoteAction.FORK_NOT_FOUND
+        )
 
     fork_url = f"https://{username}:{github_token}@github.com/{username}/{repo_name}.git"
 
-    current = subprocess.run(
-        ["git", "remote", "get-url", "fork"], check=False, capture_output=True, text=True, cwd=project_dir
-    )
-    current_url = current.stdout.strip() if current.returncode == 0 else None
+    repo = pygit2.Repository(str(project_dir))
+    fork_remote = next((r for r in repo.remotes if r.name == "fork"), None)
 
-    if current_url is None:
-        subprocess.run(["git", "remote", "add", "fork", fork_url], check=True, cwd=project_dir)
-        action = "added"
-    elif current_url == fork_url:
-        action = "already_correct"
+    if fork_remote is None:
+        repo.remotes.create("fork", fork_url)
+        action = ForkRemoteAction.ADDED
+    elif fork_remote.url == fork_url:
+        action = ForkRemoteAction.ALREADY_CORRECT
     else:
-        subprocess.run(["git", "remote", "set-url", "fork", fork_url], check=True, cwd=project_dir)
-        action = "updated"
+        repo.remotes.set_url("fork", fork_url)
+        action = ForkRemoteAction.UPDATED
 
     logger.info("Fork remote %s: https://github.com/%s/%s.git", action, username, repo_name)
     return ForkRemoteSetup(username=username, repo_name=repo_name, fork_exists=True, action=action)

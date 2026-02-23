@@ -247,6 +247,7 @@ py_library(
     srcs = ["fork_remote_setup.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
 )
 
 # === Libraries for binary sources ===
@@ -407,6 +408,7 @@ py_wheel(
         "pydantic-settings",
         "pyjwt",
         "pyrage",
+        "pygit2",
         "pyyaml",
         "supervisor",
         "tenacity",
