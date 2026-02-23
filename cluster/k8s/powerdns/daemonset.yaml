@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: powerdns
+  namespace: dns-system
+  labels:
+    app.kubernetes.io/name: powerdns
+spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: powerdns
+  template:
+    metadata:
+      annotations:
+        reloader.stakater.com/auto: "true"
+        # Skip Cilium transparent DNS proxy — PowerDNS is authoritative, not a client.
+        # Cilium's DNS proxy with 10s linger timeout breaks AXFR zone transfers.
+        io.cilium.proxy.denylist: "53/TCP,53/UDP"
+      labels:
+        app.kubernetes.io/name: powerdns
+    spec:
+      # hostNetwork mode: pod runs in the host network namespace.
+      # Why not hostPort? Cilium implements hostPort via BPF rules on 0.0.0.0:<port>,
+      # which intercepts ALL port 53 traffic on the node — including containerd's
+      # queries to Talos DNS proxy at 127.0.0.53:53, breaking image pulls.
+      #
+      # With hostNetwork, PowerDNS binds directly in the host namespace.
+      # Port 53 coexistence with Talos DNS proxy:
+      #   - PowerDNS local-address = node's public IP (via Downward API)
+      #   - Talos dns-resolve-cache binds 127.0.0.53:53 (loopback only)
+      # These are disjoint addresses, so no conflict.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: default
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: powerdns
+          image: powerdns/pdns-auth-49:latest
+          imagePullPolicy: IfNotPresent
+          # Security context: must run as root for hostNetwork port 53 binding.
+          # Verified via /proc/PID/status: containerd/runc does NOT populate the
+          # effective capability set for non-root processes, even with
+          # allowPrivilegeEscalation:true and NET_BIND_SERVICE in the bounding set.
+          # Actual process state: CapEff=0, CapBnd=0x400 — bind() returns EACCES.
+          # For root, the kernel automatically sets effective caps from bounding set
+          # after exec, so NET_BIND_SERVICE works.
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              add: ["NET_BIND_SERVICE"]
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: PDNS_launch
+              value: gpgsql
+            - name: PDNS_gpgsql_host
+              value: "powerdns-db-rw.dns-system.svc"
+            - name: PDNS_gpgsql_port
+              value: "5432"
+            - name: PDNS_gpgsql_user
+              value: "pdns"
+            - name: PDNS_gpgsql_password
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-db-pdns
+                  key: password
+            - name: PDNS_gpgsql_dbname
+              value: "pdns"
+            - name: PDNS_api
+              value: "yes"
+            - name: PDNS_api_key
+              valueFrom:
+                secretKeyRef:
+                  name: powerdns-api-key
+                  key: powerdns_api_key
+            - name: PDNS_webserver
+              value: "yes"
+            - name: PDNS_webserver_address
+              value: "0.0.0.0"
+            - name: PDNS_webserver_port
+              value: "8081"
+            # Allow all IPs for health probes. Security model:
+            # - Webserver (8081) is ClusterIP only, not exposed externally
+            # - Zone operations require X-API-Key header (powerdns-api-key secret)
+            # - Without API key: only health (/) and metrics (/metrics) accessible
+            # - Kubelet probes come from node's INTERNAL-IP; VPS nodes have public IPs,
+            #   so RFC1918-only ACL breaks health checks on hybrid VPS+Proxmox cluster
+            - name: PDNS_webserver_allow_from
+              value: "0.0.0.0/0"
+            # Move control socket to writable /tmp directory
+            - name: PDNS_socket_dir
+              value: "/tmp"
+            # Disable setuid/setgid (already enforced by Kubernetes securityContext)
+            - name: PDNS_setuid
+              value: ""
+            - name: PDNS_setgid
+              value: ""
+            # Enable AXFR for VPS secondary zone
+            - name: PDNS_allow_axfr_ips
+              value: "10.0.0.0/8,100.64.0.3"
+            - name: PDNS_disable_axfr
+              value: "no"
+            # Bind PowerDNS to the node's IP only (not 0.0.0.0) to avoid conflicting
+            # with Talos dns-resolve-cache at 127.0.0.53:53.
+            # With hostNetwork: true, status.podIP = node IP.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PDNS_local_address
+              value: "$(POD_IP)"
+          ports:
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+            - name: api
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: api
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pdns
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        # powerdns/pdns-auth-49 entrypoint writes config to /etc/pdns
+        - name: config
+          emptyDir: {}
+      nodeSelector:
+        topology.kubernetes.io/region: hetzner
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule

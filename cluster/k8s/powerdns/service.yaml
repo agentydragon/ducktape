@@ -1,0 +1,40 @@
+# DNS Service — fixed ClusterIP allows CoreDNS to forward allegedly.works reliably
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-dns
+  namespace: dns-system
+  labels:
+    app.kubernetes.io/name: powerdns
+spec:
+  type: ClusterIP
+  clusterIP: "10.96.53.53"
+  ports:
+    - port: 53
+      targetPort: dns-tcp
+      protocol: TCP
+      name: dns-tcp
+    - port: 53
+      targetPort: dns-udp
+      protocol: UDP
+      name: dns-udp
+  selector:
+    app.kubernetes.io/name: powerdns
+---
+# API Service — internal only, consumed by powerdns-operator and cert-manager webhook
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-api
+  namespace: dns-system
+  labels:
+    app.kubernetes.io/name: powerdns
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8081
+      targetPort: api
+      protocol: TCP
+      name: api
+  selector:
+    app.kubernetes.io/name: powerdns

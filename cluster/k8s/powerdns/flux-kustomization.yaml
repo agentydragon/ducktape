@@ -14,10 +14,11 @@ spec:
   wait: true
   dependsOn:
     - name: dns-system-namespace
-    - name: powerdns-secrets # Wait for password generation
+    - name: powerdns-secrets # Wait for API key generation
     - name: reflector # Wait for Reflector to handle secret copying
+    - name: powerdns-db # Wait for CNPG cluster ready and powerdns-db-pdns secret to exist
   healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
+    - apiVersion: apps/v1
+      kind: DaemonSet
       name: powerdns
       namespace: dns-system

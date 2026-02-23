@@ -85,9 +85,9 @@ use_repo(helm, "helm_toolchains")
 
 register_toolchains("@helm_toolchains//:all")
 
-# External Helm subchart dependencies (bitnami postgresql, mariadb)
+# External Helm subchart dependencies (bitnami postgresql)
 helm_charts = use_extension("//cluster/charts:helm_extensions.bzl", "helm_charts")
-use_repo(helm_charts, "helm_charts__mariadb", "helm_charts__postgresql")
+use_repo(helm_charts, "helm_charts__postgresql")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 
