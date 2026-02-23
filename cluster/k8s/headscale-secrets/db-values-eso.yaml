@@ -1,0 +1,35 @@
+# Reads password from CNPG-generated secret (headscale-db-headscale) and generates
+# a Helm values fragment injected into the HelmRelease via valuesFrom.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: headscale-db-values
+  namespace: headscale
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-headscale-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: headscale-db-values
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        values.yaml: |
+          headscale:
+            config:
+              database:
+                type: postgres
+                postgres:
+                  host: "headscale-db-rw"
+                  port: 5432
+                  name: "headscale"
+                  user: "headscale"
+                  password: "{{ .password }}"
+                  ssl: false
+  data:
+    - secretKey: password
+      remoteRef:
+        key: headscale-db-headscale
+        property: password

@@ -1,0 +1,18 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: headscale-db
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/headscale-db"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: cnpg
+    - name: headscale-namespace
+    - name: local-path-provisioner

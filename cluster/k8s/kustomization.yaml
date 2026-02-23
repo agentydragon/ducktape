@@ -68,6 +68,8 @@ resources:
   - applications/matrix-secrets/flux-kustomization.yaml
   - applications/nix-cache/flux-kustomization.yaml
   - headscale-namespace/flux-kustomization.yaml
+  - headscale-db/flux-kustomization.yaml
+  - headscale-secrets/flux-kustomization.yaml
   - applications/headscale/flux-kustomization.yaml
   - atuin-namespace/flux-kustomization.yaml
   - atuin-secrets/flux-kustomization.yaml

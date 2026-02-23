@@ -24,8 +24,8 @@ spec:
   dependsOn:
     - name: cert-manager-issuer-config
     - name: headscale-namespace
+    - name: headscale-secrets # headscale-db-values secret (DB password) must exist
     - name: gateway
     - name: cert-manager-environment
-    - name: local-path-provisioner
     - name: authentik # OIDC provider blueprint must be applied before headscale starts
     - name: authentik-blueprint-headscale-secret # OIDC client secret must exist before deploy

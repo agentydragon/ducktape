@@ -7,13 +7,20 @@
 **Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
 All kustomizations Ready. Cilium Gateway API serving HTTPS traffic.
 DNS automation fully working. Authentik auth verified.
-PowerDNS and Authentik both migrated to CloudNativePG on `hcloud-volumes`.
+PowerDNS, Authentik, and Headscale all migrated to CloudNativePG on `local-path`.
 VPS-only resilience invariant fully satisfied. Gatus monitoring comprehensive.
 Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
 
 ### Recent Changes (2026-02-23)
 
-1. **Authentik bundled PostgreSQL → CloudNativePG** — Migrated Authentik database from
+1. **Headscale → CloudNativePG PostgreSQL** — Migrated Headscale from SQLite with
+   `local-path` PVC (single-node-bound) to a 2-instance CloudNativePG cluster
+   (`headscale-db`) on `local-path` with `topologyKey: kubernetes.io/hostname`. Database
+   password injected via ESO ExternalSecret (`headscale-db-values`) using a new
+   `kubernetes-headscale-secret-store` ClusterSecretStore reading from the headscale
+   namespace. Headscale `persistence.enabled: false` — keys stored in `headscale-keys`
+   Secret so the pod can reschedule freely to the surviving VPS node.
+2. **Authentik bundled PostgreSQL → CloudNativePG** — Migrated Authentik database from
    the bundled Bitnami PostgreSQL (single instance) to a 2-instance CloudNativePG cluster
    (`authentik-db`) on `hcloud-volumes`. Both CNPG pods run on Hetzner VPS nodes with
    `topologyKey: kubernetes.io/hostname` for real HA and zero-downtime failover. Removed
@@ -21,24 +28,24 @@ Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
    credentials in secret `authentik-db-authentik`. Server and worker now load the password
    via `env.valueFrom.secretKeyRef` instead of `envFrom`. Existing data dropped (fresh
    cluster — acceptable per plan). Old bundled PVC pending deletion.
-2. **PowerDNS MariaDB → CloudNativePG PostgreSQL** — Migrated PowerDNS backend from
+3. **PowerDNS MariaDB → CloudNativePG PostgreSQL** — Migrated PowerDNS backend from
    MariaDB (proxmox-csi-retain) to a 2-instance CloudNativePG PostgreSQL cluster
    (`powerdns-db`) on `hcloud-volumes`. Both PostgreSQL pods run on Hetzner VPS nodes
    with `topologyKey: kubernetes.io/hostname` for real HA. PowerDNS DaemonSet now uses
    `GPGSQL_PASSWORD` from the CNPG-generated secret. VPS-only resilience invariant for
    DNS is now fully satisfied. Old orphaned MariaDB PVC (`data-powerdns-mariadb-0`)
    pending deletion.
-3. **Gatus comprehensive monitoring** — Added monitors for Vault, Gitea, Grafana, Matrix,
+4. **Gatus comprehensive monitoring** — Added monitors for Vault, Gitea, Grafana, Matrix,
    Harbor OIDC, Ollama, LiteLLM (including live inference probe), Langfuse, Loki,
    Prometheus, Hubble UI, Headlamp, InventTree, Headscale, Nix Cache, Atuin, Grocy,
    FileBrowser, OpenClaw.
-4. **Headscale deployed** — Headscale HelmRelease and kustomization up. Gatus probe
+5. **Headscale deployed** — Headscale HelmRelease and kustomization up. Gatus probe
    configured. Device migration from ansible VPS still pending.
-5. **Tempo deployed** — Distributed tracing via Grafana Tempo in `monitoring` namespace.
-6. **Langfuse deployed** — LLM observability platform in `langfuse` namespace.
-7. **Scanner deployed** — Document scanning with FileBrowser frontend in `scanner` namespace.
-8. **InvenTree deployed** — Inventory management in `inventree` namespace.
-9. **Headscale SSO** — Authentik outpost configured for Headscale.
+6. **Tempo deployed** — Distributed tracing via Grafana Tempo in `monitoring` namespace.
+7. **Langfuse deployed** — LLM observability platform in `langfuse` namespace.
+8. **Scanner deployed** — Document scanning with FileBrowser frontend in `scanner` namespace.
+9. **InvenTree deployed** — Inventory management in `inventree` namespace.
+10. **Headscale SSO** — Authentik outpost configured for Headscale.
 
 ### Recent Fixes (2026-02-18)
 
@@ -382,33 +389,6 @@ Low priority. Weave GitOps or Capacitor for visualizing kustomization DAG.
 `persistent-auth/terraform.tfstate` is local-only SSOT for sealed-secrets keypair, CSI
 tokens, Nix signing key. Minimum: rclone to encrypted cloud storage. Better: S3 backend
 with OpenTofu native state encryption + versioning.
-
-### TODO: Headscale HA (survive single VPS failure)
-
-Currently Headscale runs as a single pod with a `local-path` PVC on whichever VPS node
-it schedules to. If that node goes down, Headscale goes down until K8s reschedules the
-pod on the surviving VPS (which requires the PVC to be migrated or recreated, since
-`local-path` is node-local).
-
-Goal: Headscale survives losing one VPS without manual intervention.
-
-Options (in order of preference):
-
-1. **PostgreSQL backend via CNPG** — Headscale supports `db.type = postgres`. Create a
-   CNPG cluster (`headscale-db`) with 2 instances across both VPS nodes. Remove the
-   local-path PVC. Headscale pod becomes stateless (no local storage) and can reschedule
-   freely to the surviving VPS. This is the cleanest path and matches the Authentik/
-   PowerDNS pattern.
-2. **ReadWriteMany PVC** — Use an NFS or similar RWX storage class so the PVC can be
-   mounted by a pod on any node. Heavier to set up, less clean.
-
-Implementation for option 1:
-
-- Add `k8s/headscale-db/` CNPG cluster (2 instances, `local-path`, Hetzner VPS nodes)
-- Add a CNPG-sourced ExternalSecret or direct env ref for the DB password
-- Update Headscale HelmRelease: `headscale.config.db.type = postgres`, set DSN from CNPG
-  secret, disable `persistence.enabled`
-- Add `headscale-db` flux-kustomization dependency to `headscale`
 
 ### TODO: Deploy etcd Backup
 

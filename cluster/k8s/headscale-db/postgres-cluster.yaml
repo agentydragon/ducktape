@@ -1,0 +1,27 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: headscale-db
+  namespace: headscale
+spec:
+  instances: 2
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: hetzner
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # One PostgreSQL instance per VPS node for real HA
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: local-path
+    size: 1Gi
+
+  bootstrap:
+    initdb:
+      database: headscale
+      owner: headscale
+      # CNPG auto-generates credentials and stores them in secret headscale-db-headscale

@@ -25,6 +25,11 @@ spec:
     - kind: Secret
       name: headscale-oidc-client-secret
       valuesKey: values.yaml
+    # Injects headscale.config.database.postgres.password from CNPG-generated secret
+    # (via ESO ExternalSecret headscale-db-values in headscale-secrets kustomization).
+    - kind: Secret
+      name: headscale-db-values
+      valuesKey: values.yaml
   chart:
     spec:
       chart: headscale
@@ -66,10 +71,10 @@ spec:
             enabled: true
             method: S256
 
+    # PostgreSQL database config injected via valuesFrom (headscale-db-values secret).
+    # persistence disabled — database is external CNPG; keys stored in headscale-keys Secret.
     persistence:
-      enabled: true
-      storageClass: local-path
-      size: 1Gi
+      enabled: false
 
     service:
       type: ClusterIP
