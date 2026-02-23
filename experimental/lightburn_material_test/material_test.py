@@ -142,22 +142,14 @@ class AnnotationConfig(BaseModel):
     show_cell_text: bool = False  # print param values inside each cell
 
 
-class BorderConfig(CutParams):
+class BorderConfig(BaseModel):
     """Optional border rectangle drawn around the entire grid."""
+
+    model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
     padding: float = 3.0  # mm outside the grid cells
-    power_min: float = 10.0  # %
-    power_max: float = 10.0  # %
-    speed: float = 200.0  # mm/s
-
-
-class TextLayerConfig(CutParams):
-    """Cut settings for the annotation text layer (layer 0)."""
-
-    power_min: float = 15.0  # %
-    power_max: float = 15.0  # %
-    speed: float = 200.0  # mm/s
+    cut: CutParams = CutParams(power_min=10.0, power_max=10.0, speed=200.0)
 
 
 class FontConfig(BaseModel):
@@ -191,7 +183,8 @@ class GridConfig(BaseModel):
     geometry: GeometryConfig = GeometryConfig()
     annotations: AnnotationConfig = AnnotationConfig()
     border: BorderConfig = BorderConfig()
-    text_layer: TextLayerConfig = TextLayerConfig()
+    # text_layer: cut settings for layer 0 (annotation text); x/y axis params do not apply here
+    text_layer: CutParams = CutParams(power_min=15.0, power_max=15.0, speed=200.0)
     font: FontConfig = FontConfig()
 
     @model_validator(mode="after")
@@ -333,7 +326,7 @@ def generate(config: GridConfig) -> LightBurnProject:
     # Optional border layer
     border_layer_index: int | None = None
     if config.border.enabled:
-        cut_settings.append(config.border.to_cut_setting(next_index, "Border"))
+        cut_settings.append(config.border.cut.to_cut_setting(next_index, "Border"))
         border_layer_index = next_index
         next_index += 1
 

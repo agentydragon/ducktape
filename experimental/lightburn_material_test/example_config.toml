@@ -46,10 +46,11 @@ gap = 8          # mm, gap between adjacent cells
 show_cell_text = true   # print x and y parameter values inside each cell
 
 # ── Border ────────────────────────────────────────────────────────────────────
-# Supports the full cut parameter set (same fields as [cut]).
 [border]
 enabled = true
 padding = 3      # mm outside the grid cells
+
+[border.cut]     # full cut parameter set (same fields as [cut])
 power = 10       # % shorthand: sets both power_min and power_max
 # power_min = 10
 # power_max = 10
@@ -60,7 +61,7 @@ speed = 200      # mm/s
 # num_passes = 1
 
 # ── Text/annotation layer ─────────────────────────────────────────────────────
-# Supports the full cut parameter set (same fields as [cut]).
+# Full cut parameter set (same fields as [cut]).
 [text_layer]
 power = 15       # % shorthand: sets both power_min and power_max — low power just for marking
 # power_min = 15
