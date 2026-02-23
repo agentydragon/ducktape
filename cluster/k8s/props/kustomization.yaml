@@ -4,6 +4,14 @@ kind: Kustomization
 namespace: props
 
 resources:
-  - helmrelease.yaml
+  - postgresql.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - registry-deployment.yaml
+  - registry-pvc.yaml
+  - registry-service.yaml
+  - backup-cronjob.yaml
+  - backup-pvc.yaml
   - httproute.yaml
   - rolebinding-ollama-consumer.yaml
