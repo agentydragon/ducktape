@@ -672,26 +672,15 @@ helm install databot ./charts/kagent-agent \
 
 ## Implementation Phases
 
-### Phase 0: Research & Planning ✅
+### Phase 0: Research & Planning ✅ Complete
 
-- [x] Research Kagent architecture
-- [x] Find MCP servers with atomic computer control
-- [x] Verify computer-control-mcp works on local system
-- [x] Design architecture
-- [x] Document plan
-
-**computer-control-mcp Verification (2025-11-19):**
-
-- ✅ Successfully tested on Pop!\_OS with home-manager
-- ✅ Confirmed all tools work: screenshot, mouse, keyboard, OCR
-- ✅ Working setup documented in `/code/github.com/AB498/computer-control-mcp/`
-- ✅ Dependencies: Python 3.12, numpy, opencv4, tkinter, xlib, X11 libraries
-- ✅ Runs in nix-shell with proper LD_LIBRARY_PATH and DISPLAY configuration
-- ✅ Ready for containerization with desktop environment
+Architecture designed, `computer-control-mcp` verified locally on Pop!\_OS (all tools:
+screenshot, mouse, keyboard, OCR). K8s manifests and Dockerfiles created in
+`k8s/agents/devbot/`. Kagent platform reviewed.
 
 ### Phase 1: CLI-Only Prototype
 
-- [ ] Deploy Kagent on cluster
+- [ ] Deploy Kagent on cluster (unsuspend kustomizations first)
 - [ ] Create simple exec-based MCP server
 - [ ] Build agent container (CLI, no desktop)
 - [ ] Deploy single agent with persistent storage
@@ -701,14 +690,13 @@ helm install databot ./charts/kagent-agent \
 
 ### Phase 2: Add Visual Capabilities
 
-- [x] Clone computer-control-mcp repository ✅
-- [x] Verify computer-control-mcp works locally ✅
-- [x] Create Kubernetes YAML manifests for devbot agent ✅
-- [x] Write Dockerfiles for desktop and MCP server containers ✅
-- [x] Build container images locally ✅
-- [x] Deploy Kagent platform (controller + UI + KMCP) ✅
-- [ ] Test Kagent UI access at <https://kagent.allegedly.works> (wait for DNS propagation)
-- [ ] Load container images into cluster nodes (talosctl image import)
+**Note:** Kagent kustomizations (`kagent`, `kagent-namespace`, `kagent-secrets`) are
+currently **suspended** in Flux. Kagent is not actively deployed. Resume Phase 2 by
+unsuspending these kustomizations.
+
+- [ ] Unsuspend Kagent kustomizations and verify platform is running
+- [ ] Test Kagent UI at <https://kagent.allegedly.works>
+- [ ] Load devbot container images into cluster nodes (`talosctl image import`)
 - [ ] Store secrets in Vault (`kv/agents/devbot`)
 - [ ] Deploy agent desktop pod (desktop + MCP sidecar)
 - [ ] Test basic pod startup and health

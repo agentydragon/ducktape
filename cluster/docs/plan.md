@@ -1,13 +1,36 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-18
+**Last Updated**: 2026-02-23
 
 ## 🔥 Immediate Next Steps
 
 **Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
-~84/87 kustomizations Ready (3 Harbor-related still converging).
-Cilium Gateway API serving HTTPS traffic. DNS automation fully working.
-Authentik auth verified.
+All kustomizations Ready. Cilium Gateway API serving HTTPS traffic.
+DNS automation fully working. Authentik auth verified.
+PowerDNS migrated to CloudNativePG PostgreSQL on `hcloud-volumes` (VPS-only
+resilience invariant for DNS now satisfied). Gatus monitoring comprehensive.
+Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
+
+### Recent Changes (2026-02-23)
+
+1. **PowerDNS MariaDB → CloudNativePG PostgreSQL** — Migrated PowerDNS backend from
+   MariaDB (proxmox-csi-retain) to a 2-instance CloudNativePG PostgreSQL cluster
+   (`powerdns-db`) on `hcloud-volumes`. Both PostgreSQL pods run on Hetzner VPS nodes
+   with `topologyKey: kubernetes.io/hostname` for real HA. PowerDNS DaemonSet now uses
+   `GPGSQL_PASSWORD` from the CNPG-generated secret. VPS-only resilience invariant for
+   DNS is now fully satisfied. Old orphaned MariaDB PVC (`data-powerdns-mariadb-0`)
+   pending deletion.
+2. **Gatus comprehensive monitoring** — Added monitors for Vault, Gitea, Grafana, Matrix,
+   Harbor OIDC, Ollama, LiteLLM (including live inference probe), Langfuse, Loki,
+   Prometheus, Hubble UI, Headlamp, InventTree, Headscale, Nix Cache, Atuin, Grocy,
+   FileBrowser, OpenClaw.
+3. **Headscale deployed** — Headscale HelmRelease and kustomization up. Gatus probe
+   configured. Device migration from ansible VPS still pending.
+4. **Tempo deployed** — Distributed tracing via Grafana Tempo in `monitoring` namespace.
+5. **Langfuse deployed** — LLM observability platform in `langfuse` namespace.
+6. **Scanner deployed** — Document scanning with FileBrowser frontend in `scanner` namespace.
+7. **InvenTree deployed** — Inventory management in `inventree` namespace.
+8. **Headscale SSO** — Authentik outpost configured for Headscale.
 
 ### Recent Fixes (2026-02-18)
 
@@ -66,29 +89,11 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`
 
-### Completed: Harbor CI + Flux Webhook (2026-02-18)
-
-- [x] **GitHub secrets** `HARBOR_ROBOT_USERNAME` and `HARBOR_ROBOT_TOKEN` added to `agentydragon/ducktape`
-- [x] **GitHub webhook** registered for instant Flux GitRepository reconciliation
-
 ### Next Actions
 
-- [x] **Switch cert-manager to production Let's Encrypt** — done via dual-issuer toggle.
-      Single ConfigMap in `k8s/cert-manager-issuer-config/` controls active issuer.
-      Every Ingress has `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation
-      (Flux-substituted), so flipping the toggle re-issues all certs. Trust bundle follows
-      via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
-- [x] **Migrate from ingress-nginx to Cilium Gateway API** — completed 2026-02-16.
-      See Recent Fixes above.
-- [x] **Fix `dns-records` terraform** — Added `allow_overwrite` for glue records,
-      `import` block for domain registration, `lifecycle { ignore_changes }` for
-      non-nameserver attributes. IAM policy minimized to 4 actions. Applied successfully.
-- [ ] **PowerDNS MariaDB: migrate to `hcloud-volumes`** — MariaDB currently uses
-      `proxmox-csi-retain`, making DNS dependent on Proxmox. Change `storageClass` in
-      `k8s/powerdns/helmrelease.yaml` from `proxmox-csi-retain` to `hcloud-volumes`.
-      Requires PVC migration (backup MariaDB data, delete old PVC, let new PVC provision
-      on Hetzner, restore data) or a fresh bootstrap cycle. Also add `nodeSelector` or
-      affinity to pin MariaDB to VPS nodes. Violates VPS-only resilience invariant.
+- [ ] **Clean up orphaned MariaDB PVC** — `data-powerdns-mariadb-0` in `dns-system` is
+      no longer used (PowerDNS switched to CloudNativePG). Delete once confirmed:
+      `kubectl delete pvc data-powerdns-mariadb-0 -n dns-system`
 - [ ] **Grocy: provision API token for agent access** — after first login, create an API key
       in the Grocy UI (user menu → Manage API keys), store it at `kv/grocy/api-key` in Vault,
       then wire via ExternalSecret into OpenClaw (`GROCY_API_KEY`) and/or expose for Claude.
@@ -102,11 +107,8 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       Consider adding to `bootstrap.py` health checks or as a flux kustomization health check.
 - [ ] **Gatus: Harbor robot token for authenticated probe** — Create a Harbor robot account
       via Terraform with minimal read scope, store token in Vault, configure Gatus to use
-      it for authenticated `/v2/` checks (proves full auth chain, not just 401 response)
-- [ ] **Gatus: expand monitors** — Add probes for Vault, Gitea, Grafana, Matrix, etc.
-- [ ] **Gatus: LiteLLM inference health probe** — Add a Gatus endpoint that sends a
-      lightweight chat completion request to `ollama.allegedly.works` and verifies a
-      valid response. Proves the full LiteLLM→Ollama inference pipeline is working.
+      it for authenticated `/v2/` checks (proves full auth chain, not just 401 response).
+      Currently the probe only checks for 401 (unauthenticated path).
 - [ ] **Nix cache: initialize Attic cache** — Attic server is running but has no caches
       created (empty `cache` table). `cache.allegedly.works/nix-cache-info` returns 404
       because Attic serves that endpoint per-cache at `/<name>/nix-cache-info`. Fix: run
@@ -116,20 +118,18 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       (`ghcr.io/zhaofengli/attic:latest`) — check and potentially use a different tag or
       generate the token from the JWT secret directly. Gatus probe should use
       `cache.allegedly.works/main/nix-cache-info` once cache exists.
-- [ ] **Deploy headscale**, test with a device
+- [ ] **Headscale: test with a real device** — Headscale is deployed and running.
+      Connect an actual device and verify connectivity end-to-end.
 - [ ] **OpenClaw: eliminate one-time token entry** — currently the user must retrieve
       the auto-generated gateway token (`kubectl get secret openclaw-gateway-token ...`)
       and enter it once in the UI settings. Investigate options: operator exposing token
       in bootstrap config, gateway-side token injection into served HTML, or upstream
       PR to accept `"trusted-proxy"` in `sharedAuthOk` (message-handler.ts:385-387).
-- [ ] **Headlamp: fix auth** — Native OIDC reverted (Headlamp forwards OIDC tokens to
-      K8s API server, which doesn't trust Authentik → 401 on all API calls). Switched
-      to Authentik proxy outpost pattern (like gatus/grocy), but outpost is not yet
-      verified working. The proxy outpost handles authentication at the gateway; Headlamp
-      uses its ServiceAccount (`inCluster: true`) for K8s API calls. Verify end-to-end:
-      user hits `headlamp.allegedly.works` → Authentik login → proxy forwards to Headlamp
-      → Headlamp uses SA for API calls. If proxy outpost doesn't work for WebSocket-heavy
-      apps like Headlamp, may need to configure Talos API server `--oidc-issuer-url` instead.
+- [ ] **Headlamp: verify proxy outpost auth** — Switched to Authentik proxy outpost
+      pattern (like gatus/grocy). Outpost pod is running but end-to-end flow is unverified.
+      Verify: user hits `headlamp.allegedly.works` → Authentik login → proxy forwards to
+      Headlamp → Headlamp uses SA for K8s API calls. If proxy outpost doesn't work for
+      WebSocket-heavy apps, may need to configure Talos API server `--oidc-issuer-url`.
 - [ ] **Headlamp: per-user K8s RBAC** — Currently all authenticated users share
       `cluster-admin` via the ServiceAccount. For per-user RBAC: configure Talos API
       server `--oidc-issuer-url` to trust Authentik, create `ClusterRoleBinding`s
@@ -150,7 +150,6 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       configure Gitea OAuth via admin API, but SSO moved to the Authentik blueprint pattern.
       Nothing currently consumes the token secret. May still be useful for future Gitea API
       automation (repo/org management).
-- [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
 - [ ] **Verify ntfy.sh notifications** — confirm Flux reconciliation failure alerts
       actually arrive on phone via ntfy.sh push notifications.
 
@@ -183,40 +182,46 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Core Services (already configured)
 
-| Component              | Status | Notes                                       |
-| ---------------------- | ------ | ------------------------------------------- |
-| Flux CD                | ✅     | GitOps                                      |
-| Cilium Gateway API     | ✅     | Envoy hostNetwork on VPS nodes              |
-| cert-manager           | ✅     | DNS-01 via PowerDNS, dual-issuer toggle     |
-| PowerDNS               | ✅     | hostNetwork on VPS nodes                    |
-| Vault                  | ✅     | With OIDC auth                              |
-| Authentik              | ✅     | SSO provider                                |
-| External Secrets       | ✅     | Vault integration                           |
-| Monitoring             | ✅     | Prometheus/Grafana/Loki                     |
-| Proxmox CSI            | ✅     | Storage for home nodes                      |
-| local-path-provisioner | ✅     | Storage for VPS nodes                       |
-| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)            |
-| DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS  |
-| Node Feature Discovery | ✅     | Auto-detects GPU/hardware, provides labels  |
-| NVIDIA Device Plugin   | ✅     | GPU resource registration on GPU nodes      |
-| Cilium Mutual Auth     | ⏸️     | SPIRE disabled (bootstrap timeout on Talos) |
+| Component              | Status | Notes                                        |
+| ---------------------- | ------ | -------------------------------------------- |
+| Flux CD                | ✅     | GitOps                                       |
+| Cilium Gateway API     | ✅     | Envoy hostNetwork on VPS nodes               |
+| cert-manager           | ✅     | DNS-01 via PowerDNS, dual-issuer toggle      |
+| PowerDNS               | ✅     | hostNetwork on VPS nodes, CNPG PostgreSQL DB |
+| Vault                  | ✅     | With OIDC auth                               |
+| Authentik              | ✅     | SSO provider, 2 replicas on VPS nodes        |
+| External Secrets       | ✅     | Vault integration                            |
+| Monitoring             | ✅     | Prometheus/Grafana/Loki/Tempo/Alloy          |
+| Proxmox CSI            | ✅     | Storage for home nodes                       |
+| local-path-provisioner | ✅     | Storage for VPS nodes                        |
+| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)             |
+| DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS   |
+| Node Feature Discovery | ✅     | Auto-detects GPU/hardware, provides labels   |
+| NVIDIA Device Plugin   | ✅     | GPU resource registration on GPU nodes       |
+| CloudNativePG          | ✅     | CNPG operator for PostgreSQL clusters        |
+| Cilium Mutual Auth     | ⏸️     | SPIRE disabled (bootstrap timeout on Talos)  |
 
 ## Applications (already configured)
 
-| App            | Purpose                | SSO |
-| -------------- | ---------------------- | --- |
-| Harbor         | Container registry     | ✅  |
-| Gitea          | Git hosting            | ✅  |
-| Matrix/Element | Chat                   | ✅  |
-| Nix cache      | Binary cache           | -   |
-| BuildBuddy     | Remote build exec      | -   |
-| Headscale      | Tailscale control      | -   |
-| Ollama         | LLM inference          | -   |
-| Website        | Static placeholder     | -   |
-| OpenClaw       | AI coding agent        | ✅  |
-| Gatus          | Health monitoring      | ✅  |
-| Grocy          | Household/grocery mgmt | ✅  |
-| Headlamp       | Kubernetes cluster UI  | ❌  |
+| App            | Purpose                | SSO | Notes                                |
+| -------------- | ---------------------- | --- | ------------------------------------ |
+| Harbor         | Container registry     | ✅  |                                      |
+| Gitea          | Git hosting            | ✅  |                                      |
+| Matrix/Element | Chat                   | ✅  |                                      |
+| Nix cache      | Binary cache           | -   | Running, cache not initialized yet   |
+| BuildBuddy     | Remote build exec      | -   |                                      |
+| Headscale      | Tailscale control      | ✅  | Deployed, untested with real device  |
+| Ollama         | LLM inference          | -   | + LiteLLM proxy                      |
+| Website        | Static placeholder     | -   |                                      |
+| OpenClaw       | AI coding agent        | ✅  |                                      |
+| Gatus          | Health monitoring      | ✅  |                                      |
+| Grocy          | Household/grocery mgmt | ✅  |                                      |
+| Headlamp       | Kubernetes cluster UI  | ✅  | Proxy outpost; per-user RBAC pending |
+| InvenTree      | Inventory management   | -   |                                      |
+| Langfuse       | LLM observability      | -   |                                      |
+| Tempo          | Distributed tracing    | -   | Part of monitoring stack             |
+| Scanner        | Document scanning      | ✅  | Filebrowser frontend                 |
+| Atuin          | Shell history sync     | -   |                                      |
 
 ## Applications (disabled - need flux-kustomization.yaml)
 
@@ -225,14 +230,14 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Firecrawl | Web scraping API | Helm chart + manifests exist, needs enabling |
 | Devbot    | Agent workload   | Manifests exist, needs enabling              |
 
-TODO: Re-add flux-kustomization.yaml files and integrate into root kustomization.yaml
+Re-add `flux-kustomization.yaml` files and integrate into root `kustomization.yaml`
 when ready to deploy these applications.
 
 ---
 
 ## 📋 Production Cutover (`agentydragon.com`)
 
-- [ ] Deploy headscale, migrate all devices from ansible VPS headscale
+- [ ] Migrate all devices from ansible VPS headscale to cluster headscale (cluster headscale deployed at `headscale.allegedly.works`)
 - [ ] Atlas Proxmox accessible via headscale mesh (or `atlas.allegedly.works` proxy)
 - [ ] Website hosted in cluster, verify accessible
 - [ ] Update `agentydragon.com` DNS to point to cluster
@@ -259,13 +264,13 @@ entry will need to list all of them or use a single stable entry point.
 **Rule**: The following services MUST work/recover with VPS nodes only (Proxmox completely
 down). They must NOT depend on `proxmox-csi-retain` storage or Proxmox-pinned workloads.
 
-| Service   | Requirement                      | Status | Storage              | Notes                                           |
-| --------- | -------------------------------- | ------ | -------------------- | ----------------------------------------------- |
-| DNS       | Must resolve `*.allegedly.works` | ❌     | `proxmox-csi-retain` | **ACTION**: migrate MariaDB to `hcloud-volumes` |
-| Website   | Must serve `allegedly.works`     | ✅     | None (stateless)     | No Proxmox dependencies                         |
-| Ingress   | Must terminate HTTPS on VPS      | ✅     | None (hostNetwork)   | Cilium Gateway on VPS nodes                     |
-| Authentik | Must authenticate users          | ✅     | `hcloud-volumes`     | All components pinned to VPS                    |
-| Vault     | Must serve secrets               | ✅     | `local-path`         | Raft storage, schedulable on VPS                |
+| Service   | Requirement                      | Status | Storage            | Notes                                             |
+| --------- | -------------------------------- | ------ | ------------------ | ------------------------------------------------- |
+| DNS       | Must resolve `*.allegedly.works` | ✅     | `hcloud-volumes`   | CNPG PostgreSQL cluster, 2 instances on VPS nodes |
+| Website   | Must serve `allegedly.works`     | ✅     | None (stateless)   | No Proxmox dependencies                           |
+| Ingress   | Must terminate HTTPS on VPS      | ✅     | None (hostNetwork) | Cilium Gateway on VPS nodes                       |
+| Authentik | Must authenticate users          | ✅     | `hcloud-volumes`   | All components pinned to VPS                      |
+| Vault     | Must serve secrets               | ✅     | `local-path`       | Raft storage, schedulable on VPS                  |
 
 ### Compliance Checklist
 
@@ -338,11 +343,12 @@ for failover. Chicken-and-egg: bootstrap needs direct IP, post-bootstrap rewrite
 `persistent-auth/terraform.tfstate` is the SSOT for sealed-secrets keypair — local file only,
 no backup. Options: rclone+Google Drive, encrypted S3, git-crypt, or manual backup script.
 
-### GitHub Webhook for Instant Reconciliation ✅ (pending manual registration)
+### GitHub Webhook for Instant Reconciliation ✅
 
 Flux `Receiver` resources and HTTPRoute deployed at `flux-webhook.allegedly.works`.
-Harbor webhook auto-configured by `harbor-webhook` Terraform. GitHub webhook requires
-one manual `gh api` call — see "Next Actions (Harbor CI + Flux Webhook)" above.
+Harbor webhook auto-configured by `harbor-webhook` Terraform. GitHub secrets
+(`HARBOR_ROBOT_USERNAME`, `HARBOR_ROBOT_TOKEN`) and GitHub webhook registered for
+instant Flux GitRepository reconciliation on push.
 
 ### Authentik Blueprint Migration (Reduce TF State Coupling) — DONE
 
@@ -480,7 +486,6 @@ MariaDB from `proxmox-csi-retain` to `hcloud-volumes` (VPS-only resilience invar
 - [ ] Paperless-ngx (document management)
 - [ ] Syncthing (file sync)
 - [ ] Bazel Remote Cache
-- [ ] Grafana Tempo (distributed tracing, natural fit with Grafana + Loki)
 - [ ] Capacitor (Flux dependency DAG visualization, lightweight single pod)
 - [ ] Tetragon (eBPF runtime security enforcement, complements Cilium)
 - [ ] Flagger (progressive delivery / canary analysis for deployments)
@@ -601,4 +606,4 @@ for declarative zone/record management.
 - **Talos**: v1.12.3
 - **Kubernetes**: v1.35.1
 - **CNI**: Cilium (VXLAN tunnel mode)
-- **Monthly Cost**: ~€30 (2x CPX31 + backups)
+- **Monthly Cost**: ~€30 (2x CPX31 + backups) — CPX41 upgrade planned (see `docs/plans/2026-02-22-vps-cpx41-upgrade.md`)
