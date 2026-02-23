@@ -12,8 +12,13 @@
   gh pr create --repo agentydragon/ducktape --head ${fork_result.username}:<branch-name> --base devel
   ```
 % elif fork_result and not fork_result.fork_exists:
-  **Fork `https://github.com/${fork_result.username}/${fork_result.repo_name}` not found** — create it first, then re-run session start.
-  Once the fork exists the `fork` remote will be auto-configured on the next session.
+  **Fork `https://github.com/${fork_result.username}/${fork_result.repo_name}` not found.** Create it and add the remote:
+  ```bash
+  gh repo fork agentydragon/ducktape --org ${fork_result.username} --clone=false
+  git remote add fork "https://${fork_result.username}:${'$'}{GITHUB_TOKEN}@github.com/${fork_result.username}/${fork_result.repo_name}.git"
+  git push -u fork <branch-name>
+  gh pr create --repo agentydragon/ducktape --head ${fork_result.username}:<branch-name> --base devel
+  ```
 % else:
   Fork remote setup unavailable this session. Manually:
   ```bash
