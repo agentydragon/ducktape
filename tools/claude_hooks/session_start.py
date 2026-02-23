@@ -33,6 +33,7 @@ from tools.claude_hooks import (
     cli_tools_setup,
     container_runtime,
     env_file,
+    fork_remote_setup,
     kubeconfig_setup,
     mkcert_setup,
     nix_setup,
@@ -266,13 +267,17 @@ def format_environment_summary() -> str:
     return "\n".join(lines)
 
 
-def _render_extra_context(project_dir: Path, secrets: secrets_setup.SecretsSetup | None) -> str:
+def _render_extra_context(
+    project_dir: Path,
+    secrets: secrets_setup.SecretsSetup | None,
+    fork_result: fork_remote_setup.ForkRemoteSetup | None = None,
+) -> str:
     """Render repo-specific context from .claude_hooks/templates/context.mako if it exists."""
     extra_template_path = project_dir / _HOOKS_DOTDIR / "templates" / "context.mako"
     if not extra_template_path.exists():
         return ""
     template = Template(extra_template_path.read_text())
-    result: str = template.render(secrets=secrets)
+    result: str = template.render(secrets=secrets, fork_result=fork_result)
     return result.rstrip("\n")
 
 
@@ -285,6 +290,7 @@ def emit_session_context(
     precommit: precommit_setup.PrecommitSetup | None,
     secrets: secrets_setup.SecretsSetup | None,
     mkcert: mkcert_setup.MkcertSetup | None = None,
+    fork_result: fork_remote_setup.ForkRemoteSetup | None = None,
 ) -> None:
     """Emit compact context summary for Claude Code transcript.
 
@@ -294,7 +300,7 @@ def emit_session_context(
     """
     status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
 
-    extra_context = _render_extra_context(project_dir, secrets)
+    extra_context = _render_extra_context(project_dir, secrets, fork_result)
 
     template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
     result: str = template.render(
@@ -625,6 +631,15 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
                 proxy_ca_pem=proxy_ca_pem,
             )
 
+    # Ensure 'fork' git remote when GITHUB_TOKEN is available.
+    fork_result: fork_remote_setup.ForkRemoteSetup | None = None
+    if secrets and "GITHUB_TOKEN" in secrets.env_vars:
+        try:
+            with tracer.start_as_current_span("setup_fork_remote", context=root_ctx):
+                fork_result = fork_remote_setup.ensure_fork_remote(secrets.env_vars["GITHUB_TOKEN"], project_dir)
+        except Exception as e:
+            logger.warning("Fork remote setup failed: %s", e)
+
     # Render session bazelrc (unified for web mode with proxy configuration)
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
         truststore = settings.get_auth_proxy_truststore()
@@ -712,6 +727,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
             precommit=None if isinstance(precommit, BaseException) else precommit,
             secrets=secrets,
             mkcert=None if isinstance(mkcert, BaseException) else mkcert,
+            fork_result=fork_result,
         )
 
     root_span.end()

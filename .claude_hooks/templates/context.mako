@@ -4,18 +4,24 @@
 % if secrets:
 % if "GITHUB_TOKEN" in secrets.env_vars:
 `GITHUB_TOKEN`: GitHub PAT for the `agentydragon-agent` bot account. Used by `gh` CLI automatically.
-  **PR workflow** (bot is NOT a collaborator on `agentydragon/ducktape`, so use the fork):
+  **PR workflow** (`origin` pushes to `agentydragon/ducktape` via proxy, but bot is NOT a collaborator so PRs must come from a fork):
+% if fork_result and fork_result.fork_exists:
+  `fork` remote pre-configured → `https://github.com/${fork_result.username}/${fork_result.repo_name}.git`
   ```bash
-  # 1. Add fork remote with GITHUB_TOKEN auth (one-time)
-  git remote add fork "https://agentydragon-agent:${'$'}{GITHUB_TOKEN}@github.com/agentydragon-agent/ducktape.git"
-
-  # 2. Push branch to fork
   git push -u fork <branch-name>
-
-  # 3. Create PR from fork to main repo
+  gh pr create --repo agentydragon/ducktape --head ${fork_result.username}:<branch-name> --base devel
+  ```
+% elif fork_result and not fork_result.fork_exists:
+  **Fork `https://github.com/${fork_result.username}/${fork_result.repo_name}` not found** — create it first, then re-run session start.
+  Once the fork exists the `fork` remote will be auto-configured on the next session.
+% else:
+  Fork remote setup unavailable this session. Manually:
+  ```bash
+  git remote add fork "https://agentydragon-agent:${'$'}{GITHUB_TOKEN}@github.com/agentydragon-agent/ducktape.git"
+  git push -u fork <branch-name>
   gh pr create --repo agentydragon/ducktape --head agentydragon-agent:<branch-name> --base devel
   ```
-  The `origin` remote pushes to `agentydragon/ducktape` through the Claude Code integration proxy, but you can't create PRs directly (bot isn't a collaborator). Fork + GITHUB_TOKEN is the working workflow.
+% endif
 % endif
 Ollama: OpenAI-compatible LLM inference at `https://ollama.allegedly.works/v1` (2x RTX 5090). Served via LiteLLM proxy.
   Available model: `gpt-oss-20b-128k` (OpenAI gpt-oss 20B, 128K context, Apache 2.0).

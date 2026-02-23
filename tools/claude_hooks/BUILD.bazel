@@ -242,6 +242,13 @@ py_library(
     ],
 )
 
+py_library(
+    name = "fork_remote_setup",
+    srcs = ["fork_remote_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
 # === Libraries for binary sources ===
 # py_library targets for source files that are also py_binary entry points.
 # py_package depends on these (not the py_binary targets) to avoid pulling in
@@ -284,6 +291,7 @@ py_library(
         ":debug",
         ":env_file",
         ":errors",
+        ":fork_remote_setup",
         ":kubeconfig_setup",
         ":mkcert_setup",
         ":nix_setup",
@@ -353,6 +361,7 @@ py_package(
         ":container_runtime",
         ":env_file",
         ":errors",
+        ":fork_remote_setup",
         ":kubeconfig_setup",
         ":managed_files",
         ":mkcert_setup",
