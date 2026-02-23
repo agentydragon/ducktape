@@ -5,4 +5,3 @@ resources:
   - bootstrap-external-secret.yaml
   - secret-key-external-secret.yaml
   - admin-password-external-secret.yaml
-  - postgres-external-secret.yaml

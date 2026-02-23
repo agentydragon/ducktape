@@ -1,0 +1,28 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: authentik-db
+  namespace: authentik
+spec:
+  instances: 2
+
+  affinity:
+    # Run only on Hetzner VPS nodes (which have public IPs and hcloud-volumes)
+    nodeSelector:
+      topology.kubernetes.io/region: hetzner
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # One PostgreSQL instance per VPS node for real HA
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    storageClass: hcloud-volumes
+    size: 8Gi
+
+  bootstrap:
+    initdb:
+      database: authentik
+      owner: authentik
+      # CNPG auto-generates credentials and stores them in secret authentik-db-authentik

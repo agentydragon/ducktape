@@ -49,6 +49,7 @@ resources:
   - reflector/flux-kustomization.yaml
   - external-dns/flux-kustomization.yaml
   - authentik-namespace/flux-kustomization.yaml
+  - authentik-db/flux-kustomization.yaml
   - authentik/flux-kustomization.yaml
   - authentik-secrets/flux-kustomization.yaml
   - authentik-token/flux-kustomization.yaml

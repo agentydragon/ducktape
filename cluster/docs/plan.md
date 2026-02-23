@@ -7,30 +7,38 @@
 **Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
 All kustomizations Ready. Cilium Gateway API serving HTTPS traffic.
 DNS automation fully working. Authentik auth verified.
-PowerDNS migrated to CloudNativePG PostgreSQL on `hcloud-volumes` (VPS-only
-resilience invariant for DNS now satisfied). Gatus monitoring comprehensive.
+PowerDNS and Authentik both migrated to CloudNativePG on `hcloud-volumes`.
+VPS-only resilience invariant fully satisfied. Gatus monitoring comprehensive.
 Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
 
 ### Recent Changes (2026-02-23)
 
-1. **PowerDNS MariaDB → CloudNativePG PostgreSQL** — Migrated PowerDNS backend from
+1. **Authentik bundled PostgreSQL → CloudNativePG** — Migrated Authentik database from
+   the bundled Bitnami PostgreSQL (single instance) to a 2-instance CloudNativePG cluster
+   (`authentik-db`) on `hcloud-volumes`. Both CNPG pods run on Hetzner VPS nodes with
+   `topologyKey: kubernetes.io/hostname` for real HA and zero-downtime failover. Removed
+   the Vault-stored `postgres_password` and ESO ExternalSecret; CNPG auto-generates
+   credentials in secret `authentik-db-authentik`. Server and worker now load the password
+   via `env.valueFrom.secretKeyRef` instead of `envFrom`. Existing data dropped (fresh
+   cluster — acceptable per plan). Old bundled PVC pending deletion.
+2. **PowerDNS MariaDB → CloudNativePG PostgreSQL** — Migrated PowerDNS backend from
    MariaDB (proxmox-csi-retain) to a 2-instance CloudNativePG PostgreSQL cluster
    (`powerdns-db`) on `hcloud-volumes`. Both PostgreSQL pods run on Hetzner VPS nodes
    with `topologyKey: kubernetes.io/hostname` for real HA. PowerDNS DaemonSet now uses
    `GPGSQL_PASSWORD` from the CNPG-generated secret. VPS-only resilience invariant for
    DNS is now fully satisfied. Old orphaned MariaDB PVC (`data-powerdns-mariadb-0`)
    pending deletion.
-2. **Gatus comprehensive monitoring** — Added monitors for Vault, Gitea, Grafana, Matrix,
+3. **Gatus comprehensive monitoring** — Added monitors for Vault, Gitea, Grafana, Matrix,
    Harbor OIDC, Ollama, LiteLLM (including live inference probe), Langfuse, Loki,
    Prometheus, Hubble UI, Headlamp, InventTree, Headscale, Nix Cache, Atuin, Grocy,
    FileBrowser, OpenClaw.
-3. **Headscale deployed** — Headscale HelmRelease and kustomization up. Gatus probe
+4. **Headscale deployed** — Headscale HelmRelease and kustomization up. Gatus probe
    configured. Device migration from ansible VPS still pending.
-4. **Tempo deployed** — Distributed tracing via Grafana Tempo in `monitoring` namespace.
-5. **Langfuse deployed** — LLM observability platform in `langfuse` namespace.
-6. **Scanner deployed** — Document scanning with FileBrowser frontend in `scanner` namespace.
-7. **InvenTree deployed** — Inventory management in `inventree` namespace.
-8. **Headscale SSO** — Authentik outpost configured for Headscale.
+5. **Tempo deployed** — Distributed tracing via Grafana Tempo in `monitoring` namespace.
+6. **Langfuse deployed** — LLM observability platform in `langfuse` namespace.
+7. **Scanner deployed** — Document scanning with FileBrowser frontend in `scanner` namespace.
+8. **InvenTree deployed** — Inventory management in `inventree` namespace.
+9. **Headscale SSO** — Authentik outpost configured for Headscale.
 
 ### Recent Fixes (2026-02-18)
 
@@ -374,13 +382,6 @@ Low priority. Weave GitOps or Capacitor for visualizing kustomization DAG.
 `persistent-auth/terraform.tfstate` is local-only SSOT for sealed-secrets keypair, CSI
 tokens, Nix signing key. Minimum: rclone to encrypted cloud storage. Better: S3 backend
 with OpenTofu native state encryption + versioning.
-
-### TODO: Authentik HA PostgreSQL
-
-Single PostgreSQL instance on one VPS node. Losing that VPS requires Hetzner volume
-reattach (fast but manual). Consider CloudNativePG with streaming replication across
-both VPS nodes for zero-downtime failover. Stretch goal: replicate to Proxmox so
-Authentik can survive total Hetzner loss (fall back to home-only operation).
 
 ### TODO: Deploy etcd Backup
 

@@ -33,6 +33,7 @@ spec:
   dependsOn:
     - name: cert-manager-issuer-config
     - name: authentik-namespace
+    - name: authentik-db # Wait for CNPG cluster ready and authentik-db-authentik secret to exist
     - name: authentik-secrets
     - name: authentik-sso-secrets # SSO client secrets for blueprint !Env tags
     - name: authentik-token # Wait for API token generation in Vault

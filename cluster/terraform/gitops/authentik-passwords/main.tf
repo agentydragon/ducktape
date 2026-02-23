@@ -23,15 +23,6 @@ provider "vault" {
   token   = var.vault_token
 }
 
-resource "random_password" "postgres_password" {
-  length  = 32
-  special = false
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
 resource "random_password" "admin_password" {
   length  = 32
   special = false
@@ -56,9 +47,8 @@ resource "vault_kv_secret_v2" "authentik_passwords" {
   cas   = 0
 
   data_json = jsonencode({
-    postgres_password = random_password.postgres_password.result
-    admin_password    = random_password.admin_password.result
-    secret_key        = random_password.secret_key.result
+    admin_password = random_password.admin_password.result
+    secret_key     = random_password.secret_key.result
   })
 
   lifecycle {
