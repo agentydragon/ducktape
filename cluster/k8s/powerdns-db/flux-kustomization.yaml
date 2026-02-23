@@ -15,4 +15,4 @@ spec:
   dependsOn:
     - name: cnpg
     - name: dns-system-namespace
-    - name: hcloud-csi # hcloud-volumes storage class
+    - name: local-path-provisioner

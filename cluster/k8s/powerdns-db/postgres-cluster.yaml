@@ -7,7 +7,6 @@ spec:
   instances: 2
 
   affinity:
-    # Run only on Hetzner VPS nodes (which have public IPs and hcloud-volumes)
     nodeSelector:
       topology.kubernetes.io/region: hetzner
     tolerations:
@@ -18,7 +17,7 @@ spec:
     topologyKey: kubernetes.io/hostname
 
   storage:
-    storageClass: hcloud-volumes
+    storageClass: local-path
     size: 1Gi
 
   bootstrap:
