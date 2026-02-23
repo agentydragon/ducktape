@@ -26,10 +26,12 @@ py_binary(
 py_test(
     name = "test_material_test",
     srcs = ["test_material_test.py"],
+    data = ["example_config.toml"],
     imports = ["../.."],
     deps = [
         ":lbrn2_writer",
         ":material_test_lib",
+        "//bazel_util:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -10,6 +10,7 @@ from xml.etree import ElementTree as ET
 import pytest
 import pytest_bazel
 
+from bazel_util import runfiles
 from experimental.lightburn_material_test.lbrn2_writer import (
     CutSetting,
     HAlign,
@@ -411,6 +412,18 @@ def test_generate_auto_subtitle_omits_varied_params():
     assert "Power" not in sub
     assert "Speed" not in sub
     assert "Z=" in sub or "kerf" in sub.lower() or "Kerf" in sub
+
+
+def test_example_config_parses():
+    """example_config.toml must parse without error and produce a valid GridConfig."""
+    path = runfiles.get_required_path("_main/experimental/lightburn_material_test/example_config.toml")
+    with path.open("rb") as f:
+        data = tomllib.load(f)
+    cfg = GridConfig.model_validate(data)
+    assert cfg.x.param == CutParam.POWER_MAX
+    assert cfg.y.param == CutParam.Z_PER_PASS
+    assert cfg.border.enabled is True
+    assert cfg.border.cut.power_min == 10.0
 
 
 if __name__ == "__main__":
