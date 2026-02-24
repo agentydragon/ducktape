@@ -9,6 +9,11 @@
 #
 # After push, Harbor notifies the Flux webhook receiver which triggers an
 # immediate ImageRepository rescan (instead of waiting for the 5m poll).
+#
+# Skip logic: //props/backend:source_hash produces a stamp-independent hash
+# of the image layers (excluding //tools:build_info which embeds the git SHA).
+# If content-<hash> already exists in the registry, the sources haven't changed
+# and we skip the build entirely.
 name: Props Backend Image
 
 on:
@@ -54,10 +59,43 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
           rbe_image: ${{ inputs.rbe_image }}
 
+      # Login before the registry check so docker manifest inspect can authenticate.
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: registry.allegedly.works
+          username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
+          password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+
+      # Build only the content-hash target (fast; layers are shared with :load).
+      # The hash covers layers + frontend + specimens but excludes //tools:build_info,
+      # so it is stable across commits that don't touch actual source files.
+      # --remote_download_outputs=toplevel overrides --remote_download_minimal from
+      # --config=rbe so the small hash file is actually written to bazel-bin/.
+      - name: Compute source hash
+        id: source_hash
+        run: |
+          bazel build --remote_download_outputs=toplevel //props/backend:source_hash
+          HASH=$(cat bazel-bin/props/backend/source_hash.txt)
+          echo "content_tag=content-${HASH:0:16}" >> "$GITHUB_OUTPUT"
+
+      - name: Check registry for existing content
+        id: check
+        run: |
+          CONTENT_TAG="${{ steps.source_hash.outputs.content_tag }}"
+          if docker manifest inspect "${IMAGE}:${CONTENT_TAG}" > /dev/null 2>&1; then
+            echo "Sources unchanged (${CONTENT_TAG}), skipping push."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and load image
+        if: steps.check.outputs.skip != 'true'
         run: bazel run //props/backend:load
 
       - name: Compute image tags
+        if: steps.check.outputs.skip != 'true'
         id: meta
         run: |
           SHA="${{ github.sha }}"
@@ -68,20 +106,17 @@ jobs:
           if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
             TAGS="$TAGS,${{ env.IMAGE }}:latest"
           fi
-          echo "tags=$TAGS" >> $GITHUB_OUTPUT
-          echo "semver_tag=$SEMVER_TAG" >> $GITHUB_OUTPUT
-
-      - name: Login to Harbor
-        uses: docker/login-action@v3
-        with:
-          registry: registry.allegedly.works
-          username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
-          password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "semver_tag=$SEMVER_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Tag and push
+        if: steps.check.outputs.skip != 'true'
         run: |
           IFS=',' read -ra TAG_LIST <<< "${{ steps.meta.outputs.tags }}"
           for tag in "${TAG_LIST[@]}"; do
             docker tag props-backend:latest "$tag"
             docker push --quiet "$tag"
           done
+          # Push the content sentinel so future runs with the same sources skip.
+          docker tag props-backend:latest "${IMAGE}:${{ steps.source_hash.outputs.content_tag }}"
+          docker push --quiet "${IMAGE}:${{ steps.source_hash.outputs.content_tag }}"

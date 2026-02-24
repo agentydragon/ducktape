@@ -7,6 +7,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 load("//props/specimens:defs.bzl", "specimen_pkg_files")
+load("//tools:source_hash.bzl", "source_hash")
 load("//tools/testing:defs.bzl", "py_test")
 
 # =============================================================================
@@ -300,4 +301,16 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["props-backend:latest"],
+)
+
+# Stamp-independent content fingerprint used by CI to skip pushes when sources
+# haven't changed (even though STABLE_BUILD_COMMIT changes every commit).
+# Intentionally excludes //tools:build_info (which reads ctx.info_file).
+source_hash(
+    name = "source_hash",
+    deps = [
+        ":frontend_assets",
+        ":layers",
+        ":specimen_assets",
+    ],
 )
