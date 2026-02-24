@@ -1,31 +1,22 @@
-# Build and push all props agent container images to the props registry.
+# Build and push all props container images (backend + agents).
 #
-# Uses Bazel to build each OCI image, loads into Docker, then pushes to the
-# user-configured props registry (not GHCR).
+# Combines backend and agent image builds into a single workflow to share
+# Bazel setup, RBE warm cache, and checkout overhead.
 #
-# Required GitHub secrets:
-#   PROPS_REGISTRY_URL      - Registry host, e.g. "props.example.com:8000"
-#   PROPS_REGISTRY_USERNAME - Registry username (PostgreSQL role)
-#   PROPS_REGISTRY_PASSWORD - Registry password
+# All images are stamp-free: same sources → same image ID across commits.
+# push_if_changed compares the local image ID against the remote config
+# digest and skips the push when unchanged.
 #
-# Agent images pushed:
-#   critic:latest, critic:{sha}
-#   critic:{variant}, critic:{variant}-{sha}  (5 variants)
-#   grader:latest, grader:{sha}
-#   critic_dev_improve:latest, critic_dev_improve:{sha}
-#   critic_dev_optimize:latest, critic_dev_optimize:{sha}
-#
-# Skip logic: agent images are stamp-free (no //tools:build_info dep), so the
-# Docker image ID (sha256 of the image config) is a stable content fingerprint.
-# push_if_changed compares the local image ID against the remote config digest
-# and skips the push when they match.
+# Backend image → registry.allegedly.works (Harbor)
+# Agent images  → props registry (PROPS_REGISTRY_URL)
 #
 # Triggers:
 #   - workflow_call (from ci.yml): always (digest comparison handles skip)
-#   - workflow_dispatch: manual push of all agents
-name: Props Agent Images
+#   - workflow_dispatch: manual push of all images
+name: Props Images
 
 on:
+  workflow_dispatch:
   workflow_call:
     inputs:
       rbe_image:
@@ -35,24 +26,24 @@ on:
         default: ""
     secrets:
       BUILDBUDDY_API_KEY:
-        description: "BuildBuddy API key for remote cache (optional)"
         required: false
+      HARBOR_ROBOT_USERNAME:
+        required: true
+      HARBOR_ROBOT_TOKEN:
+        required: true
       PROPS_REGISTRY_URL:
-        description: "Props registry host (e.g. props.example.com:8000)"
         required: true
       PROPS_REGISTRY_USERNAME:
-        description: "Props registry username"
         required: true
       PROPS_REGISTRY_PASSWORD:
-        description: "Props registry password"
         required: true
-  workflow_dispatch:
 
 concurrency:
-  # Hardcoded name avoids deadlock when called via workflow_call
-  # (${{ github.workflow }} resolves to caller's name)
-  group: props-agents-image-${{ github.ref }}
+  group: props-images-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build-and-push:
@@ -67,6 +58,13 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
           rbe_image: ${{ inputs.rbe_image }}
 
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: registry.allegedly.works
+          username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
+          password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+
       - name: Login to Props Registry
         uses: docker/login-action@v3
         with:
@@ -74,8 +72,9 @@ jobs:
           username: ${{ secrets.PROPS_REGISTRY_USERNAME }}
           password: ${{ secrets.PROPS_REGISTRY_PASSWORD }}
 
-      - name: Build and load images
+      - name: Build and load all images
         run: |
+          bazel run //props/backend:load
           bazel run //props/agents/critic:load
           bazel run //props/agents/grader:load
           bazel run //props/agents/critic_dev/improve:load
@@ -86,19 +85,51 @@ jobs:
           bazel run //props/agents/critic/variants:high_recall_load
           bazel run //props/agents/critic/variants:verbose_docs_load
 
-      - name: Tag and push images
+      - name: Push backend image (if changed)
         env:
-          REGISTRY: ${{ secrets.PROPS_REGISTRY_URL }}
+          IMAGE: registry.allegedly.works/props/props-backend
           SHA: ${{ github.sha }}
         run: |
-          # Skip push on pull requests — images were built for validation only.
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "PR build — skipping push"
             exit 0
           fi
 
-          # Agent images are stamp-free: same sources → same image ID across commits.
-          # Skip pushing when the local image ID matches the remote config digest.
+          local_id=$(docker inspect --format='{{.Id}}' props-backend:latest)
+          remote_digest=$(docker manifest inspect "$IMAGE:latest" 2>/dev/null \
+            | jq -r '.config.digest // empty' 2>/dev/null || true)
+
+          if [[ -n "$remote_digest" && "$local_id" == "$remote_digest" ]]; then
+            echo "props-backend: unchanged (local=$local_id, remote=$remote_digest), skipping push"
+            exit 0
+          fi
+
+          echo "props-backend: changed (local=$local_id, remote=${remote_digest:-<none>}), pushing"
+
+          # Timestamp prefix makes tags sortable for Flux ImagePolicy.
+          TS="$(date -u +%Y-%m-%dT%H%M%SZ)"
+          SEMVER_TAG="devel-${TS}-${SHA:0:7}"
+          TAGS="$IMAGE:$SHA,$IMAGE:$SEMVER_TAG"
+          if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
+            TAGS="$TAGS,$IMAGE:latest"
+          fi
+
+          IFS=',' read -ra TAG_LIST <<< "$TAGS"
+          for tag in "${TAG_LIST[@]}"; do
+            docker tag props-backend:latest "$tag"
+            docker push --quiet "$tag"
+          done
+
+      - name: Push agent images (if changed)
+        env:
+          REGISTRY: ${{ secrets.PROPS_REGISTRY_URL }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "PR build — skipping push"
+            exit 0
+          fi
+
           push_if_changed() {
             local local_tag="$1" remote_repo="$2"
             shift 2

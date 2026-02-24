@@ -37,15 +37,11 @@ workflows:
     trigger: { kind: path, pattern: "^tools/rbe_image/" }
 
   # Bazel image workflows always trigger. Bazel builds are hermetic, so same
-  # inputs → same image digest. The workflows themselves compare the local
-  # digest against the registry and skip the push when unchanged. This avoids
-  # the stale-image bug where bazel-diff (HEAD vs HEAD~1) misses changes from
-  # earlier commits whose push step failed.
-  props-backend-image:
-    trigger: { kind: always }
-    secrets: inherit
-
-  props-agents-image:
+  # inputs → same image digest. The workflow compares the local digest against
+  # the registry and skips the push when unchanged. This avoids the stale-image
+  # bug where bazel-diff (HEAD vs HEAD~1) misses changes from earlier commits
+  # whose push step failed.
+  props-images:
     trigger: { kind: always }
     secrets: inherit
 
