@@ -360,8 +360,10 @@ spec:
           ports:
             - port: 8008
               protocol: TCP
-        # Allow egress to Telegram API (api.telegram.org, HTTPS).
+        # Allow HTTP/HTTPS egress to the internet (Telegram, browsing, APIs).
         - ports:
+            - port: 80
+              protocol: TCP
             - port: 443
               protocol: TCP
         # TODO: Add egress rules for InvenTree and Grocy when deployed.
