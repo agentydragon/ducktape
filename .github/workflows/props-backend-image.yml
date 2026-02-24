@@ -4,7 +4,7 @@
 # loads it into Docker, then pushes to registry.allegedly.works.
 #
 # Triggers:
-#   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
+#   - workflow_call (from ci.yml): tags :<sha> + :devel-YYYY-MM-DDTHHMMSSZ-<sha7>
 #   - workflow_dispatch: same tags + :latest
 #
 # After push, Harbor notifies the Flux webhook receiver which triggers an
@@ -99,8 +99,10 @@ jobs:
         id: meta
         run: |
           SHA="${{ github.sha }}"
-          # Timestamp prefix makes tags sortable for Flux ImagePolicy (alphabetical order)
-          TS="$(date -u +%Y%m%d%H%M%S)"
+          # Timestamp prefix makes tags sortable for Flux ImagePolicy (alphabetical order).
+          # Format: devel-YYYY-MM-DDTHHMMSSZ-sha7 (ISO 8601 date; colons omitted from time
+          # because Docker tag syntax forbids them)
+          TS="$(date -u +%Y-%m-%dT%H%M%SZ)"
           SEMVER_TAG="devel-${TS}-${SHA:0:7}"
           TAGS="${{ env.IMAGE }}:$SHA,${{ env.IMAGE }}:$SEMVER_TAG"
           if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
