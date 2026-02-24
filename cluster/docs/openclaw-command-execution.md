@@ -130,42 +130,65 @@ keypair fingerprint) and advertises its capabilities during the WebSocket
 
 ### Node Registration Flow
 
-1. Node connects to gateway WebSocket, declares `role: node`
-2. Node advertises capabilities: `system.run`, `camera.snap`, `canvas.navigate`, etc.
-3. Gateway checks `OPENCLAW_GATEWAY_TOKEN` authentication
-4. If the device ID is new, gateway requires **pairing approval** (unless
-   `dangerouslyDisableDeviceAuth: true`)
-5. Node appears in `openclaw nodes status`
+1. Gateway sends a **pre-connect challenge** with a nonce and timestamp
+2. Node responds with `connect` request declaring `role: "node"` and a stable
+   `device.id` (keypair fingerprint), signing the challenge nonce
+3. Node advertises capabilities via three fields:
+   - `caps` — high-level categories (`system.run`, `camera`, `canvas`, etc.)
+   - `commands` — allowlist of invocable commands (`camera.snap`, `screen.record`)
+   - `permissions` — granular toggles reflecting device permission status
+4. Gateway checks `OPENCLAW_GATEWAY_TOKEN` authentication
+5. If the device ID is new, gateway requires **pairing approval** (unless
+   `dangerouslyDisableDeviceAuth: true` or the connection is from loopback)
+6. Node appears in `openclaw nodes status`
+
+Supported node types that can coexist: macOS nodes, iOS/Android nodes, and
+headless Linux node-hosts.
 
 ### Node Management Commands
 
 ```bash
-openclaw nodes status                          # List all connected nodes
-openclaw nodes describe --node <idOrNameOrIp>  # Node details + capabilities
-openclaw devices list                          # List all known devices
+# Listing
+openclaw nodes list                            # All pending and paired nodes
+openclaw nodes list --connected                # Only currently connected
+openclaw nodes list --last-connected 24h       # Filter by recency
+openclaw nodes pending                         # Pending pairing requests
+openclaw nodes status                          # Node status overview
+
+# Approval
+openclaw devices list                          # All known devices
 openclaw devices approve <requestId>           # Approve a new node
+
+# Direct invocation from CLI
+openclaw nodes invoke --node <id> --command <cmd> --params '{}'
+openclaw nodes run --node <id> "git status"    # Run shell command on node
 ```
 
 ### Can the Agent Choose Which Node to Use?
 
-**Not automatically.** The gateway routes exec to whichever node is configured
-in `tools.exec.node`. The AI agent itself cannot dynamically select between
-nodes — routing is determined by config, not by the LLM.
+**Yes.** Node selection works at four levels, from static config down to
+per-invocation:
 
-There are three levels of node selection:
+| Level                | Config                                                                  | Scope                    |
+| -------------------- | ----------------------------------------------------------------------- | ------------------------ |
+| Global default       | `tools.exec.node: "node-name"`                                          | All agents, all sessions |
+| Per-agent binding    | `agents.list[N].tools.exec.node: "node-name"`                           | Specific agent           |
+| Session override     | `/exec node=mac-1` (operator slash command)                             | Current session only     |
+| Per-invocation (LLM) | `{"command": "...", "host": "node", "node": "mac-1"}` in exec tool call | Single tool call         |
 
-| Level             | Config                                        | Scope                    |
-| ----------------- | --------------------------------------------- | ------------------------ |
-| Global default    | `tools.exec.node: "node-name"`                | All agents, all sessions |
-| Per-agent binding | `agents.list[N].tools.exec.node: "node-name"` | Specific agent           |
-| Session override  | `/exec node=mac-1` (operator slash command)   | Current session only     |
+The LLM can pass `host` and `node` parameters directly in the exec tool
+invocation, allowing dynamic node selection per command. This means you can
+expose multiple nodes and let the agent decide which one to target based on the
+task at hand.
 
-**If you want agent-driven node selection**, you would need to:
+**Practical approaches for multi-node agent routing:**
 
-1. Run multiple agents, each bound to a different node
-2. Use a coordinator/sub-agent pattern where a parent agent delegates to
-   child agents based on which node's capabilities are needed
-3. Or write a custom MCP tool that wraps node selection logic
+1. **Per-invocation selection** — the agent passes `node: "<name>"` in each
+   exec tool call. Requires the system prompt to describe available nodes and
+   when to use each one.
+2. **Per-agent binding** — different agents target different nodes, using a
+   coordinator/sub-agent pattern for delegation.
+3. **Custom MCP tool** — wrap node selection logic in a dedicated tool.
 
 ### Multi-Node Sidecar Example
 
@@ -257,13 +280,25 @@ When `tools.exec.security` is `allowlist` and `ask` is `on-miss`:
 For headless/automated setups, set `ask: off` and either pre-populate the
 allowlist or use `security: full`.
 
+## Security Constraints on Nodes
+
+- Host execution (`gateway`/`node`) rejects `LD_*`/`DYLD_*` loader overrides
+- `env.PATH` overrides are blocked to prevent binary hijacking
+- Nodes receive only non-blocked environment variables
+- Exec approvals enforced locally at `~/.openclaw/exec-approvals.json`
+- When `autoAllowSkills` is enabled in approvals config, executables referenced
+  by known skills are pre-allowlisted on nodes (via `skills.bins` gateway RPC)
+
 ## References
 
-- [OpenClaw Exec Tool docs](https://docs.openclaw.ai/tools/exec)
+- [OpenClaw Exec Tool](https://docs.openclaw.ai/tools/exec)
 - [OpenClaw Exec Approvals](https://docs.openclaw.ai/tools/exec-approvals)
 - [OpenClaw Gateway Configuration](https://docs.openclaw.ai/gateway/configuration)
 - [OpenClaw Gateway Protocol](https://docs.openclaw.ai/gateway/protocol)
 - [OpenClaw Nodes](https://docs.openclaw.ai/platforms/nodes)
+- [OpenClaw Nodes CLI](https://docs.openclaw.ai/cli/nodes)
 - [OpenClaw Node Troubleshooting](https://docs.openclaw.ai/platforms/nodes/troubleshooting)
+- [OpenClaw Multi-Agent Routing](https://docs.openclaw.ai/concepts/multi-agent)
+- [OpenClaw Gateway Security](https://docs.openclaw.ai/gateway/security)
 - Our instance config: <../k8s/openclaw/openclawinstance.yaml>
 - Sandbox RBAC: <../k8s/openclaw-sandbox/role-sandbox.yaml>
