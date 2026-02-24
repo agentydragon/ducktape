@@ -21,7 +21,7 @@
 # and skips the push when they match.
 #
 # Triggers:
-#   - workflow_call (from ci.yml): when agent image targets are affected
+#   - workflow_call (from ci.yml): always (digest comparison handles skip)
 #   - workflow_dispatch: manual push of all agents
 name: Props Agent Images
 
@@ -91,6 +91,12 @@ jobs:
           REGISTRY: ${{ secrets.PROPS_REGISTRY_URL }}
           SHA: ${{ github.sha }}
         run: |
+          # Skip push on pull requests — images were built for validation only.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "PR build — skipping push"
+            exit 0
+          fi
+
           # Agent images are stamp-free: same sources → same image ID across commits.
           # Skip pushing when the local image ID matches the remote config digest.
           push_if_changed() {
