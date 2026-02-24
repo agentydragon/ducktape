@@ -28,6 +28,8 @@ spec:
           ports:
             - containerPort: 8000
           env:
+            - name: PROPS_IMAGE_TAG
+              value: devel-20260224021356-9c4046e # {"$imagepolicy": "flux-system:props-backend:tag"}
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST

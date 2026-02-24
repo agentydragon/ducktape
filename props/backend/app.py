@@ -26,6 +26,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from cli_util.logging import LogLevel, configure_logging
+from props.backend.build_info import BuildInfo, get_build_info
 from props.backend.routes import agent_definitions, ground_truth, llm, model_metadata, registry, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
@@ -37,7 +38,6 @@ from props.db.sync.sync import SpecimenBundle, sync_specimen
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.executor_factory import create_executor
 from props.orchestration.grader_supervisor import GraderSupervisor
-from tools.build_info import BuildInfo, get_build_info
 
 # Configure logging on module import
 configure_logging(

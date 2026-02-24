@@ -15,6 +15,14 @@ load("//tools/testing:defs.bzl", "py_test")
 # =============================================================================
 
 py_library(
+    name = "build_info",
+    srcs = ["build_info.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "deps",
     srcs = ["deps.py"],
     imports = ["../.."],
@@ -47,6 +55,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":build_info",
         "//cli_util:logging",
         "//props:config",
         "//props/backend/routes:agent_definitions",
@@ -65,7 +74,6 @@ py_library(
         "//props/orchestration:agent_registry",
         "//props/orchestration:executor_factory",
         "//props/orchestration:grader_supervisor",
-        "//tools:build_info",
         "@pypi//asyncpg",
         "@pypi//fastapi",
     ],
