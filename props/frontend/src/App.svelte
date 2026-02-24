@@ -229,7 +229,7 @@
 
     {#if buildInfo}
       <footer class="px-6 py-2 text-xs text-gray-400 dark:text-gray-500 text-right">
-        {buildInfo.commit} &middot; {buildInfo.commit_time}
+        {buildInfo.image_tag}
       </footer>
     {/if}
   </div>
