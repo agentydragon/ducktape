@@ -278,13 +278,17 @@ jobs:
           sed -i "s|shortSha = \".*\"|shortSha = \"${{ env.SHORT_SHA }}\"|" "$NIX_PKG"
           sed -i "s|hash = \"sha256-.*\"|hash = \"${SRI_HASH}\"|" "$NIX_PKG"
 
-          if git diff --quiet "$NIX_PKG"; then
+          # Bump wheel URL in Claude Code settings (both SessionStart and PreToolUse hooks)
+          CLAUDE_SETTINGS=".claude/settings.json"
+          sed -i "s|releases/download/claude-hooks-[a-f0-9]*/claude_hooks|releases/download/claude-hooks-${{ env.SHORT_SHA }}/claude_hooks|g" "$CLAUDE_SETTINGS"
+
+          if git diff --quiet "$NIX_PKG" "$CLAUDE_SETTINGS"; then
             echo "No change needed"
             exit 0
           fi
 
           TAG="claude-hooks-${{ env.SHORT_SHA }}"
-          git add "$NIX_PKG"
+          git add "$NIX_PKG" "$CLAUDE_SETTINGS"
           git commit -m "chore: bump claude-hooks to ${TAG} [skip ci]"
 
           # Push with error diagnostics
