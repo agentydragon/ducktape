@@ -123,6 +123,27 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
     return dirs
 
 
+def _find_cached_bazel_binary() -> Path | None:
+    """Find a Bazel binary in bazelisk's download cache.
+
+    Reads the current (non-isolated) XDG_CACHE_HOME to find a pre-downloaded Bazel
+    binary. The bazelisk metadata dir contains files named by version whose content is
+    the sha256 of the download; the binary lives at sha256/<hash>/bin/bazel.
+
+    Call this BEFORE monkeypatching XDG_CACHE_HOME so we read the real cache path.
+    """
+    real_xdg_cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    metadata_dir = real_xdg_cache / "bazelisk" / "downloads" / "metadata" / "bazelbuild"
+    if not metadata_dir.exists():
+        return None
+    for meta_file in sorted(metadata_dir.iterdir()):
+        sha256 = meta_file.read_text().strip()
+        candidate = real_xdg_cache / "bazelisk" / "downloads" / "sha256" / sha256 / "bin" / "bazel"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _setup_hook_env(
     monkeypatch: pytest.MonkeyPatch,
     isolated_dirs: IsolatedDirs,
@@ -138,6 +159,13 @@ def _setup_hook_env(
         mock_proxy: TLS proxy simulating Anthropic's proxy
         container_runtime: Container runtime to use ("none", "podman", "docker")
     """
+    # Resolve the real Bazel binary BEFORE isolating XDG_CACHE_HOME.
+    # With install_bazelisk=False, the hook falls back to shutil.which("bazelisk"),
+    # which reads .bazelversion and downloads Bazel from GitHub through the mock proxy.
+    # The mock proxy rejects those connections, causing test timeouts.
+    # Pointing SYSTEM_BAZEL at a pre-cached Bazel binary bypasses version resolution.
+    real_bazel = _find_cached_bazel_binary()
+
     # Create combined CA bundle with system CAs + mock proxy CA
     # This allows bazelisk and other TLS clients to trust the mock proxy
     system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
@@ -164,8 +192,16 @@ def _setup_hook_env(
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(supervisor_port))
     monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(auth_proxy_port))
 
-    # Disable nix (speeds up tests)
+    # Disable slow binary downloads (bazelisk, mkcert, nix) in tests.
+    # Each e2e test runs the hook in a fresh isolated XDG_CACHE_HOME, so without
+    # disabling these, each test would download ~40 MB from GitHub, causing timeouts
+    # on slow internet connections.
+    monkeypatch.setenv(settings.ENV_INSTALL_BAZELISK, "0")
+    monkeypatch.setenv(settings.ENV_INSTALL_MKCERT, "0")
     monkeypatch.setenv(settings.ENV_INSTALL_NIX, "0")
+
+    if real_bazel:
+        monkeypatch.setenv(settings.ENV_SYSTEM_BAZEL, str(real_bazel))
 
     # Proxy configuration (simulating Claude Code web)
     for var in PROXY_ENV_VARS:
