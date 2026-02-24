@@ -248,22 +248,36 @@ openclaw node run --host 127.0.0.1 --port 18790 --display-name "remote-node"
 
 ## Node Capabilities
 
-Nodes advertise capabilities at connect time. The node-host process can expose:
+Nodes advertise capabilities at connect time. Available capability families:
 
-| Capability        | Description                |
-| ----------------- | -------------------------- |
-| `system.run`      | Shell command execution    |
-| `camera.snap`     | Photo capture              |
-| `canvas.navigate` | Browser/WebView navigation |
-| `screen.record`   | Screen recording           |
-| `location.get`    | GPS/location data          |
+| Capability        | Commands                                            | Platform                     |
+| ----------------- | --------------------------------------------------- | ---------------------------- |
+| System execution  | `system.run`, `system.which`, `system.notify`       | All (headless included)      |
+| Canvas operations | `canvas.snapshot`, `canvas.eval`, `canvas.navigate` | macOS/iOS/Android            |
+| Camera access     | `camera.list`, `camera.snap`, `camera.clip`         | macOS/iOS/Android            |
+| Screen recording  | `screen.record`                                     | macOS/iOS/Android            |
+| Location services | `location.get`                                      | iOS/Android (off by default) |
+| SMS               | `sms.send`                                          | Android only                 |
+| Browser proxy     | (automatic)                                         | All (if not disabled)        |
 
-The default `openclaw node run` exposes all available capabilities. To restrict:
+**Headless Linux node-hosts** (like our sidecar) naturally only expose
+`system.run`/`system.which` and browser proxy — camera, canvas, screen, and
+location capabilities require hardware/OS features not present in containers.
 
-```bash
-# Only expose shell execution, no camera/screen/etc.
-openclaw node run --capabilities system.run
-```
+There is no `--capabilities` CLI flag to selectively enable/disable capability
+families. Instead, restrict the effective surface through:
+
+1. **Platform limitation** — headless Linux inherently limits to exec + browser
+2. **Gateway tool policies** — `agents.defaults.tools.allow`/`deny` lists:
+   ```yaml
+   agents:
+     defaults:
+       tools:
+         allow: ["exec", "read"]
+         deny: ["browser", "canvas", "nodes", "cron"]
+   ```
+3. **Exec allowlists** — restrict which binaries the node can run
+4. **`browser.enabled: false`** — disable browser proxy capability
 
 ## Approval Flow
 
@@ -279,6 +293,38 @@ When `tools.exec.security` is `allowlist` and `ask` is `on-miss`:
 
 For headless/automated setups, set `ask: off` and either pre-populate the
 allowlist or use `security: full`.
+
+## Node-Host CLI Reference
+
+The node-host is a subcommand of the main `openclaw` CLI (requires Node.js
+
+> = 22):
+
+```bash
+openclaw node run --host <gateway-host> --port 18789 --display-name "My Node"
+```
+
+| Flag                      | Default     | Description                               |
+| ------------------------- | ----------- | ----------------------------------------- |
+| `--host`                  | `127.0.0.1` | Gateway WebSocket host                    |
+| `--port`                  | `18789`     | Gateway WebSocket port                    |
+| `--tls`                   | off         | Enable TLS (`wss://`)                     |
+| `--tls-fingerprint <sha>` | —           | Validate server certificate fingerprint   |
+| `--node-id <id>`          | auto        | Override node identifier (clears pairing) |
+| `--display-name <name>`   | auto        | Custom node display name                  |
+| `--token <token>`         | —           | Gateway auth token (or use env var)       |
+
+Service management (for persistent background nodes):
+
+```bash
+openclaw node install    # Install as background service
+openclaw node status     # Check service status
+openclaw node stop       # Stop background node
+openclaw node restart    # Restart background node
+openclaw node uninstall  # Remove background service
+```
+
+Node identity and connection details persist in `~/.openclaw/node.json`.
 
 ## Security Constraints on Nodes
 
@@ -300,5 +346,8 @@ allowlist or use `security: full`.
 - [OpenClaw Node Troubleshooting](https://docs.openclaw.ai/platforms/nodes/troubleshooting)
 - [OpenClaw Multi-Agent Routing](https://docs.openclaw.ai/concepts/multi-agent)
 - [OpenClaw Gateway Security](https://docs.openclaw.ai/gateway/security)
+- [OpenClaw Node CLI Reference](https://docs.openclaw.ai/cli/node)
+- [OpenClaw Remote Gateway Access](https://docs.openclaw.ai/gateway/remote)
+- [OpenClaw K8s Operator](https://github.com/OpenClaw-rocks/k8s-operator)
 - Our instance config: <../k8s/openclaw/openclawinstance.yaml>
 - Sandbox RBAC: <../k8s/openclaw-sandbox/role-sandbox.yaml>
