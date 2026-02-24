@@ -1,0 +1,38 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "lbrn2_writer",
+    srcs = ["lbrn2_writer.py"],
+    imports = ["../.."],
+)
+
+py_library(
+    name = "material_test_lib",
+    srcs = ["material_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":lbrn2_writer",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "material_test",
+    imports = ["../.."],
+    main_module = "hack.lightburn_material_test.material_test",
+    deps = [":material_test_lib"],
+)
+
+py_test(
+    name = "test_material_test",
+    srcs = ["test_material_test.py"],
+    data = ["example_config.toml"],
+    imports = ["../.."],
+    deps = [
+        ":lbrn2_writer",
+        ":material_test_lib",
+        "//bazel_util:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

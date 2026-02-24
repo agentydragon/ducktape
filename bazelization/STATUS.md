@@ -25,7 +25,7 @@ Run `bazel run //tools/orphans:find_orphans` to list orphaned files. The checker
 
 ### Lower Priority
 
-- **Package consolidation**: Small experimental packages could move into `experimental/` monolith. Keep packages separate when they have different deployment targets or dependency sets.
+- **Package consolidation**: Small experimental packages could move into `hack/` monolith. Keep packages separate when they have different deployment targets or dependency sets.
 - **Ruff version alignment**: 0.14.0 in `tools/multitool/lockfile.json` vs 0.14.6 in `.pre-commit-config.yaml`.
 - **Remove `check-ast` pre-commit hook**: Redundant with `bazel build`.
 

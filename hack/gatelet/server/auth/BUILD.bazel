@@ -1,0 +1,113 @@
+"""Gatelet server authentication modules."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "dependencies",
+    srcs = ["dependencies.py"],
+    imports = ["../../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        ":handlers",
+        "//hack/gatelet/server:config",
+        "//hack/gatelet/server:database",
+        "@pypi//fastapi",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "handlers",
+    srcs = ["handlers.py"],
+    imports = ["../../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        ":key_auth",
+        "//hack/gatelet/server:config",
+        "//hack/gatelet/server:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "key_auth",
+    srcs = ["key_auth.py"],
+    imports = ["../../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        "//hack/gatelet/server:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "webhook_auth",
+    srcs = ["webhook_auth.py"],
+    imports = ["../../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        ":handlers",
+        "//hack/gatelet/server:config",
+        "@pypi//fastapi",
+    ],
+)
+
+py_test(
+    name = "test_handlers",
+    srcs = ["test_handlers.py"],
+    requires_docker = True,
+    deps = [
+        ":handlers",
+        "//hack/gatelet/server:config",
+        "//hack/gatelet/server:conftest",
+        "//hack/gatelet/server:models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_key_auth",
+    srcs = ["test_key_auth.py"],
+    requires_docker = True,
+    deps = [
+        ":key_auth",
+        "//hack/gatelet/server:conftest",
+        "//hack/gatelet/server:models",
+        "//hack/gatelet/server/tests:utils",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_key_path_auth",
+    srcs = ["test_key_path_auth.py"],
+    requires_docker = True,
+    deps = [
+        ":handlers",
+        "//hack/gatelet/server:config",
+        "//hack/gatelet/server:conftest",
+        "//hack/gatelet/server:models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_webhook_auth",
+    srcs = ["test_webhook_auth.py"],
+    requires_docker = True,
+    deps = [
+        ":webhook_auth",
+        "//hack/gatelet/server:config",
+        "//hack/gatelet/server:conftest",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

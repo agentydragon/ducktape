@@ -18,7 +18,7 @@ exclude = [
     "tana/export/references",
     "props/testing/fixtures/testdata",
     "claude/claude_hooks/testdata",
-    "experimental/sandboxed_jupyter/testdata",
+    "hack/sandboxed_jupyter/testdata",
     "sysrw/testdata",
     "tana/testdata",
     "props/specimens/*/*/code",
@@ -99,7 +99,7 @@ known-first-party = [
     "agent_core",
     "agent_pkg",
     "agent_server",
-    "experimental",
+    "hack",
     "bazel_util",
     "props",
     "claude_history",
@@ -150,9 +150,9 @@ split-on-trailing-comma = false
 
 [lint.per-file-ignores]
 # Project-specific ignores (consolidated from individual pyproject.toml files)
-"experimental/gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
-"experimental/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
-"experimental/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
+"hack/gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
+"hack/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
+"hack/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
 "py_detectors/det_*.py" = ["N802"]

@@ -170,7 +170,7 @@ npm.npm_translate_lock(
     # Track package.json and workspace files for auto-update
     data = [
         "//:agent_server/web/package.json",
-        "//:experimental/rspcache/admin_ui/package.json",
+        "//:hack/rspcache/admin_ui/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",

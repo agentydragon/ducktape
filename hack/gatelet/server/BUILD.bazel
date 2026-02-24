@@ -1,0 +1,223 @@
+"""Gatelet server package."""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+py_binary(
+    name = "server",
+    imports = ["../../.."],
+    main_module = "hack.gatelet.server.main",
+    visibility = ["//hack/gatelet:__pkg__"],
+    deps = [":main"],
+)
+
+aspect_py_binary(
+    name = "server_bin",
+    imports = ["../../.."],
+    main = "main.py",
+    visibility = ["//hack/gatelet:__pkg__"],
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":server_bin",
+    visibility = ["//hack/gatelet:__pkg__"],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        ":app",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    data = glob([
+        "**/*.css",
+        "**/*.html.j2",
+    ]),
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        ":database",
+        ":lifespan",
+        ":models",
+        "//hack/gatelet/server/auth:handlers",
+        "//hack/gatelet/server/auth:webhook_auth",
+        "//hack/gatelet/server/endpoints:admin",
+        "//hack/gatelet/server/endpoints:challenge",
+        "//hack/gatelet/server/endpoints:homeassistant",
+        "//hack/gatelet/server/endpoints:webhook_receive",
+        "//hack/gatelet/server/endpoints:webhook_view",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "database",
+    srcs = ["database.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "lifespan",
+    srcs = ["lifespan.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        ":config",
+        ":database",
+        "//hack/gatelet/server/auth:dependencies",
+        "//hack/gatelet/server/endpoints:activitywatch",
+        "//hack/gatelet/server/endpoints:homeassistant",
+        "//hack/gatelet/server/endpoints:webhook_view",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//jinja2",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        ":config",
+        ":models",
+    ],
+)
+
+py_library(
+    name = "security",
+    srcs = ["security.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        "@pypi//argon2_cffi",
+        "@pypi//passlib",
+    ],
+)
+
+py_library(
+    name = "shared",
+    srcs = ["shared.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [":config"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    visibility = ["//hack/gatelet:__subpackages__"],
+    deps = [
+        ":app",
+        ":config",
+        ":database",
+        ":models",
+        ":security",
+        "//hack/gatelet/server/endpoints:webhook_view",
+        "//hack/gatelet/server/tests:utils",
+        "@pypi//asgi_lifespan",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_admin_webhook_e2e",
+    srcs = ["test_admin_webhook_e2e.py"],
+    data = ["@playwright_browsers//:chromium-headless-shell"],
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":config",
+        ":security",
+        "//bazel_util:subprocess",
+        "//hack/gatelet:manage_lib",
+        "//test_util:playwright",
+        "//test_util:undeclared_outputs",
+        "@pypi//asyncpg",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
+        "@pypi//tomlkit",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_report_battery",
+    srcs = ["test_report_battery.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        "//hack/gatelet:reporter",
+        "//hack/gatelet:reporter_lib",
+        "//hack/gatelet/server/tests:utils",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_report_event",
+    srcs = ["test_report_event.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":models",
+        "//hack/gatelet:reporter",
+        "//hack/gatelet:reporter_lib",
+        "//hack/gatelet/server/tests:utils",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

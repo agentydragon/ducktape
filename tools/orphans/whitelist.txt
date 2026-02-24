@@ -95,7 +95,7 @@ finance/worthy/worthy/graph.js
 sysrw/js/system_rewrite_apply.js
 
 # rspcache admin UI (Vite/React frontend, not Bazelized)
-experimental/rspcache/admin_ui/**
+hack/rspcache/admin_ui/**
 
 # Template files
 sysrw/templates/report.html.j2
@@ -169,14 +169,14 @@ ember/scripts/ember-deploy
 **/pytest-todo
 
 # gatelet Makefile (not Python, but tracked here)
-experimental/gatelet/Makefile
+hack/gatelet/Makefile
 
 # Extensionless scripts and misc non-code files
 *.service
 *.hcl
 **/README
-experimental/make-grid-pdf
-experimental/prompt
-experimental/webcam-record
+hack/make-grid-pdf
+hack/prompt
+hack/webcam-record
 inventree_utils/rescap
 inventree_utils/server-post-receive

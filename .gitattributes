@@ -11,7 +11,7 @@
 # Test data files - inputs to tests, not source code
 claude/claude_hooks/testdata/** rules-lint-ignored=true
 props/testing/fixtures/testdata/** rules-lint-ignored=true
-experimental/sandboxed_jupyter/testdata/** rules-lint-ignored=true
+hack/sandboxed_jupyter/testdata/** rules-lint-ignored=true
 sysrw/testdata/** rules-lint-ignored=true
 tana/testdata/** rules-lint-ignored=true
 

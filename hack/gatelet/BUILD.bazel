@@ -1,0 +1,97 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# Reporter is a standalone CLI tool - doesn't depend on server
+py_library(
+    name = "reporter_lib",
+    srcs = ["reporter.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//psutil",
+        "@pypi//pydantic",
+        "@pypi//tomlkit",
+    ],
+)
+
+py_binary(
+    name = "reporter",
+    imports = ["../.."],
+    main_module = "hack.gatelet.reporter",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":reporter_lib",
+    ],
+)
+
+# Management utility - depends on server
+py_library(
+    name = "manage_lib",
+    srcs = ["manage.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hack/gatelet/server:config",
+        "//hack/gatelet/server:models",
+        "//hack/gatelet/server:security",
+        "@pypi//sqlalchemy",
+        "@pypi//tomlkit",
+    ],
+)
+
+py_binary(
+    name = "manage",
+    imports = ["../.."],
+    main_module = "hack.gatelet.manage",
+    visibility = ["//:__subpackages__"],
+    deps = [":manage_lib"],
+)
+
+# --- OCI Image ---
+
+pkg_tar(
+    name = "alembic_tar",
+    srcs = ["alembic.ini"],
+    package_dir = "/app",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint(
+        "server_bin",
+        binary_package = "hack/gatelet/server",
+    ),
+    env = py_image_env(
+        "server_bin",
+        binary_package = "hack/gatelet/server",
+    ),
+    exposed_ports = ["8000/tcp"],
+    tars = [
+        "//hack/gatelet/server:layers",
+        ":alembic_tar",
+    ],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["gatelet:latest"],
+)
+
+py_binary(
+    name = "aw_summary",
+    srcs = ["aw_summary.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//aw_client"],
+)
+
+py_library(
+    name = "tasks",
+    srcs = ["tasks.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//invoke"],
+)
