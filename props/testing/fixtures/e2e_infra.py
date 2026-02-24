@@ -29,9 +29,8 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from props.db.models import AgentType
-from test_util.image_loader import load_image
-from test_util.oci import BazelImage
 from third_party.containers.rlocations import REGISTRY_2_TARBALL, RYUK_TARBALL
+from util.oci import BazelImage, load_image
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)

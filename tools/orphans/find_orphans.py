@@ -22,8 +22,8 @@ from textwrap import dedent
 import pathspec
 import pygit2
 
-from bazel_util.query import BazelLabel, run_query
-from bazel_util.workspace import get_build_workspace_directory
+from util.bazel.query import BazelLabel, run_query
+from util.bazel.workspace import get_build_workspace_directory
 
 
 @dataclasses.dataclass

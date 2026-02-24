@@ -15,7 +15,6 @@ import pytest_bazel
 import tomlkit
 from testcontainers.postgres import PostgresContainer
 
-from bazel_util.subprocess import python_env
 from hack.gatelet.manage import reset_db
 from hack.gatelet.server.config import (
     AdminSettings,
@@ -29,8 +28,9 @@ from hack.gatelet.server.config import (
     WebhookSettings,
 )
 from hack.gatelet.server.security import hash_password
-from test_util.playwright import browser, page, playwright_sync  # noqa: F401
-from test_util.undeclared_outputs import undeclared_outputs_dir
+from util.bazel.subprocess import python_env
+from util.playwright import browser, page, playwright_sync  # noqa: F401
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

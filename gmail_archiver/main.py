@@ -16,7 +16,6 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
-from fmt_util.fmt_util import format_truncation_suffix
 from gmail_archiver.cli.common import DryRunDefaultTrueOption, TokenFileOption, get_client
 from gmail_archiver.cli.filters import filters_app
 from gmail_archiver.cli.labels import labels_app
@@ -37,6 +36,7 @@ from gmail_archiver.planners.one_medical import OneMedicalPlanner
 from gmail_archiver.planners.spruce import SprucePlanner
 from gmail_archiver.planners.square import SquarePlanner
 from gmail_archiver.planners.usps import UspsPlanner
+from util.fmt import format_truncation_suffix
 
 app = typer.Typer(help="Archive old Gmail emails based on extracted dates")
 app.add_typer(filters_app, name="filters")

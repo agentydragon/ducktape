@@ -6,11 +6,11 @@ from enum import StrEnum
 
 from pydantic import BaseModel
 
-from fmt_util.fmt_util import format_truncation_suffix
 from gmail_archiver.gmail_api_models import SystemLabel
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
 from gmail_archiver.plan import Plan
+from util.fmt import format_truncation_suffix
 
 LABEL_DOORDASH_AUTO_CLEANED = "gmail-archiver/doordash-auto-cleaned"
 

@@ -25,7 +25,8 @@ from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.mcp_types import McpServerSpecs
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from test_util.docker import debian_slim_image, load_bazel_image
+from third_party.debian_slim.fixtures import debian_slim_image
+from util.oci import load_bazel_image
 
 # Image tags and load scripts for Bazel-loaded images
 RUNTIME_IMAGE_TAG = "adgn-runtime:latest"

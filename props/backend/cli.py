@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 import typer
 import uvicorn
 
-from cli_util.logging import LogLevel, make_logging_callback
 from props.backend.app import create_app, default_deps
+from util.logging import LogLevel, make_logging_callback
 
 logger = logging.getLogger(__name__)
 

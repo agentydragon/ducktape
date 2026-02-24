@@ -24,7 +24,7 @@ py_test(
     imports = ["."],
     deps = [
         ":dbus_fast_example",
-        "//test_util:undeclared_outputs",
+        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

@@ -6,7 +6,6 @@ from agent_core.testing.mcp.responses import *  # noqa: F403
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core.testing.responses import *  # noqa: F403
-from bazel_util import runfiles
 from inop.config import (
     GraderConfig,
     OptimizerConfig,
@@ -16,6 +15,7 @@ from inop.config import (
     TokenConfig,
     TruncationConfig,
 )
+from util.bazel import runfiles
 
 
 def pytest_configure(config: pytest.Config) -> None:

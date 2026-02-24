@@ -54,10 +54,10 @@ py_library(
     visibility = ["//tools/claude_hooks:__subpackages__"],
     deps = [
         ":mock_egress_proxy",
-        "//net_util:net",
-        "//test_util:undeclared_outputs",
         "//tools/claude_hooks:settings",
         "//tools/claude_hooks/supervisor:client",
+        "//util:net",
+        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
     ],
 )

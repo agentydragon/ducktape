@@ -6,8 +6,8 @@ py_binary(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//bazel_util:query",
-        "//bazel_util:workspace",
+        "//util/bazel:query",
+        "//util/bazel:workspace",
         "@pypi//pathspec",
         "@pypi//pygit2",
     ],

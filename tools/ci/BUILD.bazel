@@ -22,7 +22,7 @@ py_library(
     srcs = ["bazel_query.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = ["//bazel_util:query"],
+    deps = ["//util/bazel:query"],
 )
 
 py_library(
@@ -31,7 +31,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//env_utils",
+        "//util:env",
         "@pypi//pydantic",
     ],
 )
@@ -42,7 +42,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//bazel_util:query",
+        "//util/bazel:query",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -71,7 +71,7 @@ py_library(
     deps = [
         ":diff_utils",
         ":github_actions",
-        "//env_utils",
+        "//util:env",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],
@@ -87,8 +87,8 @@ py_library(
         ":diff_utils",
         ":github_actions",
         ":models",
-        "//env_utils",
-        "//fmt_util",
+        "//util:env",
+        "//util:fmt",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],
@@ -103,7 +103,7 @@ py_library(
     deps = [
         ":github_actions",
         ":models",
-        "//bazel_util:workspace",
+        "//util/bazel:workspace",
         "@pypi//pyyaml",
     ],
 )

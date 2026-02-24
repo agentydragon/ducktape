@@ -8,7 +8,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from bazel_util.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path
 
 _CILIUM_VALUES_RLOCATIONS = ["_main/cluster/terraform/bootstrap/infrastructure/cilium-values.yaml"]
 

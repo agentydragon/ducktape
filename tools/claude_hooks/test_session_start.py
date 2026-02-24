@@ -23,9 +23,6 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from bazel_util.runfiles import get_required_path
-from net_util.net import pick_free_port
-from test_util.undeclared_outputs import undeclared_outputs_dir
 from tools.claude_hooks import settings
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
@@ -34,6 +31,9 @@ from tools.claude_hooks.testing import shell_helpers
 from tools.claude_hooks.testing.fixtures import MockEgressProxyFixture, collect_supervisor_logs
 from tools.claude_hooks.testing.mock_egress_proxy import MockEgressProxy
 from tools.claude_hooks.tmpfs_setup import unmount_tmpfs_under
+from util.bazel.runfiles import get_required_path
+from util.net import pick_free_port
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # Register fixtures from module (pytest-native, no direct name import needed)
 pytest_plugins = ["tools.claude_hooks.testing.fixtures"]

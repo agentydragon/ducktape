@@ -53,7 +53,6 @@ import pytest
 import pytest_asyncio
 import uvicorn
 
-from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import BackendDeps, create_app
 from props.config import DockerExecutorConfig, PropsConfig
@@ -66,7 +65,8 @@ from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.orchestration.docker_executor import DockerExecutor
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
-from test_util.oci import BazelImage, crane_push
+from util.net import pick_free_port
+from util.oci import BazelImage, crane_push
 
 logger = logging.getLogger(__name__)
 

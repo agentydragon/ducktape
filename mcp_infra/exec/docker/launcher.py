@@ -12,10 +12,10 @@ import aiodocker
 import typer
 from typer_di import TyperDI
 
-from cli_util.decorators import async_run
 from mcp_infra.exec.docker.container_session import BindMount, ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mcp_types import NetworkMode
+from util.typer import async_run
 
 app = TyperDI(help="Run docker_exec MCP over stdio")
 

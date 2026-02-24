@@ -55,7 +55,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":build_info",
-        "//cli_util:logging",
         "//props:config",
         "//props/backend/routes:agent_definitions",
         "//props/backend/routes:ground_truth",
@@ -73,6 +72,7 @@ py_library(
         "//props/orchestration:agent_registry",
         "//props/orchestration:executor_factory",
         "//props/orchestration:grader_supervisor",
+        "//util:logging",
         "@pypi//asyncpg",
         "@pypi//fastapi",
     ],
@@ -85,7 +85,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
-        "//cli_util:logging",
+        "//util:logging",
         "@pypi//fastapi",
         "@pypi//typer_slim",
         "@pypi//uvicorn",

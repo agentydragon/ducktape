@@ -16,7 +16,6 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 
-from bazel_util.subprocess import python_env
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.resources_server import ResourcesServer
@@ -27,6 +26,7 @@ from mcp_infra.stubs.resources_stub import ResourcesServerStub
 from mcp_infra.stubs.typed_stubs import TypedClient
 from mcp_infra.testing.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
+from util.bazel.subprocess import python_env
 
 
 def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerOptions:

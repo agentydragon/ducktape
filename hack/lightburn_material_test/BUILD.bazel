@@ -31,7 +31,7 @@ py_test(
     deps = [
         ":lbrn2_writer",
         ":material_test_lib",
-        "//bazel_util:runfiles",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

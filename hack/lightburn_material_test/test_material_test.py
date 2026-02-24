@@ -10,7 +10,6 @@ from xml.etree import ElementTree as ET
 import pytest
 import pytest_bazel
 
-from bazel_util import runfiles
 from hack.lightburn_material_test.lbrn2_writer import (
     CutSetting,
     HAlign,
@@ -31,6 +30,7 @@ from hack.lightburn_material_test.material_test import (
     fmt_val,
     generate,
 )
+from util.bazel import runfiles
 
 # ── fmt_val ────────────────────────────────────────────────────────────────────
 

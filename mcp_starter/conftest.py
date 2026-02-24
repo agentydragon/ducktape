@@ -6,7 +6,7 @@ import pytest_asyncio
 from fastmcp import Client
 from fastmcp.mcp_config import MCPConfig, StdioMCPServer
 
-from bazel_util.subprocess import python_env
+from util.bazel.subprocess import python_env
 
 
 def pytest_configure(config: pytest.Config) -> None:

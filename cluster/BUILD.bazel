@@ -7,9 +7,9 @@ py_library(
     name = "bootstrap_lib",
     srcs = ["bootstrap.py"],
     deps = [
-        "//bazel_util:runfiles",
-        "//bazel_util:workspace",
         "//cluster/scripts:generate_claude_kubeconfig_lib",
+        "//util/bazel:runfiles",
+        "//util/bazel:workspace",
         "@pypi//kubernetes",
         "@pypi//pydantic",
         "@pypi//pygit2",

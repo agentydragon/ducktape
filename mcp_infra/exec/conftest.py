@@ -6,7 +6,7 @@ import pytest
 from mcp_infra.testing.docker_fixtures import docker_exec_server
 from mcp_infra.testing.fixtures import *  # noqa: F403
 from openai_utils.testing.fixtures import live_openai_model, mock_or_live
-from test_util.docker import debian_slim_image
+from third_party.debian_slim.fixtures import debian_slim_image
 
 
 def pytest_configure(config: pytest.Config) -> None:

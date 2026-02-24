@@ -17,12 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from net_util.net import pick_free_port
-from test_util.undeclared_outputs import undeclared_outputs_dir
 from tools.claude_hooks import settings
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import try_connect
 from tools.claude_hooks.testing.mock_egress_proxy import EgressProxyConfig, MockEgressProxy
+from util.net import pick_free_port
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
 

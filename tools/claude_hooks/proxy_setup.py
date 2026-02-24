@@ -20,12 +20,12 @@ from pathlib import Path
 from cryptography import x509
 from opentelemetry import trace
 
-from bazel_util.subprocess import python_env
-from net_util.net import async_wait_for_port, is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from tools.claude_hooks.proxy_vars import get_upstream_proxy_url
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import SupervisorClient
+from util.bazel.subprocess import python_env
+from util.net import async_wait_for_port, is_port_in_use
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -71,7 +71,7 @@ def _resolve_rlocation(rlocation_path: str) -> Path | None:
     bazel_wrapper subprocess (which runs outside Bazel runfiles).
     """
     try:
-        from bazel_util.runfiles import get_required_path  # noqa: PLC0415
+        from util.bazel.runfiles import get_required_path  # noqa: PLC0415
 
         return get_required_path(rlocation_path)
     except RuntimeError:

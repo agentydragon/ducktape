@@ -14,8 +14,8 @@ import pyrage
 import pyrage.x25519
 from kubernetes import client, config
 
-from bazel_util.workspace import get_build_workspace_directory
 from tools.claude_hooks.kubeconfig_setup import KubeconfigSecret
+from util.bazel.workspace import get_build_workspace_directory
 
 logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 log = logging.getLogger(__name__)

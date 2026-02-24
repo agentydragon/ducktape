@@ -35,7 +35,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//bazel_util:subprocess",
+        "//util/bazel:subprocess",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

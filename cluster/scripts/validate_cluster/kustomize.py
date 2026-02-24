@@ -8,8 +8,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
-from bazel_util.runfiles import get_required_path
 from cluster.scripts.validate_cluster.k8s import K8sResource, parse_k8s_resources
+from util.bazel.runfiles import get_required_path
 
 
 class KustomizeFile(BaseModel):

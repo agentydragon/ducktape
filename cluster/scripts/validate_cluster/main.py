@@ -26,7 +26,6 @@ import json
 import sys
 from pathlib import Path
 
-from bazel_util.workspace import get_build_workspace_directory
 from cluster.scripts.validate_cluster.checks import (
     check_controller_resource_health_checks,
     check_crd_layering,
@@ -38,6 +37,7 @@ from cluster.scripts.validate_cluster.dependencies import validate_dependencies
 from cluster.scripts.validate_cluster.flux import validate_flux_build
 from cluster.scripts.validate_cluster.helm_templates import validate_helm_templates
 from cluster.scripts.validate_cluster.kustomize import run_kustomize_build
+from util.bazel.workspace import get_build_workspace_directory
 
 
 async def main() -> int:

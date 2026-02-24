@@ -9,7 +9,7 @@
 *.zsh rules-lint-ignored=true
 
 # Test data files - inputs to tests, not source code
-claude/claude_hooks/testdata/** rules-lint-ignored=true
+hack/claude_hooks/testdata/** rules-lint-ignored=true
 props/testing/fixtures/testdata/** rules-lint-ignored=true
 hack/sandboxed_jupyter/testdata/** rules-lint-ignored=true
 sysrw/testdata/** rules-lint-ignored=true
@@ -47,7 +47,7 @@ props/specimens/*/*/code/** rules-lint-ignored=true
 hack/orcaslicer_config/** rules-lint-ignored=true
 
 # Archived/legacy code
-k8s_old/** rules-lint-ignored=true
+hack/k8s_old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true

@@ -1,0 +1,329 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "check_python",
+    srcs = ["check_python.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":pattern_matcher",
+        "//hack/claude_linter_v2/config:clean_models",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/linters:python_ast",
+        "//hack/claude_linter_v2/linters:python_ruff",
+    ],
+)
+
+py_library(
+    name = "checker",
+    srcs = ["checker.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//hack/claude_linter_v2/config:loader",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/linters:python_ast",
+        "//hack/claude_linter_v2/linters:python_formatter",
+        "//hack/claude_linter_v2/linters:python_ruff",
+    ],
+)
+
+py_library(
+    name = "checkers_v2",
+    srcs = ["checkers_v2.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":rule_registry",
+        "//hack/claude_linter_v2/config:clean_models",
+        "//hack/claude_linter_v2/config:models",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":checker",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/hooks:exceptions",
+        "//hack/claude_linter_v2/hooks:handler",
+        "//hack/claude_linter_v2/session:manager",
+        "//llm:claude_code_api",
+        "@pypi//click",
+        "@pypi//humanize",
+        "@pypi//pytimeparse",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":types",
+        "//llm:claude_code_api",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "llm_analyzer",
+    srcs = ["llm_analyzer.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//hack/claude_linter_v2/config:models",
+        "//llm:claude_code_api",
+    ],
+)
+
+py_library(
+    name = "notifications",
+    srcs = ["notifications.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "pattern_matcher",
+    srcs = ["pattern_matcher.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["//hack/claude_linter_v2/config:models"],
+)
+
+py_library(
+    name = "rule_registry",
+    srcs = ["rule_registry.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["//hack/claude_linter_v2/config:models"],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = ["//llm:claude_code_api"],
+)
+
+py_binary(
+    name = "claude_linter_v2",
+    srcs = ["cli.py"],
+    imports = [".."],
+    main = "cli.py",
+    deps = [
+        ":checker",
+        ":cli",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/hooks:exceptions",
+        "//hack/claude_linter_v2/hooks:handler",
+        "//hack/claude_linter_v2/session:manager",
+        "//llm:claude_code_api",
+        "@pypi//click",
+        "@pypi//humanize",
+    ],
+)
+
+py_test(
+    name = "test_cl2_check",
+    srcs = ["test_cl2_check.py"],
+    data = ["@multitool//tools/ruff"],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
+    imports = [".."],
+    deps = [
+        ":cli",
+        ":conftest",
+        "@pypi//click",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_diff_intelligence",
+    srcs = ["test_diff_intelligence.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/diff:categorizer",
+        "//hack/claude_linter_v2/diff:intelligence",
+        "//hack/claude_linter_v2/diff:parser",
+        "//llm:claude_code_api",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_diff_intelligence_edge_cases",
+    srcs = ["test_diff_intelligence_edge_cases.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/diff:categorizer",
+        "//hack/claude_linter_v2/diff:intelligence",
+        "//hack/claude_linter_v2/diff:parser",
+        "//llm:claude_code_api",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    data = ["@multitool//tools/ruff"],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
+    imports = [".."],
+    deps = [
+        ":cli",
+        ":conftest",
+        "//util/bazel:subprocess",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_mcp_tools",
+    srcs = ["test_mcp_tools.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":types",
+        "//hack/claude_linter_v2/config:clean_models",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/hooks:handler",
+        "//llm:claude_code_api",
+        "//llm:claude_outcomes",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_modular_config",
+    srcs = ["test_modular_config.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":rule_registry",
+        "//hack/claude_linter_v2/config:clean_models",
+        "//hack/claude_linter_v2/config:loader",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_multiline_predicates",
+    srcs = ["test_multiline_predicates.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":types",
+        "//hack/claude_linter_v2/access:context",
+        "//hack/claude_linter_v2/access:evaluator",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_python_ast",
+    srcs = ["test_python_ast.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//hack/claude_linter_v2/linters:python_ast",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_python_formatter",
+    srcs = ["test_python_formatter.py"],
+    data = ["@multitool//tools/ruff"],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/linters:python_formatter",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_python_ruff",
+    srcs = ["test_python_ruff.py"],
+    data = ["@multitool//tools/ruff"],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//hack/claude_linter_v2/linters:python_ruff",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_stop_hook_fresh_scan",
+    srcs = ["test_stop_hook_fresh_scan.py"],
+    data = ["@multitool//tools/ruff"],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/hooks:handler",
+        "//llm:claude_code_api",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_stop_hook_gitignore",
+    srcs = ["test_stop_hook_gitignore.py"],
+    data = ["@multitool//tools/ruff"],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/hooks:handler",
+        "//llm:claude_code_api",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_stop_hook_quality_gate",
+    srcs = ["test_stop_hook_quality_gate.py"],
+    data = ["@multitool//tools/ruff"],
+    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
+    imports = [".."],
+    deps = [
+        ":conftest",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/hooks:handler",
+        "//llm:claude_code_api",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)

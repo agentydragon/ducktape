@@ -26,21 +26,15 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import pygit2  # noqa: E402
-from pydantic import BaseModel, Field  # noqa: E402
+import pygit2
+from pydantic import BaseModel, Field
 
-from env_utils.env_utils import get_optional_env_path, get_required_existing_path  # noqa: E402
-from fmt_util.fmt_util import format_limited_list  # noqa: E402
-from tools.ci.bazel_query import filter_for_ci, query_with_targets  # noqa: E402
-from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff  # noqa: E402
-from tools.ci.github_actions import CIEnvironment, PushStrategy  # noqa: E402
-from tools.ci.models import (  # noqa: E402
-    AlwaysTrigger,
-    BazelQueryTrigger,
-    PathPatternTrigger,
-    WorkflowConfig,
-    WorkflowManifest,
-)
+from tools.ci.bazel_query import filter_for_ci, query_with_targets
+from tools.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
+from tools.ci.github_actions import CIEnvironment, PushStrategy
+from tools.ci.models import AlwaysTrigger, BazelQueryTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
+from util.env import get_optional_env_path, get_required_existing_path
+from util.fmt import format_limited_list
 
 logger = logging.getLogger(__name__)
 

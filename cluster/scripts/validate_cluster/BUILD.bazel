@@ -39,7 +39,7 @@ py_library(
     imports = ["../../.."],
     deps = [
         ":k8s",
-        "//bazel_util:runfiles",
+        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -51,7 +51,7 @@ py_library(
     imports = ["../../.."],
     deps = [
         ":k8s",
-        "//bazel_util:runfiles",
+        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -102,7 +102,7 @@ py_library(
         ":flux",
         ":helm_templates",
         ":kustomize",
-        "//bazel_util:workspace",
+        "//util/bazel:workspace",
     ],
 )
 
@@ -129,8 +129,8 @@ py_library(
     imports = ["../../.."],
     deps = [
         ":cluster",
-        "//bazel_util:runfiles",
-        "//bazel_util:workspace",
+        "//util/bazel:runfiles",
+        "//util/bazel:workspace",
     ],
 )
 
@@ -149,7 +149,7 @@ py_library(
     name = "helm_templates",
     srcs = ["helm_templates.py"],
     imports = ["../../.."],
-    deps = ["//bazel_util:runfiles"],
+    deps = ["//util/bazel:runfiles"],
 )
 
 # ============================================================================

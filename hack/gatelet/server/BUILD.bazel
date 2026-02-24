@@ -176,10 +176,10 @@ py_test(
         ":app",
         ":config",
         ":security",
-        "//bazel_util:subprocess",
         "//hack/gatelet:manage_lib",
-        "//test_util:playwright",
-        "//test_util:undeclared_outputs",
+        "//util:playwright",
+        "//util/bazel:subprocess",
+        "//util/testing:undeclared_outputs",
         "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

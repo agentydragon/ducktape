@@ -95,7 +95,7 @@ py_library(
         "//agent_server:agent_types",
         "//agent_server/server:app",
         "//agent_server/testing:helpers",
-        "//test_util:playwright",
+        "//util:playwright",
         "@pypi//pytest",
     ],
 )

@@ -3,7 +3,7 @@ finance/worthy/worthy/index_head.html
 finance/worthy/worthy/index_tail.html
 
 # Claude Code testdata - description.md are extracted content from Claude Code
-claude/claude_hooks/testdata/claude_tools/**/*.md
+hack/claude_hooks/testdata/claude_tools/**/*.md
 
 # OrcaSlicer config - machine-generated, should not be formatted
 hack/orcaslicer_config/**
@@ -27,7 +27,7 @@ llm/instruct-logseq/**
 
 # Archived directories - complex formatting that doesn't survive prettier
 claude_commands_old/**
-k8s_old/**
+hack/k8s_old/**
 
 # Flux-generated GitOps manifests
 cluster/k8s/flux-system/**

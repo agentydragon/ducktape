@@ -18,7 +18,7 @@ from props.agents.runtime import render_template_string
 from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig, TargetMetric
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
-from test_util.undeclared_outputs import undeclared_outputs_dir
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _render(db: Database, template_path: str, helpers: dict | None = None) -> str:

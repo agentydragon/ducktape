@@ -65,7 +65,7 @@ py_test(
         "//props:conftest",
         "//props/core:agent_types",
         "//props/db:database",
-        "//test_util:undeclared_outputs",
+        "//util/testing:undeclared_outputs",
         "@pypi//mako",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

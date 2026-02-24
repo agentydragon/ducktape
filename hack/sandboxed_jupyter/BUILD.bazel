@@ -26,7 +26,7 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra/seatbelt:compile",
         "//mcp_infra/seatbelt:model",
-        "//net_util:net",
+        "//util:net",
         "@pypi//ipykernel",
         "@pypi//jupyter_mcp_server",
         "@pypi//jupyter_server",
@@ -43,7 +43,7 @@ py_binary(
     deps = [
         ":sandboxed_jupyter",
         "//mcp_infra:constants",
-        "//net_util:net",
+        "//util:net",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],

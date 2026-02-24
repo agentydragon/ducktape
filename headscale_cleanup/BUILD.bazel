@@ -7,7 +7,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//cli_util:logging",
+        "//util:logging",
         "@pypi//typer_slim",
     ],
 )

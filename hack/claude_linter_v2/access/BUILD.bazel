@@ -1,0 +1,35 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "context",
+    srcs = ["context.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["//hack/claude_linter_v2:types"],
+)
+
+py_library(
+    name = "evaluator",
+    srcs = ["evaluator.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//hack/claude_linter_v2/access:context",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "rule_engine",
+    srcs = ["rule_engine.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//hack/claude_linter_v2:types",
+        "//hack/claude_linter_v2/access:context",
+        "//hack/claude_linter_v2/access:evaluator",
+        "//hack/claude_linter_v2/config:clean_models",
+        "//hack/claude_linter_v2/config:models",
+        "//hack/claude_linter_v2/session:manager",
+    ],
+)

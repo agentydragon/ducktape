@@ -13,7 +13,7 @@ from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import IO
 
-from net_util.net import wait_for_port
+from util.net import wait_for_port
 
 # Jupyter Server configuration template for CORS and basic security settings
 JUPYTER_SERVER_CONFIG = (

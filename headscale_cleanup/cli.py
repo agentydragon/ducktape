@@ -7,7 +7,7 @@ from typing import Annotated, Any, cast
 
 import typer
 
-from cli_util.logging import LogLevel, configure_logging
+from util.logging import LogLevel, configure_logging
 
 app = typer.Typer(help="Clean up stale Headscale nodes (controlplane* and worker* nodes).")
 

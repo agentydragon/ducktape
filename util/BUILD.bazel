@@ -1,0 +1,76 @@
+"""Shared utility libraries."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "net",
+    srcs = ["net.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//tenacity"],
+)
+
+py_library(
+    name = "docker",
+    srcs = ["docker.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//aiodocker"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "typer",
+    srcs = ["typer.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "logging",
+    srcs = ["logging.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//structlog",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_library(
+    name = "fmt",
+    srcs = ["fmt.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "oci",
+    testonly = True,
+    srcs = ["oci.py"],
+    data = ["@crane"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
+    name = "playwright",
+    testonly = True,
+    srcs = ["playwright.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//pytest",
+    ],
+)

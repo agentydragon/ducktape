@@ -25,7 +25,6 @@ from mako.template import Template
 from opentelemetry import trace
 from pydantic import BaseModel
 
-from env_utils import env_utils
 from tools.build_info import get_build_info
 from tools.claude_hooks import (
     bazelisk_setup,
@@ -49,6 +48,7 @@ from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
 from tools.claude_hooks.supervisor import setup as supervisor_setup
 from tools.claude_hooks.tracing import init_tracing, shutdown_tracing
+from util import env
 
 logger = logging.getLogger(__name__)
 
@@ -410,7 +410,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
     logger.info(format_environment_summary())
 
     # Get required project directory
-    project_dir = env_utils.get_required_env_path("CLAUDE_PROJECT_DIR")
+    project_dir = env.get_required_env_path("CLAUDE_PROJECT_DIR")
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
     logger.info("Session directory: %s", settings.session_dir)
 
@@ -745,7 +745,7 @@ async def async_main() -> None:
         print(f"Raw input JSON:\n{raw_input}", file=sys.stderr)
         raise
 
-    env_file_path = env_utils.get_required_env_path("CLAUDE_ENV_FILE")
+    env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
     settings = HookSettings(session_dir=env_file_path.parent)
     otel.init(settings)
 

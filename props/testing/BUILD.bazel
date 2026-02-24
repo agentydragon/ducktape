@@ -31,7 +31,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//test_util:undeclared_outputs",
+        "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
     ],

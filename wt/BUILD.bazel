@@ -6,8 +6,8 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//cli_util:decorators",
-        "//cli_util:logging",
+        "//util:logging",
+        "//util:typer",
         "//wt/client:cd_utils",
         "//wt/client:handlers",
         "//wt/client:view_formatter",

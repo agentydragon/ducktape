@@ -15,9 +15,9 @@ from pathlib import Path
 
 import yaml
 
-from bazel_util.workspace import get_build_workspace_directory
 from props.core.models.true_positive import LineRange
 from props.db.sync.yaml_loader import YAMLIssue, YAMLOccurrence
+from util.bazel.workspace import get_build_workspace_directory
 
 # ---------------------------------------------------------------------------
 # GitHub link construction

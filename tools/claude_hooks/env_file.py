@@ -11,10 +11,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from bazel_util.subprocess import exports_from_dict
 from tools.claude_hooks.managed_files import write_config
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from tools.claude_hooks.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
+from util.bazel.subprocess import exports_from_dict
 
 # Runtime env var names (written by session hook, read by bazel_wrapper)
 ENV_AUTH_PROXY_PORT = "AUTH_PROXY_PORT"

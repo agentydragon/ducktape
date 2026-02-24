@@ -15,9 +15,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from bazel_util.runfiles import get_required_path
-from bazel_util.workspace import get_build_workspace_directory
 from cluster.scripts.validate_cluster.cluster import _K8S_SUBPATH
+from util.bazel.runfiles import get_required_path
+from util.bazel.workspace import get_build_workspace_directory
 
 
 def get_private_key_from_tofu(tf_dir: Path) -> str | None:

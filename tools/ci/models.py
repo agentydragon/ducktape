@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 import yaml
 from pydantic import BaseModel, Discriminator, Field, Tag
 
-from bazel_util.query import BazelLabel
+from util.bazel.query import BazelLabel
 
 
 class AlwaysTrigger(BaseModel):

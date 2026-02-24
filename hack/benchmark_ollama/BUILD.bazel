@@ -5,7 +5,7 @@ py_library(
     srcs = ["benchmark_ollama.py"],
     imports = ["../.."],
     deps = [
-        "//bazel_util:workspace",
+        "//util/bazel:workspace",
         "@pypi//openai",
     ],
 )

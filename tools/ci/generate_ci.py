@@ -13,9 +13,9 @@ from pathlib import Path
 
 import yaml
 
-from bazel_util.workspace import get_build_workspace_directory
 from tools.ci.github_actions import Job, Step, Workflow
 from tools.ci.models import ReleaseConfig, WorkflowConfig, WorkflowManifest
+from util.bazel.workspace import get_build_workspace_directory
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent.parent

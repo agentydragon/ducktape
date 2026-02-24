@@ -18,10 +18,10 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//net_util:net",
         "//tools/claude_hooks:errors",
         "//tools/claude_hooks:managed_files",
         "//tools/claude_hooks:settings",
+        "//util:net",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//supervisor",
@@ -35,11 +35,11 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":client",
-        "//bazel_util:subprocess",
-        "//net_util:net",
         "//tools/claude_hooks:errors",
         "//tools/claude_hooks:managed_files",
         "//tools/claude_hooks:settings",
+        "//util:net",
+        "//util/bazel:subprocess",
     ],
 )
 

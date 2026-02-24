@@ -26,12 +26,12 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import pygit2  # noqa: E402
-from pydantic import BaseModel  # noqa: E402
+import pygit2
+from pydantic import BaseModel
 
-from env_utils.env_utils import get_required_env  # noqa: E402
-from tools.ci.diff_utils import download_bazel_diff, get_changed_files, has_infra_changes, run_bazel_diff  # noqa: E402
-from tools.ci.github_actions import CIEnvironment  # noqa: E402
+from tools.ci.diff_utils import download_bazel_diff, get_changed_files, has_infra_changes, run_bazel_diff
+from tools.ci.github_actions import CIEnvironment
+from util.env import get_required_env
 
 logger = logging.getLogger(__name__)
 

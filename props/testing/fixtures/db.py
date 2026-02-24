@@ -16,14 +16,14 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
-from bazel_util.runfiles import get_required_path
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, sync_specimen
-from test_util.image_loader import load_image
 from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
+from util.bazel.runfiles import get_required_path
+from util.oci import load_image
 
 tracer = trace.get_tracer(__name__)
 

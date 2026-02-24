@@ -10,8 +10,8 @@ py_library(
     deps = [
         ":constants",
         "//agent_pkg:mcp",
-        "//cli_util:decorators",
-        "//cli_util:logging",
+        "//util:logging",
+        "//util:typer",
         "@pypi//typer",
     ],
 )

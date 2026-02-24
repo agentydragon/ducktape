@@ -4,7 +4,7 @@ import pytest
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from mcp_infra.testing.fixtures import *  # noqa: F403
-from test_util.docker import load_bazel_image
+from util.oci import load_bazel_image
 
 EDITOR_IMAGE_TAG = "adgn-editor:latest"
 EDITOR_LOAD_SCRIPT = "editor_agent/runtime/load.sh"

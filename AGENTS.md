@@ -128,20 +128,24 @@ live_openai_py_test(
 
 ### Shared Utility Libraries
 
-**`bazel_util`** (`//bazel_util`): Bazel runtime utilities.
+**`util`** (`//util`): Shared utility libraries.
 
-- `bazel_util.workspace.get_build_workspace_directory()` — repo root (`BUILD_WORKSPACE_DIRECTORY` under `bazel run`, cwd otherwise). Use this in `py_binary` targets that need to find source files on the real filesystem.
-- `bazel_util.workspace.get_build_working_directory()` — cwd where `bazel run` was invoked.
-- `bazel_util.runfiles` — runfiles resolution utilities.
-- `bazel_util.subprocess` — subprocess execution helpers.
-
-**`env_utils`** (`//env_utils`): Environment variable access with validation.
-
-- `env_utils.env_utils.get_required_env(name)` — get env var or raise `KeyError`.
-- `env_utils.env_utils.get_required_env_path(name)` — get env var as `Path`.
-- `env_utils.env_utils.get_required_existing_path(name)` — get env var as `Path`, verify it exists.
-- `env_utils.env_utils.get_optional_env(name, default=None)` — get optional env var.
-- `env_utils.env_utils.get_optional_env_path(name)` — get optional env var as `Path`.
+- `util.workspace.get_build_workspace_directory()` — repo root (`BUILD_WORKSPACE_DIRECTORY` under `bazel run`, cwd otherwise). Use this in `py_binary` targets that need to find source files on the real filesystem.
+- `util.workspace.get_build_working_directory()` — cwd where `bazel run` was invoked.
+- `util.runfiles` — runfiles resolution utilities (`//util:runfiles`).
+- `util.bazel_subprocess` — subprocess execution helpers for Bazel (`//util:bazel_subprocess`).
+- `util.bazel_query` — Bazel query utilities and `BazelLabel` type (`//util:bazel_query`).
+- `util.env.get_required_env(name)` — get env var or raise `KeyError` (`//util:env`).
+- `util.env.get_required_env_path(name)` — get env var as `Path`.
+- `util.env.get_required_existing_path(name)` — get env var as `Path`, verify it exists.
+- `util.env.get_optional_env(name, default=None)` — get optional env var.
+- `util.env.get_optional_env_path(name)` — get optional env var as `Path`.
+- `util.net` — TCP port utilities (`//util:net`).
+- `util.docker` — async Docker network utilities (`//util:docker`).
+- `util.decorators` — CLI decorators like `async_run` (`//util:decorators`).
+- `util.logging` — structured logging configuration for CLI apps (`//util:logging`).
+- `util.fmt` — formatting utilities for lists and truncation (`//util:fmt`).
+- `util.oci` — OCI image loading and pushing utilities (`//util:oci`, testonly).
 
 ### JavaScript / TypeScript (Bazel with rules_js)
 

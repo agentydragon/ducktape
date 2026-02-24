@@ -17,7 +17,7 @@ exclude = [
     "k8s_old",
     "tana/export/references",
     "props/testing/fixtures/testdata",
-    "claude/claude_hooks/testdata",
+    "hack/claude_hooks/testdata",
     "hack/sandboxed_jupyter/testdata",
     "sysrw/testdata",
     "tana/testdata",
@@ -96,6 +96,7 @@ known-third-party = ["ansible", "docker"]
 # TODO: Auto-generate this list from Bazel once bazelized
 known-first-party = [
     "tools",
+    "util",
     "mcp_starter",
     "agent_core",
     "agent_pkg",
@@ -105,6 +106,8 @@ known-first-party = [
     "props",
     "claude_history",
     "claude_hooks",
+    "claude_linter",
+    "claude_linter_v2",
     "claude_optimizer",
     "cli_util",
     "clustering_util",
@@ -162,8 +165,10 @@ split-on-trailing-comma = false
 "prompts/scans/scan_*.py" = ["N802"]
 # Lazy import for orchestration-only dependency (not available in container)
 "props/core/db/sync/sync.py" = ["PLC0415"]
-# sys.path manipulation must happen before pytest import
+# sys.path manipulation must happen before imports in uv run scripts and pytest
 "agent_server/tests/pytest_runner.py" = ["E402"]
+"tools/ci/check_release.py" = ["E402"]
+"tools/ci/ci_decide.py" = ["E402"]
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]

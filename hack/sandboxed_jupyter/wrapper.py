@@ -23,7 +23,7 @@ from hack.sandboxed_jupyter._jupyter_shared import (
 )
 from hack.sandboxed_jupyter.sandboxer import Policy, build_sandboxer_command
 from mcp_infra.constants import SLEEP_FOREVER_CMD
-from net_util.net import pick_free_port, wait_for_port
+from util.net import pick_free_port, wait_for_port
 
 StrPath = str | PathLike[str]
 

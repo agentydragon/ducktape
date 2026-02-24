@@ -29,11 +29,11 @@ from pathlib import Path
 
 import pygit2
 
-from bazel_util.runfiles import get_required_path
-from bazel_util.workspace import get_build_workspace_directory
 from tools.check_pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from tools.precommit.check_filename_conventions import check_filename_conventions
 from tools.precommit.check_terraform_centralization import find_violations
+from util.bazel.runfiles import get_required_path
+from util.bazel.workspace import get_build_workspace_directory
 
 _LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
 

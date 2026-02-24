@@ -31,9 +31,9 @@ from kubernetes.stream.ws_client import STDERR_CHANNEL, STDOUT_CHANNEL
 from pydantic import BaseModel
 from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 
-from bazel_util.runfiles import get_required_path
-from bazel_util.workspace import get_build_workspace_directory
 from cluster.scripts.generate_claude_kubeconfig import generate
+from util.bazel.runfiles import get_required_path
+from util.bazel.workspace import get_build_workspace_directory
 
 _TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
 

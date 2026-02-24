@@ -80,8 +80,8 @@ py_library(
     deps = [
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
-        "//bazel_util:runfiles",
         "//inop:config",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
     ],
 )

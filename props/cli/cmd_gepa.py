@@ -9,10 +9,10 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from cli_util.decorators import async_run
 from openai_utils.client_factory import build_client
 from props.core.gepa.gepa_adapter import optimize_with_gepa
 from props.db.database import Database
+from util.typer import async_run
 
 OPT_OPTIMIZER_MODEL = typer.Option("gpt-5.1", help="Model for critic developer agent")
 OPT_CRITIC_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for critic execution")

@@ -15,7 +15,6 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from fmt_util.fmt_util import format_truncation_suffix
 from gmail_archiver.gmail_api_models import (
     CreateFilterRequest,
     GmailFilter,
@@ -26,6 +25,7 @@ from gmail_archiver.gmail_api_models import (
     resolve_label_id,
 )
 from gmail_archiver.models import Email
+from util.fmt import format_truncation_suffix
 
 logger = logging.getLogger(__name__)
 

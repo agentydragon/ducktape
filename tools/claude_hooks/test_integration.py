@@ -13,12 +13,12 @@ import pytest_bazel
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 
-from net_util.net import async_wait_for_port
 from tools.claude_hooks import proxy_setup
 from tools.claude_hooks.proxy_setup import AUTH_PROXY_SERVICE
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.setup import start as supervisor_start
 from tools.claude_hooks.testing.fixtures import MockEgressProxyFixture, supervisor_is_running
+from util.net import async_wait_for_port
 
 # Register shared fixtures (isolated_dirs, hook_settings, mock_egress_proxy)
 pytest_plugins = ["tools.claude_hooks.testing.fixtures"]

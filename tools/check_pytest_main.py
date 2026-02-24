@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
 
-from bazel_util.query import run_query
+from util.bazel.query import run_query
 
 
 class CheckResult(NamedTuple):

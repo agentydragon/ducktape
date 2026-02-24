@@ -5,9 +5,9 @@ py_library(
     srcs = ["generate_pending_match_file_restriction.py"],
     imports = ["../../.."],
     deps = [
-        "//bazel_util:workspace",
         "//props/core/models:true_positive",
         "//props/db/sync:yaml_loader",
+        "//util/bazel:workspace",
         "@pypi//pyyaml",
     ],
 )

@@ -9,7 +9,7 @@ import pytest_bazel
 
 from hack.dbus_fast_example.client import ExampleClient
 from hack.dbus_fast_example.service_manager import ServiceManager
-from test_util.undeclared_outputs import undeclared_outputs_dir
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture(scope="session")

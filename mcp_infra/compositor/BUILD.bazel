@@ -137,7 +137,7 @@ py_library(
         "//agent_core/testing:responses",
         "//mcp_infra/testing:docker_fixtures",
         "//mcp_infra/testing:fixtures",
-        "//test_util",
+        "//third_party/debian_slim:fixtures",
         "@pypi//pytest",
     ],
 )

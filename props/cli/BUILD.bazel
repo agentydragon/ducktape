@@ -28,10 +28,10 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//cli_util:decorators",
         "//openai_utils:client_factory",
         "//props/core/gepa:gepa_adapter",
         "//props/db:database",
+        "//util:typer",
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
@@ -49,8 +49,8 @@ py_library(
     deps = [
         ":cmd_db",
         ":cmd_gepa",
-        "//cli_util:logging",
         "//props/db:database",
+        "//util:logging",
         "@pypi//rich",
         "@pypi//typer",
         "@pypi//typer_di",

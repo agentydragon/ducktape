@@ -12,9 +12,9 @@ import typer
 from rich.traceback import install as rich_traceback_install
 from typer_di import TyperDI
 
-from cli_util.logging import LogLevel, make_logging_callback
 from props.cli.cmd_db import db_app
 from props.db.database import Database
+from util.logging import LogLevel, make_logging_callback
 
 logger = logging.getLogger(__name__)
 

@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import ConnectionPoolEntry, NullPool
 
 from props.db.config import DatabaseConfig
-from props.db.setup import recreate_database as _setup_recreate_database
+from props.db.setup import recreate_database
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ class Database:
 
     def recreate(self) -> None:
         """Recreate database from scratch (drop all + schema via Alembic)."""
-        _setup_recreate_database(self._engine)
+        recreate_database(self._engine)
 
     def dispose(self) -> None:
         """Dispose engine and session factory."""

@@ -20,9 +20,9 @@ import httpx
 from pydantic import BaseModel
 from supervisor.xmlrpc import Faults
 
-from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import ProxyServiceError
 from tools.claude_hooks.managed_files import write_ini_config
+from util.net import is_port_in_use
 
 if TYPE_CHECKING:
     from tools.claude_hooks.settings import HookSettings

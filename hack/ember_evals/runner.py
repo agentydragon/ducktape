@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import datetime as _dt
+import datetime
 import json
 import os
 import re
@@ -132,7 +132,7 @@ def write_values_file(path: Path, payload: Mapping[str, object]) -> None:
 def make_base_run_id(explicit: str | None) -> str:
     if explicit:
         return sanitize_for_k8s(explicit, "eval")
-    timestamp = _dt.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     return f"eval-{timestamp}"
 
 
@@ -141,7 +141,7 @@ async def git_output(*args: str) -> str:
 
 
 async def compute_image_tag() -> str:
-    timestamp = _dt.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
     try:
         short_sha = await git_output("git", "rev-parse", "--short", "HEAD")
     except CommandError:
@@ -235,7 +235,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
         suite_version=request.suite.version,
         labels=request.labels,
         secrets=request.secrets,
-        started_at=_dt.datetime.utcnow().isoformat() + "Z",
+        started_at=datetime.datetime.utcnow().isoformat() + "Z",
         status="deploying",
     )
 
@@ -295,7 +295,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
                 print("[ember-eval] No scenarios provided; skipping scenario execution.")
 
         metadata.status = "ready"
-        metadata.ready_at = _dt.datetime.utcnow().isoformat() + "Z"
+        metadata.ready_at = datetime.datetime.utcnow().isoformat() + "Z"
         write_artifact(artifact_dir / "metadata.json", metadata.model_dump())
         if transcript.events:
             write_artifact(artifact_dir / "matrix_transcript.json", transcript.model_dump())
@@ -306,7 +306,7 @@ async def execute_run_async(request: EvalRunRequest) -> EvalRunMetadata:
         return metadata
     except Exception as exc:
         metadata.status = "failed"
-        metadata.failed_at = _dt.datetime.utcnow().isoformat() + "Z"
+        metadata.failed_at = datetime.datetime.utcnow().isoformat() + "Z"
         metadata.error = str(exc)
         if transcript.events:
             write_artifact(artifact_dir / "matrix_transcript.json", transcript.model_dump())

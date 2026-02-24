@@ -14,12 +14,12 @@ import logging
 import os
 from dataclasses import dataclass
 
-from bazel_util.subprocess import async_run_python_module
-from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import SupervisorError
 from tools.claude_hooks.managed_files import write_ini_config
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import SupervisorClient, try_connect
+from util.bazel.subprocess import async_run_python_module
+from util.net import is_port_in_use
 
 logger = logging.getLogger(__name__)
 

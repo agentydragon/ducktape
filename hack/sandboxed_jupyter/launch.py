@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import urlunparse
 
 from hack.sandboxed_jupyter._jupyter_shared import build_jupyter_mcp_command, start_jupyter_server_process
-from net_util.net import pick_free_port
+from util.net import pick_free_port
 
 StrPath = str | os.PathLike[str]
 

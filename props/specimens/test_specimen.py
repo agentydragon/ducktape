@@ -11,10 +11,10 @@ import os
 
 import pytest_bazel
 
-from bazel_util.runfiles import get_required_path
 from props.db.database import Database
 from props.db.models import Snapshot
 from props.db.sync.sync import SpecimenBundle, sync_specimen
+from util.bazel.runfiles import get_required_path
 
 
 def test_specimen(db: Database) -> None:
