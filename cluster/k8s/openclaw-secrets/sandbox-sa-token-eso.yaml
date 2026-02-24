@@ -19,3 +19,7 @@ spec:
       remoteRef:
         key: sandbox-sa-token
         property: ca.crt
+    - secretKey: namespace
+      remoteRef:
+        key: sandbox-sa-token
+        property: namespace

@@ -206,6 +206,11 @@ spec:
                 input: ["text", "image"]
                 contextWindow: 200000
                 maxTokens: 64000
+      tools:
+        exec:
+          host: node
+          security: full
+          ask: off
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
@@ -282,14 +287,9 @@ spec:
             secretKeyRef:
               name: openclaw-gateway-token
               key: token
-        # Point kubectl at the sandbox SA token so agent commands target
-        # openclaw-sandbox with the sandbox RBAC permissions.
-        - name: KUBECONFIG
-          value: /dev/null
-        - name: KUBERNETES_SERVICE_HOST
-          value: kubernetes.default.svc
-        - name: KUBERNETES_SERVICE_PORT
-          value: "443"
+        # kubectl uses in-cluster config: reads the sandbox SA token from
+        # /var/run/secrets/kubernetes.io/serviceaccount/ (mounted below).
+        # The namespace file in that mount defaults kubectl to openclaw-sandbox.
       volumeMounts:
         - name: sandbox-sa-token
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -313,6 +313,8 @@ spec:
             path: token
           - key: ca.crt
             path: ca.crt
+          - key: namespace
+            path: namespace
     - name: node-data
       emptyDir: {}
 
