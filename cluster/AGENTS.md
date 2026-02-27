@@ -104,6 +104,40 @@ reads from the same Vault path, providing credentials to the application.
 **Remaining Terraform**: `harbor-oidc-config/` (Harbor API), `vault-oidc-auth/` (Vault OIDC
 auth backend) — these configure non-Authentik systems and still use TF state.
 
+**Proxy-mode NetworkPolicy (required)**: When a service is behind the shared proxy outpost,
+it trusts `X-authentik-username` / `X-authentik-groups` headers injected by the outpost. Any
+pod that can reach the backend directly can forge those headers and impersonate any user. Add a
+`networkpolicy.yaml` next to the service's kustomization, restricting ingress to the outpost pod:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: <service>-ingress
+  namespace: <namespace>
+spec:
+  podSelector:
+    matchLabels:
+      <pod-label>: <value>
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              goauthentik.io/outpost-name: shared-proxy-outpost
+      ports:
+        - port: <backend-port>
+          protocol: TCP
+```
+
+`namespaceSelector` + `podSelector` in the same `from` item are ANDed: only the outpost pod
+in the `authentik` namespace passes, not the server/worker/db pods. Pod label verified against
+the running cluster. Add `- networkpolicy.yaml` to the service's `kustomization.yaml`.
+
 ## Loki (Log Aggregation)
 
 Loki collects logs from all pods via Promtail. Use it for postmortems when pod logs have
