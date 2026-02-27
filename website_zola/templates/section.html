@@ -1,0 +1,14 @@
+{% extends "base.html" %} {% block title %}{{ section.title | default(value="Home") }}{% endblock title %} {% block
+heading %}{{ section.title | default(value="Home") }}{% endblock heading %} {% block content %} {% set posts_section =
+get_section(path="posts/_index.md") %} {% if posts_section.pages %} {% set pages = posts_section.pages %} {% for page in
+pages | slice(end=10) %}
+<article>
+  <h3>{{ page.date | date(format="%Y-%m-%d") }} - <a href="{{ page.permalink }}">{{ page.title }}</a></h3>
+  {{ page.content | safe }}
+</article>
+{% endfor %} {% endif %}
+
+<hr />
+
+<p>You can find more in the <a href="/archive/">archive</a>.</p>
+{% endblock content %}

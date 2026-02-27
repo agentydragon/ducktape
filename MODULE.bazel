@@ -707,6 +707,14 @@ http_archive(
     urls = ["https://github.com/google/go-containerregistry/releases/download/v0.18.0/go-containerregistry_Linux_x86_64.tar.gz"],
 )
 
+# Zola static site generator — single binary, used by website_zola genrule.
+http_archive(
+    name = "zola",
+    build_file_content = 'exports_files(["zola"], visibility = ["//visibility:public"])\n',
+    sha256 = "0ca09aa40376aaa9ddfb512ff9ad963262ef95edb0d0f2d5ec6961b6f5cf22ef",
+    urls = ["https://github.com/getzola/zola/releases/download/v0.22.1/zola-v0.22.1-x86_64-unknown-linux-gnu.tar.gz"],
+)
+
 # ─ Specimen code archives (remote-VCS specimens) ─────────────────────────────
 # These specimens reference external Git repos rather than bundled code/ dirs.
 # Code is fetched at build time and exposed as filegroups for create_code_tar.

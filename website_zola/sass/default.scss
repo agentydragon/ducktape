@@ -1,0 +1,195 @@
+// Solarized colors, from https://ethanschoonover.com/solarized/
+
+$base03: #002b36;
+$base02: #073642;
+$base01: #586e75;
+$base00: #657b83;
+$base0: #839496;
+$base1: #93a1a1;
+$base2: #eee8d5;
+$base3: #fdf6e3;
+$yellow: #b58900;
+$orange: #cb4b16;
+$red: #dc322f;
+$magenta: #d33682;
+$violet: #6c71c4;
+$blue: #268bd2;
+$cyan: #2aa198;
+$green: #859900;
+@mixin rebase($rebase03, $rebase02, $rebase01, $rebase00, $rebase0, $rebase1, $rebase2, $rebase3) {
+  body {
+    background-color: $rebase3;
+    color: $rebase00;
+  }
+
+  header {
+    background-color: $rebase2;
+    border-bottom-color: $red;
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+
+  header a.logo {
+    color: $rebase01;
+  }
+
+  header a {
+    color: $red;
+  }
+
+  footer {
+    border-top-color: $red;
+    border-bottom-color: $red;
+    background-color: $rebase2;
+  }
+
+  code {
+    background-color: $rebase2;
+  }
+
+  a {
+    color: $red;
+    &:visited {
+      color: $orange;
+    }
+  }
+
+  #articles article {
+    border-top: 1px solid $rebase2;
+  }
+
+  pre {
+    border-top-color: $red;
+    border-bottom-color: $red;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: $rebase01;
+  }
+}
+
+html {
+  @include rebase($base3, $base2, $base1, $base0, $base00, $base01, $base02, $base03);
+}
+
+@media (prefers-color-scheme: dark) {
+  html {
+    @include rebase($base03, $base02, $base01, $base00, $base0, $base1, $base2, $base3);
+  }
+}
+
+html * {
+  color-profile: sRGB;
+  rendering-intent: auto;
+}
+
+body {
+  font-family: "PT Serif", serif;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 800px;
+
+  // Automatically hyphenate according to language-specific hyphenation rules
+  // if supported by browser. See:
+  // https://developer.mozilla.org/en-US/docs/Web/CSS/hyphens#suggesting_line_break_opportunities
+  hyphens: auto;
+}
+
+header {
+  padding: 0.5em;
+  text-align: center;
+  font-size: 1.2em;
+  font-family: "PT Mono", monospace;
+  border-bottom: 0.2em solid;
+}
+
+header a.logo {
+  text-decoration: none;
+}
+
+footer {
+  border-top: 0.2em solid;
+  border-bottom: 0.1em solid;
+  font-family: "PT Mono", monospace;
+  text-align: center;
+  padding: 1em;
+}
+
+div#content {
+  padding: 2em 1.2em;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "PT Mono", monospace;
+}
+
+figure {
+  text-align: center;
+}
+
+figure div {
+  display: block;
+  font-style: italic;
+}
+
+p {
+  text-align: justify;
+}
+
+pre {
+  border-top: 1px solid;
+  border-bottom: 1px solid;
+}
+
+pre code {
+  display: block;
+  padding: 0.5em;
+}
+
+blockquote {
+  font-style: italic;
+}
+
+figure pre code {
+  text-align: left;
+}
+
+hr.clearfix {
+  clear: both;
+  visibility: hidden;
+  height: 0;
+}
+
+img.avatar {
+  margin-left: 1em;
+  margin-bottom: 1em;
+}
+
+// a.sourceLine is used by codemirror for lines
+a[href] {
+  font-weight: bold;
+}
+
+#articles article:first-child {
+  margin-top: 0em;
+  padding-top: 0em;
+  border-top: 0;
+}
+
+#articles article {
+  margin-top: 10em;
+  padding-top: 10em;
+  line-height: 1.6;
+}

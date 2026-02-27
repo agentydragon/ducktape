@@ -1,0 +1,8 @@
+{% extends "base.html" %} {% block title %}Archive{% endblock title %} {% block heading %}Archive{% endblock heading %}
+{% block content %} {% set posts_section = get_section(path="posts/_index.md") %}
+<ul>
+  {% for page in posts_section.pages %}
+  <li><a href="{{ page.permalink }}">{{ page.title }}</a> - {{ page.date | date(format="%Y-%m-%d") }}</li>
+  {% endfor %}
+</ul>
+{% endblock content %}

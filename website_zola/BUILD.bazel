@@ -1,0 +1,16 @@
+genrule(
+    name = "site",
+    srcs = glob([
+        "content/**",
+        "templates/**",
+        "sass/**",
+        "static/**",
+    ]) + ["config.toml"],
+    outs = ["site.tar"],
+    cmd = " && ".join([
+        "$(location @zola//:zola) --root $$(dirname $(location config.toml)) build --output-dir $$PWD/zola_out",
+        "tar -cf $@ -C zola_out .",
+    ]),
+    tags = ["manual"],
+    tools = ["@zola"],
+)
