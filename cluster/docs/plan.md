@@ -238,11 +238,6 @@ openclaw, alloy-otlp) now have policies; see the pattern in `cluster/AGENTS.md`.
 **End goal**: Default-deny per namespace with explicit allow-rules. Use Hubble to
 observe traffic flows first, then generate baseline allow-rules.
 
-**Established pattern for Authentik proxy-mode services**: `namespaceSelector:
-kubernetes.io/metadata.name: authentik` + `podSelector: goauthentik.io/outpost-name:
-shared-proxy-outpost` in the same `from` item (AND semantics). See `cluster/AGENTS.md`
-SSO Integration section for the full template.
-
 **Priority 1 — Secrets & DNS** (unauthenticated admin APIs, high blast radius):
 
 - [ ] **Vault** — restrict ingress to ESO, tofu-controller runner, Vault namespace only.
@@ -270,12 +265,9 @@ SSO Integration section for the full template.
 - [ ] **Tempo** — restrict to Grafana, Alloy only (trace data contains request payloads).
 - [ ] **Langfuse** — restrict to props, OpenClaw telemetry, Authentik proxy.
 - [ ] **Headlamp** — restrict to Authentik proxy only (K8s admin UI).
-- [x] **Hubble UI** — restrict to Authentik proxy only (network topology visualization).
 
 **Priority 3 — Remaining services** (lower risk, still should be locked down):
 
-- [x] **Grocy** — restrict to Authentik proxy outpost only.
-- [x] **Gatus** — restrict ingress to Authentik proxy outpost + Prometheus scraping.
 - [ ] **Headscale** — restrict API to Authentik proxy, gateway.
 - [ ] **Cert-Manager** — restrict metrics endpoint to monitoring namespace.
 - [ ] **Metrics Server** — restrict to Prometheus, HPA controllers.
