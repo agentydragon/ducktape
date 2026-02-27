@@ -3,3 +3,8 @@ kind: Kustomization
 resources:
   - service-account.yaml
   - job.yaml
+configMapGenerator:
+  - name: inventree-token-provisioner-script
+    namespace: inventree
+    files:
+      - provision.sh
