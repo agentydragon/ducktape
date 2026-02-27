@@ -1,0 +1,40 @@
+# Restrict PowerDNS API (port 8081) to authorized consumers.
+# Port 53 (DNS) remains unrestricted — PowerDNS is a public authoritative server.
+# Port 8081 allows unauthenticated zone browsing and API-key-authenticated zone
+# modification; restrict to prevent DNS poisoning from any pod in the cluster.
+#
+# Note: PowerDNS runs with hostNetwork: true. Cilium enforces NetworkPolicy on
+# hostNetwork pods via host-endpoint policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: powerdns-api-ingress
+  namespace: dns-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: powerdns
+  policyTypes:
+    - Ingress
+  ingress:
+    # Port 53: public authoritative DNS — allow from all sources
+    - ports:
+        - port: 53
+          protocol: TCP
+        - port: 53
+          protocol: UDP
+    # Port 8081 API: cert-manager pdns-webhook (ACME DNS-01),
+    # powerdns-operator (zone/record management), external-dns (record sync)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cert-manager
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: powerdns-operator
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: external-dns
+      ports:
+        - port: 8081
+          protocol: TCP

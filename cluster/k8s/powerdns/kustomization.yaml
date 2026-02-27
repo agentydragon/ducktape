@@ -4,6 +4,7 @@ namespace: dns-system
 resources:
   - daemonset.yaml
   - service.yaml
+  - networkpolicy.yaml
 configMapGenerator:
   - name: powerdns-config
     files:

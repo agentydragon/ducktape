@@ -242,8 +242,8 @@ observe traffic flows first, then generate baseline allow-rules.
 
 - [ ] **Vault** — restrict ingress to ESO, tofu-controller runner, Vault namespace only.
       Any pod can currently reach `instance.vault:8200` and attempt auth method exploitation.
-- [ ] **PowerDNS API** — restrict `powerdns-api.dns-system:8081` to cert-manager webhook
-      and powerdns-operator only. Unauthenticated zone modification = DNS poisoning.
+- [x] **PowerDNS API** — restrict `powerdns-api.dns-system:8081` to cert-manager webhook,
+      powerdns-operator, and external-dns. Unauthenticated zone modification = DNS poisoning.
 - [ ] **Authentik API** — restrict `authentik-server.authentik:80` to system namespaces
       and tofu-controller. Unauthenticated `/api/v3/` enables user enumeration, provider
       tampering, backdoor user creation.
