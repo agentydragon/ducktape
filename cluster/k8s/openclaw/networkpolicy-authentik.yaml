@@ -12,6 +12,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              goauthentik.io/outpost-name: shared-proxy-outpost
       ports:
         - port: 18790
           protocol: TCP
