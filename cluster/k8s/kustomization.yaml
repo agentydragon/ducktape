@@ -128,6 +128,7 @@ resources:
   - inventree-namespace/flux-kustomization.yaml
   - applications/inventree-secrets/flux-kustomization.yaml
   - applications/inventree/flux-kustomization.yaml
+  - applications/inventree-token-provisioner/flux-kustomization.yaml
   - authentik-proxy-routes/flux-kustomization.yaml
   - harbor-oidc-config/flux-kustomization.yaml
   - user-agentydragon-namespace/flux-kustomization.yaml

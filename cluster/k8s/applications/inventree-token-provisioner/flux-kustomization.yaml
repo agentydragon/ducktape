@@ -1,0 +1,17 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: inventree-token-provisioner
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/applications/inventree-token-provisioner
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: inventree # InvenTree HelmRelease is fully deployed
+    - name: inventree-secrets # sandbox-agent password is provisioned in Vault + K8s
+    - name: openclaw-sandbox # openclaw-sandbox namespace exists
+    - name: claude-rbac # claude-sandbox namespace exists

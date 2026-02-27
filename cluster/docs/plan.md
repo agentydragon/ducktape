@@ -232,10 +232,15 @@ analysis.
 Deploy [talos-backup](https://github.com/siderolabs/talos-backup) CronJob with age
 encryption to S3. Covers cluster state loss if 2/3 control-plane nodes fail simultaneously.
 
-### TODO: Provision InvenTree API Tokens
+### Provision InvenTree API Tokens
 
-Provision API tokens for openclaw and Claude Code. Store in Vault at
-`kv/inventree/api-tokens/{service}`.
+Provisioned via `inventree-token-provisioner` Job (see
+<cluster/k8s/applications/inventree-token-provisioner/>).
+
+- Password: `inventree-tokens` Terraform module → Vault at `kv/inventree/sandbox-agent`
+- Job execs into the InvenTree pod, creates `sandbox-agent` user via Django ORM, fetches
+  its DRF token via `POST /api/user/token/`
+- `inventree-api-token` Secret written to both `openclaw-sandbox` and `claude-sandbox`
 
 ### TODO: Deploy Velero for PVC Backup
 

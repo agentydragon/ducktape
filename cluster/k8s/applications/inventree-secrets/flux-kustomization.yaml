@@ -15,6 +15,10 @@ spec:
       kind: Terraform
       name: inventree-admin
       namespace: flux-system
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: inventree-tokens
+      namespace: flux-system
   dependsOn:
     - name: inventree-namespace
     - name: external-secrets-config
