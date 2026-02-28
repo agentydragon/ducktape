@@ -43,6 +43,12 @@ build:rbe --extra_execution_platforms=//:rbe_linux_x64
 # tools (e.g. Rust linking needs CC) succeeds even though
 # BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 disables local auto-detection.
 build:rbe --host_platform=//:rbe_linux_x64
+# TODO: Investigate why GH Actions CI runs many actions locally (processwrapper-sandbox)
+# instead of via RBE. The PR #734 CI run showed 3096 processwrapper-sandbox vs 196 local
+# out of 7556 total processes. The local fallback caused specimen tar creation to use
+# symlinked sandbox inputs, producing broken tars (fixed in compile.py). CI should be
+# running most actions remotely. Check if --remote_download_minimal or missing platform
+# constraints are causing unnecessary local fallback.
 build:rbe --spawn_strategy=remote,local
 test:rbe --spawn_strategy=remote,local
 build:rbe --jobs=50
