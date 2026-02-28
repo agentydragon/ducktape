@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# harbor_push_if_changed.sh <bazel_load_target> <local_tag> <remote_repo>
+# harbor_push.sh <bazel_load_target> <local_tag> <remote_repo>
 #
 # Runs `bazel run <bazel_load_target>` to build the OCI image and load it
-# into the local Docker daemon, then compares its digest against the remote
-# :latest. If changed, pushes with tags: GITHUB_SHA, BRANCH-YYYYMMDDHHMMSS-sha7,
-# and :latest (only when GITHUB_EVENT_NAME != workflow_call).
+# into the local Docker daemon, then pushes with tags: GITHUB_SHA,
+# BRANCH-YYYYMMDDHHMMSS-sha7, and :latest (only when GITHUB_EVENT_NAME !=
+# workflow_call).
 # Skips entirely on pull_request builds.
 #
 # Environment variables (set automatically by GitHub Actions):
@@ -24,16 +24,7 @@ fi
 
 bazel run "$bazel_target"
 
-local_id=$(docker inspect --format='{{.Id}}' "$local_tag")
-remote_digest=$(docker manifest inspect "$remote_repo:latest" 2>/dev/null \
-  | jq -r '.config.digest // empty' 2>/dev/null || true)
-
-if [[ -n "$remote_digest" && "$local_id" == "$remote_digest" ]]; then
-  echo "$remote_repo: unchanged (local=$local_id, remote=$remote_digest), skipping push"
-  exit 0
-fi
-
-echo "$remote_repo: changed (local=$local_id, remote=${remote_digest:-<none>}), pushing"
+echo "$remote_repo: pushing"
 
 BRANCH="${GITHUB_REF_NAME//\//-}"
 TS="$(date -u +%Y%m%d%H%M%S)"

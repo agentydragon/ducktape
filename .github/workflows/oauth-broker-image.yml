@@ -1,10 +1,7 @@
 # Build and push the OAuth broker container image to Harbor.
 #
-# Bazel-built OCI image — same inputs → same image digest.
-# Compares local digest against remote and skips push when unchanged.
-#
 # Triggers:
-#   - workflow_call (from ci.yml): digest comparison handles skip
+#   - workflow_call (from ci.yml)
 #   - workflow_dispatch: manual push
 name: OAuth Broker Image
 
@@ -52,9 +49,9 @@ jobs:
           username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
 
-      - name: Build and push if changed
+      - name: Build and push
         run: |
-          .github/scripts/harbor_push_if_changed.sh \
+          .github/scripts/harbor_push.sh \
             //oauth_broker:load \
             oauth-broker:latest \
             registry.allegedly.works/oauth-broker/oauth-broker

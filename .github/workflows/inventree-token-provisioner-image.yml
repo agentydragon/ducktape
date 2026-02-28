@@ -1,10 +1,7 @@
 # Build and push the InvenTree token provisioner OCI image to Harbor.
 #
-# Bazel-built OCI image — same inputs → same image digest.
-# Compares local digest against remote and skips push when unchanged.
-#
 # Triggers:
-#   - workflow_call (from ci.yml): digest comparison handles skip
+#   - workflow_call (from ci.yml)
 #   - workflow_dispatch: manual push
 name: InvenTree Token Provisioner Image
 
@@ -52,9 +49,9 @@ jobs:
           username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
 
-      - name: Build and push if changed
+      - name: Build and push
         run: |
-          .github/scripts/harbor_push_if_changed.sh \
+          .github/scripts/harbor_push.sh \
             //cluster/k8s/applications/inventree-token-provisioner:load \
             inventree-token-provisioner:latest \
             registry.allegedly.works/inventree/token-provisioner

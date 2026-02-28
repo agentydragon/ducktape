@@ -3,15 +3,11 @@
 # Combines backend and agent image builds into a single workflow to share
 # Bazel setup, RBE warm cache, and checkout overhead.
 #
-# All images are stamp-free: same sources → same image ID across commits.
-# harbor_push_if_changed.sh compares the local image ID against the remote
-# config digest and skips the push when unchanged.
-#
 # Backend image → registry.allegedly.works (Harbor)
 # Agent images  → props registry (PROPS_REGISTRY_URL)
 #
 # Triggers:
-#   - workflow_call (from ci.yml): always (digest comparison handles skip)
+#   - workflow_call (from ci.yml)
 #   - workflow_dispatch: manual push of all images
 name: Props Images
 
@@ -70,9 +66,9 @@ jobs:
           username: ${{ secrets.PROPS_REGISTRY_USERNAME }}
           password: ${{ secrets.PROPS_REGISTRY_PASSWORD }}
 
-      - name: Push backend image (if changed)
+      - name: Push backend image
         run: |
-          .github/scripts/harbor_push_if_changed.sh \
+          .github/scripts/harbor_push.sh \
             //props/backend:load \
             props-backend:latest \
             registry.allegedly.works/props/props-backend
@@ -89,7 +85,7 @@ jobs:
           bazel run //props/agents/critic/variants:high_recall_load
           bazel run //props/agents/critic/variants:verbose_docs_load
 
-      - name: Push agent images (if changed)
+      - name: Push agent images
         env:
           REGISTRY: ${{ vars.PROPS_REGISTRY_URL }}
           SHA: ${{ github.sha }}
@@ -99,32 +95,21 @@ jobs:
             exit 0
           fi
 
-          push_if_changed() {
+          push_image() {
             local local_tag="$1" remote_repo="$2"
             shift 2
             local remote_tags=("$@")
-
-            local local_id remote_digest
-            local_id=$(docker inspect --format='{{.Id}}' "$local_tag")
-            remote_digest=$(docker manifest inspect "$REGISTRY/$remote_repo:latest" 2>/dev/null \
-              | jq -r '.config.digest // empty' 2>/dev/null || true)
-
-            if [[ -n "$remote_digest" && "$local_id" == "$remote_digest" ]]; then
-              echo "$remote_repo: unchanged, skipping push"
-              return
-            fi
-
             for tag in "${remote_tags[@]}"; do
               docker tag "$local_tag" "$REGISTRY/$remote_repo:$tag"
               docker push --quiet "$REGISTRY/$remote_repo:$tag"
             done
           }
 
-          push_if_changed critic:latest critic latest "$SHA"
-          push_if_changed grader:latest grader latest "$SHA"
-          push_if_changed critic_dev_improve:latest critic_dev_improve latest "$SHA"
-          push_if_changed critic_dev_optimize:latest critic_dev_optimize latest "$SHA"
+          push_image critic:latest critic latest "$SHA"
+          push_image grader:latest grader latest "$SHA"
+          push_image critic_dev_improve:latest critic_dev_improve latest "$SHA"
+          push_image critic_dev_optimize:latest critic_dev_optimize latest "$SHA"
 
           for variant in contract_truthfulness dead_code flag_propagation high_recall verbose_docs; do
-            push_if_changed "critic:$variant" critic "$variant" "${variant}-${SHA}"
+            push_image "critic:$variant" critic "$variant" "${variant}-${SHA}"
           done
