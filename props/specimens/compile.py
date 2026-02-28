@@ -28,7 +28,12 @@ def _compile_code_tar(args: argparse.Namespace) -> None:
     with tarfile.open(args.output, "w") as tar:
         for arcname in sorted(files_to_add.keys(), key=str):
             src_path = files_to_add[arcname]
-            tarinfo = tar.gettarinfo(str(src_path), arcname=str(arcname))
+            # Use os.stat (not lstat) so symlinks resolve to regular files.
+            # Bazel sandboxes inputs as symlinks; gettarinfo uses lstat,
+            # which would create SYMTYPE entries that fail isfile() on read.
+            stat = src_path.stat()
+            tarinfo = tarfile.TarInfo(name=str(arcname))
+            tarinfo.size = stat.st_size
             tarinfo.mtime = 0
             tarinfo.uid = 0
             tarinfo.gid = 0
