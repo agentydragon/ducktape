@@ -144,7 +144,25 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "0.8.1",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
+
+# KubeSpan E2E: Talos discovery service (gRPC discovery protocol server)
+oci.pull(
+    name = "discovery_service",
+    digest = "sha256:432eaf0d512f5c5fed879cb2400bab58922f172a201dbb4494d749755aa81194",
+    image = "ghcr.io/siderolabs/discovery-service",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+
+# KubeSpan E2E: Talos Linux container (KubeSpan peer for discovery test)
+oci.pull(
+    name = "talos_v1_9_5",
+    digest = "sha256:6a2a9dd6fca727ef0a920750ef4ef1addfd486198f87cbe9d6679a04ac80e707",
+    image = "ghcr.io/siderolabs/talos",
+    platforms = ["linux/amd64"],
+    tag = "v1.9.5",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_v1_9_5", "talos_v1_9_5_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")

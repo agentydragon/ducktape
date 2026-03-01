@@ -96,6 +96,20 @@ kubespand handles `SIGTERM` and `SIGINT` gracefully: it deregisters from the dis
 service, removes nftables rules, ip policy routing rules, and the WireGuard interface
 before exiting.
 
+## Testing
+
+```bash
+# Unit tests:
+bazel test //cluster/kubespan-agent:kubespan-agent_test
+
+# E2E integration test (requires Docker):
+bazel test //cluster/kubespan-agent/e2e:e2e_test
+```
+
+The E2E test starts a local discovery service, a Talos container, and kubespand in
+discovery-only mode — verifying the encrypted gRPC discovery protocol works end-to-end.
+All container images are managed as Bazel dependencies (no registry pulls at test time).
+
 ## Verifying
 
 ```bash

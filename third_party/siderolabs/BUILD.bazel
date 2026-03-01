@@ -1,0 +1,37 @@
+# Siderolabs container images for KubeSpan E2E tests.
+#
+# These images are bundled as Bazel deps so hermetic tests don't need
+# ghcr.io access at runtime.
+#
+# Usage in BUILD.bazel data deps:
+#     data = ["//third_party/siderolabs:discovery_service_tarball"]
+
+load("@rules_oci//oci:defs.bzl", "oci_load")
+
+package(default_testonly = True)
+
+oci_load(
+    name = "discovery_service_load",
+    image = "@discovery_service_linux_amd64",
+    repo_tags = ["ghcr.io/siderolabs/discovery-service:latest"],
+)
+
+filegroup(
+    name = "discovery_service_tarball",
+    srcs = [":discovery_service_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "talos_v1_9_5_load",
+    image = "@talos_v1_9_5_linux_amd64",
+    repo_tags = ["ghcr.io/siderolabs/talos:v1.9.5"],
+)
+
+filegroup(
+    name = "talos_v1_9_5_tarball",
+    srcs = [":talos_v1_9_5_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)

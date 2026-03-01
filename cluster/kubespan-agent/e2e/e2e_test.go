@@ -1,5 +1,3 @@
-//go:build integration
-
 // Package e2e contains integration tests for kubespand.
 //
 // The test verifies that kubespand can discover a Talos KubeSpan peer via
@@ -8,10 +6,10 @@
 //  2. A Talos container with KubeSpan enabled
 //  3. kubespand in discovery-only mode
 //
-// The test proves kubespand speaks the same encrypted gRPC discovery protocol
-// as Talos and that mutual peer discovery works end-to-end.
+// All container images are loaded from Bazel-managed tarballs (data deps),
+// so the test is hermetic and does not pull from registries at runtime.
 //
-// Requirements: Docker, ~2 minutes, internet (to pull container images on first run).
+// Requirements: Docker, ~2 minutes.
 package e2e
 
 import (
@@ -37,9 +35,10 @@ import (
 )
 
 const (
-	discoveryImage = "ghcr.io/siderolabs/discovery-service:latest"
-	talosImage     = "ghcr.io/siderolabs/talos:v1.9.5"
-	networkPrefix  = "kubespan-e2e"
+	discoveryRepoTag = "ghcr.io/siderolabs/discovery-service:latest"
+	talosRepoTag     = "ghcr.io/siderolabs/talos:v1.9.5"
+	kubespandRepoTag = "kubespand:latest"
+	networkPrefix    = "kubespan-e2e"
 )
 
 func TestKubeSpanDiscovery(t *testing.T) {
@@ -49,6 +48,11 @@ func TestKubeSpanDiscovery(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+
+	// Load all container images from Bazel tarballs.
+	loadImage(t, "third_party/siderolabs/discovery_service_load/tarball.tar", discoveryRepoTag)
+	loadImage(t, "third_party/siderolabs/talos_v1_9_5_load/tarball.tar", talosRepoTag)
+	loadImage(t, "cluster/kubespan-agent/kubespand_load/tarball.tar", kubespandRepoTag)
 
 	// Generate unique test ID for resource names.
 	testID := randomHex(8)
@@ -79,7 +83,7 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		"--network", networkName,
 		"-v", certFile+":/tls/cert.pem:ro",
 		"-v", keyFile+":/tls/key.pem:ro",
-		discoveryImage,
+		discoveryRepoTag,
 		"-certificate-path", "/tls/cert.pem",
 		"-key-path", "/tls/key.pem",
 	)
@@ -91,23 +95,13 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	// Wait for discovery service to be ready.
 	waitForContainer(t, ctx, discoveryName, 30*time.Second)
 
-	// Build kubespand binary.
-	kubespandBin := buildKubespand(t)
-
 	// Write kubespand config.
 	configFile := filepath.Join(tmpDir, "agent.yaml")
 	writeKubespandConfig(t, configFile, clusterID, clusterSecret, discoveryName+":3000")
 
-	// Build kubespand Docker image.
-	kubespandImage := fmt.Sprintf("kubespand-test:%s", testID)
-	buildKubespandImage(t, tmpDir, kubespandBin, kubespandImage)
-	t.Cleanup(func() {
-		dockerRunIgnoreErr("docker", "rmi", kubespandImage)
-	})
-
 	// Generate Talos machine config and start Talos container.
 	talosName := fmt.Sprintf("talos-%s", testID)
-	startTalosContainer(t, ctx, tmpDir, talosName, networkName, clusterID, clusterSecret, discoveryName)
+	startTalosContainer(t, tmpDir, talosName, networkName, clusterID, clusterSecret, discoveryName)
 	t.Cleanup(func() {
 		dockerRunIgnoreErr("docker", "rm", "-f", talosName)
 	})
@@ -123,7 +117,7 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		"--name", kubespandName,
 		"--network", networkName,
 		"-v", configFile+":/etc/kubespan/agent.yaml:ro",
-		kubespandImage,
+		kubespandRepoTag,
 		"/kubespand",
 		"-config", "/etc/kubespan/agent.yaml",
 		"-discovery-only",
@@ -140,6 +134,53 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	if !strings.Contains(out, "peers found") {
 		t.Errorf("kubespand did not find peers; output:\n%s", out)
 	}
+}
+
+// loadImage loads a container image tarball from a Bazel runfiles path.
+func loadImage(t *testing.T, rlocation, repoTag string) {
+	t.Helper()
+
+	// Resolve the tarball path from runfiles.
+	tarball := resolveRunfile(t, rlocation)
+
+	t.Logf("loading image %s from %s", repoTag, tarball)
+	cmd := exec.Command("docker", "load", "-i", tarball)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker load %s failed: %v\n%s", tarball, err, out)
+	}
+}
+
+// resolveRunfile finds a file in Bazel runfiles or the execroot.
+func resolveRunfile(t *testing.T, rlocation string) string {
+	t.Helper()
+
+	// Under `bazel test`, RUNFILES_DIR or TEST_SRCDIR is set.
+	if dir := os.Getenv("RUNFILES_DIR"); dir != "" {
+		p := filepath.Join(dir, "_main", rlocation)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if dir := os.Getenv("TEST_SRCDIR"); dir != "" {
+		p := filepath.Join(dir, "_main", rlocation)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	// Fallback: look relative to the test binary location.
+	exe, err := os.Executable()
+	if err == nil {
+		runfilesDir := exe + ".runfiles"
+		p := filepath.Join(runfilesDir, "_main", rlocation)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	t.Fatalf("could not resolve runfile %q (RUNFILES_DIR=%q, TEST_SRCDIR=%q)", rlocation, os.Getenv("RUNFILES_DIR"), os.Getenv("TEST_SRCDIR"))
+	return ""
 }
 
 // randomBytes generates n random bytes.
@@ -202,73 +243,6 @@ func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 	return certFile, keyFile
 }
 
-// buildKubespand builds the kubespand binary using Bazel and returns the path.
-func buildKubespand(t *testing.T) string {
-	t.Helper()
-	t.Log("building kubespand...")
-
-	cmd := exec.Command("bazel", "build", "//cluster/kubespan-agent")
-	cmd.Dir = findWorkspaceRoot(t)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("bazel build failed: %v\n%s", err, out)
-	}
-
-	// Find the built binary.
-	cmd = exec.Command("bazel", "cquery", "--output=files", "//cluster/kubespan-agent")
-	cmd.Dir = findWorkspaceRoot(t)
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("bazel cquery failed: %v\n%s", err, out)
-	}
-
-	binPath := strings.TrimSpace(string(out))
-	if binPath == "" {
-		t.Fatal("bazel cquery returned empty path")
-	}
-
-	// The binary is typically at bazel-bin/cluster/kubespan-agent/kubespan-agent_/kubespan-agent
-	// but cquery returns the runfiles path. Let's use the known path.
-	wsRoot := findWorkspaceRoot(t)
-	fullPath := filepath.Join(wsRoot, "bazel-bin/cluster/kubespan-agent/kubespan-agent_/kubespan-agent")
-	if _, err := os.Stat(fullPath); err != nil {
-		t.Fatalf("kubespand binary not found at %s: %v", fullPath, err)
-	}
-
-	return fullPath
-}
-
-// buildKubespandImage creates a Docker image containing the kubespand binary.
-func buildKubespandImage(t *testing.T, tmpDir, binPath, imageName string) {
-	t.Helper()
-
-	// Copy the binary to the build context.
-	binData, err := os.ReadFile(binPath)
-	if err != nil {
-		t.Fatalf("reading kubespand binary: %v", err)
-	}
-	localBin := filepath.Join(tmpDir, "kubespand")
-	if err := os.WriteFile(localBin, binData, 0755); err != nil {
-		t.Fatalf("writing kubespand binary: %v", err)
-	}
-
-	// Write a minimal Dockerfile.
-	dockerfile := filepath.Join(tmpDir, "Dockerfile")
-	if err := os.WriteFile(dockerfile, []byte(`FROM debian:bookworm-slim
-COPY kubespand /kubespand
-ENTRYPOINT ["/kubespand"]
-`), 0644); err != nil {
-		t.Fatalf("writing Dockerfile: %v", err)
-	}
-
-	cmd := exec.Command("docker", "build", "--network=host", "-t", imageName, tmpDir)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("docker build failed: %v\n%s", err, out)
-	}
-	t.Log("kubespand Docker image built")
-}
-
 // writeKubespandConfig writes a kubespand YAML config file.
 func writeKubespandConfig(t *testing.T, path, clusterID, clusterSecret, discoveryEndpoint string) {
 	t.Helper()
@@ -289,18 +263,10 @@ machine_type: "worker"
 }
 
 // startTalosContainer starts a Talos container with KubeSpan enabled.
-func startTalosContainer(t *testing.T, ctx context.Context, tmpDir, name, network, clusterID, clusterSecret, discoveryHost string) {
+func startTalosContainer(t *testing.T, tmpDir, name, network, clusterID, clusterSecret, discoveryHost string) {
 	t.Helper()
 	t.Log("generating Talos machine config...")
 
-	// Generate Talos machine config using talosctl.
-	// We need to build a config that has KubeSpan enabled with our cluster credentials
-	// and points to our local discovery service.
-	//
-	// Since we may not have talosctl available, we'll construct a minimal machine config
-	// manually using the Talos config format.
-
-	// Talos machine config (v1alpha1) with KubeSpan enabled.
 	talosConfig := map[string]interface{}{
 		"version": "v1alpha1",
 		"persist": false,
@@ -327,8 +293,8 @@ func startTalosContainer(t *testing.T, ctx context.Context, tmpDir, name, networ
 				"endpoint": "https://localhost:6443",
 			},
 			"clusterNetwork": map[string]interface{}{
-				"dnsDomain":   "cluster.local",
-				"podSubnets":  []string{"10.244.0.0/16"},
+				"dnsDomain":      "cluster.local",
+				"podSubnets":     []string{"10.244.0.0/16"},
 				"serviceSubnets": []string{"10.96.0.0/12"},
 			},
 		},
@@ -347,38 +313,12 @@ func startTalosContainer(t *testing.T, ctx context.Context, tmpDir, name, networ
 		"--privileged",
 		"-e", "PLATFORM=container",
 		"-e", "USERDATA="+configB64,
-		talosImage,
+		talosRepoTag,
 	)
 	t.Log("Talos container started")
 }
 
-// findWorkspaceRoot finds the Bazel workspace root.
-func findWorkspaceRoot(t *testing.T) string {
-	t.Helper()
-
-	// Try BUILD_WORKSPACE_DIRECTORY first (set by `bazel test`).
-	if ws := os.Getenv("BUILD_WORKSPACE_DIRECTORY"); ws != "" {
-		return ws
-	}
-
-	// Walk up from the test's working directory.
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "MODULE.bazel")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("could not find workspace root (MODULE.bazel)")
-		}
-		dir = parent
-	}
-}
-
-// waitForContainer waits for a Docker container to be running and healthy.
+// waitForContainer waits for a Docker container to be running.
 func waitForContainer(t *testing.T, ctx context.Context, name string, timeout time.Duration) {
 	t.Helper()
 
