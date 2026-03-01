@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 
 from homeassistant_proxy.config import AccessRule, Action, EntityInfo, Policy
-from homeassistant_proxy.policy import AccessDeniedError, EntityRegistry, PolicyEnforcer
+from homeassistant_proxy.policy import AccessDeniedError, PolicyEnforcer
 
 
 def _info(entity_id: str, device_id: str | None = None, area_id: str | None = None) -> EntityInfo:
@@ -12,7 +12,7 @@ def _info(entity_id: str, device_id: str | None = None, area_id: str | None = No
 
 
 def _enforcer(entities: dict[str, EntityInfo] | None = None) -> PolicyEnforcer:
-    return PolicyEnforcer("http://unused", "unused-token", registry=EntityRegistry(entities or {}))
+    return PolicyEnforcer("http://unused", "unused-token", entities=entities or {})
 
 
 class TestPriorityRules:
@@ -71,37 +71,6 @@ class TestPriorityRules:
         )
         enforcer = _enforcer({"light.dangerous": _info("light.dangerous", device_id="dev_123")})
         assert not await enforcer.is_allowed("light.dangerous", Action.CONTROL, policy)
-
-
-class TestEntityRegistry:
-    def test_reverse_device_index(self):
-        registry = EntityRegistry(
-            {
-                "light.a": _info("light.a", device_id="dev_1"),
-                "light.b": _info("light.b", device_id="dev_1"),
-                "light.c": _info("light.c", device_id="dev_2"),
-            }
-        )
-        assert sorted(registry.entities_for_devices(["dev_1"])) == ["light.a", "light.b"]
-        assert registry.entities_for_devices(["dev_2"]) == ["light.c"]
-        assert registry.entities_for_devices(["nonexistent"]) == []
-
-    def test_reverse_area_index(self):
-        registry = EntityRegistry(
-            {
-                "light.a": _info("light.a", area_id="kitchen"),
-                "light.b": _info("light.b", area_id="kitchen"),
-                "light.c": _info("light.c", area_id="bedroom"),
-            }
-        )
-        assert sorted(registry.entities_for_areas(["kitchen"])) == ["light.a", "light.b"]
-        assert registry.entities_for_areas(["bedroom"]) == ["light.c"]
-
-    def test_get_unknown_entity_returns_fallback(self):
-        registry = EntityRegistry({})
-        info = registry.get("sensor.temp")
-        assert info.entity_id == "sensor.temp"
-        assert info.device_id is None
 
 
 class TestPolicyEnforcer:

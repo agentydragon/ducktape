@@ -8,6 +8,7 @@ import pytest_bazel
 import respx
 
 from homeassistant_proxy.config import AccessRule, EntityInfo, HomeAssistantSettings, Policy, Settings, TokenConfig
+from homeassistant_proxy.policy import PolicyEnforcer
 from homeassistant_proxy.proxy import create_app
 
 _HA_URL = "http://ha.test:8123"
@@ -38,7 +39,7 @@ _HEADERS = {"Authorization": "Bearer proxy-token-abc"}
 
 @pytest.fixture
 def mock_registry():
-    with patch("homeassistant_proxy.policy.fetch_registry", new_callable=AsyncMock, return_value=_REGISTRY):
+    with patch.object(PolicyEnforcer, "_fetch_registry", new_callable=AsyncMock, return_value=_REGISTRY):
         yield
 
 

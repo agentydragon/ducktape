@@ -3,8 +3,9 @@
 import logging
 import time
 
+from hass_client import HomeAssistantClient
+
 from homeassistant_proxy.config import Action, EntityInfo, Policy
-from homeassistant_proxy.registry import fetch_registry
 
 logger = logging.getLogger(__name__)
 
@@ -17,51 +18,71 @@ class AccessDeniedError(Exception):
         super().__init__(f"access denied for entities: {entity_ids}")
 
 
-class EntityRegistry:
-    """Entity registry for looking up entity metadata by ID, device, or area."""
-
-    def __init__(self, entities: dict[str, EntityInfo]):
-        self._entities = entities
-
-    def get(self, entity_id: str) -> EntityInfo:
-        return self._entities.get(entity_id, EntityInfo(entity_id=entity_id))
-
-    def entities_for_devices(self, device_ids: list[str]) -> list[str]:
-        ids = set(device_ids)
-        return [info.entity_id for info in self._entities.values() if info.device_id in ids]
-
-    def entities_for_areas(self, area_ids: list[str]) -> list[str]:
-        ids = set(area_ids)
-        return [info.entity_id for info in self._entities.values() if info.area_id in ids]
-
-
 class PolicyEnforcer:
     """Manages the entity registry and evaluates entity access policies.
 
-    Owns registry lifecycle: fetches from HA, caches with TTL, refreshes automatically.
+    Owns registry lifecycle: fetches from HA via WebSocket, caches with TTL,
+    refreshes automatically.
     Priority: entity_ids > device_ids > area_ids > domains > all.
     """
 
     def __init__(
-        self, ha_url: str, ha_token: str, *, ttl: float = _REGISTRY_TTL_SECONDS, registry: EntityRegistry | None = None
+        self,
+        ha_url: str,
+        ha_token: str,
+        *,
+        ttl: float = _REGISTRY_TTL_SECONDS,
+        entities: dict[str, EntityInfo] | None = None,
     ):
         self._ha_url = ha_url
         self._ha_token = ha_token
         self._ttl = ttl
-        self._registry = registry
-        self._registry_time: float = 0
+        self._entities: dict[str, EntityInfo] | None = entities
+        self._entities_time: float = 0
 
-    async def _ensure_registry(self) -> EntityRegistry:
+    async def _ensure_entities(self) -> dict[str, EntityInfo]:
         now = time.monotonic()
-        if self._registry is None or now - self._registry_time >= self._ttl:
-            raw = await fetch_registry(self._ha_url, self._ha_token)
-            self._registry = EntityRegistry(raw)
-            self._registry_time = now
-        return self._registry
+        if self._entities is None or now - self._entities_time >= self._ttl:
+            self._entities = await self._fetch_registry()
+            self._entities_time = now
+        return self._entities
+
+    async def _fetch_registry(self) -> dict[str, EntityInfo]:
+        ws_url = self._ha_url.replace("http://", "ws://").replace("https://", "wss://")
+        ws_url = f"{ws_url}/api/websocket"
+
+        async with HomeAssistantClient(ws_url, self._ha_token) as client:
+            entities = await client.get_entity_registry()
+            devices = await client.get_device_registry()
+
+        device_area: dict[str, str | None] = {d["id"]: d["area_id"] for d in devices}
+
+        registry: dict[str, EntityInfo] = {}
+        for entity in entities:
+            entity_id = entity["entity_id"]
+            device_id = entity["device_id"]
+            area_id = entity["area_id"]
+            if not area_id and device_id:
+                area_id = device_area.get(device_id)
+            registry[entity_id] = EntityInfo(entity_id=entity_id, device_id=device_id, area_id=area_id)
+
+        logger.info(f"Fetched registry: {len(registry)} entities")
+        return registry
+
+    def _get_entity(self, entities: dict[str, EntityInfo], entity_id: str) -> EntityInfo:
+        return entities.get(entity_id, EntityInfo(entity_id=entity_id))
+
+    def _entities_for_devices(self, entities: dict[str, EntityInfo], device_ids: list[str]) -> list[str]:
+        ids = set(device_ids)
+        return [info.entity_id for info in entities.values() if info.device_id in ids]
+
+    def _entities_for_areas(self, entities: dict[str, EntityInfo], area_ids: list[str]) -> list[str]:
+        ids = set(area_ids)
+        return [info.entity_id for info in entities.values() if info.area_id in ids]
 
     async def is_allowed(self, entity_id: str, action: Action, policy: Policy) -> bool:
-        registry = await self._ensure_registry()
-        info = registry.get(entity_id)
+        entities = await self._ensure_entities()
+        info = self._get_entity(entities, entity_id)
         if entity_id in policy.entity_ids:
             return policy.entity_ids[entity_id].allows(action)
         if info.device_id and info.device_id in policy.device_ids:
@@ -86,8 +107,8 @@ class PolicyEnforcer:
             raise AccessDeniedError(denied)
 
     async def resolve_targets(self, entity_ids: list[str], device_ids: list[str], area_ids: list[str]) -> list[str]:
-        registry = await self._ensure_registry()
+        entities = await self._ensure_entities()
         result = list(entity_ids)
-        result.extend(registry.entities_for_devices(device_ids))
-        result.extend(registry.entities_for_areas(area_ids))
+        result.extend(self._entities_for_devices(entities, device_ids))
+        result.extend(self._entities_for_areas(entities, area_ids))
         return result

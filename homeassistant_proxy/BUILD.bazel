@@ -26,16 +26,6 @@ py_library(
     imports = [".."],
     deps = [
         ":config",
-        ":registry",
-    ],
-)
-
-py_library(
-    name = "registry",
-    srcs = ["registry.py"],
-    imports = [".."],
-    deps = [
-        ":config",
         "@pypi//hass_client",
     ],
 )
