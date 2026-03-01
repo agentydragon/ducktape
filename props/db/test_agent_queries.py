@@ -1,11 +1,8 @@
-"""Unit tests for agent SQL query builders.
+"""Unit tests for agent SQL query builders and recipes.
 
 Tests verify:
 1. Query builders execute successfully via SQLAlchemy
 2. Return expected data shapes and values
-
-This tests the single source of truth: query_builders.py functions are executed
-directly in tests, and the same query builders are compiled to SQL for j2 templates.
 
 Does NOT test:
 - RLS policies (covered in test_db_integration.py)
@@ -18,8 +15,8 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
+from props.agents.critic_dev.recipes.ground_truth import count_issues_by_snapshot
 from props.core.splits import Split
-from props.db import query_builders as qb
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import RecallByDefinitionSplitKind, Snapshot
@@ -95,7 +92,7 @@ class TestQueryBuilders:
     def test_count_issues_by_snapshot(self, query_test_data, db: Database):
         """count_issues_by_snapshot() returns TP/FP counts per snapshot."""
         with db.session() as session:
-            result = session.execute(qb.count_issues_by_snapshot(split=Split.TRAIN)).fetchall()
+            result = session.execute(count_issues_by_snapshot(split=Split.TRAIN)).fetchall()
 
             # Should have at least 1 train snapshot from git fixtures
             assert len(result) >= 1

@@ -13,12 +13,47 @@ from __future__ import annotations
 import json
 import sys
 
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from props.core.ids import SnapshotSlug
 from props.core.splits import Split
 from props.db.database import Database
 from props.db.models import FalsePositive, Snapshot, TruePositive
+
+
+def count_issues_by_snapshot(split: str | None = None) -> Select:
+    """Count true positives and false positives per snapshot.
+
+    Returns query selecting (snapshot_slug, tp_count, fp_count).
+    """
+    tp_counts = (
+        select(TruePositive.snapshot_slug, func.count().label("tp_count"))
+        .group_by(TruePositive.snapshot_slug)
+        .subquery()
+    )
+
+    fp_counts = (
+        select(FalsePositive.snapshot_slug, func.count().label("fp_count"))
+        .group_by(FalsePositive.snapshot_slug)
+        .subquery()
+    )
+
+    query = (
+        select(
+            Snapshot.slug.label("snapshot_slug"),
+            func.coalesce(tp_counts.c.tp_count, 0).label("tp_count"),
+            func.coalesce(fp_counts.c.fp_count, 0).label("fp_count"),
+        )
+        .outerjoin(tp_counts, Snapshot.slug == tp_counts.c.snapshot_slug)
+        .outerjoin(fp_counts, Snapshot.slug == fp_counts.c.snapshot_slug)
+        .order_by(Snapshot.slug)
+    )
+
+    if split is not None:
+        query = query.where(Snapshot.split == split)
+
+    return query
 
 
 def list_snapshots_by_split(session: Session, split: Split) -> list[Snapshot]:

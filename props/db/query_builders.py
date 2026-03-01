@@ -2,118 +2,14 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from pydantic import BaseModel
-from sqlalchemy import Select, func, literal, select, union_all
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
-from props.db.models import AgentRun, FalsePositive, LLMRunCost, Snapshot, TpOccurrenceCredit, TruePositive
-
-
-def count_issues_by_snapshot(split: str | None = None) -> Select:
-    """Count true positives and false positives per snapshot.
-
-    Args:
-        split: Optional split filter ('train', 'valid', 'test')
-
-    Returns:
-        Query selecting (snapshot_slug, tp_count, fp_count)
-    """
-    # Subquery for TP counts
-    tp_counts = (
-        select(TruePositive.snapshot_slug, func.count().label("tp_count"))
-        .group_by(TruePositive.snapshot_slug)
-        .subquery()
-    )
-
-    # Subquery for FP counts
-    fp_counts = (
-        select(FalsePositive.snapshot_slug, func.count().label("fp_count"))
-        .group_by(FalsePositive.snapshot_slug)
-        .subquery()
-    )
-
-    # Main query joining snapshots with counts
-    query = (
-        select(
-            Snapshot.slug.label("snapshot_slug"),
-            func.coalesce(tp_counts.c.tp_count, 0).label("tp_count"),
-            func.coalesce(fp_counts.c.fp_count, 0).label("fp_count"),
-        )
-        .outerjoin(tp_counts, Snapshot.slug == tp_counts.c.snapshot_slug)
-        .outerjoin(fp_counts, Snapshot.slug == fp_counts.c.snapshot_slug)
-        .order_by(Snapshot.slug)
-    )
-
-    if split is not None:
-        query = query.where(Snapshot.split == split)
-
-    return query
-
-
-def critic_dev_run_costs(critic_dev_run_id: UUID) -> Select:
-    """Get per-run costs and totals for a critic developer run.
-
-    Uses AgentRun with JSONB filtering to find all child runs (critics, graders)
-    of a critic-dev agent run.
-
-    Args:
-        critic_dev_run_id: Critic developer agent run UUID (agent_run_id)
-
-    Returns:
-        Query selecting transcript details with cost/token metrics from llm_run_costs view
-    """
-    # CTE for critic-dev transcripts (all child agent runs + the critic-dev agent's own run)
-    child_runs = select(
-        AgentRun.agent_run_id,
-        AgentRun.type_config["example"]["snapshot_slug"].astext.label("snapshot_slug"),
-        AgentRun.type_config["agent_type"].astext.label("run_type"),
-        AgentRun.created_at,
-    ).where(AgentRun.parent_agent_run_id == critic_dev_run_id)
-
-    # The critic-dev agent's own run
-    critic_dev_agent_run = select(
-        AgentRun.agent_run_id,
-        literal(None).label("snapshot_slug"),
-        literal("critic_dev_optimize").label("run_type"),
-        AgentRun.created_at,
-    ).where(AgentRun.agent_run_id == critic_dev_run_id)
-
-    critic_dev_runs = union_all(child_runs, critic_dev_agent_run).cte("critic_dev_runs")
-
-    # Main query joining with llm_run_costs view (LLM requests logged by proxy)
-    return (
-        select(
-            critic_dev_runs.c.agent_run_id,
-            critic_dev_runs.c.snapshot_slug,
-            critic_dev_runs.c.run_type,
-            LLMRunCost.model,
-            func.sum(LLMRunCost.cost_usd).label("cost_usd"),
-            func.sum(LLMRunCost.input_tokens).label("input_tokens"),
-            func.sum(LLMRunCost.cached_input_tokens).label("cached_tokens"),
-            func.sum(LLMRunCost.output_tokens).label("output_tokens"),
-            critic_dev_runs.c.created_at,
-        )
-        .select_from(critic_dev_runs)
-        .join(LLMRunCost, critic_dev_runs.c.agent_run_id == LLMRunCost.agent_run_id)
-        .group_by(
-            critic_dev_runs.c.agent_run_id,
-            critic_dev_runs.c.snapshot_slug,
-            critic_dev_runs.c.run_type,
-            LLMRunCost.model,
-            critic_dev_runs.c.created_at,
-        )
-        .order_by(critic_dev_runs.c.created_at.desc())
-    )
-
-
-# ============================================================================
-# Recall by Example Queries (Occurrence-Weighted)
-# ============================================================================
+from props.db.models import TpOccurrenceCredit
 
 
 class RecallByExampleRow(BaseModel):
