@@ -72,20 +72,7 @@ Relative paths are resolved from the script's directory. The script derives the 
 
 ## Recipe Modules
 
-Tested Python recipes are bundled in your container. Import and use them directly, or run their `main()` for a quick overview:
-
-```python
-from props.db.database import Database
-from props.agents.critic_dev.recipes.ground_truth import list_snapshots_by_split, get_true_positives
-from props.agents.critic_dev.recipes.recall_metrics import get_definition_leaderboard
-from props.agents.critic_dev.recipes.run_analysis import get_recent_critic_runs
-from props.db.examples import get_examples_for_split
-from props.core.splits import Split
-
-db = Database.from_env()
-with db.session() as session:
-    examples = get_examples_for_split(session, Split.TRAIN)
-```
+Tested Python recipes are bundled in your container under `props.agents.critic_dev.recipes`. Read their source for examples of how to query ground truth, recall metrics, run analysis, and training examples.
 
 ## Reference
 

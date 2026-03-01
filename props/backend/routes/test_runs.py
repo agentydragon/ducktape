@@ -18,17 +18,13 @@ from props.backend.auth import AdminRole, AuthenticatedIdentity, require_critic_
 from props.backend.deps import get_admin_db
 from props.backend.routes import runs
 from props.core.agent_types import CriticTypeConfig
-from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest
 from props.orchestration.agent_registry import BudgetExceededError, ImageResolutionError, ResolvedImage
-from props.testing.constants import BUDGET_TEST_MODEL
+from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
 FAKE_RESOLVED = ResolvedImage(digest=FAKE_CRITIC_DIGEST, oci_ref=f"localhost:5000/critic@{FAKE_CRITIC_DIGEST}")
-
-
-TRAIN_EXAMPLE = WholeSnapshotExample(snapshot_slug="test-fixtures/train1")
 
 
 @pytest.fixture

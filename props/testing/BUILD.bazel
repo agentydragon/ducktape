@@ -23,6 +23,9 @@ py_library(
     srcs = ["constants.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/models:examples",
+    ],
 )
 
 py_library(

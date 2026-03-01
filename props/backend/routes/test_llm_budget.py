@@ -14,13 +14,10 @@ from fastapi import HTTPException
 
 from props.backend.routes.llm import _check_budget
 from props.core.agent_types import CriticTypeConfig
-from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
-from props.testing.constants import BUDGET_TEST_MODEL
+from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
-
-TRAIN_EXAMPLE = WholeSnapshotExample(snapshot_slug="test-fixtures/train1")
 
 
 def test_budget_allows_under_budget(synced_db: Database) -> None:
