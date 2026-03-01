@@ -2,39 +2,46 @@
 
 import logging
 import secrets
+import time
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Any
 
 import httpx
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from homeassistant_proxy.config import Action, Settings, TokenConfig
-from homeassistant_proxy.policy import EntityInfo, allowed_entities, denied_entities
+from homeassistant_proxy.config import Settings, TokenConfig
+from homeassistant_proxy.policy import AccessDeniedError, EntityRegistry, PolicyEnforcer
 from homeassistant_proxy.registry import fetch_registry
 
 logger = logging.getLogger(__name__)
+
+_REGISTRY_TTL_SECONDS = 60.0
 
 
 def _forward(resp: httpx.Response) -> JSONResponse:
     return JSONResponse(resp.json(), status_code=resp.status_code)
 
 
-def _resolve_device_ids(raw: str | list[str] | None, registry: dict[str, EntityInfo]) -> list[str]:
-    """Resolve device_id field to entity_ids via registry."""
-    ids: list[str] = [raw] if isinstance(raw, str) else (raw or [])
-    return [info.entity_id for id_ in ids for info in registry.values() if info.device_id == id_]
+def _extract_str_or_list(value: Any, field: str) -> list[str]:
+    """Extract a string or list of strings from a request body field."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(v, str) for v in value):
+        return value
+    raise HTTPException(status_code=400, detail=f"{field}: expected string or list of strings")
 
 
-def _resolve_area_ids(raw: str | list[str] | None, registry: dict[str, EntityInfo]) -> list[str]:
-    """Resolve area_id field to entity_ids via registry."""
-    ids: list[str] = [raw] if isinstance(raw, str) else (raw or [])
-    return [info.entity_id for id_ in ids for info in registry.values() if info.area_id == id_]
+def create_app(settings: Settings | None = None) -> FastAPI:
+    if settings is None:
+        settings = Settings.from_env()
 
-
-def _make_app(settings: Settings) -> FastAPI:
     http_client: httpx.AsyncClient | None = None
+    registry_cache: EntityRegistry | None = None
+    registry_cache_time: float = 0
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -54,7 +61,7 @@ def _make_app(settings: Settings) -> FastAPI:
 
     app = FastAPI(lifespan=lifespan)
 
-    async def _require_auth(request: Request) -> TokenConfig:
+    def _authenticate(request: Request) -> TokenConfig:
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             token = auth[len("Bearer ") :]
@@ -63,86 +70,86 @@ def _make_app(settings: Settings) -> FastAPI:
                     return token_cfg
         raise HTTPException(status_code=401, detail="unauthorized")
 
-    Auth = Annotated[TokenConfig, Depends(_require_auth)]  # noqa: N806
+    async def _get_enforcer(request: Request) -> PolicyEnforcer:
+        nonlocal registry_cache, registry_cache_time
+        token_cfg = _authenticate(request)
+        now = time.monotonic()
+        if registry_cache is None or now - registry_cache_time >= _REGISTRY_TTL_SECONDS:
+            raw = await fetch_registry(settings.homeassistant.url, settings.homeassistant.token)
+            registry_cache = EntityRegistry(raw)
+            registry_cache_time = now
+        return PolicyEnforcer(token_cfg.policy, registry_cache)
 
-    async def _get_registry() -> dict[str, EntityInfo]:
-        return await fetch_registry(settings.homeassistant.url, settings.homeassistant.token)
+    @app.exception_handler(AccessDeniedError)
+    async def _handle_access_denied(request: Request, exc: AccessDeniedError) -> JSONResponse:
+        return JSONResponse({"error": str(exc)}, status_code=403)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/api/")
-    async def api_status(_: Auth) -> JSONResponse:
-        return _forward(await _http().get("/api/"))
+    # Metadata pass-through routes (require auth, no policy filtering).
+    async def _passthrough(request: Request) -> JSONResponse:
+        _authenticate(request)
+        return _forward(await _http().get(request.url.path))
 
-    @app.get("/api/config")
-    async def api_config(_: Auth) -> JSONResponse:
-        return _forward(await _http().get("/api/config"))
-
-    @app.get("/api/services")
-    async def api_services(_: Auth) -> JSONResponse:
-        return _forward(await _http().get("/api/services"))
+    for path in ("/api/", "/api/config", "/api/services"):
+        app.add_api_route(path, _passthrough, methods=["GET"])
 
     @app.get("/api/states")
-    async def api_states(token_cfg: Auth) -> JSONResponse:
+    async def api_states(request: Request) -> JSONResponse:
+        enforcer = await _get_enforcer(request)
         resp = await _http().get("/api/states")
         if resp.status_code != 200:
             return _forward(resp)
-        registry = await _get_registry()
         states: list[dict[str, Any]] = resp.json()
         all_ids = [s["entity_id"] for s in states]
-        allowed = set(allowed_entities(all_ids, Action.READ, token_cfg.policy, registry))
+        allowed = enforcer.readable_entities(all_ids)
         return JSONResponse([s for s in states if s["entity_id"] in allowed])
 
     @app.get("/api/states/{entity_id}")
-    async def api_state(token_cfg: Auth, entity_id: str) -> JSONResponse:
-        registry = await _get_registry()
-        denied = denied_entities([entity_id], Action.READ, token_cfg.policy, registry)
-        if denied:
-            return JSONResponse({"error": f"access denied for entity: {entity_id}"}, status_code=403)
+    async def api_state(request: Request, entity_id: str) -> JSONResponse:
+        enforcer = await _get_enforcer(request)
+        enforcer.require_read(entity_id)
         return _forward(await _http().get(f"/api/states/{entity_id}"))
 
     @app.post("/api/services/{domain}/{service}")
-    async def api_call_service(token_cfg: Auth, request: Request, domain: str, service: str) -> JSONResponse:
+    async def api_call_service(request: Request, domain: str, service: str) -> JSONResponse:
+        enforcer = await _get_enforcer(request)
         body = await request.body()
         data: dict[str, Any] = await request.json() if body else {}
 
-        # Extract target entity IDs from the body.
-        # The REST API uses flat entity_id in the body.
-        target_entity_ids: list[str] = []
-        raw_eid = data.get("entity_id")
-        if isinstance(raw_eid, str):
-            target_entity_ids.append(raw_eid)
-        elif isinstance(raw_eid, list):
-            target_entity_ids.extend(raw_eid)
+        entity_ids = _extract_str_or_list(data.get("entity_id"), "entity_id")
+        device_ids = _extract_str_or_list(data.get("device_id"), "device_id")
+        area_ids = _extract_str_or_list(data.get("area_id"), "area_id")
 
-        # Resolve device_id/area_id targets to entity_ids via registry.
-        registry = await _get_registry()
-        target_entity_ids.extend(_resolve_device_ids(data.get("device_id"), registry))
-        target_entity_ids.extend(_resolve_area_ids(data.get("area_id"), registry))
+        # Support nested target structure (newer HA format).
+        target = data.get("target")
+        if isinstance(target, dict):
+            entity_ids.extend(_extract_str_or_list(target.get("entity_id"), "target.entity_id"))
+            device_ids.extend(_extract_str_or_list(target.get("device_id"), "target.device_id"))
+            area_ids.extend(_extract_str_or_list(target.get("area_id"), "target.area_id"))
+        elif target is not None:
+            raise HTTPException(status_code=400, detail="target: expected object")
+
+        target_entity_ids = enforcer.resolve_targets(entity_ids, device_ids, area_ids)
 
         if not target_entity_ids:
             # Services without targets (e.g. homeassistant.restart) are admin-level — block them.
             return JSONResponse({"error": "service call has no entity/device/area target"}, status_code=403)
 
-        denied = denied_entities(target_entity_ids, Action.CONTROL, token_cfg.policy, registry)
-        if denied:
-            return JSONResponse({"error": f"control denied for entities: {denied}"}, status_code=403)
-        url = f"/api/services/{domain}/{service}"
+        enforcer.require_control(target_entity_ids)
+        url = request.url.path
         if request.url.query:
             url = f"{url}?{request.url.query}"
         return _forward(await _http().post(url, content=body, headers={"Content-Type": "application/json"}))
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-    async def catch_all(_: Auth, path: str) -> JSONResponse:
+    async def catch_all(request: Request, path: str) -> JSONResponse:
+        _authenticate(request)
         return JSONResponse({"error": f"endpoint not allowed: /{path}"}, status_code=403)
 
     return app
-
-
-def create_app() -> FastAPI:
-    return _make_app(Settings.from_env())
 
 
 def main() -> None:

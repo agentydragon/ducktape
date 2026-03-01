@@ -1,9 +1,16 @@
 """Tests for the policy evaluation engine."""
 
+import pytest
 import pytest_bazel
 
 from homeassistant_proxy.config import AccessRule, Action, Policy
-from homeassistant_proxy.policy import EntityInfo, allowed_entities, check_entity_access, denied_entities
+from homeassistant_proxy.policy import (
+    AccessDeniedError,
+    EntityInfo,
+    EntityRegistry,
+    PolicyEnforcer,
+    check_entity_access,
+)
 
 
 def _info(entity_id: str, device_id: str | None = None, area_id: str | None = None) -> EntityInfo:
@@ -66,34 +73,94 @@ class TestCheckEntityAccess:
         assert not check_entity_access("light.dangerous", Action.CONTROL, policy, info)
 
 
-class TestAllowedEntities:
-    def test_filters_by_read(self):
+class TestEntityRegistry:
+    def test_reverse_device_index(self):
+        registry = EntityRegistry(
+            {
+                "light.a": _info("light.a", device_id="dev_1"),
+                "light.b": _info("light.b", device_id="dev_1"),
+                "light.c": _info("light.c", device_id="dev_2"),
+            }
+        )
+        assert sorted(registry.entities_for_devices(["dev_1"])) == ["light.a", "light.b"]
+        assert registry.entities_for_devices(["dev_2"]) == ["light.c"]
+        assert registry.entities_for_devices(["nonexistent"]) == []
+
+    def test_reverse_area_index(self):
+        registry = EntityRegistry(
+            {
+                "light.a": _info("light.a", area_id="kitchen"),
+                "light.b": _info("light.b", area_id="kitchen"),
+                "light.c": _info("light.c", area_id="bedroom"),
+            }
+        )
+        assert sorted(registry.entities_for_areas(["kitchen"])) == ["light.a", "light.b"]
+        assert registry.entities_for_areas(["bedroom"]) == ["light.c"]
+
+    def test_get_unknown_entity_returns_fallback(self):
+        registry = EntityRegistry({})
+        info = registry.get("sensor.temp")
+        assert info.entity_id == "sensor.temp"
+        assert info.device_id is None
+
+
+class TestPolicyEnforcer:
+    def test_readable_entities(self):
         policy = Policy(entity_ids={"light.allowed": AccessRule(read=True), "light.denied": AccessRule(read=False)})
-        registry = {
-            "light.allowed": _info("light.allowed"),
-            "light.denied": _info("light.denied"),
-            "light.unknown": _info("light.unknown"),
-        }
-        result = allowed_entities(["light.allowed", "light.denied", "light.unknown"], Action.READ, policy, registry)
-        assert result == ["light.allowed"]
+        registry = EntityRegistry(
+            {
+                "light.allowed": _info("light.allowed"),
+                "light.denied": _info("light.denied"),
+                "light.unknown": _info("light.unknown"),
+            }
+        )
+        enforcer = PolicyEnforcer(policy, registry)
+        assert enforcer.readable_entities(["light.allowed", "light.denied", "light.unknown"]) == {"light.allowed"}
 
-    def test_unknown_entity_uses_fallback(self):
+    def test_readable_entities_unknown_uses_fallback(self):
         policy = Policy(all=AccessRule(read=True))
-        result = allowed_entities(["sensor.temp"], Action.READ, policy, {})
-        assert result == ["sensor.temp"]
+        enforcer = PolicyEnforcer(policy, EntityRegistry({}))
+        assert enforcer.readable_entities(["sensor.temp"]) == {"sensor.temp"}
 
+    def test_require_read_allowed(self):
+        policy = Policy(all=AccessRule(read=True))
+        enforcer = PolicyEnforcer(policy, EntityRegistry({}))
+        enforcer.require_read("sensor.temp")  # should not raise
 
-class TestDeniedEntities:
-    def test_returns_denied_entities(self):
-        policy = Policy(entity_ids={"light.ok": AccessRule(control=True), "light.no": AccessRule(control=False)})
-        registry = {"light.ok": _info("light.ok"), "light.no": _info("light.no")}
-        denied = denied_entities(["light.ok", "light.no"], Action.CONTROL, policy, registry)
-        assert denied == ["light.no"]
+    def test_require_read_denied(self):
+        policy = Policy()
+        enforcer = PolicyEnforcer(policy, EntityRegistry({}))
+        with pytest.raises(AccessDeniedError) as exc_info:
+            enforcer.require_read("sensor.temp")
+        assert "sensor.temp" in exc_info.value.entity_ids
 
-    def test_empty_when_all_allowed(self):
+    def test_require_control_allowed(self):
         policy = Policy(all=AccessRule(control=True))
-        denied = denied_entities(["light.a", "light.b"], Action.CONTROL, policy, {})
-        assert denied == []
+        enforcer = PolicyEnforcer(policy, EntityRegistry({}))
+        enforcer.require_control(["light.a", "light.b"])  # should not raise
+
+    def test_require_control_denied(self):
+        policy = Policy(entity_ids={"light.ok": AccessRule(control=True), "light.no": AccessRule(control=False)})
+        registry = EntityRegistry({"light.ok": _info("light.ok"), "light.no": _info("light.no")})
+        enforcer = PolicyEnforcer(policy, registry)
+        with pytest.raises(AccessDeniedError) as exc_info:
+            enforcer.require_control(["light.ok", "light.no"])
+        assert exc_info.value.entity_ids == ["light.no"]
+
+    def test_resolve_targets(self):
+        registry = EntityRegistry(
+            {
+                "light.a": _info("light.a", device_id="dev_1", area_id="kitchen"),
+                "light.b": _info("light.b", device_id="dev_1"),
+                "switch.c": _info("switch.c", area_id="kitchen"),
+            }
+        )
+        enforcer = PolicyEnforcer(Policy(), registry)
+        targets = enforcer.resolve_targets(entity_ids=["sensor.direct"], device_ids=["dev_1"], area_ids=["kitchen"])
+        assert "sensor.direct" in targets
+        assert "light.a" in targets  # via device
+        assert "light.b" in targets  # via device
+        assert "switch.c" in targets  # via area
 
 
 if __name__ == "__main__":

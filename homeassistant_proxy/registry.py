@@ -5,7 +5,6 @@ import logging
 from typing import Any
 
 import websockets.asyncio.client
-import websockets.exceptions
 
 from homeassistant_proxy.policy import EntityInfo
 

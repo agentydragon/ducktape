@@ -9,7 +9,7 @@ import respx
 
 from homeassistant_proxy.config import AccessRule, HomeAssistantSettings, Policy, Settings, TokenConfig
 from homeassistant_proxy.policy import EntityInfo
-from homeassistant_proxy.proxy import _make_app
+from homeassistant_proxy.proxy import create_app
 
 _HA_URL = "http://ha.test:8123"
 
@@ -43,7 +43,7 @@ def _mock_registry():
 
 @pytest.fixture
 async def client():
-    app = _make_app(_SETTINGS)
+    app = create_app(_SETTINGS)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c, app.router.lifespan_context(app):
         yield c
@@ -140,6 +140,24 @@ async def test_service_call_device_target(client: httpx.AsyncClient):
     with _mock_registry():
         resp = await client.post("/api/services/light/turn_on", headers=_HEADERS, json={"device_id": "dev_1"})
     assert resp.status_code == 200
+
+
+@respx.mock
+async def test_service_call_nested_target(client: httpx.AsyncClient):
+    respx.post(f"{_HA_URL}/api/services/light/turn_on").mock(return_value=httpx.Response(200, json=[]))
+    with _mock_registry():
+        resp = await client.post(
+            "/api/services/light/turn_on", headers=_HEADERS, json={"target": {"entity_id": "light.kitchen"}}
+        )
+    assert resp.status_code == 200
+
+
+async def test_service_call_invalid_entity_id_type(client: httpx.AsyncClient):
+    with _mock_registry():
+        resp = await client.post(
+            "/api/services/light/turn_on", headers=_HEADERS, json={"entity_id": {"invalid": "dict"}}
+        )
+    assert resp.status_code == 400
 
 
 async def test_blocked_endpoint(client: httpx.AsyncClient):

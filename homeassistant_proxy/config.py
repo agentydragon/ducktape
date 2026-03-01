@@ -67,6 +67,8 @@ class Settings(BaseModel):
         logger.info(f"Loading settings from {path.absolute()}")
         with path.open() as f:
             data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"expected YAML mapping in {path}, got {type(data).__name__}")
         # Allow HA token to come from env var
         ha_token_env = os.getenv("HOMEASSISTANT_PROXY_HA_TOKEN")
         if ha_token_env:
