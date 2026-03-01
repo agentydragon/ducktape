@@ -1,12 +1,4 @@
-"""SQLAlchemy query builders for agent-accessible database queries.
-
-Each function returns a SQLAlchemy Select object that can be:
-- Executed directly in tests: session.execute(query).fetchall()
-- Compiled to SQL string for j2 templates: compile_to_sql(query)
-
-This provides a single source of truth for query structure, eliminating duplication
-between test execution and template injection.
-"""
+"""SQLAlchemy query builders for agent-accessible database queries."""
 
 from __future__ import annotations
 
@@ -14,47 +6,12 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from sqlalchemy import Select, func, literal, select, union_all
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 from props.db.models import AgentRun, FalsePositive, LLMRunCost, Snapshot, TpOccurrenceCredit, TruePositive
-
-
-def compile_to_sql(query: Select, *, literal_binds: bool = True) -> str:
-    """Compile a SQLAlchemy Select to SQL string for template injection.
-
-    Args:
-        query: SQLAlchemy Select object
-        literal_binds: If True, inline bound parameters as literals (for static SQL)
-                      If False, use named placeholders like :param_name
-
-    Returns:
-        SQL string suitable for embedding in Jinja2 templates
-    """
-    compiled = query.compile(
-        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": literal_binds} if literal_binds else {}
-    )
-    return str(compiled)
-
-
-def compile_to_sql_with_placeholders(query: Select) -> str:
-    """Compile query to SQL with named parameter placeholders.
-
-    Args:
-        query: SQLAlchemy Select object with bound parameters
-
-    Returns:
-        SQL string with placeholders like :agent_run_id, :snapshot_slug
-
-    Example:
-        >>> q = select(AgentRun).where(AgentRun.agent_run_id == bindparam('agent_run_id'))
-        >>> compile_to_sql_with_placeholders(q)
-        'SELECT ... WHERE agent_run_id = :agent_run_id'
-    """
-    return compile_to_sql(query, literal_binds=False)
 
 
 def count_issues_by_snapshot(split: str | None = None) -> Select:
