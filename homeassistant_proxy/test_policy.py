@@ -3,79 +3,74 @@
 import pytest
 import pytest_bazel
 
-from homeassistant_proxy.config import AccessRule, Action, Policy
-from homeassistant_proxy.policy import AccessDeniedError, EntityInfo, EntityRegistry, PolicyEnforcer
+from homeassistant_proxy.config import AccessRule, Action, EntityInfo, Policy
+from homeassistant_proxy.policy import AccessDeniedError, EntityRegistry, PolicyEnforcer
 
 
 def _info(entity_id: str, device_id: str | None = None, area_id: str | None = None) -> EntityInfo:
     return EntityInfo(entity_id=entity_id, device_id=device_id, area_id=area_id)
 
 
-def _enforcer(policy: Policy, entities: dict[str, EntityInfo] | None = None) -> PolicyEnforcer:
-    return PolicyEnforcer(policy, EntityRegistry(entities or {}))
+def _enforcer(entities: dict[str, EntityInfo] | None = None) -> PolicyEnforcer:
+    return PolicyEnforcer("http://unused", "unused-token", registry=EntityRegistry(entities or {}))
 
 
 class TestPriorityRules:
     """Test the entity_ids > device_ids > area_ids > domains > all priority chain."""
 
-    def test_default_deny(self):
-        enforcer = _enforcer(Policy())
-        assert not enforcer.is_allowed("light.kitchen", Action.READ)
-        assert not enforcer.is_allowed("light.kitchen", Action.CONTROL)
+    async def test_default_deny(self):
+        enforcer = _enforcer()
+        assert not await enforcer.is_allowed("light.kitchen", Action.READ, Policy())
+        assert not await enforcer.is_allowed("light.kitchen", Action.CONTROL, Policy())
 
-    def test_all_allows_read(self):
-        enforcer = _enforcer(Policy(all=AccessRule(read=True)))
-        assert enforcer.is_allowed("light.kitchen", Action.READ)
-        assert not enforcer.is_allowed("light.kitchen", Action.CONTROL)
+    async def test_all_allows_read(self):
+        policy = Policy(all=AccessRule(read=True))
+        enforcer = _enforcer()
+        assert await enforcer.is_allowed("light.kitchen", Action.READ, policy)
+        assert not await enforcer.is_allowed("light.kitchen", Action.CONTROL, policy)
 
-    def test_domain_overrides_all(self):
-        enforcer = _enforcer(
-            Policy(all=AccessRule(read=True, control=False), domains={"light": AccessRule(read=True, control=True)}),
-            {"light.kitchen": _info("light.kitchen"), "switch.pump": _info("switch.pump")},
+    async def test_domain_overrides_all(self):
+        policy = Policy(
+            all=AccessRule(read=True, control=False), domains={"light": AccessRule(read=True, control=True)}
         )
-        assert enforcer.is_allowed("light.kitchen", Action.CONTROL)
+        enforcer = _enforcer({"light.kitchen": _info("light.kitchen"), "switch.pump": _info("switch.pump")})
+        assert await enforcer.is_allowed("light.kitchen", Action.CONTROL, policy)
         # switch domain falls back to all
-        assert not enforcer.is_allowed("switch.pump", Action.CONTROL)
+        assert not await enforcer.is_allowed("switch.pump", Action.CONTROL, policy)
 
-    def test_area_overrides_domain(self):
-        enforcer = _enforcer(
-            Policy(
-                domains={"light": AccessRule(read=True, control=False)},
-                area_ids={"bedroom": AccessRule(read=True, control=True)},
-            ),
-            {"light.bedroom_lamp": _info("light.bedroom_lamp", area_id="bedroom")},
+    async def test_area_overrides_domain(self):
+        policy = Policy(
+            domains={"light": AccessRule(read=True, control=False)},
+            area_ids={"bedroom": AccessRule(read=True, control=True)},
         )
-        assert enforcer.is_allowed("light.bedroom_lamp", Action.CONTROL)
+        enforcer = _enforcer({"light.bedroom_lamp": _info("light.bedroom_lamp", area_id="bedroom")})
+        assert await enforcer.is_allowed("light.bedroom_lamp", Action.CONTROL, policy)
 
-    def test_device_overrides_area(self):
-        enforcer = _enforcer(
-            Policy(
-                area_ids={"bedroom": AccessRule(read=True, control=True)},
-                device_ids={"dev_123": AccessRule(read=True, control=False)},
-            ),
-            {"light.bedroom_lamp": _info("light.bedroom_lamp", device_id="dev_123", area_id="bedroom")},
+    async def test_device_overrides_area(self):
+        policy = Policy(
+            area_ids={"bedroom": AccessRule(read=True, control=True)},
+            device_ids={"dev_123": AccessRule(read=True, control=False)},
         )
-        assert not enforcer.is_allowed("light.bedroom_lamp", Action.CONTROL)
+        enforcer = _enforcer(
+            {"light.bedroom_lamp": _info("light.bedroom_lamp", device_id="dev_123", area_id="bedroom")}
+        )
+        assert not await enforcer.is_allowed("light.bedroom_lamp", Action.CONTROL, policy)
 
-    def test_entity_overrides_device(self):
-        enforcer = _enforcer(
-            Policy(
-                device_ids={"dev_123": AccessRule(read=True, control=False)},
-                entity_ids={"light.special": AccessRule(read=True, control=True)},
-            ),
-            {"light.special": _info("light.special", device_id="dev_123")},
+    async def test_entity_overrides_device(self):
+        policy = Policy(
+            device_ids={"dev_123": AccessRule(read=True, control=False)},
+            entity_ids={"light.special": AccessRule(read=True, control=True)},
         )
-        assert enforcer.is_allowed("light.special", Action.CONTROL)
+        enforcer = _enforcer({"light.special": _info("light.special", device_id="dev_123")})
+        assert await enforcer.is_allowed("light.special", Action.CONTROL, policy)
 
-    def test_entity_override_denies_even_when_device_allows(self):
-        enforcer = _enforcer(
-            Policy(
-                device_ids={"dev_123": AccessRule(read=True, control=True)},
-                entity_ids={"light.dangerous": AccessRule(read=True, control=False)},
-            ),
-            {"light.dangerous": _info("light.dangerous", device_id="dev_123")},
+    async def test_entity_override_denies_even_when_device_allows(self):
+        policy = Policy(
+            device_ids={"dev_123": AccessRule(read=True, control=True)},
+            entity_ids={"light.dangerous": AccessRule(read=True, control=False)},
         )
-        assert not enforcer.is_allowed("light.dangerous", Action.CONTROL)
+        enforcer = _enforcer({"light.dangerous": _info("light.dangerous", device_id="dev_123")})
+        assert not await enforcer.is_allowed("light.dangerous", Action.CONTROL, policy)
 
 
 class TestEntityRegistry:
@@ -110,54 +105,57 @@ class TestEntityRegistry:
 
 
 class TestPolicyEnforcer:
-    def test_readable_entities(self):
+    async def test_readable_entities(self):
+        policy = Policy(entity_ids={"light.allowed": AccessRule(read=True), "light.denied": AccessRule(read=False)})
         enforcer = _enforcer(
-            Policy(entity_ids={"light.allowed": AccessRule(read=True), "light.denied": AccessRule(read=False)}),
             {
                 "light.allowed": _info("light.allowed"),
                 "light.denied": _info("light.denied"),
                 "light.unknown": _info("light.unknown"),
-            },
+            }
         )
-        assert enforcer.readable_entities(["light.allowed", "light.denied", "light.unknown"]) == {"light.allowed"}
+        result = await enforcer.readable_entities(["light.allowed", "light.denied", "light.unknown"], policy)
+        assert result == {"light.allowed"}
 
-    def test_readable_entities_unknown_uses_fallback(self):
-        enforcer = _enforcer(Policy(all=AccessRule(read=True)))
-        assert enforcer.readable_entities(["sensor.temp"]) == {"sensor.temp"}
+    async def test_readable_entities_unknown_uses_fallback(self):
+        policy = Policy(all=AccessRule(read=True))
+        enforcer = _enforcer()
+        assert await enforcer.readable_entities(["sensor.temp"], policy) == {"sensor.temp"}
 
-    def test_require_read_allowed(self):
-        enforcer = _enforcer(Policy(all=AccessRule(read=True)))
-        enforcer.require_read("sensor.temp")  # should not raise
+    async def test_require_read_allowed(self):
+        policy = Policy(all=AccessRule(read=True))
+        enforcer = _enforcer()
+        await enforcer.require_read("sensor.temp", policy)  # should not raise
 
-    def test_require_read_denied(self):
-        enforcer = _enforcer(Policy())
+    async def test_require_read_denied(self):
+        enforcer = _enforcer()
         with pytest.raises(AccessDeniedError) as exc_info:
-            enforcer.require_read("sensor.temp")
+            await enforcer.require_read("sensor.temp", Policy())
         assert "sensor.temp" in exc_info.value.entity_ids
 
-    def test_require_control_allowed(self):
-        enforcer = _enforcer(Policy(all=AccessRule(control=True)))
-        enforcer.require_control(["light.a", "light.b"])  # should not raise
+    async def test_require_control_allowed(self):
+        policy = Policy(all=AccessRule(control=True))
+        enforcer = _enforcer()
+        await enforcer.require_control(["light.a", "light.b"], policy)  # should not raise
 
-    def test_require_control_denied(self):
-        enforcer = _enforcer(
-            Policy(entity_ids={"light.ok": AccessRule(control=True), "light.no": AccessRule(control=False)}),
-            {"light.ok": _info("light.ok"), "light.no": _info("light.no")},
-        )
+    async def test_require_control_denied(self):
+        policy = Policy(entity_ids={"light.ok": AccessRule(control=True), "light.no": AccessRule(control=False)})
+        enforcer = _enforcer({"light.ok": _info("light.ok"), "light.no": _info("light.no")})
         with pytest.raises(AccessDeniedError) as exc_info:
-            enforcer.require_control(["light.ok", "light.no"])
+            await enforcer.require_control(["light.ok", "light.no"], policy)
         assert exc_info.value.entity_ids == ["light.no"]
 
-    def test_resolve_targets(self):
+    async def test_resolve_targets(self):
         enforcer = _enforcer(
-            Policy(),
             {
                 "light.a": _info("light.a", device_id="dev_1", area_id="kitchen"),
                 "light.b": _info("light.b", device_id="dev_1"),
                 "switch.c": _info("switch.c", area_id="kitchen"),
-            },
+            }
         )
-        targets = enforcer.resolve_targets(entity_ids=["sensor.direct"], device_ids=["dev_1"], area_ids=["kitchen"])
+        targets = await enforcer.resolve_targets(
+            entity_ids=["sensor.direct"], device_ids=["dev_1"], area_ids=["kitchen"]
+        )
         assert "sensor.direct" in targets
         assert "light.a" in targets  # via device
         assert "light.b" in targets  # via device

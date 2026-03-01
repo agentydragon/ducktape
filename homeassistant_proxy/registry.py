@@ -4,7 +4,7 @@ import logging
 
 from hass_client import HomeAssistantClient
 
-from homeassistant_proxy.policy import EntityInfo
+from homeassistant_proxy.config import EntityInfo
 
 logger = logging.getLogger(__name__)
 

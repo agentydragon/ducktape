@@ -26,7 +26,7 @@ py_library(
     imports = [".."],
     deps = [
         ":config",
-        "@pypi//pydantic",
+        ":registry",
     ],
 )
 
@@ -35,7 +35,7 @@ py_library(
     srcs = ["registry.py"],
     imports = [".."],
     deps = [
-        ":policy",
+        ":config",
         "@pypi//hass_client",
     ],
 )
@@ -47,7 +47,6 @@ py_library(
     deps = [
         ":config",
         ":policy",
-        ":registry",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//uvicorn",
@@ -118,6 +117,7 @@ py_test(
         ":conftest",
         ":policy",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

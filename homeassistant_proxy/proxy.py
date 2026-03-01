@@ -2,7 +2,6 @@
 
 import logging
 import secrets
-import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -12,12 +11,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from homeassistant_proxy.config import Settings, TokenConfig
-from homeassistant_proxy.policy import AccessDeniedError, EntityRegistry, PolicyEnforcer
-from homeassistant_proxy.registry import fetch_registry
+from homeassistant_proxy.policy import AccessDeniedError, PolicyEnforcer
 
 logger = logging.getLogger(__name__)
-
-_REGISTRY_TTL_SECONDS = 60.0
 
 
 def _forward(resp: httpx.Response) -> JSONResponse:
@@ -37,8 +33,7 @@ def _extract_str_or_list(value: Any, field: str) -> list[str]:
 
 def create_app(settings: Settings) -> FastAPI:
     http_client: httpx.AsyncClient | None = None
-    registry_cache: EntityRegistry | None = None
-    registry_cache_time: float = 0
+    enforcer = PolicyEnforcer(settings.homeassistant.url, settings.homeassistant.token)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -67,16 +62,6 @@ def create_app(settings: Settings) -> FastAPI:
                     return token_cfg
         raise HTTPException(status_code=401, detail="unauthorized")
 
-    async def _get_enforcer(request: Request) -> PolicyEnforcer:
-        nonlocal registry_cache, registry_cache_time
-        token_cfg = _authenticate(request)
-        now = time.monotonic()
-        if registry_cache is None or now - registry_cache_time >= _REGISTRY_TTL_SECONDS:
-            raw = await fetch_registry(settings.homeassistant.url, settings.homeassistant.token)
-            registry_cache = EntityRegistry(raw)
-            registry_cache_time = now
-        return PolicyEnforcer(token_cfg.policy, registry_cache)
-
     @app.exception_handler(AccessDeniedError)
     async def _handle_access_denied(request: Request, exc: AccessDeniedError) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=403)
@@ -95,24 +80,24 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/api/states")
     async def api_states(request: Request) -> JSONResponse:
-        enforcer = await _get_enforcer(request)
+        token_cfg = _authenticate(request)
         resp = await _http().get("/api/states")
         if resp.status_code != 200:
             return _forward(resp)
         states: list[dict[str, Any]] = resp.json()
         all_ids = [s["entity_id"] for s in states]
-        allowed = enforcer.readable_entities(all_ids)
+        allowed = await enforcer.readable_entities(all_ids, token_cfg.policy)
         return JSONResponse([s for s in states if s["entity_id"] in allowed])
 
     @app.get("/api/states/{entity_id}")
     async def api_state(request: Request, entity_id: str) -> JSONResponse:
-        enforcer = await _get_enforcer(request)
-        enforcer.require_read(entity_id)
+        token_cfg = _authenticate(request)
+        await enforcer.require_read(entity_id, token_cfg.policy)
         return _forward(await _http().get(f"/api/states/{entity_id}"))
 
     @app.post("/api/services/{domain}/{service}")
     async def api_call_service(request: Request, domain: str, service: str) -> JSONResponse:
-        enforcer = await _get_enforcer(request)
+        token_cfg = _authenticate(request)
         body = await request.body()
         data: dict[str, Any] = await request.json() if body else {}
 
@@ -129,13 +114,13 @@ def create_app(settings: Settings) -> FastAPI:
         elif target is not None:
             raise HTTPException(status_code=400, detail="target: expected object")
 
-        target_entity_ids = enforcer.resolve_targets(entity_ids, device_ids, area_ids)
+        target_entity_ids = await enforcer.resolve_targets(entity_ids, device_ids, area_ids)
 
         if not target_entity_ids:
             # Services without targets (e.g. homeassistant.restart) are admin-level — block them.
             return JSONResponse({"error": "service call has no entity/device/area target"}, status_code=403)
 
-        enforcer.require_control(target_entity_ids)
+        await enforcer.require_control(target_entity_ids, token_cfg.policy)
         url = request.url.path
         if request.url.query:
             url = f"{url}?{request.url.query}"

@@ -11,6 +11,18 @@ from pydantic import BaseModel, model_validator
 logger = logging.getLogger(__name__)
 
 
+class EntityInfo(BaseModel):
+    """Registry-resolved metadata for an entity."""
+
+    entity_id: str
+    device_id: str | None = None
+    area_id: str | None = None
+
+    @property
+    def domain(self) -> str:
+        return self.entity_id.split(".")[0]
+
+
 class Action(StrEnum):
     READ = "read"
     CONTROL = "control"

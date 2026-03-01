@@ -1,20 +1,14 @@
 """Policy evaluation engine for entity access control."""
 
-from pydantic import BaseModel
+import logging
+import time
 
-from homeassistant_proxy.config import Action, Policy
+from homeassistant_proxy.config import Action, EntityInfo, Policy
+from homeassistant_proxy.registry import fetch_registry
 
+logger = logging.getLogger(__name__)
 
-class EntityInfo(BaseModel):
-    """Registry-resolved metadata for an entity."""
-
-    entity_id: str
-    device_id: str | None = None
-    area_id: str | None = None
-
-    @property
-    def domain(self) -> str:
-        return self.entity_id.split(".")[0]
+_REGISTRY_TTL_SECONDS = 60.0
 
 
 class AccessDeniedError(Exception):
@@ -42,42 +36,58 @@ class EntityRegistry:
 
 
 class PolicyEnforcer:
-    """Evaluates entity access for a token policy against a registry.
+    """Manages the entity registry and evaluates entity access policies.
 
+    Owns registry lifecycle: fetches from HA, caches with TTL, refreshes automatically.
     Priority: entity_ids > device_ids > area_ids > domains > all.
     """
 
-    def __init__(self, policy: Policy, registry: EntityRegistry):
-        self._policy = policy
+    def __init__(
+        self, ha_url: str, ha_token: str, *, ttl: float = _REGISTRY_TTL_SECONDS, registry: EntityRegistry | None = None
+    ):
+        self._ha_url = ha_url
+        self._ha_token = ha_token
+        self._ttl = ttl
         self._registry = registry
+        self._registry_time: float = 0
 
-    def is_allowed(self, entity_id: str, action: Action) -> bool:
-        info = self._registry.get(entity_id)
-        if entity_id in self._policy.entity_ids:
-            return self._policy.entity_ids[entity_id].allows(action)
-        if info.device_id and info.device_id in self._policy.device_ids:
-            return self._policy.device_ids[info.device_id].allows(action)
-        if info.area_id and info.area_id in self._policy.area_ids:
-            return self._policy.area_ids[info.area_id].allows(action)
+    async def _ensure_registry(self) -> EntityRegistry:
+        now = time.monotonic()
+        if self._registry is None or now - self._registry_time >= self._ttl:
+            raw = await fetch_registry(self._ha_url, self._ha_token)
+            self._registry = EntityRegistry(raw)
+            self._registry_time = now
+        return self._registry
+
+    async def is_allowed(self, entity_id: str, action: Action, policy: Policy) -> bool:
+        registry = await self._ensure_registry()
+        info = registry.get(entity_id)
+        if entity_id in policy.entity_ids:
+            return policy.entity_ids[entity_id].allows(action)
+        if info.device_id and info.device_id in policy.device_ids:
+            return policy.device_ids[info.device_id].allows(action)
+        if info.area_id and info.area_id in policy.area_ids:
+            return policy.area_ids[info.area_id].allows(action)
         domain = info.domain
-        if domain in self._policy.domains:
-            return self._policy.domains[domain].allows(action)
-        return self._policy.all.allows(action)
+        if domain in policy.domains:
+            return policy.domains[domain].allows(action)
+        return policy.all.allows(action)
 
-    def readable_entities(self, entity_ids: list[str]) -> set[str]:
-        return {eid for eid in entity_ids if self.is_allowed(eid, Action.READ)}
+    async def readable_entities(self, entity_ids: list[str], policy: Policy) -> set[str]:
+        return {eid for eid in entity_ids if await self.is_allowed(eid, Action.READ, policy)}
 
-    def require_read(self, entity_id: str) -> None:
-        if not self.is_allowed(entity_id, Action.READ):
+    async def require_read(self, entity_id: str, policy: Policy) -> None:
+        if not await self.is_allowed(entity_id, Action.READ, policy):
             raise AccessDeniedError([entity_id])
 
-    def require_control(self, entity_ids: list[str]) -> None:
-        denied = [eid for eid in entity_ids if not self.is_allowed(eid, Action.CONTROL)]
+    async def require_control(self, entity_ids: list[str], policy: Policy) -> None:
+        denied = [eid for eid in entity_ids if not await self.is_allowed(eid, Action.CONTROL, policy)]
         if denied:
             raise AccessDeniedError(denied)
 
-    def resolve_targets(self, entity_ids: list[str], device_ids: list[str], area_ids: list[str]) -> list[str]:
+    async def resolve_targets(self, entity_ids: list[str], device_ids: list[str], area_ids: list[str]) -> list[str]:
+        registry = await self._ensure_registry()
         result = list(entity_ids)
-        result.extend(self._registry.entities_for_devices(device_ids))
-        result.extend(self._registry.entities_for_areas(area_ids))
+        result.extend(registry.entities_for_devices(device_ids))
+        result.extend(registry.entities_for_areas(area_ids))
         return result
