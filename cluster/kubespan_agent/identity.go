@@ -124,8 +124,12 @@ func wgEUI64(prefix netip.Prefix, mac net.HardwareAddr) (netip.Prefix, error) {
 	return netip.PrefixFrom(ip, ip.BitLen()), nil
 }
 
-// DetectMAC finds the first non-loopback, non-virtual NIC's MAC address.
-// Ref: talos/pkg/machinery/resources/network/hardware_addr.go (FirstHardwareAddr)
+// DetectMAC finds the first physical NIC's MAC address.
+//
+// Uses the same heuristic as Talos's FirstHardwareAddr: iterates interfaces
+// in kernel order, skipping loopback and interfaces without a MAC. Virtual
+// interfaces (bridges, veth, etc.) are filtered by checking for the
+// /sys/class/net/<name>/device symlink, which only exists for physical NICs.
 func DetectMAC() (net.HardwareAddr, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -139,8 +143,22 @@ func DetectMAC() (net.HardwareAddr, error) {
 		if len(iface.HardwareAddr) == 0 {
 			continue
 		}
-		// Skip common virtual interface prefixes.
-		if iface.Name == "docker0" || iface.Name == "br0" {
+		// Physical NICs have a /sys/class/net/<name>/device symlink pointing
+		// to the PCI/USB device. Virtual interfaces (bridges, veth, tun, etc.)
+		// do not. This is more robust than name-based filtering.
+		if _, err := os.Stat(fmt.Sprintf("/sys/class/net/%s/device", iface.Name)); err != nil {
+			continue
+		}
+		return iface.HardwareAddr, nil
+	}
+
+	// Fallback: if no physical NIC found (e.g., in a container), use the
+	// first non-loopback interface with a MAC.
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if len(iface.HardwareAddr) == 0 {
 			continue
 		}
 		return iface.HardwareAddr, nil

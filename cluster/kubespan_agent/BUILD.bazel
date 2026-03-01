@@ -3,7 +3,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
-    name = "kubespan-agent_lib",
+    name = "kubespan_agent_lib",
     srcs = [
         "config.go",
         "discovery.go",
@@ -13,7 +13,7 @@ go_library(
         "routing.go",
         "wireguard.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/cluster/kubespan-agent",
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent",
     visibility = ["//visibility:private"],
     deps = [
         "@com_github_google_nftables//:nftables",
@@ -36,8 +36,8 @@ go_library(
 )
 
 go_binary(
-    name = "kubespan-agent",
-    embed = [":kubespan-agent_lib"],
+    name = "kubespand",
+    embed = [":kubespan_agent_lib"],
     goarch = "amd64",
     goos = "linux",
     static = "on",
@@ -45,18 +45,28 @@ go_binary(
 )
 
 go_test(
-    name = "kubespan-agent_test",
+    name = "kubespan_agent_test",
     srcs = ["peerstate_test.go"],
-    embed = [":kubespan-agent_lib"],
+    embed = [":kubespan_agent_lib"],
 )
 
-# OCI image for kubespand (used by E2E tests).
+go_test(
+    name = "e2e_test",
+    srcs = ["e2e_test.go"],
+    data = [
+        ":kubespand_tarball",
+        "//third_party/siderolabs:discovery_service_tarball",
+        "//third_party/siderolabs:talos_v1_9_5_tarball",
+    ],
+    embed = [":kubespan_agent_lib"],
+    tags = ["requires_docker"],
+)
+
 pkg_tar(
     name = "kubespand_layer",
     testonly = True,
-    srcs = [":kubespan-agent"],
+    srcs = [":kubespand"],
     package_dir = "/",
-    remap_paths = {"kubespan-agent": "kubespand"},
 )
 
 oci_image(

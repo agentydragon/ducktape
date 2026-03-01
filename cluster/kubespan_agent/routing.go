@@ -2,16 +2,19 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
 	"sort"
+	"syscall"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/vishvananda/netlink"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
@@ -25,12 +28,13 @@ const tableName = "talos_kubespan"
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (nftables setup)
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (RulesManager)
 type RoutingManager struct {
-	mtu int
+	mtu    int
+	logger *zap.Logger
 }
 
 // NewRoutingManager creates a new routing manager.
-func NewRoutingManager(mtu int) *RoutingManager {
-	return &RoutingManager{mtu: mtu}
+func NewRoutingManager(mtu int, logger *zap.Logger) *RoutingManager {
+	return &RoutingManager{mtu: mtu, logger: logger}
 }
 
 // Install sets up nftables rules, ip policy routing rules, and default routes.
@@ -664,19 +668,28 @@ func (rm *RoutingManager) mssClampIPv6Exprs(set *nftables.Set, mss uint16) []exp
 	}
 }
 
+// makeIPRule builds the fwmark-based policy routing rule for a given address family.
+func makeIPRule(family int) *netlink.Rule {
+	rule := netlink.NewRule()
+	rule.Priority = RulePriority
+	rule.Mark = constants.KubeSpanDefaultForceFirewallMark
+	rule.Mask = uint32Ptr(constants.KubeSpanDefaultFirewallMask)
+	rule.Table = constants.KubeSpanDefaultRoutingTable
+	rule.Family = family
+	return rule
+}
+
 // installIPRules adds fwmark-based policy routing rules.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (Install)
 func (rm *RoutingManager) installIPRules() error {
 	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
-		rule := netlink.NewRule()
-		rule.Priority = RulePriority
-		rule.Mark = constants.KubeSpanDefaultForceFirewallMark
-		rule.Mask = uint32Ptr(constants.KubeSpanDefaultFirewallMask)
-		rule.Table = constants.KubeSpanDefaultRoutingTable
-		rule.Family = family
+		rule := makeIPRule(family)
 
-		// Delete existing rule first (idempotent).
-		_ = netlink.RuleDel(rule)
+		// Delete existing rule first (idempotent). ESRCH means rule
+		// doesn't exist, which is expected on first install.
+		if err := netlink.RuleDel(rule); err != nil && !errors.Is(err, syscall.ESRCH) {
+			rm.logger.Warn("failed to delete old ip rule", zap.Int("family", family), zap.Error(err))
+		}
 
 		if err := netlink.RuleAdd(rule); err != nil {
 			return fmt.Errorf("adding ip rule (family %d): %w", family, err)
@@ -689,13 +702,9 @@ func (rm *RoutingManager) installIPRules() error {
 // deleteIPRules removes the fwmark-based policy routing rules.
 func (rm *RoutingManager) deleteIPRules() {
 	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
-		rule := netlink.NewRule()
-		rule.Priority = RulePriority
-		rule.Mark = constants.KubeSpanDefaultForceFirewallMark
-		rule.Mask = uint32Ptr(constants.KubeSpanDefaultFirewallMask)
-		rule.Table = constants.KubeSpanDefaultRoutingTable
-		rule.Family = family
-		_ = netlink.RuleDel(rule)
+		if err := netlink.RuleDel(makeIPRule(family)); err != nil && !errors.Is(err, syscall.ESRCH) {
+			rm.logger.Warn("failed to delete ip rule", zap.Int("family", family), zap.Error(err))
+		}
 	}
 }
 

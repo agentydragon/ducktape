@@ -94,7 +94,7 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		}
 		logger.Info("WireGuard interface ready", zap.String("interface", constants.KubeSpanLinkName))
 
-		routing = NewRoutingManager(cfg.MTU)
+		routing = NewRoutingManager(cfg.MTU, logger)
 		if err := routing.Install(nil); err != nil {
 			return fmt.Errorf("routing: %w", err)
 		}

@@ -1,0 +1,54 @@
+# kubespand configuration
+#
+# Extract cluster_id and cluster_secret from Talos:
+#   talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.cluster.id'
+#   talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.cluster.secret'
+
+# Talos cluster identity (base64). Required.
+cluster_id: "CHANGE_ME"
+
+# 32-byte AES key for discovery encryption and WireGuard PSK (base64). Required.
+cluster_secret: "CHANGE_ME"
+
+# gRPC discovery service endpoint. Default: discovery.talos.dev:443.
+# Self-host: https://github.com/siderolabs/discovery-service
+# discovery_endpoint: "discovery.talos.dev:443"
+
+# WireGuard UDP listen port. Must match Talos KubeSpan port. Default: 51820.
+# listen_port: 51820
+
+# MTU for the kubespan WireGuard interface. Default: 1420.
+# If running Cilium VXLAN (50 byte overhead) on top, use:
+#   1500 - 80 (WireGuard) - 50 (VXLAN) = 1370
+# Must match the cluster's Cilium MTU configuration.
+# mtu: 1420
+
+# Path to persist the WireGuard keypair. Generated on first run. Default:
+# /var/lib/kubespan/identity.json.
+# identity_file: "/var/lib/kubespan/identity.json"
+
+# Route all traffic through KubeSpan even when peers are down.
+# false = only route to peers in "up" state. Default: false.
+# force_routing: false
+
+# Machine type advertised to the discovery service. Informational only —
+# does not change behavior. Talos uses "worker" or "controlplane". Default: worker.
+# machine_type: "worker"
+
+# Additional endpoints to announce via the discovery service.
+# Useful for nodes behind NAT where the public IP differs from the detected IP.
+# Format: "ip:port".
+# extra_endpoints:
+#   - "203.0.113.1:51820"
+
+# Endpoint filters control which discovered peer endpoints are accepted.
+# Each entry is a CIDR prefix. Prefix with "!" to deny.
+# Evaluated in order; first match wins. Empty = accept all.
+# endpoint_filters:
+#   - "0.0.0.0/0"
+#   - "!192.168.0.0/16"
+#   - "::/0"
+
+# Skip TLS certificate verification for the discovery service.
+# Only for testing with self-hosted services using self-signed certs.
+# insecure_discovery: false

@@ -1,16 +1,6 @@
-// Package e2e contains integration tests for kubespand.
-//
-// The test verifies that kubespand can discover a Talos KubeSpan peer via
-// the Talos discovery service. It runs:
-//  1. A local discovery service with self-signed TLS
-//  2. A Talos container with KubeSpan enabled
-//  3. kubespand in discovery-only mode
-//
-// All container images are loaded from Bazel-managed tarballs (data deps),
-// so the test is hermetic and does not pull from registries at runtime.
-//
-// Requirements: Docker, ~2 minutes.
-package e2e
+// Integration test for kubespand: verifies peer discovery against a real
+// Talos container and local discovery service. Requires Docker, ~2 minutes.
+package main
 
 import (
 	"bytes"
@@ -32,6 +22,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -52,7 +44,7 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	// Load all container images from Bazel tarballs.
 	loadImage(t, "third_party/siderolabs/discovery_service_load/tarball.tar", discoveryRepoTag)
 	loadImage(t, "third_party/siderolabs/talos_v1_9_5_load/tarball.tar", talosRepoTag)
-	loadImage(t, "cluster/kubespan-agent/kubespand_load/tarball.tar", kubespandRepoTag)
+	loadImage(t, "cluster/kubespan_agent/kubespand_load/tarball.tar", kubespandRepoTag)
 
 	// Generate unique test ID for resource names.
 	testID := randomHex(8)
@@ -243,21 +235,27 @@ func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 	return certFile, keyFile
 }
 
-// writeKubespandConfig writes a kubespand YAML config file.
+// writeKubespandConfig writes a kubespand YAML config file using the Config struct.
 func writeKubespandConfig(t *testing.T, path, clusterID, clusterSecret, discoveryEndpoint string) {
 	t.Helper()
 
-	config := fmt.Sprintf(`cluster_id: %q
-cluster_secret: %q
-discovery_endpoint: %q
-insecure_discovery: true
-listen_port: 51820
-mtu: 1420
-identity_file: "/tmp/kubespan-identity.json"
-machine_type: "worker"
-`, clusterID, clusterSecret, discoveryEndpoint)
+	cfg := Config{
+		ClusterID:         clusterID,
+		ClusterSecret:     clusterSecret,
+		DiscoveryEndpoint: discoveryEndpoint,
+		InsecureDiscovery: true,
+		ListenPort:        51820,
+		MTU:               1420,
+		IdentityFile:      "/tmp/kubespan-identity.json",
+		MachineType:       "worker",
+	}
 
-	if err := os.WriteFile(path, []byte(config), 0644); err != nil {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshaling kubespand config: %v", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
 		t.Fatalf("writing kubespand config: %v", err)
 	}
 }

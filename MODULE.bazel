@@ -636,7 +636,7 @@ go_deps.module(
     version = "v0.40.0",
 )
 
-# kubespan-agent Go dependencies
+# kubespan_agent Go dependencies
 go_deps.module(
     path = "cel.dev/expr",
     sum = "h1:56OvJKSH3hDGL0ml5uSxZmz3/3Pq4tJ+fb1unVLAFcY=",
