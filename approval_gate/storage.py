@@ -169,14 +169,9 @@ class ActionStorage:
             action_row.status = new_state.status
 
             next_id = (await self._get_log_hwm(session, key.session_key)) + 1
-            log_row = _LogEntryRow(
-                session_key=key.session_key,
-                entry_id=next_id,
-                action_seq=key.action_seq,
-                kind=detail.kind,
-                detail_json=_LOG_DETAIL_TA.dump_json(detail).decode(),
+            log_row = await self._add_log_row(
+                session, session_key=key.session_key, action_seq=key.action_seq, next_id=next_id, detail=detail
             )
-            session.add(log_row)
             await session.commit()
             await session.refresh(action_row)
         return action_row.to_action(), log_row.to_log_entry()
@@ -200,18 +195,27 @@ class ActionStorage:
         )
         return result.scalar_one()
 
+    @staticmethod
+    async def _add_log_row(
+        session: AsyncSession, *, session_key: str, action_seq: int, next_id: int, detail: LogEventDetail
+    ) -> _LogEntryRow:
+        row = _LogEntryRow(
+            session_key=session_key,
+            entry_id=next_id,
+            action_seq=action_seq,
+            kind=detail.kind,
+            detail_json=_LOG_DETAIL_TA.dump_json(detail).decode(),
+        )
+        session.add(row)
+        return row
+
     async def append_log_entry(self, *, session_key: str, action_seq: int, detail: LogEventDetail) -> LogEntry:
         """Append an event to the log; assigns the next entry_id for the session."""
         async with self._session_factory() as session:
             next_id = (await self._get_log_hwm(session, session_key)) + 1
-            row = _LogEntryRow(
-                session_key=session_key,
-                entry_id=next_id,
-                action_seq=action_seq,
-                kind=detail.kind,
-                detail_json=_LOG_DETAIL_TA.dump_json(detail).decode(),
+            row = await self._add_log_row(
+                session, session_key=session_key, action_seq=action_seq, next_id=next_id, detail=detail
             )
-            session.add(row)
             await session.commit()
         return row.to_log_entry()
 
