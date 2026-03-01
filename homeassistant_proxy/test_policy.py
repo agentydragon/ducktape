@@ -3,7 +3,7 @@
 import pytest_bazel
 
 from homeassistant_proxy.config import AccessRule, Action, Policy
-from homeassistant_proxy.policy import EntityInfo, check_all_entities, check_entity_access, filter_entities
+from homeassistant_proxy.policy import EntityInfo, allowed_entities, check_entity_access, denied_entities
 
 
 def _info(entity_id: str, device_id: str | None = None, area_id: str | None = None) -> EntityInfo:
@@ -66,7 +66,7 @@ class TestCheckEntityAccess:
         assert not check_entity_access("light.dangerous", Action.CONTROL, policy, info)
 
 
-class TestFilterEntities:
+class TestAllowedEntities:
     def test_filters_by_read(self):
         policy = Policy(entity_ids={"light.allowed": AccessRule(read=True), "light.denied": AccessRule(read=False)})
         registry = {
@@ -74,25 +74,25 @@ class TestFilterEntities:
             "light.denied": _info("light.denied"),
             "light.unknown": _info("light.unknown"),
         }
-        result = filter_entities(["light.allowed", "light.denied", "light.unknown"], Action.READ, policy, registry)
+        result = allowed_entities(["light.allowed", "light.denied", "light.unknown"], Action.READ, policy, registry)
         assert result == ["light.allowed"]
 
     def test_unknown_entity_uses_fallback(self):
         policy = Policy(all=AccessRule(read=True))
-        result = filter_entities(["sensor.temp"], Action.READ, policy, {})
+        result = allowed_entities(["sensor.temp"], Action.READ, policy, {})
         assert result == ["sensor.temp"]
 
 
-class TestCheckAllEntities:
+class TestDeniedEntities:
     def test_returns_denied_entities(self):
         policy = Policy(entity_ids={"light.ok": AccessRule(control=True), "light.no": AccessRule(control=False)})
         registry = {"light.ok": _info("light.ok"), "light.no": _info("light.no")}
-        denied = check_all_entities(["light.ok", "light.no"], Action.CONTROL, policy, registry)
+        denied = denied_entities(["light.ok", "light.no"], Action.CONTROL, policy, registry)
         assert denied == ["light.no"]
 
     def test_empty_when_all_allowed(self):
         policy = Policy(all=AccessRule(control=True))
-        denied = check_all_entities(["light.a", "light.b"], Action.CONTROL, policy, {})
+        denied = denied_entities(["light.a", "light.b"], Action.CONTROL, policy, {})
         assert denied == []
 
 

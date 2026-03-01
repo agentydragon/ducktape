@@ -34,7 +34,7 @@ def check_entity_access(entity_id: str, action: Action, policy: Policy, entity_i
     return policy.all.allows(action)
 
 
-def filter_entities(
+def allowed_entities(
     entity_ids: list[str], action: Action, policy: Policy, registry: dict[str, EntityInfo]
 ) -> list[str]:
     """Return entity IDs that the policy allows for the given action."""
@@ -45,7 +45,7 @@ def filter_entities(
     ]
 
 
-def check_all_entities(
+def denied_entities(
     entity_ids: list[str], action: Action, policy: Policy, registry: dict[str, EntityInfo]
 ) -> list[str]:
     """Return entity IDs that the policy DENIES for the given action."""

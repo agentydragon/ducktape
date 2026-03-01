@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from homeassistant_proxy.config import Action, Settings, TokenConfig
-from homeassistant_proxy.policy import EntityInfo, check_all_entities, filter_entities
+from homeassistant_proxy.policy import EntityInfo, allowed_entities, denied_entities
 from homeassistant_proxy.registry import fetch_registry
 
 logger = logging.getLogger(__name__)
@@ -21,10 +21,16 @@ def _forward(resp: httpx.Response) -> JSONResponse:
     return JSONResponse(resp.json(), status_code=resp.status_code)
 
 
-def _resolve_ids(raw: str | list[str] | None, registry: dict[str, EntityInfo], attr: str) -> list[str]:
-    """Resolve a body field (device_id or area_id) to entity_ids via registry."""
+def _resolve_device_ids(raw: str | list[str] | None, registry: dict[str, EntityInfo]) -> list[str]:
+    """Resolve device_id field to entity_ids via registry."""
     ids: list[str] = [raw] if isinstance(raw, str) else (raw or [])
-    return [info.entity_id for id_ in ids for info in registry.values() if getattr(info, attr) == id_]
+    return [info.entity_id for id_ in ids for info in registry.values() if info.device_id == id_]
+
+
+def _resolve_area_ids(raw: str | list[str] | None, registry: dict[str, EntityInfo]) -> list[str]:
+    """Resolve area_id field to entity_ids via registry."""
+    ids: list[str] = [raw] if isinstance(raw, str) else (raw or [])
+    return [info.entity_id for id_ in ids for info in registry.values() if info.area_id == id_]
 
 
 def _make_app(settings: Settings) -> FastAPI:
@@ -86,13 +92,13 @@ def _make_app(settings: Settings) -> FastAPI:
         registry = await _get_registry()
         states: list[dict[str, Any]] = resp.json()
         all_ids = [s["entity_id"] for s in states]
-        allowed = set(filter_entities(all_ids, Action.READ, token_cfg.policy, registry))
+        allowed = set(allowed_entities(all_ids, Action.READ, token_cfg.policy, registry))
         return JSONResponse([s for s in states if s["entity_id"] in allowed])
 
     @app.get("/api/states/{entity_id}")
     async def api_state(token_cfg: Auth, entity_id: str) -> JSONResponse:
         registry = await _get_registry()
-        denied = check_all_entities([entity_id], Action.READ, token_cfg.policy, registry)
+        denied = denied_entities([entity_id], Action.READ, token_cfg.policy, registry)
         if denied:
             return JSONResponse({"error": f"access denied for entity: {entity_id}"}, status_code=403)
         return _forward(await _http().get(f"/api/states/{entity_id}"))
@@ -113,14 +119,14 @@ def _make_app(settings: Settings) -> FastAPI:
 
         # Resolve device_id/area_id targets to entity_ids via registry.
         registry = await _get_registry()
-        target_entity_ids.extend(_resolve_ids(data.get("device_id"), registry, "device_id"))
-        target_entity_ids.extend(_resolve_ids(data.get("area_id"), registry, "area_id"))
+        target_entity_ids.extend(_resolve_device_ids(data.get("device_id"), registry))
+        target_entity_ids.extend(_resolve_area_ids(data.get("area_id"), registry))
 
         if not target_entity_ids:
             # Services without targets (e.g. homeassistant.restart) are admin-level — block them.
             return JSONResponse({"error": "service call has no entity/device/area target"}, status_code=403)
 
-        denied = check_all_entities(target_entity_ids, Action.CONTROL, token_cfg.policy, registry)
+        denied = denied_entities(target_entity_ids, Action.CONTROL, token_cfg.policy, registry)
         if denied:
             return JSONResponse({"error": f"control denied for entities: {denied}"}, status_code=403)
         url = f"/api/services/{domain}/{service}"
