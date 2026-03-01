@@ -162,6 +162,16 @@ class ApprovalGateServer(EnhancedFastMCP):
                     raise ValueError(f"Action not found: {action_id}")
                 return action.model_dump_json()
 
+            # Enable resource subscriptions so HTTP clients can subscribe to
+            # action state changes and receive ResourceUpdated notifications.
+            @self._mcp_server.subscribe_resource()
+            async def _handle_subscribe(_uri: str) -> None:
+                return None
+
+            @self._mcp_server.unsubscribe_resource()
+            async def _handle_unsubscribe(_uri: str) -> None:
+                return None
+
             # ── Operator MCP tools ────────────────────────────────────────────
             # Gated by require_scopes("operator"); bypassed for in-process clients
             # (stdio/memory transport), which allows tests to call these freely.

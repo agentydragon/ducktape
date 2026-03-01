@@ -249,3 +249,29 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_reconnect",
+    size = "medium",
+    srcs = ["test_reconnect.py"],
+    deps = [
+        ":conftest",
+        ":mcp_auth",
+        ":models",
+        ":predicates",
+        ":proxy_server",
+        "//mcp_infra:prefix",
+        "//util:net",
+        "@pypi//anyio",
+        "@pypi//cryptography",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
+    ],
+)

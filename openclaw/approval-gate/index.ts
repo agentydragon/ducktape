@@ -9,6 +9,11 @@
  *   4. On ResourceUpdated: reads the resource, formats a result message, and
  *      injects it into the agent session via chat.inject (local gateway WebSocket).
  *
+ * Resilience: if the approval gate MCP server goes down, the plugin automatically
+ * reconnects with exponential backoff. On reconnect, it re-subscribes to all
+ * pending (non-terminal) actions and delivers any results that arrived during the
+ * outage via catch-up reads.
+ *
  * Auth:
  *   - Approval gate MCP endpoint: Bearer AGENT_API_KEY (from plugin config)
  *   - chat.inject call: OPENCLAW_GATEWAY_TOKEN (env var, same process)
@@ -23,6 +28,8 @@ import WebSocket from "ws";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:18789";
 const ACTION_RESOURCE_PREFIX = "resource://actions/";
+const INITIAL_RETRY_DELAY_MS = 5_000;
+const MAX_RETRY_DELAY_MS = 60_000;
 
 // ── Action state types (mirrors approval_gate/models.py + mcp_types.CallToolResult) ─
 // TODO: These types overlap with approval_gate/frontend/types.ts. The two packages live in
@@ -101,17 +108,192 @@ function stripSessionKey(schema: Record<string, unknown>): Record<string, unknow
   return result;
 }
 
+// ── Pending action tracking ─────────────────────────────────────────────────
+
+type PendingAction = { resourceUri: string; sessionKey: string | null };
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type NotificationHandler = (notification: any) => Promise<void>;
+
+// ── ApprovalGateConnection ──────────────────────────────────────────────────
+
 /**
- * Read an action resource and parse it.
- * Throws if the resource content is non-text or unparseable.
+ * Resilient MCP client connection to the approval gate server.
+ *
+ * Automatically reconnects on disconnect with exponential backoff. Tracks
+ * in-flight actions and re-subscribes on reconnect, performing catch-up reads
+ * to deliver results that arrived during the outage.
  */
-async function readActionResource(client: Client, uri: string): Promise<Action> {
-  const resource = await client.readResource({ uri });
-  const content = resource.contents[0];
-  if (!content || !("text" in content)) {
-    throw new Error(`resource ${uri} returned non-text content`);
+class ApprovalGateConnection {
+  private client: Client | null = null;
+  private connecting = false;
+  private retryDelay = INITIAL_RETRY_DELAY_MS;
+  private notificationHandler: NotificationHandler | null = null;
+  private cachedInstructions: string | undefined;
+  /** Actions that haven't reached terminal state — re-subscribed on reconnect. */
+  private readonly pendingActions = new Map<string, PendingAction>();
+
+  constructor(
+    private readonly url: string,
+    private readonly agentApiKey: string,
+    private readonly log: ScopedLogger
+  ) {}
+
+  async connect(): Promise<void> {
+    if (this.connecting) return;
+    this.connecting = true;
+    try {
+      const transport = new StreamableHTTPClientTransport(new URL(this.url), {
+        requestInit: {
+          headers: { Authorization: `Bearer ${this.agentApiKey}` },
+        },
+      });
+      const client = new Client({ name: "openclaw-approval-gate-plugin", version: "0.1.0" });
+
+      client.onclose = () => {
+        this.log.warn("MCP connection closed");
+        this.client = null;
+        this.scheduleReconnect();
+      };
+
+      client.onerror = (error: Error) => {
+        this.log.warn(`MCP client error: ${error.message}`);
+      };
+
+      await client.connect(transport);
+      this.client = client;
+      this.retryDelay = INITIAL_RETRY_DELAY_MS;
+
+      // Cache instructions from initialization handshake
+      const initResult = (client as Record<string, unknown>)._instructions as string | undefined;
+      if (initResult) {
+        this.cachedInstructions = initResult;
+      }
+
+      // Re-register notification handler on the new client
+      if (this.notificationHandler) {
+        client.setNotificationHandler(
+          { method: "notifications/resources/updated" } as Parameters<typeof client.setNotificationHandler>[0],
+          this.notificationHandler
+        );
+      }
+
+      this.log.info(`connected to ${this.url}`);
+
+      // Re-subscribe to pending actions and catch up on missed results
+      await this.resubscribePendingActions();
+    } catch (err) {
+      this.log.error(`failed to connect to approval gate: ${String(err)}`);
+      this.scheduleReconnect();
+    } finally {
+      this.connecting = false;
+    }
   }
-  return JSON.parse((content as { text: string }).text) as Action;
+
+  private scheduleReconnect(): void {
+    const delay = this.retryDelay;
+    this.retryDelay = Math.min(this.retryDelay * 2, MAX_RETRY_DELAY_MS);
+    this.log.info(`reconnecting in ${delay}ms`);
+    setTimeout(() => this.connect(), delay);
+  }
+
+  /**
+   * Re-subscribe to all pending actions after reconnect.
+   *
+   * For each action: subscribe first (for future changes), then read current state
+   * to catch results that arrived during the outage. If already terminal, deliver
+   * the result immediately. The subscribe-then-read order avoids race conditions.
+   */
+  private async resubscribePendingActions(): Promise<void> {
+    if (this.pendingActions.size === 0) return;
+    this.log.info(`re-subscribing to ${this.pendingActions.size} pending action(s)`);
+    const entries = [...this.pendingActions.entries()];
+    for (const [actionId, { resourceUri }] of entries) {
+      try {
+        const client = this.requireClient();
+        await client.subscribeResource({ uri: resourceUri });
+
+        // Catch-up read: check if action resolved during outage
+        const resource = await client.readResource({ uri: resourceUri });
+        const content = resource.contents[0];
+        if (content && "text" in content) {
+          const action = JSON.parse((content as { text: string }).text) as Action;
+          if (isTerminal(action.state.status)) {
+            // Trigger the notification handler to deliver the result
+            const notification = { method: "notifications/resources/updated", params: { uri: resourceUri } };
+            this.notificationHandler?.(notification).catch((err) =>
+              this.log.warn(`catch-up notification failed for ${actionId}: ${String(err)}`)
+            );
+          }
+        }
+      } catch (err) {
+        this.log.warn(`failed to re-subscribe to action ${actionId}: ${String(err)}`);
+      }
+    }
+  }
+
+  private requireClient(): Client {
+    if (!this.client) {
+      throw new Error("approval gate server is currently unavailable");
+    }
+    return this.client;
+  }
+
+  get connected(): boolean {
+    return this.client !== null;
+  }
+
+  get instructions(): string | undefined {
+    return this.cachedInstructions;
+  }
+
+  setNotificationHandler(handler: NotificationHandler): void {
+    this.notificationHandler = handler;
+    if (this.client) {
+      this.client.setNotificationHandler(
+        { method: "notifications/resources/updated" } as Parameters<typeof this.client.setNotificationHandler>[0],
+        handler
+      );
+    }
+  }
+
+  trackAction(actionId: string, resourceUri: string, sessionKey: string | null): void {
+    this.pendingActions.set(actionId, { resourceUri, sessionKey });
+  }
+
+  resolveAction(actionId: string): void {
+    this.pendingActions.delete(actionId);
+  }
+
+  async callTool(name: string, args: Record<string, unknown>): Promise<ReturnType<Client["callTool"]>> {
+    return this.requireClient().callTool({ name, arguments: args });
+  }
+
+  async readResource(uri: string): Promise<Action> {
+    const client = this.requireClient();
+    const resource = await client.readResource({ uri });
+    const content = resource.contents[0];
+    if (!content || !("text" in content)) {
+      throw new Error(`resource ${uri} returned non-text content`);
+    }
+    return JSON.parse((content as { text: string }).text) as Action;
+  }
+
+  async subscribeResource(uri: string): Promise<void> {
+    this.requireClient().subscribeResource({ uri });
+  }
+
+  async unsubscribeResource(uri: string): Promise<void> {
+    try {
+      this.requireClient().unsubscribeResource({ uri });
+    } catch {
+      // Swallow — unsubscribe is best-effort (connection may already be gone)
+    }
+  }
+
+  async listTools(): Promise<ReturnType<Client["listTools"]>> {
+    return this.requireClient().listTools();
+  }
 }
 
 type GatewayReqFrame = { type: "req"; id: string; method: string; params?: unknown };
@@ -281,84 +463,69 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     log.warn("OPENCLAW_GATEWAY_TOKEN not set; action results will not be injected into sessions");
   }
 
-  // ── Connect to approval gate MCP server ──────────────────────────────────
-  // TODO: handle approval gate availability changes — unregister/re-register tools on disconnect/reconnect
-  const transport = new StreamableHTTPClientTransport(new URL(approvalGateUrl), {
-    requestInit: {
-      headers: { Authorization: `Bearer ${agentApiKey}` },
-    },
+  // ── Resilient MCP connection to approval gate server ──────────────────────
+  const connection = new ApprovalGateConnection(approvalGateUrl, agentApiKey, log);
+
+  // Set up ResourceUpdated notification handler before connecting, so it's
+  // registered on every (re)connect. The handler reads the action resource,
+  // delivers terminal results via gateway.inject, and cleans up tracking.
+  connection.setNotificationHandler(async (notification) => {
+    const uri = (notification.params as { uri?: string }).uri;
+    if (!uri?.startsWith(ACTION_RESOURCE_PREFIX)) return;
+
+    const actionId = uri.slice(ACTION_RESOURCE_PREFIX.length);
+
+    let action: Action;
+    try {
+      action = await connection.readResource(uri);
+    } catch (err) {
+      log.warn(`failed to read resource ${uri}: ${String(err)}`);
+      return;
+    }
+
+    const { status } = action.state;
+    if (!isTerminal(status)) return;
+
+    // Terminal — clean up subscription and tracking
+    connection.resolveAction(actionId);
+    await connection.unsubscribeResource(uri);
+
+    const sessionKey = action.session_key;
+    if (!sessionKey) {
+      log.info(`action ${actionId} has no session_key; skipping chat.inject`);
+      return;
+    }
+
+    if (!gateway) return;
+
+    const message = formatOutcomeMessage(action);
+    try {
+      await gateway.inject(sessionKey, message);
+      log.info(`injected result for action ${actionId} into session ${sessionKey}`);
+    } catch (err) {
+      log.error(`failed to inject result for action ${actionId}: ${String(err)}`);
+    }
   });
 
-  const client = new Client({ name: "openclaw-approval-gate-plugin", version: "0.1.0" });
-
   try {
-    await client.connect(transport);
-    log.info(`connected to ${approvalGateUrl}`);
+    await connection.connect();
   } catch (err) {
-    log.error(`failed to connect to approval gate: ${String(err)}`);
+    log.error(`initial connection failed: ${String(err)} — will retry in background`);
+  }
+
+  // ── Discover and re-register approval gate tools ──────────────────────────
+  // Tools are registered once at startup. If the initial connection fails,
+  // tools won't be available until a manual restart. Once registered, tools
+  // survive reconnections — execute() checks connection state and returns
+  // a user-friendly error if the server is temporarily unavailable.
+  if (!connection.connected) {
+    log.warn("not connected on startup; no tools registered — plugin will reconnect in background");
     return;
   }
 
-  // Capture MCP server instructions from the initialization handshake.
-  // The SDK does not expose a public accessor so we reach into the private field.
-  const mcpInstructions = (client as Record<string, unknown>)._initializeResult as
-    | { instructions?: string }
-    | undefined;
-
-  // ── Set up ResourceUpdated notification handler ───────────────────────────
-  // The approval gate emits ResourceUpdated on resource://actions/{id} for
-  // every state change. We read the resource, format a result message, and
-  // inject it into the appropriate agent session.
-  client.setNotificationHandler(
-    { method: "notifications/resources/updated" } as Parameters<typeof client.setNotificationHandler>[0],
-    async (notification) => {
-      const uri = (notification.params as { uri?: string }).uri;
-      if (!uri?.startsWith(ACTION_RESOURCE_PREFIX)) return;
-
-      const actionId = uri.slice(ACTION_RESOURCE_PREFIX.length);
-
-      let action: Action;
-      try {
-        action = await readActionResource(client, uri);
-      } catch (err) {
-        log.warn(`failed to read resource ${uri}: ${String(err)}`);
-        return;
-      }
-
-      // Only deliver notifications for terminal states
-      const { status } = action.state;
-      if (!isTerminal(status)) return;
-
-      // Unsubscribe now that we have a terminal state — no further updates expected.
-      try {
-        await client.unsubscribeResource({ uri });
-      } catch (err) {
-        log.warn(`failed to unsubscribe from ${uri}: ${String(err)}`);
-      }
-
-      const sessionKey = action.session_key;
-      if (!sessionKey) {
-        log.info(`action ${actionId} has no session_key; skipping chat.inject`);
-        return;
-      }
-
-      if (!gateway) return;
-
-      const message = formatOutcomeMessage(action);
-
-      try {
-        await gateway.inject(sessionKey, message);
-        log.info(`injected result for action ${actionId} into session ${sessionKey}`);
-      } catch (err) {
-        log.error(`failed to inject result for action ${actionId}: ${String(err)}`);
-      }
-    }
-  );
-
-  // ── Discover and re-register approval gate tools ──────────────────────────
-  let toolList: Awaited<ReturnType<typeof client.listTools>>;
+  let toolList: Awaited<ReturnType<Client["listTools"]>>;
   try {
-    toolList = await client.listTools();
+    toolList = await connection.listTools();
   } catch (err) {
     log.error(`failed to list tools: ${String(err)}`);
     return;
@@ -377,21 +544,40 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
       parameters: schema,
       async execute(_id: string, params: Record<string, unknown>) {
         const callArgs = { ...params, session_key: ctx.sessionKey ?? null };
-        const result = await client.callTool({ name: toolName, arguments: callArgs });
+
+        let result: Awaited<ReturnType<Client["callTool"]>>;
+        try {
+          result = await connection.callTool(toolName, callArgs);
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Approval gate server is currently unavailable. Please retry shortly. (${String(err)})`,
+              },
+            ],
+          };
+        }
 
         const firstContent = result.content?.[0] as { text: string };
         const actionId = JSON.parse(firstContent.text) as string;
-
         const resourceUri = `${ACTION_RESOURCE_PREFIX}${actionId}`;
 
+        // Track this action for re-subscription on reconnect
+        connection.trackAction(actionId, resourceUri, ctx.sessionKey ?? null);
+
         // Subscribe so ResourceUpdated notifications reach our handler above.
-        await client.subscribeResource({ uri: resourceUri });
+        try {
+          await connection.subscribeResource(resourceUri);
+        } catch (err) {
+          log.warn(`failed to subscribe to ${resourceUri}: ${String(err)}`);
+        }
 
         // Read current state immediately — action may already be resolved
         // (auto-approved by predicate or instantly denied).
         let action: Action;
         try {
-          action = await readActionResource(client, resourceUri);
+          action = await connection.readResource(resourceUri);
         } catch (err) {
           log.warn(`could not read initial state for ${resourceUri}: ${String(err)}`);
           return {
@@ -406,12 +592,9 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
 
         const { status } = action.state;
         if (isTerminal(status)) {
-          // Already terminal — unsubscribe (no further notifications expected) and return outcome.
-          try {
-            await client.unsubscribeResource({ uri: resourceUri });
-          } catch (err) {
-            log.warn(`failed to unsubscribe from ${resourceUri}: ${String(err)}`);
-          }
+          // Already terminal — clean up and return outcome.
+          connection.resolveAction(actionId);
+          await connection.unsubscribeResource(resourceUri);
           return { content: [{ type: "text" as const, text: formatOutcomeMessage(action) }] };
         }
 
@@ -437,8 +620,8 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   //
   // The pseudo-XML envelope signals to the model that this is injected infrastructure
   // context, not a user message.
-  if (mcpInstructions?.instructions) {
-    const instructions = mcpInstructions.instructions;
+  const instructions = connection.instructions;
+  if (instructions) {
     api.on("before_prompt_build", (event) => {
       const hasUserMessages = (event.messages as Array<{ role?: string }>).some((m) => m.role === "user");
       if (hasUserMessages) return;
