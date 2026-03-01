@@ -179,7 +179,10 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":models",
         ":storage",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],
