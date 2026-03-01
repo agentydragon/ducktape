@@ -126,3 +126,7 @@ harbor_images:
   - bazel_target: //mcp_infra/exec:exec_backend_load
     local_tag: approval-gate-exec-backend:latest
     remote_path: approval-gate/exec-backend
+
+  - bazel_target: //homeassistant_proxy:load
+    local_tag: homeassistant-proxy:latest
+    remote_path: homeassistant-proxy/homeassistant-proxy

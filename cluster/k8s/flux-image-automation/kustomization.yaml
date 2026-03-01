@@ -20,3 +20,6 @@ resources:
   - exec-backend-image-repository.yaml
   - exec-backend-image-policy.yaml
   - exec-backend-image-update-automation.yaml
+  - homeassistant-proxy-image-repository.yaml
+  - homeassistant-proxy-image-policy.yaml
+  - homeassistant-proxy-image-update-automation.yaml

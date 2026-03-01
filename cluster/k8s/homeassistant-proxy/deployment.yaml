@@ -26,7 +26,7 @@ spec:
         - name: harbor-ci-robot
       containers:
         - name: homeassistant-proxy
-          image: registry.allegedly.works/homeassistant-proxy/homeassistant-proxy:latest
+          image: registry.allegedly.works/homeassistant-proxy/homeassistant-proxy:latest # {"$imagepolicy": "flux-system:homeassistant-proxy"}
           ports:
             - name: http
               containerPort: 8080
