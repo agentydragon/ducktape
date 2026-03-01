@@ -774,6 +774,11 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
             best = max(with_runs, key=get_lcb)
             definition_id = best.critic_image_digest
 
+            # TODO: Definition and example selection is currently automatic (best LCB95
+            # definition, top-N examples by recall). Eventually expose this via a frontend
+            # affordance so the user can choose which definition to improve and which
+            # examples to focus on.
+
             # Select Pareto-optimal training examples
             recall_rows = query_recall_by_example(session, split=Split.TRAIN, critic_image_digest=definition_id)
             if not recall_rows:
