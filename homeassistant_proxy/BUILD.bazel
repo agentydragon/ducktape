@@ -50,15 +50,6 @@ py_library(
         ":registry",
         "@pypi//fastapi",
         "@pypi//httpx",
-    ],
-)
-
-py_library(
-    name = "cli",
-    srcs = ["cli.py"],
-    imports = [".."],
-    deps = [
-        ":proxy",
         "@pypi//uvicorn",
     ],
 )
@@ -70,8 +61,8 @@ py_library(
 py_binary(
     name = "homeassistant_proxy",
     imports = [".."],
-    main_module = "homeassistant_proxy.cli",
-    deps = [":cli"],
+    main_module = "homeassistant_proxy.proxy",
+    deps = [":proxy"],
 )
 
 # =============================================================================
@@ -81,8 +72,8 @@ py_binary(
 aspect_py_binary(
     name = "homeassistant_proxy_bin",
     imports = [".."],
-    main = "cli.py",
-    deps = [":cli"],
+    main = "proxy.py",
+    deps = [":proxy"],
 )
 
 py_image_layer(

@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -177,3 +178,13 @@ def _make_app(settings: Settings) -> FastAPI:
 
 def create_app() -> FastAPI:
     return _make_app(Settings.from_env())
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    app = create_app()
+    uvicorn.run(app, host="0.0.0.0", port=8080)
+
+
+if __name__ == "__main__":
+    main()
