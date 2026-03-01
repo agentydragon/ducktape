@@ -157,15 +157,15 @@ class ActionStorage:
             await session.refresh(row)
         return row.to_action()
 
-    async def list_actions(self, status: ActionStatus | None = None, *, limit: int = 100) -> list[Action]:
+    async def list_actions(
+        self, status: ActionStatus | None = None, *, limit: int = 100, offset: int = 0
+    ) -> list[Action]:
         """List actions, optionally filtered by status, newest first."""
         async with self._session_factory() as session:
-            stmt = select(_ActionRow).order_by(_ActionRow.created_at.desc()).limit(limit)
+            stmt = select(_ActionRow).order_by(_ActionRow.created_at.desc()).limit(limit).offset(offset)
             if status is not None:
                 stmt = stmt.where(_ActionRow.status == status)
-            result = await session.execute(stmt)
-            rows = result.scalars().all()
-        return [r.to_action() for r in rows]
+            return [r.to_action() for r in (await session.execute(stmt)).scalars().all()]
 
     # ── Event log ────────────────────────────────────────────────────────────
 

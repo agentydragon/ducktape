@@ -23,8 +23,9 @@ from mcp import types as mcp_types
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import AccessToken as MCPAccessToken
+from pydantic import AnyUrl
 
-from approval_gate.mcp_auth import AGENT_SCOPE
+from approval_gate.mcp_auth import AGENT_SCOPE, READER_SCOPE
 from approval_gate.models import Action, ActionKey, ActionStatus, ApproveDecision, DenyDecision
 from approval_gate.predicates import Approved, NeedsHumanDecision
 from approval_gate.proxy_server import ApprovalGateServer
@@ -37,12 +38,8 @@ _SESSION = "e2e-session"
 
 @pytest.fixture(autouse=True)
 async def _agent_auth_ctx():
-    """Inject AGENT_SCOPE into the MCP auth context for in-process tests.
-
-    Sets auth_context_var before the server task is created so the server task
-    inherits agent scope (anyio copies contextvars to new asyncio tasks).
-    """
-    user = AuthenticatedUser(MCPAccessToken(token="test-agent", client_id="test", scopes=[AGENT_SCOPE]))
+    """Inject AGENT_SCOPE + READER_SCOPE into the MCP auth context for in-process tests."""
+    user = AuthenticatedUser(MCPAccessToken(token="test-agent", client_id="test", scopes=[AGENT_SCOPE, READER_SCOPE]))
     token = auth_context_var.set(user)
     yield
     auth_context_var.reset(token)
@@ -83,8 +80,8 @@ def _parse_action_key(result: mcp_types.CallToolResult) -> ActionKey:
 class _ResourceWaiter(MessageHandler):
     """Receives resource-updated notifications and signals waiters.
 
-    Subscribes to the session log HWM resource. On each notification, reads
-    the action resource to check if the target status has been reached.
+    Subscribes to the session log HWM and action resources. On each notification,
+    reads the action resource to check if the target status has been reached.
     """
 
     def __init__(self) -> None:
@@ -100,10 +97,12 @@ class _ResourceWaiter(MessageHandler):
         """Wait until the action reaches `status` via resource-updated notifications."""
         action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
         hwm_uri = f"resource://sessions/{key.session_key}/log_hwm"
+        # Subscribe so the server sends notifications to this session
+        await client.session.subscribe_resource(AnyUrl(action_uri))
+        await client.session.subscribe_resource(AnyUrl(hwm_uri))
         while True:
             event = anyio.Event()
             self._events[hwm_uri] = event
-            # Also listen on the action resource directly
             self._events[action_uri] = event
             action: Action = await read_text_json_typed(client, action_uri, Action)
             if action.state.status == status:

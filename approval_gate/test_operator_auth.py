@@ -125,12 +125,13 @@ async def operator_tool_names(gate_http, admin_jwt) -> set[str]:
 
 
 async def test_agent_cannot_see_operator_tools(agent_tool_names):
-    """Agent bearer token must not see approve_action/reject_action/list_actions."""
+    """Agent bearer token must not see approve_action/reject_action."""
     assert "approve_action" not in agent_tool_names
     assert "reject_action" not in agent_tool_names
-    assert "list_actions" not in agent_tool_names
     assert "test_echo" in agent_tool_names
     assert "withdraw_action" in agent_tool_names
+    # list_actions requires reader scope which both roles have
+    assert "list_actions" in agent_tool_names
 
 
 async def test_operator_jwt_sees_operator_tools(operator_tool_names):

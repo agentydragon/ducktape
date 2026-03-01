@@ -83,20 +83,16 @@ export class ApprovalGateMcpClient {
     return JSON.parse(first.text as string) as T;
   }
 
-  async listActions(status?: ActionStatus, limit = 100): Promise<Action[]> {
-    return this.callTool("list_actions", { status: status ?? null, limit });
+  async listActions(status?: ActionStatus, limit = 100, offset = 0): Promise<Action[]> {
+    return this.callTool("list_actions", { status: status ?? null, limit, offset });
   }
 
   async approve(key: ActionKey): Promise<Action> {
-    return this.callTool("approve_action", { session_key: key.session_key, action_seq: key.action_seq });
+    return this.callTool("approve_action", { key });
   }
 
   async reject(key: ActionKey, reason?: string): Promise<Action> {
-    return this.callTool("reject_action", {
-      session_key: key.session_key,
-      action_seq: key.action_seq,
-      reason: reason ?? null,
-    });
+    return this.callTool("reject_action", { key, reason: reason ?? null });
   }
 
   async readAction<T>(uri: string): Promise<T> {

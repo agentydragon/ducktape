@@ -1,8 +1,8 @@
 """FastMCP AuthProvider for the approval gate.
 
 Handles two auth methods on a single /mcp endpoint:
-  - x-authentik-jwt: <jwt>         → operator (scopes: ["operator"])
-  - Authorization: Bearer <key>    → agent   (scopes: ["agent"])
+  - x-authentik-jwt: <jwt>         → operator (scopes: ["operator", "reader"])
+  - Authorization: Bearer <key>    → agent   (scopes: ["agent", "reader"])
 
 For in-process (stdio/memory) Client connections, FastMCP bypasses all auth checks
 entirely — tests connect directly to ApprovalGateServer without needing any credentials.
@@ -27,15 +27,17 @@ logger = logging.getLogger(__name__)
 
 AGENT_SCOPE = "agent"
 OPERATOR_SCOPE = "operator"
+READER_SCOPE = "reader"
 
 
 class ApprovalGateAuthProvider(AuthProvider):
     """Authenticates both Authentik JWT (operators) and bearer API keys (agents).
 
-    Agents carry ``Authorization: Bearer <AGENT_API_KEY>`` and receive the ``AGENT_SCOPE``,
+    Both roles include ``READER_SCOPE`` for resource reads and ``list_actions``.
+    Agents carry ``Authorization: Bearer <AGENT_API_KEY>`` and additionally receive ``AGENT_SCOPE``,
     which gates wrapped backend tools and ``withdraw_action``.
-    Operators carry ``x-authentik-jwt: <jwt>`` and receive the ``OPERATOR_SCOPE``,
-    which gates the list_actions / approve_action / reject_action MCP tools.
+    Operators carry ``x-authentik-jwt: <jwt>`` and additionally receive ``OPERATOR_SCOPE``,
+    which gates approve_action / reject_action.
     """
 
     def __init__(self, *, agent_api_key: str, jwks_client: PyJWKClient) -> None:
@@ -63,7 +65,7 @@ class ApprovalGateAuthProvider(AuthProvider):
 
     def _verify_agent_bearer(self, token: str) -> AccessToken | None:
         if token == self._agent_api_key:
-            return AccessToken(token=token, client_id="agent", scopes=[AGENT_SCOPE])
+            return AccessToken(token=token, client_id="agent", scopes=[AGENT_SCOPE, READER_SCOPE])
         return None
 
     async def _verify_operator_jwt(self, raw_jwt: str) -> AccessToken | None:
@@ -83,7 +85,7 @@ class ApprovalGateAuthProvider(AuthProvider):
             return None
         # Any valid JWT is treated as an operator; group checks are left to the JWKS
         # issuer policy. If finer-grained enforcement is needed, add a groups check here.
-        return AccessToken(token=raw_jwt, client_id="operator", scopes=[OPERATOR_SCOPE])
+        return AccessToken(token=raw_jwt, client_id="operator", scopes=[OPERATOR_SCOPE, READER_SCOPE])
 
 
 class _DualHeaderAuthBackend(AuthenticationBackend):

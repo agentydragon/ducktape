@@ -29,7 +29,10 @@ py_binary(
     name = "export_schema_bin",
     imports = [".."],
     main_module = "approval_gate.export_schema",
-    visibility = ["//approval_gate:__subpackages__"],
+    visibility = [
+        "//approval_gate:__subpackages__",
+        "//openclaw/approval-gate:__pkg__",
+    ],
     deps = [":export_schema"],
 )
 

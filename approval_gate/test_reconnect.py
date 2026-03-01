@@ -31,7 +31,6 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from fastmcp.mcp_config import RemoteMCPServer
-from jwt import PyJWKClient
 from mcp import types as mcp_types
 from pydantic import AnyUrl
 from starlette.applications import Starlette
@@ -91,7 +90,7 @@ def _make_backend():
 
 def _make_gate_app(backend: FastMCP, db_path: Path, mock_jwks_signing_key):
     """Create a Starlette app with an ApprovalGateServer."""
-    jwks_client = PyJWKClient("http://test/jwks")
+    jwks_client = pyjwt.PyJWKClient("http://test/jwks")
     auth = ApprovalGateAuthProvider(agent_api_key=_AGENT_API_KEY, jwks_client=jwks_client)
     gate = ApprovalGateServer(
         backends={_TEST_NS: backend},
@@ -157,6 +156,9 @@ class _ResourceWaiter(MessageHandler):
         """Wait until action reaches the given status via resource-updated notifications."""
         action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
         hwm_uri = f"resource://sessions/{key.session_key}/log_hwm"
+        # Subscribe so the server sends notifications to this session
+        await client.session.subscribe_resource(AnyUrl(action_uri))
+        await client.session.subscribe_resource(AnyUrl(hwm_uri))
         while True:
             event = anyio.Event()
             self._events[hwm_uri] = event
@@ -208,7 +210,7 @@ async def test_client_reconnects_after_server_restart(tmp_path, mock_jwks_signin
             # Approve via operator and verify execution
             async with Client(_operator_transport(port, admin_jwt)) as operator:
                 await operator.call_tool(
-                    "approve_action", {"session_key": key_2.session_key, "action_seq": key_2.action_seq}
+                    "approve_action", {"key": {"session_key": key_2.session_key, "action_seq": key_2.action_seq}}
                 )
 
             assert {"text": "after-restart"} in calls
@@ -237,7 +239,7 @@ async def test_pending_action_survives_server_restart(tmp_path, mock_jwks_signin
             # Operator approves the action from before restart
             async with Client(_operator_transport(port, admin_jwt)) as operator:
                 await operator.call_tool(
-                    "approve_action", {"session_key": key.session_key, "action_seq": key.action_seq}
+                    "approve_action", {"key": {"session_key": key.session_key, "action_seq": key.action_seq}}
                 )
 
             # New agent client reads the action resource — should be done
@@ -278,7 +280,7 @@ async def test_resubscribe_receives_notifications_after_restart(tmp_path, mock_j
                 # Approve via operator
                 async with Client(_operator_transport(port, admin_jwt)) as operator:
                     await operator.call_tool(
-                        "approve_action", {"session_key": key.session_key, "action_seq": key.action_seq}
+                        "approve_action", {"key": {"session_key": key.session_key, "action_seq": key.action_seq}}
                     )
 
                 # Wait for the ResourceUpdated notification on the new connection

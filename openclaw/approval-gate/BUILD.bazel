@@ -1,0 +1,20 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("//tools/js:json_schema.bzl", "js_json_schema")
+
+npm_link_all_packages(name = "node_modules")
+
+js_json_schema(
+    name = "types",
+    out = "types.d.ts",
+    generator = "//approval_gate:export_schema_bin",
+)
+
+js_library(
+    name = "plugin",
+    srcs = ["index.ts"],
+    deps = [
+        ":node_modules",
+        ":types",
+    ],
+)

@@ -26,6 +26,15 @@
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type {
+  Action,
+  ActionKey,
+  CallToolResult,
+  Detail as LogEventDetail,
+  DoneState,
+  LogEntry,
+  RejectedState,
+} from "./types.js";
 import WebSocket from "ws";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:18789";
@@ -33,60 +42,6 @@ const LOG_HWM_PREFIX = "resource://sessions/";
 const LOG_HWM_SUFFIX = "/log_hwm";
 const INITIAL_RETRY_DELAY_MS = 5_000;
 const MAX_RETRY_DELAY_MS = 60_000;
-
-// ── Action/log types (mirrors approval_gate/models.py) ──────────────────────
-// The frontend SPA consumes generated types from the Pydantic models via
-// js_json_schema. This plugin is npm-managed (no Bazel), so types are kept
-// inline. Keep in sync with approval_gate/models.py.
-
-interface ActionKey {
-  session_key: string;
-  action_seq: number;
-}
-
-interface CallToolResult {
-  content: Array<{ type: string; text?: string; [key: string]: unknown }>;
-  isError?: boolean | null;
-}
-
-interface ActionState {
-  status: "pending" | "executing" | "done" | "rejected" | "withdrawn";
-}
-
-interface DoneState extends ActionState {
-  status: "done";
-  outcome: CallToolResult;
-}
-
-interface RejectedState extends ActionState {
-  status: "rejected";
-  reason?: string | null;
-}
-
-interface Action {
-  key: ActionKey;
-  call: { tool_name: string };
-  state: ActionState;
-}
-
-// Log event detail discriminated union — matches LogEventDetail in models.py.
-// The MCP log entry resource serializes via Pydantic, so `detail` is a typed
-// object (not a flat kind + detail_json string).
-type LogEventDetail =
-  | { kind: "action_received" }
-  | { kind: "approved" }
-  | { kind: "denied"; reason?: string | null }
-  | { kind: "withdrawn" }
-  | { kind: "execution_started" }
-  | { kind: "execution_finished"; outcome: CallToolResult };
-
-interface LogEntry {
-  entry_id: number;
-  session_key: string;
-  action_seq: number;
-  detail: LogEventDetail;
-  timestamp: string;
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
