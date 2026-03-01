@@ -2,30 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from mcp import types as mcp_types
 from more_itertools import one
 from pydantic import TypeAdapter
-
-
-def extract_text_from_tool_content(
-    content: Iterable[
-        mcp_types.TextContent
-        | mcp_types.ImageContent
-        | mcp_types.AudioContent
-        | mcp_types.ResourceLink
-        | mcp_types.EmbeddedResource
-    ],
-) -> str | None:
-    """Extract text from MCP CallToolResult content blocks.
-
-    Returns the first TextContent.text found, or None if no text content exists.
-    """
-    for item in content:
-        if isinstance(item, mcp_types.TextContent):
-            return item.text
-    return None
 
 
 def parse_tool_result_as[T](result: mcp_types.CallToolResult, model: type[T]) -> T:
