@@ -49,6 +49,11 @@ type Config struct {
 	// ForceRouting routes all peer traffic through KubeSpan even when peers are down.
 	// Ref: talos/pkg/machinery/resources/kubespan/config.go (ForceRouting)
 	ForceRouting bool `yaml:"force_routing"`
+
+	// MachineType is advertised to the discovery service. Talos uses "worker" or
+	// "controlplane" — the value is informational and does not change behavior.
+	// Ref: talos/pkg/machinery/api/machine/machine.go (TypeWorker, TypeControlPlane)
+	MachineType string `yaml:"machine_type"`
 }
 
 // LoadConfig reads and validates a YAML config file.
@@ -63,6 +68,7 @@ func LoadConfig(path string) (*Config, error) {
 		ListenPort:        51820,
 		MTU:               1420,
 		IdentityFile:      "/var/lib/kubespan/identity.json",
+		MachineType:       "worker",
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {

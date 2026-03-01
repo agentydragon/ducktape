@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/aes"
 	"crypto/tls"
@@ -8,6 +9,8 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"runtime"
+	"strings"
 	"time"
 
 	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
@@ -84,7 +87,7 @@ func (dm *DiscoveryManager) Run(ctx context.Context) error {
 
 // PublishLocal announces this node's affiliate data to the discovery service.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate)
-func (dm *DiscoveryManager) PublishLocal(id *Identity, listenPort int) error {
+func (dm *DiscoveryManager) PublishLocal(cfg *Config, id *Identity, listenPort int) error {
 	addr, err := id.ParsedAddress()
 	if err != nil {
 		return fmt.Errorf("parsing identity address: %w", err)
@@ -99,8 +102,8 @@ func (dm *DiscoveryManager) PublishLocal(id *Identity, listenPort int) error {
 			NodeId:          id.PublicKey, // Use public key as node ID (unique per identity)
 			Hostname:        hostname,
 			Nodename:        hostname,
-			MachineType:     "worker",
-			OperatingSystem: "Linux (kubespand)",
+			MachineType:     cfg.MachineType,
+			OperatingSystem: detectOS(),
 			Kubespan: &clientpb.KubeSpan{
 				PublicKey: id.PublicKey,
 				Address:   addrBytes,
@@ -109,6 +112,45 @@ func (dm *DiscoveryManager) PublishLocal(id *Identity, listenPort int) error {
 	}
 
 	return dm.client.SetLocalData(affiliate, nil)
+}
+
+// detectOS returns a human-readable OS identifier string.
+// On Linux, reads /etc/os-release for the distro name and version.
+func detectOS() string {
+	if runtime.GOOS != "linux" {
+		return runtime.GOOS + " (kubespand)"
+	}
+
+	f, err := os.Open("/etc/os-release")
+	if err != nil {
+		return "Linux (kubespand)"
+	}
+	defer f.Close()
+
+	var name, version string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "PRETTY_NAME=") {
+			val := strings.TrimPrefix(line, "PRETTY_NAME=")
+			val = strings.Trim(val, "\"")
+			return val + " (kubespand)"
+		}
+		if strings.HasPrefix(line, "NAME=") {
+			name = strings.Trim(strings.TrimPrefix(line, "NAME="), "\"")
+		}
+		if strings.HasPrefix(line, "VERSION=") {
+			version = strings.Trim(strings.TrimPrefix(line, "VERSION="), "\"")
+		}
+	}
+
+	if name != "" {
+		if version != "" {
+			return name + " " + version + " (kubespand)"
+		}
+		return name + " (kubespand)"
+	}
+	return "Linux (kubespand)"
 }
 
 // GetPeers returns the current list of discovered peers, converted from

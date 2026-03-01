@@ -31,3 +31,7 @@ identity_file: "/var/lib/kubespan/identity.json"
 # Route all traffic through KubeSpan even when peers are down.
 # false = only route to peers in "up" state (allowDownPeerBypass behavior).
 force_routing: false
+
+# Machine type advertised to the discovery service. Informational only.
+# Talos uses "worker" or "controlplane".
+machine_type: "worker"

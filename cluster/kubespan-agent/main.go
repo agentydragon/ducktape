@@ -117,7 +117,7 @@ func run(configPath string, logger *zap.Logger) error {
 	}()
 
 	// Publish our identity to the discovery service.
-	if err := discovery.PublishLocal(identity, cfg.ListenPort); err != nil {
+	if err := discovery.PublishLocal(cfg, identity, cfg.ListenPort); err != nil {
 		return fmt.Errorf("publishing local identity: %w", err)
 	}
 	logger.Info("published to discovery service")
@@ -158,7 +158,7 @@ func run(configPath string, logger *zap.Logger) error {
 				logger.Error("reconcile failed", zap.Error(err))
 			}
 			// Re-publish to keep TTL fresh.
-			_ = discovery.PublishLocal(identity, cfg.ListenPort)
+			_ = discovery.PublishLocal(cfg, identity, cfg.ListenPort)
 
 		case <-ticker.C:
 			// Periodic reconciliation — check handshakes, cycle endpoints if needed.
