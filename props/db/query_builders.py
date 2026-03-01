@@ -22,10 +22,7 @@ class RecallByExampleRow(BaseModel):
 
 
 def query_recall_by_example(
-    session: Session,
-    split: Split | None = None,
-    critic_image_digest: str | None = None,
-    snapshot_slugs: list[SnapshotSlug] | None = None,
+    session: Session, split: Split | None = None, critic_image_digest: str | None = None
 ) -> list[RecallByExampleRow]:
     """Query occurrence-weighted recall grouped by (example, critic_image_digest).
 
@@ -39,7 +36,6 @@ def query_recall_by_example(
         session: SQLAlchemy session
         split: Optional split filter (TRAIN, VALID, TEST)
         critic_image_digest: Optional image digest filter (get recall for specific definition)
-        snapshot_slugs: Optional list of snapshot slugs to filter
 
     Returns:
         List of RecallByExampleRow (example, critic_image_digest, recall)
@@ -67,8 +63,6 @@ def query_recall_by_example(
         query = query.filter(TpOccurrenceCredit.split == split)
     if critic_image_digest is not None:
         query = query.filter(TpOccurrenceCredit.critic_image_digest == critic_image_digest)
-    if snapshot_slugs is not None:
-        query = query.filter(TpOccurrenceCredit.snapshot_slug.in_(snapshot_slugs))
 
     query = query.group_by(
         TpOccurrenceCredit.snapshot_slug,
