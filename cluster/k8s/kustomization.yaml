@@ -142,4 +142,7 @@ resources:
   - harbor-oidc-config/flux-kustomization.yaml
   - user-agentydragon-namespace/flux-kustomization.yaml
   - user-agentydragon/flux-kustomization.yaml
+  - homeassistant-proxy-namespace/flux-kustomization.yaml
+  - homeassistant-proxy-secrets/flux-kustomization.yaml
+  - homeassistant-proxy/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml

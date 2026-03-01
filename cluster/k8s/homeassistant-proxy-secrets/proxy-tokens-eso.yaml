@@ -1,0 +1,19 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: homeassistant-proxy-tokens
+  namespace: homeassistant-proxy
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: homeassistant-proxy-tokens
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: mcp_agent
+      remoteRef:
+        key: kv/homeassistant-proxy/tokens
+        property: mcp_agent
