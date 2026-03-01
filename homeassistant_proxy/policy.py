@@ -41,32 +41,28 @@ class EntityRegistry:
         return [info.entity_id for info in self._entities.values() if info.area_id in ids]
 
 
-def check_entity_access(entity_id: str, action: Action, policy: Policy, entity_info: EntityInfo) -> bool:
-    """Check whether a policy allows an action on an entity.
+class PolicyEnforcer:
+    """Evaluates entity access for a token policy against a registry.
 
     Priority: entity_ids > device_ids > area_ids > domains > all.
     """
-    if entity_id in policy.entity_ids:
-        return policy.entity_ids[entity_id].allows(action)
-    if entity_info.device_id and entity_info.device_id in policy.device_ids:
-        return policy.device_ids[entity_info.device_id].allows(action)
-    if entity_info.area_id and entity_info.area_id in policy.area_ids:
-        return policy.area_ids[entity_info.area_id].allows(action)
-    domain = entity_info.domain
-    if domain in policy.domains:
-        return policy.domains[domain].allows(action)
-    return policy.all.allows(action)
-
-
-class PolicyEnforcer:
-    """Evaluates entity access for a token policy against a registry."""
 
     def __init__(self, policy: Policy, registry: EntityRegistry):
         self._policy = policy
         self._registry = registry
 
     def is_allowed(self, entity_id: str, action: Action) -> bool:
-        return check_entity_access(entity_id, action, self._policy, self._registry.get(entity_id))
+        info = self._registry.get(entity_id)
+        if entity_id in self._policy.entity_ids:
+            return self._policy.entity_ids[entity_id].allows(action)
+        if info.device_id and info.device_id in self._policy.device_ids:
+            return self._policy.device_ids[info.device_id].allows(action)
+        if info.area_id and info.area_id in self._policy.area_ids:
+            return self._policy.area_ids[info.area_id].allows(action)
+        domain = info.domain
+        if domain in self._policy.domains:
+            return self._policy.domains[domain].allows(action)
+        return self._policy.all.allows(action)
 
     def readable_entities(self, entity_ids: list[str]) -> set[str]:
         return {eid for eid in entity_ids if self.is_allowed(eid, Action.READ)}
