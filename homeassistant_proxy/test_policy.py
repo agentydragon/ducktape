@@ -1,5 +1,8 @@
 """Tests for the policy evaluation engine."""
 
+import time
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import pytest_bazel
 
@@ -12,7 +15,14 @@ def _info(entity_id: str, device_id: str | None = None, area_id: str | None = No
 
 
 def _enforcer(entities: dict[str, EntityInfo] | None = None) -> PolicyEnforcer:
-    return PolicyEnforcer("http://unused", "unused-token", entities=entities or {})
+    enforcer = PolicyEnforcer("http://unused", "unused-token")
+    if entities is not None:
+        enforcer._entities = entities
+        enforcer._entities_time = time.monotonic()
+    else:
+        enforcer._entities = {}
+        enforcer._entities_time = time.monotonic()
+    return enforcer
 
 
 class TestPriorityRules:
@@ -129,6 +139,36 @@ class TestPolicyEnforcer:
         assert "light.a" in targets  # via device
         assert "light.b" in targets  # via device
         assert "switch.c" in targets  # via area
+
+
+class TestConnectionLifecycle:
+    async def test_stale_cache_on_disconnect(self):
+        """When connection is lost, stale cached entities are served."""
+        enforcer = PolicyEnforcer("http://unused", "unused-token")
+        enforcer._entities = {"light.a": _info("light.a")}
+        enforcer._entities_time = 0  # Expired TTL
+        with patch.object(enforcer, "_fetch_registry", new_callable=AsyncMock, side_effect=ConnectionError("down")):
+            entities = await enforcer._ensure_entities()
+        assert "light.a" in entities
+
+    async def test_initial_fetch_failure_raises(self):
+        """When no cached entities exist and connection fails, raise."""
+        enforcer = PolicyEnforcer("http://unused", "unused-token")
+        with (
+            patch.object(enforcer, "_fetch_registry", new_callable=AsyncMock, side_effect=ConnectionError("down")),
+            pytest.raises(ConnectionError),
+        ):
+            await enforcer._ensure_entities()
+
+    async def test_start_stop_lifecycle(self):
+        """start() creates a task, stop() cancels it."""
+        enforcer = PolicyEnforcer("http://unused", "unused-token")
+        with patch.object(enforcer, "_connection_loop", new_callable=AsyncMock):
+            await enforcer.start()
+            assert enforcer._connection_task is not None
+            await enforcer.stop()
+            assert enforcer._connection_task is None
+            assert enforcer._client is None
 
 
 if __name__ == "__main__":

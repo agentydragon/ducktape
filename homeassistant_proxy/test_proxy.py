@@ -37,6 +37,16 @@ _REGISTRY = {
 _HEADERS = {"Authorization": "Bearer proxy-token-abc"}
 
 
+@pytest.fixture(autouse=True)
+def no_ws_lifecycle():
+    """Prevent PolicyEnforcer from starting the real WebSocket connection loop."""
+    with (
+        patch.object(PolicyEnforcer, "start", new_callable=AsyncMock),
+        patch.object(PolicyEnforcer, "stop", new_callable=AsyncMock),
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_registry():
     with patch.object(PolicyEnforcer, "_fetch_registry", new_callable=AsyncMock, return_value=_REGISTRY):

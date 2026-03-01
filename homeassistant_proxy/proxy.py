@@ -43,7 +43,9 @@ def create_app(settings: Settings) -> FastAPI:
             headers={"Authorization": f"Bearer {settings.homeassistant.token}"},
             timeout=30.0,
         )
+        await enforcer.start()
         yield
+        await enforcer.stop()
         await http_client.aclose()
         http_client = None
 

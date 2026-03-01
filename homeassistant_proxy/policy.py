@@ -1,15 +1,21 @@
 """Policy evaluation engine for entity access control."""
 
+import asyncio
+import contextlib
 import logging
 import time
 
 from hass_client import HomeAssistantClient
+from hass_client.exceptions import AuthenticationFailed, CannotConnect, ConnectionFailed, NotConnected
 
 from homeassistant_proxy.config import Action, EntityInfo, Policy
 
 logger = logging.getLogger(__name__)
 
 _REGISTRY_TTL_SECONDS = 60.0
+_BACKOFF_INITIAL = 1.0
+_BACKOFF_MAX = 60.0
+_BACKOFF_FACTOR = 2.0
 
 
 class AccessDeniedError(Exception):
@@ -21,39 +27,93 @@ class AccessDeniedError(Exception):
 class PolicyEnforcer:
     """Manages the entity registry and evaluates entity access policies.
 
-    Owns registry lifecycle: fetches from HA via WebSocket, caches with TTL,
-    refreshes automatically.
+    Maintains a persistent WebSocket connection to HA with automatic
+    reconnection. Fetches entity/device registries and caches with TTL.
     Priority: entity_ids > device_ids > area_ids > domains > all.
     """
 
-    def __init__(
-        self,
-        ha_url: str,
-        ha_token: str,
-        *,
-        ttl: float = _REGISTRY_TTL_SECONDS,
-        entities: dict[str, EntityInfo] | None = None,
-    ):
+    def __init__(self, ha_url: str, ha_token: str):
         self._ha_url = ha_url
         self._ha_token = ha_token
-        self._ttl = ttl
-        self._entities: dict[str, EntityInfo] | None = entities
+        self._entities: dict[str, EntityInfo] | None = None
         self._entities_time: float = 0
+        self._client: HomeAssistantClient | None = None
+        self._connection_task: asyncio.Task[None] | None = None
+        self._connected = asyncio.Event()
+        self._ws_url = ha_url.replace("http://", "ws://").replace("https://", "wss://") + "/api/websocket"
+
+    async def start(self) -> None:
+        """Start the persistent connection loop."""
+        self._connection_task = asyncio.create_task(self._connection_loop())
+
+    async def stop(self) -> None:
+        """Stop the connection loop and disconnect."""
+        if self._connection_task is not None:
+            self._connection_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._connection_task
+            self._connection_task = None
+        if self._client is not None:
+            await self._client.disconnect()
+            self._client = None
+        self._connected.clear()
+
+    async def _connection_loop(self) -> None:
+        """Maintain a persistent WebSocket connection with exponential backoff."""
+        backoff = _BACKOFF_INITIAL
+        while True:
+            try:
+                self._client = HomeAssistantClient(self._ws_url, self._ha_token)
+                await self._client.connect()
+                logger.info("WebSocket connected to Home Assistant")
+                backoff = _BACKOFF_INITIAL
+                self._connected.set()
+                await self._client.start_listening()
+            except AuthenticationFailed:
+                logger.error("HA authentication failed -- stopping connection loop")
+                self._connected.clear()
+                return
+            except (CannotConnect, ConnectionFailed, NotConnected, OSError) as exc:
+                logger.warning(f"HA connection lost: {exc}. Reconnecting in {backoff:.1f}s")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(f"Unexpected error in HA connection loop. Reconnecting in {backoff:.1f}s")
+            finally:
+                self._connected.clear()
+                if self._client is not None:
+                    with contextlib.suppress(Exception):
+                        await self._client.disconnect()
+                    self._client = None
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * _BACKOFF_FACTOR, _BACKOFF_MAX)
 
     async def _ensure_entities(self) -> dict[str, EntityInfo]:
         now = time.monotonic()
-        if self._entities is None or now - self._entities_time >= self._ttl:
-            self._entities = await self._fetch_registry()
-            self._entities_time = now
+        if self._entities is None or now - self._entities_time >= _REGISTRY_TTL_SECONDS:
+            try:
+                self._entities = await self._fetch_registry()
+                self._entities_time = now
+            except (ConnectionError, NotConnected, CannotConnect, ConnectionFailed) as exc:
+                if self._entities is not None:
+                    logger.warning(f"Registry refresh failed ({exc}), serving stale cache")
+                else:
+                    raise
         return self._entities
 
     async def _fetch_registry(self) -> dict[str, EntityInfo]:
-        ws_url = self._ha_url.replace("http://", "ws://").replace("https://", "wss://")
-        ws_url = f"{ws_url}/api/websocket"
+        if not self._connected.is_set():
+            logger.warning("HA not connected, waiting for connection...")
+            try:
+                await asyncio.wait_for(self._connected.wait(), timeout=10.0)
+            except TimeoutError:
+                raise ConnectionError("HA WebSocket not available for registry refresh")
 
-        async with HomeAssistantClient(ws_url, self._ha_token) as client:
-            entities = await client.get_entity_registry()
-            devices = await client.get_device_registry()
+        client = self._client
+        assert client is not None
+
+        entities = await client.get_entity_registry()
+        devices = await client.get_device_registry()
 
         device_area: dict[str, str | None] = {d["id"]: d["area_id"] for d in devices}
 
