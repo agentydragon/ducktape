@@ -157,6 +157,30 @@ class ActionStorage:
             await session.refresh(row)
         return row.to_action()
 
+    async def update_state_and_log(
+        self, key: ActionKey, new_state: ActionState, detail: LogEventDetail
+    ) -> tuple[Action, LogEntry]:
+        """Update action state and append a log entry in one transaction."""
+        async with self._session_factory() as session:
+            action_row = await session.get(_ActionRow, (key.session_key, key.action_seq))
+            if action_row is None:
+                raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+            action_row.state_json = _ACTION_STATE_TA.dump_json(new_state).decode()
+            action_row.status = new_state.status
+
+            next_id = (await self._get_log_hwm(session, key.session_key)) + 1
+            log_row = _LogEntryRow(
+                session_key=key.session_key,
+                entry_id=next_id,
+                action_seq=key.action_seq,
+                kind=detail.kind,
+                detail_json=_LOG_DETAIL_TA.dump_json(detail).decode(),
+            )
+            session.add(log_row)
+            await session.commit()
+            await session.refresh(action_row)
+        return action_row.to_action(), log_row.to_log_entry()
+
     async def list_actions(
         self, status: ActionStatus | None = None, *, limit: int = 100, offset: int = 0
     ) -> list[Action]:
@@ -169,13 +193,17 @@ class ActionStorage:
 
     # ── Event log ────────────────────────────────────────────────────────────
 
+    @staticmethod
+    async def _get_log_hwm(session: AsyncSession, session_key: str) -> int:
+        result = await session.execute(
+            select(func.coalesce(func.max(_LogEntryRow.entry_id), 0)).where(_LogEntryRow.session_key == session_key)
+        )
+        return result.scalar_one()
+
     async def append_log_entry(self, *, session_key: str, action_seq: int, detail: LogEventDetail) -> LogEntry:
         """Append an event to the log; assigns the next entry_id for the session."""
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(func.coalesce(func.max(_LogEntryRow.entry_id), 0)).where(_LogEntryRow.session_key == session_key)
-            )
-            next_id = result.scalar_one() + 1
+            next_id = (await self._get_log_hwm(session, session_key)) + 1
             row = _LogEntryRow(
                 session_key=session_key,
                 entry_id=next_id,
@@ -190,10 +218,7 @@ class ActionStorage:
     async def get_log_hwm(self, session_key: str) -> int:
         """Return the highest entry_id for a session, or 0 if no entries."""
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(func.coalesce(func.max(_LogEntryRow.entry_id), 0)).where(_LogEntryRow.session_key == session_key)
-            )
-            return result.scalar_one()
+            return await self._get_log_hwm(session, session_key)
 
     async def get_log_entry(self, session_key: str, entry_id: int) -> LogEntry | None:
         """Fetch a specific log entry."""
