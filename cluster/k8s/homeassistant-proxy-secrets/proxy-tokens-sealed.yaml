@@ -1,0 +1,12 @@
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: homeassistant-proxy-tokens
+  namespace: homeassistant-proxy
+spec:
+  encryptedData:
+    mcp_agent: FILL_WITH_KUBESEAL
+  template:
+    metadata:
+      name: homeassistant-proxy-tokens
+      namespace: homeassistant-proxy
