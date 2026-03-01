@@ -28,7 +28,6 @@ import pytest_bazel
 import uvicorn
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastmcp import FastMCP
-from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from fastmcp.mcp_config import RemoteMCPServer
 from mcp import types as mcp_types
@@ -146,7 +145,7 @@ class _ResourceWaiter(MessageHandler):
         if evt is not None:
             evt.set()
 
-    async def wait_for(self, client: Client, key: ActionKey, status: ActionStatus) -> Action:
+    async def wait_for(self, client: GateClient, key: ActionKey, status: ActionStatus) -> Action:
         """Wait until action reaches the given status via resource-updated notifications."""
         action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
         hwm_uri = f"resource://sessions/{key.session_key}/log_hwm"
@@ -174,9 +173,8 @@ async def test_client_reconnects_after_server_restart(tmp_path, mock_jwks_signin
     with patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=mock_jwks_signing_key):
         # ── Phase 1: start server, call tool ─────────────────────────────────
         app1, _gate1 = _make_gate_app(backend, db_path, mock_jwks_signing_key)
-        async with _serve_app(app1, port=port), Client(_agent_transport(port)) as raw:
-            agent = GateClient(raw)
-            tools = await raw.list_tools()
+        async with _serve_app(app1, port=port), GateClient(_agent_transport(port)) as agent:
+            tools = await agent.list_tools()
             assert any(t.name == "test_echo" for t in tools)
 
             key_1 = await agent.call_echo("before-restart", session_key=_SESSION)
@@ -188,9 +186,8 @@ async def test_client_reconnects_after_server_restart(tmp_path, mock_jwks_signin
         app2, _gate2 = _make_gate_app(backend, db_path, mock_jwks_signing_key)
         async with _serve_app(app2, port=port):
             # New client connects successfully
-            async with Client(_agent_transport(port)) as raw:
-                agent = GateClient(raw)
-                tools = await raw.list_tools()
+            async with GateClient(_agent_transport(port)) as agent:
+                tools = await agent.list_tools()
                 assert any(t.name == "test_echo" for t in tools)
 
                 # Call tool again — new action
@@ -198,8 +195,7 @@ async def test_client_reconnects_after_server_restart(tmp_path, mock_jwks_signin
                 assert key_2.action_seq > key_1.action_seq
 
             # Approve via operator and verify execution
-            async with Client(_operator_transport(port, admin_jwt)) as raw:
-                operator = GateClient(raw)
+            async with GateClient(_operator_transport(port, admin_jwt)) as operator:
                 await operator.approve(key_2)
 
             assert {"text": "after-restart"} in calls
@@ -214,8 +210,7 @@ async def test_pending_action_survives_server_restart(tmp_path, mock_jwks_signin
     with patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=mock_jwks_signing_key):
         # ── Phase 1: create action ───────────────────────────────────────────
         app1, _gate1 = _make_gate_app(backend, db_path, mock_jwks_signing_key)
-        async with _serve_app(app1, port=port), Client(_agent_transport(port)) as raw:
-            agent = GateClient(raw)
+        async with _serve_app(app1, port=port), GateClient(_agent_transport(port)) as agent:
             key = await agent.call_echo("survive", session_key=_SESSION)
 
         # Server down — action is persisted in SQLite
@@ -224,14 +219,13 @@ async def test_pending_action_survives_server_restart(tmp_path, mock_jwks_signin
         app2, _gate2 = _make_gate_app(backend, db_path, mock_jwks_signing_key)
         async with _serve_app(app2, port=port):
             # Operator approves the action from before restart
-            async with Client(_operator_transport(port, admin_jwt)) as raw:
-                operator = GateClient(raw)
+            async with GateClient(_operator_transport(port, admin_jwt)) as operator:
                 await operator.approve(key)
 
             # New agent client reads the action resource — should be done
-            async with Client(_agent_transport(port)) as raw:
+            async with GateClient(_agent_transport(port)) as agent:
                 action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
-                action: Action = await read_text_json_typed(raw, action_uri, Action)
+                action: Action = await read_text_json_typed(agent, action_uri, Action)
                 assert action.state.status == ActionStatus.DONE
 
             assert {"text": "survive"} in calls
@@ -246,8 +240,7 @@ async def test_resubscribe_receives_notifications_after_restart(tmp_path, mock_j
     with patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=mock_jwks_signing_key):
         # ── Phase 1: create action ───────────────────────────────────────────
         app1, _gate1 = _make_gate_app(backend, db_path, mock_jwks_signing_key)
-        async with _serve_app(app1, port=port), Client(_agent_transport(port)) as raw:
-            agent = GateClient(raw)
+        async with _serve_app(app1, port=port), GateClient(_agent_transport(port)) as agent:
             key = await agent.call_echo("resub", session_key=_SESSION)
 
         # Server down
@@ -256,19 +249,18 @@ async def test_resubscribe_receives_notifications_after_restart(tmp_path, mock_j
         app2, _gate2 = _make_gate_app(backend, db_path, mock_jwks_signing_key)
         async with _serve_app(app2, port=port):
             waiter = _ResourceWaiter()
-            async with Client(_agent_transport(port), message_handler=waiter) as agent_raw:
+            async with GateClient(_agent_transport(port), message_handler=waiter) as agent:
                 # Re-subscribe to the session's log HWM from phase 1
                 hwm_uri = AnyUrl(f"resource://sessions/{key.session_key}/log_hwm")
-                await agent_raw.session.subscribe_resource(hwm_uri)
+                await agent.session.subscribe_resource(hwm_uri)
 
                 # Approve via operator
-                async with Client(_operator_transport(port, admin_jwt)) as raw:
-                    operator = GateClient(raw)
+                async with GateClient(_operator_transport(port, admin_jwt)) as operator:
                     await operator.approve(key)
 
                 # Wait for the ResourceUpdated notification on the new connection
                 with anyio.fail_after(10.0):
-                    action = await waiter.wait_for(agent_raw, key, ActionStatus.DONE)
+                    action = await waiter.wait_for(agent, key, ActionStatus.DONE)
 
                 assert action.state.status == ActionStatus.DONE
 

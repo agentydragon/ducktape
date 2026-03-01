@@ -25,21 +25,18 @@ def pytest_configure(config: pytest.Config) -> None:
     config._inicache["asyncio_default_fixture_loop_scope"] = "function"
 
 
-class GateClient:
-    """Typed wrapper around a raw MCP Client for calling approval gate tools."""
+class GateClient(Client):
+    """MCP Client subclass with typed methods for approval gate tools."""
 
-    def __init__(self, client: Client) -> None:
-        self._client = client
-
-    async def call_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
+    async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
         """Call a gate-wrapped tool and parse the ActionKey from the result."""
-        result = await self._client.call_tool_mcp(tool_name, args)
+        result = await self.call_tool_mcp(tool_name, args)
         item = result.content[0]
         assert isinstance(item, mcp_types.TextContent)
         return ActionKey.model_validate_json(item.text)
 
     async def call_echo(self, text: str, *, justification: str = "test", session_key: str) -> ActionKey:
-        return await self.call_tool(
+        return await self.call_gate_tool(
             "test_echo", {"input": {"text": text}, "justification": justification, "session_key": session_key}
         )
 
@@ -50,14 +47,10 @@ class GateClient:
         return await self._call_operator_tool("reject_action", {"key": key.model_dump(), "reason": reason})
 
     async def _call_operator_tool(self, name: str, args: dict[str, object]) -> Action:
-        result = await self._client.call_tool_mcp(name, args)
+        result = await self.call_tool_mcp(name, args)
         item = result.content[0]
         assert isinstance(item, mcp_types.TextContent)
         return Action.model_validate_json(item.text)
-
-    @property
-    def session(self):
-        return self._client.session
 
 
 @pytest.fixture

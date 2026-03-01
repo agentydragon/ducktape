@@ -17,7 +17,6 @@ import anyio
 import pytest
 import pytest_bazel
 from fastmcp import FastMCP
-from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types as mcp_types
 from mcp.server.auth.middleware.auth_context import auth_context_var
@@ -98,7 +97,7 @@ class _ResourceWaiter(MessageHandler):
             event = anyio.Event()
             self._events[hwm_uri] = event
             self._events[action_uri] = event
-            action: Action = await read_text_json_typed(client._client, action_uri, Action)
+            action: Action = await read_text_json_typed(client, action_uri, Action)
             if action.state.status == status:
                 self._events.pop(hwm_uri, None)
                 self._events.pop(action_uri, None)
@@ -108,7 +107,7 @@ class _ResourceWaiter(MessageHandler):
 
 async def test_tool_list_wraps_backend_tools(gate):
     """MCP tool list exposes backend tools wrapped with the approval-gate schema envelope."""
-    async with Client(gate) as client:
+    async with GateClient(gate) as client:
         tools = await client.list_tools()
 
     names = [t.name for t in tools]
@@ -126,8 +125,7 @@ async def test_approve_executes_backend_tool(gate, backend):
     """Happy path: tool call queued -> operator approves -> backend runs -> action done."""
     _, calls = backend
     waiter = _ResourceWaiter()
-    async with Client(gate, message_handler=waiter) as raw:
-        client = GateClient(raw)
+    async with GateClient(gate, message_handler=waiter) as client:
         key = await client.call_echo("hello", session_key=_SESSION)
         await gate.decide(key, ApproveDecision())
         with anyio.fail_after(5.0):
@@ -139,8 +137,7 @@ async def test_reject_leaves_action_rejected_and_skips_backend(gate, backend):
     """Reject path: tool call queued -> operator rejects -> rejected state, backend not called."""
     _, calls = backend
     waiter = _ResourceWaiter()
-    async with Client(gate, message_handler=waiter) as raw:
-        client = GateClient(raw)
+    async with GateClient(gate, message_handler=waiter) as client:
         key = await client.call_echo("no-run", session_key=_SESSION)
         await gate.decide(key, DenyDecision(reason="test rejection"))
         with anyio.fail_after(5.0):
@@ -153,8 +150,7 @@ async def test_auto_approve_predicate_skips_queue(backend, tmp_path):
     srv, calls = backend
     gate = _make_gate(srv, tmp_path, lambda ns, tool, args: Approved(), db_name="gate_auto.db")
     waiter = _ResourceWaiter()
-    async with Client(gate, message_handler=waiter) as raw:
-        client = GateClient(raw)
+    async with GateClient(gate, message_handler=waiter) as client:
         key = await client.call_echo("auto", justification="auto", session_key=_SESSION)
         with anyio.fail_after(5.0):
             await waiter.wait_for(client, key, ActionStatus.DONE)
@@ -189,20 +185,19 @@ async def test_multi_backend_namespace_isolation(tmp_path):
         public_base_url="http://test",
     )
     waiter = _ResourceWaiter()
-    async with Client(gate, message_handler=waiter) as raw:
-        client = GateClient(raw)
-        tools = await raw.list_tools()
+    async with GateClient(gate, message_handler=waiter) as client:
+        tools = await client.list_tools()
         tool_names = {t.name for t in tools}
         assert "alpha_echo" in tool_names
         assert "beta_echo" in tool_names
 
-        key_a = await client.call_tool(
+        key_a = await client.call_gate_tool(
             "alpha_echo", {"input": {"text": "from-a"}, "justification": "test", "session_key": _SESSION}
         )
         with anyio.fail_after(5.0):
             await waiter.wait_for(client, key_a, ActionStatus.DONE)
 
-        key_b = await client.call_tool(
+        key_b = await client.call_gate_tool(
             "beta_echo", {"input": {"text": "from-b"}, "justification": "test", "session_key": _SESSION}
         )
         with anyio.fail_after(5.0):
@@ -214,8 +209,7 @@ async def test_multi_backend_namespace_isolation(tmp_path):
 
 async def test_action_seq_increments_within_session(gate, backend):
     """Action sequences increment monotonically within a session."""
-    async with Client(gate) as raw:
-        client = GateClient(raw)
+    async with GateClient(gate) as client:
         k1 = await client.call_echo("a", justification="t", session_key=_SESSION)
         k2 = await client.call_echo("b", justification="t", session_key=_SESSION)
     assert k1.session_key == _SESSION
@@ -227,12 +221,11 @@ async def test_action_seq_increments_within_session(gate, backend):
 async def test_log_hwm_increments_on_state_changes(gate, backend):
     """The session log HWM increases as actions are received and decided."""
     waiter = _ResourceWaiter()
-    async with Client(gate, message_handler=waiter) as raw:
-        client = GateClient(raw)
+    async with GateClient(gate, message_handler=waiter) as client:
         key = await client.call_echo("log-test", justification="t", session_key=_SESSION)
 
         # After creation, HWM should be at least 1 (ACTION_RECEIVED)
-        hwm_after_create = int(await read_text(raw, f"resource://sessions/{_SESSION}/log_hwm"))
+        hwm_after_create = int(await read_text(client, f"resource://sessions/{_SESSION}/log_hwm"))
         assert hwm_after_create >= 1
 
         # Approve and wait for done
@@ -241,7 +234,7 @@ async def test_log_hwm_increments_on_state_changes(gate, backend):
             await waiter.wait_for(client, key, ActionStatus.DONE)
 
         # HWM should have advanced
-        hwm_after_done = int(await read_text(raw, f"resource://sessions/{_SESSION}/log_hwm"))
+        hwm_after_done = int(await read_text(client, f"resource://sessions/{_SESSION}/log_hwm"))
         assert hwm_after_done > hwm_after_create
 
 
