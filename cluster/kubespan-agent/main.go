@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/siderolabs/talos/pkg/machinery/constants"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 )
 
@@ -90,14 +92,14 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		if err := wg.EnsureInterface(address); err != nil {
 			return fmt.Errorf("wireguard interface: %w", err)
 		}
-		logger.Info("WireGuard interface ready", zap.String("interface", LinkName))
+		logger.Info("WireGuard interface ready", zap.String("interface", constants.KubeSpanLinkName))
 
 		routing = NewRoutingManager(cfg.MTU)
 		if err := routing.Install(nil); err != nil {
 			return fmt.Errorf("routing: %w", err)
 		}
 		logger.Info("routing rules installed",
-			zap.Int("table", RoutingTable),
+			zap.Int("table", constants.KubeSpanDefaultRoutingTable),
 			zap.Int("rule_priority", RulePriority),
 		)
 	}
@@ -360,7 +362,7 @@ func reconcilePeers(
 		// Collect routed prefixes for nftables.
 		// Only route through peers that are UP (or all if force_routing).
 		// Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (routedPeersIPs)
-		if forceRouting || (ps != nil && ps.State == PeerStateUp) {
+		if forceRouting || (ps != nil && ps.State == kubespan.PeerStateUp) {
 			routedPrefixes = append(routedPrefixes, peer.AllowedIPs...)
 		}
 	}
@@ -380,7 +382,7 @@ func reconcilePeers(
 		if peer, ok := peerMap[key]; ok {
 			logger.Debug("peer status",
 				zap.String("label", peer.Label),
-				zap.String("state", string(ps.State)),
+				zap.String("state", ps.State.String()),
 				zap.String("endpoint", ps.Endpoint.String()),
 				zap.Time("last_handshake", ps.LastHandshakeTime),
 			)

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"gopkg.in/yaml.v3"
 )
 
@@ -81,9 +82,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		DiscoveryEndpoint: "discovery.talos.dev:443",
-		ListenPort:        51820,
-		MTU:               1420,
+		DiscoveryEndpoint: constants.DefaultDiscoveryServiceEndpoint,
+		ListenPort:        constants.KubeSpanDefaultPort,
+		MTU:               constants.KubeSpanLinkMTU,
 		IdentityFile:      "/var/lib/kubespan/identity.json",
 		MachineType:       "worker",
 	}
@@ -98,9 +99,8 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.ClusterSecret == "" {
 		return nil, fmt.Errorf("cluster_secret is required")
 	}
-	if cfg.MTU < 1280 {
-		// Ref: talos/pkg/machinery/constants/constants.go (KubeSpanLinkMinimumMTU = 1280)
-		return nil, fmt.Errorf("mtu must be at least 1280")
+	if cfg.MTU < constants.KubeSpanLinkMinimumMTU {
+		return nil, fmt.Errorf("mtu must be at least %d", constants.KubeSpanLinkMinimumMTU)
 	}
 
 	return cfg, nil

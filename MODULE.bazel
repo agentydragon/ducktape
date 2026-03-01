@@ -638,9 +638,59 @@ go_deps.module(
 
 # kubespan-agent Go dependencies
 go_deps.module(
+    path = "cel.dev/expr",
+    sum = "h1:56OvJKSH3hDGL0ml5uSxZmz3/3Pq4tJ+fb1unVLAFcY=",
+    version = "v0.24.0",
+)
+go_deps.module(
+    path = "github.com/antlr4-go/antlr/v4",
+    sum = "h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=",
+    version = "v4.13.1",
+)
+go_deps.module(
+    path = "github.com/blang/semver/v4",
+    sum = "h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM=",
+    version = "v4.0.0",
+)
+go_deps.module(
     path = "github.com/cenkalti/backoff/v4",
     sum = "h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=",
     version = "v4.3.0",
+)
+go_deps.module(
+    path = "github.com/containerd/go-cni",
+    sum = "h1:eFSGOKlhoYNxpJ51KRIMHZNlg5UgocXEIEBGkY7Hnis=",
+    version = "v1.1.13",
+)
+go_deps.module(
+    path = "github.com/containernetworking/cni",
+    sum = "h1:v6EpN8RznAZj9765HhXQrtXgX+ECGebEYEmnuFjskwo=",
+    version = "v1.3.0",
+)
+go_deps.module(
+    path = "github.com/cosi-project/runtime",
+    sum = "h1:fsX1VKn9atthccDMhWDHM+t1hdW6eDKAPa2t/Rd/dfI=",
+    version = "v1.12.0",
+)
+go_deps.module(
+    path = "github.com/dustin/go-humanize",
+    sum = "h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=",
+    version = "v1.0.1",
+)
+go_deps.module(
+    path = "github.com/gertd/go-pluralize",
+    sum = "h1:M3uASbVjMnTsPb0PNqg+E/24Vwigyo/tvyMTtAlLgiA=",
+    version = "v0.2.1",
+)
+go_deps.module(
+    path = "github.com/google/cel-go",
+    sum = "h1:iPbVVEdkhTX++hpe3lzSk7D3G3QSYqLGoHOcEio+UXQ=",
+    version = "v0.26.1",
+)
+go_deps.module(
+    path = "github.com/google/go-cmp",
+    sum = "h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=",
+    version = "v0.7.0",
 )
 go_deps.module(
     path = "github.com/google/nftables",
@@ -648,9 +698,34 @@ go_deps.module(
     version = "v0.3.0",
 )
 go_deps.module(
+    path = "github.com/grpc-ecosystem/grpc-gateway/v2",
+    sum = "h1:NmZ1PKzSTQbuGHw9DGPFomqkkLWMC+vZCkfs+FHv1Vg=",
+    version = "v2.27.3",
+)
+go_deps.module(
+    path = "github.com/hashicorp/errwrap",
+    sum = "h1:OxrOeh75EUXMY8TBjag2fzXGZ40LB6IKw45YeGUDY2I=",
+    version = "v1.1.0",
+)
+go_deps.module(
+    path = "github.com/hashicorp/go-multierror",
+    sum = "h1:H5DkEtf6CXdFp0N0Em5UCwQpXMWke8IA0+lD48awMYo=",
+    version = "v1.1.1",
+)
+go_deps.module(
     path = "github.com/josharian/native",
     sum = "h1:uuaP0hAbW7Y4l0ZRQ6C9zfb7Mg1mbFKry/xzDAfmtLA=",
     version = "v1.1.0",
+)
+go_deps.module(
+    path = "github.com/jsimonetti/rtnetlink/v2",
+    sum = "h1:3sSPD0k+Qvia3wbv6kZXCN0Dlz6Swv7RHjvvonuOcKE=",
+    version = "v2.1.0",
+)
+go_deps.module(
+    path = "github.com/mdlayher/ethtool",
+    sum = "h1:jjMGNSQfqauwFCtSzcqpa57R0AJdxKdQgbQ9mAOtM4Q=",
+    version = "v0.4.0",
 )
 go_deps.module(
     path = "github.com/mdlayher/genetlink",
@@ -659,8 +734,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mdlayher/netlink",
-    sum = "h1:A1Cq6Ysb0GM0tpKMbdCXCIfBclan4oHk1Jb+Hrejirg=",
-    version = "v1.7.3-0.20250113171957-fbb4dce95f42",
+    sum = "h1:e7XNIYJKD7hUct3Px04RuIGJbBxy1/c4nX7D5YyvvlM=",
+    version = "v1.8.0",
 )
 go_deps.module(
     path = "github.com/mdlayher/netx",
@@ -669,13 +744,38 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mdlayher/socket",
-    sum = "h1:ilICZmJcQz70vrWVes1MFera4jGiWNocSkykwwoy3XI=",
-    version = "v0.5.0",
+    sum = "h1:VZaqt6RkGkt2OE9l3GcC6nZkqD3xKeQLyfleW/uBcos=",
+    version = "v0.5.1",
+)
+go_deps.module(
+    path = "github.com/opencontainers/runtime-spec",
+    sum = "h1:S4k4ryNgEpxW1dzyqffOmhI1BHYcjzU8lpJfSlR0xww=",
+    version = "v1.2.1",
+)
+go_deps.module(
+    path = "github.com/petermattis/goid",
+    sum = "h1:Dx7Ovyv/SFnMFw3fD4oEoeorXc6saIiQ23LrGLth0Gw=",
+    version = "v0.0.0-20240813172612-4fcff4a6cae7",
 )
 go_deps.module(
     path = "github.com/planetscale/vtprotobuf",
-    sum = "h1:GFCKgmp0tecUJ0sJuv4pzYCqS9+RGSn52M3FUwPs+uo=",
-    version = "v0.6.1-0.20240319094008-0393e58bdf10",
+    sum = "h1:1sLMdKq4gNANTj0dUibycTLzpIEKVnLnbaEkxws78nw=",
+    version = "v0.6.1-0.20241121165744-79df5c4772f2",
+)
+go_deps.module(
+    path = "github.com/ryanuber/go-glob",
+    sum = "h1:iQh3xXAumdQ+4Ufa5b25cRpC5TYKlno6hsv6Cb3pkBk=",
+    version = "v1.0.0",
+)
+go_deps.module(
+    path = "github.com/sasha-s/go-deadlock",
+    sum = "h1:tNCOEEDG6tBqrNDOX35j/7hL5FcFViG6awUGROb2NsU=",
+    version = "v0.3.5",
+)
+go_deps.module(
+    path = "github.com/siderolabs/crypto",
+    sum = "h1:uMoe/X/mABOv6yOgvKcjmjIMdv6U8JegBXlPKtyjn3g=",
+    version = "v0.6.4",
 )
 go_deps.module(
     path = "github.com/siderolabs/discovery-api",
@@ -689,8 +789,33 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/siderolabs/gen",
-    sum = "h1:VNpbmDLhkXp7qcSEkKk1Ee7vU2afs3xvHrWLGR2UuiY=",
-    version = "v0.4.8",
+    sum = "h1:pE6shuqov3L+5rEcAUJ/kY6iJofimljQw5G95P8a5c4=",
+    version = "v0.8.6",
+)
+go_deps.module(
+    path = "github.com/siderolabs/go-pointer",
+    sum = "h1:f7Yi4IK1jptS8yrT9GEbwhmGcVxvPQgBUG/weH3V3DM=",
+    version = "v1.0.1",
+)
+go_deps.module(
+    path = "github.com/siderolabs/net",
+    sum = "h1:1bOgVay/ijPkJz4qct98nHsiB/ysLQU0KLoBC4qLm7I=",
+    version = "v0.4.0",
+)
+go_deps.module(
+    path = "github.com/siderolabs/protoenc",
+    sum = "h1:D3Fpn2nQSQOhl8ZlAxijZAf7K6F8CM1uZq0afIGsr8Q=",
+    version = "v0.2.4",
+)
+go_deps.module(
+    path = "github.com/siderolabs/talos/pkg/machinery",
+    sum = "h1:4Zh47gUnK8y155dUWJKpSRnFgAozvFjs7XlGMaKGhM0=",
+    version = "v1.12.4",
+)
+go_deps.module(
+    path = "github.com/stoewer/go-strcase",
+    sum = "h1:g0eASXYtp+yvN9fK8sH94oCIk0fau9uV1/ZdJ0AVEzs=",
+    version = "v1.3.0",
 )
 go_deps.module(
     path = "github.com/vishvananda/netlink",
@@ -713,19 +838,44 @@ go_deps.module(
     version = "v1.27.0",
 )
 go_deps.module(
+    path = "go.yaml.in/yaml/v4",
+    sum = "h1:3h1fjsh1CTAPjW7q/EMe+C8shx5d8ctzZTrLcs/j8Go=",
+    version = "v4.0.0-rc.3",
+)
+go_deps.module(
     path = "go4.org/netipx",
     sum = "h1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=",
     version = "v0.0.0-20231129151722-fdeea329fbba",
 )
 go_deps.module(
     path = "golang.org/x/crypto",
-    sum = "h1:ihbySMvVjLAeSH1IbfcRTkD/iNscyz8rGzjF/E5hV6U=",
-    version = "v0.31.0",
+    sum = "h1:SHs+kF4LP+f+p14esP5jAoDpHU8Gu/v9lFRK6IT5imM=",
+    version = "v0.39.0",
+)
+go_deps.module(
+    path = "golang.org/x/exp",
+    sum = "h1:KL/ZBHXgKGVmuZBZ01Lt57yE5ws8ZPSkkihmEyq7FXc=",
+    version = "v0.0.0-20250128182459-e0ece0dbea4c",
 )
 go_deps.module(
     path = "golang.org/x/net",
-    sum = "h1:74SYHlV8BIgHIFC/LrYkOGIwL19eTYXQ5wc6TBuO36I=",
-    version = "v0.33.0",
+    sum = "h1:Mx+4dIFzqraBXUugkia1OOvlD6LemFo1ALMHjrXDOhY=",
+    version = "v0.47.0",
+)
+go_deps.module(
+    path = "golang.org/x/sync",
+    sum = "h1:kr88TuHDroi+UVf+0hZnirlk8o8T+4MrK6mr60WkH/I=",
+    version = "v0.18.0",
+)
+go_deps.module(
+    path = "golang.org/x/text",
+    sum = "h1:aC8ghyu4JhP8VojJ2lEHBnochRno1sgL6nEi9WGFGMM=",
+    version = "v0.31.0",
+)
+go_deps.module(
+    path = "golang.org/x/time",
+    sum = "h1:MRx4UaLrDotUKUdCIqzPC48t1Y9hANFKIRpNx+Te8PI=",
+    version = "v0.14.0",
 )
 go_deps.module(
     path = "golang.zx2c4.com/wireguard",
@@ -738,23 +888,57 @@ go_deps.module(
     version = "v0.0.0-20230429144221-925a1e7659e6",
 )
 go_deps.module(
+    path = "google.golang.org/genproto/googleapis/api",
+    sum = "h1:B14OtaXuMaCQsl2deSvNkyPKIzq3BjfxQp8d00QyWx4=",
+    version = "v0.0.0-20251111163417-95abcf5c77ba",
+)
+go_deps.module(
     path = "google.golang.org/genproto/googleapis/rpc",
-    sum = "h1:e7S5W7MGGLaSu8j3YjdezkZ+m1/Nm0uRVRMEMGk26Xs=",
-    version = "v0.0.0-20240814211410-ddb44dafa142",
+    sum = "h1:UKgtfRM7Yh93Sya0Fo8ZzhDP4qBckrrxEr2oF5UIVb8=",
+    version = "v0.0.0-20251111163417-95abcf5c77ba",
+)
+go_deps.module(
+    path = "google.golang.org/grpc",
+    sum = "h1:UnVkv1+uMLYXoIz6o7chp59WfQUYA2ex/BXQ9rHZu7A=",
+    version = "v1.76.0",
+)
+go_deps.module(
+    path = "google.golang.org/protobuf",
+    sum = "h1:AYd7cD/uASjIL6Q9LiTjz8JLcrh/88q5UObnmY3aOOE=",
+    version = "v1.36.10",
+)
+go_deps.module(
+    path = "gopkg.in/yaml.v3",
+    sum = "h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
+    version = "v3.0.1",
 )
 use_repo(
     go_deps,
+    "com_github_antlr4_go_antlr_v4",
     "com_github_azure_go_ansiterm",
+    "com_github_blang_semver_v4",
     "com_github_cenkalti_backoff_v4",
+    "com_github_containerd_go_cni",
     "com_github_containerd_log",
+    "com_github_containernetworking_cni",
+    "com_github_cosi_project_runtime",
     "com_github_docker_go_units",
+    "com_github_dustin_go_humanize",
     "com_github_fsouza_go_dockerclient",
+    "com_github_gertd_go_pluralize",
+    "com_github_google_cel_go",
+    "com_github_google_go_cmp",
     "com_github_google_nftables",
     "com_github_google_uuid",
     "com_github_gorilla_websocket",
+    "com_github_grpc_ecosystem_grpc_gateway_v2",
+    "com_github_hashicorp_errwrap",
+    "com_github_hashicorp_go_multierror",
     "com_github_josharian_native",
+    "com_github_jsimonetti_rtnetlink_v2",
     "com_github_klauspost_compress",
     "com_github_mark3labs_mcp_go",
+    "com_github_mdlayher_ethtool",
     "com_github_mdlayher_genetlink",
     "com_github_mdlayher_netlink",
     "com_github_mdlayher_netx",
@@ -772,17 +956,29 @@ use_repo(
     "com_github_moby_term",
     "com_github_opencontainers_go_digest",
     "com_github_opencontainers_image_spec",
+    "com_github_opencontainers_runtime_spec",
+    "com_github_petermattis_goid",
     "com_github_planetscale_vtprotobuf",
+    "com_github_ryanuber_go_glob",
+    "com_github_sasha_s_go_deadlock",
+    "com_github_siderolabs_crypto",
     "com_github_siderolabs_discovery_api",
     "com_github_siderolabs_discovery_client",
     "com_github_siderolabs_gen",
+    "com_github_siderolabs_go_pointer",
+    "com_github_siderolabs_net",
+    "com_github_siderolabs_protoenc",
+    "com_github_siderolabs_talos_pkg_machinery",
     "com_github_sirupsen_logrus",
     "com_github_spf13_cobra",
+    "com_github_stoewer_go_strcase",
     "com_github_vishvananda_netlink",
     "com_github_vishvananda_netns",
     "com_zx2c4_golang_wireguard",
     "com_zx2c4_golang_wireguard_wgctrl",
+    "dev_cel_expr",
     "in_gopkg_yaml_v3",
+    "in_yaml_go_yaml_v4",
     "io_opentelemetry_go_contrib_bridges_otelslog",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploghttp",
@@ -793,12 +989,17 @@ use_repo(
     "io_opentelemetry_go_otel_sdk_log",
     "io_opentelemetry_go_otel_sdk_metric",
     "org_go4_netipx",
+    "org_golang_google_genproto_googleapis_api",
     "org_golang_google_genproto_googleapis_rpc",
+    "org_golang_google_grpc",
     "org_golang_google_protobuf",
     "org_golang_x_crypto",
+    "org_golang_x_exp",
     "org_golang_x_net",
     "org_golang_x_sync",
     "org_golang_x_sys",
+    "org_golang_x_text",
+    "org_golang_x_time",
     "org_uber_go_multierr",
     "org_uber_go_zap",
 )

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/mdlayher/netx/eui64"
+	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"go4.org/netipx"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
@@ -18,10 +18,10 @@ import (
 // Identity holds the node's KubeSpan identity (WireGuard keypair + derived addresses).
 // Ref: talos/pkg/machinery/resources/kubespan/identity.go (IdentitySpec)
 type Identity struct {
-	PrivateKey string     `json:"private_key"`
-	PublicKey  string     `json:"public_key"`
-	Subnet    string     `json:"subnet"`  // ULA /64 prefix
-	Address   string     `json:"address"` // EUI-64 /128 address
+	PrivateKey string `json:"private_key"`
+	PublicKey  string `json:"public_key"`
+	Subnet     string `json:"subnet"`  // ULA /64 prefix
+	Address    string `json:"address"` // EUI-64 /128 address
 }
 
 // LoadOrCreateIdentity loads an existing identity from disk, or generates a new one.
@@ -82,7 +82,7 @@ func loadIdentity(path string) (*Identity, error) {
 // first NIC MAC address.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/identity.go (UpdateAddress)
 func (id *Identity) UpdateAddress(clusterID string, mac net.HardwareAddr) error {
-	subnet := ulaPrefix(clusterID)
+	subnet := network.ULAPrefix(clusterID, network.ULAKubeSpan)
 	id.Subnet = subnet.String()
 
 	addr, err := wgEUI64(subnet, mac)
@@ -102,28 +102,6 @@ func (id *Identity) ParsedAddress() (netip.Prefix, error) {
 // ParsedSubnet returns the node's KubeSpan subnet as a netip.Prefix.
 func (id *Identity) ParsedSubnet() (netip.Prefix, error) {
 	return netip.ParsePrefix(id.Subnet)
-}
-
-// ulaPrefix generates the KubeSpan ULA /64 prefix from a cluster ID.
-//
-// Algorithm (Talos-specific RFC 4193 implementation):
-//   1. SHA-256 hash the cluster ID
-//   2. Take last 16 bytes as the IPv6 address
-//   3. Set byte 0 to 0xfd (ULA prefix per RFC 4193)
-//   4. Set byte 7 to 0x02 (KubeSpan purpose)
-//   5. Return as /64 prefix
-//
-// Ref: talos/pkg/machinery/resources/network/ula.go (ULAPrefix)
-func ulaPrefix(clusterID string) netip.Prefix {
-	var prefixData [16]byte
-
-	hash := sha256.Sum256([]byte(clusterID))
-	copy(prefixData[:], hash[sha256.Size-16:])
-
-	prefixData[0] = 0xfd // RFC 4193 ULA
-	prefixData[7] = 0x02 // KubeSpan purpose (ULAKubeSpan)
-
-	return netip.PrefixFrom(netip.AddrFrom16(prefixData), 64).Masked()
 }
 
 // wgEUI64 computes an EUI-64 address within the given prefix from a MAC address.

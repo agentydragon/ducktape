@@ -4,6 +4,8 @@ import (
 	"net/netip"
 	"testing"
 	"time"
+
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 )
 
 // Tests ported from talos/internal/app/machined/pkg/adapters/kubespan/peer_status_test.go
@@ -16,7 +18,7 @@ func TestCalculateState_NoEndpointChange(t *testing.T) {
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
 	ps.CalculateState()
-	if ps.State != PeerStateDown {
+	if ps.State != kubespan.PeerStateDown {
 		t.Errorf("expected DOWN, got %s", ps.State)
 	}
 }
@@ -29,7 +31,7 @@ func TestCalculateState_RecentHandshake(t *testing.T) {
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
 	ps.CalculateState()
-	if ps.State != PeerStateUp {
+	if ps.State != kubespan.PeerStateUp {
 		t.Errorf("expected UP, got %s", ps.State)
 	}
 }
@@ -42,7 +44,7 @@ func TestCalculateState_JustChangedEndpoint(t *testing.T) {
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
 	ps.CalculateState()
-	if ps.State != PeerStateUnknown {
+	if ps.State != kubespan.PeerStateUnknown {
 		t.Errorf("expected UNKNOWN, got %s", ps.State)
 	}
 }
@@ -55,7 +57,7 @@ func TestCalculateState_JustChangedEndpointWithHandshake(t *testing.T) {
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
 	ps.CalculateState()
-	if ps.State != PeerStateUp {
+	if ps.State != kubespan.PeerStateUp {
 		t.Errorf("expected UP, got %s", ps.State)
 	}
 }
@@ -68,7 +70,7 @@ func TestCalculateState_EndpointChangeMidRange(t *testing.T) {
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
 	ps.CalculateState()
-	if ps.State != PeerStateDown {
+	if ps.State != kubespan.PeerStateDown {
 		t.Errorf("expected DOWN, got %s", ps.State)
 	}
 }
@@ -80,7 +82,7 @@ func TestCalculateState_NoEndpointEverSet(t *testing.T) {
 		LastHandshakeTime:  time.Now().Add(-60 * time.Second),
 	}
 	ps.CalculateState()
-	if ps.State != PeerStateUnknown {
+	if ps.State != kubespan.PeerStateUnknown {
 		t.Errorf("expected UNKNOWN (no endpoint ever set), got %s", ps.State)
 	}
 }
@@ -91,49 +93,49 @@ func TestCalculateStateWithDurations(t *testing.T) {
 		sinceHandshake      time.Duration
 		sinceEndpointChange time.Duration
 		hasEndpoint         bool
-		want                PeerState
+		want                kubespan.PeerState
 	}{
 		{
 			name:                "long_stable_up",
 			sinceHandshake:      60 * time.Second,
 			sinceEndpointChange: 10 * time.Minute,
 			hasEndpoint:         true,
-			want:                PeerStateUp,
+			want:                kubespan.PeerStateUp,
 		},
 		{
 			name:                "long_stable_down",
 			sinceHandshake:      6 * time.Minute,
 			sinceEndpointChange: 10 * time.Minute,
 			hasEndpoint:         true,
-			want:                PeerStateDown,
+			want:                kubespan.PeerStateDown,
 		},
 		{
 			name:                "just_changed_waiting",
 			sinceHandshake:      60 * time.Second,
 			sinceEndpointChange: 10 * time.Second,
 			hasEndpoint:         true,
-			want:                PeerStateUnknown,
+			want:                kubespan.PeerStateUnknown,
 		},
 		{
 			name:                "just_changed_connected",
 			sinceHandshake:      5 * time.Second,
 			sinceEndpointChange: 10 * time.Second,
 			hasEndpoint:         true,
-			want:                PeerStateUp,
+			want:                kubespan.PeerStateUp,
 		},
 		{
 			name:                "mid_range_connected",
 			sinceHandshake:      10 * time.Second,
 			sinceEndpointChange: 30 * time.Second,
 			hasEndpoint:         true,
-			want:                PeerStateUp,
+			want:                kubespan.PeerStateUp,
 		},
 		{
 			name:                "mid_range_failed",
 			sinceHandshake:      60 * time.Second,
 			sinceEndpointChange: 30 * time.Second,
 			hasEndpoint:         true,
-			want:                PeerStateDown,
+			want:                kubespan.PeerStateDown,
 		},
 	}
 
@@ -153,19 +155,19 @@ func TestCalculateStateWithDurations(t *testing.T) {
 
 func TestShouldChangeEndpoint(t *testing.T) {
 	// DOWN → should change
-	ps := &PeerStatus{State: PeerStateDown, LastUsedEndpoint: netip.MustParseAddrPort("1.2.3.4:51820")}
+	ps := &PeerStatus{State: kubespan.PeerStateDown, LastUsedEndpoint: netip.MustParseAddrPort("1.2.3.4:51820")}
 	if !ps.ShouldChangeEndpoint() {
 		t.Error("expected ShouldChangeEndpoint=true for DOWN peer")
 	}
 
 	// No endpoint set → should change
-	ps = &PeerStatus{State: PeerStateUnknown}
+	ps = &PeerStatus{State: kubespan.PeerStateUnknown}
 	if !ps.ShouldChangeEndpoint() {
 		t.Error("expected ShouldChangeEndpoint=true with no endpoint")
 	}
 
 	// UP → should not change
-	ps = &PeerStatus{State: PeerStateUp, LastUsedEndpoint: netip.MustParseAddrPort("1.2.3.4:51820")}
+	ps = &PeerStatus{State: kubespan.PeerStateUp, LastUsedEndpoint: netip.MustParseAddrPort("1.2.3.4:51820")}
 	if ps.ShouldChangeEndpoint() {
 		t.Error("expected ShouldChangeEndpoint=false for UP peer")
 	}

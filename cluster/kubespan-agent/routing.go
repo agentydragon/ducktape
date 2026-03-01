@@ -10,20 +10,15 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
+	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
 
-// Routing/firewall constants matching Talos defaults.
-// Ref: talos/pkg/machinery/constants/constants.go
-const (
-	RoutingTable      = 180  // KubeSpanDefaultRoutingTable
-	ForceFirewallMark = 0x40 // KubeSpanDefaultForceFirewallMark (force-route mark)
-	FirewallMask      = 0x60 // KubeSpanDefaultFirewallMask
-	RulePriority      = 32500
+// RulePriority for ip rule entries directing marked traffic to the KubeSpan routing table.
+const RulePriority = 32500
 
-	tableName = "talos_kubespan"
-)
+const tableName = "talos_kubespan"
 
 // RoutingManager manages nftables rules and ip policy routing for KubeSpan.
 // Uses the google/nftables Go library (same as Talos) for atomic nftables management.
@@ -386,19 +381,19 @@ func (rm *RoutingManager) skipWGMarkExprs() []expr.Any {
 	return []expr.Any{
 		// Load meta mark → reg 1
 		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
-		// Bitwise: reg1 = reg1 & FirewallMask
+		// Bitwise: reg1 = reg1 & constants.KubeSpanDefaultFirewallMask
 		&expr.Bitwise{
 			SourceRegister: 1,
 			DestRegister:   1,
 			Len:            4,
-			Mask:           binaryutil.NativeEndian.PutUint32(FirewallMask),
+			Mask:           binaryutil.NativeEndian.PutUint32(constants.KubeSpanDefaultFirewallMask),
 			Xor:            binaryutil.NativeEndian.PutUint32(0),
 		},
-		// Compare: reg1 == FirewallMark (0x20, WG egress mark)
+		// Compare: reg1 == KubeSpanDefaultFirewallMark (0x20, WG egress mark)
 		&expr.Cmp{
 			Op:       expr.CmpOpEq,
 			Register: 1,
-			Data:     binaryutil.NativeEndian.PutUint32(FirewallMark),
+			Data:     binaryutil.NativeEndian.PutUint32(constants.KubeSpanDefaultFirewallMark),
 		},
 		// Verdict: accept
 		&expr.Verdict{Kind: expr.VerdictAccept},
@@ -450,7 +445,7 @@ func (rm *RoutingManager) markIPv4Exprs(set *nftables.Set) []expr.Any {
 		},
 		// Load current mark → reg 1
 		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
-		// OR with ForceFirewallMark: reg1 = (reg1 & 0xffffffff) ^ ForceFirewallMark
+		// OR with constants.KubeSpanDefaultForceFirewallMark: reg1 = (reg1 & 0xffffffff) ^ constants.KubeSpanDefaultForceFirewallMark
 		// Actually: mark | 0x40 = (mark & ~0x40) ^ 0x40 ... but simpler: bitwise OR.
 		// Bitwise OR: reg1 = (reg1 & 0xffffffff) | 0x40
 		// nftables bitwise: result = (sreg & mask) ^ xor
@@ -460,8 +455,8 @@ func (rm *RoutingManager) markIPv4Exprs(set *nftables.Set) []expr.Any {
 			SourceRegister: 1,
 			DestRegister:   1,
 			Len:            4,
-			Mask:           binaryutil.NativeEndian.PutUint32(^uint32(ForceFirewallMark)),
-			Xor:            binaryutil.NativeEndian.PutUint32(ForceFirewallMark),
+			Mask:           binaryutil.NativeEndian.PutUint32(^uint32(constants.KubeSpanDefaultForceFirewallMark)),
+			Xor:            binaryutil.NativeEndian.PutUint32(constants.KubeSpanDefaultForceFirewallMark),
 		},
 		// Set mark from reg 1
 		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
@@ -495,13 +490,13 @@ func (rm *RoutingManager) markIPv6Exprs(set *nftables.Set) []expr.Any {
 		},
 		// Load current mark
 		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
-		// OR with ForceFirewallMark
+		// OR with constants.KubeSpanDefaultForceFirewallMark
 		&expr.Bitwise{
 			SourceRegister: 1,
 			DestRegister:   1,
 			Len:            4,
-			Mask:           binaryutil.NativeEndian.PutUint32(^uint32(ForceFirewallMark)),
-			Xor:            binaryutil.NativeEndian.PutUint32(ForceFirewallMark),
+			Mask:           binaryutil.NativeEndian.PutUint32(^uint32(constants.KubeSpanDefaultForceFirewallMark)),
+			Xor:            binaryutil.NativeEndian.PutUint32(constants.KubeSpanDefaultForceFirewallMark),
 		},
 		// Set mark
 		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
@@ -675,9 +670,9 @@ func (rm *RoutingManager) installIPRules() error {
 	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
 		rule := netlink.NewRule()
 		rule.Priority = RulePriority
-		rule.Mark = ForceFirewallMark
-		rule.Mask = uint32Ptr(FirewallMask)
-		rule.Table = RoutingTable
+		rule.Mark = constants.KubeSpanDefaultForceFirewallMark
+		rule.Mask = uint32Ptr(constants.KubeSpanDefaultFirewallMask)
+		rule.Table = constants.KubeSpanDefaultRoutingTable
 		rule.Family = family
 
 		// Delete existing rule first (idempotent).
@@ -696,9 +691,9 @@ func (rm *RoutingManager) deleteIPRules() {
 	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
 		rule := netlink.NewRule()
 		rule.Priority = RulePriority
-		rule.Mark = ForceFirewallMark
-		rule.Mask = uint32Ptr(FirewallMask)
-		rule.Table = RoutingTable
+		rule.Mark = constants.KubeSpanDefaultForceFirewallMark
+		rule.Mask = uint32Ptr(constants.KubeSpanDefaultFirewallMask)
+		rule.Table = constants.KubeSpanDefaultRoutingTable
 		rule.Family = family
 		_ = netlink.RuleDel(rule)
 	}
@@ -707,31 +702,31 @@ func (rm *RoutingManager) deleteIPRules() {
 // installRoutes adds default routes in table 180 pointing to the kubespan interface.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (RouteSpec)
 func (rm *RoutingManager) installRoutes() error {
-	link, err := netlink.LinkByName(LinkName)
+	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
 	if err != nil {
-		return fmt.Errorf("finding %s for routes: %w", LinkName, err)
+		return fmt.Errorf("finding %s for routes: %w", constants.KubeSpanLinkName, err)
 	}
 
 	// IPv4 default route via kubespan.
 	v4Route := &netlink.Route{
 		LinkIndex: link.Attrs().Index,
-		Table:     RoutingTable,
+		Table:     constants.KubeSpanDefaultRoutingTable,
 		Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
 		MTU:       rm.mtu,
 	}
 	if err := netlink.RouteReplace(v4Route); err != nil {
-		return fmt.Errorf("adding IPv4 default route to table %d: %w", RoutingTable, err)
+		return fmt.Errorf("adding IPv4 default route to table %d: %w", constants.KubeSpanDefaultRoutingTable, err)
 	}
 
 	// IPv6 default route via kubespan.
 	v6Route := &netlink.Route{
 		LinkIndex: link.Attrs().Index,
-		Table:     RoutingTable,
+		Table:     constants.KubeSpanDefaultRoutingTable,
 		Dst:       &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)},
 		MTU:       rm.mtu,
 	}
 	if err := netlink.RouteReplace(v6Route); err != nil {
-		return fmt.Errorf("adding IPv6 default route to table %d: %w", RoutingTable, err)
+		return fmt.Errorf("adding IPv6 default route to table %d: %w", constants.KubeSpanDefaultRoutingTable, err)
 	}
 
 	return nil

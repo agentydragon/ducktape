@@ -3,16 +3,8 @@ package main
 import (
 	"net/netip"
 	"time"
-)
 
-// PeerState represents the health state of a KubeSpan peer.
-// Ref: talos/pkg/machinery/resources/kubespan/peerstate_string.go
-type PeerState string
-
-const (
-	PeerStateUnknown PeerState = "unknown"
-	PeerStateUp      PeerState = "up"
-	PeerStateDown    PeerState = "down"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 )
 
 // Timeouts for peer state machine.
@@ -37,7 +29,7 @@ type PeerStatus struct {
 	LastHandshakeTime  time.Time
 	TransmitBytes      uint64
 	ReceiveBytes       uint64
-	State              PeerState
+	State              kubespan.PeerState
 }
 
 // CalculateState computes the peer state from current time.
@@ -75,39 +67,39 @@ func (ps *PeerStatus) calculateStateWithDurations(sinceHandshake, sinceEndpointC
 	case sinceEndpointChange > PeerDownInterval:
 		// Long time since endpoint change — judge purely by handshake freshness.
 		if sinceHandshake < PeerDownInterval {
-			ps.State = PeerStateUp
+			ps.State = kubespan.PeerStateUp
 		} else {
-			ps.State = PeerStateDown
+			ps.State = kubespan.PeerStateDown
 		}
 
 	case sinceEndpointChange < EndpointConnectionTimeout:
 		// Just changed endpoint, give it time to connect.
 		if sinceHandshake < sinceEndpointChange {
 			// Handshake happened after the endpoint change.
-			ps.State = PeerStateUp
+			ps.State = kubespan.PeerStateUp
 		} else {
-			ps.State = PeerStateUnknown
+			ps.State = kubespan.PeerStateUnknown
 		}
 
 	default:
 		// Between 15s and 275s since endpoint change.
 		if sinceHandshake < sinceEndpointChange {
-			ps.State = PeerStateUp
+			ps.State = kubespan.PeerStateUp
 		} else {
-			ps.State = PeerStateDown
+			ps.State = kubespan.PeerStateDown
 		}
 	}
 
 	// If state is DOWN but we've never set an endpoint, treat as UNKNOWN.
-	if ps.State == PeerStateDown && !ps.LastUsedEndpoint.IsValid() {
-		ps.State = PeerStateUnknown
+	if ps.State == kubespan.PeerStateDown && !ps.LastUsedEndpoint.IsValid() {
+		ps.State = kubespan.PeerStateUnknown
 	}
 }
 
 // ShouldChangeEndpoint returns true when the peer needs a new endpoint.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (ShouldChangeEndpoint)
 func (ps *PeerStatus) ShouldChangeEndpoint() bool {
-	return ps.State == PeerStateDown || !ps.LastUsedEndpoint.IsValid()
+	return ps.State == kubespan.PeerStateDown || !ps.LastUsedEndpoint.IsValid()
 }
 
 // PickNewEndpoint selects the next endpoint to try, round-robin style.
@@ -143,5 +135,5 @@ func (ps *PeerStatus) UpdateEndpoint(endpoint netip.AddrPort) {
 	ps.Endpoint = endpoint
 	ps.LastUsedEndpoint = endpoint
 	ps.LastEndpointChange = time.Now()
-	ps.State = PeerStateUnknown
+	ps.State = kubespan.PeerStateUnknown
 }

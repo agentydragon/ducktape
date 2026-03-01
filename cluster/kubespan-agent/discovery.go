@@ -24,10 +24,10 @@ const discoveryTTL = 30 * time.Minute
 // Ref: talos/pkg/machinery/resources/kubespan/peer_spec.go (PeerSpecSpec)
 type Peer struct {
 	PublicKey  string
-	Address   netip.Addr     // KubeSpan ULA /128
-	Endpoints []netip.AddrPort
+	Address    netip.Addr // KubeSpan ULA /128
+	Endpoints  []netip.AddrPort
 	AllowedIPs []netip.Prefix
-	Label     string // node name for logging
+	Label      string // node name for logging
 }
 
 // DiscoveryManager handles communication with the Talos discovery service.
@@ -224,7 +224,7 @@ func (dm *DiscoveryManager) GetPeers() []Peer {
 
 		peer := Peer{
 			PublicKey: ks.PublicKey,
-			Label:    aff.Affiliate.Nodename,
+			Label:     aff.Affiliate.Nodename,
 		}
 
 		// Parse KubeSpan address.
