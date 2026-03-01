@@ -6,6 +6,7 @@
 
 # Build system
 /bazel-*
+cluster/kubespan-agent/kubespan-agent
 **/node_modules/
 **/.aspect/
 
