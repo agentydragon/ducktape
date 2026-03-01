@@ -256,9 +256,10 @@ class ApprovalGateServer(EnhancedFastMCP):
             input: dict[str, object] = {},  # noqa: B006
         ) -> ActionKey:
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
-            action_seq = await self._req_storage.next_action_seq(session_key)
-            key = ActionKey(session_key=session_key, action_seq=action_seq)
-            await self._req_storage.create_action(key=key, call=call, justification=justification)
+            action = await self._req_storage.create_action(
+                session_key=session_key, call=call, justification=justification
+            )
+            key = action.key
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
             self._spawn(self._apply_predicate(key, namespace, tool_name, input))

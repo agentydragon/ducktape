@@ -114,33 +114,27 @@ class ActionStorage:
         """Dispose of the underlying engine, releasing all connections."""
         await self._engine.dispose()
 
-    # ── Action sequence allocation ───────────────────────────────────────────
+    # ── Action CRUD ──────────────────────────────────────────────────────────
 
-    async def next_action_seq(self, session_key: str) -> int:
-        """Return the next action_seq for a session (max + 1, or 1 if first)."""
+    async def create_action(self, *, session_key: str, call: ToolCall, justification: str) -> Action:
+        """Insert a new pending action, atomically assigning the next action_seq."""
+        state = PendingState()
         async with self._session_factory() as session:
             result = await session.execute(
                 select(func.coalesce(func.max(_ActionRow.action_seq), 0)).where(_ActionRow.session_key == session_key)
             )
-            return result.scalar_one() + 1
-
-    # ── Action CRUD ──────────────────────────────────────────────────────────
-
-    async def create_action(self, *, key: ActionKey, call: ToolCall, justification: str) -> Action:
-        """Insert a new pending action."""
-        state = PendingState()
-        row = _ActionRow(
-            session_key=key.session_key,
-            action_seq=key.action_seq,
-            call_json=call.model_dump_json(),
-            justification=justification,
-            state_json=state.model_dump_json(),
-            status=state.status,
-        )
-        async with self._session_factory() as session:
+            action_seq = result.scalar_one() + 1
+            row = _ActionRow(
+                session_key=session_key,
+                action_seq=action_seq,
+                call_json=call.model_dump_json(),
+                justification=justification,
+                state_json=state.model_dump_json(),
+                status=state.status,
+            )
             session.add(row)
             await session.commit()
-        logger.debug("created action %s/%d tool=%s", key.session_key, key.action_seq, call.tool_name)
+        logger.debug("created action %s/%d tool=%s", session_key, action_seq, call.tool_name)
         return row.to_action()
 
     async def get_action(self, key: ActionKey) -> Action | None:

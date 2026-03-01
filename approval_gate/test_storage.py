@@ -16,21 +16,16 @@ from approval_gate.models import (
 )
 from approval_gate.storage import ActionStorage
 
-_KEY1 = ActionKey(session_key="sess-a", action_seq=1)
-_KEY2 = ActionKey(session_key="sess-a", action_seq=2)
-_KEY3 = ActionKey(session_key="sess-b", action_seq=1)
-_KEY4 = ActionKey(session_key="sess-b", action_seq=2)
-
 
 async def test_create_and_get(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={"argv": ["echo", "hi"]})
-    action = await storage.create_action(key=_KEY1, call=call, justification="testing")
-    assert action.key == _KEY1
+    action = await storage.create_action(session_key="sess-a", call=call, justification="testing")
+    assert action.key == ActionKey(session_key="sess-a", action_seq=1)
     assert isinstance(action.state, PendingState)
 
-    fetched = await storage.get_action(_KEY1)
+    fetched = await storage.get_action(action.key)
     assert fetched is not None
-    assert fetched.key == _KEY1
+    assert fetched.key == action.key
     assert fetched.call.tool_name == "exec"
     assert fetched.justification == "testing"
 
@@ -42,9 +37,9 @@ async def test_get_missing_returns_none(storage: ActionStorage):
 
 async def test_update_state(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
-    await storage.create_action(key=_KEY2, call=call, justification="test")
+    action = await storage.create_action(session_key="sess-a", call=call, justification="test")
     updated = await storage.update_state(
-        _KEY2, DoneState(outcome=CallToolResult(content=[TextContent(type="text", text="ok")]))
+        action.key, DoneState(outcome=CallToolResult(content=[TextContent(type="text", text="ok")]))
     )
     assert updated is not None
     assert isinstance(updated.state, DoneState)
@@ -53,48 +48,44 @@ async def test_update_state(storage: ActionStorage):
 
 async def test_list_actions_filter(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
-    await storage.create_action(key=_KEY3, call=call, justification="a")
-    await storage.create_action(key=_KEY4, call=call, justification="b")
-    await storage.update_state(_KEY4, RejectedState(reason="no"))
+    a1 = await storage.create_action(session_key="sess-b", call=call, justification="a")
+    a2 = await storage.create_action(session_key="sess-b", call=call, justification="b")
+    await storage.update_state(a2.key, RejectedState(reason="no"))
 
     pending = await storage.list_actions(ActionStatus.PENDING)
     keys = {a.key for a in pending}
-    assert _KEY3 in keys
-    assert _KEY4 not in keys
+    assert a1.key in keys
+    assert a2.key not in keys
 
     rejected = await storage.list_actions(ActionStatus.REJECTED)
-    assert any(a.key == _KEY4 for a in rejected)
+    assert any(a.key == a2.key for a in rejected)
 
 
 async def test_list_actions_all(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
-    k1 = ActionKey(session_key="sess-all", action_seq=1)
-    k2 = ActionKey(session_key="sess-all", action_seq=2)
-    await storage.create_action(key=k1, call=call, justification="x")
-    await storage.create_action(key=k2, call=call, justification="y")
+    a1 = await storage.create_action(session_key="sess-all", call=call, justification="x")
+    a2 = await storage.create_action(session_key="sess-all", call=call, justification="y")
 
     all_actions = await storage.list_actions(None)
     keys = {a.key for a in all_actions}
-    assert k1 in keys
-    assert k2 in keys
+    assert a1.key in keys
+    assert a2.key in keys
 
 
-async def test_next_action_seq(storage: ActionStorage):
-    assert await storage.next_action_seq("new-session") == 1
-
+async def test_action_seq_auto_assigned(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
-    await storage.create_action(
-        key=ActionKey(session_key="new-session", action_seq=1), call=call, justification="first"
-    )
-    assert await storage.next_action_seq("new-session") == 2
+    a1 = await storage.create_action(session_key="seq-sess", call=call, justification="first")
+    assert a1.key.action_seq == 1
 
-    await storage.create_action(
-        key=ActionKey(session_key="new-session", action_seq=2), call=call, justification="second"
-    )
-    assert await storage.next_action_seq("new-session") == 3
+    a2 = await storage.create_action(session_key="seq-sess", call=call, justification="second")
+    assert a2.key.action_seq == 2
+
+    a3 = await storage.create_action(session_key="seq-sess", call=call, justification="third")
+    assert a3.key.action_seq == 3
 
     # Different session starts from 1
-    assert await storage.next_action_seq("other-session") == 1
+    other = await storage.create_action(session_key="other-sess", call=call, justification="first")
+    assert other.key.action_seq == 1
 
 
 async def test_append_log_entry(storage: ActionStorage):
