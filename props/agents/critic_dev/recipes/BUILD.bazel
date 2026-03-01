@@ -15,7 +15,10 @@ py_library(
     name = "ground_truth",
     srcs = ["ground_truth.py"],
     imports = ["../../../.."],
-    visibility = ["//props:__subpackages__"],
+    visibility = [
+        "//props/agents/critic_dev:__subpackages__",
+        "//props/db:__pkg__",  # test_agent_queries
+    ],
     deps = [
         "//props/core:ids",
         "//props/core:splits",
@@ -29,7 +32,7 @@ py_library(
     name = "recall_metrics",
     srcs = ["recall_metrics.py"],
     imports = ["../../../.."],
-    visibility = ["//props:__subpackages__"],
+    visibility = ["//props/agents/critic_dev:__subpackages__"],
     deps = [
         "//props/core:splits",
         "//props/db:database",
@@ -42,7 +45,7 @@ py_library(
     name = "run_analysis",
     srcs = ["run_analysis.py"],
     imports = ["../../../.."],
-    visibility = ["//props:__subpackages__"],
+    visibility = ["//props/agents/critic_dev:__subpackages__"],
     deps = [
         "//props/core:agent_types",
         "//props/core:ids",
@@ -56,7 +59,7 @@ py_library(
     name = "examples_and_scopes",
     srcs = ["examples_and_scopes.py"],
     imports = ["../../../.."],
-    visibility = ["//props:__subpackages__"],
+    visibility = ["//props/agents/critic_dev:__subpackages__"],
     deps = [
         "//props/core:ids",
         "//props/core:splits",
