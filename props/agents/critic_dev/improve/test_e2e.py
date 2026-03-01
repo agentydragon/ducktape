@@ -90,7 +90,6 @@ chmod +x /workspace/improved/init""",
 
 
 @pytest.mark.timeout(180)
-@pytest.mark.requires_docker
 async def test_prompt_improve_e2e_creates_package(
     e2e_stack, subtract_file_example, critic_dev_improve_image, critic_image, db: Database
 ):
@@ -116,7 +115,6 @@ async def test_prompt_improve_e2e_creates_package(
 
 
 @pytest.mark.timeout(180)
-@pytest.mark.requires_docker
 async def test_prompt_improve_e2e_multiple_examples(
     e2e_stack, test_snapshot, critic_dev_improve_image, critic_image, db: Database
 ):

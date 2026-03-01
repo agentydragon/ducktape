@@ -1,4 +1,3 @@
-import pytest
 import pytest_bazel
 from fastmcp.client import Client
 
@@ -39,7 +38,6 @@ async def test_direct_inprocess_server(compositor, compositor_client) -> None:
     assert result.exit == Exited(exit_code=0)
 
 
-@pytest.mark.requires_docker
 async def test_inproc_container_exec_exposes_container_info_resource(docker_exec_server: ContainerExecServer) -> None:
     """in-proc container exec exposes a container.info resource."""
 

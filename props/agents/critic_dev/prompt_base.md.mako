@@ -79,11 +79,12 @@ from props.db.database import Database
 from props.agents.critic_dev.recipes.ground_truth import list_snapshots_by_split, get_true_positives
 from props.agents.critic_dev.recipes.recall_metrics import get_definition_leaderboard
 from props.agents.critic_dev.recipes.run_analysis import get_recent_critic_runs
-from props.agents.critic_dev.recipes.examples_and_scopes import list_train_examples
+from props.db.examples import get_examples_for_split
+from props.core.splits import Split
 
 db = Database.from_env()
 with db.session() as session:
-    examples = list_train_examples(session)
+    examples = get_examples_for_split(session, Split.TRAIN)
 ```
 
 ## Reference

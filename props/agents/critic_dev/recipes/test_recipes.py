@@ -30,7 +30,6 @@ from props.testing.constants import DEFAULT_TEST_MODEL
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.requires_docker]
 
 RECIPE_PKG = "props.agents.critic_dev.recipes"
 
@@ -86,7 +85,7 @@ async def test_recipes_in_container(
         assert len(ra_data["recent_runs"]) >= 1, f"Expected non-empty runs: {ra_data}"
         logger.info(f"run_analysis: {ra_data}")
 
-        yield m.report_failure("Recipe verification complete")
+        yield m.report_failure("Recipe verification done — exiting via report_failure")
 
     async with e2e_stack(
         {DEFAULT_TEST_MODEL: optimizer_mock}, images=[critic_dev_optimize_image, critic_image]

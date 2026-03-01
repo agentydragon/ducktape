@@ -72,7 +72,6 @@ approval_policy: |
 # -- Policy validation (docker) --
 
 
-@pytest.mark.requires_docker
 class TestPolicyValidation:
     """Tests for policy validation via MCP admin tools."""
 
@@ -107,7 +106,6 @@ class TestPolicyValidation:
 # -- Preset loading and version management (docker) --
 
 
-@pytest.mark.requires_docker
 class TestPresetPolicyLoading:
     """Tests that preset policies are correctly loaded into PolicyEngine."""
 

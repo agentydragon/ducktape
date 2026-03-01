@@ -30,8 +30,6 @@ from props.testing.fixtures.runs import make_fake_critic_run
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.requires_docker]
-
 
 @pytest.mark.timeout(180)
 async def test_grader_clusters_novel_issues_from_two_critiques(

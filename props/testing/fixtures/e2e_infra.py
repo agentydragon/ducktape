@@ -9,7 +9,6 @@ but manifests are deleted at the start of each test to ensure crane push always
 triggers agent_definition recording via the backend proxy.
 
 Usage in tests:
-    @pytest.mark.requires_docker
     async def test_something(e2e_registry, grader_image, e2e_stack):
         async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
             image = await stack.registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)

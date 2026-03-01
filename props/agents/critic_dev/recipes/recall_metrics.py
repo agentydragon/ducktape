@@ -1,9 +1,4 @@
-"""Recipe: Checking definition recall metrics.
-
-Run directly::
-
-    python3 -c "from props.agents.critic_dev.recipes.recall_metrics import main; main()"
-"""
+"""Recipe: Checking definition recall metrics."""
 
 from __future__ import annotations
 

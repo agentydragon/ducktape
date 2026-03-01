@@ -35,8 +35,6 @@ from props.testing.fixtures.runs import make_fake_critic_run
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.requires_docker]
-
 
 @pytest.mark.timeout(240)
 async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):

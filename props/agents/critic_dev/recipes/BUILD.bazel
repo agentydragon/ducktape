@@ -66,7 +66,6 @@ py_library(
         "//props/core/models:examples",
         "//props/db:database",
         "//props/db:examples",
-        "@pypi//sqlalchemy",
     ],
 )
 

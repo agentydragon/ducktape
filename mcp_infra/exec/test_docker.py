@@ -19,7 +19,6 @@ async def typed_docker_client(make_typed_mcp, docker_exec_server):
 # All tests below require structuredContent and call via the typed client
 
 
-@pytest.mark.requires_docker
 async def test_hello_world(typed_docker_client) -> None:
     client, session = typed_docker_client
     tools = await session.list_tools()
@@ -33,7 +32,6 @@ async def test_hello_world(typed_docker_client) -> None:
     assert "hello" in (res.stdout or "")
 
 
-@pytest.mark.requires_docker
 async def test_stderr_and_exit_code(typed_docker_client) -> None:
     client, _session = typed_docker_client
     res = await client.exec(make_exec_input(["sh", "-lc", "echo err 1>&2; exit 3"]))
@@ -44,7 +42,6 @@ async def test_stderr_and_exit_code(typed_docker_client) -> None:
     assert "err" in (res.stderr or "")
 
 
-@pytest.mark.requires_docker
 async def test_timeout_flag(typed_docker_client) -> None:
     client, _session = typed_docker_client
     res = await client.exec(make_exec_input(["sh", "-lc", "sleep 5"], timeout_ms=500))

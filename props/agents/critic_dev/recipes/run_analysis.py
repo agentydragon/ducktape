@@ -2,10 +2,6 @@
 
 Demonstrates how to inspect recent runs, their costs, child runs,
 and budget status using the ORM models and views.
-
-Run directly::
-
-    python3 -c "from props.agents.critic_dev.recipes.run_analysis import main; main('test-fixtures/train1')"
 """
 
 from __future__ import annotations

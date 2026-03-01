@@ -11,7 +11,6 @@ from mcp_infra.prefix import MCPMountPrefix
 ## Removed: template-based seatbelt tests. Seatbelt now accepts only explicit policy.
 
 
-@pytest.mark.requires_docker
 async def test_container_timeout_causes_deny_abort(
     monkeypatch: pytest.MonkeyPatch, make_policy_gateway_client, make_approval_policy_server, make_simple_mcp
 ):

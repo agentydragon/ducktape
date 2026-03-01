@@ -60,7 +60,6 @@ def make_policy_test_backend() -> FlatModelMixin:
     return server
 
 
-@pytest.mark.requires_docker
 async def test_policy_gateway_middleware_allow(policy_gateway_client):
     # policy_gateway_client already has allow-all policy
     res = await policy_gateway_client.call_tool(build_mcp_function(MCPMountPrefix("backend"), "echo"), {"text": "7"})
@@ -68,7 +67,6 @@ async def test_policy_gateway_middleware_allow(policy_gateway_client):
     assert res.structured_content == {"echo": "7"}
 
 
-@pytest.mark.requires_docker
 @pytest.mark.parametrize(
     ("decision", "expected_msg"),
     [
@@ -86,7 +84,6 @@ async def test_policy_gateway_middleware_deny(
         assert expected_msg in str(ei.value)
 
 
-@pytest.mark.requires_docker
 async def test_policy_gateway_middleware_reserved_backend_code_remap(
     make_policy_gateway_client, make_policy_test_backend
 ):
@@ -97,7 +94,6 @@ async def test_policy_gateway_middleware_reserved_backend_code_remap(
         assert "policy_backend_reserved_misuse" in str(ei.value)
 
 
-@pytest.mark.requires_docker
 @pytest.mark.xfail(reason="In-proc raises drop ErrorData; stamp not inspectable at middleware layer")
 async def test_policy_gateway_middleware_backend_stamp_misuse(make_policy_gateway_client, make_policy_test_backend):
     async with make_policy_gateway_client({"backend": make_policy_test_backend}) as sess:
@@ -106,7 +102,6 @@ async def test_policy_gateway_middleware_backend_stamp_misuse(make_policy_gatewa
         assert POLICY_BACKEND_RESERVED_MISUSE_MSG in str(ei.value)
 
 
-@pytest.mark.requires_docker
 @pytest.mark.xfail(
     reason="Proxy raises ToolError; ErrorData.data (containing stamp) not accessible at middleware layer"
 )
@@ -125,7 +120,6 @@ async def test_policy_gateway_middleware_backend_stamp_misuse_via_proxy(
         assert POLICY_BACKEND_RESERVED_MISUSE_MSG in s
 
 
-@pytest.mark.requires_docker
 async def test_policy_gateway_middleware_ask_then_allow(
     make_policy_gateway_compositor, make_decision_engine, make_simple_mcp
 ):

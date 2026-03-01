@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
@@ -28,7 +27,6 @@ class HostDockerExecMock(MCPDecoratorMock):
         return tool_roundtrip(call, BaseExecResult)
 
 
-@pytest.mark.requires_docker
 async def test_editor_step_sequence(tmp_path, async_docker_client, editor_image_id):
     """Test editor flow: init, edit file, submit-success, and writeback to host file."""
     fname = "file.txt"

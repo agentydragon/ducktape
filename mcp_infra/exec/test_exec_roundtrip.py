@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
 import pytest_bazel
 
 from agent_core.agent import Agent, AgentResult
@@ -29,7 +28,6 @@ ECHO_CMD = ["/bin/echo", "-n", "hello"]
 SERVER_NAME = MCPMountPrefix("box")
 
 
-@pytest.mark.requires_docker
 async def test_llm_exec_echo(mock_or_live, docker_exec_server, compositor, compositor_client) -> None:
     """LLM calls box__exec to echo hello, agent returns stdout."""
     await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server)

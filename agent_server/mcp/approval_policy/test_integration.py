@@ -2,7 +2,6 @@
 
 import asyncio
 
-import pytest
 import pytest_bazel
 from fastmcp.client import Client
 
@@ -18,7 +17,6 @@ from mcp_infra.resource_utils import read_text_json_typed
 from openai_utils.model import SystemMessage
 
 
-@pytest.mark.requires_docker
 async def test_approval_system_wired_and_blocks_on_ask(
     echo_spec, make_policy_gateway_compositor, make_approval_policy_server
 ) -> None:

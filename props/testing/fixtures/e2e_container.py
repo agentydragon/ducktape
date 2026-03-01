@@ -16,7 +16,6 @@ Environment variables:
         - Set to "127.0.0.1" for host networking (e.g., CI with --network=host)
 
 Usage:
-    @pytest.mark.requires_docker
     async def test_critic_completes(e2e_stack, all_files_scope, critic_image):
         mock = make_critic_mock()
         async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:

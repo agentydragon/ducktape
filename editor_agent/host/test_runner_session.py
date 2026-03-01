@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import pytest_bazel
 
 from editor_agent.host.runner import editor_docker_session, writeback_success
 from editor_agent.host.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
 
 
-@pytest.mark.requires_docker
 async def test_editor_session_starts_and_cleans(tmp_path: Path, async_docker_client, editor_image_id):
     target = tmp_path / "file.txt"
     target.write_text("hello", encoding="utf-8")

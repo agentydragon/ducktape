@@ -140,7 +140,6 @@ async def policy_evaluator(async_docker_client, approval_policy_server: PolicyEn
     """Container-backed policy evaluator using the default policy engine.
 
     Deduplicates setup across tests that need to call policy.decide(...).
-    Requires Docker (tests should mark with @pytest.mark.requires_docker).
     """
     return ContainerPolicyEvaluator(agent_id="tests", docker_client=async_docker_client, engine=approval_policy_server)
 

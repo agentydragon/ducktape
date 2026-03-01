@@ -2,10 +2,6 @@
 
 Demonstrates how to explore what issues exist for snapshots, using the
 ORM models and their class methods.
-
-Run directly::
-
-    python3 -c "from props.agents.critic_dev.recipes.ground_truth import main; main('test-fixtures/train1')"
 """
 
 from __future__ import annotations

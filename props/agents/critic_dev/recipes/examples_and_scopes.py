@@ -1,33 +1,17 @@
 """Recipe: Working with examples and scopes.
 
 Demonstrates how to list training examples and construct ExampleSpec objects.
-
-Run directly::
-
-    python3 -c "from props.agents.critic_dev.recipes.examples_and_scopes import main; main()"
 """
 
 from __future__ import annotations
 
 import json
 
-from sqlalchemy.orm import Session
-
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 from props.db.database import Database
-from props.db.examples import Example, get_examples_for_split
-
-
-def list_train_examples(session: Session) -> list[Example]:
-    """List all training examples, ordered deterministically.
-
-    Uses get_examples_for_split() — the canonical entrypoint for loading
-    training data. Examples are ordered by (snapshot_slug, example_kind,
-    files_hash NULLS FIRST).
-    """
-    return get_examples_for_split(session, Split.TRAIN)
+from props.db.examples import get_examples_for_split
 
 
 def build_example_spec(snapshot_slug: str, files_hash: str | None = None) -> ExampleSpec:
@@ -46,7 +30,7 @@ def main() -> None:
     """Print training examples data as JSON."""
     db = Database.from_env()
     with db.session() as session:
-        examples = list_train_examples(session)
+        examples = get_examples_for_split(session, Split.TRAIN)
         print(
             json.dumps(
                 {

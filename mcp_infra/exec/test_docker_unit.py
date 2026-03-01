@@ -21,7 +21,6 @@ async def exec_client(make_typed_mcp, exec_server):
         yield client
 
 
-@pytest.mark.requires_docker
 async def test_exec_stdout_stderr_timeout(exec_client) -> None:
     # stdout
     r1 = await exec_client.exec(make_exec_input(["/bin/echo", "hello"], timeout_ms=5000))
@@ -37,7 +36,6 @@ async def test_exec_stdout_stderr_timeout(exec_client) -> None:
     assert r3.exit == TimedOut()
 
 
-@pytest.mark.requires_docker
 async def test_persession_exec_timeout_then_next_ok(exec_client) -> None:
     # Force timeout
     t1 = await exec_client.exec(make_exec_input(["sh", "-lc", "sleep 3"], timeout_ms=500))

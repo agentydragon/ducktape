@@ -35,7 +35,6 @@ class IsSystemNotification(BaseMatcher):
         description.append_text(f"UserMessage with system notification containing {self._substrings!r}")
 
 
-@pytest.mark.requires_docker
 @pytest.mark.timeout(35)
 async def test_notifications_handler_in_container_inserts_system_message(
     docker_client, async_docker_client, sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str

@@ -31,8 +31,6 @@ from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.requires_docker]
-
 
 @pytest.mark.timeout(300)
 async def test_build_critic_sh_via_agent(

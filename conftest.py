@@ -25,7 +25,6 @@ def pytest_configure(config: pytest.Config) -> None:
     # External requirements - LLM APIs
     config.addinivalue_line("markers", "live_openai_api: tests requiring OPENAI_API_KEY")
     config.addinivalue_line("markers", "real_github: tests requiring network access to GitHub")
-    config.addinivalue_line("markers", "requires_docker: tests requiring Docker daemon")
     config.addinivalue_line("markers", "requires_sandbox_exec: tests requiring macOS sandbox-exec")
     config.addinivalue_line("markers", "requires_production_specimens: tests that sync production specimens")
 

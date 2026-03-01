@@ -64,7 +64,10 @@ cp "${CUSTOM_MAIN}" "${WORK_DIR}/layer/${MAIN_PY_PATH}"
 tar -cf "${WORK_DIR}/layer.tar" -C "${WORK_DIR}/layer" .
 
 # 2. Append the layer to the base image
-# --insecure: in-container registry uses plain HTTP behind the auth proxy
+# --insecure: the in-cluster registry (localhost or k8s service) uses plain
+# HTTP behind the auth proxy.  This is safe because the registry is only
+# reachable from the agent pod network.  Do NOT use --insecure against
+# registries reachable from untrusted networks.
 crane mutate "${BASE_REF}" \
   --append "${WORK_DIR}/layer.tar" \
   --tag "${REGISTRY}/critic:${VARIANT}" \

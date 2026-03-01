@@ -22,24 +22,24 @@ async def main() -> int:
     with db.session() as session:
         agent_run_id = get_current_agent_run_id(session)
         print(f"Custom critic running as {agent_run_id}")
-
-    with db.session() as session:
-        agent_run_id = get_current_agent_run_id(session)
-        issue = ReportedIssue(
-            agent_run_id=agent_run_id,
-            issue_id="build-script-test-issue",
-            rationale="Test issue from build_critic.sh custom image",
+        session.add(
+            ReportedIssue(
+                agent_run_id=agent_run_id,
+                issue_id="build-script-test-issue",
+                rationale="Test issue from build_critic.sh custom image",
+            )
         )
-        session.add(issue)
 
+    # Separate session: occurrence references the issue via FK, so the issue
+    # must be committed first (db.session() auto-commits on exit).
     with db.session() as session:
-        agent_run_id = get_current_agent_run_id(session)
-        occ = ReportedIssueOccurrence(
-            agent_run_id=agent_run_id,
-            reported_issue_id="build-script-test-issue",
-            locations=[LocationAnchor(file="test.py", start_line=1, end_line=5)],
+        session.add(
+            ReportedIssueOccurrence(
+                agent_run_id=agent_run_id,
+                reported_issue_id="build-script-test-issue",
+                locations=[LocationAnchor(file="test.py", start_line=1, end_line=5)],
+            )
         )
-        session.add(occ)
 
     print("Custom critic completed: 1 issue, 1 occurrence")
     return 0

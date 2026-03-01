@@ -1,14 +1,4 @@
-"""Unit tests for agent SQL query builders and recipes.
-
-Tests verify:
-1. Query builders execute successfully via SQLAlchemy
-2. Return expected data shapes and values
-
-Does NOT test:
-- RLS policies (covered in test_db_integration.py)
-- Docker integration (covered in test_critic_dev_integration.py)
-- Database setup/teardown (uses existing db fixture)
-"""
+"""Tests for agent query builders and DB views against a synced test database."""
 
 from __future__ import annotations
 
@@ -25,20 +15,7 @@ from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_r
 
 @pytest.fixture
 def query_test_data(synced_db: Database):
-    """Populate database with critic/grader runs for query validation.
-
-    Uses git fixtures for ground truth (Snapshots, TPs, FPs, Examples).
-    Creates:
-    - 1 prompt
-    - 3 critic runs (1 train, 2 valid)
-    - 3 grader runs (1 train, 2 valid)
-    - Event records (tool_call and function_call_output events)
-
-    Note: Git fixtures provide:
-    - test-trivial (TRAIN) - has TPs and examples
-    - test-validation (VALID) - has TPs and examples
-    - test-validation-2 (VALID) - has TPs and examples
-    """
+    """Seed critic + grader runs so DB views have non-trivial data."""
     with synced_db.session() as session:
         # Query git fixture examples (snapshots/TPs/FPs already loaded by synced_db)
         # Use explicit join and select columns to avoid lazy loading issues

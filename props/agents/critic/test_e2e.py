@@ -16,7 +16,6 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 from hamcrest import all_of, assert_that
 
@@ -43,7 +42,6 @@ def make_critic_mock_zero_issues() -> DecoratorMock:
     return mock
 
 
-@pytest.mark.requires_docker
 async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, critic_image, db: Database):
     """Test critic successfully submits zero issues."""
     mock = make_critic_mock_zero_issues()
@@ -88,7 +86,6 @@ def make_critic_mock_with_issues() -> DecoratorMock:
     return mock
 
 
-@pytest.mark.requires_docker
 async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_scope, critic_image, db: Database):
     """Test critic submits an issue with occurrence."""
     mock = make_critic_mock_with_issues()
@@ -126,7 +123,6 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
             assert occurrence.locations[0].file == "subtract.py"
 
 
-@pytest.mark.requires_docker
 async def test_python3_can_import_and_inspect_props(
     e2e_stack, test_snapshot, all_files_scope, critic_image, db: Database
 ):

@@ -96,7 +96,6 @@ def pytest_configure(config: pytest.Config) -> None:
             root_logger.addHandler(handler)
             root_logger.setLevel(logging.INFO)
 
-    config.addinivalue_line("markers", "requires_docker: marks tests requiring Docker daemon")
     config.addinivalue_line("markers", "timeout(seconds): test timeout in seconds (requires pytest-timeout)")
     config.addinivalue_line("markers", "live_openai_api: marks tests calling real OpenAI API")
 

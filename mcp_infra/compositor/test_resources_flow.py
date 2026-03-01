@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that, has_item, instance_of
 
@@ -17,7 +16,6 @@ from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
 
 
-@pytest.mark.requires_docker
 async def test_model_reads_container_info_with_stubbed_openai(
     reasoning_model, docker_exec_server, compositor, compositor_client, recording_handler
 ) -> None:

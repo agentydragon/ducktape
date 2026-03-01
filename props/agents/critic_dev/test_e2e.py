@@ -50,7 +50,6 @@ from props.testing.mocks import get_system_message_text
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.requires_docker]
 
 # Test timeout (seconds)
 TEST_TIMEOUT_SECONDS = 120

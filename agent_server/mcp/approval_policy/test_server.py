@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 from fastmcp.client import Client
 
@@ -18,7 +17,6 @@ from mcp_utils.resources import extract_single_text_content
 from openai_utils.model import UserMessage
 
 
-@pytest.mark.requires_docker
 async def test_tool_schemas(make_typed_mcp, approval_policy_server):
     """Verify approval_policy proposer tools are exposed with flat typed schemas."""
     async with make_typed_mcp(approval_policy_server.proposer) as (client, _sess):
@@ -26,7 +24,6 @@ async def test_tool_schemas(make_typed_mcp, approval_policy_server):
         assert {"create_proposal", "withdraw_proposal"} <= names
 
 
-@pytest.mark.requires_docker
 async def test_resources_list_and_read_policy(make_typed_mcp, approval_policy_server):
     """List and read resources directly from the reader server."""
     server = approval_policy_server.reader
@@ -45,7 +42,6 @@ async def test_resources_list_and_read_policy(make_typed_mcp, approval_policy_se
         assert "PolicyResponse" in policy_text
 
 
-@pytest.mark.requires_docker
 async def test_server_available_in_compositor(echo_spec, make_policy_gateway_compositor):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
