@@ -159,9 +159,6 @@ py_test(
     ],
     imports = ["../../.."],
     requires_docker = True,
-    tags = [
-        "e2e",
-    ],
     deps = [
         ":conftest",
         ":main",

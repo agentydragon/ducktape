@@ -27,7 +27,6 @@ from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_de
 
 FAKE_RESOLVED = ResolvedImage(digest=FAKE_CRITIC_DIGEST, oci_ref=f"localhost:5000/critic@{FAKE_CRITIC_DIGEST}")
 
-pytestmark = [pytest.mark.integration]
 
 TRAIN_EXAMPLE = WholeSnapshotExample(snapshot_slug="test-fixtures/train1")
 

@@ -50,14 +50,13 @@ from props.testing.mocks import get_system_message_text
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
+pytestmark = [pytest.mark.requires_docker]
 
 # Test timeout (seconds)
 TEST_TIMEOUT_SECONDS = 120
 
 
 @pytest.mark.timeout(300)
-@pytest.mark.slow
 async def test_po_orchestrates_critic_with_system_prompt_check(
     synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
@@ -219,7 +218,6 @@ _CUSTOM_CRITIC_SCRIPT = textwrap.dedent("""\
 
 
 @pytest.mark.timeout(300)
-@pytest.mark.slow
 async def test_po_creates_custom_critic_image(
     synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
@@ -361,7 +359,6 @@ async def test_po_creates_custom_critic_image(
 
 
 @pytest.mark.timeout(180)
-@pytest.mark.slow
 async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_files_scope, critic_image):
     """Test that critic agents cannot push images to registry.
 

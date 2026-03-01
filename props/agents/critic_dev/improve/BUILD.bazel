@@ -39,7 +39,6 @@ py_test(
     ],
     imports = ["../../../.."],
     requires_docker = True,
-    tags = ["e2e"],
     deps = [
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",

@@ -32,8 +32,6 @@ from props.db.examples import Example
 from props.db.models import AgentRun
 from props.testing.constants import DEFAULT_TEST_MODEL
 
-pytestmark = [pytest.mark.integration]
-
 # Test timeout (seconds) - applies to container execution
 TEST_TIMEOUT_SECONDS = 120
 

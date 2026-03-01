@@ -32,7 +32,6 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from uuid import uuid4
 
-import pytest
 import pytest_asyncio
 import pytest_bazel
 from sqlalchemy import create_engine
@@ -56,8 +55,6 @@ from props.orchestration.agent_credentials import AgentCredentials
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, FAKE_GRADER_DIGEST, make_fake_critic_run
-
-pytestmark = [pytest.mark.integration]
 
 
 @pytest_asyncio.fixture

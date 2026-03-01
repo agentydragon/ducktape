@@ -8,11 +8,8 @@ The filtering is based on match_file_restriction:
 
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 from sqlalchemy import text
-
-pytestmark = [pytest.mark.integration]
 
 
 class TestMatchableOccurrences:

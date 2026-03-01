@@ -36,7 +36,7 @@ from props.testing.fixtures.runs import make_fake_critic_run
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
+pytestmark = [pytest.mark.requires_docker]
 
 
 @pytest.mark.timeout(180)

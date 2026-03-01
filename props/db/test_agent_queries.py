@@ -22,11 +22,8 @@ from props.core.splits import Split
 from props.db import query_builders as qb
 from props.db.database import Database
 from props.db.examples import Example
-from props.db.models import FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
-from props.testing.constants import DEFAULT_TEST_MODEL
+from props.db.models import RecallByDefinitionSplitKind, Snapshot
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
-
-pytestmark = [pytest.mark.integration]
 
 
 @pytest.fixture
@@ -95,47 +92,6 @@ def query_test_data(synced_db: Database):
 class TestQueryBuilders:
     """Test query builders execute and return expected data."""
 
-    def test_list_train_snapshots(self, query_test_data, db: Database):
-        """list_train_snapshots() returns train snapshots in order."""
-        with db.session() as session:
-            result = session.execute(qb.list_train_snapshots()).fetchall()
-
-            # Should have at least 1 train snapshot from git fixtures
-            assert len(result) >= 1
-
-            # Check first row has expected columns and values
-            assert "test-fixtures/" in result[0].slug  # Git fixtures use test-fixtures/ prefix
-            assert result[0].split == "train"
-
-            # Check ordering (slugs should be sorted)
-            slugs = [row.slug for row in result]
-            assert slugs == sorted(slugs)
-
-    def test_list_train_true_positives(self, query_test_data, db: Database):
-        """list_train_true_positives() returns all TPs for train split."""
-        with db.session() as session:
-            result = session.execute(qb.list_train_true_positives()).fetchall()
-
-            # Should have at least 1 train true positive from git fixtures
-            assert len(result) >= 1
-
-            # Check structure
-            assert "test-fixtures/" in result[0].snapshot_slug
-            assert result[0].tp_id is not None
-            assert result[0].rationale is not None
-
-    def test_list_train_false_positives(self, query_test_data, db: Database):
-        """list_train_false_positives() returns all FPs for train split."""
-        with db.session() as session:
-            result = session.execute(qb.list_train_false_positives()).fetchall()
-
-            # Git fixtures may or may not have FPs - just check structure if any exist
-            if len(result) > 0:
-                # Check structure
-                assert "test-fixtures/" in result[0].snapshot_slug
-                assert result[0].fp_id is not None
-                assert result[0].rationale is not None
-
     def test_count_issues_by_snapshot(self, query_test_data, db: Database):
         """count_issues_by_snapshot() returns TP/FP counts per snapshot."""
         with db.session() as session:
@@ -152,53 +108,6 @@ class TestQueryBuilders:
                 # tp_count and fp_count should be integers
                 assert isinstance(row.tp_count, int)
                 assert isinstance(row.fp_count, int)
-
-    def test_list_true_positives_for_snapshot(self, query_test_data, db: Database):
-        """list_true_positives_for_snapshot() returns TPs for specific snapshot."""
-        with db.session() as session:
-            # Find a TRAIN snapshot with TPs
-            train_snapshot = (
-                session.query(Snapshot)
-                .filter(Snapshot.split == Split.TRAIN)
-                .join(TruePositive, TruePositive.snapshot_slug == Snapshot.slug)
-                .first()
-            )
-            assert train_snapshot, "No TRAIN snapshot with TPs found"
-
-            result = session.execute(qb.list_true_positives_for_snapshot(train_snapshot.slug)).scalars().all()
-
-            # Should have at least 1 TP
-            assert len(result) >= 1
-            assert result[0].tp_id is not None
-            assert result[0].rationale is not None
-            assert len(result[0].occurrences) >= 1
-
-    def test_list_false_positives_for_snapshot(self, query_test_data, db: Database):
-        """list_false_positives_for_snapshot() returns FPs for specific snapshot."""
-        with db.session() as session:
-            # Find a TRAIN snapshot with FPs (if any exist)
-            train_snapshot_with_fps = (
-                session.query(Snapshot)
-                .filter(Snapshot.split == Split.TRAIN)
-                .join(FalsePositive, FalsePositive.snapshot_slug == Snapshot.slug)
-                .first()
-            )
-
-            if train_snapshot_with_fps:
-                result = (
-                    session.execute(qb.list_false_positives_for_snapshot(train_snapshot_with_fps.slug)).scalars().all()
-                )
-                # Should have at least 1 FP
-                assert len(result) >= 1
-                assert result[0].fp_id is not None
-                assert result[0].rationale is not None
-                assert len(result[0].occurrences) >= 1
-            else:
-                # If no FPs, just verify empty result for any TRAIN snapshot
-                train_snapshot = session.query(Snapshot).filter(Snapshot.split == Split.TRAIN).first()
-                assert train_snapshot, "No TRAIN snapshot found"
-                result = session.execute(qb.list_false_positives_for_snapshot(train_snapshot.slug)).scalars().all()
-                assert len(result) == 0
 
     def test_valid_aggregates_view(self, query_test_data, db: Database):
         """aggregated_recall_by_definition view computes statistics for valid split."""
@@ -223,32 +132,6 @@ class TestQueryBuilders:
             # Check status counts are present (dict from JSONB) with non-negative values
             assert row.status_counts is not None
             assert all(count >= 0 for count in row.status_counts.values())
-
-    def test_critic_runs_for_snapshot(self, query_test_data, db: Database):
-        """critic_runs_for_snapshot() returns critic runs for a specific snapshot."""
-        with db.session() as session:
-            # Find a TRAIN file-set example (with files_hash) that has critic runs
-            train_example = (
-                session.query(Example)
-                .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
-                .filter(Snapshot.split == Split.TRAIN)
-                .filter(Example.files_hash.isnot(None))  # File-set example only
-                .first()
-            )
-            assert train_example, "No TRAIN file-set example found"
-
-            result = session.execute(qb.critic_runs_for_snapshot(train_example.snapshot_slug, limit=5)).fetchall()
-
-            # Should have at least 1 critic run (created in query_test_data fixture)
-            assert len(result) >= 1
-
-            # Check structure (uses agent_runs table now, not legacy critic_runs)
-            row = result[0]
-            assert row.agent_run_id is not None  # Primary key is agent_run_id now
-            assert row.status is not None  # AgentRunStatus enum value
-            assert row.created_at is not None
-            # files_hash may be None for whole-snapshot examples, or a string for file-set examples
-            assert row.model == DEFAULT_TEST_MODEL
 
 
 if __name__ == "__main__":

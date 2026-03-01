@@ -45,7 +45,6 @@ from props.testing.constants import DEFAULT_TEST_MODEL
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.integration]
 
 # Test timeout (seconds) - applies to container execution
 TEST_TIMEOUT_SECONDS = 60
@@ -107,7 +106,6 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-@pytest.mark.slow
 async def test_optimizer_orchestrates_critic(
     synced_db: Database, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):

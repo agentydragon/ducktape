@@ -117,9 +117,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":examples",
         ":models",
-        "//props/core:agent_types",
         "//props/core:ids",
         "//props/core:splits",
         "//props/core/models:examples",
@@ -191,7 +189,6 @@ py_test(
         ":query_builders",
         "//props:conftest",
         "//props/core:splits",
-        "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

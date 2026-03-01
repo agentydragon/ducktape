@@ -205,9 +205,6 @@ py_test(
     ],
     imports = ["../../.."],
     requires_docker = True,
-    tags = [
-        "e2e",
-    ],
     deps = [
         ":conftest",
         ":drift_handler",
@@ -236,9 +233,6 @@ py_test(
     ],
     imports = ["../../.."],
     requires_docker = True,
-    tags = [
-        "e2e",
-    ],
     deps = [
         ":conftest",
         ":drift_handler",
@@ -267,9 +261,6 @@ py_test(
     ],
     imports = ["../../.."],
     requires_docker = True,
-    tags = [
-        "e2e",
-    ],
     deps = [
         ":conftest",
         ":drift_handler",
@@ -298,9 +289,6 @@ py_test(
     ],
     imports = ["../../.."],
     requires_docker = True,
-    tags = [
-        "e2e",
-    ],
     deps = [
         ":conftest",
         "//agent_core/testing:responses",

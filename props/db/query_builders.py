@@ -13,26 +13,14 @@ from __future__ import annotations
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import Select, bindparam, func, literal, select, union_all
+from sqlalchemy import Select, func, literal, select, union_all
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
-from props.core.agent_types import AgentType
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
-from props.db.examples import Example
-from props.db.models import (
-    AgentRun,
-    FalsePositive,
-    FalsePositiveOccurrenceORM,
-    LLMRunCost,
-    OccurrenceRangeORM,
-    Snapshot,
-    TpOccurrenceCredit,
-    TruePositive,
-    TruePositiveOccurrenceORM,
-)
+from props.db.models import AgentRun, FalsePositive, LLMRunCost, Snapshot, TpOccurrenceCredit, TruePositive
 
 
 def compile_to_sql(query: Select, *, literal_binds: bool = True) -> str:
@@ -67,95 +55,6 @@ def compile_to_sql_with_placeholders(query: Select) -> str:
         'SELECT ... WHERE agent_run_id = :agent_run_id'
     """
     return compile_to_sql(query, literal_binds=False)
-
-
-# ============================================================================
-# Snapshot queries
-# ============================================================================
-
-
-# TODO: Consider removing - compiled but never rendered in template, agents can query directly
-def list_train_snapshots() -> Select:
-    """List all train split snapshots.
-
-    Returns:
-        Query selecting (slug, split) from train snapshots, ordered by slug
-    """
-    return select(Snapshot.slug, Snapshot.split).where(Snapshot.split == Split.TRAIN).order_by(Snapshot.slug)
-
-
-# TODO: Consider removing - no usages found anywhere
-def list_snapshots_by_split(split: str) -> Select:
-    """List all snapshots for a given split.
-
-    Args:
-        split: One of 'train', 'valid', 'test'
-
-    Returns:
-        Query selecting (slug, split) from snapshots with given split, ordered by slug
-    """
-    return select(Snapshot.slug, Snapshot.split).where(Snapshot.split == split).order_by(Snapshot.slug)
-
-
-# ============================================================================
-# True positive / false positive queries
-# ============================================================================
-
-
-# TODO: Consider removing - no usages found anywhere
-def list_true_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
-    """Get all true positives for a snapshot.
-
-    Args:
-        snapshot_slug: Snapshot slug to query
-
-    Returns:
-        Query selecting TruePositive ORM objects (access .occurrences via relationship)
-    """
-    return select(TruePositive).where(TruePositive.snapshot_slug == snapshot_slug).order_by(TruePositive.tp_id)
-
-
-# TODO: Consider removing - no usages found anywhere
-def list_false_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
-    """Get all false positives for a snapshot.
-
-    Args:
-        snapshot_slug: Snapshot slug to query
-
-    Returns:
-        Query selecting FalsePositive ORM objects (access .occurrences via relationship)
-    """
-    return select(FalsePositive).where(FalsePositive.snapshot_slug == snapshot_slug).order_by(FalsePositive.fp_id)
-
-
-# TODO: Consider removing - compiled but never rendered in template, agents can query directly
-def list_train_true_positives() -> Select:
-    """List all true positives for train split snapshots.
-
-    Returns:
-        Query selecting (snapshot_slug, tp_id, rationale) for train snapshots
-    """
-    return (
-        select(TruePositive.snapshot_slug, TruePositive.tp_id, TruePositive.rationale)
-        .join(TruePositive.snapshot_obj)
-        .where(Snapshot.split == Split.TRAIN)
-        .order_by(TruePositive.snapshot_slug, TruePositive.tp_id)
-    )
-
-
-# TODO: Consider removing - compiled but never rendered in template, agents can query directly
-def list_train_false_positives() -> Select:
-    """List all false positives for train split snapshots.
-
-    Returns:
-        Query selecting (snapshot_slug, fp_id, rationale) for train snapshots
-    """
-    return (
-        select(FalsePositive.snapshot_slug, FalsePositive.fp_id, FalsePositive.rationale)
-        .join(FalsePositive.snapshot_obj)
-        .where(Snapshot.split == Split.TRAIN)
-        .order_by(FalsePositive.snapshot_slug, FalsePositive.fp_id)
-    )
 
 
 def count_issues_by_snapshot(split: str | None = None) -> Select:
@@ -197,124 +96,6 @@ def count_issues_by_snapshot(split: str | None = None) -> Select:
         query = query.where(Snapshot.split == split)
 
     return query
-
-
-# ============================================================================
-# Grader result queries
-# ============================================================================
-
-
-def snapshot_files_with_issues_select() -> Select:
-    """Define the SELECT query for the snapshot_files_with_issues view.
-
-    Computes the set of files with issues for each snapshot by joining with
-    occurrence_ranges table to get all file paths.
-
-    Replicates the logic of Snapshot.files_with_issues() method:
-        tp_files = {file_path for tp in self.true_positives
-                    for occurrence in tp.occurrences
-                    for range in occurrence.ranges}
-        fp_files = {file_path for fp in self.false_positives
-                    for occurrence in fp.occurrences
-                    for range in occurrence.ranges}
-        return tp_files | fp_files
-
-    RLS Note: This view inherits RLS from true_positives and false_positives tables,
-    which may be filtered by temporary agent users (e.g., TRAIN-only for critic-dev).
-    We also join with snapshots to ensure snapshot_slug is valid.
-
-    Returns:
-        Query selecting snapshot_slug and files_with_issues (text array) for each snapshot
-    """
-    # Extract all file paths from TP occurrence ranges
-    # RLS on true_positives applies task-specific filtering for temporary agent users
-    tp_files = (
-        select(TruePositive.snapshot_slug, OccurrenceRangeORM.file_path.label("file_path"))
-        .select_from(TruePositive)
-        .join(TruePositiveOccurrenceORM, TruePositive.snapshot_slug == TruePositiveOccurrenceORM.snapshot_slug)
-        .join(
-            OccurrenceRangeORM,
-            (TruePositive.snapshot_slug == OccurrenceRangeORM.snapshot_slug)
-            & (TruePositive.tp_id == OccurrenceRangeORM.tp_id),
-        )
-    )
-
-    # Extract all file paths from FP occurrence ranges
-    # RLS on false_positives applies task-specific filtering for temporary agent users
-    fp_files = (
-        select(FalsePositive.snapshot_slug, OccurrenceRangeORM.file_path.label("file_path"))
-        .select_from(FalsePositive)
-        .join(FalsePositiveOccurrenceORM, FalsePositive.snapshot_slug == FalsePositiveOccurrenceORM.snapshot_slug)
-        .join(
-            OccurrenceRangeORM,
-            (FalsePositive.snapshot_slug == OccurrenceRangeORM.snapshot_slug)
-            & (FalsePositive.fp_id == OccurrenceRangeORM.fp_id),
-        )
-    )
-
-    # Union and aggregate per snapshot
-    all_files_union = union_all(tp_files, fp_files).subquery()
-
-    # Join with snapshots to ensure snapshot_slug is valid and inherits snapshots RLS (no-op for train filter)
-    return (
-        select(
-            all_files_union.c.snapshot_slug,
-            func.array_agg(func.distinct(all_files_union.c.file_path)).label("files_with_issues"),
-        )
-        .select_from(all_files_union)
-        .join(Snapshot, all_files_union.c.snapshot_slug == Snapshot.slug)
-        .group_by(all_files_union.c.snapshot_slug)
-    )
-
-
-# ============================================================================
-# Critic run queries
-# ============================================================================
-
-
-# TODO: Consider removing - no usages found (only parameterized version compiled)
-def critic_runs_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Select:
-    """Get recent critic agent runs for a specific snapshot.
-
-    Uses AgentRun with JSONB filtering on type_config->>'agent_type' = 'critic'
-    and type_config->'example'->>'snapshot_slug' = snapshot_slug.
-
-    Args:
-        snapshot_slug: Snapshot to query
-        limit: Maximum number of results (default 5)
-
-    Returns:
-        Query selecting agent run details for critic runs
-    """
-    return (
-        select(
-            AgentRun.agent_run_id,
-            AgentRun.status,
-            AgentRun.created_at,
-            AgentRun.model,
-            AgentRun.type_config["example"]["files_hash"].astext.label("files_hash"),
-        )
-        .where(
-            AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-            AgentRun.type_config["example"]["snapshot_slug"].astext == snapshot_slug,
-        )
-        .order_by(AgentRun.created_at.desc())
-        .limit(limit)
-    )
-
-
-# ============================================================================
-# Parameterized query builders (for agent-side parameter substitution)
-# ============================================================================
-
-
-# TODO: Consider removing - compiled but never rendered in template
-def critic_runs_for_snapshot_parameterized() -> Select:
-    """Get critic runs for a snapshot (parameterized with :snapshot_slug placeholder).
-
-    Agents fill in :snapshot_slug at runtime.
-    """
-    return critic_runs_for_snapshot(bindparam("snapshot_slug"), limit=5)  # type: ignore[arg-type]
 
 
 def critic_dev_run_costs(critic_dev_run_id: UUID) -> Select:
@@ -370,35 +151,6 @@ def critic_dev_run_costs(critic_dev_run_id: UUID) -> Select:
             critic_dev_runs.c.created_at,
         )
         .order_by(critic_dev_runs.c.created_at.desc())
-    )
-
-
-# TODO: Consider removing - no usages found (only non-param version used)
-def critic_dev_run_costs_parameterized() -> Select:
-    """Critic-dev run costs (parameterized with :critic_dev_run_id placeholder).
-
-    Agents fill in :critic_dev_run_id at runtime.
-    """
-    return critic_dev_run_costs(bindparam("critic_dev_run_id"))  # type: ignore[arg-type]
-
-
-# ============================================================================
-# Scope queries
-# ============================================================================
-
-
-# TODO: Consider removing - compiled but never rendered in template
-def list_train_scopes() -> Select:
-    """List all examples for train split snapshots.
-
-    Returns:
-        Query selecting (snapshot_slug, example_kind, files_hash) for train snapshots
-    """
-    return (
-        select(Example.snapshot_slug, Example.example_kind, Example.files_hash)
-        .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
-        .where(Snapshot.split == Split.TRAIN)
-        .order_by(Example.snapshot_slug, Example.example_kind, Example.files_hash)
     )
 
 

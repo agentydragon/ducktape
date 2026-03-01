@@ -11,7 +11,6 @@ import contextlib
 from collections.abc import AsyncGenerator
 from uuid import UUID, uuid4
 
-import pytest
 import pytest_asyncio
 import pytest_bazel
 
@@ -24,8 +23,6 @@ from props.orchestration.agent_credentials import AgentCredentials
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
-
-pytestmark = [pytest.mark.integration]
 
 
 @pytest_asyncio.fixture

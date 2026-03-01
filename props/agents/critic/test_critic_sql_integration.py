@@ -7,7 +7,6 @@ Tests the SQL workflow where critic agents:
 
 from __future__ import annotations
 
-import pytest
 import pytest_bazel
 from sqlalchemy import text
 
@@ -18,8 +17,6 @@ from props.db.examples import Example
 from props.db.models import AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
-
-pytestmark = [pytest.mark.integration]
 
 
 async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, temp_engine, db: Database):

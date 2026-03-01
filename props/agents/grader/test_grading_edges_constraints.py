@@ -15,8 +15,6 @@ from sqlalchemy.exc import IntegrityError
 from props.db.models import AgentRunStatus, GradingEdge
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run, make_reported_issues
 
-pytestmark = [pytest.mark.integration]
-
 
 @pytest.fixture
 def test_critic_run(session, example_subtract_orm):

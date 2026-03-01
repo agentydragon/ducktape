@@ -18,8 +18,6 @@ from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
 from props.db.database import Database
 from props.db.models import ModelMetadata
 
-pytestmark = [pytest.mark.integration]
-
 
 @pytest.fixture
 def sample_config() -> PropsConfig:

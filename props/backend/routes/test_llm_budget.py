@@ -20,8 +20,6 @@ from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 from props.testing.constants import BUDGET_TEST_MODEL
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
-pytestmark = [pytest.mark.integration]
-
 TRAIN_EXAMPLE = WholeSnapshotExample(snapshot_slug="test-fixtures/train1")
 
 

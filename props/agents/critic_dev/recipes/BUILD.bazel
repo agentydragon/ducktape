@@ -1,0 +1,127 @@
+"""Recipes: tested examples of common critic-dev workflows.
+
+Bundled into critic-dev OCI images so agents can import or inspect them.
+"""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+exports_files([
+    "build_critic.sh",
+    "custom_critic_for_test.py",
+])
+
+py_library(
+    name = "ground_truth",
+    srcs = ["ground_truth.py"],
+    imports = ["../../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "recall_metrics",
+    srcs = ["recall_metrics.py"],
+    imports = ["../../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:splits",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:query_builders",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "run_analysis",
+    srcs = ["run_analysis.py"],
+    imports = ["../../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "examples_and_scopes",
+    srcs = ["examples_and_scopes.py"],
+    imports = ["../../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:examples",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_recipes",
+    size = "medium",
+    srcs = ["test_recipes.py"],
+    data = [
+        "//props/agents/critic:image",
+        "//props/agents/critic_dev/optimize:image",
+    ],
+    imports = ["../../../.."],
+    requires_docker = True,
+    deps = [
+        "//agent_core/testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+        "//props:conftest",
+        "//props/agents/critic_dev/testing:mocks",
+        "//props/core:agent_types",
+        "//props/db:models",
+        "//props/testing:constants",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_build_critic_e2e",
+    size = "medium",
+    srcs = ["test_build_critic_e2e.py"],
+    data = [
+        "build_critic.sh",
+        "//props/agents/critic:image",
+        "//props/agents/critic_dev/optimize:image",
+        "//props/agents/grader:image",
+    ],
+    imports = ["../../../.."],
+    requires_docker = True,
+    deps = [
+        "//agent_core/testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//props:conftest",
+        "//props/agents/critic_dev/testing:mocks",
+        "//props/agents/critic_dev/testing:orchestration_fixtures",
+        "//props/agents/grader:tools",
+        "//props/agents/grader/testing:mocks",
+        "//props/core:agent_types",
+        "//props/core:eval_api_models",
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

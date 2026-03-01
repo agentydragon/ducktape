@@ -21,8 +21,6 @@ from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
-pytestmark = [pytest.mark.integration]
-
 
 @pytest.fixture
 def test_critic_run(synced_db: Database):
