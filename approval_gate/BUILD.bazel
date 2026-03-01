@@ -10,8 +10,27 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        "@pypi//mcp",
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    imports = [".."],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    imports = [".."],
+    main_module = "approval_gate.export_schema",
+    visibility = ["//approval_gate:__subpackages__"],
+    deps = [":export_schema"],
 )
 
 py_library(

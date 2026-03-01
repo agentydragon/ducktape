@@ -7,10 +7,10 @@
  *      schema (injected automatically from ctx.sessionKey).
  *   3. Subscribes to `resource://sessions/{session_key}/log_hwm` MCP resource
  *      notifications for each session.
- *   4. On HWM change: catches up by reading missed log entries. For terminal
- *      events (done/rejected/withdrawn), reads the full action state and
- *      injects the result into the agent session via chat.inject (local gateway
- *      WebSocket).
+ *   4. On HWM change: catches up by reading missed log entries concurrently.
+ *      For terminal events (execution_finished/denied/withdrawn), formats the
+ *      result directly from the log entry detail and injects it into the agent
+ *      session via chat.inject (local gateway WebSocket).
  *
  * Resilience: if the approval gate MCP server goes down, the plugin automatically
  * reconnects with exponential backoff. On reconnect, it re-subscribes to all
@@ -35,14 +35,18 @@ const INITIAL_RETRY_DELAY_MS = 5_000;
 const MAX_RETRY_DELAY_MS = 60_000;
 
 // ── Action/log types (mirrors approval_gate/models.py) ──────────────────────
-// TODO: These types overlap with approval_gate/frontend/types.ts. The two packages live in
-// different environments (Node.js plugin vs browser SPA) and carry different field sets, so
-// a shared package would add more complexity than it removes for now. If a third consumer
-// appears, consider extracting a shared @ducktape/approval-gate-types workspace package.
+// The frontend SPA consumes generated types from the Pydantic models via
+// js_json_schema. This plugin is npm-managed (no Bazel), so types are kept
+// inline. Keep in sync with approval_gate/models.py.
 
 interface ActionKey {
   session_key: string;
   action_seq: number;
+}
+
+interface CallToolResult {
+  content: Array<{ type: string; text?: string; [key: string]: unknown }>;
+  isError?: boolean | null;
 }
 
 interface ActionState {
@@ -51,10 +55,7 @@ interface ActionState {
 
 interface DoneState extends ActionState {
   status: "done";
-  outcome: {
-    content: Array<{ type: string; text?: string; [key: string]: unknown }>;
-    isError?: boolean | null;
-  };
+  outcome: CallToolResult;
 }
 
 interface RejectedState extends ActionState {
@@ -68,49 +69,68 @@ interface Action {
   state: ActionState;
 }
 
+// Log event detail discriminated union — matches LogEventDetail in models.py.
+// The MCP log entry resource serializes via Pydantic, so `detail` is a typed
+// object (not a flat kind + detail_json string).
+type LogEventDetail =
+  | { kind: "action_received" }
+  | { kind: "approved" }
+  | { kind: "denied"; reason?: string | null }
+  | { kind: "withdrawn" }
+  | { kind: "execution_started" }
+  | { kind: "execution_finished"; outcome: CallToolResult };
+
 interface LogEntry {
   entry_id: number;
   session_key: string;
   action_seq: number;
-  kind: string;
+  detail: LogEventDetail;
   timestamp: string;
-  detail_json: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-type TerminalStatus = "done" | "rejected" | "withdrawn";
-const TERMINAL_STATUSES = new Set<TerminalStatus>(["done", "rejected", "withdrawn"]);
 const TERMINAL_LOG_KINDS = new Set(["execution_finished", "denied", "withdrawn"]);
-
-function isTerminal(status: string): status is TerminalStatus {
-  return TERMINAL_STATUSES.has(status as TerminalStatus);
-}
 
 function isTerminalLogKind(kind: string): boolean {
   return TERMINAL_LOG_KINDS.has(kind);
 }
 
-function formatOutcomeMessage(action: Action): string {
-  const state = action.state;
-  const keyStr = `${action.key.session_key}/${action.key.action_seq}`;
-
-  if (state.status === "done") {
-    const done = state as DoneState;
-    const parts = done.outcome.content.filter((c) => c.type === "text" && c.text).map((c) => c.text as string);
-    const body = parts.join("\n") || JSON.stringify(done.outcome.content, null, 2);
-    if (!done.outcome.isError) {
+/** Format a human-readable message from a terminal log entry detail. */
+function formatTerminalMessage(keyStr: string, detail: LogEventDetail): string {
+  if (detail.kind === "execution_finished") {
+    const parts = detail.outcome.content.filter((c) => c.type === "text" && c.text).map((c) => c.text as string);
+    const body = parts.join("\n") || JSON.stringify(detail.outcome.content, null, 2);
+    if (!detail.outcome.isError) {
       return `Action ${keyStr} approved and executed:\n\n${body}`;
     } else {
       return `Action ${keyStr} was approved but execution returned an error:\n\n${body}`;
     }
   }
+  if (detail.kind === "denied") {
+    return `Action ${keyStr} was rejected by the operator. Reason: ${detail.reason ?? "none given"}`;
+  }
+  if (detail.kind === "withdrawn") {
+    return `Action ${keyStr} was withdrawn.`;
+  }
+  return `Action ${keyStr} log event: ${detail.kind}`;
+}
+
+/** Format a human-readable message from an Action's terminal state. */
+function formatActionOutcome(action: Action): string {
+  const keyStr = `${action.key.session_key}/${action.key.action_seq}`;
+  const state = action.state;
+
+  if (state.status === "done") {
+    const done = state as DoneState;
+    return formatTerminalMessage(keyStr, { kind: "execution_finished", outcome: done.outcome });
+  }
   if (state.status === "rejected") {
     const rej = state as RejectedState;
-    return `Action ${keyStr} was rejected by the operator. Reason: ${rej.reason ?? "none given"}`;
+    return formatTerminalMessage(keyStr, { kind: "denied", reason: rej.reason });
   }
   if (state.status === "withdrawn") {
-    return `Action ${keyStr} was withdrawn.`;
+    return formatTerminalMessage(keyStr, { kind: "withdrawn" });
   }
   return `Action ${keyStr} state changed to: ${state.status}`;
 }
@@ -152,6 +172,7 @@ class ApprovalGateConnection {
   private connecting = false;
   private retryDelay = INITIAL_RETRY_DELAY_MS;
   private notificationHandler: NotificationHandler | null = null;
+  private catchUpHandler: ((sessionKey: string) => Promise<void>) | null = null;
   private cachedInstructions: string | undefined;
   /** Last seen log entry_id per session — re-subscribed on reconnect. */
   private readonly sessionHwms = new Map<string, number>();
@@ -223,27 +244,22 @@ class ApprovalGateConnection {
   /**
    * Re-subscribe to all tracked sessions after reconnect.
    *
-   * For each session: subscribe to its log_hwm resource, then read the current
-   * HWM and catch up on any missed log entries.
+   * For each session: subscribe to its log_hwm resource, then trigger catch-up
+   * directly to process any log entries missed during the outage.
    */
   private async resubscribeTrackedSessions(): Promise<void> {
     if (this.sessionHwms.size === 0) return;
     this.log.info(`re-subscribing to ${this.sessionHwms.size} tracked session(s)`);
-    for (const [sessionKey, lastHwm] of this.sessionHwms.entries()) {
+    for (const [sessionKey] of this.sessionHwms.entries()) {
       try {
         const hwmUri = `${LOG_HWM_PREFIX}${sessionKey}${LOG_HWM_SUFFIX}`;
         const client = this.requireClient();
         await client.subscribeResource({ uri: hwmUri });
 
-        // Read current HWM and catch up
-        const currentHwm = await this.readHwm(sessionKey);
-        if (currentHwm > lastHwm) {
-          // Trigger catch-up via the notification handler
-          const notification = { method: "notifications/resources/updated", params: { uri: hwmUri } };
-          this.notificationHandler?.(notification).catch((err) =>
-            this.log.warn(`catch-up failed for session ${sessionKey}: ${String(err)}`)
-          );
-        }
+        // Catch up on missed log entries directly
+        this.catchUpHandler?.(sessionKey).catch((err) =>
+          this.log.warn(`catch-up failed for session ${sessionKey}: ${String(err)}`)
+        );
       } catch (err) {
         this.log.warn(`failed to re-subscribe to session ${sessionKey}: ${String(err)}`);
       }
@@ -273,6 +289,11 @@ class ApprovalGateConnection {
         handler
       );
     }
+  }
+
+  /** Set the handler called directly during reconnect catch-up (no synthetic notification). */
+  setCatchUpHandler(handler: (sessionKey: string) => Promise<void>): void {
+    this.catchUpHandler = handler;
   }
 
   /** Start tracking a session's log HWM. Subscribes if not already tracked. */
@@ -518,17 +539,10 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   // ── Resilient MCP connection to approval gate server ──────────────────────
   const connection = new ApprovalGateConnection(approvalGateUrl, agentApiKey, log);
 
-  // Set up ResourceUpdated notification handler before connecting, so it's
-  // registered on every (re)connect. The handler watches for log HWM changes,
-  // catches up on missed log entries, and delivers terminal results via gateway.inject.
-  connection.setNotificationHandler(async (notification) => {
-    const uri = (notification.params as { uri?: string }).uri;
-    if (!uri) return;
-
-    const sessionKey = parseSessionKeyFromHwmUri(uri);
-    if (!sessionKey) return;
-
-    // Read the new HWM value
+  // Catch up on missed log entries for a session. Reads all entries between
+  // the last-seen HWM and the current HWM concurrently, then processes terminal
+  // entries in order. Used by both the notification handler and reconnect logic.
+  async function catchUpSession(sessionKey: string): Promise<void> {
     let newHwm: number;
     try {
       newHwm = await connection.readHwm(sessionKey);
@@ -540,41 +554,49 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     const lastHwm = connection.getSessionHwm(sessionKey);
     if (newHwm <= lastHwm) return;
 
-    // Catch up on log entries since our last seen HWM
-    for (let entryId = lastHwm + 1; entryId <= newHwm; entryId++) {
-      let entry: LogEntry;
-      try {
-        entry = await connection.readLogEntry(sessionKey, entryId);
-      } catch (err) {
-        log.warn(`failed to read log entry ${sessionKey}/${entryId}: ${String(err)}`);
-        continue;
-      }
+    // Read all missed log entries concurrently
+    const entryIds = Array.from({ length: newHwm - lastHwm }, (_, i) => lastHwm + 1 + i);
+    const entries = await Promise.all(
+      entryIds.map((id) =>
+        connection.readLogEntry(sessionKey, id).catch((err) => {
+          log.warn(`failed to read log entry ${sessionKey}/${id}: ${String(err)}`);
+          return null;
+        })
+      )
+    );
 
-      if (!isTerminalLogKind(entry.kind)) continue;
-
-      // Read the full action state for terminal events
-      const actionUri = `resource://sessions/${sessionKey}/actions/${entry.action_seq}`;
-      let action: Action;
-      try {
-        action = await connection.readResource(actionUri);
-      } catch (err) {
-        log.warn(`failed to read action ${sessionKey}/${entry.action_seq}: ${String(err)}`);
-        continue;
-      }
-
-      if (!isTerminal(action.state.status)) continue;
+    // Process terminal entries in order
+    for (const entry of entries) {
+      if (!entry || !isTerminalLogKind(entry.detail.kind)) continue;
       if (!gateway) continue;
 
-      const message = formatOutcomeMessage(action);
+      const keyStr = `${sessionKey}/${entry.action_seq}`;
+      const message = formatTerminalMessage(keyStr, entry.detail);
       try {
         await gateway.inject(sessionKey, message);
-        log.info(`injected result for action ${sessionKey}/${entry.action_seq} into session ${sessionKey}`);
+        log.info(`injected result for action ${keyStr}`);
       } catch (err) {
-        log.error(`failed to inject result for action ${sessionKey}/${entry.action_seq}: ${String(err)}`);
+        log.error(`failed to inject result for action ${keyStr}: ${String(err)}`);
       }
     }
 
     connection.updateSessionHwm(sessionKey, newHwm);
+  }
+
+  // Register catch-up handler for reconnect (called directly, no synthetic notification)
+  connection.setCatchUpHandler(catchUpSession);
+
+  // Set up ResourceUpdated notification handler before connecting, so it's
+  // registered on every (re)connect. The handler watches for log HWM changes
+  // and delegates to catchUpSession.
+  connection.setNotificationHandler(async (notification) => {
+    const uri = (notification.params as { uri?: string }).uri;
+    if (!uri) return;
+
+    const sessionKey = parseSessionKeyFromHwmUri(uri);
+    if (!sessionKey) return;
+
+    await catchUpSession(sessionKey);
   });
 
   try {
@@ -619,7 +641,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         description: toolDescription,
         parameters: schema,
         async execute(_id: string, params: Record<string, unknown>) {
-          const callArgs = { ...params, session_key: ctx.sessionKey ?? null };
+          const callArgs = { ...params, session_key: ctx.sessionKey };
 
           let result: Awaited<ReturnType<Client["callTool"]>>;
           try {
@@ -661,9 +683,9 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
           }
 
           const { status } = action.state;
-          if (isTerminal(status)) {
+          if (status === "done" || status === "rejected" || status === "withdrawn") {
             // Already terminal — return outcome directly.
-            return { content: [{ type: "text" as const, text: formatOutcomeMessage(action) }] };
+            return { content: [{ type: "text" as const, text: formatActionOutcome(action) }] };
           }
 
           // Still pending — tell the agent its action is queued.
