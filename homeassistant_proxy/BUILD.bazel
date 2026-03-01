@@ -16,6 +16,7 @@ py_library(
     imports = [".."],
     deps = [
         "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 

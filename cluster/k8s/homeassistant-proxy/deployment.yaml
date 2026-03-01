@@ -33,7 +33,7 @@ spec:
               protocol: TCP
           env:
             - name: HOMEASSISTANT_PROXY_CONFIG
-              value: /etc/homeassistant-proxy/config.toml
+              value: /etc/homeassistant-proxy/config.yaml
             - name: UV_PYTHON_PREFERENCE
               value: only-system
             - name: HOMEASSISTANT_PROXY_HA_TOKEN
@@ -84,7 +84,7 @@ spec:
           configMap:
             name: homeassistant-proxy-config
             items:
-              - key: config.toml
-                path: config.toml
+              - key: config.yaml
+                path: config.yaml
         - name: tmp
           emptyDir: {}

@@ -10,4 +10,4 @@ configMapGenerator:
   - name: homeassistant-proxy-config
     namespace: homeassistant-proxy
     files:
-      - config.toml
+      - config.yaml

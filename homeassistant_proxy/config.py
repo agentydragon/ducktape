@@ -2,10 +2,10 @@
 
 import logging
 import os
-import tomllib
 from enum import StrEnum
 from pathlib import Path
 
+import yaml
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -53,8 +53,8 @@ class Settings(BaseModel):
     @classmethod
     def from_file(cls, path: Path) -> "Settings":
         logger.info(f"Loading settings from {path.absolute()}")
-        with path.open("rb") as f:
-            data = tomllib.load(f)
+        with path.open() as f:
+            data = yaml.safe_load(f)
         # Allow HA token to come from env var
         ha_token_env = os.getenv("HOMEASSISTANT_PROXY_HA_TOKEN")
         if ha_token_env:
@@ -69,5 +69,5 @@ class Settings(BaseModel):
 
     @classmethod
     def from_env(cls) -> "Settings":
-        path = Path(os.getenv("HOMEASSISTANT_PROXY_CONFIG", "homeassistant_proxy.toml"))
+        path = Path(os.getenv("HOMEASSISTANT_PROXY_CONFIG", "homeassistant_proxy.yaml"))
         return cls.from_file(path)
