@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture
-async def storage(tmp_path: Path) -> ActionStorage:
+async def storage(tmp_path: Path) -> AsyncGenerator[ActionStorage]:
     """Temporary in-memory storage for tests."""
     store = await ActionStorage.initialize(tmp_path / "test.db")
     try:
