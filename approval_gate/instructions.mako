@@ -2,12 +2,14 @@
 Mako template for the MCP server instructions returned during initialization.
 
 Template variables:
-  backend_instructions: str | None  — instructions from the backend MCP server
-  public_base_url: str               — base URL for approval action links
+  backend_instructions: dict[str, str | None]  — per-backend instructions keyed by namespace
+  public_base_url: str                          — base URL for approval action links
 </%doc>
 # Approval Gate
 
-This server **approval-wraps** calls to a privileged backend MCP server.
+This server **approval-wraps** calls to ${len(backend_instructions)} backend server(s).
+Tools are namespaced as `{server}_{tool}` — for example, if a backend named `exec`
+exposes a tool called `run_command`, it appears here as `exec_run_command`.
 
 ## How it works
 
@@ -17,7 +19,7 @@ immediately with an `action_id`. Your call is **not executed yet**.
 Share the approval URL `${public_base_url}/actions/<action_id>` with the user so they
 can approve or reject the action.
 
-Once the operator approves it, the call is forwarded to the backend server and the
+Once the operator approves it, the call is forwarded to the correct backend server and the
 result is recorded. If the OpenClaw plugin is active, the outcome will be **injected
 into your session** automatically; otherwise, poll or subscribe to the action resource.
 
@@ -65,7 +67,14 @@ reaches a terminal state (`done`, `rejected`, or `withdrawn`).
 
 ---
 
-## Backend server instructions
+## Backend servers
+% for namespace, instructions in sorted(backend_instructions.items()):
 
-${backend_instructions}
+### `${namespace}`
+% if instructions:
+${instructions}
+% else:
+No additional instructions provided.
+% endif
+% endfor
 % endif

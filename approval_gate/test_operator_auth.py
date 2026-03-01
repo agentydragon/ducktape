@@ -27,9 +27,11 @@ from starlette.routing import Mount
 from approval_gate.mcp_auth import ApprovalGateAuthProvider
 from approval_gate.predicates import NeedsHumanDecision
 from approval_gate.proxy_server import ApprovalGateServer
+from mcp_infra.prefix import MCPMountPrefix
 from util.net import pick_free_port
 
 _AGENT_API_KEY = "test-agent-bearer-key"
+_TEST_NS = MCPMountPrefix("test")
 
 
 @pytest.fixture
@@ -88,9 +90,9 @@ async def gate_http(tmp_path, mock_jwks_signing_key):
     jwks_client = PyJWKClient("http://test/jwks")
     auth = ApprovalGateAuthProvider(agent_api_key=_AGENT_API_KEY, jwks_client=jwks_client)
     gate = ApprovalGateServer(
-        backend=backend,
+        backends={_TEST_NS: backend},
         db_path=tmp_path / "gate.db",
-        predicate=lambda tool, args: NeedsHumanDecision(),
+        predicate=lambda ns, tool, args: NeedsHumanDecision(),
         public_base_url="http://test",
         auth=auth,
     )
@@ -127,7 +129,7 @@ async def test_agent_cannot_see_operator_tools(agent_tool_names):
     assert "approve_action" not in agent_tool_names
     assert "reject_action" not in agent_tool_names
     assert "list_actions" not in agent_tool_names
-    assert "echo" in agent_tool_names
+    assert "test_echo" in agent_tool_names
     assert "withdraw_action" in agent_tool_names
 
 
@@ -136,7 +138,7 @@ async def test_operator_jwt_sees_operator_tools(operator_tool_names):
     assert "approve_action" in operator_tool_names
     assert "reject_action" in operator_tool_names
     assert "list_actions" in operator_tool_names
-    assert "echo" not in operator_tool_names
+    assert "test_echo" not in operator_tool_names
     assert "withdraw_action" not in operator_tool_names
 
 

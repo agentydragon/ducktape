@@ -47,6 +47,8 @@
       <dd><code>{action.id}</code></dd>
       <dt>Status</dt>
       <dd><span class="status status-{action.state.status}">{action.state.status}</span></dd>
+      <dt>Server</dt>
+      <dd><code>{action.call.server_namespace}</code></dd>
       <dt>Tool</dt>
       <dd><code>{action.call.tool_name}</code></dd>
       <dt>Justification</dt>

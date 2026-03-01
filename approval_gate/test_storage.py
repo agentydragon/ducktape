@@ -15,7 +15,7 @@ _ID4 = uuid.UUID("00000000-0000-0000-0000-000000000004")
 
 
 async def test_create_and_get(storage: ActionStorage):
-    call = ToolCall(tool_name="exec", arguments={"argv": ["echo", "hi"]})
+    call = ToolCall(server_namespace="test", tool_name="exec", arguments={"argv": ["echo", "hi"]})
     action = await storage.create(action_id=_ID1, call=call, justification="testing", session_key=None)
     assert action.id == _ID1
     assert isinstance(action.state, PendingState)
@@ -34,7 +34,7 @@ async def test_get_missing_returns_none(storage: ActionStorage):
 
 
 async def test_update_state(storage: ActionStorage):
-    call = ToolCall(tool_name="exec", arguments={})
+    call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
     await storage.create(action_id=_ID2, call=call, justification="test", session_key="sk-1")
     updated = await storage.update_state(
         _ID2, DoneState(outcome=CallToolResult(content=[TextContent(type="text", text="ok")]))
@@ -45,7 +45,7 @@ async def test_update_state(storage: ActionStorage):
 
 
 async def test_list_actions_filter(storage: ActionStorage):
-    call = ToolCall(tool_name="exec", arguments={})
+    call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
     await storage.create(action_id=_ID3, call=call, justification="a", session_key=None)
     await storage.create(action_id=_ID4, call=call, justification="b", session_key=None)
     await storage.update_state(_ID4, RejectedState(reason="no"))
@@ -60,7 +60,7 @@ async def test_list_actions_filter(storage: ActionStorage):
 
 
 async def test_list_actions_all(storage: ActionStorage):
-    call = ToolCall(tool_name="exec", arguments={})
+    call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
     id1 = uuid.uuid4()
     id2 = uuid.uuid4()
     await storage.create(action_id=id1, call=call, justification="x", session_key=None)
@@ -73,7 +73,7 @@ async def test_list_actions_all(storage: ActionStorage):
 
 
 async def test_session_key_stored(storage: ActionStorage):
-    call = ToolCall(tool_name="exec", arguments={})
+    call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
     sk_id = uuid.uuid4()
     await storage.create(action_id=sk_id, call=call, justification="need session", session_key="my-session-key")
     fetched = await storage.get(sk_id)

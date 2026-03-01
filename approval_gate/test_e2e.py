@@ -31,6 +31,9 @@ from approval_gate.mcp_auth import AGENT_SCOPE
 from approval_gate.models import Action, ActionStatus, ApproveDecision, DenyDecision
 from approval_gate.predicates import Approved, NeedsHumanDecision
 from approval_gate.proxy_server import ApprovalGateServer
+from mcp_infra.prefix import MCPMountPrefix
+
+_TEST_NS = MCPMountPrefix("test")
 
 
 @pytest.fixture(autouse=True)
@@ -61,14 +64,14 @@ async def backend():
 
 def _make_gate(srv, tmp_path, predicate, db_name="gate.db"):
     return ApprovalGateServer(
-        backend=srv, db_path=tmp_path / db_name, predicate=predicate, public_base_url="http://test"
+        backends={_TEST_NS: srv}, db_path=tmp_path / db_name, predicate=predicate, public_base_url="http://test"
     )
 
 
 @pytest.fixture
 async def gate(backend, tmp_path):
     srv, _ = backend
-    return _make_gate(srv, tmp_path, lambda tool, args: NeedsHumanDecision())
+    return _make_gate(srv, tmp_path, lambda ns, tool, args: NeedsHumanDecision())
 
 
 class _ResourceWaiter(MessageHandler):
@@ -118,9 +121,9 @@ async def test_tool_list_wraps_backend_tools(gate):
         tools = await client.list_tools()
 
     names = [t.name for t in tools]
-    assert "echo" in names
+    assert "test_echo" in names
 
-    echo = next(t for t in tools if t.name == "echo")
+    echo = next(t for t in tools if t.name == "test_echo")
     props = echo.inputSchema["properties"]
     assert "justification" in props
     assert "session_key" in props
@@ -133,7 +136,7 @@ async def test_approve_executes_backend_tool(gate, backend):
     _, calls = backend
     waiter = _ResourceWaiter()
     async with Client(gate, message_handler=waiter) as client:
-        result = await client.call_tool_mcp("echo", {"input": {"text": "hello"}, "justification": "test"})
+        result = await client.call_tool_mcp("test_echo", {"input": {"text": "hello"}, "justification": "test"})
         action_id = uuid.UUID(json.loads(result.content[0].text))
         await gate.decide(action_id, ApproveDecision())
         with anyio.fail_after(5.0):
@@ -146,7 +149,7 @@ async def test_reject_leaves_action_rejected_and_skips_backend(gate, backend):
     _, calls = backend
     waiter = _ResourceWaiter()
     async with Client(gate, message_handler=waiter) as client:
-        result = await client.call_tool_mcp("echo", {"input": {"text": "no-run"}, "justification": "test"})
+        result = await client.call_tool_mcp("test_echo", {"input": {"text": "no-run"}, "justification": "test"})
         action_id = uuid.UUID(json.loads(result.content[0].text))
         await gate.decide(action_id, DenyDecision(reason="test rejection"))
         with anyio.fail_after(5.0):
@@ -157,14 +160,64 @@ async def test_reject_leaves_action_rejected_and_skips_backend(gate, backend):
 async def test_auto_approve_predicate_skips_queue(backend, tmp_path):
     """Auto-approve predicate: tool call immediately executes without any operator action."""
     srv, calls = backend
-    gate = _make_gate(srv, tmp_path, lambda tool, args: Approved(), db_name="gate_auto.db")
+    gate = _make_gate(srv, tmp_path, lambda ns, tool, args: Approved(), db_name="gate_auto.db")
     waiter = _ResourceWaiter()
     async with Client(gate, message_handler=waiter) as client:
-        result = await client.call_tool_mcp("echo", {"input": {"text": "auto"}, "justification": "auto"})
+        result = await client.call_tool_mcp("test_echo", {"input": {"text": "auto"}, "justification": "auto"})
         action_id = uuid.UUID(json.loads(result.content[0].text))
         with anyio.fail_after(5.0):
             await waiter.wait_for(client, action_id, ActionStatus.DONE)
     assert calls == [{"text": "auto"}]
+
+
+async def test_multi_backend_namespace_isolation(tmp_path):
+    """Multiple backends each get namespaced tools that route to the correct backend."""
+    calls_a: list[dict] = []
+    calls_b: list[dict] = []
+
+    srv_a = FastMCP("backend-a")
+
+    @srv_a.tool()
+    async def echo(text: str) -> str:
+        calls_a.append({"text": text})
+        return f"a: {text}"
+
+    srv_b = FastMCP("backend-b")
+
+    @srv_b.tool(name="echo")
+    async def echo_b(text: str) -> str:
+        calls_b.append({"text": text})
+        return f"b: {text}"
+
+    ns_a = MCPMountPrefix("alpha")
+    ns_b = MCPMountPrefix("beta")
+    gate = ApprovalGateServer(
+        backends={ns_a: srv_a, ns_b: srv_b},
+        db_path=tmp_path / "gate_multi.db",
+        predicate=lambda ns, tool, args: Approved(),
+        public_base_url="http://test",
+    )
+    waiter = _ResourceWaiter()
+    async with Client(gate, message_handler=waiter) as client:
+        tools = await client.list_tools()
+        tool_names = {t.name for t in tools}
+        assert "alpha_echo" in tool_names
+        assert "beta_echo" in tool_names
+
+        # Call alpha backend
+        result_a = await client.call_tool_mcp("alpha_echo", {"input": {"text": "from-a"}, "justification": "test"})
+        action_id_a = uuid.UUID(json.loads(result_a.content[0].text))
+        with anyio.fail_after(5.0):
+            await waiter.wait_for(client, action_id_a, ActionStatus.DONE)
+
+        # Call beta backend
+        result_b = await client.call_tool_mcp("beta_echo", {"input": {"text": "from-b"}, "justification": "test"})
+        action_id_b = uuid.UUID(json.loads(result_b.content[0].text))
+        with anyio.fail_after(5.0):
+            await waiter.wait_for(client, action_id_b, ActionStatus.DONE)
+
+    assert calls_a == [{"text": "from-a"}]
+    assert calls_b == [{"text": "from-b"}]
 
 
 if __name__ == "__main__":

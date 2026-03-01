@@ -2,7 +2,7 @@
 
 The predicate is a Python file loaded at startup that exports a function:
 
-    def decide(tool_name: str, arguments: dict) -> Approved | Denied | NeedsHumanDecision:
+    def decide(server_namespace: str, tool_name: str, arguments: dict) -> Approved | Denied | NeedsHumanDecision:
         ...
 
 Three outcomes:
@@ -51,13 +51,13 @@ PredicateDecision = Approved | Denied | NeedsHumanDecision
 
 
 class PredicateFn(Protocol):
-    def __call__(self, tool_name: str, arguments: dict) -> PredicateDecision: ...
+    def __call__(self, server_namespace: str, tool_name: str, arguments: dict) -> PredicateDecision: ...
 
 
 # ── Loader ────────────────────────────────────────────────────────────────────
 
 
-def _always_needs_human(tool_name: str, arguments: dict) -> PredicateDecision:
+def _always_needs_human(server_namespace: str, tool_name: str, arguments: dict) -> PredicateDecision:
     return NeedsHumanDecision()
 
 
@@ -83,10 +83,12 @@ def load_predicate(path: Path | None) -> PredicateFn:
         return _always_needs_human
 
 
-def call_predicate(fn: PredicateFn, tool_name: str, arguments: dict) -> PredicateDecision:
+def call_predicate(fn: PredicateFn, server_namespace: str, tool_name: str, arguments: dict) -> PredicateDecision:
     """Call the predicate, catching exceptions and returning NeedsHumanDecision on error."""
     try:
-        return fn(tool_name, arguments)
+        return fn(server_namespace, tool_name, arguments)
     except Exception:
-        logger.exception("predicate raised for tool=%s; defaulting to NeedsHumanDecision", tool_name)
+        logger.exception(
+            "predicate raised for server=%s tool=%s; defaulting to NeedsHumanDecision", server_namespace, tool_name
+        )
         return NeedsHumanDecision()

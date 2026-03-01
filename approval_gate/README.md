@@ -1,15 +1,20 @@
 # approval_gate
 
-Generic MCP approval proxy. Wraps any backend MCP server and adds a human-in-the-loop
+Generic MCP approval proxy. Wraps one or more backend MCP servers and adds a human-in-the-loop
 approval layer to every tool call. Agents queue actions; operators approve/reject via
 a Svelte UI; notifications flow back via MCP `ResourceUpdated` events.
+
+Each backend is mounted under a namespace prefix — tools are exposed as `{namespace}_{tool}`
+(e.g., backend `exec` with tool `run_command` becomes `exec_run_command`).
 
 ## Architecture
 
 ```
-Backend MCP server (e.g. DirectExecServer)
-        │  streamable-http or stdio
-        ▼
+Backend MCP servers (streamable-http or stdio)
+  exec ──┐
+  files ─┤  mounted under namespace prefixes
+  ...  ──┘
+         ▼
 ApprovalGateServer (FastMCP proxy)        port 8765
   ├── /mcp  — unified MCP endpoint
   │           x-authentik-jwt → operator browser (JWT-verified)
@@ -54,26 +59,26 @@ with the backend spec (see below).
 
 ## Configuration
 
-### Backend spec (YAML config file)
+### Backend specs (YAML config file)
 
-The backend MCP server is configured via a YAML file. Set `CONFIG_PATH` to its path
-(default: `/etc/approval-gate/config.yaml`).
-
-For a streamable-http server:
-
-```yaml
-backend:
-  url: http://exec-backend:8766/mcp
-```
-
-For a stdio server:
+Backend MCP servers are configured via a YAML file. Set `CONFIG_PATH` to its path
+(default: `/etc/approval-gate/config.yaml`). Each backend is keyed by its namespace
+prefix (lowercase alphanumeric + underscore).
 
 ```yaml
-backend:
-  command: /usr/bin/my-tool
-  args:
-    - --mcp
+backends:
+  exec:
+    url: http://exec-backend:8766/mcp
+    headers:
+      Authorization: "Bearer token123"
+  files:
+    command: /usr/bin/file-server
+    args:
+      - --mcp
 ```
+
+Each backend entry supports the full `MCPServerTypes` config (URL + headers for
+streamable-http, command + args + env for stdio).
 
 ### Environment variables
 
@@ -93,7 +98,9 @@ backend:
 ```python
 from approval_gate.predicates import Approved, Denied, NeedsHumanDecision
 
-def decide(tool_name: str, arguments: dict) -> Approved | Denied | NeedsHumanDecision:
+def decide(server_namespace: str, tool_name: str, arguments: dict) -> Approved | Denied | NeedsHumanDecision:
+    if server_namespace == "exec" and tool_name == "run_command":
+        return Approved()
     return NeedsHumanDecision()  # default: always queue for operator
 ```
 

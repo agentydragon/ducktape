@@ -37,7 +37,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
     jwks_client = PyJWKClient(settings.operator_jwks_url)
     auth = ApprovalGateAuthProvider(agent_api_key=settings.agent_api_key, jwks_client=jwks_client)
     gate = ApprovalGateServer(
-        backend=settings.backend,
+        backends=settings.backends,
         db_path=settings.db_path,
         predicate=predicate,
         public_base_url=settings.public_base_url,

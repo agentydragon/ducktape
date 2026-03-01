@@ -24,6 +24,7 @@ class ToolCall(BaseModel):
     they live on Action directly.
     """
 
+    server_namespace: str
     tool_name: str
     arguments: dict[str, object]
 

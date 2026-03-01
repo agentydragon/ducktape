@@ -8,6 +8,7 @@ export type ActionStatus = "pending" | "executing" | "done" | "rejected" | "with
 export type ActionId = string;
 
 export type ToolCall = {
+  server_namespace: string;
   tool_name: string;
   arguments: Record<string, unknown>;
 };

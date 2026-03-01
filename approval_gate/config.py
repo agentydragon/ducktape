@@ -6,11 +6,14 @@ config files are read from environment variables.
 
 Config file format (YAML):
 
-  backend:
-    url: http://exec-backend:8766/mcp     # streamable-http server
-    # or for stdio:
-    # command: /usr/bin/my-tool
-    # args: [--mcp]
+  backends:
+    exec:
+      url: http://exec-backend:8766/mcp
+      headers:
+        Authorization: "Bearer ..."
+    files:
+      command: /usr/bin/file-server
+      args: [--mcp]
 
   public_base_url: "https://approval-gate.example.com"
   operator_jwks_url: "https://auth.example.com/application/o/approval-gate/jwks/"
@@ -19,7 +22,8 @@ Config file format (YAML):
 Environment variables (secrets):
   AGENT_API_KEY — bearer token for agent/plugin MCP access (required)
 
-The backend format matches fastmcp's MCPConfig mcpServers entry format.
+Each backend entry matches fastmcp's MCPConfig mcpServers entry format.
+Backend keys are validated as MCPMountPrefix (lowercase alphanumeric + underscore).
 """
 
 from __future__ import annotations
@@ -31,17 +35,22 @@ import yaml
 from fastmcp.mcp_config import MCPServerTypes
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from mcp_infra.prefix import MCPMountPrefix
+
 
 class Settings(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     agent_api_key: str
-    backend: MCPServerTypes
+    backends: dict[MCPMountPrefix, MCPServerTypes]
     public_base_url: str
     db_path: Path = Path("/data/approval_gate.db")
     predicate_path: Path | None = Field(
         default=None,
-        description="Path to a Python module exporting decide(tool_name, arguments) → Approved|Denied|NeedsHumanDecision.",
+        description=(
+            "Path to a Python module exporting "
+            "decide(server_namespace, tool_name, arguments) → Approved|Denied|NeedsHumanDecision."
+        ),
     )
     operator_jwks_url: str
     host: str = "0.0.0.0"

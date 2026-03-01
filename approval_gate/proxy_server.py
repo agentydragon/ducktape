@@ -1,11 +1,12 @@
 """Core approval gate FastMCP server.
 
-Wraps a backend MCP server (connected via MCPServerTypes transport) with an
-approval layer. For each backend tool T, exposes a wrapped version that:
+Wraps multiple backend MCP servers (connected via MCPServerTypes transport or
+in-process FastMCP) with an approval layer. For each backend tool T in server S,
+exposes a wrapped version named ``{s}_{t}`` that:
   - Adds required `justification: str` field
   - Adds optional `session_key: str | None` field (injected by plugin)
   - On call: checks predicate, stores pending action, returns action_id/URL
-  - On operator approval: forwards original args to backend, updates state
+  - On operator approval: forwards original args to correct backend, updates state
   - Emits ResourceUpdated notifications so the OpenClaw plugin can inject results
 
 Action resources are exposed at: resource://actions/{id}
@@ -18,13 +19,12 @@ import copy
 import logging
 import uuid
 from collections.abc import AsyncGenerator, Coroutine
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.client.transports import ClientTransport
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server.auth import require_scopes
 from fastmcp.tools.tool import FunctionTool
@@ -49,6 +49,8 @@ from approval_gate.models import (
 from approval_gate.predicates import Approved, Denied, NeedsHumanDecision, PredicateFn, call_predicate
 from approval_gate.storage import ActionStorage
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +91,12 @@ def _require_action(action: Action | None, action_id: uuid.UUID) -> Action:
 
 
 class ApprovalGateServer(EnhancedFastMCP):
-    """MCP server that wraps a backend MCP server with an approval layer."""
+    """MCP server that wraps multiple backend MCP servers with an approval layer."""
 
     def __init__(
         self,
         *,
-        backend: MCPServerTypes | FastMCP,
+        backends: dict[MCPMountPrefix, MCPServerTypes | FastMCP],
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
@@ -106,40 +108,44 @@ class ApprovalGateServer(EnhancedFastMCP):
         super().__init__(
             "Approval Gate", lifespan=self._lifespan, instructions="Approval gate — initialising…", **kwargs
         )
-        self._backend_spec = backend
+        self._backend_specs = backends
         self._db_path = db_path
         self._storage: ActionStorage | None = None
         self._predicate = predicate
         self._public_base_url = public_base_url
         # Populated in lifespan
-        self._backend_client: Client | None = None
+        self._backend_clients: dict[MCPMountPrefix, Client] = {}
         # Holds references to fire-and-forget background tasks to prevent GC cancellation.
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
-    # ── Lifespan: connect backend, register wrapped tools + resources ─────────
+    # ── Lifespan: connect backends, register wrapped tools + resources ────────
 
     @asynccontextmanager
     async def _lifespan(self, app: FastMCP) -> AsyncGenerator[None]:
         # Initialise storage here so the server can be constructed synchronously.
         self._storage = await ActionStorage.initialize(self._db_path)
 
-        # Support both MCPServerTypes config objects (HTTP/stdio) and direct FastMCP
-        # instances (in-process, used by tests).
-        backend: Client
-        if isinstance(self._backend_spec, FastMCP):
-            backend = Client(self._backend_spec)
-        else:
-            transport: ClientTransport = self._backend_spec.to_transport()
-            backend = Client(transport)
+        async with AsyncExitStack() as stack:
+            backend_instructions: dict[str, str | None] = {}
 
-        logger.info("[_lifespan] connecting to backend: %s", self._backend_spec)
-        async with backend:
-            logger.info("[_lifespan] backend connected")
-            self._backend_client = backend
-            init = backend.initialize_result
+            for namespace, spec in self._backend_specs.items():
+                # mypy can't match to_transport()'s union return against Client's overloaded __init__
+                client = Client(spec) if isinstance(spec, FastMCP) else Client(spec.to_transport())  # type: ignore[arg-type]
+
+                logger.info("[_lifespan] connecting to backend %s: %s", namespace, spec)
+                await stack.enter_async_context(client)
+                logger.info("[_lifespan] backend %s connected", namespace)
+                self._backend_clients[namespace] = client
+
+                init = client.initialize_result
+                backend_instructions[namespace] = init.instructions if init else None
+
+                # Discover and register wrapped tools from this backend
+                backend_tools = await client.list_tools()
+                for tool in backend_tools:
+                    self._register_wrapped_tool(namespace, tool)
 
             # Render instructions using Mako template
-            backend_instructions: str | None = init.instructions if init else None
             tmpl = Template(filename=str(_INSTRUCTIONS_TEMPLATE))
             rendered_instructions = tmpl.render(
                 backend_instructions=backend_instructions, public_base_url=self._public_base_url
@@ -155,11 +161,6 @@ class ApprovalGateServer(EnhancedFastMCP):
                 if action is None:
                     raise ValueError(f"Action not found: {action_id}")
                 return action.model_dump_json()
-
-            # Discover and register wrapped tools from backend
-            backend_tools = await backend.list_tools()
-            for tool in backend_tools:
-                self._register_wrapped_tool(tool)
 
             # ── Operator MCP tools ────────────────────────────────────────────
             # Gated by require_scopes("operator"); bypassed for in-process clients
@@ -194,7 +195,7 @@ class ApprovalGateServer(EnhancedFastMCP):
                 logger.info("[_lifespan] draining %d background task(s)", len(self._background_tasks))
                 await asyncio.gather(*self._background_tasks, return_exceptions=True)
 
-        self._backend_client = None
+        self._backend_clients.clear()
 
     @property
     def _req_storage(self) -> ActionStorage:
@@ -202,31 +203,27 @@ class ApprovalGateServer(EnhancedFastMCP):
             raise RuntimeError("storage not initialised — gate not started")
         return self._storage
 
-    def _register_wrapped_tool(self, backend_tool: mcp_types.Tool) -> None:
-        """Register an approval-wrapped version of a backend tool."""
+    def _register_wrapped_tool(self, namespace: MCPMountPrefix, backend_tool: mcp_types.Tool) -> None:
+        """Register an approval-wrapped version of a backend tool under its namespace."""
         tool_name = backend_tool.name
+        prefixed_name = build_mcp_function(namespace, tool_name)
         original_schema = backend_tool.inputSchema or {}
         wrapped_schema = _wrap_tool_schema(original_schema)
 
-        description = (
-            f"[Approval-gated] {backend_tool.description or ''}\n\n"
-            "This call queues for operator approval. Returns immediately with action_id "
-            "and approval_url. Poll resource://actions/{action_id} or subscribe to "
-            "resource-updated notifications to learn when the action completes."
-        ).strip()
+        description = backend_tool.description or ""
 
         async def _tool_handler(
             justification: str,
             input: dict[str, object] = {},  # noqa: B006
             session_key: str | None = None,
         ) -> uuid.UUID:
-            call = ToolCall(tool_name=tool_name, arguments=input)
+            call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
             action_id = uuid.uuid4()
             await self._req_storage.create(
                 action_id=action_id, call=call, justification=justification, session_key=session_key
             )
             await self.broadcast_resource_list_changed()
-            self._spawn(self._apply_predicate(action_id, tool_name, input))
+            self._spawn(self._apply_predicate(action_id, namespace, tool_name, input))
             return action_id
 
         # Construct a FunctionTool with the wrapped schema (bypasses schema inference
@@ -236,23 +233,25 @@ class ApprovalGateServer(EnhancedFastMCP):
         # mode (e.g. missing additionalProperties:false, optional fields not in required).
         tool = FunctionTool(
             fn=_tool_handler,
-            name=tool_name,
+            name=prefixed_name,
             description=description,
             parameters=wrapped_schema,
             auth=require_scopes(AGENT_SCOPE),
         )
         FastMCP.add_tool(self, tool)
 
-    async def _apply_predicate(self, action_id: uuid.UUID, tool_name: str, input: dict[str, object]) -> None:
+    async def _apply_predicate(
+        self, action_id: uuid.UUID, namespace: MCPMountPrefix, tool_name: str, input: dict[str, object]
+    ) -> None:
         """Evaluate the predicate and auto-decide if not NeedsHumanDecision."""
-        decision = call_predicate(self._predicate, tool_name, input)
+        decision = call_predicate(self._predicate, namespace, tool_name, input)
         match decision:
             case Approved():
                 await self.decide(action_id, ApproveDecision())
             case Denied(reason=reason):
                 await self.decide(action_id, DenyDecision(reason=reason or "automatically denied"))
             case NeedsHumanDecision():
-                logger.info("queued action id=%s tool=%s", action_id, tool_name)
+                logger.info("queued action id=%s server=%s tool=%s", action_id, namespace, tool_name)
 
     # ── Operator / agent decisions ────────────────────────────────────────────
 
@@ -303,7 +302,9 @@ class ApprovalGateServer(EnhancedFastMCP):
     # ── Internal backend call ─────────────────────────────────────────────────
 
     async def _execute_backend_call(self, action: Action) -> mcp_types.CallToolResult:
-        """Forward the tool call to the backend and return the raw MCP CallToolResult."""
-        if self._backend_client is None:
-            raise RuntimeError("backend client not connected")
-        return await self._backend_client.call_tool_mcp(action.call.tool_name, action.call.arguments)
+        """Forward the tool call to the correct backend and return the raw MCP CallToolResult."""
+        namespace = MCPMountPrefix(action.call.server_namespace)
+        client = self._backend_clients.get(namespace)
+        if client is None:
+            raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
+        return await client.call_tool_mcp(action.call.tool_name, action.call.arguments)

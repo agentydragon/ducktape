@@ -97,7 +97,7 @@ def test_action_state_discriminator(state: ActionState):
 
 def test_tool_call_extra_fields_rejected():
     with pytest.raises(ValidationError):
-        ToolCall(tool_name="x", arguments={}, extra_field="oops")  # type: ignore[call-arg]
+        ToolCall(server_namespace="test", tool_name="x", arguments={}, extra_field="oops")  # type: ignore[call-arg]
 
 
 if __name__ == "__main__":
