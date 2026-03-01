@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "kubespan_agent_lib",
+    srcs = [
+        "config.go",
+        "discovery.go",
+        "identity.go",
+        "main.go",
+        "peerstate.go",
+        "routing.go",
+        "wireguard.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan-agent",
+    deps = [
+        "@com_github_mdlayher_netx//eui64",
+        "@com_github_siderolabs_discovery_api//api/v1alpha1/client/pb",
+        "@com_github_siderolabs_discovery_client//pkg/client",
+        "@com_github_vishvananda_netlink//:netlink",
+        "@com_zx2c4_golang_wireguard_wgctrl//:wgctrl",
+        "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_go4_netipx//:netipx",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_binary(
+    name = "kubespan-agent",
+    embed = [":kubespan_agent_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "kubespan_agent_test",
+    srcs = ["peerstate_test.go"],
+    embed = [":kubespan_agent_lib"],
+)

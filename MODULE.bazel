@@ -617,16 +617,124 @@ go_deps.module(
     sum = "h1:DBZZqJ2Rkml6QMQsZywtnjnnGvHza6BTfYFWY9kjEWQ=",
     version = "v0.40.0",
 )
+
+# kubespan-agent Go dependencies
+go_deps.module(
+    path = "github.com/cenkalti/backoff/v4",
+    sum = "h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=",
+    version = "v4.3.0",
+)
+go_deps.module(
+    path = "github.com/josharian/native",
+    sum = "h1:uuaP0hAbW7Y4l0ZRQ6C9zfb7Mg1mbFKry/xzDAfmtLA=",
+    version = "v1.1.0",
+)
+go_deps.module(
+    path = "github.com/mdlayher/genetlink",
+    sum = "h1:KdrNKe+CTu+IbZnm/GVUMXSqBBLqcGpRDa0xkQy56gw=",
+    version = "v1.3.2",
+)
+go_deps.module(
+    path = "github.com/mdlayher/netlink",
+    sum = "h1:/UtM3ofJap7Vl4QWCPDGXY8d3GIY2UGSDbK+QWmY8/g=",
+    version = "v1.7.2",
+)
+go_deps.module(
+    path = "github.com/mdlayher/netx",
+    sum = "h1:HMgSn3c16SXca3M+n6fLK2hXJLd4mhKAsZZh7lQfYmQ=",
+    version = "v0.0.0-20230430222610-7e21880baee8",
+)
+go_deps.module(
+    path = "github.com/mdlayher/socket",
+    sum = "h1:eM9y2/jlbs1M615oshPQOHZzj6R6wMT7bX5NPiQvn2U=",
+    version = "v0.4.1",
+)
+go_deps.module(
+    path = "github.com/planetscale/vtprotobuf",
+    sum = "h1:GFCKgmp0tecUJ0sJuv4pzYCqS9+RGSn52M3FUwPs+uo=",
+    version = "v0.6.1-0.20240319094008-0393e58bdf10",
+)
+go_deps.module(
+    path = "github.com/siderolabs/discovery-api",
+    sum = "h1:fcHVkLkWla7C5+9IeOGEUQ4N8Yp9R7a/kcKbiay2QKw=",
+    version = "v0.1.5",
+)
+go_deps.module(
+    path = "github.com/siderolabs/discovery-client",
+    sum = "h1:bTAvFLiISSzVXyYL1cIgAz8cPYd9ZfvhxwdebgtxARA=",
+    version = "v0.1.10",
+)
+go_deps.module(
+    path = "github.com/siderolabs/gen",
+    sum = "h1:VNpbmDLhkXp7qcSEkKk1Ee7vU2afs3xvHrWLGR2UuiY=",
+    version = "v0.4.8",
+)
+go_deps.module(
+    path = "github.com/vishvananda/netlink",
+    sum = "h1:3AEMt62VKqz90r0tmNhog0r/PpWKmrEShJU0wJW6bV0=",
+    version = "v1.3.1",
+)
+go_deps.module(
+    path = "github.com/vishvananda/netns",
+    sum = "h1:DfiHV+j8bA32MFM7bfEunvT8IAqQ/NzSJHtcmW5zdEY=",
+    version = "v0.0.5",
+)
+go_deps.module(
+    path = "go.uber.org/multierr",
+    sum = "h1:blXXJkSxSSfBVBlC76pxqeO+LN3aDfLQo+309xJstO0=",
+    version = "v1.11.0",
+)
+go_deps.module(
+    path = "go.uber.org/zap",
+    sum = "h1:aJMhYGrd5QSmlpLMr2MftRKl7t8J8PTZPA732ud/XR8=",
+    version = "v1.27.0",
+)
+go_deps.module(
+    path = "go4.org/netipx",
+    sum = "h1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=",
+    version = "v0.0.0-20231129151722-fdeea329fbba",
+)
+go_deps.module(
+    path = "golang.org/x/crypto",
+    sum = "h1:RrRspgV4mU+YwB4FYnuBoKsUapNIL5cohGAmSH3azsw=",
+    version = "v0.26.0",
+)
+go_deps.module(
+    path = "golang.org/x/net",
+    sum = "h1:a9JDOJc5GMUJ0+UDqmLT86WiEy7iWyIhz8gz8E4e5hE=",
+    version = "v0.28.0",
+)
+go_deps.module(
+    path = "golang.zx2c4.com/wireguard",
+    sum = "h1:J1CaxgLerRR5lgx3wnr6L04cJFbWoceSK9JWBdglINo=",
+    version = "v0.0.0-20230325221338-052af4a8072b",
+)
+go_deps.module(
+    path = "golang.zx2c4.com/wireguard/wgctrl",
+    sum = "h1:CawjfCvYQH2OU3/TnxLx97WDSUDRABfT18pCOYwc2GE=",
+    version = "v0.0.0-20230429144221-925a1e7659e6",
+)
+go_deps.module(
+    path = "google.golang.org/genproto/googleapis/rpc",
+    sum = "h1:e7S5W7MGGLaSu8j3YjdezkZ+m1/Nm0uRVRMEMGk26Xs=",
+    version = "v0.0.0-20240814211410-ddb44dafa142",
+)
 use_repo(
     go_deps,
     "com_github_azure_go_ansiterm",
+    "com_github_cenkalti_backoff_v4",
     "com_github_containerd_log",
     "com_github_docker_go_units",
     "com_github_fsouza_go_dockerclient",
     "com_github_google_uuid",
     "com_github_gorilla_websocket",
+    "com_github_josharian_native",
     "com_github_klauspost_compress",
     "com_github_mark3labs_mcp_go",
+    "com_github_mdlayher_genetlink",
+    "com_github_mdlayher_netlink",
+    "com_github_mdlayher_netx",
+    "com_github_mdlayher_socket",
     "com_github_microsoft_go_winio",
     "com_github_mitchellh_mapstructure",
     "com_github_moby_go_archive",
@@ -640,8 +748,17 @@ use_repo(
     "com_github_moby_term",
     "com_github_opencontainers_go_digest",
     "com_github_opencontainers_image_spec",
+    "com_github_planetscale_vtprotobuf",
+    "com_github_siderolabs_discovery_api",
+    "com_github_siderolabs_discovery_client",
+    "com_github_siderolabs_gen",
     "com_github_sirupsen_logrus",
     "com_github_spf13_cobra",
+    "com_github_vishvananda_netlink",
+    "com_github_vishvananda_netns",
+    "com_zx2c4_golang_wireguard",
+    "com_zx2c4_golang_wireguard_wgctrl",
+    "in_gopkg_yaml_v3",
     "io_opentelemetry_go_contrib_bridges_otelslog",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploghttp",
@@ -651,7 +768,13 @@ use_repo(
     "io_opentelemetry_go_otel_sdk",
     "io_opentelemetry_go_otel_sdk_log",
     "io_opentelemetry_go_otel_sdk_metric",
+    "org_go4_netipx",
+    "org_golang_google_genproto_googleapis_rpc",
     "org_golang_google_protobuf",
+    "org_golang_x_crypto",
+    "org_golang_x_net",
     "org_golang_x_sync",
     "org_golang_x_sys",
+    "org_uber_go_multierr",
+    "org_uber_go_zap",
 )

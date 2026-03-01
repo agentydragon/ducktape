@@ -1,0 +1,33 @@
+# kubespand configuration
+#
+# Extract cluster_id and cluster_secret from Talos machine secrets:
+#   talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.cluster.id'
+#   talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.cluster.secret'
+#
+# Or from OpenTofu state:
+#   cd cluster/terraform/bootstrap/infrastructure
+#   tofu output -json talos_machine_secrets | jq -r '.cluster.id'
+#   tofu output -json talos_machine_secrets | jq -r '.cluster.secret'
+
+cluster_id: "CHANGE_ME"
+cluster_secret: "CHANGE_ME"
+
+# Talos discovery service endpoint (default: discovery.talos.dev:443)
+# You can self-host: https://github.com/siderolabs/discovery-service
+discovery_endpoint: "discovery.talos.dev:443"
+
+# WireGuard listen port (must match Talos KubeSpan port: 51820)
+listen_port: 51820
+
+# MTU for the kubespan WireGuard interface.
+# Default 1420. If running Cilium VXLAN (50 byte overhead) on top, use:
+#   1500 - 80 (WireGuard) - 50 (VXLAN) = 1370
+# Must match the cluster's Cilium MTU configuration.
+mtu: 1420
+
+# Path to persist the WireGuard keypair. Generated on first run.
+identity_file: "/var/lib/kubespan/identity.json"
+
+# Route all traffic through KubeSpan even when peers are down.
+# false = only route to peers in "up" state (allowDownPeerBypass behavior).
+force_routing: false
