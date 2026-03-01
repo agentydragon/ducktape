@@ -34,7 +34,6 @@ py_library(
         "//props/core:splits",
         "//props/db:database",
         "//props/db:models",
-        "//props/db:query_builders",
         "@pypi//sqlalchemy",
     ],
 )
