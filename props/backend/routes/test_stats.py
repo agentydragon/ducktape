@@ -1,7 +1,7 @@
 """Integration tests for stats API routes.
 
-Tests the occurrence stats, distributions, and coverage endpoints with
-real Postgres and test fixture data (critic runs + grading edges).
+Tests the occurrence stats and coverage endpoints with real Postgres
+and test fixture data (critic runs + grading edges).
 """
 
 from __future__ import annotations
@@ -128,37 +128,6 @@ def test_occurrences_sort_desc(
     assert credits == sorted(credits, reverse=True)
 
 
-# --- /distributions ---
-
-
-def test_distributions_empty(stats_client: TestClient) -> None:
-    """Returns empty lists when no runs exist for split."""
-    resp = stats_client.get("/api/stats/distributions", params={"split": "valid"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["max_recall_values"] == []
-    assert body["tp_count_values"] == []
-
-
-def test_distributions_with_runs(
-    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
-) -> None:
-    """Returns recall and TP count distributions for train split."""
-    resp = stats_client.get("/api/stats/distributions", params={"split": "train"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body["max_recall_values"]) > 0
-    assert all(0.0 <= v <= 1.0 for v in body["max_recall_values"])
-    assert len(body["tp_count_values"]) > 0
-    assert all(v > 0 for v in body["tp_count_values"])
-
-
-def test_distributions_requires_split(stats_client: TestClient) -> None:
-    """Split parameter is required."""
-    resp = stats_client.get("/api/stats/distributions")
-    assert resp.status_code == 422
-
-
 # --- /coverage ---
 
 
@@ -170,6 +139,27 @@ def test_coverage_empty(stats_client: TestClient) -> None:
     assert body["examples"] == []
     assert body["definitions"] == []
     assert body["cells"] == []
+    assert body["max_recall_values"] == []
+    assert body["tp_count_values"] == []
+
+
+def test_coverage_distributions_with_runs(
+    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
+) -> None:
+    """Coverage response includes distribution histograms."""
+    resp = stats_client.get("/api/stats/coverage", params={"split": "train"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["max_recall_values"]) > 0
+    assert all(0.0 <= v <= 1.0 for v in body["max_recall_values"])
+    assert len(body["tp_count_values"]) > 0
+    assert all(v > 0 for v in body["tp_count_values"])
+
+
+def test_coverage_requires_split(stats_client: TestClient) -> None:
+    """Split parameter is required."""
+    resp = stats_client.get("/api/stats/coverage")
+    assert resp.status_code == 422
 
 
 def test_coverage_with_runs(
@@ -195,12 +185,6 @@ def test_coverage_with_runs(
     cell = body["cells"][0]
     assert 0.0 <= cell["recall"] <= 1.0
     assert isinstance(cell["is_best"], bool)
-
-
-def test_coverage_requires_split(stats_client: TestClient) -> None:
-    """Split parameter is required."""
-    resp = stats_client.get("/api/stats/coverage")
-    assert resp.status_code == 422
 
 
 def test_coverage_limit_definitions(

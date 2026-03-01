@@ -287,7 +287,6 @@ export async function fetchModelMetadata() {
 
 export type OccurrenceStatsRow = components["schemas"]["OccurrenceStatsRow"];
 export type OccurrenceStatsResponse = components["schemas"]["OccurrenceStatsResponse"];
-export type DistributionsResponse = components["schemas"]["DistributionsResponse"];
 export type CoverageResponse = components["schemas"]["CoverageResponse"];
 export type CoverageExample = components["schemas"]["CoverageExample"];
 export type CoverageDefinition = components["schemas"]["CoverageDefinition"];
@@ -306,14 +305,6 @@ export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split)
     },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch occurrence stats"));
-  return data;
-}
-
-export async function fetchDistributions(split: Split) {
-  const { data, error } = await api.GET("/api/stats/distributions", {
-    params: { query: { split } },
-  });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch distributions"));
   return data;
 }
 

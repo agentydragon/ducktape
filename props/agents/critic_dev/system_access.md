@@ -36,14 +36,13 @@ python3 -c "from props.db.snapshot_io import fetch_snapshot_to_path; from props.
 
 The backend exposes stats endpoints at `$PROPS_BACKEND_URL/api/stats/` that aggregate metrics across runs. These use your agent credentials (RLS-scoped). Read the full OpenAPI schema at `$PROPS_BACKEND_URL/openapi.json` for request/response types.
 
-| Endpoint                          | Purpose                                                                |
-| --------------------------------- | ---------------------------------------------------------------------- |
-| `GET /api/stats/overview`         | Definitions leaderboard with recall, example counts by split           |
-| `GET /api/stats/definitions/{id}` | Per-definition stats: split breakdown, per-example recall              |
-| `GET /api/stats/examples`         | Per-example stats: which definitions perform best                      |
-| `GET /api/stats/occurrences`      | Per-TP-occurrence credit stats (mean/min/max/n_runs), sortable         |
-| `GET /api/stats/distributions`    | Recall and TP count histograms for a split                             |
-| `GET /api/stats/coverage`         | Definition x example coverage matrix (which defs cover which examples) |
+| Endpoint                          | Purpose                                                        |
+| --------------------------------- | -------------------------------------------------------------- |
+| `GET /api/stats/overview`         | Definitions leaderboard with recall, example counts by split   |
+| `GET /api/stats/definitions/{id}` | Per-definition stats: split breakdown, per-example recall      |
+| `GET /api/stats/examples`         | Per-example stats: which definitions perform best              |
+| `GET /api/stats/occurrences`      | Per-TP-occurrence credit stats (mean/min/max/n_runs), sortable |
+| `GET /api/stats/coverage`         | Coverage matrix + recall/TP count histograms for a split       |
 
 Example:
 

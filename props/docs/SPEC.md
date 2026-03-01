@@ -370,8 +370,7 @@ CritiqueDetailPage
 - `GET /api/stats/overview` — leaderboard data with all definitions
 - `GET /api/stats/definitions` — list definitions (filtered by agent_type)
 - `GET /api/stats/occurrences` — aggregated per-occurrence credit stats (mean/min/max credit, run counts)
-- `GET /api/stats/distributions` — histogram data for recall and TP counts
-- `GET /api/stats/coverage` — definition x example coverage heatmap data
+- `GET /api/stats/coverage` — definition x example coverage heatmap + recall/TP count histograms
 
 ### Runs
 

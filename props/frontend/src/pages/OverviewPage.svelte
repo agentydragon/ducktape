@@ -2,13 +2,11 @@
   import { onMount, getContext } from "svelte";
   import { goto } from "$lib/router";
   import type { RunModalPrefill } from "$lib/types";
-  import { fetchOverview, type OverviewResponse } from "$lib/api/client";
+  import { fetchOverview, fetchCoverage, type OverviewResponse, type CoverageResponse } from "$lib/api/client";
   import DefinitionsTable from "$components/stats/DefinitionsTable.svelte";
   import SummaryCards from "$components/stats/SummaryCards.svelte";
   import DistributionChart from "$components/stats/DistributionChart.svelte";
   import CoverageHeatmap from "$components/stats/CoverageHeatmap.svelte";
-  import { fetchDistributions, fetchCoverage } from "$lib/api/client";
-  import type { DistributionsResponse, CoverageResponse } from "$lib/api/client";
   import TabButton from "$components/TabButton.svelte";
   import { toast } from "svelte-sonner";
 
@@ -27,7 +25,6 @@
   let error: string | null = $state(null);
 
   let analysisSplit: "valid" | "train" = $state("valid");
-  let distributions: DistributionsResponse | null = $state(null);
   let coverage: CoverageResponse | null = $state(null);
   let analysisLoading = $state(false);
 
@@ -37,10 +34,9 @@
     const requestId = ++analysisRequestId;
     analysisLoading = true;
     try {
-      const [dist, cov] = await Promise.all([fetchDistributions(split), fetchCoverage(split)]);
+      const cov = await fetchCoverage(split);
       // Guard against stale responses from rapid split switching
       if (requestId === analysisRequestId) {
-        distributions = dist;
         coverage = cov;
       }
     } catch (e) {
@@ -130,27 +126,25 @@
 
       {#if analysisLoading}
         <div class="text-gray-500 dark:text-gray-400 text-center py-8">Loading analysis...</div>
-      {:else}
-        {#if distributions}
-          <div class="grid grid-cols-2 gap-4 mb-4">
-            <DistributionChart
-              values={distributions.max_recall_values}
-              title="Max Recall Distribution"
-              numBuckets={10}
-              valueFormat={(v) => `${(v * 100).toFixed(0)}%`}
-              color="rgb(59, 130, 246)"
-            />
-            <DistributionChart
-              values={distributions.tp_count_values}
-              title="TP Occurrence Count Distribution"
-              numBuckets={8}
-              valueFormat={(v) => `${v.toFixed(0)}`}
-              color="rgb(34, 197, 94)"
-            />
-          </div>
-        {/if}
+      {:else if coverage}
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <DistributionChart
+            values={coverage.max_recall_values}
+            title="Max Recall Distribution"
+            numBuckets={10}
+            valueFormat={(v) => `${(v * 100).toFixed(0)}%`}
+            color="rgb(59, 130, 246)"
+          />
+          <DistributionChart
+            values={coverage.tp_count_values}
+            title="TP Occurrence Count Distribution"
+            numBuckets={8}
+            valueFormat={(v) => `${v.toFixed(0)}`}
+            color="rgb(34, 197, 94)"
+          />
+        </div>
 
-        {#if coverage && coverage.definitions.length > 0}
+        {#if coverage.definitions.length > 0}
           <CoverageHeatmap definitions={coverage.definitions} examples={coverage.examples} cells={coverage.cells} />
         {/if}
       {/if}

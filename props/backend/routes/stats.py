@@ -385,42 +385,6 @@ def get_occurrences(
         return OccurrenceStatsResponse(occurrences=occurrences, total=total)
 
 
-# --- Distributions ---
-
-
-class DistributionsResponse(BaseModel):
-    max_recall_values: list[float]
-    tp_count_values: list[int]
-
-
-@router.get("/distributions")
-def get_distributions(split: Split, caller_db: CallerDb) -> DistributionsResponse:
-    with caller_db.session() as session:
-        results = query_recall_by_example(session, split=split)
-
-        # Group by example, find max recall across definitions
-        by_example: dict[ExampleSpec, float] = {}
-        for row in results:
-            by_example[row.example] = max(by_example.get(row.example, 0.0), row.recall)
-        max_recall_values = list(by_example.values())
-
-        # TP counts per example
-        tp_count_results = (
-            session.query(
-                TpOccurrenceCredit.snapshot_slug,
-                TpOccurrenceCredit.example_kind,
-                TpOccurrenceCredit.files_hash,
-                func.count(TpOccurrenceCredit.occurrence_id.distinct()).label("n_occurrences"),
-            )
-            .filter(TpOccurrenceCredit.split == split)
-            .group_by(TpOccurrenceCredit.snapshot_slug, TpOccurrenceCredit.example_kind, TpOccurrenceCredit.files_hash)
-            .all()
-        )
-        tp_count_values = [r.n_occurrences for r in tp_count_results]
-
-        return DistributionsResponse(max_recall_values=max_recall_values, tp_count_values=tp_count_values)
-
-
 # --- Coverage heatmap ---
 
 
@@ -449,6 +413,8 @@ class CoverageResponse(BaseModel):
     examples: list[CoverageExample]
     definitions: list[CoverageDefinition]
     cells: list[CoverageCell]
+    max_recall_values: list[float]
+    tp_count_values: list[int]
 
 
 def _build_tp_counts_by_example(session: Session, split: Split) -> dict[ExampleSpec, int]:
@@ -505,8 +471,12 @@ def get_coverage(split: Split, caller_db: CallerDb, limit_definitions: int = 15)
         # Only include examples that have nonzero max recall
         nonzero_examples = [ex for ex, recalls in by_example.items() if recalls and max(recalls.values()) > 0]
 
-        # Get TP counts per example
+        # Get TP counts per example (used for heatmap and distribution histogram)
         tp_counts_by_example = _build_tp_counts_by_example(session, split)
+
+        # Distribution histograms (over ALL examples, not just nonzero)
+        max_recall_values = [max(recalls.values()) if recalls else 0.0 for recalls in by_example.values()]
+        tp_count_values = list(tp_counts_by_example.values())
 
         # Build index maps
         def_to_idx = {d: i for i, d in enumerate(top_definitions)}
@@ -550,4 +520,10 @@ def get_coverage(split: Split, caller_db: CallerDb, limit_definitions: int = 15)
                     )
                 )
 
-        return CoverageResponse(examples=response_examples, definitions=response_definitions, cells=cells)
+        return CoverageResponse(
+            examples=response_examples,
+            definitions=response_definitions,
+            cells=cells,
+            max_recall_values=max_recall_values,
+            tp_count_values=tp_count_values,
+        )
