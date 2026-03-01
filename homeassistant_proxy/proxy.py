@@ -35,10 +35,7 @@ def _extract_str_or_list(value: Any, field: str) -> list[str]:
     raise HTTPException(status_code=400, detail=f"{field}: expected string or list of strings")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    if settings is None:
-        settings = Settings.from_env()
-
+def create_app(settings: Settings) -> FastAPI:
     http_client: httpx.AsyncClient | None = None
     registry_cache: EntityRegistry | None = None
     registry_cache_time: float = 0
@@ -154,7 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    app = create_app()
+    app = create_app(Settings.from_env())
     uvicorn.run(app, host="0.0.0.0", port=8080)
 
 
