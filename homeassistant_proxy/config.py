@@ -37,13 +37,13 @@ class Policy(BaseModel):
 
 
 class TokenConfig(BaseModel):
-    secret: str
+    secret: str = ""
     policy: Policy
 
 
 class HomeAssistantSettings(BaseModel):
     url: str
-    token: str
+    token: str = ""
 
 
 class Settings(BaseModel):

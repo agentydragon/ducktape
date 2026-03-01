@@ -8,8 +8,7 @@ homeassistant:
 
 tokens:
   mcp_agent:
-    # secret is set via HOMEASSISTANT_PROXY_TOKEN_MCP_AGENT env var
-    secret: placeholder
+    # secret comes from HOMEASSISTANT_PROXY_TOKEN_MCP_AGENT env var
     policy:
       all:
         read: true
