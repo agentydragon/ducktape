@@ -181,8 +181,8 @@ py_library(
     deps = [
         ":models",
         ":storage",
+        "//mcp_utils",
         "@pypi//fastmcp",
-        "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

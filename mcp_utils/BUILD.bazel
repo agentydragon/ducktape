@@ -10,5 +10,6 @@ py_library(
     deps = [
         "@pypi//mcp",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
     ],
 )

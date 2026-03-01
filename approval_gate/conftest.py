@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 from fastmcp.client import Client
-from mcp import types as mcp_types
 
 from approval_gate.models import Action, ActionKey
 from approval_gate.storage import ActionStorage
+from mcp_utils.resources import parse_tool_result_as
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -30,10 +30,7 @@ class GateClient(Client):
 
     async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
         """Call a gate-wrapped tool and parse the ActionKey from the result."""
-        result = await self.call_tool_mcp(tool_name, args)
-        item = result.content[0]
-        assert isinstance(item, mcp_types.TextContent)
-        return ActionKey.model_validate_json(item.text)
+        return parse_tool_result_as(await self.call_tool_mcp(tool_name, args), ActionKey)
 
     async def call_echo(self, text: str, *, justification: str = "test", session_key: str) -> ActionKey:
         return await self.call_gate_tool(
@@ -41,16 +38,12 @@ class GateClient(Client):
         )
 
     async def approve(self, key: ActionKey) -> Action:
-        return await self._call_operator_tool("approve_action", {"key": key.model_dump()})
+        return parse_tool_result_as(await self.call_tool_mcp("approve_action", {"key": key.model_dump()}), Action)
 
     async def reject(self, key: ActionKey, reason: str | None = None) -> Action:
-        return await self._call_operator_tool("reject_action", {"key": key.model_dump(), "reason": reason})
-
-    async def _call_operator_tool(self, name: str, args: dict[str, object]) -> Action:
-        result = await self.call_tool_mcp(name, args)
-        item = result.content[0]
-        assert isinstance(item, mcp_types.TextContent)
-        return Action.model_validate_json(item.text)
+        return parse_tool_result_as(
+            await self.call_tool_mcp("reject_action", {"key": key.model_dump(), "reason": reason}), Action
+        )
 
 
 @pytest.fixture

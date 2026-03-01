@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from mcp import types as mcp_types
 from more_itertools import one
+from pydantic import TypeAdapter
 
 
 def extract_text_from_tool_content(
@@ -25,6 +26,13 @@ def extract_text_from_tool_content(
         if isinstance(item, mcp_types.TextContent):
             return item.text
     return None
+
+
+def parse_tool_result_as[T](result: mcp_types.CallToolResult, model: type[T]) -> T:
+    """Extract the single TextContent from a tool result and parse it as a Pydantic model."""
+    item = one(result.content)
+    assert isinstance(item, mcp_types.TextContent)
+    return TypeAdapter(model).validate_json(item.text)
 
 
 def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:
