@@ -4,8 +4,10 @@
 
 export type ActionStatus = "pending" | "executing" | "done" | "rejected" | "withdrawn";
 
-/** UUID string for an action (matches uuid.UUID in Python models). */
-export type ActionId = string;
+export type ActionKey = {
+  session_key: string;
+  action_seq: number;
+};
 
 export type ToolCall = {
   server_namespace: string;
@@ -25,11 +27,27 @@ export type WithdrawnState = { status: "withdrawn" };
 export type ActionState = PendingState | ExecutingState | DoneState | RejectedState | WithdrawnState;
 
 export type Action = {
-  id: ActionId;
+  key: ActionKey;
   created_at: string;
   updated_at: string;
   call: ToolCall;
   justification: string;
-  session_key: string | null;
   state: ActionState;
+};
+
+export type LogEventKind =
+  | "action_received"
+  | "approved"
+  | "denied"
+  | "withdrawn"
+  | "execution_started"
+  | "execution_finished";
+
+export type LogEntry = {
+  entry_id: number;
+  session_key: string;
+  action_seq: number;
+  kind: LogEventKind;
+  timestamp: string;
+  detail_json: string | null;
 };

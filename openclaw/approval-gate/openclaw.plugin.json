@@ -14,6 +14,11 @@
       "agentApiKey": {
         "type": "string",
         "description": "AGENT_API_KEY for the approval gate MCP endpoint"
+      },
+      "registerTools": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether to discover and register approval-gate-wrapped tools with OpenClaw. When false (default), the plugin only listens for action notifications and delivers results via chat.inject."
       }
     }
   }

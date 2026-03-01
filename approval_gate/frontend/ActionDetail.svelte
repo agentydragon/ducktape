@@ -17,7 +17,7 @@
   async function onApprove() {
     approving = true;
     try {
-      await (await getMcpClient()).approve(action.id);
+      await (await getMcpClient()).approve(action.key);
     } catch (e) {
       alert(`Approve failed: ${String(e)}`);
       approving = false;
@@ -27,7 +27,7 @@
   async function onReject() {
     rejecting = true;
     try {
-      await (await getMcpClient()).reject(action.id, rejectReason.trim() || undefined);
+      await (await getMcpClient()).reject(action.key, rejectReason.trim() || undefined);
     } catch (e) {
       alert(`Reject failed: ${String(e)}`);
       rejecting = false;
@@ -36,15 +36,17 @@
 </script>
 
 <header>
-  <h1><a href="#/">Approval Gate</a> / Action {action.id.slice(0, 8)}</h1>
+  <h1><a href="#/">Approval Gate</a> / Action {action.key.session_key}/{action.key.action_seq}</h1>
 </header>
 
 <main>
   <div class="card">
     <h2>Details</h2>
     <dl>
-      <dt>ID</dt>
-      <dd><code>{action.id}</code></dd>
+      <dt>Session</dt>
+      <dd><code>{action.key.session_key}</code></dd>
+      <dt>Action #</dt>
+      <dd><code>{action.key.action_seq}</code></dd>
       <dt>Status</dt>
       <dd><span class="status status-{action.state.status}">{action.state.status}</span></dd>
       <dt>Server</dt>

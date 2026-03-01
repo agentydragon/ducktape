@@ -24,4 +24,8 @@ def pytest_configure(config: pytest.Config) -> None:
 @pytest.fixture
 async def storage(tmp_path: Path) -> ActionStorage:
     """Temporary in-memory storage for tests."""
-    return await ActionStorage.initialize(tmp_path / "test.db")
+    store = await ActionStorage.initialize(tmp_path / "test.db")
+    try:
+        yield store
+    finally:
+        await store.close()

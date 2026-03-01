@@ -5,8 +5,9 @@
   import ActionDetail from "./ActionDetail.svelte";
   import type { Action } from "./types.ts";
 
-  const actionMatch = window.location.hash.match(/^#\/actions\/([^/]+)\/?$/);
-  const actionId: string | null = actionMatch ? actionMatch[1] : null;
+  const actionMatch = window.location.hash.match(/^#\/sessions\/([^/]+)\/actions\/(\d+)\/?$/);
+  const sessionKey: string | null = actionMatch ? actionMatch[1] : null;
+  const actionSeq: number | null = actionMatch ? parseInt(actionMatch[2], 10) : null;
 
   let pending = $state<Action[]>([]);
   let recent = $state<Action[]>([]);
@@ -20,10 +21,11 @@
   }
 
   onMount(async () => {
-    if (actionId) {
+    if (sessionKey !== null && actionSeq !== null) {
       try {
         const mcp = await getMcpClient();
-        await mcp.subscribeAction<Action>(`resource://actions/${actionId}`, (a) => {
+        const uri = `resource://sessions/${sessionKey}/actions/${actionSeq}`;
+        await mcp.subscribeAction<Action>(uri, (a) => {
           action = a;
           loading = false;
           error = null;
@@ -62,7 +64,7 @@
 {:else if error}
   {@render defaultHeader()}
   <main><p class="error">Failed to load: {error}</p></main>
-{:else if actionId !== null}
+{:else if sessionKey !== null && actionSeq !== null}
   {#if action}
     <ActionDetail {action} />
   {:else}

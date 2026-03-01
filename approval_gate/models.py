@@ -6,7 +6,6 @@ Invalid states are unrepresentable by construction.
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -20,8 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ToolCall(BaseModel):
     """The underlying MCP tool call to forward on approval.
 
-    justification and session_key are stripped before storage here;
-    they live on Action directly.
+    justification is stripped before storage here; it lives on Action directly.
     """
 
     server_namespace: str
@@ -29,6 +27,21 @@ class ToolCall(BaseModel):
     arguments: dict[str, object]
 
     model_config = ConfigDict(extra="forbid")
+
+
+# ── Compound action key ─────────────────────────────────────────────────────
+
+
+class ActionKey(BaseModel):
+    """Compound action identifier: (session_key, action_seq).
+
+    action_seq is 1-based and monotonically increasing per session_key.
+    """
+
+    session_key: str
+    action_seq: int
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 # ── Action lifecycle states ───────────────────────────────────────────────────
@@ -95,13 +108,79 @@ ActionState = Annotated[
 class Action(BaseModel):
     """One pending or resolved action record."""
 
-    id: uuid.UUID
+    key: ActionKey
     created_at: datetime
     updated_at: datetime
     call: ToolCall
     justification: str
-    session_key: str | None
     state: ActionState
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# ── Append-only event log ───────────────────────────────────────────────────
+
+
+class LogEventKind(StrEnum):
+    ACTION_RECEIVED = "action_received"
+    APPROVED = "approved"
+    DENIED = "denied"
+    WITHDRAWN = "withdrawn"
+    EXECUTION_STARTED = "execution_started"
+    EXECUTION_FINISHED = "execution_finished"
+
+
+class ActionReceivedDetail(BaseModel):
+    kind: Literal[LogEventKind.ACTION_RECEIVED] = LogEventKind.ACTION_RECEIVED
+    model_config = ConfigDict(extra="forbid")
+
+
+class ApprovedDetail(BaseModel):
+    kind: Literal[LogEventKind.APPROVED] = LogEventKind.APPROVED
+    model_config = ConfigDict(extra="forbid")
+
+
+class DeniedDetail(BaseModel):
+    kind: Literal[LogEventKind.DENIED] = LogEventKind.DENIED
+    reason: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+
+class WithdrawnDetail(BaseModel):
+    kind: Literal[LogEventKind.WITHDRAWN] = LogEventKind.WITHDRAWN
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExecutionStartedDetail(BaseModel):
+    kind: Literal[LogEventKind.EXECUTION_STARTED] = LogEventKind.EXECUTION_STARTED
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExecutionFinishedDetail(BaseModel):
+    kind: Literal[LogEventKind.EXECUTION_FINISHED] = LogEventKind.EXECUTION_FINISHED
+    outcome: mcp_types.CallToolResult
+    model_config = ConfigDict(extra="forbid")
+
+
+LogEventDetail = Annotated[
+    ActionReceivedDetail
+    | ApprovedDetail
+    | DeniedDetail
+    | WithdrawnDetail
+    | ExecutionStartedDetail
+    | ExecutionFinishedDetail,
+    Field(discriminator="kind"),
+]
+
+
+class LogEntry(BaseModel):
+    """A single append-only event log entry, scoped to a session."""
+
+    entry_id: int
+    session_key: str
+    action_seq: int
+    detail: LogEventDetail
+    timestamp: datetime
 
     model_config = ConfigDict(extra="forbid")
 

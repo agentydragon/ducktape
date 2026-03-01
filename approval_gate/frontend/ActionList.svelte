@@ -6,6 +6,10 @@
   function fmt(iso: string): string {
     return new Date(iso).toLocaleString();
   }
+
+  function actionHref(a: Action): string {
+    return `#/sessions/${a.key.session_key}/actions/${a.key.action_seq}`;
+  }
 </script>
 
 <header>
@@ -25,10 +29,10 @@
         <tr><th>Server</th><th>Tool</th><th>Justification</th><th>Created</th></tr>
       </thead>
       <tbody>
-        {#each pending as a (a.id)}
+        {#each pending as a (`${a.key.session_key}/${a.key.action_seq}`)}
           <tr>
             <td><code>{a.call.server_namespace}</code></td>
-            <td class="tool-name"><a href="#/actions/{a.id}">{a.call.tool_name}</a></td>
+            <td class="tool-name"><a href={actionHref(a)}>{a.call.tool_name}</a></td>
             <td>{a.justification}</td>
             <td>{fmt(a.created_at)}</td>
           </tr>
@@ -46,10 +50,10 @@
         <tr><th>Server</th><th>Tool</th><th>Status</th><th>Justification</th><th>Updated</th></tr>
       </thead>
       <tbody>
-        {#each recent as a (a.id)}
+        {#each recent as a (`${a.key.session_key}/${a.key.action_seq}`)}
           <tr>
             <td><code>{a.call.server_namespace}</code></td>
-            <td class="tool-name"><a href="#/actions/{a.id}">{a.call.tool_name}</a></td>
+            <td class="tool-name"><a href={actionHref(a)}>{a.call.tool_name}</a></td>
             <td><span class="status status-{a.state.status}">{a.state.status}</span></td>
             <td>{a.justification}</td>
             <td>{fmt(a.updated_at)}</td>

@@ -3,13 +3,15 @@
 Wraps multiple backend MCP servers (connected via MCPServerTypes transport or
 in-process FastMCP) with an approval layer. For each backend tool T in server S,
 exposes a wrapped version named ``{s}_{t}`` that:
-  - Adds required `justification: str` field
-  - Adds optional `session_key: str | None` field (injected by plugin)
-  - On call: checks predicate, stores pending action, returns action_id/URL
+  - Adds required `justification: str` and `session_key: str` fields
+  - On call: checks predicate, stores pending action, returns ActionKey
   - On operator approval: forwards original args to correct backend, updates state
-  - Emits ResourceUpdated notifications so the OpenClaw plugin can inject results
+  - Appends to per-session append-only event log and broadcasts HWM updates
 
-Action resources are exposed at: resource://actions/{id}
+Resources:
+  resource://sessions/{session_key}/actions/{action_seq}  — action state
+  resource://sessions/{session_key}/log_hwm               — last log entry_id
+  resource://sessions/{session_key}/log/{entry_id}         — log entry
 """
 
 from __future__ import annotations
@@ -17,12 +19,12 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-import uuid
 from collections.abc import AsyncGenerator, Coroutine
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import anyio
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPServerTypes
@@ -34,16 +36,23 @@ from mcp import types as mcp_types
 from approval_gate.mcp_auth import AGENT_SCOPE, OPERATOR_SCOPE
 from approval_gate.models import (
     Action,
+    ActionKey,
+    ActionReceivedDetail,
     ActionState,
     ActionStatus,
     ApproveDecision,
+    DeniedDetail,
     DenyDecision,
     DoneState,
     ExecutingState,
+    ExecutionFinishedDetail,
+    ExecutionStartedDetail,
+    LogEventDetail,
     OperatorDecision,
     PendingState,
     RejectedState,
     ToolCall,
+    WithdrawnDetail,
     WithdrawnState,
 )
 from approval_gate.predicates import Approved, Denied, NeedsHumanDecision, PredicateFn, call_predicate
@@ -61,7 +70,7 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     """Wrap a backend tool's input schema in an approval envelope.
 
     Produces:
-      { input: <original_schema>, justification: str, session_key: str|null }
+      { input: <original_schema>, justification: str, session_key: str }
 
     The nested `input` property holds the backend's original schema unchanged,
     avoiding any risk of name collisions with the approval fields.
@@ -75,18 +84,25 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
                 "description": "Explain why you need to run this action. Shown to the operator.",
             },
             "session_key": {
-                "type": ["string", "null"],
-                "description": "OpenClaw session key for result notifications. Injected by plugin.",
-                "default": None,
+                "type": "string",
+                "description": "Session key for result notifications. Injected by plugin.",
             },
         },
-        "required": ["input", "justification"],
+        "required": ["input", "justification", "session_key"],
     }
 
 
-def _require_action(action: Action | None, action_id: uuid.UUID) -> Action:
+def _require_action(action: Action | None, key: ActionKey) -> Action:
     if action is None:
-        raise ValueError(f"Action not found: {action_id}")
+        raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+    return action
+
+
+def _require_pending(action: Action) -> Action:
+    if not isinstance(action.state, PendingState):
+        raise ValueError(
+            f"Action {action.key.session_key}/{action.key.action_seq} is not pending ({action.state.status=})"
+        )
     return action
 
 
@@ -102,9 +118,6 @@ class ApprovalGateServer(EnhancedFastMCP):
         public_base_url: str,
         **kwargs: Any,
     ) -> None:
-        # Instructions are set after backend connection in lifespan; placeholder here.
-        # Pass self._lifespan explicitly so FastMCP stores our bound method as the instance
-        # attribute rather than default_lifespan — no del hack needed.
         super().__init__(
             "Approval Gate", lifespan=self._lifespan, instructions="Approval gate — initialising…", **kwargs
         )
@@ -113,23 +126,22 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._storage: ActionStorage | None = None
         self._predicate = predicate
         self._public_base_url = public_base_url
-        # Populated in lifespan
         self._backend_clients: dict[MCPMountPrefix, Client] = {}
-        # Holds references to fire-and-forget background tasks to prevent GC cancellation.
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
     # ── Lifespan: connect backends, register wrapped tools + resources ────────
 
     @asynccontextmanager
     async def _lifespan(self, app: FastMCP) -> AsyncGenerator[None]:
-        # Initialise storage here so the server can be constructed synchronously.
         self._storage = await ActionStorage.initialize(self._db_path)
 
-        async with AsyncExitStack() as stack:
+        # Manual stack management so cleanup runs inside the shielded scope below.
+        stack = AsyncExitStack()
+        await stack.__aenter__()
+        try:
             backend_instructions: dict[str, str | None] = {}
 
             for namespace, spec in self._backend_specs.items():
-                # mypy can't match to_transport()'s union return against Client's overloaded __init__
                 client = Client(spec) if isinstance(spec, FastMCP) else Client(spec.to_transport())  # type: ignore[arg-type]
 
                 logger.info("[_lifespan] connecting to backend %s: %s", namespace, spec)
@@ -140,30 +152,42 @@ class ApprovalGateServer(EnhancedFastMCP):
                 init = client.initialize_result
                 backend_instructions[namespace] = init.instructions if init else None
 
-                # Discover and register wrapped tools from this backend
                 backend_tools = await client.list_tools()
                 for tool in backend_tools:
                     self._register_wrapped_tool(namespace, tool)
 
-            # Render instructions using Mako template
             tmpl = Template(filename=str(_INSTRUCTIONS_TEMPLATE))
             rendered_instructions = tmpl.render(
                 backend_instructions=backend_instructions, public_base_url=self._public_base_url
             )
-            # FastMCP.instructions is a property that writes through to _mcp_server.instructions
             self.instructions = rendered_instructions
 
-            # Register a resource template for individual action state
-            @self.resource("resource://actions/{action_id}")
-            async def action_resource(action_id: uuid.UUID) -> str:
+            # ── Resource templates ────────────────────────────────────────────
+
+            @self.resource("resource://sessions/{session_key}/actions/{action_seq}")
+            async def action_resource(session_key: str, action_seq: int) -> str:
                 """Current state of a deferred action."""
-                action = await self._req_storage.get(action_id)
+                key = ActionKey(session_key=session_key, action_seq=action_seq)
+                action = await self._req_storage.get_action(key)
                 if action is None:
-                    raise ValueError(f"Action not found: {action_id}")
+                    raise ValueError(f"Action not found: {session_key}/{action_seq}")
                 return action.model_dump_json()
 
-            # Enable resource subscriptions so HTTP clients can subscribe to
-            # action state changes and receive ResourceUpdated notifications.
+            @self.resource("resource://sessions/{session_key}/log_hwm")
+            async def log_hwm_resource(session_key: str) -> str:
+                """The entry_id of the last log entry for this session."""
+                hwm = await self._req_storage.get_log_hwm(session_key)
+                return str(hwm)
+
+            @self.resource("resource://sessions/{session_key}/log/{entry_id}")
+            async def log_entry_resource(session_key: str, entry_id: int) -> str:
+                """A specific log entry."""
+                entry = await self._req_storage.get_log_entry(session_key, entry_id)
+                if entry is None:
+                    raise ValueError(f"Log entry not found: {session_key}/{entry_id}")
+                return entry.model_dump_json()
+
+            # Enable resource subscriptions
             @self._mcp_server.subscribe_resource()
             async def _handle_subscribe(_uri: str) -> None:
                 return None
@@ -173,8 +197,6 @@ class ApprovalGateServer(EnhancedFastMCP):
                 return None
 
             # ── Operator MCP tools ────────────────────────────────────────────
-            # Gated by require_scopes("operator"); bypassed for in-process clients
-            # (stdio/memory transport), which allows tests to call these freely.
 
             @self.tool(auth=require_scopes(OPERATOR_SCOPE))
             async def list_actions(status: ActionStatus | None = None, limit: int = 100) -> list[Action]:
@@ -182,30 +204,36 @@ class ApprovalGateServer(EnhancedFastMCP):
                 return await self._req_storage.list_actions(status, limit=limit)
 
             @self.tool(auth=require_scopes(OPERATOR_SCOPE))
-            async def approve_action(action_id: uuid.UUID) -> Action:
+            async def approve_action(session_key: str, action_seq: int) -> Action:
                 """Approve a pending action, executing it against the backend."""
-                return await self.decide(action_id, ApproveDecision())
+                return await self.decide(ActionKey(session_key=session_key, action_seq=action_seq), ApproveDecision())
 
             @self.tool(auth=require_scopes(OPERATOR_SCOPE))
-            async def reject_action(action_id: uuid.UUID, reason: str | None = None) -> Action:
+            async def reject_action(session_key: str, action_seq: int, reason: str | None = None) -> Action:
                 """Reject a pending action without executing it."""
-                return await self.decide(action_id, DenyDecision(reason=reason))
+                return await self.decide(
+                    ActionKey(session_key=session_key, action_seq=action_seq), DenyDecision(reason=reason)
+                )
 
             @self.tool(auth=require_scopes(AGENT_SCOPE))
-            async def withdraw_action(action_id: uuid.UUID) -> Action:
+            async def withdraw_action(session_key: str, action_seq: int) -> Action:
                 """Withdraw a pending action before it is decided by an operator."""
-                return await self.withdraw(action_id)
+                return await self.withdraw(ActionKey(session_key=session_key, action_seq=action_seq))
 
             yield
-
-            # Drain in-flight background tasks (e.g. _execute_and_finish) before
-            # disconnecting from the backend so they don't outlive the backend connection
-            # and leak into the next test or request cycle.
-            if self._background_tasks:
-                logger.info("[_lifespan] draining %d background task(s)", len(self._background_tasks))
-                await asyncio.gather(*self._background_tasks, return_exceptions=True)
-
-        self._backend_clients.clear()
+        finally:
+            # Shield cleanup from FastMCP memory transport's cancel scope.
+            # FastMCPTransport.connect_session() calls tg.cancel_scope.cancel()
+            # on client disconnect, which would cancel our async cleanup
+            # (backend client close, storage dispose), leaving orphaned resources.
+            with anyio.CancelScope(shield=True):
+                if self._background_tasks:
+                    logger.info("[_lifespan] draining %d background task(s)", len(self._background_tasks))
+                    await asyncio.gather(*self._background_tasks, return_exceptions=True)
+                await stack.aclose()
+                self._backend_clients.clear()
+                if self._storage is not None:
+                    await self._storage.close()
 
     @property
     def _req_storage(self) -> ActionStorage:
@@ -224,23 +252,18 @@ class ApprovalGateServer(EnhancedFastMCP):
 
         async def _tool_handler(
             justification: str,
+            session_key: str,
             input: dict[str, object] = {},  # noqa: B006
-            session_key: str | None = None,
-        ) -> uuid.UUID:
+        ) -> ActionKey:
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
-            action_id = uuid.uuid4()
-            await self._req_storage.create(
-                action_id=action_id, call=call, justification=justification, session_key=session_key
-            )
+            action_seq = await self._req_storage.next_action_seq(session_key)
+            key = ActionKey(session_key=session_key, action_seq=action_seq)
+            await self._req_storage.create_action(key=key, call=call, justification=justification)
+            await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
-            self._spawn(self._apply_predicate(action_id, namespace, tool_name, input))
-            return action_id
+            self._spawn(self._apply_predicate(key, namespace, tool_name, input))
+            return key
 
-        # Construct a FunctionTool with the wrapped schema (bypasses schema inference
-        # from type hints — we provide the exact JSON schema from the backend tool).
-        # Call FastMCP.add_tool directly to skip OpenAIStrictModeMixin validation:
-        # proxy tools embed arbitrary backend schemas that may not satisfy OpenAI strict
-        # mode (e.g. missing additionalProperties:false, optional fields not in required).
         tool = FunctionTool(
             fn=_tool_handler,
             name=prefixed_name,
@@ -251,51 +274,60 @@ class ApprovalGateServer(EnhancedFastMCP):
         FastMCP.add_tool(self, tool)
 
     async def _apply_predicate(
-        self, action_id: uuid.UUID, namespace: MCPMountPrefix, tool_name: str, input: dict[str, object]
+        self, key: ActionKey, namespace: MCPMountPrefix, tool_name: str, input: dict[str, object]
     ) -> None:
         """Evaluate the predicate and auto-decide if not NeedsHumanDecision."""
         decision = call_predicate(self._predicate, namespace, tool_name, input)
         match decision:
             case Approved():
-                await self.decide(action_id, ApproveDecision())
+                await self.decide(key, ApproveDecision())
             case Denied(reason=reason):
-                await self.decide(action_id, DenyDecision(reason=reason or "automatically denied"))
+                await self.decide(key, DenyDecision(reason=reason or "automatically denied"))
             case NeedsHumanDecision():
-                logger.info("queued action id=%s server=%s tool=%s", action_id, namespace, tool_name)
+                logger.info(
+                    "queued action %s/%d server=%s tool=%s", key.session_key, key.action_seq, namespace, tool_name
+                )
+
+    # ── Event log helpers ────────────────────────────────────────────────────
+
+    async def _append_log_and_notify(self, key: ActionKey, detail: LogEventDetail) -> None:
+        """Append a log entry and broadcast action + HWM resource updates."""
+        await self._req_storage.append_log_entry(session_key=key.session_key, action_seq=key.action_seq, detail=detail)
+        await self.broadcast_resource_updated(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
+        await self.broadcast_resource_updated(f"resource://sessions/{key.session_key}/log_hwm")
 
     # ── Operator / agent decisions ────────────────────────────────────────────
 
-    async def decide(self, action_id: uuid.UUID, decision: OperatorDecision) -> Action:
+    async def _get_pending_action(self, key: ActionKey) -> Action:
+        """Fetch an action and verify it exists and is pending."""
+        return _require_pending(_require_action(await self._req_storage.get_action(key), key))
+
+    async def decide(self, key: ActionKey, decision: OperatorDecision) -> Action:
         """Apply an operator decision (approve or deny) to a pending action.
 
         Raises ValueError if the action does not exist or is not pending.
         """
-        action = _require_action(await self._req_storage.get(action_id), action_id)
-        if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {action_id} is not pending ({action.state.status=})")
-
+        await self._get_pending_action(key)
         match decision:
             case ApproveDecision():
-                action = await self._update_and_notify(action_id, ExecutingState())
-                self._spawn(self._execute_and_finish(action_id, action))
+                action = await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail())
+                self._spawn(self._execute_and_finish(key, action))
                 return action
             case DenyDecision(reason=reason):
-                return await self._update_and_notify(action_id, RejectedState(reason=reason))
+                return await self._update_and_notify(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
 
-    async def withdraw(self, action_id: uuid.UUID) -> Action:
+    async def withdraw(self, key: ActionKey) -> Action:
         """Agent-initiated withdrawal of a pending action.
 
         Raises ValueError if the action does not exist or is not pending.
         """
-        action = _require_action(await self._req_storage.get(action_id), action_id)
-        if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {action_id} is not pending ({action.state.status=})")
-        return await self._update_and_notify(action_id, WithdrawnState())
+        await self._get_pending_action(key)
+        return await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
 
-    async def _execute_and_finish(self, action_id: uuid.UUID, action: Action) -> None:
+    async def _execute_and_finish(self, key: ActionKey, action: Action) -> None:
         """Execute the backend call and update state to done."""
         outcome = await self._execute_backend_call(action)
-        await self._update_and_notify(action_id, DoneState(outcome=outcome))
+        await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
 
     def _spawn(self, coro: Coroutine[Any, Any, Any]) -> None:
         """Schedule a coroutine as a background task, keeping a reference to prevent GC."""
@@ -303,10 +335,10 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
-    async def _update_and_notify(self, action_id: uuid.UUID, new_state: ActionState) -> Action:
-        """Update action state in storage and broadcast a resource-updated notification."""
-        action = _require_action(await self._req_storage.update_state(action_id, new_state), action_id)
-        await self.broadcast_resource_updated(f"resource://actions/{action_id}")
+    async def _update_and_notify(self, key: ActionKey, new_state: ActionState, detail: LogEventDetail) -> Action:
+        """Update action state in storage, append log entry, and broadcast notifications."""
+        action = _require_action(await self._req_storage.update_state(key, new_state), key)
+        await self._append_log_and_notify(key, detail)
         return action
 
     # ── Internal backend call ─────────────────────────────────────────────────

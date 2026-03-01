@@ -11,7 +11,7 @@ import {
   ResourceUpdatedNotificationSchema,
   type ResourceUpdatedNotification,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { Action, ActionId, ActionStatus } from "./types.ts";
+import type { Action, ActionKey, ActionStatus } from "./types.ts";
 
 type Callback<T> = (data: T) => void;
 
@@ -87,12 +87,16 @@ export class ApprovalGateMcpClient {
     return this.callTool("list_actions", { status: status ?? null, limit });
   }
 
-  async approve(id: ActionId): Promise<Action> {
-    return this.callTool("approve_action", { action_id: id });
+  async approve(key: ActionKey): Promise<Action> {
+    return this.callTool("approve_action", { session_key: key.session_key, action_seq: key.action_seq });
   }
 
-  async reject(id: ActionId, reason?: string): Promise<Action> {
-    return this.callTool("reject_action", { action_id: id, reason: reason ?? null });
+  async reject(key: ActionKey, reason?: string): Promise<Action> {
+    return this.callTool("reject_action", {
+      session_key: key.session_key,
+      action_seq: key.action_seq,
+      reason: reason ?? null,
+    });
   }
 
   async readAction<T>(uri: string): Promise<T> {

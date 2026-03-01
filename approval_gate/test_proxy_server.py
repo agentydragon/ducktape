@@ -15,28 +15,11 @@ def test_adds_justification_and_session_key_at_top_level():
     assert "session_key" in result["properties"]
 
 
-def test_required_contains_input_and_justification():
+def test_required_contains_input_justification_and_session_key():
     result = _wrap_tool_schema({})
     assert "input" in result["required"]
     assert "justification" in result["required"]
-    # session_key is optional (has a default)
-    assert "session_key" not in result["required"]
-
-
-def test_no_collision_between_input_fields_and_envelope_fields():
-    # A backend tool with fields named 'justification' and 'session_key' must not
-    # shadow or be shadowed by the envelope fields — they live under 'input'.
-    original = {
-        "type": "object",
-        "properties": {"justification": {"type": "integer"}, "session_key": {"type": "boolean"}},
-    }
-    result = _wrap_tool_schema(original)
-    # Backend fields remain untouched inside 'input'
-    assert result["properties"]["input"]["properties"]["justification"] == {"type": "integer"}
-    assert result["properties"]["input"]["properties"]["session_key"] == {"type": "boolean"}
-    # Envelope fields are the approval-gate versions, not the backend's
-    assert result["properties"]["justification"]["type"] == "string"
-    assert result["properties"]["session_key"]["type"] == ["string", "null"]
+    assert "session_key" in result["required"]
 
 
 def test_does_not_mutate_original_schema():

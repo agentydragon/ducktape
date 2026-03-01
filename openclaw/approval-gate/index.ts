@@ -5,14 +5,16 @@
  *   1. Discovers approval-gate tools via MCP list_tools.
  *   2. Re-registers each tool with OpenClaw, stripping `session_key` from the
  *      schema (injected automatically from ctx.sessionKey).
- *   3. Subscribes to `resource://actions/{id}` MCP resource notifications.
- *   4. On ResourceUpdated: reads the resource, formats a result message, and
- *      injects it into the agent session via chat.inject (local gateway WebSocket).
+ *   3. Subscribes to `resource://sessions/{session_key}/log_hwm` MCP resource
+ *      notifications for each session.
+ *   4. On HWM change: catches up by reading missed log entries. For terminal
+ *      events (done/rejected/withdrawn), reads the full action state and
+ *      injects the result into the agent session via chat.inject (local gateway
+ *      WebSocket).
  *
  * Resilience: if the approval gate MCP server goes down, the plugin automatically
  * reconnects with exponential backoff. On reconnect, it re-subscribes to all
- * pending (non-terminal) actions and delivers any results that arrived during the
- * outage via catch-up reads.
+ * tracked sessions' log HWMs and catches up from the last known HWM.
  *
  * Auth:
  *   - Approval gate MCP endpoint: Bearer AGENT_API_KEY (from plugin config)
@@ -27,15 +29,21 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import WebSocket from "ws";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:18789";
-const ACTION_RESOURCE_PREFIX = "resource://actions/";
+const LOG_HWM_PREFIX = "resource://sessions/";
+const LOG_HWM_SUFFIX = "/log_hwm";
 const INITIAL_RETRY_DELAY_MS = 5_000;
 const MAX_RETRY_DELAY_MS = 60_000;
 
-// ── Action state types (mirrors approval_gate/models.py + mcp_types.CallToolResult) ─
+// ── Action/log types (mirrors approval_gate/models.py) ──────────────────────
 // TODO: These types overlap with approval_gate/frontend/types.ts. The two packages live in
 // different environments (Node.js plugin vs browser SPA) and carry different field sets, so
 // a shared package would add more complexity than it removes for now. If a third consumer
 // appears, consider extracting a shared @ducktape/approval-gate-types workspace package.
+
+interface ActionKey {
+  session_key: string;
+  action_seq: number;
+}
 
 interface ActionState {
   status: "pending" | "executing" | "done" | "rejected" | "withdrawn";
@@ -55,43 +63,62 @@ interface RejectedState extends ActionState {
 }
 
 interface Action {
-  id: string;
+  key: ActionKey;
   call: { tool_name: string };
-  session_key?: string | null;
   state: ActionState;
+}
+
+interface LogEntry {
+  entry_id: number;
+  session_key: string;
+  action_seq: number;
+  kind: string;
+  timestamp: string;
+  detail_json: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 type TerminalStatus = "done" | "rejected" | "withdrawn";
 const TERMINAL_STATUSES = new Set<TerminalStatus>(["done", "rejected", "withdrawn"]);
+const TERMINAL_LOG_KINDS = new Set(["execution_finished", "denied", "withdrawn"]);
 
 function isTerminal(status: string): status is TerminalStatus {
   return TERMINAL_STATUSES.has(status as TerminalStatus);
 }
 
+function isTerminalLogKind(kind: string): boolean {
+  return TERMINAL_LOG_KINDS.has(kind);
+}
+
 function formatOutcomeMessage(action: Action): string {
   const state = action.state;
-  const id = action.id;
+  const keyStr = `${action.key.session_key}/${action.key.action_seq}`;
 
   if (state.status === "done") {
     const done = state as DoneState;
     const parts = done.outcome.content.filter((c) => c.type === "text" && c.text).map((c) => c.text as string);
     const body = parts.join("\n") || JSON.stringify(done.outcome.content, null, 2);
     if (!done.outcome.isError) {
-      return `Action ${id} approved and executed:\n\n${body}`;
+      return `Action ${keyStr} approved and executed:\n\n${body}`;
     } else {
-      return `Action ${id} was approved but execution returned an error:\n\n${body}`;
+      return `Action ${keyStr} was approved but execution returned an error:\n\n${body}`;
     }
   }
   if (state.status === "rejected") {
     const rej = state as RejectedState;
-    return `Action ${id} was rejected by the operator. Reason: ${rej.reason ?? "none given"}`;
+    return `Action ${keyStr} was rejected by the operator. Reason: ${rej.reason ?? "none given"}`;
   }
   if (state.status === "withdrawn") {
-    return `Action ${id} was withdrawn.`;
+    return `Action ${keyStr} was withdrawn.`;
   }
-  return `Action ${id} state changed to: ${state.status}`;
+  return `Action ${keyStr} state changed to: ${state.status}`;
+}
+
+/** Parse session_key from a log HWM URI like resource://sessions/{key}/log_hwm */
+function parseSessionKeyFromHwmUri(uri: string): string | null {
+  if (!uri.startsWith(LOG_HWM_PREFIX) || !uri.endsWith(LOG_HWM_SUFFIX)) return null;
+  return uri.slice(LOG_HWM_PREFIX.length, uri.length - LOG_HWM_SUFFIX.length);
 }
 
 /** Strip session_key from a JSON schema properties object. */
@@ -108,10 +135,6 @@ function stripSessionKey(schema: Record<string, unknown>): Record<string, unknow
   return result;
 }
 
-// ── Pending action tracking ─────────────────────────────────────────────────
-
-type PendingAction = { resourceUri: string; sessionKey: string | null };
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type NotificationHandler = (notification: any) => Promise<void>;
 
@@ -121,7 +144,7 @@ type NotificationHandler = (notification: any) => Promise<void>;
  * Resilient MCP client connection to the approval gate server.
  *
  * Automatically reconnects on disconnect with exponential backoff. Tracks
- * in-flight actions and re-subscribes on reconnect, performing catch-up reads
+ * session HWMs and re-subscribes on reconnect, performing catch-up reads
  * to deliver results that arrived during the outage.
  */
 class ApprovalGateConnection {
@@ -130,8 +153,8 @@ class ApprovalGateConnection {
   private retryDelay = INITIAL_RETRY_DELAY_MS;
   private notificationHandler: NotificationHandler | null = null;
   private cachedInstructions: string | undefined;
-  /** Actions that haven't reached terminal state — re-subscribed on reconnect. */
-  private readonly pendingActions = new Map<string, PendingAction>();
+  /** Last seen log entry_id per session — re-subscribed on reconnect. */
+  private readonly sessionHwms = new Map<string, number>();
 
   constructor(
     private readonly url: string,
@@ -180,8 +203,8 @@ class ApprovalGateConnection {
 
       this.log.info(`connected to ${this.url}`);
 
-      // Re-subscribe to pending actions and catch up on missed results
-      await this.resubscribePendingActions();
+      // Re-subscribe to tracked sessions and catch up on missed log entries
+      await this.resubscribeTrackedSessions();
     } catch (err) {
       this.log.error(`failed to connect to approval gate: ${String(err)}`);
       this.scheduleReconnect();
@@ -198,36 +221,31 @@ class ApprovalGateConnection {
   }
 
   /**
-   * Re-subscribe to all pending actions after reconnect.
+   * Re-subscribe to all tracked sessions after reconnect.
    *
-   * For each action: subscribe first (for future changes), then read current state
-   * to catch results that arrived during the outage. If already terminal, deliver
-   * the result immediately. The subscribe-then-read order avoids race conditions.
+   * For each session: subscribe to its log_hwm resource, then read the current
+   * HWM and catch up on any missed log entries.
    */
-  private async resubscribePendingActions(): Promise<void> {
-    if (this.pendingActions.size === 0) return;
-    this.log.info(`re-subscribing to ${this.pendingActions.size} pending action(s)`);
-    const entries = [...this.pendingActions.entries()];
-    for (const [actionId, { resourceUri }] of entries) {
+  private async resubscribeTrackedSessions(): Promise<void> {
+    if (this.sessionHwms.size === 0) return;
+    this.log.info(`re-subscribing to ${this.sessionHwms.size} tracked session(s)`);
+    for (const [sessionKey, lastHwm] of this.sessionHwms.entries()) {
       try {
+        const hwmUri = `${LOG_HWM_PREFIX}${sessionKey}${LOG_HWM_SUFFIX}`;
         const client = this.requireClient();
-        await client.subscribeResource({ uri: resourceUri });
+        await client.subscribeResource({ uri: hwmUri });
 
-        // Catch-up read: check if action resolved during outage
-        const resource = await client.readResource({ uri: resourceUri });
-        const content = resource.contents[0];
-        if (content && "text" in content) {
-          const action = JSON.parse((content as { text: string }).text) as Action;
-          if (isTerminal(action.state.status)) {
-            // Trigger the notification handler to deliver the result
-            const notification = { method: "notifications/resources/updated", params: { uri: resourceUri } };
-            this.notificationHandler?.(notification).catch((err) =>
-              this.log.warn(`catch-up notification failed for ${actionId}: ${String(err)}`)
-            );
-          }
+        // Read current HWM and catch up
+        const currentHwm = await this.readHwm(sessionKey);
+        if (currentHwm > lastHwm) {
+          // Trigger catch-up via the notification handler
+          const notification = { method: "notifications/resources/updated", params: { uri: hwmUri } };
+          this.notificationHandler?.(notification).catch((err) =>
+            this.log.warn(`catch-up failed for session ${sessionKey}: ${String(err)}`)
+          );
         }
       } catch (err) {
-        this.log.warn(`failed to re-subscribe to action ${actionId}: ${String(err)}`);
+        this.log.warn(`failed to re-subscribe to session ${sessionKey}: ${String(err)}`);
       }
     }
   }
@@ -257,12 +275,30 @@ class ApprovalGateConnection {
     }
   }
 
-  trackAction(actionId: string, resourceUri: string, sessionKey: string | null): void {
-    this.pendingActions.set(actionId, { resourceUri, sessionKey });
+  /** Start tracking a session's log HWM. Subscribes if not already tracked. */
+  async trackSession(sessionKey: string): Promise<void> {
+    if (this.sessionHwms.has(sessionKey)) return;
+    this.sessionHwms.set(sessionKey, 0);
+    const hwmUri = `${LOG_HWM_PREFIX}${sessionKey}${LOG_HWM_SUFFIX}`;
+    try {
+      await this.requireClient().subscribeResource({ uri: hwmUri });
+      this.log.info(`tracking session ${sessionKey}`);
+    } catch (err) {
+      this.log.warn(`failed to subscribe to HWM for session ${sessionKey}: ${String(err)}`);
+    }
   }
 
-  resolveAction(actionId: string): void {
-    this.pendingActions.delete(actionId);
+  /** Update the last-seen HWM for a session. */
+  updateSessionHwm(sessionKey: string, hwm: number): void {
+    const current = this.sessionHwms.get(sessionKey) ?? 0;
+    if (hwm > current) {
+      this.sessionHwms.set(sessionKey, hwm);
+    }
+  }
+
+  /** Get the last-seen HWM for a session. */
+  getSessionHwm(sessionKey: string): number {
+    return this.sessionHwms.get(sessionKey) ?? 0;
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<ReturnType<Client["callTool"]>> {
@@ -279,16 +315,30 @@ class ApprovalGateConnection {
     return JSON.parse((content as { text: string }).text) as Action;
   }
 
-  async subscribeResource(uri: string): Promise<void> {
-    this.requireClient().subscribeResource({ uri });
+  async readResourceText(uri: string): Promise<string> {
+    const client = this.requireClient();
+    const resource = await client.readResource({ uri });
+    const content = resource.contents[0];
+    if (!content || !("text" in content)) {
+      throw new Error(`resource ${uri} returned non-text content`);
+    }
+    return (content as { text: string }).text;
   }
 
-  async unsubscribeResource(uri: string): Promise<void> {
-    try {
-      this.requireClient().unsubscribeResource({ uri });
-    } catch {
-      // Swallow — unsubscribe is best-effort (connection may already be gone)
-    }
+  async readHwm(sessionKey: string): Promise<number> {
+    const uri = `${LOG_HWM_PREFIX}${sessionKey}${LOG_HWM_SUFFIX}`;
+    const text = await this.readResourceText(uri);
+    return parseInt(text, 10);
+  }
+
+  async readLogEntry(sessionKey: string, entryId: number): Promise<LogEntry> {
+    const uri = `resource://sessions/${sessionKey}/log/${entryId}`;
+    const text = await this.readResourceText(uri);
+    return JSON.parse(text) as LogEntry;
+  }
+
+  async subscribeResource(uri: string): Promise<void> {
+    this.requireClient().subscribeResource({ uri });
   }
 
   async listTools(): Promise<ReturnType<Client["listTools"]>> {
@@ -444,7 +494,9 @@ function scopedLogger(api: OpenClawPluginApi) {
 
 export default async function register(api: OpenClawPluginApi): Promise<void> {
   const log = scopedLogger(api);
-  const cfg = api.pluginConfig as { approvalGateUrl?: string; agentApiKey?: string } | undefined;
+  const cfg = api.pluginConfig as
+    | { approvalGateUrl?: string; agentApiKey?: string; registerTools?: boolean }
+    | undefined;
 
   const approvalGateUrl = cfg?.approvalGateUrl?.trim();
   const agentApiKey = cfg?.agentApiKey?.trim();
@@ -467,44 +519,62 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   const connection = new ApprovalGateConnection(approvalGateUrl, agentApiKey, log);
 
   // Set up ResourceUpdated notification handler before connecting, so it's
-  // registered on every (re)connect. The handler reads the action resource,
-  // delivers terminal results via gateway.inject, and cleans up tracking.
+  // registered on every (re)connect. The handler watches for log HWM changes,
+  // catches up on missed log entries, and delivers terminal results via gateway.inject.
   connection.setNotificationHandler(async (notification) => {
     const uri = (notification.params as { uri?: string }).uri;
-    if (!uri?.startsWith(ACTION_RESOURCE_PREFIX)) return;
+    if (!uri) return;
 
-    const actionId = uri.slice(ACTION_RESOURCE_PREFIX.length);
+    const sessionKey = parseSessionKeyFromHwmUri(uri);
+    if (!sessionKey) return;
 
-    let action: Action;
+    // Read the new HWM value
+    let newHwm: number;
     try {
-      action = await connection.readResource(uri);
+      newHwm = await connection.readHwm(sessionKey);
     } catch (err) {
-      log.warn(`failed to read resource ${uri}: ${String(err)}`);
+      log.warn(`failed to read HWM for session ${sessionKey}: ${String(err)}`);
       return;
     }
 
-    const { status } = action.state;
-    if (!isTerminal(status)) return;
+    const lastHwm = connection.getSessionHwm(sessionKey);
+    if (newHwm <= lastHwm) return;
 
-    // Terminal — clean up subscription and tracking
-    connection.resolveAction(actionId);
-    await connection.unsubscribeResource(uri);
+    // Catch up on log entries since our last seen HWM
+    for (let entryId = lastHwm + 1; entryId <= newHwm; entryId++) {
+      let entry: LogEntry;
+      try {
+        entry = await connection.readLogEntry(sessionKey, entryId);
+      } catch (err) {
+        log.warn(`failed to read log entry ${sessionKey}/${entryId}: ${String(err)}`);
+        continue;
+      }
 
-    const sessionKey = action.session_key;
-    if (!sessionKey) {
-      log.info(`action ${actionId} has no session_key; skipping chat.inject`);
-      return;
+      if (!isTerminalLogKind(entry.kind)) continue;
+
+      // Read the full action state for terminal events
+      const actionUri = `resource://sessions/${sessionKey}/actions/${entry.action_seq}`;
+      let action: Action;
+      try {
+        action = await connection.readResource(actionUri);
+      } catch (err) {
+        log.warn(`failed to read action ${sessionKey}/${entry.action_seq}: ${String(err)}`);
+        continue;
+      }
+
+      if (!isTerminal(action.state.status)) continue;
+      if (!gateway) continue;
+
+      const message = formatOutcomeMessage(action);
+      try {
+        await gateway.inject(sessionKey, message);
+        log.info(`injected result for action ${sessionKey}/${entry.action_seq} into session ${sessionKey}`);
+      } catch (err) {
+        log.error(`failed to inject result for action ${sessionKey}/${entry.action_seq}: ${String(err)}`);
+      }
     }
 
-    if (!gateway) return;
-
-    const message = formatOutcomeMessage(action);
-    try {
-      await gateway.inject(sessionKey, message);
-      log.info(`injected result for action ${actionId} into session ${sessionKey}`);
-    } catch (err) {
-      log.error(`failed to inject result for action ${actionId}: ${String(err)}`);
-    }
+    connection.updateSessionHwm(sessionKey, newHwm);
   });
 
   try {
@@ -514,104 +584,105 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   }
 
   // ── Discover and re-register approval gate tools ──────────────────────────
-  // Tools are registered once at startup. If the initial connection fails,
-  // tools won't be available until a manual restart. Once registered, tools
-  // survive reconnections — execute() checks connection state and returns
-  // a user-friendly error if the server is temporarily unavailable.
-  if (!connection.connected) {
-    log.warn("not connected on startup; no tools registered — plugin will reconnect in background");
-    return;
-  }
+  // Gated behind registerTools config (default off). When disabled, the plugin
+  // still listens for action notifications and delivers results via chat.inject,
+  // but does not expose approval-gate-wrapped tools to agents.
+  const registerTools = cfg?.registerTools ?? false;
 
-  let toolList: Awaited<ReturnType<Client["listTools"]>>;
-  try {
-    toolList = await connection.listTools();
-  } catch (err) {
-    log.error(`failed to list tools: ${String(err)}`);
-    return;
-  }
+  if (registerTools) {
+    // Tools are registered once at startup. If the initial connection fails,
+    // tools won't be available until a manual restart. Once registered, tools
+    // survive reconnections — execute() checks connection state and returns
+    // a user-friendly error if the server is temporarily unavailable.
+    if (!connection.connected) {
+      log.warn("not connected on startup; no tools registered — plugin will reconnect in background");
+      return;
+    }
 
-  for (const tool of toolList.tools) {
-    const toolName = tool.name;
-    const toolDescription = tool.description ?? "";
-    // session_key is injected by us; agents should not see or set it
-    const schema = stripSessionKey((tool.inputSchema ?? {}) as Record<string, unknown>);
+    let toolList: Awaited<ReturnType<Client["listTools"]>>;
+    try {
+      toolList = await connection.listTools();
+    } catch (err) {
+      log.error(`failed to list tools: ${String(err)}`);
+      return;
+    }
 
-    api.registerTool((ctx: OpenClawPluginToolContext) => ({
-      name: toolName,
-      label: toolName,
-      description: toolDescription,
-      parameters: schema,
-      async execute(_id: string, params: Record<string, unknown>) {
-        const callArgs = { ...params, session_key: ctx.sessionKey ?? null };
+    for (const tool of toolList.tools) {
+      const toolName = tool.name;
+      const toolDescription = tool.description ?? "";
+      // session_key is injected by us; agents should not see or set it
+      const schema = stripSessionKey((tool.inputSchema ?? {}) as Record<string, unknown>);
 
-        let result: Awaited<ReturnType<Client["callTool"]>>;
-        try {
-          result = await connection.callTool(toolName, callArgs);
-        } catch (err) {
+      api.registerTool((ctx: OpenClawPluginToolContext) => ({
+        name: toolName,
+        label: toolName,
+        description: toolDescription,
+        parameters: schema,
+        async execute(_id: string, params: Record<string, unknown>) {
+          const callArgs = { ...params, session_key: ctx.sessionKey ?? null };
+
+          let result: Awaited<ReturnType<Client["callTool"]>>;
+          try {
+            result = await connection.callTool(toolName, callArgs);
+          } catch (err) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Approval gate server is currently unavailable. Please retry shortly. (${String(err)})`,
+                },
+              ],
+            };
+          }
+
+          const firstContent = result.content?.[0] as { text: string };
+          const actionKey = JSON.parse(firstContent.text) as ActionKey;
+          const keyStr = `${actionKey.session_key}/${actionKey.action_seq}`;
+
+          // Start tracking this session's log HWM for notifications
+          await connection.trackSession(actionKey.session_key);
+
+          // Read current state immediately — action may already be resolved
+          // (auto-approved by predicate or instantly denied).
+          const actionUri = `resource://sessions/${actionKey.session_key}/actions/${actionKey.action_seq}`;
+          let action: Action;
+          try {
+            action = await connection.readResource(actionUri);
+          } catch (err) {
+            log.warn(`could not read initial state for ${actionUri}: ${String(err)}`);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Action ${keyStr} queued for operator approval`,
+                },
+              ],
+            };
+          }
+
+          const { status } = action.state;
+          if (isTerminal(status)) {
+            // Already terminal — return outcome directly.
+            return { content: [{ type: "text" as const, text: formatOutcomeMessage(action) }] };
+          }
+
+          // Still pending — tell the agent its action is queued.
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Approval gate server is currently unavailable. Please retry shortly. (${String(err)})`,
+                text: `Action ${keyStr} queued for operator approval`,
               },
             ],
           };
-        }
+        },
+      }));
+    }
 
-        const firstContent = result.content?.[0] as { text: string };
-        const actionId = JSON.parse(firstContent.text) as string;
-        const resourceUri = `${ACTION_RESOURCE_PREFIX}${actionId}`;
-
-        // Track this action for re-subscription on reconnect
-        connection.trackAction(actionId, resourceUri, ctx.sessionKey ?? null);
-
-        // Subscribe so ResourceUpdated notifications reach our handler above.
-        try {
-          await connection.subscribeResource(resourceUri);
-        } catch (err) {
-          log.warn(`failed to subscribe to ${resourceUri}: ${String(err)}`);
-        }
-
-        // Read current state immediately — action may already be resolved
-        // (auto-approved by predicate or instantly denied).
-        let action: Action;
-        try {
-          action = await connection.readResource(resourceUri);
-        } catch (err) {
-          log.warn(`could not read initial state for ${resourceUri}: ${String(err)}`);
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Action ${actionId} queued for operator approval`,
-              },
-            ],
-          };
-        }
-
-        const { status } = action.state;
-        if (isTerminal(status)) {
-          // Already terminal — clean up and return outcome.
-          connection.resolveAction(actionId);
-          await connection.unsubscribeResource(resourceUri);
-          return { content: [{ type: "text" as const, text: formatOutcomeMessage(action) }] };
-        }
-
-        // Still pending — tell the agent its action is queued.
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Action ${actionId} queued for operator approval`,
-            },
-          ],
-        };
-      },
-    }));
+    log.info(`registered ${toolList.tools.length} tool(s): ${toolList.tools.map((t) => t.name).join(", ")}`);
+  } else {
+    log.info("registerTools is off; skipping tool registration (notification listener still active)");
   }
-
-  log.info(`registered ${toolList.tools.length} tool(s): ${toolList.tools.map((t) => t.name).join(", ")}`);
 
   // Inject MCP server instructions into the agent context on the first turn of each
   // fresh session (no user messages yet). prependContext ends up in the first user
