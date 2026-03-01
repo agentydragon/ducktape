@@ -353,9 +353,17 @@ class ApprovalGateServer(EnhancedFastMCP):
         task.add_done_callback(self._background_tasks.discard)
 
     async def _update_and_notify(self, key: ActionKey, new_state: ActionState, detail: LogEventDetail) -> Action:
-        """Update action state in storage, append log entry, and notify subscribers."""
+        """Update action state in storage, append log entry, and notify subscribers.
+
+        Appends the log entry first so the HWM advances before the action state
+        changes. This prevents races where a reader sees a terminal action state
+        but the log entry hasn't been written yet (which can cause entry_id
+        collisions from concurrent log appends).
+        """
+        await self._req_storage.append_log_entry(session_key=key.session_key, action_seq=key.action_seq, detail=detail)
         action = await self._req_storage.update_state(key, new_state)
         if action is None:
             raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
-        await self._append_log_and_notify(key, detail)
+        await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
+        await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
         return action
