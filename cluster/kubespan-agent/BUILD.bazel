@@ -13,6 +13,9 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan-agent",
     deps = [
+        "@com_github_google_nftables//:nftables",
+        "@com_github_google_nftables//binaryutil",
+        "@com_github_google_nftables//expr",
         "@com_github_mdlayher_netx//eui64",
         "@com_github_siderolabs_discovery_api//api/v1alpha1/client/pb",
         "@com_github_siderolabs_discovery_client//pkg/client",
@@ -21,6 +24,7 @@ go_library(
         "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_go4_netipx//:netipx",
+        "@org_golang_x_sys//unix",
         "@org_uber_go_zap//:zap",
     ],
 )

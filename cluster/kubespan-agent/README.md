@@ -26,18 +26,12 @@ so this daemon fills that gap.
 
 - Linux (kernel 5.6+ for WireGuard)
 - `wireguard` kernel module loaded
-- `nft` (nftables) CLI available
 - Root privileges (creates network interfaces and routing rules)
 
 ## Building
 
 ```bash
-# With Bazel (from repo root):
 bazel build //cluster/kubespan-agent
-
-# With Go:
-cd cluster/kubespan-agent
-go build -o kubespand .
 ```
 
 ## Configuration
@@ -63,16 +57,19 @@ tofu output -json talos_machine_secrets | jq -r '.cluster.secret'
 
 ### Config Fields
 
-| Field                | Default                           | Description                                       |
-| -------------------- | --------------------------------- | ------------------------------------------------- |
-| `cluster_id`         | (required)                        | Talos cluster identity (base64)                   |
-| `cluster_secret`     | (required)                        | 32-byte AES key for discovery encryption (base64) |
-| `discovery_endpoint` | `discovery.talos.dev:443`         | gRPC discovery service endpoint                   |
-| `listen_port`        | `51820`                           | WireGuard UDP port                                |
-| `mtu`                | `1420`                            | WireGuard interface MTU                           |
-| `identity_file`      | `/var/lib/kubespan/identity.json` | Persisted WireGuard keypair path                  |
-| `force_routing`      | `false`                           | Route to peers even when they are down            |
-| `machine_type`       | `worker`                          | Advertised to discovery (`worker`/`controlplane`) |
+| Field                | Default                           | Description                                                       |
+| -------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| `cluster_id`         | (required)                        | Talos cluster identity (base64)                                   |
+| `cluster_secret`     | (required)                        | 32-byte AES key for discovery encryption (base64)                 |
+| `discovery_endpoint` | `discovery.talos.dev:443`         | gRPC discovery service endpoint                                   |
+| `listen_port`        | `51820`                           | WireGuard UDP port                                                |
+| `mtu`                | `1420`                            | WireGuard interface MTU                                           |
+| `identity_file`      | `/var/lib/kubespan/identity.json` | Persisted WireGuard keypair path                                  |
+| `force_routing`      | `false`                           | Route to peers even when they are down                            |
+| `machine_type`       | `worker`                          | Advertised to discovery (`worker`/`controlplane`)                 |
+| `extra_endpoints`    | `[]`                              | Additional endpoints to announce (e.g. `["203.0.113.1:51820"]`)   |
+| `endpoint_filters`   | `[]`                              | CIDR allow/deny list (prefix `!` to deny, e.g. `["!10.0.0.0/8"]`) |
+| `insecure_discovery` | `false`                           | Skip TLS verification for self-hosted discovery services          |
 
 ## Running
 
@@ -82,6 +79,22 @@ sudo ./kubespand -config /etc/kubespan/agent.yaml
 
 On first run, it generates a WireGuard keypair at the configured `identity_file` path. The
 keypair is reused on subsequent runs to maintain a stable KubeSpan identity.
+
+### Discovery-Only Mode
+
+Run without WireGuard/routing to test discovery connectivity:
+
+```bash
+./kubespand -discovery-only -timeout 60s -config /etc/kubespan/agent.yaml
+```
+
+Exits 0 when at least one peer is discovered, 1 on timeout. No root required.
+
+### Signal Handling
+
+kubespand handles `SIGTERM` and `SIGINT` gracefully: it deregisters from the discovery
+service, removes nftables rules, ip policy routing rules, and the WireGuard interface
+before exiting.
 
 ## Verifying
 
@@ -122,27 +135,17 @@ Constants match `talos/pkg/machinery/constants/constants.go`:
 
 ### Not Yet Implemented
 
-- **Extra endpoints announcement**: Talos supports advertising manually configured endpoints
-  (e.g. public IPs behind NAT). The config field exists but endpoint publishing is not wired up.
-- **Endpoint filters**: Talos supports filtering which endpoints are accepted/advertised.
-  Not implemented — all discovered endpoints are used.
 - **Harvest extra endpoints**: Talos can learn additional endpoints from WireGuard handshake
   source addresses. Not implemented.
 - **Advertise Kubernetes networks**: Talos controlplane nodes can advertise pod/service CIDRs
   as additional allowed IPs. Not implemented — only the node's own KubeSpan ULA /128 and any
   addresses published by the Talos peer are routed.
-- **Endpoint filter exclusions**: `ExcludeAdvertisedNetworks` from Talos config is not supported.
-- **Graceful discovery re-registration**: On identity change (unlikely), the old affiliate is
-  not explicitly cleaned up — it expires via TTL.
 - **CSR auto-approval**: When running as a Kubernetes node, this daemon does not handle
   kubelet CSR approval (needs a separate mechanism).
 - **NixOS/systemd module**: No packaged NixOS module or systemd unit yet.
 
 ### Known Differences from Talos
 
-- **nftables via CLI**: Uses `nft -f -` CLI invocation rather than the `google/nftables`
-  Go library. The Go library lacks support for interval-type sets needed for prefix matching.
-  Functionally equivalent but requires `nft` binary on PATH.
 - **Single MAC detection**: Talos uses `net.FirstHardwareAddr()` from its own network
   stack. This daemon scans `/sys/class/net/` for the first physical NIC's MAC address,
   skipping loopback and virtual interfaces. The MAC is only used for EUI-64 address

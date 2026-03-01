@@ -20,6 +20,8 @@ const PeerReconcileInterval = 30 * time.Second
 
 func main() {
 	configPath := flag.String("config", "/etc/kubespan/agent.yaml", "path to config file")
+	discoveryOnly := flag.Bool("discovery-only", false, "run discovery only (no WireGuard/routing), exit when peers found")
+	discoveryTimeout := flag.Duration("timeout", 0, "timeout for discovery-only mode (0 = no timeout)")
 	flag.Parse()
 
 	logger, err := zap.NewProduction()
@@ -29,12 +31,12 @@ func main() {
 	}
 	defer logger.Sync()
 
-	if err := run(*configPath, logger); err != nil {
+	if err := run(*configPath, *discoveryOnly, *discoveryTimeout, logger); err != nil {
 		logger.Fatal("kubespand exited with error", zap.Error(err))
 	}
 }
 
-func run(configPath string, logger *zap.Logger) error {
+func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, logger *zap.Logger) error {
 	// Load config.
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
@@ -45,6 +47,7 @@ func run(configPath string, logger *zap.Logger) error {
 		zap.String("discovery_endpoint", cfg.DiscoveryEndpoint),
 		zap.Int("listen_port", cfg.ListenPort),
 		zap.Int("mtu", cfg.MTU),
+		zap.Bool("discovery_only", discoveryOnly),
 	)
 
 	// Load or create identity.
@@ -68,40 +71,47 @@ func run(configPath string, logger *zap.Logger) error {
 		zap.String("address", identity.Address),
 	)
 
-	address, err := identity.ParsedAddress()
-	if err != nil {
-		return fmt.Errorf("parsing identity address: %w", err)
+	// Set up WireGuard and routing (skip in discovery-only mode).
+	var wg *WireGuardManager
+	var routing *RoutingManager
+
+	if !discoveryOnly {
+		address, err := identity.ParsedAddress()
+		if err != nil {
+			return fmt.Errorf("parsing identity address: %w", err)
+		}
+
+		wg, err = NewWireGuardManager(identity.PrivateKey, cfg.ClusterSecret, cfg.ListenPort, cfg.MTU)
+		if err != nil {
+			return fmt.Errorf("wireguard manager: %w", err)
+		}
+		defer wg.Close()
+
+		if err := wg.EnsureInterface(address); err != nil {
+			return fmt.Errorf("wireguard interface: %w", err)
+		}
+		logger.Info("WireGuard interface ready", zap.String("interface", LinkName))
+
+		routing = NewRoutingManager(cfg.MTU)
+		if err := routing.Install(nil); err != nil {
+			return fmt.Errorf("routing: %w", err)
+		}
+		logger.Info("routing rules installed",
+			zap.Int("table", RoutingTable),
+			zap.Int("rule_priority", RulePriority),
+		)
 	}
 
-	// Set up WireGuard interface.
-	wg, err := NewWireGuardManager(identity.PrivateKey, cfg.ClusterSecret, cfg.ListenPort, cfg.MTU)
-	if err != nil {
-		return fmt.Errorf("wireguard manager: %w", err)
-	}
-	defer wg.Close()
-
-	if err := wg.EnsureInterface(address); err != nil {
-		return fmt.Errorf("wireguard interface: %w", err)
-	}
-	logger.Info("WireGuard interface ready", zap.String("interface", LinkName))
-
-	// Set up routing and firewall.
-	routing := NewRoutingManager(cfg.MTU)
-
-	// Install initial (empty) routing rules — nftables with no routed IPs yet,
-	// plus ip rules and default routes in table 180.
-	if err := routing.Install(nil); err != nil {
-		return fmt.Errorf("routing: %w", err)
-	}
-	logger.Info("routing rules installed",
-		zap.Int("table", RoutingTable),
-		zap.Int("rule_priority", RulePriority),
-	)
-
-	// Set up signal handler for cleanup.
+	// Set up context with optional timeout for discovery-only mode.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	if discoveryOnly && discoveryTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, discoveryTimeout)
+		defer cancel()
+	}
+
+	// Set up signal handler.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
@@ -122,18 +132,103 @@ func run(configPath string, logger *zap.Logger) error {
 	}
 	logger.Info("published to discovery service")
 
+	cleanup := func() {
+		logger.Info("cleaning up")
+		discovery.DeleteLocalAffiliate()
+		if routing != nil {
+			routing.Cleanup()
+		}
+		if wg != nil {
+			wg.Cleanup()
+		}
+	}
+
+	if discoveryOnly {
+		return runDiscoveryLoop(ctx, discovery, cfg, identity, cleanup, discoveryErrCh, logger)
+	}
+	return runFullLoop(ctx, cancel, wg, routing, discovery, cfg, identity, sigCh, discoveryErrCh, cleanup, logger)
+}
+
+// runDiscoveryLoop runs a discovery-only event loop: waits for peers then exits.
+func runDiscoveryLoop(
+	ctx context.Context,
+	discovery *DiscoveryManager,
+	cfg *Config,
+	identity *Identity,
+	cleanup func(),
+	discoveryErrCh <-chan error,
+	logger *zap.Logger,
+) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	checkPeers := func() bool {
+		peers := discovery.GetPeers()
+		if len(peers) == 0 {
+			return false
+		}
+		for _, p := range peers {
+			logger.Info("discovered peer",
+				zap.String("label", p.Label),
+				zap.String("public_key", p.PublicKey),
+				zap.String("address", p.Address.String()),
+				zap.Int("endpoints", len(p.Endpoints)),
+			)
+		}
+		logger.Info("discovery-only mode: peers found, exiting successfully", zap.Int("count", len(peers)))
+		return true
+	}
+
+	for {
+		select {
+		case err := <-discoveryErrCh:
+			cleanup()
+			if err != nil {
+				return fmt.Errorf("discovery client: %w", err)
+			}
+			return fmt.Errorf("discovery client exited without finding peers")
+
+		case <-ctx.Done():
+			cleanup()
+			return fmt.Errorf("timeout waiting for peers")
+
+		case <-discovery.NotifyCh():
+			if checkPeers() {
+				cleanup()
+				return nil
+			}
+
+		case <-ticker.C:
+			if checkPeers() {
+				cleanup()
+				return nil
+			}
+			// Re-publish to keep TTL fresh.
+			_ = discovery.PublishLocal(cfg, identity, cfg.ListenPort)
+		}
+	}
+}
+
+// runFullLoop runs the full WireGuard reconciliation event loop.
+func runFullLoop(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	wg *WireGuardManager,
+	routing *RoutingManager,
+	discovery *DiscoveryManager,
+	cfg *Config,
+	identity *Identity,
+	sigCh <-chan os.Signal,
+	discoveryErrCh <-chan error,
+	cleanup func(),
+	logger *zap.Logger,
+) error {
 	// Main reconciliation loop.
 	// Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (Run loop)
 	ticker := time.NewTicker(PeerReconcileInterval)
 	defer ticker.Stop()
 
 	peerStatuses := make(map[string]*PeerStatus)
-
-	cleanup := func() {
-		logger.Info("cleaning up")
-		routing.Cleanup()
-		wg.Cleanup()
-	}
 
 	for {
 		select {

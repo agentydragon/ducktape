@@ -35,3 +35,21 @@ force_routing: false
 # Machine type advertised to the discovery service. Informational only.
 # Talos uses "worker" or "controlplane".
 machine_type: "worker"
+
+# Additional endpoints to announce via the discovery service.
+# Useful for nodes behind NAT where the public IP differs from the detected IP.
+# Format: "ip:port" (e.g., "203.0.113.1:51820").
+# extra_endpoints:
+#   - "203.0.113.1:51820"
+
+# Endpoint filters control which discovered peer endpoints are accepted.
+# Each entry is a CIDR prefix. Prefix with "!" to deny.
+# Evaluated in order; first match wins. Default: accept all.
+# endpoint_filters:
+#   - "0.0.0.0/0"
+#   - "!192.168.0.0/16"
+#   - "::/0"
+
+# Skip TLS certificate verification for the discovery service.
+# Only use for testing with self-hosted discovery services using self-signed certs.
+# insecure_discovery: false

@@ -54,6 +54,23 @@ type Config struct {
 	// "controlplane" — the value is informational and does not change behavior.
 	// Ref: talos/pkg/machinery/api/machine/machine.go (TypeWorker, TypeControlPlane)
 	MachineType string `yaml:"machine_type"`
+
+	// ExtraEndpoints are additional endpoints to announce via the discovery service.
+	// Useful for nodes behind NAT where the public IP differs from the detected IP.
+	// Format: "ip:port" (e.g., "203.0.113.1:51820").
+	// Ref: talos/pkg/machinery/resources/kubespan/config.go (ExtraEndpoints)
+	ExtraEndpoints []string `yaml:"extra_endpoints"`
+
+	// EndpointFilters controls which discovered peer endpoints are accepted.
+	// Each entry is a CIDR prefix. Prefix with "!" to exclude.
+	// Example: ["0.0.0.0/0", "!192.168.0.0/16", "::/0"]
+	// Empty means accept all endpoints.
+	// Ref: talos/pkg/machinery/resources/kubespan/config.go (EndpointFilters)
+	EndpointFilters []string `yaml:"endpoint_filters"`
+
+	// InsecureDiscovery disables TLS certificate verification for the discovery service.
+	// Only use for testing with self-hosted discovery services using self-signed certs.
+	InsecureDiscovery bool `yaml:"insecure_discovery"`
 }
 
 // LoadConfig reads and validates a YAML config file.

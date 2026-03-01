@@ -625,6 +625,11 @@ go_deps.module(
     version = "v4.3.0",
 )
 go_deps.module(
+    path = "github.com/google/nftables",
+    sum = "h1:bkyZ0cbpVeMHXOrtlFc8ISmfVqq5gPJukoYieyVmITg=",
+    version = "v0.3.0",
+)
+go_deps.module(
     path = "github.com/josharian/native",
     sum = "h1:uuaP0hAbW7Y4l0ZRQ6C9zfb7Mg1mbFKry/xzDAfmtLA=",
     version = "v1.1.0",
@@ -636,8 +641,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mdlayher/netlink",
-    sum = "h1:/UtM3ofJap7Vl4QWCPDGXY8d3GIY2UGSDbK+QWmY8/g=",
-    version = "v1.7.2",
+    sum = "h1:A1Cq6Ysb0GM0tpKMbdCXCIfBclan4oHk1Jb+Hrejirg=",
+    version = "v1.7.3-0.20250113171957-fbb4dce95f42",
 )
 go_deps.module(
     path = "github.com/mdlayher/netx",
@@ -646,8 +651,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mdlayher/socket",
-    sum = "h1:eM9y2/jlbs1M615oshPQOHZzj6R6wMT7bX5NPiQvn2U=",
-    version = "v0.4.1",
+    sum = "h1:ilICZmJcQz70vrWVes1MFera4jGiWNocSkykwwoy3XI=",
+    version = "v0.5.0",
 )
 go_deps.module(
     path = "github.com/planetscale/vtprotobuf",
@@ -696,13 +701,13 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/crypto",
-    sum = "h1:RrRspgV4mU+YwB4FYnuBoKsUapNIL5cohGAmSH3azsw=",
-    version = "v0.26.0",
+    sum = "h1:ihbySMvVjLAeSH1IbfcRTkD/iNscyz8rGzjF/E5hV6U=",
+    version = "v0.31.0",
 )
 go_deps.module(
     path = "golang.org/x/net",
-    sum = "h1:a9JDOJc5GMUJ0+UDqmLT86WiEy7iWyIhz8gz8E4e5hE=",
-    version = "v0.28.0",
+    sum = "h1:74SYHlV8BIgHIFC/LrYkOGIwL19eTYXQ5wc6TBuO36I=",
+    version = "v0.33.0",
 )
 go_deps.module(
     path = "golang.zx2c4.com/wireguard",
@@ -726,6 +731,7 @@ use_repo(
     "com_github_containerd_log",
     "com_github_docker_go_units",
     "com_github_fsouza_go_dockerclient",
+    "com_github_google_nftables",
     "com_github_google_uuid",
     "com_github_gorilla_websocket",
     "com_github_josharian_native",

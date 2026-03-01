@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "e2e_test",
+    srcs = ["e2e_test.go"],
+    tags = [
+        "external",
+        "integration",
+        "manual",
+        "no-sandbox",
+    ],
+)
