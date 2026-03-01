@@ -99,16 +99,3 @@ def query_recall_by_example(
             )
         )
     return rows
-
-
-# ============================================================================
-# Aggregated Recall Views
-# ============================================================================
-# Query ORM models directly for recall stats:
-#   - RecallByRun: per critic run
-#   - RecallByDefinitionExample: per (definition, model, example)
-#   - RecallByDefinitionSplitKind: per (definition, model, split, example_kind)
-#   - RecallByExample: per (example, model)
-#
-# All views return: recall_denominator (denominator), credit_stats (numerator),
-# recall_stats (credit_stats / recall_denominator).
