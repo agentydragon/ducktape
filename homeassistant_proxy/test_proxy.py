@@ -37,8 +37,10 @@ _REGISTRY = {
 _HEADERS = {"Authorization": "Bearer proxy-token-abc"}
 
 
-def _mock_registry():
-    return patch("homeassistant_proxy.proxy.fetch_registry", new_callable=AsyncMock, return_value=_REGISTRY)
+@pytest.fixture
+def mock_registry():
+    with patch("homeassistant_proxy.proxy.fetch_registry", new_callable=AsyncMock, return_value=_REGISTRY):
+        yield
 
 
 @pytest.fixture
@@ -74,15 +76,14 @@ async def test_api_status(client: httpx.AsyncClient):
 
 
 @respx.mock
-async def test_states_filtered(client: httpx.AsyncClient):
+async def test_states_filtered(client: httpx.AsyncClient, mock_registry):
     all_states = [
         {"entity_id": "light.kitchen", "state": "on"},
         {"entity_id": "switch.pump", "state": "off"},
         {"entity_id": "sensor.temp", "state": "22"},
     ]
     respx.get(f"{_HA_URL}/api/states").mock(return_value=httpx.Response(200, json=all_states))
-    with _mock_registry():
-        resp = await client.get("/api/states", headers=_HEADERS)
+    resp = await client.get("/api/states", headers=_HEADERS)
     assert resp.status_code == 200
     entity_ids = [s["entity_id"] for s in resp.json()]
     # All have read=true via the "all" rule
@@ -92,71 +93,61 @@ async def test_states_filtered(client: httpx.AsyncClient):
 
 
 @respx.mock
-async def test_single_state_allowed(client: httpx.AsyncClient):
+async def test_single_state_allowed(client: httpx.AsyncClient, mock_registry):
     respx.get(f"{_HA_URL}/api/states/light.kitchen").mock(
         return_value=httpx.Response(200, json={"entity_id": "light.kitchen", "state": "on"})
     )
-    with _mock_registry():
-        resp = await client.get("/api/states/light.kitchen", headers=_HEADERS)
+    resp = await client.get("/api/states/light.kitchen", headers=_HEADERS)
     assert resp.status_code == 200
 
 
 @respx.mock
-async def test_service_call_allowed(client: httpx.AsyncClient):
+async def test_service_call_allowed(client: httpx.AsyncClient, mock_registry):
     respx.post(f"{_HA_URL}/api/services/light/turn_on").mock(return_value=httpx.Response(200, json=[]))
-    with _mock_registry():
-        resp = await client.post("/api/services/light/turn_on", headers=_HEADERS, json={"entity_id": "light.kitchen"})
+    resp = await client.post("/api/services/light/turn_on", headers=_HEADERS, json={"entity_id": "light.kitchen"})
     assert resp.status_code == 200
 
 
 @respx.mock
-async def test_service_call_denied_entity(client: httpx.AsyncClient):
-    with _mock_registry():
-        resp = await client.post("/api/services/light/turn_on", headers=_HEADERS, json={"entity_id": "light.dangerous"})
+async def test_service_call_denied_entity(client: httpx.AsyncClient, mock_registry):
+    resp = await client.post("/api/services/light/turn_on", headers=_HEADERS, json={"entity_id": "light.dangerous"})
     assert resp.status_code == 403
     assert "light.dangerous" in resp.json()["error"]
 
 
 @respx.mock
-async def test_service_call_denied_domain(client: httpx.AsyncClient):
+async def test_service_call_denied_domain(client: httpx.AsyncClient, mock_registry):
     # switch.pump: domain=switch, all rule says control=false
-    with _mock_registry():
-        resp = await client.post("/api/services/switch/turn_on", headers=_HEADERS, json={"entity_id": "switch.pump"})
+    resp = await client.post("/api/services/switch/turn_on", headers=_HEADERS, json={"entity_id": "switch.pump"})
     assert resp.status_code == 403
 
 
 @respx.mock
-async def test_service_call_no_target_denied(client: httpx.AsyncClient):
-    with _mock_registry():
-        resp = await client.post("/api/services/homeassistant/restart", headers=_HEADERS, json={})
+async def test_service_call_no_target_denied(client: httpx.AsyncClient, mock_registry):
+    resp = await client.post("/api/services/homeassistant/restart", headers=_HEADERS, json={})
     assert resp.status_code == 403
     assert "no entity" in resp.json()["error"]
 
 
 @respx.mock
-async def test_service_call_device_target(client: httpx.AsyncClient):
+async def test_service_call_device_target(client: httpx.AsyncClient, mock_registry):
     # dev_1 resolves to light.kitchen, which has control via light domain
     respx.post(f"{_HA_URL}/api/services/light/turn_on").mock(return_value=httpx.Response(200, json=[]))
-    with _mock_registry():
-        resp = await client.post("/api/services/light/turn_on", headers=_HEADERS, json={"device_id": "dev_1"})
+    resp = await client.post("/api/services/light/turn_on", headers=_HEADERS, json={"device_id": "dev_1"})
     assert resp.status_code == 200
 
 
 @respx.mock
-async def test_service_call_nested_target(client: httpx.AsyncClient):
+async def test_service_call_nested_target(client: httpx.AsyncClient, mock_registry):
     respx.post(f"{_HA_URL}/api/services/light/turn_on").mock(return_value=httpx.Response(200, json=[]))
-    with _mock_registry():
-        resp = await client.post(
-            "/api/services/light/turn_on", headers=_HEADERS, json={"target": {"entity_id": "light.kitchen"}}
-        )
+    resp = await client.post(
+        "/api/services/light/turn_on", headers=_HEADERS, json={"target": {"entity_id": "light.kitchen"}}
+    )
     assert resp.status_code == 200
 
 
-async def test_service_call_invalid_entity_id_type(client: httpx.AsyncClient):
-    with _mock_registry():
-        resp = await client.post(
-            "/api/services/light/turn_on", headers=_HEADERS, json={"entity_id": {"invalid": "dict"}}
-        )
+async def test_service_call_invalid_entity_id_type(client: httpx.AsyncClient, mock_registry):
+    resp = await client.post("/api/services/light/turn_on", headers=_HEADERS, json={"entity_id": {"invalid": "dict"}})
     assert resp.status_code == 400
 
 

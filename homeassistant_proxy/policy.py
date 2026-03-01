@@ -24,26 +24,21 @@ class AccessDeniedError(Exception):
 
 
 class EntityRegistry:
-    """Entity registry with reverse indexes for efficient device/area lookup."""
+    """Entity registry for looking up entity metadata by ID, device, or area."""
 
     def __init__(self, entities: dict[str, EntityInfo]):
         self._entities = entities
-        self._by_device: dict[str, list[str]] = {}
-        self._by_area: dict[str, list[str]] = {}
-        for info in entities.values():
-            if info.device_id:
-                self._by_device.setdefault(info.device_id, []).append(info.entity_id)
-            if info.area_id:
-                self._by_area.setdefault(info.area_id, []).append(info.entity_id)
 
     def get(self, entity_id: str) -> EntityInfo:
         return self._entities.get(entity_id, EntityInfo(entity_id=entity_id))
 
     def entities_for_devices(self, device_ids: list[str]) -> list[str]:
-        return [eid for did in device_ids for eid in self._by_device.get(did, [])]
+        ids = set(device_ids)
+        return [info.entity_id for info in self._entities.values() if info.device_id in ids]
 
     def entities_for_areas(self, area_ids: list[str]) -> list[str]:
-        return [eid for aid in area_ids for eid in self._by_area.get(aid, [])]
+        ids = set(area_ids)
+        return [info.entity_id for info in self._entities.values() if info.area_id in ids]
 
 
 def check_entity_access(entity_id: str, action: Action, policy: Policy, entity_info: EntityInfo) -> bool:
