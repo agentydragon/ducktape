@@ -1,5 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//tools/js:json_schema.bzl", "js_json_schema")
 
 npm_link_all_packages(name = "node_modules")
@@ -46,4 +48,25 @@ js_library(
         ":types",
         ":util",
     ],
+)
+
+# ── Plugin packaging for Docker ──────────────────────────────────────────────
+
+pkg_files(
+    name = "plugin_files",
+    srcs = [
+        "approval-gate-connection.ts",
+        "index.ts",
+        "openclaw.plugin.json",
+        "package.json",
+        "reconnecting-mcp-client.ts",
+        "util.ts",
+    ],
+    strip_prefix = strip_prefix.from_pkg(),
+)
+
+pkg_tar(
+    name = "plugin_tar",
+    srcs = [":plugin_files"],
+    visibility = ["//visibility:public"],
 )

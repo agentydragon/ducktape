@@ -30,6 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build approval-gate plugin tar
+        run: bazel build //openclaw/approval-gate:plugin_tar
+
+      - name: Stage plugin tar for Docker
+        run: cp bazel-bin/openclaw/approval-gate/plugin_tar.tar docker/openclaw/approval-gate-plugin.tar
+
       - name: Compute image tags
         id: meta
         run: |

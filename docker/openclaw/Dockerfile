@@ -32,14 +32,10 @@ RUN node -e " \
  && chown -R node:node node_modules
 
 # ── Approval gate plugin ──────────────────────────────────────────────────────
-# Plugin source is copied from the repo; deps are installed at build time.
+# Plugin source built by Bazel (//openclaw/approval-gate:plugin_tar).
+# CI stages the tar at docker/openclaw/approval-gate-plugin.tar before build.
 WORKDIR /app/extensions/approval-gate
-COPY openclaw/approval-gate/package.json ./
-COPY openclaw/approval-gate/openclaw.plugin.json ./
-COPY openclaw/approval-gate/index.ts ./
-COPY openclaw/approval-gate/util.ts ./
-COPY openclaw/approval-gate/reconnecting-mcp-client.ts ./
-COPY openclaw/approval-gate/approval-gate-connection.ts ./
+ADD docker/openclaw/approval-gate-plugin.tar .
 RUN npm install --omit=dev \
  && chown -R node:node .
 

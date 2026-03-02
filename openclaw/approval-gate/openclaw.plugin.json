@@ -5,20 +5,33 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["approvalGateUrl", "approvalGateToken"],
+    "required": ["approvalGate"],
     "properties": {
-      "approvalGateUrl": {
-        "type": "string",
-        "description": "Base URL of the approval gate MCP endpoint, e.g. http://approval-gate.approval-gate.svc.cluster.local:8765/mcp"
+      "approvalGate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "token"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Base URL of the approval gate MCP endpoint, e.g. http://approval-gate.approval-gate.svc.cluster.local:8765/mcp"
+          },
+          "token": {
+            "type": "string",
+            "description": "Bearer token for authenticating to the approval gate MCP endpoint"
+          }
+        }
       },
-      "approvalGateToken": {
-        "type": "string",
-        "description": "Bearer token for authenticating to the approval gate MCP endpoint"
-      },
-      "execServerUrl": {
-        "type": "string",
-        "default": "http://127.0.0.1:8766/mcp",
-        "description": "URL of the DirectExecServer sidecar MCP endpoint (pod-local, unauthenticated)"
+      "execServer": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string",
+            "default": "http://127.0.0.1:8766/mcp",
+            "description": "URL of the DirectExecServer sidecar MCP endpoint (pod-local, unauthenticated)"
+          }
+        }
       },
       "registerTools": {
         "type": "boolean",
