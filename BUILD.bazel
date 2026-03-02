@@ -74,6 +74,20 @@ js_library(
     ],
 )
 
+# Prettier configuration as js_library
+# Makes the config and its plugins available to the prettier binary in tools/ci
+# no-lint: This is a config file, not a target to lint
+js_library(
+    name = "prettierrc",
+    srcs = [".prettierrc.cjs"],
+    tags = ["no-lint"],
+    visibility = ["//tools:__subpackages__"],
+    deps = [
+        ":node_modules/prettier-plugin-svelte",
+        ":node_modules/svelte",
+    ],
+)
+
 # Generate requirements_bazel.txt from pyproject.toml
 # Run: bazel run //:requirements.update
 #

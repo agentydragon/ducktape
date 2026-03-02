@@ -331,7 +331,7 @@ def write_workflow(path: Path, workflow: Workflow) -> None:
     """Write a workflow file and run prettier to match pre-commit formatting."""
     path.write_text(generate_ci_yml(workflow))
     prettier = get_required_path(_PRETTIER_RLOCATION)
-    subprocess.run([prettier, "--write", "--no-config", "--print-width", "120", "--tab-width", "2", path], check=True)
+    subprocess.run([prettier, "--write", path], check=True)
     print(f"Generated {path}")
 
 
