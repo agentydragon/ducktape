@@ -123,7 +123,6 @@ class Action(BaseModel):
 
 class LogEventKind(StrEnum):
     ACTION_RECEIVED = "action_received"
-    APPROVED = "approved"
     DENIED = "denied"
     WITHDRAWN = "withdrawn"
     EXECUTION_STARTED = "execution_started"
@@ -132,11 +131,6 @@ class LogEventKind(StrEnum):
 
 class ActionReceivedDetail(BaseModel):
     kind: Literal[LogEventKind.ACTION_RECEIVED] = LogEventKind.ACTION_RECEIVED
-    model_config = ConfigDict(extra="forbid")
-
-
-class ApprovedDetail(BaseModel):
-    kind: Literal[LogEventKind.APPROVED] = LogEventKind.APPROVED
     model_config = ConfigDict(extra="forbid")
 
 
@@ -163,12 +157,7 @@ class ExecutionFinishedDetail(BaseModel):
 
 
 LogEventDetail = Annotated[
-    ActionReceivedDetail
-    | ApprovedDetail
-    | DeniedDetail
-    | WithdrawnDetail
-    | ExecutionStartedDetail
-    | ExecutionFinishedDetail,
+    ActionReceivedDetail | DeniedDetail | WithdrawnDetail | ExecutionStartedDetail | ExecutionFinishedDetail,
     Field(discriminator="kind"),
 ]
 
@@ -201,14 +190,6 @@ class DenyDecision(BaseModel):
 
     kind: Literal["denied"] = "denied"
     reason: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class WithdrawDecision(BaseModel):
-    """Agent withdrew the action before a decision was made."""
-
-    kind: Literal["withdrawn"] = "withdrawn"
 
     model_config = ConfigDict(extra="forbid")
 

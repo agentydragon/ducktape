@@ -16,20 +16,30 @@ Backend MCP servers (streamable-http or stdio)
   ...  ──┘
          ▼
 ApprovalGateServer (FastMCP proxy)        port 8765
-  ├── /mcp  — unified MCP endpoint
-  │           x-authentik-jwt → operator browser (JWT-verified)
-  │           Authorization: Bearer → OpenClaw agent (AGENT_TOKEN)
-  └── /     — operator Svelte SPA (Authentik SSO, JWT-verified)
-        │  MCP ResourceUpdated: resource://actions/{id}
-        ▼
+  ├── /mcp  — unified MCP endpoint (all callers present JWT)
+  │     ├── x-authentik-jwt → operator browser
+  │     └── Authorization: Bearer <JWT> → agent (via auth-proxy)
+  └── /     — operator Svelte SPA (Authentik SSO)
+         ▲
+         │  MCP over HTTP (JWT-authenticated)
+         │
+auth-proxy sidecar (openclaw-gateway pod) port 8767
+  ├── accepts unauthenticated MCP from OpenClaw plugin
+  ├── injects OAuth2 Bearer token (client_credentials grant from Authentik)
+  └── forwards authenticated MCP to upstream approval gate
+         ▲
+         │  MCP over HTTP (unauthenticated, localhost only)
+         │
 OpenClaw plugin (openclaw/approval-gate/)
   ├── re-registers approval gate tools for the OpenClaw agent
   └── translates ResourceUpdated → chat.inject gateway RPC
 ```
 
-`CiliumNetworkPolicy` allows both the Authentik outpost and OpenClaw pods to reach
-port 8765. Access to `/mcp` is controlled by auth header: JWT for the operator
-browser, `AGENT_TOKEN` bearer for the OpenClaw plugin.
+All tokens are JWTs verified against the same JWKS endpoint (Authentik).
+Operator tokens arrive via `x-authentik-jwt` (Authentik proxy outpost);
+agent tokens arrive via `Authorization: Bearer` (client_credentials flow
+through the auth-proxy sidecar). JWT scopes determine capabilities:
+`propose` (agent), `decide` (operator), `read` (both).
 
 ## Running
 
@@ -47,11 +57,12 @@ with the backend spec (see below).
 | `models.py`         | Discriminated union types (`Action`, `ActionState`, `ToolCallOutcome`) |
 | `storage.py`        | aiosqlite CRUD; indexed `status` column                                |
 | `predicates.py`     | Three-way predicate: `Approved \| Denied \| NeedsHumanDecision`        |
-| `config.py`         | `Settings` (Pydantic); backend spec from YAML, token from env          |
+| `config.py`         | `Settings` (Pydantic); backend spec + auth config from YAML            |
 | `proxy_server.py`   | `ApprovalGateServer` — core MCP proxy, tool wrapping, notifications    |
-| `mcp_auth.py`       | Dual-header auth: Authentik JWT (operators) + bearer token (agents)    |
+| `mcp_auth.py`       | JWT auth: Authentik header normalizer + scope constants                |
 | `app.py`            | Starlette app factory (`create_app()`) + uvicorn entry point           |
 | `instructions.mako` | Mako template for MCP `initialize` instructions                        |
+| `auth_proxy/`       | OAuth2 sidecar: FastMCP proxy with client_credentials token injection  |
 | `frontend/`         | Svelte 5 operator SPA (action list + detail, approve/reject workflow)  |
 
 ## Configuration
@@ -73,22 +84,16 @@ backends:
 ```
 
 Each backend entry supports the full `MCPServerTypes` config (URL + headers for
-streamable-http, command + args + env for stdio). URL-based backends that don't
-specify an explicit `Authorization` header automatically get the `AGENT_TOKEN` injected
-as `Authorization: Bearer <AGENT_TOKEN>` at startup.
+streamable-http, command + args + env for stdio).
 
 ### Environment variables
 
-| Variable            | Required | Description                                                                                   |
-| ------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| `AGENT_TOKEN`       | yes      | Bearer token for agent `/mcp` auth and auto-injected into backend headers                     |
-| `PUBLIC_BASE_URL`   | yes      | Base URL for approval links shown to agents                                                   |
-| `OPERATOR_JWKS_URL` | yes      | JWKS endpoint for verifying operator UI JWTs (e.g. Authentik's `/application/o/<slug>/jwks/`) |
-| `CONFIG_PATH`       | no       | Path to YAML config file (default `/etc/approval-gate/config.yaml`)                           |
-| `DB_PATH`           | no       | SQLite DB path (default `/data/approval_gate.db`)                                             |
-| `PREDICATE_PATH`    | no       | Path to Python predicate file (default: always queue for human)                               |
-| `HOST`              | no       | Server bind address (default `0.0.0.0`)                                                       |
-| `PORT`              | no       | Server port (default `8765`)                                                                  |
+| Variable      | Required | Description                                                         |
+| ------------- | -------- | ------------------------------------------------------------------- |
+| `CONFIG_PATH` | no       | Path to YAML config file (default `/etc/approval-gate/config.yaml`) |
+
+All other settings (`public_base_url`, `jwks_url`, `backends`, `db_path`,
+`predicate_path`, `host`, `port`) are loaded from the YAML config file.
 
 ## Predicate file format
 

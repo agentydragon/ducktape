@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 from fastmcp.client import Client
+from fastmcp.server.auth.providers.jwt import RSAKeyPair
 
+from approval_gate.mcp_auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE
 from approval_gate.models import Action, ActionKey
 from approval_gate.storage import ActionStorage
 from mcp_utils.resources import parse_tool_result_as
@@ -44,6 +46,21 @@ class GateClient(Client):
         return parse_tool_result_as(
             await self.call_tool_mcp("reject_action", {"key": key.model_dump(), "reason": reason}), Action
         )
+
+
+@pytest.fixture
+def rsa_key_pair():
+    return RSAKeyPair.generate()
+
+
+@pytest.fixture
+def agent_jwt(rsa_key_pair):
+    return rsa_key_pair.create_token(subject="agent", scopes=[PROPOSE_SCOPE, READ_SCOPE])
+
+
+@pytest.fixture
+def operator_jwt(rsa_key_pair):
+    return rsa_key_pair.create_token(subject="operator", scopes=[DECIDE_SCOPE, READ_SCOPE])
 
 
 @pytest.fixture

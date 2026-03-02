@@ -1,0 +1,30 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageUpdateAutomation
+metadata:
+  name: auth-proxy
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  git:
+    checkout:
+      ref:
+        branch: devel
+    commit:
+      author:
+        name: flux-image-automation
+        email: flux@allegedly.works
+      messageTemplate: |-
+        chore: update auth-proxy image [skip ci]
+        {{ range $resource, $changes := .Changed.Objects -}}
+        {{ range $_, $change := $changes -}}
+        {{ $change.OldValue }} -> {{ $change.NewValue }}
+        {{ end -}}
+        {{ end -}}
+    push:
+      branch: devel
+  update:
+    strategy: Setters
+    path: ./cluster/k8s/openclaw-gateway

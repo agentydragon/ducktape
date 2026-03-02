@@ -34,8 +34,8 @@ spec:
             - name: TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: approval-gate-secrets
-                  key: agent-token
+                  name: exec-backend-token
+                  key: password
             - name: INSTRUCTIONS
               value: >-
                 This server lets you run commands on a container with a

@@ -7,7 +7,7 @@ task is started (anyio copies contextvars to new tasks), allowing the
 in-process client to call agent-scoped tools.
 
 Operator actions (approve/reject) are called via gate.decide() directly
-because in-process clients only have AGENT_SCOPE, not OPERATOR_SCOPE.
+because in-process clients only have PROPOSE_SCOPE, not DECIDE_SCOPE.
 The full MCP auth boundary is covered by test_operator_auth.py.
 """
 
@@ -25,7 +25,7 @@ from mcp.server.auth.provider import AccessToken as MCPAccessToken
 from pydantic import AnyUrl
 
 from approval_gate.conftest import GateClient
-from approval_gate.mcp_auth import AGENT_SCOPE, READER_SCOPE
+from approval_gate.mcp_auth import PROPOSE_SCOPE, READ_SCOPE
 from approval_gate.models import Action, ActionKey, ActionStatus, ApproveDecision, DenyDecision
 from approval_gate.predicates import Approved, NeedsHumanDecision
 from approval_gate.proxy_server import ApprovalGateServer
@@ -38,8 +38,8 @@ _SESSION = "e2e-session"
 
 @pytest.fixture(autouse=True)
 async def _agent_auth_ctx():
-    """Inject AGENT_SCOPE + READER_SCOPE into the MCP auth context for in-process tests."""
-    user = AuthenticatedUser(MCPAccessToken(token="test-agent", client_id="test", scopes=[AGENT_SCOPE, READER_SCOPE]))
+    """Inject PROPOSE_SCOPE + READ_SCOPE into the MCP auth context for in-process tests."""
+    user = AuthenticatedUser(MCPAccessToken(token="test-agent", client_id="test", scopes=[PROPOSE_SCOPE, READ_SCOPE]))
     token = auth_context_var.set(user)
     yield
     auth_context_var.reset(token)

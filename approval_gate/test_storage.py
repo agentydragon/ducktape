@@ -7,9 +7,9 @@ from approval_gate.models import (
     ActionKey,
     ActionReceivedDetail,
     ActionStatus,
-    ApprovedDetail,
     DeniedDetail,
     DoneState,
+    ExecutionStartedDetail,
     PendingState,
     RejectedState,
     ToolCall,
@@ -113,17 +113,17 @@ async def test_get_log_hwm(storage: ActionStorage):
     await storage.append_log_entry(session_key="hwm-sess", action_seq=1, detail=ActionReceivedDetail())
     assert await storage.get_log_hwm("hwm-sess") == 1
 
-    await storage.append_log_entry(session_key="hwm-sess", action_seq=1, detail=ApprovedDetail())
+    await storage.append_log_entry(session_key="hwm-sess", action_seq=1, detail=ExecutionStartedDetail())
     assert await storage.get_log_hwm("hwm-sess") == 2
 
 
 async def test_get_log_entry(storage: ActionStorage):
     await storage.append_log_entry(session_key="entry-sess", action_seq=1, detail=ActionReceivedDetail())
-    await storage.append_log_entry(session_key="entry-sess", action_seq=1, detail=ApprovedDetail())
+    await storage.append_log_entry(session_key="entry-sess", action_seq=1, detail=ExecutionStartedDetail())
 
     entry = await storage.get_log_entry("entry-sess", 2)
     assert entry is not None
-    assert isinstance(entry.detail, ApprovedDetail)
+    assert isinstance(entry.detail, ExecutionStartedDetail)
 
     missing = await storage.get_log_entry("entry-sess", 99)
     assert missing is None

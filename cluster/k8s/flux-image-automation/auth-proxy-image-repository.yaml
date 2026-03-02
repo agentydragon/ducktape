@@ -1,0 +1,10 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: auth-proxy
+  namespace: flux-system
+spec:
+  image: registry.allegedly.works/approval-gate/auth-proxy
+  interval: 5m
+  secretRef:
+    name: harbor-ci-robot

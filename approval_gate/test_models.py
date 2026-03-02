@@ -15,7 +15,6 @@ from approval_gate.models import (
     ActionReceivedDetail,
     ActionState,
     ActionStatus,
-    ApprovedDetail,
     DeniedDetail,
     DoneState,
     ExecutingState,
@@ -132,15 +131,15 @@ def test_log_entry_roundtrip():
         entry_id=3,
         session_key="sess-1",
         action_seq=2,
-        detail=ApprovedDetail(),
+        detail=ExecutionStartedDetail(),
         timestamp=datetime(2026, 1, 15, 10, 30, 0, tzinfo=UTC),
     )
     parsed = LogEntry.model_validate_json(entry.model_dump_json())
     assert parsed.entry_id == 3
     assert parsed.session_key == "sess-1"
     assert parsed.action_seq == 2
-    assert isinstance(parsed.detail, ApprovedDetail)
-    assert parsed.detail.kind == LogEventKind.APPROVED
+    assert isinstance(parsed.detail, ExecutionStartedDetail)
+    assert parsed.detail.kind == LogEventKind.EXECUTION_STARTED
 
 
 def test_log_entry_with_denied_detail():
@@ -176,7 +175,6 @@ def test_log_entry_with_execution_finished_detail():
     "detail",
     [
         ActionReceivedDetail(),
-        ApprovedDetail(),
         DeniedDetail(reason="x"),
         WithdrawnDetail(),
         ExecutionStartedDetail(),

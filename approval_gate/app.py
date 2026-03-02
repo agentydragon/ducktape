@@ -1,7 +1,7 @@
 """Approval Gate Starlette application.
 
 /healthz          — liveness probe (no auth)
-/mcp              — MCP endpoint (FastMCP handles auth via ApprovalGateAuthProvider)
+/mcp              — MCP endpoint (JWTVerifier handles auth via JWKS)
 /static/frontend  — bundled Svelte SPA assets
 /                 — SPA shell
 """
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 import uvicorn
-from jwt import PyJWKClient
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from approval_gate.config import Settings
-from approval_gate.mcp_auth import ApprovalGateAuthProvider
+from approval_gate.mcp_auth import AuthentikHeaderNormalizer
 from approval_gate.predicates import load_predicate
 from approval_gate.proxy_server import ApprovalGateServer
 
@@ -34,8 +34,7 @@ _FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
 def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
     """Build the Starlette app serving UI and MCP on a single port."""
     predicate = load_predicate(settings.predicate_path)
-    jwks_client = PyJWKClient(settings.operator_jwks_url)
-    auth = ApprovalGateAuthProvider(agent_token=settings.agent_token, jwks_client=jwks_client)
+    auth = JWTVerifier(jwks_uri=settings.jwks_url)
     gate = ApprovalGateServer(
         backends=settings.backends,
         db_path=settings.db_path,
@@ -44,11 +43,15 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
         auth=auth,
     )
     mcp_app = gate.http_app(path="/")
+    # Wrap the MCP app with AuthentikHeaderNormalizer so operator JWTs
+    # arriving via x-authentik-jwt are visible to JWTVerifier's standard
+    # Bearer auth middleware.
+    mcp_app_with_header_norm = AuthentikHeaderNormalizer(mcp_app)
 
     async def healthz(request: Request) -> JSONResponse:
         return JSONResponse({"ok": True})
 
-    routes: list = [Route("/healthz", endpoint=healthz), Mount("/mcp", app=mcp_app)]
+    routes: list = [Route("/healthz", endpoint=healthz), Mount("/mcp", app=mcp_app_with_header_norm)]
 
     if include_static:
         _html = (_FRONTEND_DIST_DIR / "index.html").read_text()

@@ -42,11 +42,6 @@ spec:
         secretKeyRef:
           name: openclaw-matrix-bot-password
           key: password
-    - name: APPROVAL_GATE_TOKEN
-      valueFrom:
-        secretKeyRef:
-          name: approval-gate-secrets
-          key: token
   config:
     raw:
       cron:
@@ -223,8 +218,8 @@ spec:
           approval-gate:
             config:
               approvalGate:
-                url: "http://approval-gate.approval-gate.svc.cluster.local:8765/mcp"
-                token: "${APPROVAL_GATE_TOKEN}"
+                # Via local auth-proxy sidecar (injects OAuth2 Bearer token upstream)
+                url: "http://127.0.0.1:8767/mcp"
               execServer:
                 url: "http://127.0.0.1:8766/mcp"
       tools:
@@ -297,6 +292,34 @@ spec:
         cpu: "1000m"
         memory: "2Gi"
   sidecars:
+    - name: auth-proxy
+      image: registry.allegedly.works/approval-gate/auth-proxy:latest # {"$imagepolicy": "flux-system:auth-proxy"}
+      env:
+        - name: UPSTREAM_URL
+          value: "http://approval-gate.approval-gate.svc.cluster.local:8765"
+        - name: TOKEN_URL
+          value: "http://authentik-server.authentik.svc.cluster.local/application/o/approval-gate-agent/token/"
+        - name: CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: approval-gate-secrets
+              key: client-id
+        - name: CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: approval-gate-secrets
+              key: client-secret
+        - name: SCOPE
+          value: "openid propose read"
+        - name: PORT
+          value: "8767"
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
     - name: exec-server
       image: registry.allegedly.works/openclaw/openclaw-exec:latest
       # DirectExecServer entrypoint is baked into the base image.
@@ -364,6 +387,14 @@ spec:
                   kubernetes.io/metadata.name: approval-gate
           ports:
             - port: 8765
+              protocol: TCP
+        # Allow egress to Authentik for OAuth2 token exchange (auth proxy sidecar).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: authentik
+          ports:
+            - port: 80
               protocol: TCP
   availability:
     nodeSelector:

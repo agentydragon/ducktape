@@ -1,7 +1,7 @@
 # HTTPRoute for the approval gate operator UI via Authentik proxy outpost.
 # The operator UI is protected by Authentik authentication.
-# Agent MCP traffic on /mcp uses bearer token auth and does NOT go through
-# Authentik (agents cannot log in via Authentik SSO).
+# Agent MCP traffic uses OAuth2 JWTs (client_credentials grant) and does NOT
+# go through the proxy outpost — agent JWTs are verified by JWTVerifier at /mcp.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
