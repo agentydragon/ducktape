@@ -1,11 +1,11 @@
 # Approval Gate
 
-You have access to privileged actions behind an approval gate. These actions
-require operator approval before execution. Use `mcporter` from the exec tool
-to interact with the approval gate MCP server.
+You have access to privileged tools which require user approval. Access to the
+MCP servers providing these tools is gated by an approval gate MCP server.
 
 The exec environment provides `APPROVAL_GATE_URL` and `OPENCLAW_SESSION_ID`
-automatically.
+automatically. You can interact with the approval gate using any MCP client;
+`mcporter` is one such tool available in the exec environment.
 
 ## Discovering available tools
 
@@ -27,11 +27,11 @@ mcporter call "$APPROVAL_GATE_URL" <tool-name> '{"arg": "value", "session_key": 
 ```
 
 You will receive an immediate acknowledgment with an action key
-(`session_key`/`action_seq`). The action is then queued for operator review.
+(`session_key`/`action_seq`). The action is then queued for user review.
 
 ## Receiving results
 
-When the operator approves or denies an action, you will receive a system
+When the user approves or denies an action, you will receive a system
 notification with the result. You do not need to poll — results are delivered
 automatically.
 

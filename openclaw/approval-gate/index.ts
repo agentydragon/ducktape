@@ -55,7 +55,7 @@ function formatTerminalMessage(keyStr: string, detail: LogEventDetail): string {
     }
   }
   if (detail.kind === "denied") {
-    return `Action ${keyStr} was rejected by the operator. Reason: ${detail.reason ?? "none given"}`;
+    return `Action ${keyStr} was rejected by the user. Reason: ${detail.reason ?? "none given"}`;
   }
   if (detail.kind === "withdrawn") {
     return `Action ${keyStr} was withdrawn.`;
@@ -82,28 +82,28 @@ function stripSchemaKeys(schema: Record<string, unknown>, keys: string[]): Recor
 
 export default async function register(api: OpenClawPluginApi): Promise<void> {
   const log = scopedLogger(api, "approval-gate");
+  const execLog = scopedLogger(api, "exec");
   const cfg = api.pluginConfig as
     | {
-        approvalGateUrl?: string;
-        approvalGateToken?: string;
+        approvalGate?: { url?: string; token?: string };
+        execServer?: { url?: string };
         registerTools?: boolean;
-        execServerUrl?: string;
       }
     | undefined;
 
-  const approvalGateUrl = cfg?.approvalGateUrl?.trim();
-  const approvalGateToken = cfg?.approvalGateToken?.trim();
-  const execServerUrl = cfg?.execServerUrl?.trim() ?? DEFAULT_EXEC_SERVER_URL;
+  const approvalGateUrl = cfg?.approvalGate?.url?.trim();
+  const approvalGateToken = cfg?.approvalGate?.token?.trim();
+  const execServerUrl = cfg?.execServer?.url?.trim() ?? DEFAULT_EXEC_SERVER_URL;
 
   if (!approvalGateUrl || !approvalGateToken) {
-    log.warn("approvalGateUrl and approvalGateToken are required in plugin config; plugin disabled");
+    log.warn("approvalGate.url and approvalGate.token are required in plugin config; plugin disabled");
     return;
   }
 
   const { enqueueSystemEvent } = api.runtime.system;
 
   // ── Exec sidecar MCP connection ───────────────────────────────────────────
-  const execConnection = new ReconnectingMcpClient(execServerUrl, "openclaw-exec", log);
+  const execConnection = new ReconnectingMcpClient(execServerUrl, "openclaw-exec", execLog);
   try {
     await execConnection.connect();
   } catch (err) {
@@ -298,7 +298,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
             content: [
               {
                 type: "text" as const,
-                text: `Action ${keyStr} queued for operator approval`,
+                text: `Action ${keyStr} queued for user approval`,
               },
             ],
           };

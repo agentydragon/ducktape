@@ -25,9 +25,13 @@ Add to your OpenClaw config:
     "entries": {
       "approval-gate": {
         "config": {
-          "approvalGateUrl": "http://approval-gate.approval-gate.svc.cluster.local:8765/mcp",
-          "approvalGateToken": "<token from the approval gate>",
-          "execServerUrl": "http://127.0.0.1:8766/mcp",
+          "approvalGate": {
+            "url": "http://approval-gate.approval-gate.svc.cluster.local:8765/mcp",
+            "token": "<token from the approval gate>",
+          },
+          "execServer": {
+            "url": "http://127.0.0.1:8766/mcp",
+          },
         },
       },
     },

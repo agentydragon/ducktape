@@ -17,7 +17,7 @@ const LOG_HWM_PREFIX = "resource://sessions/";
 const LOG_HWM_SUFFIX = "/log_hwm";
 
 function logHwmUri(sessionKey: string): string {
-  return logHwmUri(sessionKey);
+  return `${LOG_HWM_PREFIX}${sessionKey}${LOG_HWM_SUFFIX}`;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,7 +26,6 @@ type NotificationHandler = (notification: any) => Promise<void>;
 export class ApprovalGateConnection extends ReconnectingMcpClient {
   private notificationHandler: NotificationHandler | null = null;
   private catchUpHandler: ((sessionKey: string) => Promise<void>) | null = null;
-  private cachedInstructions: string | undefined;
   /** Last seen log entry_id per session — re-subscribed on reconnect. */
   private readonly sessionHwms = new Map<string, number>();
 
@@ -47,11 +46,6 @@ export class ApprovalGateConnection extends ReconnectingMcpClient {
   }
 
   protected override async onConnected(client: Client): Promise<void> {
-    const initResult = (client as Record<string, unknown>)._instructions as string | undefined;
-    if (initResult) {
-      this.cachedInstructions = initResult;
-    }
-
     if (this.notificationHandler) {
       client.setNotificationHandler(
         { method: "notifications/resources/updated" } as Parameters<typeof client.setNotificationHandler>[0],
@@ -78,10 +72,6 @@ export class ApprovalGateConnection extends ReconnectingMcpClient {
         this.log.warn(`failed to re-subscribe to session ${sessionKey}: ${String(err)}`);
       }
     }
-  }
-
-  get instructions(): string | undefined {
-    return this.cachedInstructions;
   }
 
   setNotificationHandler(handler: NotificationHandler): void {

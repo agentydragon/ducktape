@@ -46,7 +46,7 @@ spec:
       valueFrom:
         secretKeyRef:
           name: approval-gate-secrets
-          key: agent-api-key
+          key: token
   config:
     raw:
       cron:
@@ -222,9 +222,11 @@ spec:
         entries:
           approval-gate:
             config:
-              approvalGateUrl: "http://approval-gate.approval-gate.svc.cluster.local:8765/mcp"
-              approvalGateToken: "${APPROVAL_GATE_TOKEN}"
-              execServerUrl: "http://127.0.0.1:8766/mcp"
+              approvalGate:
+                url: "http://approval-gate.approval-gate.svc.cluster.local:8765/mcp"
+                token: "${APPROVAL_GATE_TOKEN}"
+              execServer:
+                url: "http://127.0.0.1:8766/mcp"
       tools:
         # Built-in exec is disabled. The approval-gate plugin registers an exec
         # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
