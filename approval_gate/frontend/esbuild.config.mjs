@@ -1,5 +1,6 @@
 import esbuild from 'esbuild';
 import esbuildSvelte from 'esbuild-svelte';
+import tailwindcss from 'esbuild-plugin-tailwindcss';
 import { copyFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
@@ -20,7 +21,7 @@ const config = {
   minify: !watch,
   sourcemap: true,
   target: ['es2022'],
-  plugins: [esbuildSvelte()],
+  plugins: [esbuildSvelte(), tailwindcss()],
   // Help esbuild find node_modules in Bazel sandbox
   nodePaths: [resolve(process.cwd(), 'node_modules')],
   // Follow symlinks (required for Bazel's node_modules structure)

@@ -5,10 +5,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.23.0",
     "openapi-fetch": "^0.15.0",
-    "svelte": "^5.38.1"
+    "svelte": "^5.38.1",
+    "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
     "esbuild": "^0.25.1",
+    "esbuild-plugin-tailwindcss": "^2.0.3",
     "esbuild-svelte": "^0.9.4",
     "openapi-typescript": "^7.10.1",
     "pixelmatch": "^6.0.0",

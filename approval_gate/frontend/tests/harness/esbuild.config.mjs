@@ -1,5 +1,6 @@
 import esbuild from 'esbuild';
 import esbuildSvelte from 'esbuild-svelte';
+import tailwindcss from 'esbuild-plugin-tailwindcss';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 
@@ -24,6 +25,7 @@ await esbuild.build({
         css: 'injected',
       },
     }),
+    tailwindcss(),
   ],
   // Help esbuild find node_modules in Bazel sandbox
   nodePaths: [resolve(process.cwd(), 'node_modules')],

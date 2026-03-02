@@ -55,21 +55,23 @@
 </script>
 
 {#snippet defaultHeader()}
-  <header><h1>Approval Gate</h1></header>
+  <header class="bg-blue-800 px-4 py-3 sm:px-6 flex items-center gap-3">
+    <h1 class="text-white text-lg font-semibold m-0">Approval Gate</h1>
+  </header>
 {/snippet}
 
 {#if loading}
   {@render defaultHeader()}
-  <main><p>Loading…</p></main>
+  <main class="max-w-4xl mx-auto px-4 py-6"><p class="text-gray-500">Loading…</p></main>
 {:else if error}
   {@render defaultHeader()}
-  <main><p class="error">Failed to load: {error}</p></main>
+  <main class="max-w-4xl mx-auto px-4 py-6"><p class="text-red-600 font-medium">Failed to load: {error}</p></main>
 {:else if sessionKey !== null && actionSeq !== null}
   {#if action}
     <ActionDetail {action} />
   {:else}
     {@render defaultHeader()}
-    <main><p class="error">Action not found.</p></main>
+    <main class="max-w-4xl mx-auto px-4 py-6"><p class="text-red-600 font-medium">Action not found.</p></main>
   {/if}
 {:else}
   <ActionList {pending} {recent} />

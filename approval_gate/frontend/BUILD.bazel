@@ -121,7 +121,10 @@ js_run_binary(
         "tests/harness/esbuild.config.mjs",
         ":harness_lib",
     ],
-    outs = ["tests/harness/dist/harness.js"],
+    outs = [
+        "tests/harness/dist/harness.css",
+        "tests/harness/dist/harness.js",
+    ],
     args = ["tests/harness/dist"],
     chdir = package_name(),
     tool = ":build_harness",
@@ -129,7 +132,7 @@ js_run_binary(
 
 filegroup(
     name = "harness_js",
-    srcs = [":harness_bundle"],
+    srcs = ["tests/harness/dist/harness.js"],
 )
 
 filegroup(

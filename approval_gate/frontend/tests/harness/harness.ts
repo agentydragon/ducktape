@@ -1,6 +1,7 @@
 // Visual regression test harness for approval-gate frontend
 // Mounts the full UI with mock data to capture whole-page screenshots
 
+import "../../app.css";
 import { mount } from "svelte";
 import ActionList from "../../ActionList.svelte";
 import ActionDetail from "../../ActionDetail.svelte";
