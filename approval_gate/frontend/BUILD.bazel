@@ -154,10 +154,23 @@ visual_test(
     srcs = ["tests/visual_test_DetailPage.mjs"],
 )
 
+# Mobile (375px) variants — verify responsive breakpoints
+visual_test(
+    name = "visual_ListPage_mobile",
+    srcs = ["tests/visual_test_ListPage_mobile.mjs"],
+)
+
+visual_test(
+    name = "visual_DetailPage_mobile",
+    srcs = ["tests/visual_test_DetailPage_mobile.mjs"],
+)
+
 test_suite(
     name = "visual_tests",
     tests = [
         ":visual_DetailPage",
+        ":visual_DetailPage_mobile",
         ":visual_ListPage",
+        ":visual_ListPage_mobile",
     ],
 )

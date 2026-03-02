@@ -110,8 +110,14 @@ function compareBaseline(name, screenshot, outputDir, baselineDir, updateWriteDi
 /**
  * Run a single visual scenario and exit 0 (pass) or 1 (fail).
  * Called from each per-scenario test file.
+ *
+ * @param {string} scenarioName - Harness page name (e.g. "ListPage").
+ * @param {string|null} callerUrl - import.meta.url of the calling test file (for baseline dir resolution).
+ * @param {{ viewport?: { width: number, height: number }, baselineName?: string }} [options] - Optional overrides.
+ *   baselineName overrides the filename stem for the baseline PNG (defaults to scenarioName).
  */
-export async function main(scenarioName, callerUrl = null) {
+export async function main(scenarioName, callerUrl = null, options = {}) {
+  const baselineName = options.baselineName || scenarioName;
   const baselineDir = callerUrl
     ? join(dirname(fileURLToPath(callerUrl)), "baselines")
     : DEFAULT_BASELINE_DIR;
@@ -128,7 +134,7 @@ export async function main(scenarioName, callerUrl = null) {
     process.exit(1);
   }
 
-  const userDataDir = join(process.env.TEST_TMPDIR || process.cwd(), `chrome-user-data-${scenarioName}`);
+  const userDataDir = join(process.env.TEST_TMPDIR || process.cwd(), `chrome-user-data-${baselineName}`);
   mkdirSync(userDataDir, { recursive: true });
 
   const launchOptions = {
@@ -176,7 +182,7 @@ export async function main(scenarioName, callerUrl = null) {
   }
 
   if (updateMode) {
-    console.log(`Updating baseline for: ${scenarioName}`);
+    console.log(`Updating baseline for: ${baselineName}`);
   }
 
   const browser = await puppeteer.launch(launchOptions);
@@ -184,7 +190,8 @@ export async function main(scenarioName, callerUrl = null) {
 
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
+    const viewport = { width: 1200, height: 800, deviceScaleFactor: 1, ...options.viewport };
+    await page.setViewport(viewport);
     await page.emulateMediaFeatures([
       { name: "prefers-color-scheme", value: "light" },
       { name: "prefers-reduced-motion", value: "reduce" },
@@ -200,7 +207,7 @@ export async function main(scenarioName, callerUrl = null) {
       process.exit(1);
     }
 
-    console.log(`Testing: ${scenarioName}`);
+    console.log(`Testing: ${baselineName} (page=${scenarioName})`);
     await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0" });
     await page.waitForSelector("#app > *", { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 200));
@@ -209,7 +216,7 @@ export async function main(scenarioName, callerUrl = null) {
     const screenshotData = await element.screenshot();
     const screenshot = Buffer.isBuffer(screenshotData) ? screenshotData : Buffer.from(screenshotData);
 
-    const result = compareBaseline(scenarioName, screenshot, outputDir, baselineDir, writeDir);
+    const result = compareBaseline(baselineName, screenshot, outputDir, baselineDir, writeDir);
     if (result.updated) {
       console.log("  ✓ Baseline updated");
     } else if (result.created) {
