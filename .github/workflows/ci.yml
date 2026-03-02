@@ -39,11 +39,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: bazel-diff.jar
-          key: bazel-diff-12.1.1
+          key: bazel-diff-16.0.0
       - name: Download bazel-diff
         run: |-
           curl -fsSL -o bazel-diff.jar \
-            "https://github.com/Tinder/bazel-diff/releases/download/12.1.1/bazel-diff_deploy.jar"
+            "https://github.com/Tinder/bazel-diff/releases/download/16.0.0/bazel-diff_deploy.jar"
         if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
       - name: Cache bazel-diff hashes
         uses: actions/cache@v4

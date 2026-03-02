@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from tools.ci.diff_utils import BAZEL_DIFF_VERSION
 from tools.ci.github_actions import Job, Step, Workflow
 from tools.ci.models import HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
 from util.bazel.workspace import get_build_workspace_directory
@@ -28,8 +29,6 @@ HEADER = """\
 # AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
 # Regenerate with: bazel run //tools/ci:generate_ci_bin
 """
-
-BAZEL_DIFF_VERSION = "12.1.1"
 
 
 COMPUTE_TARGETS_JOB = Job(

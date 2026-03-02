@@ -36,20 +36,6 @@ runs:
         distribution: temurin
         java-version: "21"
 
-    - name: Cache bazel-diff JAR
-      id: cache-bazel-diff
-      uses: actions/cache@v4
-      with:
-        path: bazel-diff.jar
-        key: bazel-diff-12.1.1
-
-    - name: Download bazel-diff
-      if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
-      shell: bash
-      run: |
-        curl -fsSL -o bazel-diff.jar \
-          "https://github.com/Tinder/bazel-diff/releases/download/12.1.1/bazel-diff_deploy.jar"
-
     - name: Check if release needed
       id: check
       shell: bash
@@ -57,7 +43,6 @@ runs:
         PACKAGE_PREFIX: ${{ inputs.package_prefix }}
         BAZEL_WHEEL_TARGET: ${{ inputs.bazel_target }}
         LATEST_RELEASE_TAG: ${{ inputs.latest_release_tag }}
-        BAZEL_DIFF_JAR: ${{ github.workspace }}/bazel-diff.jar
         CI_PUSH_STRATEGY: incremental
       run: |
         uv run tools/ci/check_release.py

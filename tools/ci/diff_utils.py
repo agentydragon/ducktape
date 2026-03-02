@@ -83,7 +83,7 @@ def get_ci_base_commit(repo: pygit2.Repository, env: CIEnvironment) -> pygit2.Co
     return None
 
 
-BAZEL_DIFF_VERSION = "12.1.1"
+BAZEL_DIFF_VERSION = "16.0.0"
 BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"
 
 

@@ -102,6 +102,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":diff_utils",
         ":github_actions",
         ":models",
         "//util/bazel:workspace",
