@@ -99,15 +99,30 @@ func (ctrl *PeerSpecController) Run(ctx context.Context, r controller.Runtime, l
 				continue
 			}
 
-			// Build AllowedIPs: KubeSpan address as /128 + AdditionalAddresses + node Addresses as /128 hosts.
-			var allowedIPs []netip.Prefix
-			if ks.Address.IsValid() {
-				allowedIPs = append(allowedIPs, netip.PrefixFrom(ks.Address, ks.Address.BitLen()))
+			// Build AllowedIPs using IPSetBuilder so we can subtract ExcludeAdvertisedNetworks.
+			// Ref: talos/internal/app/machined/pkg/controllers/kubespan/peer_spec.go (ipSetForPeer)
+			var builder netipx.IPSetBuilder
+
+			for _, p := range ks.AdditionalAddresses {
+				builder.AddPrefix(p)
 			}
-			allowedIPs = append(allowedIPs, ks.AdditionalAddresses...)
 			for _, addr := range affSpec.Addresses {
-				allowedIPs = append(allowedIPs, netip.PrefixFrom(addr, addr.BitLen()))
+				builder.Add(addr)
 			}
+			for _, p := range ks.ExcludeAdvertisedNetworks {
+				builder.RemovePrefix(p)
+			}
+			// KubeSpan address is always included (added after exclusions).
+			if ks.Address.IsValid() {
+				builder.Add(ks.Address)
+			}
+
+			allowedIPSet, buildErr := builder.IPSet()
+			if buildErr != nil {
+				logger.Warn("failed to build IP set for peer", zap.String("peer", ks.PublicKey), zap.Error(buildErr))
+				continue
+			}
+			allowedIPs := allowedIPSet.Prefixes()
 
 			// Filter endpoints.
 			var endpoints []netip.AddrPort

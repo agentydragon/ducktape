@@ -117,7 +117,7 @@ Maps to the following Talos source files:
 | ----------------------------- | ------------------------------------------------------- | ----------------------------------------- |
 | COSI network resources        | ManagerCtrl writes `LinkSpec`/`AddressSpec`/`RouteSpec` | We call netlink directly                  |
 | `AdvertiseKubernetesNetworks` | PeerSpecCtrl adds pod/service CIDRs to AllowedIPs       | Not implemented                           |
-| `ExcludeAdvertisedNetworks`   | PeerSpecCtrl filters excluded networks                  | Not implemented                           |
+| `ExcludeAdvertisedNetworks`   | PeerSpecCtrl filters excluded networks                  | Implemented                               |
 | NfTablesChain COSI resources  | Talos models nftables as COSI resources                 | We call nftables directly                 |
 | `AffiliateMergeController`    | Merges raw → cluster namespace affiliates               | Skipped (single source)                   |
 | `MachineResetSignal` cleanup  | DiscoveryServiceCtrl cleans up on reset                 | Not implemented                           |
