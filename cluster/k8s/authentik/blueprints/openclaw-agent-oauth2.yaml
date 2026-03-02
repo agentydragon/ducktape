@@ -1,9 +1,9 @@
 version: 1
 metadata:
-  name: SSO - Approval Gate Agent (OAuth2 client_credentials)
+  name: SSO - OpenClaw Agent (OAuth2 client_credentials)
   labels:
     blueprints.goauthentik.io/description: >-
-      OAuth2 provider for approval-gate agent auth via client_credentials grant.
+      OAuth2 provider for openclaw agent auth via client_credentials grant.
       Issues JWTs with "propose" and "read" scopes for agent tool access.
 
 entries:
@@ -43,13 +43,13 @@ entries:
   # ── OAuth2 provider for agent (client_credentials) ─────────────────────────
 
   - model: authentik_providers_oauth2.oauth2provider
-    id: approval-gate-agent-provider
+    id: openclaw-agent-provider
     state: present
     identifiers:
-      name: approval-gate-agent
+      name: openclaw-agent
     attrs:
-      client_id: approval-gate-agent
-      client_secret: !Env APPROVAL_GATE_AGENT_CLIENT_SECRET
+      client_id: openclaw-agent
+      client_secret: !Env OPENCLAW_AGENT_CLIENT_SECRET
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       client_type: confidential
@@ -64,25 +64,25 @@ entries:
       # No redirect_uris — client_credentials flow doesn't redirect.
 
   - model: authentik_core.application
-    id: approval-gate-agent-app
+    id: openclaw-agent-app
     state: present
     identifiers:
-      slug: approval-gate-agent
+      slug: openclaw-agent
     attrs:
-      name: Approval Gate Agent
-      provider: !KeyOf approval-gate-agent-provider
-      meta_description: "Machine-to-machine auth for approval gate agents"
+      name: OpenClaw Agent
+      provider: !KeyOf openclaw-agent-provider
+      meta_description: "Machine-to-machine auth for openclaw agents"
 
   # ── Service account for client_credentials grant ───────────────────────────
   # Authentik requires a user bound to the application for client_credentials.
 
   - model: authentik_core.user
-    id: approval-gate-service-account
+    id: openclaw-agent-service-account
     state: present
     identifiers:
-      username: approval-gate-agent-sa
+      username: openclaw-agent-sa
     attrs:
-      name: "Approval Gate Agent (Service Account)"
+      name: "OpenClaw Agent (Service Account)"
       type: service_account
       is_active: true
       path: "service-accounts"
@@ -91,6 +91,6 @@ entries:
   - model: authentik_policies.policybinding
     state: present
     identifiers:
-      target: !KeyOf approval-gate-agent-app
-      user: !KeyOf approval-gate-service-account
+      target: !KeyOf openclaw-agent-app
+      user: !KeyOf openclaw-agent-service-account
       order: 0

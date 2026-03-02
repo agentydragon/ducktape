@@ -298,7 +298,7 @@ spec:
         - name: UPSTREAM_URL
           value: "http://approval-gate.approval-gate.svc.cluster.local:8765"
         - name: TOKEN_URL
-          value: "http://authentik-server.authentik.svc.cluster.local/application/o/approval-gate-agent/token/"
+          value: "http://authentik-server.authentik.svc.cluster.local/application/o/openclaw-agent/token/"
         - name: CLIENT_ID
           valueFrom:
             secretKeyRef:

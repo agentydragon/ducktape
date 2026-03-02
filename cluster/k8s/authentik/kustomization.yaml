@@ -32,4 +32,5 @@ configMapGenerator:
       - blueprints/openclaw-mitmproxy-sso.yaml
       - blueprints/proxmox-sso.yaml
       - blueprints/shared-proxy-outpost.yaml
+      - blueprints/openclaw-agent-oauth2.yaml
     namespace: authentik

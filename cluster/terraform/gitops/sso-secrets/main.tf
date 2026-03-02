@@ -117,7 +117,7 @@ resource "random_password" "gatus_client_secret" {
   }
 }
 
-resource "random_password" "approval_gate_agent_client_secret" {
+resource "random_password" "openclaw_agent_client_secret" {
   length  = 32
   special = false
   keepers = { rotation_version = var.rotation_version }
@@ -219,13 +219,13 @@ resource "vault_kv_secret_v2" "gatus_oidc" {
   })
 }
 
-resource "vault_kv_secret_v2" "approval_gate_agent_oidc" {
+resource "vault_kv_secret_v2" "openclaw_agent_oidc" {
   mount = "kv"
-  name  = "sso/approval-gate-agent"
+  name  = "sso/openclaw-agent"
 
   data_json = jsonencode({
-    client_id     = "approval-gate-agent"
-    client_secret = random_password.approval_gate_agent_client_secret.result
+    client_id     = "openclaw-agent"
+    client_secret = random_password.openclaw_agent_client_secret.result
   })
 }
 
