@@ -1,4 +1,4 @@
-// Package main implements kubespand, a standalone KubeSpan agent for non-Talos Linux.
+// Package config holds the kubespand configuration type and loader.
 //
 // KubeSpan is Talos Linux's built-in WireGuard mesh network. This daemon reimplements
 // the node-side protocol so that non-Talos machines can join the mesh as first-class peers.
@@ -7,7 +7,7 @@
 // Discovery service: https://github.com/siderolabs/discovery-service
 // Discovery client: https://github.com/siderolabs/discovery-client
 // Confirmed no standalone client: https://github.com/siderolabs/talos/discussions/10032
-package main
+package config
 
 import (
 	"fmt"
@@ -17,9 +17,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ConfigSpec holds the kubespand configuration.
+// Spec holds the kubespand configuration.
 // Ref: talos/pkg/machinery/resources/kubespan/config.go (ConfigSpec)
-type ConfigSpec struct {
+type Spec struct {
 	// ClusterID is the Talos cluster identity, used for ULA prefix generation and
 	// discovery service registration.
 	// Extract: talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.cluster.id'
@@ -74,22 +74,22 @@ type ConfigSpec struct {
 	InsecureDiscovery bool `yaml:"insecure_discovery"`
 }
 
-// DeepCopy returns a deep copy of the ConfigSpec.
-func (c ConfigSpec) DeepCopy() ConfigSpec {
+// DeepCopy returns a deep copy of the Spec.
+func (c Spec) DeepCopy() Spec {
 	cp := c
 	cp.ExtraEndpoints = append([]string(nil), c.ExtraEndpoints...)
 	cp.EndpointFilters = append([]string(nil), c.EndpointFilters...)
 	return cp
 }
 
-// LoadConfig reads and validates a YAML config file.
-func LoadConfig(path string) (*ConfigSpec, error) {
+// Load reads and validates a YAML config file.
+func Load(path string) (*Spec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
-	cfg := &ConfigSpec{
+	cfg := &Spec{
 		DiscoveryEndpoint: constants.DefaultDiscoveryServiceEndpoint,
 		ListenPort:        constants.KubeSpanDefaultPort,
 		MTU:               constants.KubeSpanLinkMTU,

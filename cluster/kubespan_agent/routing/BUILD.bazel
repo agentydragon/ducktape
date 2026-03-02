@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "routing",
+    srcs = ["routing.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/routing",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "@com_github_google_nftables//:nftables",
+        "@com_github_google_nftables//binaryutil",
+        "@com_github_google_nftables//expr",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_vishvananda_netlink//:netlink",
+        "@org_golang_x_sys//unix",
+        "@org_uber_go_zap//:zap",
+    ],
+)

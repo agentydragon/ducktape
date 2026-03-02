@@ -1,4 +1,5 @@
-package main
+// Package wireguard manages the KubeSpan WireGuard interface and its peers.
+package wireguard
 
 import (
 	"encoding/base64"
@@ -13,9 +14,9 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-// WireGuardManager manages the KubeSpan WireGuard interface and its peers.
+// Manager manages the KubeSpan WireGuard interface and its peers.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (ManagerController)
-type WireGuardManager struct {
+type Manager struct {
 	client     *wgctrl.Client
 	privateKey wgtypes.Key
 	psk        wgtypes.Key
@@ -23,8 +24,8 @@ type WireGuardManager struct {
 	mtu        int
 }
 
-// NewWireGuardManager creates a WireGuard manager.
-func NewWireGuardManager(privateKeyBase64 string, clusterSecret string, listenPort, mtu int) (*WireGuardManager, error) {
+// NewManager creates a WireGuard manager.
+func NewManager(privateKeyBase64 string, clusterSecret string, listenPort, mtu int) (*Manager, error) {
 	client, err := wgctrl.New()
 	if err != nil {
 		return nil, fmt.Errorf("wgctrl client: %w", err)
@@ -45,7 +46,7 @@ func NewWireGuardManager(privateKeyBase64 string, clusterSecret string, listenPo
 	copy(pskBytes[:], secretBytes)
 	psk := wgtypes.Key(pskBytes)
 
-	return &WireGuardManager{
+	return &Manager{
 		client:     client,
 		privateKey: privKey,
 		psk:        psk,
@@ -57,7 +58,7 @@ func NewWireGuardManager(privateKeyBase64 string, clusterSecret string, listenPo
 // EnsureInterface creates the kubespan WireGuard interface if it doesn't exist,
 // configures it with the private key and listen port, and assigns the node address.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (network.LinkSpec)
-func (wm *WireGuardManager) EnsureInterface(address netip.Prefix) error {
+func (wm *Manager) EnsureInterface(address netip.Prefix) error {
 	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
 	if err != nil {
 		// Create the interface.
@@ -104,10 +105,17 @@ func (wm *WireGuardManager) EnsureInterface(address netip.Prefix) error {
 	return nil
 }
 
+// Peer is the configuration for a single WireGuard peer.
+type Peer struct {
+	PublicKey  string
+	Endpoint   netip.AddrPort
+	AllowedIPs []netip.Prefix
+}
+
 // ConfigurePeers sets the WireGuard peers on the kubespan interface.
 // Each peer gets the cluster secret as preshared key and a 25s keepalive.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (WireGuardPeer config)
-func (wm *WireGuardManager) ConfigurePeers(peers []WireGuardPeer) error {
+func (wm *Manager) ConfigurePeers(peers []Peer) error {
 	wgPeers := make([]wgtypes.PeerConfig, 0, len(peers))
 
 	for _, p := range peers {
@@ -137,22 +145,30 @@ func (wm *WireGuardManager) ConfigurePeers(peers []WireGuardPeer) error {
 	})
 }
 
+// PeerInfo holds live WireGuard data for a peer.
+type PeerInfo struct {
+	LastHandshakeTime time.Time
+	Endpoint          netip.AddrPort
+	TransmitBytes     uint64
+	ReceiveBytes      uint64
+}
+
 // GetPeerHandshakes queries the WireGuard device for current peer handshake times.
 // Returns a map of public key → last handshake time.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (wgDevice.Peers loop)
-func (wm *WireGuardManager) GetPeerHandshakes() (map[string]PeerWireGuardInfo, error) {
+func (wm *Manager) GetPeerHandshakes() (map[string]PeerInfo, error) {
 	dev, err := wm.client.Device(constants.KubeSpanLinkName)
 	if err != nil {
 		return nil, fmt.Errorf("querying %s device: %w", constants.KubeSpanLinkName, err)
 	}
 
-	result := make(map[string]PeerWireGuardInfo, len(dev.Peers))
+	result := make(map[string]PeerInfo, len(dev.Peers))
 	for _, p := range dev.Peers {
 		var endpoint netip.AddrPort
 		if p.Endpoint != nil {
 			endpoint = p.Endpoint.AddrPort()
 		}
-		result[p.PublicKey.String()] = PeerWireGuardInfo{
+		result[p.PublicKey.String()] = PeerInfo{
 			LastHandshakeTime: p.LastHandshakeTime,
 			Endpoint:          endpoint,
 			TransmitBytes:     uint64(p.TransmitBytes),
@@ -164,7 +180,7 @@ func (wm *WireGuardManager) GetPeerHandshakes() (map[string]PeerWireGuardInfo, e
 }
 
 // Cleanup removes the kubespan WireGuard interface.
-func (wm *WireGuardManager) Cleanup() error {
+func (wm *Manager) Cleanup() error {
 	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
 	if err != nil {
 		return nil // already gone
@@ -173,23 +189,8 @@ func (wm *WireGuardManager) Cleanup() error {
 }
 
 // Close releases the wgctrl client.
-func (wm *WireGuardManager) Close() error {
+func (wm *Manager) Close() error {
 	return wm.client.Close()
-}
-
-// WireGuardPeer is the configuration for a single WireGuard peer.
-type WireGuardPeer struct {
-	PublicKey  string
-	Endpoint   netip.AddrPort
-	AllowedIPs []netip.Prefix
-}
-
-// PeerWireGuardInfo holds live WireGuard data for a peer.
-type PeerWireGuardInfo struct {
-	LastHandshakeTime time.Time
-	Endpoint          netip.AddrPort
-	TransmitBytes     uint64
-	ReceiveBytes      uint64
 }
 
 // Helper conversions.

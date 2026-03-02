@@ -1,13 +1,19 @@
-package main
+// Package resources defines COSI resource types for kubespand.
+package resources
 
 import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/config"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/discovery"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/identity"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate"
 )
 
 // Namespace for all kubespand resources.
-const KubespanNamespace = resource.Namespace("kubespan")
+const Namespace = resource.Namespace("kubespan")
 
 // Resource type constants.
 const (
@@ -26,7 +32,7 @@ const (
 // --- Config resource ---
 
 // Config is the COSI resource for kubespand configuration.
-type Config = typed.Resource[ConfigSpec, ConfigExtension]
+type Config = typed.Resource[config.Spec, ConfigExtension]
 
 // ConfigExtension provides COSI resource metadata for Config.
 type ConfigExtension struct{}
@@ -35,22 +41,22 @@ type ConfigExtension struct{}
 func (ConfigExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
 	return spec.ResourceDefinitionSpec{
 		Type:             ConfigType,
-		DefaultNamespace: KubespanNamespace,
+		DefaultNamespace: Namespace,
 	}
 }
 
 // NewConfig creates a new Config resource.
 func NewConfig(ns resource.Namespace, id resource.ID) *Config {
-	return typed.NewResource[ConfigSpec, ConfigExtension](
+	return typed.NewResource[config.Spec, ConfigExtension](
 		resource.NewMetadata(ns, ConfigType, id, resource.VersionUndefined),
-		ConfigSpec{},
+		config.Spec{},
 	)
 }
 
 // --- Identity resource ---
 
 // Identity is the COSI resource for the node's KubeSpan identity.
-type Identity = typed.Resource[IdentitySpec, IdentityExtension]
+type Identity = typed.Resource[identity.Spec, IdentityExtension]
 
 // IdentityExtension provides COSI resource metadata for Identity.
 type IdentityExtension struct{}
@@ -59,22 +65,22 @@ type IdentityExtension struct{}
 func (IdentityExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
 	return spec.ResourceDefinitionSpec{
 		Type:             IdentityType,
-		DefaultNamespace: KubespanNamespace,
+		DefaultNamespace: Namespace,
 	}
 }
 
 // NewIdentity creates a new Identity resource.
 func NewIdentity(ns resource.Namespace, id resource.ID) *Identity {
-	return typed.NewResource[IdentitySpec, IdentityExtension](
+	return typed.NewResource[identity.Spec, IdentityExtension](
 		resource.NewMetadata(ns, IdentityType, id, resource.VersionUndefined),
-		IdentitySpec{},
+		identity.Spec{},
 	)
 }
 
 // --- PeerSpec resource ---
 
 // PeerSpec is the COSI resource for a discovered KubeSpan peer.
-type PeerSpec = typed.Resource[PeerSpecSpec, PeerSpecExtension]
+type PeerSpec = typed.Resource[discovery.PeerSpec, PeerSpecExtension]
 
 // PeerSpecExtension provides COSI resource metadata for PeerSpec.
 type PeerSpecExtension struct{}
@@ -83,22 +89,22 @@ type PeerSpecExtension struct{}
 func (PeerSpecExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
 	return spec.ResourceDefinitionSpec{
 		Type:             PeerSpecType,
-		DefaultNamespace: KubespanNamespace,
+		DefaultNamespace: Namespace,
 	}
 }
 
 // NewPeerSpec creates a new PeerSpec resource.
 func NewPeerSpec(ns resource.Namespace, id resource.ID) *PeerSpec {
-	return typed.NewResource[PeerSpecSpec, PeerSpecExtension](
+	return typed.NewResource[discovery.PeerSpec, PeerSpecExtension](
 		resource.NewMetadata(ns, PeerSpecType, id, resource.VersionUndefined),
-		PeerSpecSpec{},
+		discovery.PeerSpec{},
 	)
 }
 
 // --- PeerStatus resource ---
 
 // PeerStatus is the COSI resource for a peer's live WireGuard state.
-type PeerStatus = typed.Resource[PeerStatusSpec, PeerStatusExtension]
+type PeerStatus = typed.Resource[peerstate.Spec, PeerStatusExtension]
 
 // PeerStatusExtension provides COSI resource metadata for PeerStatus.
 type PeerStatusExtension struct{}
@@ -107,14 +113,14 @@ type PeerStatusExtension struct{}
 func (PeerStatusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
 	return spec.ResourceDefinitionSpec{
 		Type:             PeerStatusType,
-		DefaultNamespace: KubespanNamespace,
+		DefaultNamespace: Namespace,
 	}
 }
 
 // NewPeerStatus creates a new PeerStatus resource.
 func NewPeerStatus(ns resource.Namespace, id resource.ID) *PeerStatus {
-	return typed.NewResource[PeerStatusSpec, PeerStatusExtension](
+	return typed.NewResource[peerstate.Spec, PeerStatusExtension](
 		resource.NewMetadata(ns, PeerStatusType, id, resource.VersionUndefined),
-		PeerStatusSpec{},
+		peerstate.Spec{},
 	)
 }

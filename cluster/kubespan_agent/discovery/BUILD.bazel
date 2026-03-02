@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "discovery",
+    srcs = ["discovery.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/discovery",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "//cluster/kubespan_agent/config",
+        "//cluster/kubespan_agent/identity",
+        "@com_github_siderolabs_discovery_api//api/v1alpha1/client/pb",
+        "@com_github_siderolabs_discovery_client//pkg/client",
+        "@org_uber_go_zap//:zap",
+    ],
+)

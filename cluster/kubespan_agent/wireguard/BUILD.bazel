@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "wireguard",
+    srcs = ["wireguard.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/wireguard",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_vishvananda_netlink//:netlink",
+        "@com_zx2c4_golang_wireguard_wgctrl//:wgctrl",
+        "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
+    ],
+)

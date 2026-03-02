@@ -1,4 +1,5 @@
-package main
+// Package discovery handles communication with the Talos discovery service.
+package discovery
 
 import (
 	"bufio"
@@ -16,13 +17,16 @@ import (
 	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
 	discoveryclient "github.com/siderolabs/discovery-client/pkg/client"
 	"go.uber.org/zap"
+
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/config"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/identity"
 )
 
 const discoveryTTL = 30 * time.Minute
 
-// PeerSpecSpec represents a discovered KubeSpan peer.
+// PeerSpec represents a discovered KubeSpan peer.
 // Ref: talos/pkg/machinery/resources/kubespan/peer_spec.go (PeerSpecSpec)
-type PeerSpecSpec struct {
+type PeerSpec struct {
 	PublicKey  string
 	Address    netip.Addr // KubeSpan ULA /128
 	Endpoints  []netip.AddrPort
@@ -30,17 +34,17 @@ type PeerSpecSpec struct {
 	Label      string // node name for logging
 }
 
-// DeepCopy returns a deep copy of the PeerSpecSpec.
-func (p PeerSpecSpec) DeepCopy() PeerSpecSpec {
+// DeepCopy returns a deep copy of the PeerSpec.
+func (p PeerSpec) DeepCopy() PeerSpec {
 	cp := p
 	cp.Endpoints = append([]netip.AddrPort(nil), p.Endpoints...)
 	cp.AllowedIPs = append([]netip.Prefix(nil), p.AllowedIPs...)
 	return cp
 }
 
-// DiscoveryManager handles communication with the Talos discovery service.
+// Manager handles communication with the Talos discovery service.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
-type DiscoveryManager struct {
+type Manager struct {
 	client          *discoveryclient.Client
 	notifyCh        chan struct{}
 	logger          *zap.Logger
@@ -53,12 +57,12 @@ type endpointFilter struct {
 	deny   bool // true if prefixed with "!"
 }
 
-// NewDiscoveryManager creates a new discovery manager.
+// NewManager creates a new discovery manager.
 //
 // The discovery client encrypts all affiliate data with AES-GCM using the cluster
 // secret as the key. The discovery service never sees plaintext node data.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (Run)
-func NewDiscoveryManager(cfg *ConfigSpec, affiliateID string, logger *zap.Logger) (*DiscoveryManager, error) {
+func NewManager(cfg *config.Spec, affiliateID string, logger *zap.Logger) (*Manager, error) {
 	secretBytes, err := base64.StdEncoding.DecodeString(cfg.ClusterSecret)
 	if err != nil {
 		return nil, fmt.Errorf("decoding cluster_secret: %w", err)
@@ -104,7 +108,7 @@ func NewDiscoveryManager(cfg *ConfigSpec, affiliateID string, logger *zap.Logger
 		filters = append(filters, endpointFilter{prefix: prefix, deny: deny})
 	}
 
-	return &DiscoveryManager{
+	return &Manager{
 		client:          client,
 		notifyCh:        make(chan struct{}, 1),
 		logger:          logger,
@@ -113,19 +117,19 @@ func NewDiscoveryManager(cfg *ConfigSpec, affiliateID string, logger *zap.Logger
 }
 
 // NotifyCh returns the channel that receives notifications when the peer list changes.
-func (dm *DiscoveryManager) NotifyCh() <-chan struct{} {
+func (dm *Manager) NotifyCh() <-chan struct{} {
 	return dm.notifyCh
 }
 
 // Run starts the discovery client event loop. Blocks until ctx is cancelled.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (Run, client.Run)
-func (dm *DiscoveryManager) Run(ctx context.Context) error {
+func (dm *Manager) Run(ctx context.Context) error {
 	return dm.client.Run(ctx, dm.logger, dm.notifyCh)
 }
 
 // PublishLocal announces this node's affiliate data to the discovery service.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints)
-func (dm *DiscoveryManager) PublishLocal(cfg *ConfigSpec, id *IdentitySpec, listenPort int) error {
+func (dm *Manager) PublishLocal(cfg *config.Spec, id *identity.Spec, listenPort int) error {
 	addr, err := id.ParsedAddress()
 	if err != nil {
 		return fmt.Errorf("parsing identity address: %w", err)
@@ -171,7 +175,7 @@ func (dm *DiscoveryManager) PublishLocal(cfg *ConfigSpec, id *IdentitySpec, list
 
 // DeleteLocalAffiliate removes this node's affiliate data from the discovery service.
 // Called on shutdown to clean up immediately rather than waiting for TTL expiry.
-func (dm *DiscoveryManager) DeleteLocalAffiliate() {
+func (dm *Manager) DeleteLocalAffiliate() {
 	dm.client.DeleteLocalAffiliate()
 }
 
@@ -213,13 +217,13 @@ func detectOS() string {
 }
 
 // GetPeers returns the current list of discovered peers, converted from
-// discovery affiliates to our internal Peer type. Endpoints are filtered
+// discovery affiliates to our internal PeerSpec type. Endpoints are filtered
 // according to the configured EndpointFilters.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (specAffiliate)
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/peer_spec.go (PeerSpecController)
-func (dm *DiscoveryManager) GetPeers() []PeerSpecSpec {
+func (dm *Manager) GetPeers() []PeerSpec {
 	affiliates := dm.client.GetAffiliates()
-	peers := make([]PeerSpecSpec, 0, len(affiliates))
+	peers := make([]PeerSpec, 0, len(affiliates))
 
 	for _, aff := range affiliates {
 		if aff.Affiliate == nil || aff.Affiliate.Kubespan == nil {
@@ -230,7 +234,7 @@ func (dm *DiscoveryManager) GetPeers() []PeerSpecSpec {
 			continue
 		}
 
-		peer := PeerSpecSpec{
+		peer := PeerSpec{
 			PublicKey: ks.PublicKey,
 			Label:     aff.Affiliate.Nodename,
 		}
@@ -282,7 +286,7 @@ func (dm *DiscoveryManager) GetPeers() []PeerSpecSpec {
 // Filters are evaluated in order; the first matching filter determines the result.
 // If no filter matches, the endpoint is allowed (default accept).
 // Ref: talos/pkg/machinery/resources/kubespan/config.go (EndpointFilters)
-func (dm *DiscoveryManager) endpointAllowed(addr netip.Addr) bool {
+func (dm *Manager) endpointAllowed(addr netip.Addr) bool {
 	if len(dm.endpointFilters) == 0 {
 		return true
 	}

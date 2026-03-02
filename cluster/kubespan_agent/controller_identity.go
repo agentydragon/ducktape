@@ -8,6 +8,9 @@ import (
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"go.uber.org/zap"
+
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/identity"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/resources"
 )
 
 // IdentityController watches Config and produces the node's KubeSpan Identity.
@@ -26,7 +29,7 @@ func (ctrl *IdentityController) Name() string {
 // Inputs implements controller.Controller.
 func (ctrl *IdentityController) Inputs() []controller.Input {
 	return []controller.Input{
-		safe.Input[*Config](controller.InputWeak),
+		safe.Input[*resources.Config](controller.InputWeak),
 	}
 }
 
@@ -34,7 +37,7 @@ func (ctrl *IdentityController) Inputs() []controller.Input {
 func (ctrl *IdentityController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
-			Type: IdentityType,
+			Type: resources.IdentityType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -49,7 +52,7 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 		case <-r.EventCh():
 		}
 
-		cfg, err := safe.ReaderGetByID[*Config](ctx, r, ConfigID)
+		cfg, err := safe.ReaderGetByID[*resources.Config](ctx, r, resources.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				continue
@@ -59,12 +62,12 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 
 		cfgSpec := cfg.TypedSpec()
 
-		mac, err := DetectMAC()
+		mac, err := identity.DetectMAC()
 		if err != nil {
 			return fmt.Errorf("detecting MAC: %w", err)
 		}
 
-		id, err := LoadOrCreateIdentity(cfgSpec.IdentityFile, cfgSpec.ClusterID)
+		id, err := identity.LoadOrCreate(cfgSpec.IdentityFile, cfgSpec.ClusterID)
 		if err != nil {
 			return fmt.Errorf("loading identity: %w", err)
 		}
@@ -79,7 +82,7 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 			zap.String("address", id.Address),
 		)
 
-		if err := safe.WriterModify(ctx, r, NewIdentity(KubespanNamespace, IdentityID), func(res *Identity) error {
+		if err := safe.WriterModify(ctx, r, resources.NewIdentity(resources.Namespace, resources.IdentityID), func(res *resources.Identity) error {
 			*res.TypedSpec() = *id
 			return nil
 		}); err != nil {

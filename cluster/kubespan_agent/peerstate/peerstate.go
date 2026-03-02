@@ -1,4 +1,5 @@
-package main
+// Package peerstate tracks the live state of KubeSpan peers.
+package peerstate
 
 import (
 	"net/netip"
@@ -19,9 +20,9 @@ const (
 	PeerDownInterval = 275 * time.Second
 )
 
-// PeerStatusSpec tracks the live state of a single KubeSpan peer.
+// Spec tracks the live state of a single KubeSpan peer.
 // Ref: talos/pkg/machinery/resources/kubespan/peer_status.go (PeerStatusSpec)
-type PeerStatusSpec struct {
+type Spec struct {
 	Label              string
 	Endpoint           netip.AddrPort
 	LastUsedEndpoint   netip.AddrPort
@@ -32,21 +33,21 @@ type PeerStatusSpec struct {
 	State              kubespan.PeerState
 }
 
-// DeepCopy returns a deep copy of the PeerStatusSpec.
-func (ps PeerStatusSpec) DeepCopy() PeerStatusSpec {
+// DeepCopy returns a deep copy of the Spec.
+func (ps Spec) DeepCopy() Spec {
 	return ps
 }
 
 // CalculateState computes the peer state from current time.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (CalculateState)
-func (ps *PeerStatusSpec) CalculateState() {
+func (ps *Spec) CalculateState() {
 	now := time.Now()
 	sinceHandshake := now.Sub(ps.LastHandshakeTime)
 	sinceEndpointChange := now.Sub(ps.LastEndpointChange)
-	ps.calculateStateWithDurations(sinceHandshake, sinceEndpointChange)
+	ps.CalculateStateWithDurations(sinceHandshake, sinceEndpointChange)
 }
 
-// calculateStateWithDurations computes the peer state from explicit durations (testable).
+// CalculateStateWithDurations computes the peer state from explicit durations (testable).
 //
 // State machine (from Talos source):
 //
@@ -67,7 +68,7 @@ func (ps *PeerStatusSpec) CalculateState() {
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go
 //
 //	(CalculateStateWithDurations)
-func (ps *PeerStatusSpec) calculateStateWithDurations(sinceHandshake, sinceEndpointChange time.Duration) {
+func (ps *Spec) CalculateStateWithDurations(sinceHandshake, sinceEndpointChange time.Duration) {
 	switch {
 	case sinceEndpointChange > PeerDownInterval:
 		// Long time since endpoint change — judge purely by handshake freshness.
@@ -103,13 +104,13 @@ func (ps *PeerStatusSpec) calculateStateWithDurations(sinceHandshake, sinceEndpo
 
 // ShouldChangeEndpoint returns true when the peer needs a new endpoint.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (ShouldChangeEndpoint)
-func (ps *PeerStatusSpec) ShouldChangeEndpoint() bool {
+func (ps *Spec) ShouldChangeEndpoint() bool {
 	return ps.State == kubespan.PeerStateDown || !ps.LastUsedEndpoint.IsValid()
 }
 
 // PickNewEndpoint selects the next endpoint to try, round-robin style.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (PickNewEndpoint)
-func (ps *PeerStatusSpec) PickNewEndpoint(endpoints []netip.AddrPort) netip.AddrPort {
+func (ps *Spec) PickNewEndpoint(endpoints []netip.AddrPort) netip.AddrPort {
 	if len(endpoints) == 0 {
 		return netip.AddrPort{}
 	}
@@ -136,7 +137,7 @@ func (ps *PeerStatusSpec) PickNewEndpoint(endpoints []netip.AddrPort) netip.Addr
 
 // UpdateEndpoint records that we're trying a new endpoint.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (UpdateEndpoint)
-func (ps *PeerStatusSpec) UpdateEndpoint(endpoint netip.AddrPort) {
+func (ps *Spec) UpdateEndpoint(endpoint netip.AddrPort) {
 	ps.Endpoint = endpoint
 	ps.LastUsedEndpoint = endpoint
 	ps.LastEndpointChange = time.Now()

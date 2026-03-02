@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "resources",
+    srcs = ["resources.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/resources",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "//cluster/kubespan_agent/config",
+        "//cluster/kubespan_agent/discovery",
+        "//cluster/kubespan_agent/identity",
+        "//cluster/kubespan_agent/peerstate",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+    ],
+)

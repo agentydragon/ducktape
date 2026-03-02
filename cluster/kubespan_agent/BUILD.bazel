@@ -5,45 +5,30 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 go_library(
     name = "kubespan_agent_lib",
     srcs = [
-        "config.go",
         "controller_discovery.go",
         "controller_identity.go",
         "controller_manager.go",
-        "discovery.go",
-        "identity.go",
         "main.go",
-        "peerstate.go",
-        "resources.go",
-        "routing.go",
-        "wireguard.go",
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent",
     visibility = ["//visibility:private"],
     deps = [
+        "//cluster/kubespan_agent/config",
+        "//cluster/kubespan_agent/discovery",
+        "//cluster/kubespan_agent/identity",
+        "//cluster/kubespan_agent/peerstate",
+        "//cluster/kubespan_agent/resources",
+        "//cluster/kubespan_agent/routing",
+        "//cluster/kubespan_agent/wireguard",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
         "@com_github_cosi_project_runtime//pkg/resource",
-        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
-        "@com_github_cosi_project_runtime//pkg/resource/typed",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
         "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
-        "@com_github_google_nftables//:nftables",
-        "@com_github_google_nftables//binaryutil",
-        "@com_github_google_nftables//expr",
-        "@com_github_mdlayher_netx//eui64",
-        "@com_github_siderolabs_discovery_api//api/v1alpha1/client/pb",
-        "@com_github_siderolabs_discovery_client//pkg/client",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
-        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
-        "@com_github_vishvananda_netlink//:netlink",
-        "@com_zx2c4_golang_wireguard_wgctrl//:wgctrl",
-        "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@org_go4_netipx//:netipx",
-        "@org_golang_x_sys//unix",
         "@org_uber_go_zap//:zap",
     ],
 )
@@ -58,12 +43,6 @@ go_binary(
 )
 
 go_test(
-    name = "kubespan_agent_test",
-    srcs = ["peerstate_test.go"],
-    embed = [":kubespan_agent_lib"],
-)
-
-go_test(
     name = "e2e_test",
     srcs = ["e2e_test.go"],
     data = [
@@ -73,6 +52,10 @@ go_test(
     ],
     embed = [":kubespan_agent_lib"],
     tags = ["requires_docker"],
+    deps = [
+        "//cluster/kubespan_agent/config",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
 )
 
 pkg_tar(

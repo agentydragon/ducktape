@@ -13,6 +13,11 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
+
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/resources"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/routing"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/wireguard"
 )
 
 // PeerReconcileInterval is how often we poll WireGuard for handshake times
@@ -32,8 +37,8 @@ const PeerReconcileInterval = 30 * time.Second
 //
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 type ManagerController struct {
-	wg      *WireGuardManager
-	routing *RoutingManager
+	wg      *wireguard.Manager
+	routing *routing.Manager
 	ticker  *time.Ticker
 }
 
@@ -45,9 +50,9 @@ func (ctrl *ManagerController) Name() string {
 // Inputs implements controller.Controller.
 func (ctrl *ManagerController) Inputs() []controller.Input {
 	return []controller.Input{
-		safe.Input[*Config](controller.InputWeak),
-		safe.Input[*Identity](controller.InputWeak),
-		safe.Input[*PeerSpec](controller.InputWeak),
+		safe.Input[*resources.Config](controller.InputWeak),
+		safe.Input[*resources.Identity](controller.InputWeak),
+		safe.Input[*resources.PeerSpec](controller.InputWeak),
 	}
 }
 
@@ -55,7 +60,7 @@ func (ctrl *ManagerController) Inputs() []controller.Input {
 func (ctrl *ManagerController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
-			Type: PeerStatusType,
+			Type: resources.PeerStatusType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -93,7 +98,7 @@ func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, lo
 }
 
 func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runtime, logger *zap.Logger) error {
-	cfg, err := safe.ReaderGetByID[*Config](ctx, r, ConfigID)
+	cfg, err := safe.ReaderGetByID[*resources.Config](ctx, r, resources.ConfigID)
 	if err != nil {
 		if state.IsNotFoundError(err) {
 			return nil
@@ -101,7 +106,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		return fmt.Errorf("getting config: %w", err)
 	}
 
-	id, err := safe.ReaderGetByID[*Identity](ctx, r, IdentityID)
+	id, err := safe.ReaderGetByID[*resources.Identity](ctx, r, resources.IdentityID)
 	if err != nil {
 		if state.IsNotFoundError(err) {
 			return nil
@@ -119,7 +124,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 			return fmt.Errorf("parsing identity address: %w", parseErr)
 		}
 
-		wg, wgErr := NewWireGuardManager(idSpec.PrivateKey, cfgSpec.ClusterSecret, cfgSpec.ListenPort, cfgSpec.MTU)
+		wg, wgErr := wireguard.NewManager(idSpec.PrivateKey, cfgSpec.ClusterSecret, cfgSpec.ListenPort, cfgSpec.MTU)
 		if wgErr != nil {
 			return fmt.Errorf("wireguard manager: %w", wgErr)
 		}
@@ -132,29 +137,29 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 
 		ctrl.wg = wg
 
-		ctrl.routing = NewRoutingManager(cfgSpec.MTU, logger)
+		ctrl.routing = routing.NewManager(cfgSpec.MTU, logger)
 		if err := ctrl.routing.Install(nil); err != nil {
 			return fmt.Errorf("routing: %w", err)
 		}
 		logger.Info("routing rules installed",
 			zap.Int("table", constants.KubeSpanDefaultRoutingTable),
-			zap.Int("rule_priority", RulePriority),
+			zap.Int("rule_priority", routing.RulePriority),
 		)
 	}
 
 	// List all discovered peers.
-	peerList, err := safe.ReaderListAll[*PeerSpec](ctx, r)
+	peerList, err := safe.ReaderListAll[*resources.PeerSpec](ctx, r)
 	if err != nil {
 		return fmt.Errorf("listing peer specs: %w", err)
 	}
 
 	// Read existing peer statuses to preserve state machine data.
-	existingStatuses, err := safe.ReaderListAll[*PeerStatus](ctx, r)
+	existingStatuses, err := safe.ReaderListAll[*resources.PeerStatus](ctx, r)
 	if err != nil && !state.IsNotFoundError(err) {
 		return fmt.Errorf("listing peer statuses: %w", err)
 	}
 
-	statusMap := make(map[string]*PeerStatusSpec)
+	statusMap := make(map[string]*peerstate.Spec)
 	for ps := range existingStatuses.All() {
 		spec := ps.TypedSpec().DeepCopy()
 		statusMap[ps.Metadata().ID()] = &spec
@@ -168,7 +173,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 	}
 
 	// Build WireGuard peer configs and update statuses.
-	var wgPeers []WireGuardPeer
+	var wgPeers []wireguard.Peer
 	var routedPrefixes []netip.Prefix
 
 	r.StartTrackingOutputs()
@@ -180,7 +185,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		// Get or create status for this peer.
 		ps, ok := statusMap[pubKey]
 		if !ok {
-			ps = &PeerStatusSpec{Label: peerSpec.Label}
+			ps = &peerstate.Spec{Label: peerSpec.Label}
 		}
 
 		// Update from WireGuard handshake data.
@@ -209,7 +214,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		}
 
 		// Build WireGuard peer config.
-		wgPeer := WireGuardPeer{
+		wgPeer := wireguard.Peer{
 			PublicKey:  pubKey,
 			AllowedIPs: peerSpec.AllowedIPs,
 		}
@@ -228,7 +233,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		}
 
 		// Write PeerStatus resource.
-		if err := safe.WriterModify(ctx, r, NewPeerStatus(KubespanNamespace, resource.ID(pubKey)), func(res *PeerStatus) error {
+		if err := safe.WriterModify(ctx, r, resources.NewPeerStatus(resources.Namespace, resource.ID(pubKey)), func(res *resources.PeerStatus) error {
 			*res.TypedSpec() = *ps
 			return nil
 		}); err != nil {
@@ -236,7 +241,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		}
 	}
 
-	if err := safe.CleanupOutputs[*PeerStatus](ctx, r); err != nil {
+	if err := safe.CleanupOutputs[*resources.PeerStatus](ctx, r); err != nil {
 		return fmt.Errorf("cleaning up peer statuses: %w", err)
 	}
 

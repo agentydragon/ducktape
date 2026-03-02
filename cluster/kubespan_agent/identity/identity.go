@@ -1,4 +1,5 @@
-package main
+// Package identity handles KubeSpan node identity (WireGuard keypair + derived addresses).
+package identity
 
 import (
 	"encoding/json"
@@ -15,24 +16,24 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-// IdentitySpec holds the node's KubeSpan identity (WireGuard keypair + derived addresses).
+// Spec holds the node's KubeSpan identity (WireGuard keypair + derived addresses).
 // Ref: talos/pkg/machinery/resources/kubespan/identity.go (IdentitySpec)
-type IdentitySpec struct {
+type Spec struct {
 	PrivateKey string `json:"private_key"`
 	PublicKey  string `json:"public_key"`
 	Subnet     string `json:"subnet"`  // ULA /64 prefix
 	Address    string `json:"address"` // EUI-64 /128 address
 }
 
-// DeepCopy returns a deep copy of the IdentitySpec.
-func (id IdentitySpec) DeepCopy() IdentitySpec {
+// DeepCopy returns a deep copy of the Spec.
+func (id Spec) DeepCopy() Spec {
 	return id
 }
 
-// LoadOrCreateIdentity loads an existing identity from disk, or generates a new one.
+// LoadOrCreate loads an existing identity from disk, or generates a new one.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/identity.go (IdentityController)
-func LoadOrCreateIdentity(path string, clusterID string) (*IdentitySpec, error) {
-	id, err := loadIdentity(path)
+func LoadOrCreate(path string, clusterID string) (*Spec, error) {
+	id, err := load(path)
 	if err == nil {
 		return id, nil
 	}
@@ -47,7 +48,7 @@ func LoadOrCreateIdentity(path string, clusterID string) (*IdentitySpec, error) 
 		return nil, fmt.Errorf("generating WireGuard key: %w", err)
 	}
 
-	id = &IdentitySpec{
+	id = &Spec{
 		PrivateKey: key.String(),
 		PublicKey:  key.PublicKey().String(),
 	}
@@ -68,12 +69,12 @@ func LoadOrCreateIdentity(path string, clusterID string) (*IdentitySpec, error) 
 	return id, nil
 }
 
-func loadIdentity(path string) (*IdentitySpec, error) {
+func load(path string) (*Spec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var id IdentitySpec
+	var id Spec
 	if err := json.Unmarshal(data, &id); err != nil {
 		return nil, fmt.Errorf("parsing identity: %w", err)
 	}
@@ -86,7 +87,7 @@ func loadIdentity(path string) (*IdentitySpec, error) {
 // UpdateAddress computes the node's KubeSpan ULA address from the cluster ID and
 // first NIC MAC address.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/identity.go (UpdateAddress)
-func (id *IdentitySpec) UpdateAddress(clusterID string, mac net.HardwareAddr) error {
+func (id *Spec) UpdateAddress(clusterID string, mac net.HardwareAddr) error {
 	subnet := network.ULAPrefix(clusterID, network.ULAKubeSpan)
 	id.Subnet = subnet.String()
 
@@ -100,12 +101,12 @@ func (id *IdentitySpec) UpdateAddress(clusterID string, mac net.HardwareAddr) er
 }
 
 // ParsedAddress returns the node's KubeSpan address as a netip.Prefix.
-func (id *IdentitySpec) ParsedAddress() (netip.Prefix, error) {
+func (id *Spec) ParsedAddress() (netip.Prefix, error) {
 	return netip.ParsePrefix(id.Address)
 }
 
 // ParsedSubnet returns the node's KubeSpan subnet as a netip.Prefix.
-func (id *IdentitySpec) ParsedSubnet() (netip.Prefix, error) {
+func (id *Spec) ParsedSubnet() (netip.Prefix, error) {
 	return netip.ParsePrefix(id.Subnet)
 }
 
@@ -132,21 +133,23 @@ func wgEUI64(prefix netip.Prefix, mac net.HardwareAddr) (netip.Prefix, error) {
 // DetectMAC finds the first physical NIC's MAC address.
 //
 // Uses the same heuristic as Talos's FirstHardwareAddr: iterates interfaces
-// in kernel order, skipping loopback and interfaces without a MAC. Virtual
-// interfaces (bridges, veth, etc.) are filtered by checking for the
-// /sys/class/net/<name>/device symlink, which only exists for physical NICs.
+// in kernel order, skipping loopback and interfaces without a MAC. Physical
+// NICs are preferred (detected via /sys/class/net/<name>/device symlink);
+// falls back to the first non-loopback interface if no physical NIC is found
+// (e.g., in a container).
 func DetectMAC() (net.HardwareAddr, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, fmt.Errorf("listing interfaces: %w", err)
 	}
 
+	var firstNonLoopback net.HardwareAddr
 	for _, iface := range ifaces {
-		if iface.Flags&net.FlagLoopback != 0 {
+		if iface.Flags&net.FlagLoopback != 0 || len(iface.HardwareAddr) == 0 {
 			continue
 		}
-		if len(iface.HardwareAddr) == 0 {
-			continue
+		if firstNonLoopback == nil {
+			firstNonLoopback = iface.HardwareAddr
 		}
 		// Physical NICs have a /sys/class/net/<name>/device symlink pointing
 		// to the PCI/USB device. Virtual interfaces (bridges, veth, tun, etc.)
@@ -157,17 +160,8 @@ func DetectMAC() (net.HardwareAddr, error) {
 		return iface.HardwareAddr, nil
 	}
 
-	// Fallback: if no physical NIC found (e.g., in a container), use the
-	// first non-loopback interface with a MAC.
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		if len(iface.HardwareAddr) == 0 {
-			continue
-		}
-		return iface.HardwareAddr, nil
+	if firstNonLoopback != nil {
+		return firstNonLoopback, nil
 	}
-
 	return nil, errors.New("no suitable network interface found")
 }

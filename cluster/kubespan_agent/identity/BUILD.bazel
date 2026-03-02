@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "identity",
+    srcs = ["identity.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/identity",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "@com_github_mdlayher_netx//eui64",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
+        "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
+        "@org_go4_netipx//:netipx",
+    ],
+)

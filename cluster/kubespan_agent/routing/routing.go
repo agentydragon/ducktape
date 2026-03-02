@@ -1,4 +1,5 @@
-package main
+// Package routing manages nftables rules and ip policy routing for KubeSpan.
+package routing
 
 import (
 	"encoding/binary"
@@ -23,18 +24,18 @@ const RulePriority = 32500
 
 const tableName = "talos_kubespan"
 
-// RoutingManager manages nftables rules and ip policy routing for KubeSpan.
+// Manager manages nftables rules and ip policy routing for KubeSpan.
 // Uses the google/nftables Go library (same as Talos) for atomic nftables management.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (nftables setup)
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (RulesManager)
-type RoutingManager struct {
+type Manager struct {
 	mtu    int
 	logger *zap.Logger
 }
 
-// NewRoutingManager creates a new routing manager.
-func NewRoutingManager(mtu int, logger *zap.Logger) *RoutingManager {
-	return &RoutingManager{mtu: mtu, logger: logger}
+// NewManager creates a new routing manager.
+func NewManager(mtu int, logger *zap.Logger) *Manager {
+	return &Manager{mtu: mtu, logger: logger}
 }
 
 // Install sets up nftables rules, ip policy routing rules, and default routes.
@@ -53,7 +54,7 @@ func NewRoutingManager(mtu int, logger *zap.Logger) *RoutingManager {
 //
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go
-func (rm *RoutingManager) Install(routedPrefixes []netip.Prefix) error {
+func (rm *Manager) Install(routedPrefixes []netip.Prefix) error {
 	if err := rm.installNftables(routedPrefixes); err != nil {
 		return fmt.Errorf("nftables: %w", err)
 	}
@@ -70,12 +71,12 @@ func (rm *RoutingManager) Install(routedPrefixes []netip.Prefix) error {
 }
 
 // Update refreshes the nftables rules with the current set of routed prefixes.
-func (rm *RoutingManager) Update(routedPrefixes []netip.Prefix) error {
+func (rm *Manager) Update(routedPrefixes []netip.Prefix) error {
 	return rm.installNftables(routedPrefixes)
 }
 
 // Cleanup removes all nftables rules, ip rules, and routes installed by kubespand.
-func (rm *RoutingManager) Cleanup() error {
+func (rm *Manager) Cleanup() error {
 	conn, err := nftables.New()
 	if err != nil {
 		return fmt.Errorf("nftables conn: %w", err)
@@ -97,7 +98,7 @@ func (rm *RoutingManager) Cleanup() error {
 // Uses the google/nftables Go library with interval sets for prefix matching.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 // Ref: talos/internal/app/machined/pkg/adapters/network/nftables_rule.go
-func (rm *RoutingManager) installNftables(routedPrefixes []netip.Prefix) error {
+func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn, err := nftables.New()
 	if err != nil {
 		return fmt.Errorf("nftables conn: %w", err)
@@ -124,10 +125,10 @@ func (rm *RoutingManager) installNftables(routedPrefixes []netip.Prefix) error {
 
 	// Build anonymous interval sets for IPv4 and IPv6 prefix matching.
 	// Ref: talos/internal/app/machined/pkg/adapters/network/nftables_rule.go (SetElements)
-	v4PrerouteSet := rm.makeIPv4Set(table, v4Prefixes)
-	v6PrerouteSet := rm.makeIPv6Set(table, v6Prefixes)
-	v4OutputSet := rm.makeIPv4Set(table, v4Prefixes)
-	v6OutputSet := rm.makeIPv6Set(table, v6Prefixes)
+	v4PrerouteSet := makeIPv4Set(table, v4Prefixes)
+	v6PrerouteSet := makeIPv6Set(table, v6Prefixes)
+	v4OutputSet := makeIPv4Set(table, v4Prefixes)
+	v6OutputSet := makeIPv6Set(table, v6Prefixes)
 
 	if err := conn.AddSet(v4PrerouteSet.set, v4PrerouteSet.elements); err != nil {
 		return fmt.Errorf("adding v4 preroute set: %w", err)
@@ -159,21 +160,21 @@ func (rm *RoutingManager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: prerouteChain,
-		Exprs: rm.skipWGMarkExprs(),
+		Exprs: skipWGMarkExprs(),
 	})
 
 	// Rule: ip daddr @routed_v4 meta mark set meta mark | 0x40 accept
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: prerouteChain,
-		Exprs: rm.markIPv4Exprs(v4PrerouteSet.set),
+		Exprs: markIPv4Exprs(v4PrerouteSet.set),
 	})
 
 	// Rule: ip6 daddr @routed_v6 meta mark set meta mark | 0x40 accept
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: prerouteChain,
-		Exprs: rm.markIPv6Exprs(v6PrerouteSet.set),
+		Exprs: markIPv6Exprs(v6PrerouteSet.set),
 	})
 
 	// Output chain: mark outgoing packets + MSS clamping.
@@ -191,7 +192,7 @@ func (rm *RoutingManager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
-		Exprs: rm.skipWGMarkExprs(),
+		Exprs: skipWGMarkExprs(),
 	})
 
 	// Rule: skip loopback.
@@ -199,7 +200,7 @@ func (rm *RoutingManager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
-		Exprs: rm.skipLoopbackExprs(),
+		Exprs: skipLoopbackExprs(),
 	})
 
 	// MSS clamping rules for routed traffic.
@@ -209,7 +210,7 @@ func (rm *RoutingManager) installNftables(routedPrefixes []netip.Prefix) error {
 		conn.AddRule(&nftables.Rule{
 			Table: table,
 			Chain: outputChain,
-			Exprs: rm.mssClampIPv4Exprs(v4OutputSet.set, uint16(mss4)),
+			Exprs: mssClampIPv4Exprs(v4OutputSet.set, uint16(mss4)),
 		})
 	}
 	mss6 := rm.mtu - 60 // IPv6 header (40) + TCP header (20)
@@ -217,7 +218,7 @@ func (rm *RoutingManager) installNftables(routedPrefixes []netip.Prefix) error {
 		conn.AddRule(&nftables.Rule{
 			Table: table,
 			Chain: outputChain,
-			Exprs: rm.mssClampIPv6Exprs(v6OutputSet.set, uint16(mss6)),
+			Exprs: mssClampIPv6Exprs(v6OutputSet.set, uint16(mss6)),
 		})
 	}
 
@@ -225,14 +226,14 @@ func (rm *RoutingManager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
-		Exprs: rm.markIPv4Exprs(v4OutputSet.set),
+		Exprs: markIPv4Exprs(v4OutputSet.set),
 	})
 
 	// Rule: mark routed IPv6 packets.
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
-		Exprs: rm.markIPv6Exprs(v6OutputSet.set),
+		Exprs: markIPv6Exprs(v6OutputSet.set),
 	})
 
 	// Flush atomically applies all operations.
@@ -250,7 +251,7 @@ type intervalSet struct {
 }
 
 // makeIPv4Set creates an anonymous constant interval set for IPv4 prefixes.
-func (rm *RoutingManager) makeIPv4Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
+func makeIPv4Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
 	set := &nftables.Set{
 		Table:     table,
 		Anonymous: true,
@@ -265,7 +266,7 @@ func (rm *RoutingManager) makeIPv4Set(table *nftables.Table, prefixes []netip.Pr
 }
 
 // makeIPv6Set creates an anonymous constant interval set for IPv6 prefixes.
-func (rm *RoutingManager) makeIPv6Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
+func makeIPv6Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
 	set := &nftables.Set{
 		Table:     table,
 		Anonymous: true,
@@ -381,7 +382,7 @@ func incrementAddr(addr netip.Addr) netip.Addr {
 
 // skipWGMarkExprs returns expressions for: meta mark & 0x60 == 0x20 accept
 // Skips packets already marked by WireGuard (egress encrypted packets).
-func (rm *RoutingManager) skipWGMarkExprs() []expr.Any {
+func skipWGMarkExprs() []expr.Any {
 	return []expr.Any{
 		// Load meta mark → reg 1
 		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
@@ -405,7 +406,7 @@ func (rm *RoutingManager) skipWGMarkExprs() []expr.Any {
 }
 
 // skipLoopbackExprs returns expressions for: oifname "lo" accept
-func (rm *RoutingManager) skipLoopbackExprs() []expr.Any {
+func skipLoopbackExprs() []expr.Any {
 	// oifname is a 16-byte field (IFNAMSIZ).
 	loName := make([]byte, 16)
 	copy(loName, "lo\x00")
@@ -425,7 +426,7 @@ func (rm *RoutingManager) skipLoopbackExprs() []expr.Any {
 }
 
 // markIPv4Exprs returns expressions for: ip daddr @set meta mark set meta mark | 0x40 accept
-func (rm *RoutingManager) markIPv4Exprs(set *nftables.Set) []expr.Any {
+func markIPv4Exprs(set *nftables.Set) []expr.Any {
 	return []expr.Any{
 		// Check nfproto == IPv4
 		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
@@ -449,12 +450,9 @@ func (rm *RoutingManager) markIPv4Exprs(set *nftables.Set) []expr.Any {
 		},
 		// Load current mark → reg 1
 		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
-		// OR with constants.KubeSpanDefaultForceFirewallMark: reg1 = (reg1 & 0xffffffff) ^ constants.KubeSpanDefaultForceFirewallMark
-		// Actually: mark | 0x40 = (mark & ~0x40) ^ 0x40 ... but simpler: bitwise OR.
-		// Bitwise OR: reg1 = (reg1 & 0xffffffff) | 0x40
+		// OR with constants.KubeSpanDefaultForceFirewallMark:
 		// nftables bitwise: result = (sreg & mask) ^ xor
-		// To compute OR with X: mask = 0xffffffff, xor = X → result = (reg & 0xff..) ^ X
-		// But that's XOR not OR. For OR: mask = ~X, xor = X → result = (reg & ~X) | X
+		// To compute OR with X: mask = ~X, xor = X → result = (reg & ~X) | X
 		&expr.Bitwise{
 			SourceRegister: 1,
 			DestRegister:   1,
@@ -470,7 +468,7 @@ func (rm *RoutingManager) markIPv4Exprs(set *nftables.Set) []expr.Any {
 }
 
 // markIPv6Exprs returns expressions for: ip6 daddr @set meta mark set meta mark | 0x40 accept
-func (rm *RoutingManager) markIPv6Exprs(set *nftables.Set) []expr.Any {
+func markIPv6Exprs(set *nftables.Set) []expr.Any {
 	return []expr.Any{
 		// Check nfproto == IPv6
 		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
@@ -511,7 +509,7 @@ func (rm *RoutingManager) markIPv6Exprs(set *nftables.Set) []expr.Any {
 
 // mssClampIPv4Exprs returns expressions for TCP MSS clamping on IPv4 routed traffic.
 // ip daddr @set tcp flags syn / syn,rst tcp option maxseg size set <mss>
-func (rm *RoutingManager) mssClampIPv4Exprs(set *nftables.Set, mss uint16) []expr.Any {
+func mssClampIPv4Exprs(set *nftables.Set, mss uint16) []expr.Any {
 	return []expr.Any{
 		// Check nfproto == IPv4
 		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
@@ -590,7 +588,7 @@ func (rm *RoutingManager) mssClampIPv4Exprs(set *nftables.Set, mss uint16) []exp
 }
 
 // mssClampIPv6Exprs returns expressions for TCP MSS clamping on IPv6 routed traffic.
-func (rm *RoutingManager) mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
+func mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
 	return []expr.Any{
 		// Check nfproto == IPv6
 		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
@@ -681,7 +679,7 @@ func makeIPRule(family int) *netlink.Rule {
 
 // installIPRules adds fwmark-based policy routing rules.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (Install)
-func (rm *RoutingManager) installIPRules() error {
+func (rm *Manager) installIPRules() error {
 	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
 		rule := makeIPRule(family)
 
@@ -700,7 +698,7 @@ func (rm *RoutingManager) installIPRules() error {
 }
 
 // deleteIPRules removes the fwmark-based policy routing rules.
-func (rm *RoutingManager) deleteIPRules() {
+func (rm *Manager) deleteIPRules() {
 	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
 		if err := netlink.RuleDel(makeIPRule(family)); err != nil && !errors.Is(err, syscall.ESRCH) {
 			rm.logger.Warn("failed to delete ip rule", zap.Int("family", family), zap.Error(err))
@@ -710,7 +708,7 @@ func (rm *RoutingManager) deleteIPRules() {
 
 // installRoutes adds default routes in table 180 pointing to the kubespan interface.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (RouteSpec)
-func (rm *RoutingManager) installRoutes() error {
+func (rm *Manager) installRoutes() error {
 	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
 	if err != nil {
 		return fmt.Errorf("finding %s for routes: %w", constants.KubeSpanLinkName, err)

@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "peerstate",
+    srcs = ["peerstate.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+    ],
+)
+
+go_test(
+    name = "peerstate_test",
+    srcs = ["peerstate_test.go"],
+    embed = [":peerstate"],
+    deps = [
+        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+    ],
+)

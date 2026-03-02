@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/config"
 )
 
 const (
@@ -239,7 +241,7 @@ func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 func writeKubespandConfig(t *testing.T, path, clusterID, clusterSecret, discoveryEndpoint string) {
 	t.Helper()
 
-	cfg := ConfigSpec{
+	cfg := config.Spec{
 		ClusterID:         clusterID,
 		ClusterSecret:     clusterSecret,
 		DiscoveryEndpoint: discoveryEndpoint,

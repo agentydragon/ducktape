@@ -9,19 +9,22 @@ import (
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"go.uber.org/zap"
+
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/discovery"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/resources"
 )
 
 // DiscoveryController watches Config + Identity and produces PeerSpec resources
 // by communicating with the Talos discovery service.
 //
-// It manages the lifecycle of the DiscoveryManager: creating it when Config and
+// It manages the lifecycle of the discovery Manager: creating it when Config and
 // Identity become available, forwarding discovery notifications to the COSI
 // event loop, and cleaning up on shutdown.
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/peer_spec.go
 type DiscoveryController struct {
-	dm       *DiscoveryManager
+	dm       *discovery.Manager
 	cancelDM context.CancelFunc
 }
 
@@ -33,8 +36,8 @@ func (ctrl *DiscoveryController) Name() string {
 // Inputs implements controller.Controller.
 func (ctrl *DiscoveryController) Inputs() []controller.Input {
 	return []controller.Input{
-		safe.Input[*Config](controller.InputWeak),
-		safe.Input[*Identity](controller.InputWeak),
+		safe.Input[*resources.Config](controller.InputWeak),
+		safe.Input[*resources.Identity](controller.InputWeak),
 	}
 }
 
@@ -42,7 +45,7 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 func (ctrl *DiscoveryController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
-			Type: PeerSpecType,
+			Type: resources.PeerSpecType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -59,7 +62,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		case <-r.EventCh():
 		}
 
-		cfg, err := safe.ReaderGetByID[*Config](ctx, r, ConfigID)
+		cfg, err := safe.ReaderGetByID[*resources.Config](ctx, r, resources.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				ctrl.stopDiscovery()
@@ -68,7 +71,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			return fmt.Errorf("getting config: %w", err)
 		}
 
-		id, err := safe.ReaderGetByID[*Identity](ctx, r, IdentityID)
+		id, err := safe.ReaderGetByID[*resources.Identity](ctx, r, resources.IdentityID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				continue
@@ -81,7 +84,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 
 		// Create discovery manager if not yet running.
 		if ctrl.dm == nil {
-			dm, createErr := NewDiscoveryManager(cfgSpec, idSpec.PublicKey, logger)
+			dm, createErr := discovery.NewManager(cfgSpec, idSpec.PublicKey, logger)
 			if createErr != nil {
 				return fmt.Errorf("creating discovery manager: %w", createErr)
 			}
@@ -116,7 +119,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		}
 
 		// Re-publish to keep TTL fresh.
-		if pubErr := ctrl.dm.PublishLocal(cfgSpec, idSpec, cfgSpec.ListenPort); pubErr != nil {
+		if pubErr := ctrl.dm.PublishLocal(cfgSpec, id.TypedSpec(), cfgSpec.ListenPort); pubErr != nil {
 			logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
 		}
 
@@ -126,7 +129,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		r.StartTrackingOutputs()
 
 		for _, peer := range peers {
-			if err := safe.WriterModify(ctx, r, NewPeerSpec(KubespanNamespace, resource.ID(peer.PublicKey)), func(res *PeerSpec) error {
+			if err := safe.WriterModify(ctx, r, resources.NewPeerSpec(resources.Namespace, resource.ID(peer.PublicKey)), func(res *resources.PeerSpec) error {
 				*res.TypedSpec() = peer
 				return nil
 			}); err != nil {
@@ -134,7 +137,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			}
 		}
 
-		if err := safe.CleanupOutputs[*PeerSpec](ctx, r); err != nil {
+		if err := safe.CleanupOutputs[*resources.PeerSpec](ctx, r); err != nil {
 			return fmt.Errorf("cleaning up peer specs: %w", err)
 		}
 

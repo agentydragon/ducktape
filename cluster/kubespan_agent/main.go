@@ -15,6 +15,9 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"go.uber.org/zap"
+
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/config"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/resources"
 )
 
 func main() {
@@ -37,7 +40,7 @@ func main() {
 
 func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, logger *zap.Logger) error {
 	// Load config from YAML.
-	cfgSpec, err := LoadConfig(configPath)
+	cfgSpec, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
@@ -73,10 +76,10 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	}()
 
 	// Inject config as a COSI resource.
-	if err := st.Create(ctx, NewConfig(KubespanNamespace, ConfigID)); err != nil {
+	if err := st.Create(ctx, resources.NewConfig(resources.Namespace, resources.ConfigID)); err != nil {
 		return fmt.Errorf("creating config resource: %w", err)
 	}
-	if err := safe.StateModify(ctx, st, NewConfig(KubespanNamespace, ConfigID), func(res *Config) error {
+	if err := safe.StateModify(ctx, st, resources.NewConfig(resources.Namespace, resources.ConfigID), func(res *resources.Config) error {
 		*res.TypedSpec() = *cfgSpec
 		return nil
 	}); err != nil {
@@ -141,7 +144,7 @@ func waitForPeers(ctx context.Context, st state.State, runtimeErrCh <-chan error
 			return fmt.Errorf("timeout waiting for peers")
 
 		case <-ticker.C:
-			list, err := safe.StateListAll[*PeerSpec](ctx, st)
+			list, err := safe.StateListAll[*resources.PeerSpec](ctx, st)
 			if err != nil {
 				continue
 			}
