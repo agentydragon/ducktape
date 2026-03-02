@@ -1,24 +1,29 @@
 {
   "id": "approval-gate",
   "name": "Approval Gate",
-  "description": "Bridges the approval gate MCP proxy: re-registers approval-wrapped tools, subscribes to action notifications, and delivers results via chat.inject.",
+  "description": "Provides exec tool (via DirectExecServer sidecar) with session context injection, and bridges the approval gate MCP proxy for privileged action notifications.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["approvalGateUrl", "agentApiKey"],
+    "required": ["approvalGateUrl", "approvalGateToken"],
     "properties": {
       "approvalGateUrl": {
         "type": "string",
         "description": "Base URL of the approval gate MCP endpoint, e.g. http://approval-gate.approval-gate.svc.cluster.local:8765/mcp"
       },
-      "agentApiKey": {
+      "approvalGateToken": {
         "type": "string",
-        "description": "AGENT_API_KEY for the approval gate MCP endpoint"
+        "description": "Bearer token for authenticating to the approval gate MCP endpoint"
+      },
+      "execServerUrl": {
+        "type": "string",
+        "default": "http://127.0.0.1:8766/mcp",
+        "description": "URL of the DirectExecServer sidecar MCP endpoint (pod-local, unauthenticated)"
       },
       "registerTools": {
         "type": "boolean",
         "default": false,
-        "description": "Whether to discover and register approval-gate-wrapped tools with OpenClaw. When false (default), the plugin only listens for action notifications and delivers results via chat.inject."
+        "description": "Whether to discover and register approval-gate-wrapped tools with OpenClaw. When false (default), the plugin only listens for action notifications and delivers results via system events."
       }
     }
   }

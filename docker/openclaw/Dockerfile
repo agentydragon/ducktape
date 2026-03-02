@@ -35,8 +35,11 @@ RUN node -e " \
 # Plugin source is copied from the repo; deps are installed at build time.
 WORKDIR /app/extensions/approval-gate
 COPY openclaw/approval-gate/package.json ./
-COPY openclaw/approval-gate/index.ts ./
 COPY openclaw/approval-gate/openclaw.plugin.json ./
+COPY openclaw/approval-gate/index.ts ./
+COPY openclaw/approval-gate/util.ts ./
+COPY openclaw/approval-gate/reconnecting-mcp-client.ts ./
+COPY openclaw/approval-gate/approval-gate-connection.ts ./
 RUN npm install --omit=dev \
  && chown -R node:node .
 
@@ -44,7 +47,7 @@ WORKDIR /app
 
 # Proxy preload: always active. Kyverno injects the proxy env vars at runtime;
 # NODE_OPTIONS activates this preload so Node.js uses them from startup.
-COPY proxy-setup.mjs /app/proxy-setup.mjs
+COPY docker/openclaw/proxy-setup.mjs /app/proxy-setup.mjs
 ENV NODE_OPTIONS="--import=file:///app/proxy-setup.mjs"
 
 USER node

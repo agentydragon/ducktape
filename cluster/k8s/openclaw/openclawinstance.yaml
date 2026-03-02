@@ -42,6 +42,11 @@ spec:
         secretKeyRef:
           name: openclaw-matrix-bot-password
           key: password
+    - name: APPROVAL_GATE_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: approval-gate-secrets
+          key: agent-api-key
   config:
     raw:
       cron:
@@ -213,12 +218,19 @@ spec:
                 input: ["text", "image"]
                 contextWindow: 200000
                 maxTokens: 64000
+      plugins:
+        entries:
+          approval-gate:
+            config:
+              approvalGateUrl: "http://approval-gate.approval-gate.svc.cluster.local:8765/mcp"
+              approvalGateToken: "${APPROVAL_GATE_TOKEN}"
+              execServerUrl: "http://127.0.0.1:8766/mcp"
       tools:
+        # Built-in exec is disabled. The approval-gate plugin registers an exec
+        # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
+        # injection, replacing the node-host exec path entirely.
         exec:
-          host: node
-          node: "sidecar"
-          security: full
-          ask: off
+          enabled: false
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
@@ -283,43 +295,19 @@ spec:
         cpu: "1000m"
         memory: "2Gi"
   sidecars:
-    - name: node-host
-      image: ghcr.io/openclaw/openclaw:2026.2.24
-      command: ["node", "openclaw.mjs", "node", "run"]
-      args: ["--host", "127.0.0.1", "--port", "18789", "--display-name", "sidecar"]
-      env:
-        - name: OPENCLAW_GATEWAY_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: openclaw-gateway-token
-              key: token
-        # Point node at the operator-managed config so it reads
-        # tools.exec.ask=off / security=full (otherwise node defaults
-        # to ask=on-miss / security=allowlist and blocks execution).
-        - name: OPENCLAW_CONFIG_PATH
-          value: /operator-config/openclaw.json
-        # Operator config references ${OPENCLAW_CHROMIUM_CDP} in browser
-        # profiles. The sidecar doesn't use chromium but config parsing
-        # fails without this env var.
-        - name: OPENCLAW_CHROMIUM_CDP
-          value: "http://127.0.0.1:9222"
-      # Note: Commands execute directly inside this container via
-      # child_process.spawn() — no K8s API involved.
-      # The SA token below is ONLY for kubectl: it provides in-cluster
-      # auth scoped to openclaw-sandbox namespace (restricted RBAC).
-      # The namespace file in the mount defaults kubectl's namespace.
+    - name: exec-server
+      image: registry.allegedly.works/openclaw/openclaw-exec:latest
+      # DirectExecServer entrypoint is baked into the base image.
+      # Listen on 127.0.0.1 only — the gateway plugin connects pod-locally.
+      args: ["--host", "127.0.0.1", "--port", "8766"]
+      env: []
+      # SA token provides kubectl access to openclaw-sandbox namespace.
+      # Workspace PVC is shared with the gateway so file tools and exec
+      # see the same filesystem.
       volumeMounts:
         - name: sandbox-sa-token
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           readOnly: true
-        - name: node-data
-          mountPath: /home/node/.openclaw
-        - name: operator-config
-          mountPath: /operator-config
-          readOnly: true
-        # Share workspace PVC with gateway — fixes split-brain filesystem
-        # where built-in file tools (Read/Write/Glob) see gateway fs but
-        # shell exec runs on sidecar fs. Both now see the same files.
         - name: data
           mountPath: /home/openclaw/.openclaw
       resources:
@@ -340,12 +328,6 @@ spec:
             path: ca.crt
           - key: namespace
             path: namespace
-    - name: node-data
-      persistentVolumeClaim:
-        claimName: openclaw-node-data
-    - name: operator-config
-      configMap:
-        name: openclaw-config
   security:
     networkPolicy:
       additionalEgress:

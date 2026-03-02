@@ -11,10 +11,39 @@ js_json_schema(
 )
 
 js_library(
-    name = "plugin",
-    srcs = ["index.ts"],
+    name = "util",
+    srcs = ["util.ts"],
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "reconnecting-mcp-client",
+    srcs = ["reconnecting-mcp-client.ts"],
     deps = [
         ":node_modules",
+        ":util",
+    ],
+)
+
+js_library(
+    name = "approval-gate-connection",
+    srcs = ["approval-gate-connection.ts"],
+    deps = [
+        ":node_modules",
+        ":reconnecting-mcp-client",
         ":types",
+        ":util",
+    ],
+)
+
+js_library(
+    name = "index",
+    srcs = ["index.ts"],
+    deps = [
+        ":approval-gate-connection",
+        ":node_modules",
+        ":reconnecting-mcp-client",
+        ":types",
+        ":util",
     ],
 )

@@ -1,26 +1,27 @@
-# Build and push the custom OpenClaw+matrix container image to Harbor.
+# Build and push the OpenClaw exec sidecar image to Harbor.
 #
-# Derives from upstream ghcr.io/openclaw/openclaw with the matrix channel
-# plugin and its native crypto binary pre-installed.
+# Contains DirectExecServer + mcporter + kubectl for agent exec.
+# Runs as a sidecar in the OpenClaw pod, providing pod-local exec
+# with session context injection.
 #
 # Triggers:
 #   - workflow_dispatch: manual trigger (tags :latest too)
 #   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
-name: OpenClaw Image
+name: OpenClaw Exec Image
 
 on:
   workflow_dispatch:
   workflow_call:
 
 concurrency:
-  group: openclaw-image-${{ github.ref }}
+  group: openclaw-exec-image-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
-  IMAGE: registry.allegedly.works/openclaw/openclaw-matrix
+  IMAGE: registry.allegedly.works/openclaw/openclaw-exec
 
 jobs:
   build-and-push:
@@ -53,6 +54,6 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/openclaw/Dockerfile
+          file: docker/openclaw-exec/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
