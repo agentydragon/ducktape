@@ -7,10 +7,10 @@ import (
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/identity"
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/resources"
 )
 
 // IdentityController watches Config and produces the node's KubeSpan Identity.
@@ -29,7 +29,7 @@ func (ctrl *IdentityController) Name() string {
 // Inputs implements controller.Controller.
 func (ctrl *IdentityController) Inputs() []controller.Input {
 	return []controller.Input{
-		safe.Input[*resources.Config](controller.InputWeak),
+		safe.Input[*kubespan.Config](controller.InputWeak),
 	}
 }
 
@@ -37,7 +37,7 @@ func (ctrl *IdentityController) Inputs() []controller.Input {
 func (ctrl *IdentityController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
-			Type: resources.IdentityType,
+			Type: kubespan.IdentityType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -52,7 +52,7 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 		case <-r.EventCh():
 		}
 
-		cfg, err := safe.ReaderGetByID[*resources.Config](ctx, r, resources.ConfigID)
+		cfg, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				continue
@@ -67,25 +67,28 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 			return fmt.Errorf("detecting MAC: %w", err)
 		}
 
-		id, err := identity.LoadOrCreate(cfgSpec.IdentityFile, cfgSpec.ClusterID)
+		id, err := identity.LoadOrCreate(agentCfg.IdentityFile, cfgSpec.ClusterID)
 		if err != nil {
 			return fmt.Errorf("loading identity: %w", err)
 		}
 
-		if err := id.UpdateAddress(cfgSpec.ClusterID, mac); err != nil {
+		if err := identity.UpdateAddress(id, cfgSpec.ClusterID, mac); err != nil {
 			return fmt.Errorf("computing address: %w", err)
 		}
 
 		logger.Info("identity ready",
 			zap.String("public_key", id.PublicKey),
-			zap.String("subnet", id.Subnet),
-			zap.String("address", id.Address),
+			zap.Stringer("subnet", id.Subnet),
+			zap.Stringer("address", id.Address),
 		)
 
-		if err := safe.WriterModify(ctx, r, resources.NewIdentity(resources.Namespace, resources.IdentityID), func(res *resources.Identity) error {
-			*res.TypedSpec() = *id
-			return nil
-		}); err != nil {
+		if err := safe.WriterModify(ctx, r,
+			kubespan.NewIdentity(kubespan.NamespaceName, kubespan.LocalIdentity),
+			func(res *kubespan.Identity) error {
+				*res.TypedSpec() = *id
+				return nil
+			},
+		); err != nil {
 			return fmt.Errorf("writing identity: %w", err)
 		}
 

@@ -2,7 +2,6 @@
 package discovery
 
 import (
-	"bufio"
 	"context"
 	"crypto/aes"
 	"crypto/tls"
@@ -16,31 +15,13 @@ import (
 
 	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
 	discoveryclient "github.com/siderolabs/discovery-client/pkg/client"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/config"
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/identity"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/agentconfig"
 )
 
 const discoveryTTL = 30 * time.Minute
-
-// PeerSpec represents a discovered KubeSpan peer.
-// Ref: talos/pkg/machinery/resources/kubespan/peer_spec.go (PeerSpecSpec)
-type PeerSpec struct {
-	PublicKey  string
-	Address    netip.Addr // KubeSpan ULA /128
-	Endpoints  []netip.AddrPort
-	AllowedIPs []netip.Prefix
-	Label      string // node name for logging
-}
-
-// DeepCopy returns a deep copy of the PeerSpec.
-func (p PeerSpec) DeepCopy() PeerSpec {
-	cp := p
-	cp.Endpoints = append([]netip.AddrPort(nil), p.Endpoints...)
-	cp.AllowedIPs = append([]netip.Prefix(nil), p.AllowedIPs...)
-	return cp
-}
 
 // Manager handles communication with the Talos discovery service.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
@@ -59,18 +40,18 @@ type endpointFilter struct {
 
 // NewManager creates a new discovery manager.
 //
-// The discovery client encrypts all affiliate data with AES-GCM using the cluster
-// secret as the key. The discovery service never sees plaintext node data.
+// The discovery client encrypts all affiliate data with AES-GCM using the
+// shared secret as the key. The discovery service never sees plaintext node data.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (Run)
-func NewManager(cfg *config.Spec, affiliateID string, logger *zap.Logger) (*Manager, error) {
-	secretBytes, err := base64.StdEncoding.DecodeString(cfg.ClusterSecret)
+func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Logger) (*Manager, error) {
+	secretBytes, err := base64.StdEncoding.DecodeString(cfg.SharedSecret)
 	if err != nil {
-		return nil, fmt.Errorf("decoding cluster_secret: %w", err)
+		return nil, fmt.Errorf("decoding shared_secret: %w", err)
 	}
 
 	cipherBlock, err := aes.NewCipher(secretBytes)
 	if err != nil {
-		return nil, fmt.Errorf("AES cipher from cluster_secret: %w", err)
+		return nil, fmt.Errorf("AES cipher from shared_secret: %w", err)
 	}
 
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
@@ -129,25 +110,17 @@ func (dm *Manager) Run(ctx context.Context) error {
 
 // PublishLocal announces this node's affiliate data to the discovery service.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints)
-func (dm *Manager) PublishLocal(cfg *config.Spec, id *identity.Spec, listenPort int) error {
-	addr, err := id.ParsedAddress()
-	if err != nil {
-		return fmt.Errorf("parsing identity address: %w", err)
-	}
+func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.IdentitySpec, listenPort int) error {
+	addrBytes, _ := id.Address.Addr().MarshalBinary()
 
 	hostname, _ := os.Hostname()
 
-	addrBytes, _ := addr.Addr().MarshalBinary()
-
 	// Build endpoint list from extra_endpoints config.
 	// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbEndpoints)
+	// TODO: implement client.GetPublicIP() for external endpoint discovery
+	// TODO: implement pbOtherEndpoints() to re-announce harvested endpoints from EndpointController
 	var endpoints []*clientpb.Endpoint
-	for _, ep := range cfg.ExtraEndpoints {
-		addrPort, parseErr := netip.ParseAddrPort(ep)
-		if parseErr != nil {
-			dm.logger.Warn("skipping invalid extra_endpoint", zap.String("endpoint", ep), zap.Error(parseErr))
-			continue
-		}
+	for _, addrPort := range cfg.ExtraEndpoints {
 		ipBytes, _ := addrPort.Addr().MarshalBinary()
 		endpoints = append(endpoints, &clientpb.Endpoint{
 			Ip:   ipBytes,
@@ -157,11 +130,11 @@ func (dm *Manager) PublishLocal(cfg *config.Spec, id *identity.Spec, listenPort 
 
 	affiliate := &discoveryclient.Affiliate{
 		Affiliate: &clientpb.Affiliate{
-			NodeId:          id.PublicKey, // Use public key as node ID (unique per identity)
+			NodeId:          id.PublicKey,
 			Hostname:        hostname,
 			Nodename:        hostname,
 			MachineType:     cfg.MachineType,
-			OperatingSystem: detectOS() + " (kubespand)",
+			OperatingSystem: runtime.GOOS + "/" + runtime.GOARCH + " (kubespand)",
 			Kubespan: &clientpb.KubeSpan{
 				PublicKey: id.PublicKey,
 				Address:   addrBytes,
@@ -175,55 +148,18 @@ func (dm *Manager) PublishLocal(cfg *config.Spec, id *identity.Spec, listenPort 
 
 // DeleteLocalAffiliate removes this node's affiliate data from the discovery service.
 // Called on shutdown to clean up immediately rather than waiting for TTL expiry.
+// TODO: align DeleteLocalAffiliate with Talos MachineResetSignal pattern
 func (dm *Manager) DeleteLocalAffiliate() {
 	dm.client.DeleteLocalAffiliate()
 }
 
-// detectOS returns a human-readable OS identifier string (without the kubespand suffix).
-// On Linux, reads /etc/os-release for the distro name and version.
-func detectOS() string {
-	if runtime.GOOS != "linux" {
-		return runtime.GOOS
-	}
-
-	f, err := os.Open("/etc/os-release")
-	if err != nil {
-		return "Linux"
-	}
-	defer f.Close()
-
-	var name, version string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "PRETTY_NAME=") {
-			return strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
-		}
-		if strings.HasPrefix(line, "NAME=") {
-			name = strings.Trim(strings.TrimPrefix(line, "NAME="), "\"")
-		}
-		if strings.HasPrefix(line, "VERSION=") {
-			version = strings.Trim(strings.TrimPrefix(line, "VERSION="), "\"")
-		}
-	}
-
-	if name != "" {
-		if version != "" {
-			return name + " " + version
-		}
-		return name
-	}
-	return "Linux"
-}
-
-// GetPeers returns the current list of discovered peers, converted from
-// discovery affiliates to our internal PeerSpec type. Endpoints are filtered
-// according to the configured EndpointFilters.
+// GetPeers returns the current list of discovered peers as a map from public key
+// to PeerSpecSpec. Endpoints are filtered according to the configured EndpointFilters.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (specAffiliate)
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/peer_spec.go (PeerSpecController)
-func (dm *Manager) GetPeers() []PeerSpec {
+func (dm *Manager) GetPeers() map[string]kubespan.PeerSpecSpec {
 	affiliates := dm.client.GetAffiliates()
-	peers := make([]PeerSpec, 0, len(affiliates))
+	peers := make(map[string]kubespan.PeerSpecSpec, len(affiliates))
 
 	for _, aff := range affiliates {
 		if aff.Affiliate == nil || aff.Affiliate.Kubespan == nil {
@@ -234,9 +170,8 @@ func (dm *Manager) GetPeers() []PeerSpec {
 			continue
 		}
 
-		peer := PeerSpec{
-			PublicKey: ks.PublicKey,
-			Label:     aff.Affiliate.Nodename,
+		peer := kubespan.PeerSpecSpec{
+			Label: aff.Affiliate.Nodename,
 		}
 
 		// Parse KubeSpan address.
@@ -244,7 +179,6 @@ func (dm *Manager) GetPeers() []PeerSpec {
 			var addr netip.Addr
 			if err := addr.UnmarshalBinary(ks.Address); err == nil {
 				peer.Address = addr
-				// The node's /128 is always an allowed IP.
 				peer.AllowedIPs = append(peer.AllowedIPs, netip.PrefixFrom(addr, addr.BitLen()))
 			}
 		}
@@ -276,16 +210,13 @@ func (dm *Manager) GetPeers() []PeerSpec {
 			}
 		}
 
-		peers = append(peers, peer)
+		peers[ks.PublicKey] = peer
 	}
 
 	return peers
 }
 
 // endpointAllowed checks if an endpoint IP passes the configured endpoint filters.
-// Filters are evaluated in order; the first matching filter determines the result.
-// If no filter matches, the endpoint is allowed (default accept).
-// Ref: talos/pkg/machinery/resources/kubespan/config.go (EndpointFilters)
 func (dm *Manager) endpointAllowed(addr netip.Addr) bool {
 	if len(dm.endpointFilters) == 0 {
 		return true

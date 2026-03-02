@@ -8,10 +8,10 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/discovery"
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/resources"
 )
 
 // DiscoveryController watches Config + Identity and produces PeerSpec resources
@@ -36,8 +36,8 @@ func (ctrl *DiscoveryController) Name() string {
 // Inputs implements controller.Controller.
 func (ctrl *DiscoveryController) Inputs() []controller.Input {
 	return []controller.Input{
-		safe.Input[*resources.Config](controller.InputWeak),
-		safe.Input[*resources.Identity](controller.InputWeak),
+		safe.Input[*kubespan.Config](controller.InputWeak),
+		safe.Input[*kubespan.Identity](controller.InputWeak),
 	}
 }
 
@@ -45,7 +45,7 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 func (ctrl *DiscoveryController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
-			Type: resources.PeerSpecType,
+			Type: kubespan.PeerSpecType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -62,7 +62,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		case <-r.EventCh():
 		}
 
-		cfg, err := safe.ReaderGetByID[*resources.Config](ctx, r, resources.ConfigID)
+		cfg, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				ctrl.stopDiscovery()
@@ -71,7 +71,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			return fmt.Errorf("getting config: %w", err)
 		}
 
-		id, err := safe.ReaderGetByID[*resources.Identity](ctx, r, resources.IdentityID)
+		id, err := safe.ReaderGetByID[*kubespan.Identity](ctx, r, kubespan.LocalIdentity)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				continue
@@ -81,10 +81,11 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 
 		cfgSpec := cfg.TypedSpec()
 		idSpec := id.TypedSpec()
+		_ = cfgSpec // used via agentCfg below
 
 		// Create discovery manager if not yet running.
 		if ctrl.dm == nil {
-			dm, createErr := discovery.NewManager(cfgSpec, idSpec.PublicKey, logger)
+			dm, createErr := discovery.NewManager(agentCfg, idSpec.PublicKey, logger)
 			if createErr != nil {
 				return fmt.Errorf("creating discovery manager: %w", createErr)
 			}
@@ -111,7 +112,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 				}
 			}()
 
-			if pubErr := dm.PublishLocal(cfgSpec, idSpec, cfgSpec.ListenPort); pubErr != nil {
+			if pubErr := dm.PublishLocal(agentCfg, idSpec, agentCfg.ListenPort); pubErr != nil {
 				logger.Error("publishing local affiliate", zap.Error(pubErr))
 			}
 
@@ -119,7 +120,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		}
 
 		// Re-publish to keep TTL fresh.
-		if pubErr := ctrl.dm.PublishLocal(cfgSpec, id.TypedSpec(), cfgSpec.ListenPort); pubErr != nil {
+		if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.ListenPort); pubErr != nil {
 			logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
 		}
 
@@ -128,16 +129,19 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 
 		r.StartTrackingOutputs()
 
-		for _, peer := range peers {
-			if err := safe.WriterModify(ctx, r, resources.NewPeerSpec(resources.Namespace, resource.ID(peer.PublicKey)), func(res *resources.PeerSpec) error {
-				*res.TypedSpec() = peer
-				return nil
-			}); err != nil {
-				return fmt.Errorf("writing peer spec %s: %w", peer.Label, err)
+		for pubKey, peerSpec := range peers {
+			if err := safe.WriterModify(ctx, r,
+				kubespan.NewPeerSpec(kubespan.NamespaceName, resource.ID(pubKey)),
+				func(res *kubespan.PeerSpec) error {
+					*res.TypedSpec() = peerSpec
+					return nil
+				},
+			); err != nil {
+				return fmt.Errorf("writing peer spec %s: %w", peerSpec.Label, err)
 			}
 		}
 
-		if err := safe.CleanupOutputs[*resources.PeerSpec](ctx, r); err != nil {
+		if err := safe.CleanupOutputs[*kubespan.PeerSpec](ctx, r); err != nil {
 			return fmt.Errorf("cleaning up peer specs: %w", err)
 		}
 

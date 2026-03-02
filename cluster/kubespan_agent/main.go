@@ -14,11 +14,16 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/config"
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/resources"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/agentconfig"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/endpoint"
 )
+
+// agentCfg is the parsed agent configuration, accessible to controllers
+// for agent-specific fields not in upstream kubespan.ConfigSpec.
+var agentCfg *agentconfig.AgentConfig
 
 func main() {
 	configPath := flag.String("config", "/etc/kubespan/agent.yaml", "path to config file")
@@ -39,18 +44,22 @@ func main() {
 }
 
 func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, logger *zap.Logger) error {
-	// Load config from YAML.
-	cfgSpec, err := config.Load(configPath)
+	// Load agent config from YAML.
+	var err error
+	agentCfg, err = agentconfig.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
 	logger.Info("loaded config",
-		zap.String("cluster_id", cfgSpec.ClusterID),
-		zap.String("discovery_endpoint", cfgSpec.DiscoveryEndpoint),
-		zap.Int("listen_port", cfgSpec.ListenPort),
-		zap.Int("mtu", cfgSpec.MTU),
+		zap.String("cluster_id", agentCfg.ClusterID),
+		zap.String("discovery_endpoint", agentCfg.DiscoveryEndpoint),
+		zap.Int("listen_port", agentCfg.ListenPort),
+		zap.Uint32("mtu", agentCfg.MTU),
 		zap.Bool("discovery_only", discoveryOnly),
 	)
+
+	// Convert to upstream ConfigSpec for COSI injection.
+	cfgSpec := agentCfg.ToConfigSpec()
 
 	// Create COSI in-memory state.
 	st := state.WrapCore(namespaced.NewState(inmem.Build))
@@ -75,14 +84,17 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		}
 	}()
 
-	// Inject config as a COSI resource.
-	if err := st.Create(ctx, resources.NewConfig(resources.Namespace, resources.ConfigID)); err != nil {
+	// Inject config as a COSI resource using upstream kubespan.Config type.
+	if err := st.Create(ctx, kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID)); err != nil {
 		return fmt.Errorf("creating config resource: %w", err)
 	}
-	if err := safe.StateModify(ctx, st, resources.NewConfig(resources.Namespace, resources.ConfigID), func(res *resources.Config) error {
-		*res.TypedSpec() = *cfgSpec
-		return nil
-	}); err != nil {
+	if err := safe.StateModify(ctx, st,
+		kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID),
+		func(res *kubespan.Config) error {
+			*res.TypedSpec() = cfgSpec
+			return nil
+		},
+	); err != nil {
 		return fmt.Errorf("populating config resource: %w", err)
 	}
 
@@ -102,6 +114,9 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	if !discoveryOnly {
 		if err := rt.RegisterController(&ManagerController{}); err != nil {
 			return fmt.Errorf("registering manager controller: %w", err)
+		}
+		if err := rt.RegisterController(&endpoint.Controller{}); err != nil {
+			return fmt.Errorf("registering endpoint controller: %w", err)
 		}
 	}
 
@@ -144,7 +159,7 @@ func waitForPeers(ctx context.Context, st state.State, runtimeErrCh <-chan error
 			return fmt.Errorf("timeout waiting for peers")
 
 		case <-ticker.C:
-			list, err := safe.StateListAll[*resources.PeerSpec](ctx, st)
+			list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, st)
 			if err != nil {
 				continue
 			}
@@ -156,8 +171,8 @@ func waitForPeers(ctx context.Context, st state.State, runtimeErrCh <-chan error
 				spec := peer.TypedSpec()
 				logger.Info("discovered peer",
 					zap.String("label", spec.Label),
-					zap.String("public_key", spec.PublicKey),
-					zap.String("address", spec.Address.String()),
+					zap.String("public_key", peer.Metadata().ID()),
+					zap.Stringer("address", spec.Address),
 					zap.Int("endpoints", len(spec.Endpoints)),
 				)
 			}

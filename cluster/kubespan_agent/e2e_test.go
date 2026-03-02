@@ -25,7 +25,7 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 	"gopkg.in/yaml.v3"
 
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/config"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/agentconfig"
 )
 
 const (
@@ -60,7 +60,7 @@ func TestKubeSpanDiscovery(t *testing.T) {
 
 	// Generate shared cluster credentials.
 	clusterID := base64.StdEncoding.EncodeToString(randomBytes(32))
-	clusterSecret := base64.StdEncoding.EncodeToString(randomBytes(32))
+	sharedSecret := base64.StdEncoding.EncodeToString(randomBytes(32))
 	t.Logf("cluster_id: %s", clusterID)
 
 	// Create temp directory for test artifacts.
@@ -108,11 +108,11 @@ func TestKubeSpanDiscovery(t *testing.T) {
 
 	// Write kubespand config.
 	configFile := filepath.Join(tmpDir, "agent.yaml")
-	writeKubespandConfig(t, configFile, clusterID, clusterSecret, discoveryName+":3000")
+	writeKubespandConfig(t, configFile, clusterID, sharedSecret, discoveryName+":3000")
 
 	// Generate Talos machine config and start Talos container.
 	talosName := fmt.Sprintf("talos-%s", testID)
-	talosContainer := startTalosContainer(t, ctx, client, talosName, networkName, clusterID, clusterSecret, discoveryName)
+	talosContainer := startTalosContainer(t, ctx, client, talosName, networkName, clusterID, sharedSecret, discoveryName)
 	t.Cleanup(func() {
 		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: talosContainer.ID, Force: true})
 	})
@@ -161,7 +161,6 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	}
 }
 
-// createAndStartContainer creates and starts a Docker container.
 func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.Client, opts docker.CreateContainerOptions) *docker.Container {
 	t.Helper()
 
@@ -177,7 +176,6 @@ func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.C
 	return container
 }
 
-// containerLogs returns the combined stdout+stderr logs of a container.
 func containerLogs(t *testing.T, ctx context.Context, client *docker.Client, containerID string) string {
 	t.Helper()
 
@@ -196,7 +194,6 @@ func containerLogs(t *testing.T, ctx context.Context, client *docker.Client, con
 	return buf.String()
 }
 
-// loadImage loads a container image tarball from a Bazel runfiles path.
 func loadImage(t *testing.T, client *docker.Client, rlocation, repoTag string) {
 	t.Helper()
 
@@ -214,11 +211,9 @@ func loadImage(t *testing.T, client *docker.Client, rlocation, repoTag string) {
 	}
 }
 
-// resolveRunfile finds a file in Bazel runfiles or the execroot.
 func resolveRunfile(t *testing.T, rlocation string) string {
 	t.Helper()
 
-	// Under `bazel test`, RUNFILES_DIR or TEST_SRCDIR is set.
 	if dir := os.Getenv("RUNFILES_DIR"); dir != "" {
 		p := filepath.Join(dir, "_main", rlocation)
 		if _, err := os.Stat(p); err == nil {
@@ -232,7 +227,6 @@ func resolveRunfile(t *testing.T, rlocation string) string {
 		}
 	}
 
-	// Fallback: look relative to the test binary location.
 	exe, err := os.Executable()
 	if err == nil {
 		runfilesDir := exe + ".runfiles"
@@ -246,7 +240,6 @@ func resolveRunfile(t *testing.T, rlocation string) string {
 	return ""
 }
 
-// randomBytes generates n random bytes.
 func randomBytes(n int) []byte {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
@@ -255,12 +248,10 @@ func randomBytes(n int) []byte {
 	return b
 }
 
-// randomHex generates a random hex string of n bytes.
 func randomHex(n int) string {
 	return fmt.Sprintf("%x", randomBytes(n))
 }
 
-// generateTLSCert creates a self-signed TLS certificate and key in the given directory.
 func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 	t.Helper()
 
@@ -276,9 +267,8 @@ func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		// SANs must cover the Docker hostname used by kubespand to connect.
-		DNSNames:    []string{"discovery-test", "localhost"},
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:     []string{"discovery-test", "localhost"},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
@@ -306,18 +296,18 @@ func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 	return certFile, keyFile
 }
 
-// writeKubespandConfig writes a kubespand YAML config file using the ConfigSpec struct.
-func writeKubespandConfig(t *testing.T, path, clusterID, clusterSecret, discoveryEndpoint string) {
+// writeKubespandConfig writes a kubespand YAML config file using AgentConfig struct.
+func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discoveryEndpoint string) {
 	t.Helper()
 
-	cfg := config.Spec{
+	cfg := agentconfig.AgentConfig{
 		ClusterID:         clusterID,
-		ClusterSecret:     clusterSecret,
+		SharedSecret:      sharedSecret,
 		DiscoveryEndpoint: discoveryEndpoint,
 		InsecureDiscovery: true,
 		ListenPort:        51820,
 		MTU:               1420,
-		IdentityFile:      "/tmp/kubespan-identity.json",
+		IdentityFile:      "/tmp/kubespan-identity.yaml",
 		MachineType:       "worker",
 	}
 
@@ -331,8 +321,7 @@ func writeKubespandConfig(t *testing.T, path, clusterID, clusterSecret, discover
 	}
 }
 
-// startTalosContainer starts a Talos container with KubeSpan enabled.
-func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Client, name, network, clusterID, clusterSecret, discoveryHost string) *docker.Container {
+func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Client, name, network, clusterID, sharedSecret, discoveryHost string) *docker.Container {
 	t.Helper()
 	t.Log("generating Talos machine config...")
 
@@ -349,7 +338,7 @@ func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Clien
 		},
 		"cluster": map[string]interface{}{
 			"id":     clusterID,
-			"secret": clusterSecret,
+			"secret": sharedSecret,
 			"discovery": map[string]interface{}{
 				"enabled": true,
 				"registries": map[string]interface{}{
@@ -395,7 +384,6 @@ func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Clien
 	return container
 }
 
-// waitForContainer waits for a Docker container to be running.
 func waitForContainer(t *testing.T, ctx context.Context, client *docker.Client, containerID string, timeout time.Duration) {
 	t.Helper()
 

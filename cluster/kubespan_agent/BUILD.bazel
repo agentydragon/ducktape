@@ -13,11 +13,11 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent",
     visibility = ["//visibility:private"],
     deps = [
-        "//cluster/kubespan_agent/config",
+        "//cluster/kubespan_agent/agentconfig",
         "//cluster/kubespan_agent/discovery",
+        "//cluster/kubespan_agent/endpoint",
         "//cluster/kubespan_agent/identity",
         "//cluster/kubespan_agent/peerstate",
-        "//cluster/kubespan_agent/resources",
         "//cluster/kubespan_agent/routing",
         "//cluster/kubespan_agent/wireguard",
         "@com_github_cosi_project_runtime//pkg/controller",
@@ -53,7 +53,7 @@ go_test(
     embed = [":kubespan_agent_lib"],
     tags = ["requires_docker"],
     deps = [
-        "//cluster/kubespan_agent/config",
+        "//cluster/kubespan_agent/agentconfig",
         "@com_github_fsouza_go_dockerclient//:go-dockerclient",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],

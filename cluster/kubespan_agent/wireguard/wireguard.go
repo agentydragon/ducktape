@@ -25,7 +25,7 @@ type Manager struct {
 }
 
 // NewManager creates a WireGuard manager.
-func NewManager(privateKeyBase64 string, clusterSecret string, listenPort, mtu int) (*Manager, error) {
+func NewManager(privateKeyBase64 string, sharedSecret string, listenPort, mtu int) (*Manager, error) {
 	client, err := wgctrl.New()
 	if err != nil {
 		return nil, fmt.Errorf("wgctrl client: %w", err)
@@ -36,11 +36,11 @@ func NewManager(privateKeyBase64 string, clusterSecret string, listenPort, mtu i
 		return nil, fmt.Errorf("parsing private key: %w", err)
 	}
 
-	// Cluster secret is used as preshared key for all peers.
+	// Shared secret is used as preshared key for all peers.
 	// Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
-	secretBytes, err := base64.StdEncoding.DecodeString(clusterSecret)
+	secretBytes, err := base64.StdEncoding.DecodeString(sharedSecret)
 	if err != nil {
-		return nil, fmt.Errorf("decoding cluster_secret for PSK: %w", err)
+		return nil, fmt.Errorf("decoding shared_secret for PSK: %w", err)
 	}
 	var pskBytes [wgtypes.KeyLen]byte
 	copy(pskBytes[:], secretBytes)
@@ -61,7 +61,6 @@ func NewManager(privateKeyBase64 string, clusterSecret string, listenPort, mtu i
 func (wm *Manager) EnsureInterface(address netip.Prefix) error {
 	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
 	if err != nil {
-		// Create the interface.
 		wgLink := &netlink.Wireguard{
 			LinkAttrs: netlink.LinkAttrs{
 				Name: constants.KubeSpanLinkName,
@@ -77,7 +76,6 @@ func (wm *Manager) EnsureInterface(address netip.Prefix) error {
 		}
 	}
 
-	// Configure WireGuard.
 	fwmark := constants.KubeSpanDefaultFirewallMark
 	port := wm.listenPort
 	err = wm.client.ConfigureDevice(constants.KubeSpanLinkName, wgtypes.Config{
@@ -89,7 +87,6 @@ func (wm *Manager) EnsureInterface(address netip.Prefix) error {
 		return fmt.Errorf("configuring %s WireGuard: %w", constants.KubeSpanLinkName, err)
 	}
 
-	// Assign the IPv6 ULA address.
 	addr := &netlink.Addr{
 		IPNet: prefixToIPNet(address),
 	}
@@ -97,7 +94,6 @@ func (wm *Manager) EnsureInterface(address netip.Prefix) error {
 		return fmt.Errorf("assigning address %s to %s: %w", address, constants.KubeSpanLinkName, err)
 	}
 
-	// Bring the interface up.
 	if err := netlink.LinkSetUp(link); err != nil {
 		return fmt.Errorf("bringing up %s: %w", constants.KubeSpanLinkName, err)
 	}
@@ -113,7 +109,7 @@ type Peer struct {
 }
 
 // ConfigurePeers sets the WireGuard peers on the kubespan interface.
-// Each peer gets the cluster secret as preshared key and a 25s keepalive.
+// Each peer gets the shared secret as preshared key and a 25s keepalive.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (WireGuardPeer config)
 func (wm *Manager) ConfigurePeers(peers []Peer) error {
 	wgPeers := make([]wgtypes.PeerConfig, 0, len(peers))
@@ -145,41 +141,19 @@ func (wm *Manager) ConfigurePeers(peers []Peer) error {
 	})
 }
 
-// PeerInfo holds live WireGuard data for a peer.
-type PeerInfo struct {
-	LastHandshakeTime time.Time
-	Endpoint          netip.AddrPort
-	TransmitBytes     uint64
-	ReceiveBytes      uint64
-}
-
-// GetPeerHandshakes queries the WireGuard device for current peer handshake times.
-// Returns a map of public key → last handshake time.
+// GetPeers queries the WireGuard device for current peer state.
+// Returns the raw wgtypes.Peer list for use with peerstate.UpdateFromWireguard.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (wgDevice.Peers loop)
-func (wm *Manager) GetPeerHandshakes() (map[string]PeerInfo, error) {
+func (wm *Manager) GetPeers() ([]wgtypes.Peer, error) {
 	dev, err := wm.client.Device(constants.KubeSpanLinkName)
 	if err != nil {
 		return nil, fmt.Errorf("querying %s device: %w", constants.KubeSpanLinkName, err)
 	}
-
-	result := make(map[string]PeerInfo, len(dev.Peers))
-	for _, p := range dev.Peers {
-		var endpoint netip.AddrPort
-		if p.Endpoint != nil {
-			endpoint = p.Endpoint.AddrPort()
-		}
-		result[p.PublicKey.String()] = PeerInfo{
-			LastHandshakeTime: p.LastHandshakeTime,
-			Endpoint:          endpoint,
-			TransmitBytes:     uint64(p.TransmitBytes),
-			ReceiveBytes:      uint64(p.ReceiveBytes),
-		}
-	}
-
-	return result, nil
+	return dev.Peers, nil
 }
 
 // Cleanup removes the kubespan WireGuard interface.
+// TODO: align cleanup with COSI resource teardown (Talos writes LinkSpec/AddressSpec/RouteSpec)
 func (wm *Manager) Cleanup() error {
 	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
 	if err != nil {

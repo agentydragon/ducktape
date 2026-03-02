@@ -3,39 +3,152 @@ package routing
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"net"
 	"net/netip"
 	"sort"
-	"syscall"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
+	"github.com/jsimonetti/rtnetlink/v2"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
-// RulePriority for ip rule entries directing marked traffic to the KubeSpan routing table.
-const RulePriority = 32500
-
 const tableName = "talos_kubespan"
 
-// Manager manages nftables rules and ip policy routing for KubeSpan.
-// Uses the google/nftables Go library (same as Talos) for atomic nftables management.
+// RulesManager manages IP policy routing rules for KubeSpan.
+// Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go
+type RulesManager interface {
+	Install() error
+	Cleanup() error
+}
+
+type rulesManager struct {
+	targetTable  uint8
+	internalMark uint32
+	markMask     uint32
+}
+
+// NewRulesManager creates a new IP rules manager matching Talos's routing_rules.go.
+// Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (NewRulesManager)
+func NewRulesManager(targetTable uint8, internalMark, markMask uint32) RulesManager {
+	return &rulesManager{
+		targetTable:  targetTable,
+		internalMark: internalMark,
+		markMask:     markMask,
+	}
+}
+
+// Install adds fwmark-based policy routing rules for both IPv4 and IPv6.
+// Uses jsimonetti/rtnetlink v2 for rule management.
+// Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (Install)
+func (rm *rulesManager) Install() error {
+	nc, err := rtnetlink.Dial(nil)
+	if err != nil {
+		return fmt.Errorf("rtnetlink dial: %w", err)
+	}
+	defer nc.Close()
+
+	for _, family := range []uint8{unix.AF_INET, unix.AF_INET6} {
+		priority := nextRuleNumber(nc, family)
+		table := uint32(rm.targetTable)
+
+		if err := nc.Rule.Replace(&rtnetlink.RuleMessage{
+			Family: family,
+			Table:  rm.targetTable,
+			Action: unix.FR_ACT_TO_TBL,
+			Attributes: &rtnetlink.RuleAttributes{
+				FwMark:   &rm.internalMark,
+				FwMask:   &rm.markMask,
+				Table:    &table,
+				Priority: &priority,
+			},
+		}); err != nil {
+			return fmt.Errorf("installing ip rule (family %d): %w", family, err)
+		}
+	}
+
+	return nil
+}
+
+// Cleanup removes all fwmark-based policy routing rules matching our mark/mask/table.
+// Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (Cleanup)
+func (rm *rulesManager) Cleanup() error {
+	nc, err := rtnetlink.Dial(nil)
+	if err != nil {
+		return fmt.Errorf("rtnetlink dial: %w", err)
+	}
+	defer nc.Close()
+
+	rules, err := nc.Rule.List()
+	if err != nil {
+		return fmt.Errorf("listing rules: %w", err)
+	}
+
+	for _, rule := range rules {
+		if rule.Table != rm.targetTable {
+			continue
+		}
+		if rule.Attributes == nil || rule.Attributes.FwMark == nil || rule.Attributes.FwMask == nil {
+			continue
+		}
+		if *rule.Attributes.FwMark != rm.internalMark || *rule.Attributes.FwMask != rm.markMask {
+			continue
+		}
+		if err := nc.Rule.Delete(&rule); err != nil {
+			return fmt.Errorf("deleting ip rule: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// nextRuleNumber finds the next available rule priority.
+// Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (nextRuleNumber)
+func nextRuleNumber(nc *rtnetlink.Conn, family uint8) uint32 {
+	rules, err := nc.Rule.List()
+	if err != nil {
+		return 32500 // fallback
+	}
+
+	max := uint32(32499)
+	for _, rule := range rules {
+		if rule.Family != family {
+			continue
+		}
+		if rule.Attributes != nil && rule.Attributes.Priority != nil {
+			if *rule.Attributes.Priority > max && *rule.Attributes.Priority < 32766 {
+				max = *rule.Attributes.Priority
+			}
+		}
+	}
+	return max + 1
+}
+
+// Manager manages nftables rules, ip policy routing rules, and routes for KubeSpan.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (nftables setup)
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (RulesManager)
 type Manager struct {
-	mtu    int
-	logger *zap.Logger
+	mtu          int
+	logger       *zap.Logger
+	rulesManager RulesManager
 }
 
 // NewManager creates a new routing manager.
 func NewManager(mtu int, logger *zap.Logger) *Manager {
-	return &Manager{mtu: mtu, logger: logger}
+	return &Manager{
+		mtu:    mtu,
+		logger: logger,
+		rulesManager: NewRulesManager(
+			uint8(constants.KubeSpanDefaultRoutingTable),
+			constants.KubeSpanDefaultForceFirewallMark,
+			constants.KubeSpanDefaultFirewallMask,
+		),
+	}
 }
 
 // Install sets up nftables rules, ip policy routing rules, and default routes.
@@ -47,7 +160,7 @@ func NewManager(mtu int, logger *zap.Logger) *Manager {
 // Both chains skip packets already marked with 0x20 (WireGuard encrypted egress).
 //
 // ip rules:
-//   - fwmark 0x40/0x60 → table 180 (priority 32500) for both IPv4 and IPv6
+//   - fwmark 0x40/0x60 → table 180 (dynamic priority) for both IPv4 and IPv6
 //
 // Routes:
 //   - Default routes in table 180 via kubespan interface
@@ -59,7 +172,7 @@ func (rm *Manager) Install(routedPrefixes []netip.Prefix) error {
 		return fmt.Errorf("nftables: %w", err)
 	}
 
-	if err := rm.installIPRules(); err != nil {
+	if err := rm.rulesManager.Install(); err != nil {
 		return fmt.Errorf("ip rules: %w", err)
 	}
 
@@ -82,22 +195,22 @@ func (rm *Manager) Cleanup() error {
 		return fmt.Errorf("nftables conn: %w", err)
 	}
 
-	// Delete table (removes all chains, sets, and rules atomically).
 	conn.DelTable(&nftables.Table{
 		Family: nftables.TableFamilyINet,
 		Name:   tableName,
 	})
 	_ = conn.Flush() // ignore error if table doesn't exist
 
-	rm.deleteIPRules()
+	if err := rm.rulesManager.Cleanup(); err != nil {
+		rm.logger.Warn("failed to cleanup ip rules", zap.Error(err))
+	}
+
 	// Routes in table 180 disappear when the kubespan interface is deleted.
 	return nil
 }
 
 // installNftables creates the talos_kubespan nftables table with two chains.
-// Uses the google/nftables Go library with interval sets for prefix matching.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
-// Ref: talos/internal/app/machined/pkg/adapters/network/nftables_rule.go
 func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn, err := nftables.New()
 	if err != nil {
@@ -113,7 +226,6 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn.DelTable(table)
 	table = conn.AddTable(table)
 
-	// Separate prefixes by address family.
 	var v4Prefixes, v6Prefixes []netip.Prefix
 	for _, p := range routedPrefixes {
 		if p.Addr().Is4() {
@@ -123,8 +235,6 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		}
 	}
 
-	// Build anonymous interval sets for IPv4 and IPv6 prefix matching.
-	// Ref: talos/internal/app/machined/pkg/adapters/network/nftables_rule.go (SetElements)
 	v4PrerouteSet := makeIPv4Set(table, v4Prefixes)
 	v6PrerouteSet := makeIPv6Set(table, v6Prefixes)
 	v4OutputSet := makeIPv4Set(table, v4Prefixes)
@@ -144,7 +254,6 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	}
 
 	// Prerouting chain: mark incoming packets destined for routed IPs.
-	// Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (kubespan_prerouting)
 	policy := nftables.ChainPolicyAccept
 	prerouteChain := conn.AddChain(&nftables.Chain{
 		Name:     "kubespan_prerouting",
@@ -155,22 +264,18 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		Policy:   &policy,
 	})
 
-	// Rule: skip packets already marked by WireGuard (egress encrypted packets).
-	// meta mark & 0x60 == 0x20 accept
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: prerouteChain,
 		Exprs: skipWGMarkExprs(),
 	})
 
-	// Rule: ip daddr @routed_v4 meta mark set meta mark | 0x40 accept
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: prerouteChain,
 		Exprs: markIPv4Exprs(v4PrerouteSet.set),
 	})
 
-	// Rule: ip6 daddr @routed_v6 meta mark set meta mark | 0x40 accept
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: prerouteChain,
@@ -178,7 +283,6 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	})
 
 	// Output chain: mark outgoing packets + MSS clamping.
-	// Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (kubespan_outgoing)
 	outputChain := conn.AddChain(&nftables.Chain{
 		Name:     "kubespan_outgoing",
 		Table:    table,
@@ -188,24 +292,19 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		Policy:   &policy,
 	})
 
-	// Rule: skip WireGuard egress.
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
 		Exprs: skipWGMarkExprs(),
 	})
 
-	// Rule: skip loopback.
-	// oifname "lo" accept
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
 		Exprs: skipLoopbackExprs(),
 	})
 
-	// MSS clamping rules for routed traffic.
-	// Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
-	mss4 := rm.mtu - 40 // IPv4 header (20) + TCP header (20)
+	mss4 := rm.mtu - 40
 	if mss4 > 0 {
 		conn.AddRule(&nftables.Rule{
 			Table: table,
@@ -213,7 +312,7 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 			Exprs: mssClampIPv4Exprs(v4OutputSet.set, uint16(mss4)),
 		})
 	}
-	mss6 := rm.mtu - 60 // IPv6 header (40) + TCP header (20)
+	mss6 := rm.mtu - 60
 	if mss6 > 0 {
 		conn.AddRule(&nftables.Rule{
 			Table: table,
@@ -222,21 +321,18 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		})
 	}
 
-	// Rule: mark routed IPv4 packets.
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
 		Exprs: markIPv4Exprs(v4OutputSet.set),
 	})
 
-	// Rule: mark routed IPv6 packets.
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
 		Exprs: markIPv6Exprs(v6OutputSet.set),
 	})
 
-	// Flush atomically applies all operations.
 	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("nftables flush: %w", err)
 	}
@@ -250,7 +346,6 @@ type intervalSet struct {
 	elements []nftables.SetElement
 }
 
-// makeIPv4Set creates an anonymous constant interval set for IPv4 prefixes.
 func makeIPv4Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
 	set := &nftables.Set{
 		Table:     table,
@@ -265,7 +360,6 @@ func makeIPv4Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
 	}
 }
 
-// makeIPv6Set creates an anonymous constant interval set for IPv6 prefixes.
 func makeIPv6Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
 	set := &nftables.Set{
 		Table:     table,
@@ -280,15 +374,13 @@ func makeIPv6Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
 	}
 }
 
-// prefixesToSetElements converts a list of IP prefixes into nftables interval set elements.
-// Each prefix becomes two elements: [network_addr, IntervalEnd=false] and [end_addr, IntervalEnd=true].
+// prefixesToSetElements converts IP prefixes into nftables interval set elements.
 // Ref: talos/internal/app/machined/pkg/adapters/network/nftables_rule.go (SetElements)
 func prefixesToSetElements(prefixes []netip.Prefix, addrLen int) []nftables.SetElement {
 	if len(prefixes) == 0 {
 		return nil
 	}
 
-	// Sort prefixes for deterministic set construction.
 	sorted := make([]netip.Prefix, len(prefixes))
 	copy(sorted, prefixes)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -301,10 +393,9 @@ func prefixesToSetElements(prefixes []netip.Prefix, addrLen int) []nftables.SetE
 
 	var elements []nftables.SetElement
 	for _, p := range sorted {
-		p = p.Masked() // Normalize to network address.
+		p = p.Masked()
 		startBytes := p.Addr().As16()
 
-		// Compute the end address (first address past the prefix range).
 		endAddr := prefixEnd(p)
 		endBytes := endAddr.As16()
 
@@ -326,46 +417,34 @@ func prefixesToSetElements(prefixes []netip.Prefix, addrLen int) []nftables.SetE
 	return elements
 }
 
-// prefixEnd returns the first address past the end of a prefix range.
-// For example, 10.0.0.0/24 → 10.0.1.0.
 func prefixEnd(p netip.Prefix) netip.Addr {
 	addr := p.Addr()
 	bits := p.Bits()
 
-	b := addr.As16()
-
-	// Total bits for this address family.
 	totalBits := 128
 	if addr.Is4() {
 		totalBits = 32
 	}
 
-	// For a /totalBits prefix (single address), the end is addr+1.
-	// For shorter prefixes, we compute the network + size of the prefix block.
 	if bits == totalBits {
 		return incrementAddr(addr)
 	}
 
-	// Set the host part to all-ones, then increment.
-	// This gives us the first address past the prefix range.
 	if addr.Is4() {
 		ip4 := addr.As4()
-		maskLen := bits
-		for i := maskLen; i < 32; i++ {
+		for i := bits; i < 32; i++ {
 			ip4[i/8] |= 1 << (7 - i%8)
 		}
-		a := netip.AddrFrom4(ip4)
-		return incrementAddr(a)
+		return incrementAddr(netip.AddrFrom4(ip4))
 	}
 
+	b := addr.As16()
 	for i := bits; i < 128; i++ {
 		b[i/8] |= 1 << (7 - i%8)
 	}
-	a := netip.AddrFrom16(b)
-	return incrementAddr(a)
+	return incrementAddr(netip.AddrFrom16(b))
 }
 
-// incrementAddr adds 1 to an IP address.
 func incrementAddr(addr netip.Addr) netip.Addr {
 	b := addr.As16()
 	for i := len(b) - 1; i >= 0; i-- {
@@ -380,13 +459,9 @@ func incrementAddr(addr netip.Addr) netip.Addr {
 	return netip.AddrFrom16(b)
 }
 
-// skipWGMarkExprs returns expressions for: meta mark & 0x60 == 0x20 accept
-// Skips packets already marked by WireGuard (egress encrypted packets).
 func skipWGMarkExprs() []expr.Any {
 	return []expr.Any{
-		// Load meta mark → reg 1
 		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
-		// Bitwise: reg1 = reg1 & constants.KubeSpanDefaultFirewallMask
 		&expr.Bitwise{
 			SourceRegister: 1,
 			DestRegister:   1,
@@ -394,65 +469,50 @@ func skipWGMarkExprs() []expr.Any {
 			Mask:           binaryutil.NativeEndian.PutUint32(constants.KubeSpanDefaultFirewallMask),
 			Xor:            binaryutil.NativeEndian.PutUint32(0),
 		},
-		// Compare: reg1 == KubeSpanDefaultFirewallMark (0x20, WG egress mark)
 		&expr.Cmp{
 			Op:       expr.CmpOpEq,
 			Register: 1,
 			Data:     binaryutil.NativeEndian.PutUint32(constants.KubeSpanDefaultFirewallMark),
 		},
-		// Verdict: accept
 		&expr.Verdict{Kind: expr.VerdictAccept},
 	}
 }
 
-// skipLoopbackExprs returns expressions for: oifname "lo" accept
 func skipLoopbackExprs() []expr.Any {
-	// oifname is a 16-byte field (IFNAMSIZ).
 	loName := make([]byte, 16)
 	copy(loName, "lo\x00")
 
 	return []expr.Any{
-		// Load output interface name → reg 1
 		&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
-		// Compare: reg1 == "lo"
 		&expr.Cmp{
 			Op:       expr.CmpOpEq,
 			Register: 1,
 			Data:     loName,
 		},
-		// Verdict: accept
 		&expr.Verdict{Kind: expr.VerdictAccept},
 	}
 }
 
-// markIPv4Exprs returns expressions for: ip daddr @set meta mark set meta mark | 0x40 accept
 func markIPv4Exprs(set *nftables.Set) []expr.Any {
 	return []expr.Any{
-		// Check nfproto == IPv4
 		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
 		&expr.Cmp{
 			Op:       expr.CmpOpEq,
 			Register: 1,
 			Data:     []byte{unix.NFPROTO_IPV4},
 		},
-		// Load IPv4 destination address → reg 1 (offset 16 in network header, 4 bytes)
 		&expr.Payload{
 			DestRegister: 1,
 			Base:         expr.PayloadBaseNetworkHeader,
 			Offset:       16,
 			Len:          4,
 		},
-		// Lookup in set
 		&expr.Lookup{
 			SourceRegister: 1,
 			SetName:        set.Name,
 			SetID:          set.ID,
 		},
-		// Load current mark → reg 1
 		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
-		// OR with constants.KubeSpanDefaultForceFirewallMark:
-		// nftables bitwise: result = (sreg & mask) ^ xor
-		// To compute OR with X: mask = ~X, xor = X → result = (reg & ~X) | X
 		&expr.Bitwise{
 			SourceRegister: 1,
 			DestRegister:   1,
@@ -460,39 +520,31 @@ func markIPv4Exprs(set *nftables.Set) []expr.Any {
 			Mask:           binaryutil.NativeEndian.PutUint32(^uint32(constants.KubeSpanDefaultForceFirewallMark)),
 			Xor:            binaryutil.NativeEndian.PutUint32(constants.KubeSpanDefaultForceFirewallMark),
 		},
-		// Set mark from reg 1
 		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
-		// Verdict: accept
 		&expr.Verdict{Kind: expr.VerdictAccept},
 	}
 }
 
-// markIPv6Exprs returns expressions for: ip6 daddr @set meta mark set meta mark | 0x40 accept
 func markIPv6Exprs(set *nftables.Set) []expr.Any {
 	return []expr.Any{
-		// Check nfproto == IPv6
 		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
 		&expr.Cmp{
 			Op:       expr.CmpOpEq,
 			Register: 1,
 			Data:     []byte{unix.NFPROTO_IPV6},
 		},
-		// Load IPv6 destination address → reg 1 (offset 24 in network header, 16 bytes)
 		&expr.Payload{
 			DestRegister: 1,
 			Base:         expr.PayloadBaseNetworkHeader,
 			Offset:       24,
 			Len:          16,
 		},
-		// Lookup in set
 		&expr.Lookup{
 			SourceRegister: 1,
 			SetName:        set.Name,
 			SetID:          set.ID,
 		},
-		// Load current mark
 		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
-		// OR with constants.KubeSpanDefaultForceFirewallMark
 		&expr.Bitwise{
 			SourceRegister: 1,
 			DestRegister:   1,
@@ -500,124 +552,36 @@ func markIPv6Exprs(set *nftables.Set) []expr.Any {
 			Mask:           binaryutil.NativeEndian.PutUint32(^uint32(constants.KubeSpanDefaultForceFirewallMark)),
 			Xor:            binaryutil.NativeEndian.PutUint32(constants.KubeSpanDefaultForceFirewallMark),
 		},
-		// Set mark
 		&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
-		// Accept
 		&expr.Verdict{Kind: expr.VerdictAccept},
 	}
 }
 
-// mssClampIPv4Exprs returns expressions for TCP MSS clamping on IPv4 routed traffic.
-// ip daddr @set tcp flags syn / syn,rst tcp option maxseg size set <mss>
 func mssClampIPv4Exprs(set *nftables.Set, mss uint16) []expr.Any {
 	return []expr.Any{
-		// Check nfproto == IPv4
 		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
 		&expr.Cmp{
 			Op:       expr.CmpOpEq,
 			Register: 1,
 			Data:     []byte{unix.NFPROTO_IPV4},
 		},
-		// Load IPv4 daddr → reg 1
 		&expr.Payload{
 			DestRegister: 1,
 			Base:         expr.PayloadBaseNetworkHeader,
 			Offset:       16,
 			Len:          4,
 		},
-		// Lookup in set
 		&expr.Lookup{
 			SourceRegister: 1,
 			SetName:        set.Name,
 			SetID:          set.ID,
 		},
-		// Check L4 protocol == TCP
 		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
 		&expr.Cmp{
 			Op:       expr.CmpOpEq,
 			Register: 1,
 			Data:     []byte{unix.IPPROTO_TCP},
 		},
-		// Check TCP flags: SYN set, RST not set → (flags & (SYN|RST)) == SYN
-		&expr.Payload{
-			DestRegister: 1,
-			Base:         expr.PayloadBaseTransportHeader,
-			Offset:       13, // TCP flags byte offset
-			Len:          1,
-		},
-		&expr.Bitwise{
-			SourceRegister: 1,
-			DestRegister:   1,
-			Len:            1,
-			Mask:           []byte{0x06}, // SYN (0x02) | RST (0x04)
-			Xor:            []byte{0x00},
-		},
-		&expr.Cmp{
-			Op:       expr.CmpOpEq,
-			Register: 1,
-			Data:     []byte{0x02}, // SYN only
-		},
-		// Read current MSS option → reg 1
-		&expr.Exthdr{
-			DestRegister: 1,
-			Type:         2, // TCP MSS option kind
-			Offset:       2, // MSS value offset within the option
-			Len:          2,
-			Op:           expr.ExthdrOpTcpopt,
-		},
-		// Compare: MSS > target → clamp
-		&expr.Cmp{
-			Op:       expr.CmpOpGt,
-			Register: 1,
-			Data:     binary.BigEndian.AppendUint16(nil, mss),
-		},
-		// Load target MSS value → reg 1
-		&expr.Immediate{
-			Register: 1,
-			Data:     binary.BigEndian.AppendUint16(nil, mss),
-		},
-		// Write MSS option
-		&expr.Exthdr{
-			SourceRegister: 1,
-			Type:           2,
-			Offset:         2,
-			Len:            2,
-			Op:             expr.ExthdrOpTcpopt,
-		},
-	}
-}
-
-// mssClampIPv6Exprs returns expressions for TCP MSS clamping on IPv6 routed traffic.
-func mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
-	return []expr.Any{
-		// Check nfproto == IPv6
-		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
-		&expr.Cmp{
-			Op:       expr.CmpOpEq,
-			Register: 1,
-			Data:     []byte{unix.NFPROTO_IPV6},
-		},
-		// Load IPv6 daddr → reg 1
-		&expr.Payload{
-			DestRegister: 1,
-			Base:         expr.PayloadBaseNetworkHeader,
-			Offset:       24,
-			Len:          16,
-		},
-		// Lookup in set
-		&expr.Lookup{
-			SourceRegister: 1,
-			SetName:        set.Name,
-			SetID:          set.ID,
-		},
-		// Check L4 proto == TCP
-		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
-		&expr.Cmp{
-			Op:       expr.CmpOpEq,
-			Register: 1,
-			Data:     []byte{unix.IPPROTO_TCP},
-		},
-		// Check TCP SYN without RST
 		&expr.Payload{
 			DestRegister: 1,
 			Base:         expr.PayloadBaseTransportHeader,
@@ -636,7 +600,6 @@ func mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
 			Register: 1,
 			Data:     []byte{0x02},
 		},
-		// Read current MSS option
 		&expr.Exthdr{
 			DestRegister: 1,
 			Type:         2,
@@ -644,18 +607,15 @@ func mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
 			Len:          2,
 			Op:           expr.ExthdrOpTcpopt,
 		},
-		// Compare: MSS > target
 		&expr.Cmp{
 			Op:       expr.CmpOpGt,
 			Register: 1,
 			Data:     binary.BigEndian.AppendUint16(nil, mss),
 		},
-		// Load target MSS
 		&expr.Immediate{
 			Register: 1,
 			Data:     binary.BigEndian.AppendUint16(nil, mss),
 		},
-		// Write MSS option
 		&expr.Exthdr{
 			SourceRegister: 1,
 			Type:           2,
@@ -666,55 +626,84 @@ func mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
 	}
 }
 
-// makeIPRule builds the fwmark-based policy routing rule for a given address family.
-func makeIPRule(family int) *netlink.Rule {
-	rule := netlink.NewRule()
-	rule.Priority = RulePriority
-	rule.Mark = constants.KubeSpanDefaultForceFirewallMark
-	rule.Mask = uint32Ptr(constants.KubeSpanDefaultFirewallMask)
-	rule.Table = constants.KubeSpanDefaultRoutingTable
-	rule.Family = family
-	return rule
-}
-
-// installIPRules adds fwmark-based policy routing rules.
-// Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go (Install)
-func (rm *Manager) installIPRules() error {
-	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
-		rule := makeIPRule(family)
-
-		// Delete existing rule first (idempotent). ESRCH means rule
-		// doesn't exist, which is expected on first install.
-		if err := netlink.RuleDel(rule); err != nil && !errors.Is(err, syscall.ESRCH) {
-			rm.logger.Warn("failed to delete old ip rule", zap.Int("family", family), zap.Error(err))
-		}
-
-		if err := netlink.RuleAdd(rule); err != nil {
-			return fmt.Errorf("adding ip rule (family %d): %w", family, err)
-		}
-	}
-
-	return nil
-}
-
-// deleteIPRules removes the fwmark-based policy routing rules.
-func (rm *Manager) deleteIPRules() {
-	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
-		if err := netlink.RuleDel(makeIPRule(family)); err != nil && !errors.Is(err, syscall.ESRCH) {
-			rm.logger.Warn("failed to delete ip rule", zap.Int("family", family), zap.Error(err))
-		}
+func mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+		&expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			Data:     []byte{unix.NFPROTO_IPV6},
+		},
+		&expr.Payload{
+			DestRegister: 1,
+			Base:         expr.PayloadBaseNetworkHeader,
+			Offset:       24,
+			Len:          16,
+		},
+		&expr.Lookup{
+			SourceRegister: 1,
+			SetName:        set.Name,
+			SetID:          set.ID,
+		},
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			Data:     []byte{unix.IPPROTO_TCP},
+		},
+		&expr.Payload{
+			DestRegister: 1,
+			Base:         expr.PayloadBaseTransportHeader,
+			Offset:       13,
+			Len:          1,
+		},
+		&expr.Bitwise{
+			SourceRegister: 1,
+			DestRegister:   1,
+			Len:            1,
+			Mask:           []byte{0x06},
+			Xor:            []byte{0x00},
+		},
+		&expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			Data:     []byte{0x02},
+		},
+		&expr.Exthdr{
+			DestRegister: 1,
+			Type:         2,
+			Offset:       2,
+			Len:          2,
+			Op:           expr.ExthdrOpTcpopt,
+		},
+		&expr.Cmp{
+			Op:       expr.CmpOpGt,
+			Register: 1,
+			Data:     binary.BigEndian.AppendUint16(nil, mss),
+		},
+		&expr.Immediate{
+			Register: 1,
+			Data:     binary.BigEndian.AppendUint16(nil, mss),
+		},
+		&expr.Exthdr{
+			SourceRegister: 1,
+			Type:           2,
+			Offset:         2,
+			Len:            2,
+			Op:             expr.ExthdrOpTcpopt,
+		},
 	}
 }
 
 // installRoutes adds default routes in table 180 pointing to the kubespan interface.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (RouteSpec)
+// TODO: consider aligning nftables with Talos NfTablesChain COSI resources
 func (rm *Manager) installRoutes() error {
 	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
 	if err != nil {
 		return fmt.Errorf("finding %s for routes: %w", constants.KubeSpanLinkName, err)
 	}
 
-	// IPv4 default route via kubespan.
 	v4Route := &netlink.Route{
 		LinkIndex: link.Attrs().Index,
 		Table:     constants.KubeSpanDefaultRoutingTable,
@@ -725,7 +714,6 @@ func (rm *Manager) installRoutes() error {
 		return fmt.Errorf("adding IPv4 default route to table %d: %w", constants.KubeSpanDefaultRoutingTable, err)
 	}
 
-	// IPv6 default route via kubespan.
 	v6Route := &netlink.Route{
 		LinkIndex: link.Attrs().Index,
 		Table:     constants.KubeSpanDefaultRoutingTable,
@@ -737,8 +725,4 @@ func (rm *Manager) installRoutes() error {
 	}
 
 	return nil
-}
-
-func uint32Ptr(v uint32) *uint32 {
-	return &v
 }

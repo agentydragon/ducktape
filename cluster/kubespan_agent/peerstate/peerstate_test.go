@@ -1,4 +1,4 @@
-package peerstate
+package peerstate_test
 
 import (
 	"net/netip"
@@ -6,82 +6,78 @@ import (
 	"time"
 
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate"
 )
 
 // Tests ported from talos/internal/app/machined/pkg/adapters/kubespan/peer_status_test.go
 
 func TestCalculateState_NoEndpointChange(t *testing.T) {
-	// Long time since endpoint change, no handshake → DOWN
-	ps := &Spec{
+	ps := &kubespan.PeerStatusSpec{
 		LastEndpointChange: time.Now().Add(-10 * time.Minute),
 		LastHandshakeTime:  time.Now().Add(-10 * time.Minute),
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
-	ps.CalculateState()
+	peerstate.CalculateState(ps)
 	if ps.State != kubespan.PeerStateDown {
 		t.Errorf("expected DOWN, got %s", ps.State)
 	}
 }
 
 func TestCalculateState_RecentHandshake(t *testing.T) {
-	// Long time since endpoint change, recent handshake → UP
-	ps := &Spec{
+	ps := &kubespan.PeerStatusSpec{
 		LastEndpointChange: time.Now().Add(-10 * time.Minute),
 		LastHandshakeTime:  time.Now().Add(-30 * time.Second),
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
-	ps.CalculateState()
+	peerstate.CalculateState(ps)
 	if ps.State != kubespan.PeerStateUp {
 		t.Errorf("expected UP, got %s", ps.State)
 	}
 }
 
 func TestCalculateState_JustChangedEndpoint(t *testing.T) {
-	// Just changed endpoint (< 15s), no handshake yet → UNKNOWN
-	ps := &Spec{
+	ps := &kubespan.PeerStatusSpec{
 		LastEndpointChange: time.Now().Add(-5 * time.Second),
 		LastHandshakeTime:  time.Now().Add(-10 * time.Minute),
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
-	ps.CalculateState()
+	peerstate.CalculateState(ps)
 	if ps.State != kubespan.PeerStateUnknown {
 		t.Errorf("expected UNKNOWN, got %s", ps.State)
 	}
 }
 
 func TestCalculateState_JustChangedEndpointWithHandshake(t *testing.T) {
-	// Just changed endpoint (< 15s), handshake happened after change → UP
-	ps := &Spec{
+	ps := &kubespan.PeerStatusSpec{
 		LastEndpointChange: time.Now().Add(-5 * time.Second),
 		LastHandshakeTime:  time.Now().Add(-2 * time.Second),
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
-	ps.CalculateState()
+	peerstate.CalculateState(ps)
 	if ps.State != kubespan.PeerStateUp {
 		t.Errorf("expected UP, got %s", ps.State)
 	}
 }
 
 func TestCalculateState_EndpointChangeMidRange(t *testing.T) {
-	// 30s since endpoint change, no handshake since → DOWN
-	ps := &Spec{
+	ps := &kubespan.PeerStatusSpec{
 		LastEndpointChange: time.Now().Add(-30 * time.Second),
 		LastHandshakeTime:  time.Now().Add(-60 * time.Second),
 		LastUsedEndpoint:   netip.MustParseAddrPort("1.2.3.4:51820"),
 	}
-	ps.CalculateState()
+	peerstate.CalculateState(ps)
 	if ps.State != kubespan.PeerStateDown {
 		t.Errorf("expected DOWN, got %s", ps.State)
 	}
 }
 
 func TestCalculateState_NoEndpointEverSet(t *testing.T) {
-	// DOWN but no endpoint ever set → UNKNOWN
-	ps := &Spec{
+	ps := &kubespan.PeerStatusSpec{
 		LastEndpointChange: time.Now().Add(-30 * time.Second),
 		LastHandshakeTime:  time.Now().Add(-60 * time.Second),
 	}
-	ps.CalculateState()
+	peerstate.CalculateState(ps)
 	if ps.State != kubespan.PeerStateUnknown {
 		t.Errorf("expected UNKNOWN (no endpoint ever set), got %s", ps.State)
 	}
@@ -141,11 +137,11 @@ func TestCalculateStateWithDurations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ps := &Spec{}
+			ps := &kubespan.PeerStatusSpec{}
 			if tt.hasEndpoint {
 				ps.LastUsedEndpoint = netip.MustParseAddrPort("1.2.3.4:51820")
 			}
-			ps.CalculateStateWithDurations(tt.sinceHandshake, tt.sinceEndpointChange)
+			peerstate.CalculateStateWithDurations(ps, tt.sinceHandshake, tt.sinceEndpointChange)
 			if ps.State != tt.want {
 				t.Errorf("got %s, want %s", ps.State, tt.want)
 			}
@@ -154,21 +150,18 @@ func TestCalculateStateWithDurations(t *testing.T) {
 }
 
 func TestShouldChangeEndpoint(t *testing.T) {
-	// DOWN → should change
-	ps := &Spec{State: kubespan.PeerStateDown, LastUsedEndpoint: netip.MustParseAddrPort("1.2.3.4:51820")}
-	if !ps.ShouldChangeEndpoint() {
+	ps := &kubespan.PeerStatusSpec{State: kubespan.PeerStateDown, LastUsedEndpoint: netip.MustParseAddrPort("1.2.3.4:51820")}
+	if !peerstate.ShouldChangeEndpoint(ps) {
 		t.Error("expected ShouldChangeEndpoint=true for DOWN peer")
 	}
 
-	// No endpoint set → should change
-	ps = &Spec{State: kubespan.PeerStateUnknown}
-	if !ps.ShouldChangeEndpoint() {
+	ps = &kubespan.PeerStatusSpec{State: kubespan.PeerStateUnknown}
+	if !peerstate.ShouldChangeEndpoint(ps) {
 		t.Error("expected ShouldChangeEndpoint=true with no endpoint")
 	}
 
-	// UP → should not change
-	ps = &Spec{State: kubespan.PeerStateUp, LastUsedEndpoint: netip.MustParseAddrPort("1.2.3.4:51820")}
-	if ps.ShouldChangeEndpoint() {
+	ps = &kubespan.PeerStatusSpec{State: kubespan.PeerStateUp, LastUsedEndpoint: netip.MustParseAddrPort("1.2.3.4:51820")}
+	if peerstate.ShouldChangeEndpoint(ps) {
 		t.Error("expected ShouldChangeEndpoint=false for UP peer")
 	}
 }
@@ -179,37 +172,32 @@ func TestPickNewEndpoint(t *testing.T) {
 	ep3 := netip.MustParseAddrPort("3.3.3.3:51820")
 	endpoints := []netip.AddrPort{ep1, ep2, ep3}
 
-	// No last endpoint → pick first
-	ps := &Spec{}
-	got := ps.PickNewEndpoint(endpoints)
+	ps := &kubespan.PeerStatusSpec{}
+	got := peerstate.PickNewEndpoint(ps, endpoints)
 	if got != ep1 {
 		t.Errorf("expected %s, got %s", ep1, got)
 	}
 
-	// Last was ep1 → pick ep2
-	ps = &Spec{LastUsedEndpoint: ep1}
-	got = ps.PickNewEndpoint(endpoints)
+	ps = &kubespan.PeerStatusSpec{LastUsedEndpoint: ep1}
+	got = peerstate.PickNewEndpoint(ps, endpoints)
 	if got != ep2 {
 		t.Errorf("expected %s, got %s", ep2, got)
 	}
 
-	// Last was ep3 → wrap to ep1
-	ps = &Spec{LastUsedEndpoint: ep3}
-	got = ps.PickNewEndpoint(endpoints)
+	ps = &kubespan.PeerStatusSpec{LastUsedEndpoint: ep3}
+	got = peerstate.PickNewEndpoint(ps, endpoints)
 	if got != ep1 {
 		t.Errorf("expected %s, got %s", ep1, got)
 	}
 
-	// Single endpoint, already set → return zero (don't rotate)
-	ps = &Spec{LastUsedEndpoint: ep1}
-	got = ps.PickNewEndpoint([]netip.AddrPort{ep1})
+	ps = &kubespan.PeerStatusSpec{LastUsedEndpoint: ep1}
+	got = peerstate.PickNewEndpoint(ps, []netip.AddrPort{ep1})
 	if got.IsValid() {
 		t.Errorf("expected zero, got %s", got)
 	}
 
-	// Empty list → return zero
-	ps = &Spec{}
-	got = ps.PickNewEndpoint(nil)
+	ps = &kubespan.PeerStatusSpec{}
+	got = peerstate.PickNewEndpoint(ps, nil)
 	if got.IsValid() {
 		t.Errorf("expected zero, got %s", got)
 	}

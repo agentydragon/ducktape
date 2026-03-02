@@ -1,12 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "config",
-    srcs = ["config.go"],
-    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/config",
+    name = "agentconfig",
+    srcs = ["agentconfig.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/agentconfig",
     visibility = ["//cluster/kubespan_agent:__subpackages__"],
     deps = [
         "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )

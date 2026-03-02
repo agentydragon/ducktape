@@ -7,14 +7,15 @@ go_library(
     visibility = ["//cluster/kubespan_agent:__subpackages__"],
     deps = [
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+        "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
     ],
 )
 
 go_test(
     name = "peerstate_test",
     srcs = ["peerstate_test.go"],
-    embed = [":peerstate"],
     deps = [
+        ":peerstate",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
     ],
 )

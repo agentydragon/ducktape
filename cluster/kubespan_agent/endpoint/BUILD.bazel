@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "endpoint",
+    srcs = ["endpoint.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/endpoint",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+        "@org_uber_go_zap//:zap",
+    ],
+)
