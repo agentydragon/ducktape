@@ -9,6 +9,8 @@ go_library(
         "//cluster/kubespan_agent/agentconfig",
         "@com_github_siderolabs_discovery_api//api/v1alpha1/client/pb",
         "@com_github_siderolabs_discovery_client//pkg/client",
+        "@com_github_siderolabs_talos_pkg_machinery//config/machine",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
         "@org_uber_go_zap//:zap",
     ],

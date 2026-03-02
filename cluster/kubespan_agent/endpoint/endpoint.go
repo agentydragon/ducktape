@@ -2,7 +2,6 @@
 // endpoints from connected peers for re-announcement via discovery.
 //
 // Port of talos/internal/app/machined/pkg/controllers/kubespan/endpoint.go.
-// Simplified: maps peer public key directly as resource ID (no Affiliate lookup).
 package endpoint
 
 import (
@@ -10,18 +9,18 @@ import (
 	"fmt"
 
 	"github.com/cosi-project/runtime/pkg/controller"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 )
 
-// Controller watches Config and PeerStatus resources and produces Endpoint
-// resources for peers that are connected (State == Up) with a valid endpoint.
-//
-// This enables endpoint harvesting: when HarvestExtraEndpoints is enabled,
-// discovered endpoint addresses of connected peers are recorded as Endpoint
-// resources which can then be re-announced via the discovery service.
+// Controller watches Config, PeerStatus, and Affiliate resources, and produces
+// Endpoint resources for peers that are connected (State == Up) with a valid
+// endpoint. Uses the Affiliate mapping to set the correct AffiliateID on
+// harvested endpoints for re-announcement via the discovery service.
 //
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/endpoint.go
 type Controller struct{}
@@ -36,6 +35,7 @@ func (ctrl *Controller) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*kubespan.Config](controller.InputWeak),
 		safe.Input[*kubespan.PeerStatus](controller.InputWeak),
+		safe.Input[*cluster.Affiliate](controller.InputWeak),
 	}
 }
 
@@ -72,6 +72,9 @@ func (ctrl *Controller) Run(ctx context.Context, r controller.Runtime, logger *z
 		r.StartTrackingOutputs()
 
 		if cfgSpec.HarvestExtraEndpoints {
+			// Build publicKey → affiliateID map from Affiliate resources.
+			pubKeyToAffID := ctrl.buildAffiliateMap(ctx, r)
+
 			peerStatuses, listErr := safe.ReaderListAll[*kubespan.PeerStatus](ctx, r)
 			if listErr != nil {
 				return fmt.Errorf("listing peer statuses: %w", listErr)
@@ -86,16 +89,21 @@ func (ctrl *Controller) Run(ctx context.Context, r controller.Runtime, logger *z
 					continue
 				}
 
-				// TODO: integrate harvested endpoints with discovery re-announcement (pbOtherEndpoints)
+				pubKey := ps.Metadata().ID()
+				affID, ok := pubKeyToAffID[pubKey]
+				if !ok {
+					affID = pubKey // fallback to public key if no affiliate mapping
+				}
+
 				if err := safe.WriterModify(ctx, r,
-					kubespan.NewEndpoint(kubespan.NamespaceName, ps.Metadata().ID()),
+					kubespan.NewEndpoint(kubespan.NamespaceName, resource.ID(affID)),
 					func(res *kubespan.Endpoint) error {
-						res.TypedSpec().AffiliateID = ps.Metadata().ID()
+						res.TypedSpec().AffiliateID = affID
 						res.TypedSpec().Endpoint = spec.Endpoint
 						return nil
 					},
 				); err != nil {
-					return fmt.Errorf("writing endpoint for %s: %w", ps.Metadata().ID(), err)
+					return fmt.Errorf("writing endpoint for %s: %w", affID, err)
 				}
 			}
 		}
@@ -106,4 +114,22 @@ func (ctrl *Controller) Run(ctx context.Context, r controller.Runtime, logger *z
 
 		r.ResetRestartBackoff()
 	}
+}
+
+// buildAffiliateMap reads cluster.Affiliate resources and returns a map
+// from KubeSpan public key to affiliate resource ID (NodeID).
+func (ctrl *Controller) buildAffiliateMap(ctx context.Context, r controller.Runtime) map[string]string {
+	affiliates, err := safe.ReaderListAll[*cluster.Affiliate](ctx, r)
+	if err != nil {
+		return nil
+	}
+
+	result := make(map[string]string)
+	for aff := range affiliates.All() {
+		ks := aff.TypedSpec().KubeSpan
+		if ks.PublicKey != "" {
+			result[ks.PublicKey] = aff.Metadata().ID()
+		}
+	}
+	return result
 }

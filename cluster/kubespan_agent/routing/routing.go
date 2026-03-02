@@ -12,6 +12,7 @@ import (
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 	"github.com/jsimonetti/rtnetlink/v2"
+	"github.com/siderolabs/gen/xslices"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
@@ -168,6 +169,11 @@ func NewManager(mtu int, logger *zap.Logger) *Manager {
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go
 func (rm *Manager) Install(routedPrefixes []netip.Prefix) error {
+	// Clean up stale rules from a prior crash before installing new ones.
+	if err := rm.Cleanup(); err != nil {
+		rm.logger.Warn("pre-install cleanup failed (may be first run)", zap.Error(err))
+	}
+
 	if err := rm.installNftables(routedPrefixes); err != nil {
 		return fmt.Errorf("nftables: %w", err)
 	}
@@ -226,31 +232,18 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn.DelTable(table)
 	table = conn.AddTable(table)
 
-	var v4Prefixes, v6Prefixes []netip.Prefix
-	for _, p := range routedPrefixes {
-		if p.Addr().Is4() {
-			v4Prefixes = append(v4Prefixes, p)
-		} else {
-			v6Prefixes = append(v6Prefixes, p)
-		}
-	}
+	v4Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return p.Addr().Is4() })
+	v6Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return !p.Addr().Is4() })
 
-	v4PrerouteSet := makeIPv4Set(table, v4Prefixes)
-	v6PrerouteSet := makeIPv6Set(table, v6Prefixes)
-	v4OutputSet := makeIPv4Set(table, v4Prefixes)
-	v6OutputSet := makeIPv6Set(table, v6Prefixes)
+	// Share sets between prerouting and output chains (same prefixes).
+	v4Set := makeIPv4Set(table, v4Prefixes)
+	v6Set := makeIPv6Set(table, v6Prefixes)
 
-	if err := conn.AddSet(v4PrerouteSet.set, v4PrerouteSet.elements); err != nil {
-		return fmt.Errorf("adding v4 preroute set: %w", err)
+	if err := conn.AddSet(v4Set.set, v4Set.elements); err != nil {
+		return fmt.Errorf("adding v4 set: %w", err)
 	}
-	if err := conn.AddSet(v6PrerouteSet.set, v6PrerouteSet.elements); err != nil {
-		return fmt.Errorf("adding v6 preroute set: %w", err)
-	}
-	if err := conn.AddSet(v4OutputSet.set, v4OutputSet.elements); err != nil {
-		return fmt.Errorf("adding v4 output set: %w", err)
-	}
-	if err := conn.AddSet(v6OutputSet.set, v6OutputSet.elements); err != nil {
-		return fmt.Errorf("adding v6 output set: %w", err)
+	if err := conn.AddSet(v6Set.set, v6Set.elements); err != nil {
+		return fmt.Errorf("adding v6 set: %w", err)
 	}
 
 	// Prerouting chain: mark incoming packets destined for routed IPs.
@@ -273,13 +266,13 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: prerouteChain,
-		Exprs: markIPv4Exprs(v4PrerouteSet.set),
+		Exprs: markIPv4Exprs(v4Set.set),
 	})
 
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: prerouteChain,
-		Exprs: markIPv6Exprs(v6PrerouteSet.set),
+		Exprs: markIPv6Exprs(v6Set.set),
 	})
 
 	// Output chain: mark outgoing packets + MSS clamping.
@@ -309,7 +302,7 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		conn.AddRule(&nftables.Rule{
 			Table: table,
 			Chain: outputChain,
-			Exprs: mssClampIPv4Exprs(v4OutputSet.set, uint16(mss4)),
+			Exprs: mssClampIPv4Exprs(v4Set.set, uint16(mss4)),
 		})
 	}
 	mss6 := rm.mtu - 60
@@ -317,20 +310,20 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		conn.AddRule(&nftables.Rule{
 			Table: table,
 			Chain: outputChain,
-			Exprs: mssClampIPv6Exprs(v6OutputSet.set, uint16(mss6)),
+			Exprs: mssClampIPv6Exprs(v6Set.set, uint16(mss6)),
 		})
 	}
 
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
-		Exprs: markIPv4Exprs(v4OutputSet.set),
+		Exprs: markIPv4Exprs(v4Set.set),
 	})
 
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: outputChain,
-		Exprs: markIPv6Exprs(v6OutputSet.set),
+		Exprs: markIPv6Exprs(v6Set.set),
 	})
 
 	if err := conn.Flush(); err != nil {

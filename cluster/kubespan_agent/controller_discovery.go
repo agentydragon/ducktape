@@ -3,26 +3,29 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/netip"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
+	discoveryclient "github.com/siderolabs/discovery-client/pkg/client"
+	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/discovery"
 )
 
-// DiscoveryController watches Config + Identity and produces PeerSpec resources
-// by communicating with the Talos discovery service.
+// DiscoveryController watches Config + Identity and produces cluster.Affiliate
+// resources by communicating with the Talos discovery service.
 //
 // It manages the lifecycle of the discovery Manager: creating it when Config and
 // Identity become available, forwarding discovery notifications to the COSI
 // event loop, and cleaning up on shutdown.
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
-// Ref: talos/internal/app/machined/pkg/controllers/kubespan/peer_spec.go
 type DiscoveryController struct {
 	dm       *discovery.Manager
 	cancelDM context.CancelFunc
@@ -38,6 +41,7 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*kubespan.Config](controller.InputWeak),
 		safe.Input[*kubespan.Identity](controller.InputWeak),
+		safe.Input[*kubespan.Endpoint](controller.InputWeak),
 	}
 }
 
@@ -45,7 +49,7 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 func (ctrl *DiscoveryController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
-			Type: kubespan.PeerSpecType,
+			Type: cluster.AffiliateType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -62,7 +66,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		case <-r.EventCh():
 		}
 
-		cfg, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
+		_, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				ctrl.stopDiscovery()
@@ -79,9 +83,10 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			return fmt.Errorf("getting identity: %w", err)
 		}
 
-		cfgSpec := cfg.TypedSpec()
 		idSpec := id.TypedSpec()
-		_ = cfgSpec // used via agentCfg below
+
+		// Build otherEndpoints from harvested Endpoint resources for re-announcement.
+		otherEndpoints := ctrl.buildOtherEndpoints(ctx, r)
 
 		// Create discovery manager if not yet running.
 		if ctrl.dm == nil {
@@ -112,42 +117,80 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 				}
 			}()
 
-			if pubErr := dm.PublishLocal(agentCfg, idSpec, agentCfg.ListenPort); pubErr != nil {
+			if pubErr := dm.PublishLocal(agentCfg, idSpec, agentCfg.ListenPort, otherEndpoints); pubErr != nil {
 				logger.Error("publishing local affiliate", zap.Error(pubErr))
 			}
 
 			logger.Info("discovery client started")
 		}
 
-		// Re-publish to keep TTL fresh.
-		if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.ListenPort); pubErr != nil {
+		// Re-publish to keep TTL fresh and update harvested endpoints.
+		if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.ListenPort, otherEndpoints); pubErr != nil {
 			logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
 		}
 
-		// Reconcile PeerSpec resources from discovered peers.
-		peers := ctrl.dm.GetPeers()
+		// Reconcile cluster.Affiliate resources from discovered peers.
+		affiliates := ctrl.dm.GetAffiliates()
 
 		r.StartTrackingOutputs()
 
-		for pubKey, peerSpec := range peers {
+		for pubKey, affSpec := range affiliates {
 			if err := safe.WriterModify(ctx, r,
-				kubespan.NewPeerSpec(kubespan.NamespaceName, resource.ID(pubKey)),
-				func(res *kubespan.PeerSpec) error {
-					*res.TypedSpec() = peerSpec
+				cluster.NewAffiliate(cluster.NamespaceName, resource.ID(pubKey)),
+				func(res *cluster.Affiliate) error {
+					*res.TypedSpec() = affSpec
 					return nil
 				},
 			); err != nil {
-				return fmt.Errorf("writing peer spec %s: %w", peerSpec.Label, err)
+				return fmt.Errorf("writing affiliate %s: %w", affSpec.Hostname, err)
 			}
 		}
 
-		if err := safe.CleanupOutputs[*kubespan.PeerSpec](ctx, r); err != nil {
-			return fmt.Errorf("cleaning up peer specs: %w", err)
+		if err := safe.CleanupOutputs[*cluster.Affiliate](ctx, r); err != nil {
+			return fmt.Errorf("cleaning up affiliates: %w", err)
 		}
 
-		logger.Debug("discovery reconciled", zap.Int("peers", len(peers)))
+		logger.Debug("discovery reconciled", zap.Int("affiliates", len(affiliates)))
 		r.ResetRestartBackoff()
 	}
+}
+
+// buildOtherEndpoints reads harvested kubespan.Endpoint resources and converts
+// them to discoveryclient.Endpoint for re-announcement via the discovery service.
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbOtherEndpoints)
+func (ctrl *DiscoveryController) buildOtherEndpoints(ctx context.Context, r controller.Runtime) []discoveryclient.Endpoint {
+	endpoints, err := safe.ReaderListAll[*kubespan.Endpoint](ctx, r)
+	if err != nil {
+		return nil
+	}
+
+	// Group endpoints by AffiliateID.
+	byAffiliate := make(map[string][]netip.AddrPort)
+	for ep := range endpoints.All() {
+		spec := ep.TypedSpec()
+		if spec.AffiliateID == "" || !spec.Endpoint.IsValid() {
+			continue
+		}
+		byAffiliate[spec.AffiliateID] = append(byAffiliate[spec.AffiliateID], spec.Endpoint)
+	}
+
+	var result []discoveryclient.Endpoint
+	for affID, addrPorts := range byAffiliate {
+		var pbEndpoints []*clientpb.Endpoint
+		for _, ap := range addrPorts {
+			ipBytes, _ := ap.Addr().MarshalBinary()
+			pbEndpoints = append(pbEndpoints, &clientpb.Endpoint{
+				Ip:   ipBytes,
+				Port: uint32(ap.Port()),
+			})
+		}
+		result = append(result, discoveryclient.Endpoint{
+			AffiliateID: affID,
+			Endpoints:   pbEndpoints,
+		})
+	}
+
+	return result
 }
 
 // stopDiscovery shuts down the discovery manager if running.

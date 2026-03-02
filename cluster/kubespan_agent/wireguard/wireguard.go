@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"time"
 
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/vishvananda/netlink"
@@ -41,6 +40,9 @@ func NewManager(privateKeyBase64 string, sharedSecret string, listenPort, mtu in
 	secretBytes, err := base64.StdEncoding.DecodeString(sharedSecret)
 	if err != nil {
 		return nil, fmt.Errorf("decoding shared_secret for PSK: %w", err)
+	}
+	if len(secretBytes) != wgtypes.KeyLen {
+		return nil, fmt.Errorf("decoded shared_secret length %d, expected %d", len(secretBytes), wgtypes.KeyLen)
 	}
 	var pskBytes [wgtypes.KeyLen]byte
 	copy(pskBytes[:], secretBytes)
@@ -101,43 +103,19 @@ func (wm *Manager) EnsureInterface(address netip.Prefix) error {
 	return nil
 }
 
-// Peer is the configuration for a single WireGuard peer.
-type Peer struct {
-	PublicKey  string
-	Endpoint   netip.AddrPort
-	AllowedIPs []netip.Prefix
+// PresharedKey returns the WireGuard preshared key for peer configuration.
+func (wm *Manager) PresharedKey() *wgtypes.Key {
+	return &wm.psk
 }
 
 // ConfigurePeers sets the WireGuard peers on the kubespan interface.
-// Each peer gets the shared secret as preshared key and a 25s keepalive.
+// Callers build wgtypes.PeerConfig directly using PresharedKey(), AddrPortToUDPAddr(),
+// and PrefixesToIPNets() helpers.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (WireGuardPeer config)
-func (wm *Manager) ConfigurePeers(peers []Peer) error {
-	wgPeers := make([]wgtypes.PeerConfig, 0, len(peers))
-
-	for _, p := range peers {
-		pubKey, err := wgtypes.ParseKey(p.PublicKey)
-		if err != nil {
-			continue // skip peers with invalid keys
-		}
-
-		peerCfg := wgtypes.PeerConfig{
-			PublicKey:                   pubKey,
-			PresharedKey:                &wm.psk,
-			PersistentKeepaliveInterval: durationPtr(constants.KubeSpanDefaultPeerKeepalive),
-			ReplaceAllowedIPs:           true,
-			AllowedIPs:                  prefixesToIPNets(p.AllowedIPs),
-		}
-
-		if p.Endpoint.IsValid() {
-			peerCfg.Endpoint = addrPortToUDPAddr(p.Endpoint)
-		}
-
-		wgPeers = append(wgPeers, peerCfg)
-	}
-
+func (wm *Manager) ConfigurePeers(peers []wgtypes.PeerConfig) error {
 	return wm.client.ConfigureDevice(constants.KubeSpanLinkName, wgtypes.Config{
 		ReplacePeers: true,
-		Peers:        wgPeers,
+		Peers:        peers,
 	})
 }
 
@@ -167,30 +145,29 @@ func (wm *Manager) Close() error {
 	return wm.client.Close()
 }
 
-// Helper conversions.
-
-func prefixToIPNet(p netip.Prefix) *net.IPNet {
-	return &net.IPNet{
-		IP:   p.Addr().AsSlice(),
-		Mask: net.CIDRMask(p.Bits(), p.Addr().BitLen()),
-	}
-}
-
-func prefixesToIPNets(prefixes []netip.Prefix) []net.IPNet {
+// PrefixesToIPNets converts netip.Prefix slices to net.IPNet slices for wgtypes.
+func PrefixesToIPNets(prefixes []netip.Prefix) []net.IPNet {
 	nets := make([]net.IPNet, len(prefixes))
 	for i, p := range prefixes {
-		nets[i] = *prefixToIPNet(p)
+		nets[i] = net.IPNet{
+			IP:   p.Addr().AsSlice(),
+			Mask: net.CIDRMask(p.Bits(), p.Addr().BitLen()),
+		}
 	}
 	return nets
 }
 
-func addrPortToUDPAddr(ap netip.AddrPort) *net.UDPAddr {
+// AddrPortToUDPAddr converts netip.AddrPort to *net.UDPAddr for wgtypes.
+func AddrPortToUDPAddr(ap netip.AddrPort) *net.UDPAddr {
 	return &net.UDPAddr{
 		IP:   ap.Addr().AsSlice(),
 		Port: int(ap.Port()),
 	}
 }
 
-func durationPtr(d time.Duration) *time.Duration {
-	return &d
+func prefixToIPNet(p netip.Prefix) *net.IPNet {
+	return &net.IPNet{
+		IP:   p.Addr().AsSlice(),
+		Mask: net.CIDRMask(p.Bits(), p.Addr().BitLen()),
+	}
 }

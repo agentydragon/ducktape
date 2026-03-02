@@ -7,8 +7,10 @@ go_library(
     visibility = ["//cluster/kubespan_agent:__subpackages__"],
     deps = [
         "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
         "@org_uber_go_zap//:zap",
     ],

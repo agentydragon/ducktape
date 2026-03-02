@@ -19,14 +19,22 @@ automatically when their inputs change.
 
 1. **IdentityController**: watches `Config` → produces `Identity` (WireGuard keypair +
    IPv6 ULA address derived from cluster ID + local MAC)
-2. **DiscoveryController**: watches `Config` + `Identity` → produces `PeerSpec` resources
-   by communicating with the Talos discovery service (`discovery.talos.dev:443`) via the
-   official [discovery-client](https://github.com/siderolabs/discovery-client) library
-3. **ManagerController**: watches `Config` + `Identity` + `PeerSpec` → produces
+2. **DiscoveryController**: watches `Config` + `Identity` + `Endpoint` → produces
+   `cluster.Affiliate` resources by communicating with the Talos discovery service
+   (`discovery.talos.dev:443`) via the official
+   [discovery-client](https://github.com/siderolabs/discovery-client) library. Harvested
+   endpoints from the EndpointController are re-announced via the discovery service.
+3. **PeerSpecController**: watches `Config` + `Identity` + `cluster.Affiliate` → produces
+   `PeerSpec` resources. Applies endpoint filtering, builds AllowedIPs from affiliate data,
+   and detects/resolves IP overlaps between peers.
+4. **ManagerController**: watches `Config` + `Identity` + `PeerSpec` → produces
    `PeerStatus` resources, manages the `kubespan` WireGuard interface (preshared key,
    25s keepalive), nftables rules, and ip policy routing (table 180, fwmark 0x40/0x60).
    Polls handshake times every 30s and cycles endpoints for down peers (same state
    machine as Talos)
+5. **EndpointController**: watches `Config` + `PeerStatus` + `cluster.Affiliate` →
+   produces `Endpoint` resources for connected peers with valid endpoints. Enables
+   endpoint harvesting for re-announcement via the discovery service.
 
 ## Prerequisites
 
@@ -89,24 +97,30 @@ talosctl get kubespanpeerstatuses
 
 Maps to the following Talos source files:
 
-| kubespand file            | Talos source                                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `resources.go`            | `pkg/machinery/resources/kubespan/*.go` (COSI resource definitions)                                                |
-| `controller_identity.go`  | `internal/.../controllers/kubespan/identity.go` (IdentityController)                                               |
-| `controller_discovery.go` | `internal/.../controllers/cluster/discovery_service.go`, `.../kubespan/peer_spec.go`                               |
-| `controller_manager.go`   | `internal/.../controllers/kubespan/manager.go` (WireGuard + nftables + peer state)                                 |
-| `identity.go`             | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64)        |
-| `discovery.go`            | `internal/.../controllers/cluster/discovery_service.go` (discovery client adapter)                                 |
-| `wireguard.go`            | `internal/.../controllers/kubespan/manager.go` (WireGuard device config)                                           |
-| `routing.go`              | `internal/.../controllers/kubespan/manager.go` (nftables), `.../kubespan/routing_rules.go` (ip rules)              |
-| `peerstate.go`            | `pkg/machinery/resources/kubespan/peer_status.go`, `internal/.../adapters/kubespan/peer_status.go` (state machine) |
-| `config.go`               | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                                      |
+| kubespand file               | Talos source                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `controller_identity.go`     | `internal/.../controllers/kubespan/identity.go` (IdentityController)                                               |
+| `controller_discovery.go`    | `internal/.../controllers/cluster/discovery_service.go` (DiscoveryServiceController)                               |
+| `controller_peerspec.go`     | `internal/.../controllers/kubespan/peer_spec.go` (PeerSpecController)                                              |
+| `controller_manager.go`      | `internal/.../controllers/kubespan/manager.go` (WireGuard + nftables + peer state)                                 |
+| `endpoint/endpoint.go`       | `internal/.../controllers/kubespan/endpoint.go` (EndpointController)                                               |
+| `identity/identity.go`       | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64)        |
+| `discovery/discovery.go`     | `internal/.../controllers/cluster/discovery_service.go` (discovery client adapter)                                 |
+| `wireguard/wireguard.go`     | `internal/.../controllers/kubespan/manager.go` (WireGuard device config)                                           |
+| `routing/routing.go`         | `internal/.../controllers/kubespan/manager.go` (nftables), `.../kubespan/routing_rules.go` (ip rules)              |
+| `peerstate/peerstate.go`     | `pkg/machinery/resources/kubespan/peer_status.go`, `internal/.../adapters/kubespan/peer_status.go` (state machine) |
+| `agentconfig/agentconfig.go` | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                                      |
 
-## Limitations
+## Known Gaps
 
-- **Harvest extra endpoints**: Talos learns additional endpoints from WireGuard handshake
-  source addresses. Not implemented.
-- **Advertise Kubernetes networks**: Talos controlplane nodes advertise pod/service CIDRs.
-  Not implemented — only the node's own KubeSpan ULA is routed.
-- **Single MAC detection**: Uses `/sys/class/net/<name>/device` sysfs probe (with fallback)
-  instead of Talos's internal `FirstHardwareAddr` controller.
+| Gap                           | Talos Reference                                         | Status                                    |
+| ----------------------------- | ------------------------------------------------------- | ----------------------------------------- |
+| COSI network resources        | ManagerCtrl writes `LinkSpec`/`AddressSpec`/`RouteSpec` | We call netlink directly                  |
+| `AdvertiseKubernetesNetworks` | PeerSpecCtrl adds pod/service CIDRs to AllowedIPs       | Not implemented                           |
+| `ExcludeAdvertisedNetworks`   | PeerSpecCtrl filters excluded networks                  | Not implemented                           |
+| NfTablesChain COSI resources  | Talos models nftables as COSI resources                 | We call nftables directly                 |
+| `AffiliateMergeController`    | Merges raw → cluster namespace affiliates               | Skipped (single source)                   |
+| `MachineResetSignal` cleanup  | DiscoveryServiceCtrl cleans up on reset                 | Not implemented                           |
+| `ConfigController`            | Reads `MachineConfig` → `ConfigSpec`                    | We inject from YAML                       |
+| Multiple identity sources     | Talos uses STATE partition + `HardwareAddr`             | We use flat file + sysfs                  |
+| Single MAC detection          | Uses sysfs probe with fallback                          | Talos uses `FirstHardwareAddr` controller |

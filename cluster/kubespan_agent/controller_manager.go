@@ -10,9 +10,11 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/siderolabs/go-pointer"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate"
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/routing"
@@ -171,13 +173,11 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 	}
 
 	// Build WireGuard peer configs and update statuses.
-	var wgPeers []wireguard.Peer
+	var wgPeers []wgtypes.PeerConfig
 	var routedPrefixes []netip.Prefix
 
 	r.StartTrackingOutputs()
 
-	// TODO: IP overlap detection between peers (Talos PeerSpecController.ipSetForPeer)
-	// TODO: AdvertiseKubernetesNetworks (add pod/service CIDRs to AllowedIPs)
 	for peer := range peerList.All() {
 		peerSpec := peer.TypedSpec()
 		pubKey := peer.Metadata().ID()
@@ -208,18 +208,26 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 			}
 		}
 
-		// Build WireGuard peer config.
-		wgPeer := wireguard.Peer{
-			PublicKey:  pubKey,
-			AllowedIPs: peerSpec.AllowedIPs,
+		// Build WireGuard peer config directly.
+		wgKey, keyErr := wgtypes.ParseKey(pubKey)
+		if keyErr != nil {
+			logger.Warn("skipping peer with invalid key", zap.String("key", pubKey), zap.Error(keyErr))
+			continue
+		}
+		peerCfg := wgtypes.PeerConfig{
+			PublicKey:                   wgKey,
+			PresharedKey:                ctrl.wg.PresharedKey(),
+			PersistentKeepaliveInterval: pointer.To(constants.KubeSpanDefaultPeerKeepalive),
+			ReplaceAllowedIPs:           true,
+			AllowedIPs:                  wireguard.PrefixesToIPNets(peerSpec.AllowedIPs),
 		}
 		if ps.LastUsedEndpoint.IsValid() {
-			wgPeer.Endpoint = ps.LastUsedEndpoint
+			peerCfg.Endpoint = wireguard.AddrPortToUDPAddr(ps.LastUsedEndpoint)
 		} else if len(peerSpec.Endpoints) > 0 {
-			wgPeer.Endpoint = peerSpec.Endpoints[0]
+			peerCfg.Endpoint = wireguard.AddrPortToUDPAddr(peerSpec.Endpoints[0])
 			peerstate.UpdateEndpoint(ps, peerSpec.Endpoints[0])
 		}
-		wgPeers = append(wgPeers, wgPeer)
+		wgPeers = append(wgPeers, peerCfg)
 
 		// Collect routed prefixes for nftables.
 		// Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go (routedPeersIPs)

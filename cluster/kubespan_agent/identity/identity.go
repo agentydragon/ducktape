@@ -61,7 +61,7 @@ func wgEUI64(prefix netip.Prefix, mac net.HardwareAddr) (out netip.Prefix, err e
 
 	ip, ok := netipx.FromStdIP(stdIP)
 	if !ok {
-		return out, fmt.Errorf("failed to parse intermediate standard IP %q: %w", stdIP.String(), err)
+		return out, fmt.Errorf("failed to parse intermediate standard IP %q", stdIP.String())
 	}
 
 	return netip.PrefixFrom(ip, ip.BitLen()), nil

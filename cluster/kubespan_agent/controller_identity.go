@@ -19,7 +19,9 @@ import (
 // from the cluster ID and the machine's MAC address.
 //
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/identity.go
-type IdentityController struct{}
+type IdentityController struct {
+	cachedID *kubespan.IdentitySpec
+}
 
 // Name implements controller.Controller.
 func (ctrl *IdentityController) Name() string {
@@ -62,30 +64,34 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 
 		cfgSpec := cfg.TypedSpec()
 
-		mac, err := identity.DetectMAC()
-		if err != nil {
-			return fmt.Errorf("detecting MAC: %w", err)
-		}
+		if ctrl.cachedID == nil {
+			mac, err := identity.DetectMAC()
+			if err != nil {
+				return fmt.Errorf("detecting MAC: %w", err)
+			}
 
-		id, err := identity.LoadOrCreate(agentCfg.IdentityFile, cfgSpec.ClusterID)
-		if err != nil {
-			return fmt.Errorf("loading identity: %w", err)
-		}
+			id, err := identity.LoadOrCreate(agentCfg.IdentityFile, cfgSpec.ClusterID)
+			if err != nil {
+				return fmt.Errorf("loading identity: %w", err)
+			}
 
-		if err := identity.UpdateAddress(id, cfgSpec.ClusterID, mac); err != nil {
-			return fmt.Errorf("computing address: %w", err)
-		}
+			if err := identity.UpdateAddress(id, cfgSpec.ClusterID, mac); err != nil {
+				return fmt.Errorf("computing address: %w", err)
+			}
 
-		logger.Info("identity ready",
-			zap.String("public_key", id.PublicKey),
-			zap.Stringer("subnet", id.Subnet),
-			zap.Stringer("address", id.Address),
-		)
+			ctrl.cachedID = id
+
+			logger.Info("identity ready",
+				zap.String("public_key", id.PublicKey),
+				zap.Stringer("subnet", id.Subnet),
+				zap.Stringer("address", id.Address),
+			)
+		}
 
 		if err := safe.WriterModify(ctx, r,
 			kubespan.NewIdentity(kubespan.NamespaceName, kubespan.LocalIdentity),
 			func(res *kubespan.Identity) error {
-				*res.TypedSpec() = *id
+				*res.TypedSpec() = *ctrl.cachedID
 				return nil
 			},
 		); err != nil {

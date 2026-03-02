@@ -10,11 +10,13 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
-	"strings"
+	"slices"
 	"time"
 
 	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
 	discoveryclient "github.com/siderolabs/discovery-client/pkg/client"
+	"github.com/siderolabs/talos/pkg/machinery/config/machine"
+	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
@@ -26,16 +28,9 @@ const discoveryTTL = 30 * time.Minute
 // Manager handles communication with the Talos discovery service.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
 type Manager struct {
-	client          *discoveryclient.Client
-	notifyCh        chan struct{}
-	logger          *zap.Logger
-	endpointFilters []endpointFilter
-}
-
-// endpointFilter is a parsed CIDR filter for peer endpoints.
-type endpointFilter struct {
-	prefix netip.Prefix
-	deny   bool // true if prefixed with "!"
+	client   *discoveryclient.Client
+	notifyCh chan struct{}
+	logger   *zap.Logger
 }
 
 // NewManager creates a new discovery manager.
@@ -72,28 +67,10 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 		return nil, fmt.Errorf("creating discovery client: %w", err)
 	}
 
-	// Parse endpoint filters.
-	// Ref: talos/pkg/machinery/resources/kubespan/config.go (EndpointFilters)
-	var filters []endpointFilter
-	for _, f := range cfg.EndpointFilters {
-		deny := false
-		cidr := f
-		if strings.HasPrefix(cidr, "!") {
-			deny = true
-			cidr = cidr[1:]
-		}
-		prefix, parseErr := netip.ParsePrefix(cidr)
-		if parseErr != nil {
-			return nil, fmt.Errorf("invalid endpoint_filter %q: %w", f, parseErr)
-		}
-		filters = append(filters, endpointFilter{prefix: prefix, deny: deny})
-	}
-
 	return &Manager{
-		client:          client,
-		notifyCh:        make(chan struct{}, 1),
-		logger:          logger,
-		endpointFilters: filters,
+		client:   client,
+		notifyCh: make(chan struct{}, 1),
+		logger:   logger,
 	}, nil
 }
 
@@ -109,16 +86,14 @@ func (dm *Manager) Run(ctx context.Context) error {
 }
 
 // PublishLocal announces this node's affiliate data to the discovery service.
-// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints)
-func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.IdentitySpec, listenPort int) error {
+// otherEndpoints are harvested endpoints from EndpointController for re-announcement.
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints, pbOtherEndpoints)
+func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.IdentitySpec, listenPort int, otherEndpoints []discoveryclient.Endpoint) error {
 	addrBytes, _ := id.Address.Addr().MarshalBinary()
 
 	hostname, _ := os.Hostname()
 
 	// Build endpoint list from extra_endpoints config.
-	// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbEndpoints)
-	// TODO: implement client.GetPublicIP() for external endpoint discovery
-	// TODO: implement pbOtherEndpoints() to re-announce harvested endpoints from EndpointController
 	var endpoints []*clientpb.Endpoint
 	for _, addrPort := range cfg.ExtraEndpoints {
 		ipBytes, _ := addrPort.Addr().MarshalBinary()
@@ -126,6 +101,26 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 			Ip:   ipBytes,
 			Port: uint32(addrPort.Port()),
 		})
+	}
+
+	// Add public IP from discovery service (external endpoint discovery).
+	if pubIPBytes := dm.client.GetPublicIP(); len(pubIPBytes) > 0 {
+		if pubIP, ok := netip.AddrFromSlice(pubIPBytes); ok {
+			pubEndpoint := netip.AddrPortFrom(pubIP, uint16(listenPort))
+			pubEPBytes, _ := pubEndpoint.Addr().MarshalBinary()
+			pbEP := &clientpb.Endpoint{Ip: pubEPBytes, Port: uint32(pubEndpoint.Port())}
+			// Avoid duplicates with extra_endpoints.
+			found := false
+			for _, ep := range endpoints {
+				if slices.Equal(ep.Ip, pbEP.Ip) && ep.Port == pbEP.Port {
+					found = true
+					break
+				}
+			}
+			if !found {
+				endpoints = append(endpoints, pbEP)
+			}
+		}
 	}
 
 	affiliate := &discoveryclient.Affiliate{
@@ -143,25 +138,24 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 		Endpoints: endpoints,
 	}
 
-	return dm.client.SetLocalData(affiliate, nil)
+	return dm.client.SetLocalData(affiliate, otherEndpoints)
 }
 
 // DeleteLocalAffiliate removes this node's affiliate data from the discovery service.
 // Called on shutdown to clean up immediately rather than waiting for TTL expiry.
-// TODO: align DeleteLocalAffiliate with Talos MachineResetSignal pattern
 func (dm *Manager) DeleteLocalAffiliate() {
 	dm.client.DeleteLocalAffiliate()
 }
 
-// GetPeers returns the current list of discovered peers as a map from public key
-// to PeerSpecSpec. Endpoints are filtered according to the configured EndpointFilters.
+// GetAffiliates returns discovered peers as a map from affiliate ID (public key)
+// to cluster.AffiliateSpec. Endpoints are returned unfiltered; filtering is done
+// by the PeerSpecController.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (specAffiliate)
-// Ref: talos/internal/app/machined/pkg/controllers/kubespan/peer_spec.go (PeerSpecController)
-func (dm *Manager) GetPeers() map[string]kubespan.PeerSpecSpec {
-	affiliates := dm.client.GetAffiliates()
-	peers := make(map[string]kubespan.PeerSpecSpec, len(affiliates))
+func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
+	rawAffiliates := dm.client.GetAffiliates()
+	result := make(map[string]cluster.AffiliateSpec, len(rawAffiliates))
 
-	for _, aff := range affiliates {
+	for _, aff := range rawAffiliates {
 		if aff.Affiliate == nil || aff.Affiliate.Kubespan == nil {
 			continue
 		}
@@ -170,16 +164,24 @@ func (dm *Manager) GetPeers() map[string]kubespan.PeerSpecSpec {
 			continue
 		}
 
-		peer := kubespan.PeerSpecSpec{
-			Label: aff.Affiliate.Nodename,
+		machineType, _ := machine.ParseType(aff.Affiliate.MachineType)
+
+		spec := cluster.AffiliateSpec{
+			NodeID:          aff.Affiliate.NodeId,
+			Hostname:        aff.Affiliate.Hostname,
+			Nodename:        aff.Affiliate.Nodename,
+			OperatingSystem: aff.Affiliate.OperatingSystem,
+			MachineType:     machineType,
+			KubeSpan: cluster.KubeSpanAffiliateSpec{
+				PublicKey: ks.PublicKey,
+			},
 		}
 
 		// Parse KubeSpan address.
 		if len(ks.Address) > 0 {
 			var addr netip.Addr
 			if err := addr.UnmarshalBinary(ks.Address); err == nil {
-				peer.Address = addr
-				peer.AllowedIPs = append(peer.AllowedIPs, netip.PrefixFrom(addr, addr.BitLen()))
+				spec.KubeSpan.Address = addr
 			}
 		}
 
@@ -187,44 +189,28 @@ func (dm *Manager) GetPeers() map[string]kubespan.PeerSpecSpec {
 		for _, ap := range ks.AdditionalAddresses {
 			var ip netip.Addr
 			if err := ip.UnmarshalBinary(ap.Ip); err == nil {
-				peer.AllowedIPs = append(peer.AllowedIPs, netip.PrefixFrom(ip, int(ap.Bits)))
+				spec.KubeSpan.AdditionalAddresses = append(spec.KubeSpan.AdditionalAddresses, netip.PrefixFrom(ip, int(ap.Bits)))
 			}
 		}
 
-		// Parse node addresses (pod IPs etc).
+		// Parse node addresses.
 		for _, addrBytes := range aff.Affiliate.Addresses {
 			var ip netip.Addr
 			if err := ip.UnmarshalBinary(addrBytes); err == nil {
-				peer.AllowedIPs = append(peer.AllowedIPs, netip.PrefixFrom(ip, ip.BitLen()))
+				spec.Addresses = append(spec.Addresses, ip)
 			}
 		}
 
-		// Parse and filter endpoints.
+		// Parse endpoints (no filtering — PeerSpecController handles that).
 		for _, ep := range aff.Endpoints {
 			var ip netip.Addr
 			if err := ip.UnmarshalBinary(ep.Ip); err == nil {
-				addrPort := netip.AddrPortFrom(ip, uint16(ep.Port))
-				if dm.endpointAllowed(ip) {
-					peer.Endpoints = append(peer.Endpoints, addrPort)
-				}
+				spec.KubeSpan.Endpoints = append(spec.KubeSpan.Endpoints, netip.AddrPortFrom(ip, uint16(ep.Port)))
 			}
 		}
 
-		peers[ks.PublicKey] = peer
+		result[ks.PublicKey] = spec
 	}
 
-	return peers
-}
-
-// endpointAllowed checks if an endpoint IP passes the configured endpoint filters.
-func (dm *Manager) endpointAllowed(addr netip.Addr) bool {
-	if len(dm.endpointFilters) == 0 {
-		return true
-	}
-	for _, f := range dm.endpointFilters {
-		if f.prefix.Contains(addr) {
-			return !f.deny
-		}
-	}
-	return false
+	return result
 }

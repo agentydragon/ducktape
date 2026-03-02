@@ -10,6 +10,7 @@ go_library(
         "@com_github_google_nftables//binaryutil",
         "@com_github_google_nftables//expr",
         "@com_github_jsimonetti_rtnetlink_v2//:rtnetlink",
+        "@com_github_siderolabs_gen//xslices",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_x_sys//unix",

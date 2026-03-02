@@ -1,14 +1,15 @@
 # kubespand configuration
 #
-# Extract cluster_id and cluster_secret from Talos:
+# Extract cluster_id and shared_secret from Talos:
 #   talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.cluster.id'
 #   talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.cluster.secret'
+#   (maps to shared_secret in this config)
 
 # Talos cluster identity (base64). Required.
 cluster_id: "CHANGE_ME"
 
 # 32-byte AES key for discovery encryption and WireGuard PSK (base64). Required.
-cluster_secret: "CHANGE_ME"
+shared_secret: "CHANGE_ME"
 
 # gRPC discovery service endpoint. Default: discovery.talos.dev:443.
 # Self-host: https://github.com/siderolabs/discovery-service
@@ -45,8 +46,8 @@ cluster_secret: "CHANGE_ME"
 # Each entry is a CIDR prefix. Prefix with "!" to deny.
 # Evaluated in order; first match wins. Empty = accept all.
 # endpoint_filters:
-#   - "0.0.0.0/0"
 #   - "!192.168.0.0/16"
+#   - "0.0.0.0/0"
 #   - "::/0"
 
 # Skip TLS certificate verification for the discovery service.

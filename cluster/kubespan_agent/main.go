@@ -111,6 +111,9 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	if err := rt.RegisterController(&DiscoveryController{}); err != nil {
 		return fmt.Errorf("registering discovery controller: %w", err)
 	}
+	if err := rt.RegisterController(&PeerSpecController{}); err != nil {
+		return fmt.Errorf("registering peerspec controller: %w", err)
+	}
 	if !discoveryOnly {
 		if err := rt.RegisterController(&ManagerController{}); err != nil {
 			return fmt.Errorf("registering manager controller: %w", err)
@@ -156,7 +159,10 @@ func waitForPeers(ctx context.Context, st state.State, runtimeErrCh <-chan error
 			return fmt.Errorf("controller runtime exited without finding peers")
 
 		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for peers")
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("timeout waiting for peers")
+			}
+			return nil // clean signal shutdown
 
 		case <-ticker.C:
 			list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, st)
