@@ -20,14 +20,22 @@ import (
 
 const discoveryTTL = 30 * time.Minute
 
-// Peer represents a discovered KubeSpan peer.
+// PeerSpecSpec represents a discovered KubeSpan peer.
 // Ref: talos/pkg/machinery/resources/kubespan/peer_spec.go (PeerSpecSpec)
-type Peer struct {
+type PeerSpecSpec struct {
 	PublicKey  string
 	Address    netip.Addr // KubeSpan ULA /128
 	Endpoints  []netip.AddrPort
 	AllowedIPs []netip.Prefix
 	Label      string // node name for logging
+}
+
+// DeepCopy returns a deep copy of the PeerSpecSpec.
+func (p PeerSpecSpec) DeepCopy() PeerSpecSpec {
+	cp := p
+	cp.Endpoints = append([]netip.AddrPort(nil), p.Endpoints...)
+	cp.AllowedIPs = append([]netip.Prefix(nil), p.AllowedIPs...)
+	return cp
 }
 
 // DiscoveryManager handles communication with the Talos discovery service.
@@ -50,7 +58,7 @@ type endpointFilter struct {
 // The discovery client encrypts all affiliate data with AES-GCM using the cluster
 // secret as the key. The discovery service never sees plaintext node data.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (Run)
-func NewDiscoveryManager(cfg *Config, affiliateID string, logger *zap.Logger) (*DiscoveryManager, error) {
+func NewDiscoveryManager(cfg *ConfigSpec, affiliateID string, logger *zap.Logger) (*DiscoveryManager, error) {
 	secretBytes, err := base64.StdEncoding.DecodeString(cfg.ClusterSecret)
 	if err != nil {
 		return nil, fmt.Errorf("decoding cluster_secret: %w", err)
@@ -117,7 +125,7 @@ func (dm *DiscoveryManager) Run(ctx context.Context) error {
 
 // PublishLocal announces this node's affiliate data to the discovery service.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints)
-func (dm *DiscoveryManager) PublishLocal(cfg *Config, id *Identity, listenPort int) error {
+func (dm *DiscoveryManager) PublishLocal(cfg *ConfigSpec, id *IdentitySpec, listenPort int) error {
 	addr, err := id.ParsedAddress()
 	if err != nil {
 		return fmt.Errorf("parsing identity address: %w", err)
@@ -209,9 +217,9 @@ func detectOS() string {
 // according to the configured EndpointFilters.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (specAffiliate)
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/peer_spec.go (PeerSpecController)
-func (dm *DiscoveryManager) GetPeers() []Peer {
+func (dm *DiscoveryManager) GetPeers() []PeerSpecSpec {
 	affiliates := dm.client.GetAffiliates()
-	peers := make([]Peer, 0, len(affiliates))
+	peers := make([]PeerSpecSpec, 0, len(affiliates))
 
 	for _, aff := range affiliates {
 		if aff.Affiliate == nil || aff.Affiliate.Kubespan == nil {
@@ -222,7 +230,7 @@ func (dm *DiscoveryManager) GetPeers() []Peer {
 			continue
 		}
 
-		peer := Peer{
+		peer := PeerSpecSpec{
 			PublicKey: ks.PublicKey,
 			Label:     aff.Affiliate.Nodename,
 		}

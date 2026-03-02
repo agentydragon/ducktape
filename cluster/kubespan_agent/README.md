@@ -10,17 +10,23 @@ so this daemon fills that gap.
 
 ## How It Works
 
-1. **Identity**: generates a WireGuard keypair and derives an IPv6 ULA address from the
-   cluster ID + local MAC (same algorithm as Talos)
-2. **Discovery**: connects to the Talos discovery service (`discovery.talos.dev:443`) via
-   the official [discovery-client](https://github.com/siderolabs/discovery-client) library,
-   announces itself and watches for peers
-3. **WireGuard**: creates a `kubespan` WireGuard interface, configures peers with
-   preshared key (cluster secret) and 25s keepalive
-4. **Routing**: installs nftables rules and ip policy routing to steer matching traffic
-   through the WireGuard tunnel (table 180, fwmark 0x40/0x60)
-5. **Peer health**: polls WireGuard handshake times every 30s, cycles endpoints when a
-   peer goes down (same state machine as Talos)
+kubespand uses the [COSI](https://github.com/cosi-project/runtime) (Controller Runtime +
+State Interface) framework — the same reactive resource/controller model that Talos uses
+internally. Resources flow through an in-memory state, and controllers reconcile
+automatically when their inputs change.
+
+**Controllers:**
+
+1. **IdentityController**: watches `Config` → produces `Identity` (WireGuard keypair +
+   IPv6 ULA address derived from cluster ID + local MAC)
+2. **DiscoveryController**: watches `Config` + `Identity` → produces `PeerSpec` resources
+   by communicating with the Talos discovery service (`discovery.talos.dev:443`) via the
+   official [discovery-client](https://github.com/siderolabs/discovery-client) library
+3. **ManagerController**: watches `Config` + `Identity` + `PeerSpec` → produces
+   `PeerStatus` resources, manages the `kubespan` WireGuard interface (preshared key,
+   25s keepalive), nftables rules, and ip policy routing (table 180, fwmark 0x40/0x60).
+   Polls handshake times every 30s and cycles endpoints for down peers (same state
+   machine as Talos)
 
 ## Prerequisites
 
@@ -83,14 +89,18 @@ talosctl get kubespanpeerstatuses
 
 Maps to the following Talos source files:
 
-| kubespand file | Talos source                                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `identity.go`  | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64)                    |
-| `discovery.go` | `internal/.../controllers/cluster/discovery_service.go`                                                                        |
-| `wireguard.go` | `internal/.../controllers/kubespan/manager.go` (WireGuard device config)                                                       |
-| `routing.go`   | `internal/.../controllers/kubespan/manager.go` (nftables), `internal/.../controllers/kubespan/routing_rules.go` (ip rules)     |
-| `peerstate.go` | `pkg/machinery/resources/kubespan/peer_status.go` (PeerState), `internal/.../adapters/kubespan/peer_status.go` (state machine) |
-| `config.go`    | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                                                  |
+| kubespand file            | Talos source                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `resources.go`            | `pkg/machinery/resources/kubespan/*.go` (COSI resource definitions)                                                |
+| `controller_identity.go`  | `internal/.../controllers/kubespan/identity.go` (IdentityController)                                               |
+| `controller_discovery.go` | `internal/.../controllers/cluster/discovery_service.go`, `.../kubespan/peer_spec.go`                               |
+| `controller_manager.go`   | `internal/.../controllers/kubespan/manager.go` (WireGuard + nftables + peer state)                                 |
+| `identity.go`             | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64)        |
+| `discovery.go`            | `internal/.../controllers/cluster/discovery_service.go` (discovery client adapter)                                 |
+| `wireguard.go`            | `internal/.../controllers/kubespan/manager.go` (WireGuard device config)                                           |
+| `routing.go`              | `internal/.../controllers/kubespan/manager.go` (nftables), `.../kubespan/routing_rules.go` (ip rules)              |
+| `peerstate.go`            | `pkg/machinery/resources/kubespan/peer_status.go`, `internal/.../adapters/kubespan/peer_status.go` (state machine) |
+| `config.go`               | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                                      |
 
 ## Limitations
 
@@ -98,6 +108,5 @@ Maps to the following Talos source files:
   source addresses. Not implemented.
 - **Advertise Kubernetes networks**: Talos controlplane nodes advertise pod/service CIDRs.
   Not implemented — only the node's own KubeSpan ULA is routed.
-- **No COSI resource model**: Uses a simpler imperative reconciliation loop.
 - **Single MAC detection**: Uses `/sys/class/net/<name>/device` sysfs probe (with fallback)
   instead of Talos's internal `FirstHardwareAddr` controller.

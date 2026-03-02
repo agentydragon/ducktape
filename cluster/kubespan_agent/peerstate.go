@@ -19,9 +19,9 @@ const (
 	PeerDownInterval = 275 * time.Second
 )
 
-// PeerStatus tracks the live state of a single KubeSpan peer.
+// PeerStatusSpec tracks the live state of a single KubeSpan peer.
 // Ref: talos/pkg/machinery/resources/kubespan/peer_status.go (PeerStatusSpec)
-type PeerStatus struct {
+type PeerStatusSpec struct {
 	Label              string
 	Endpoint           netip.AddrPort
 	LastUsedEndpoint   netip.AddrPort
@@ -32,9 +32,14 @@ type PeerStatus struct {
 	State              kubespan.PeerState
 }
 
+// DeepCopy returns a deep copy of the PeerStatusSpec.
+func (ps PeerStatusSpec) DeepCopy() PeerStatusSpec {
+	return ps
+}
+
 // CalculateState computes the peer state from current time.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (CalculateState)
-func (ps *PeerStatus) CalculateState() {
+func (ps *PeerStatusSpec) CalculateState() {
 	now := time.Now()
 	sinceHandshake := now.Sub(ps.LastHandshakeTime)
 	sinceEndpointChange := now.Sub(ps.LastEndpointChange)
@@ -62,7 +67,7 @@ func (ps *PeerStatus) CalculateState() {
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go
 //
 //	(CalculateStateWithDurations)
-func (ps *PeerStatus) calculateStateWithDurations(sinceHandshake, sinceEndpointChange time.Duration) {
+func (ps *PeerStatusSpec) calculateStateWithDurations(sinceHandshake, sinceEndpointChange time.Duration) {
 	switch {
 	case sinceEndpointChange > PeerDownInterval:
 		// Long time since endpoint change — judge purely by handshake freshness.
@@ -98,13 +103,13 @@ func (ps *PeerStatus) calculateStateWithDurations(sinceHandshake, sinceEndpointC
 
 // ShouldChangeEndpoint returns true when the peer needs a new endpoint.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (ShouldChangeEndpoint)
-func (ps *PeerStatus) ShouldChangeEndpoint() bool {
+func (ps *PeerStatusSpec) ShouldChangeEndpoint() bool {
 	return ps.State == kubespan.PeerStateDown || !ps.LastUsedEndpoint.IsValid()
 }
 
 // PickNewEndpoint selects the next endpoint to try, round-robin style.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (PickNewEndpoint)
-func (ps *PeerStatus) PickNewEndpoint(endpoints []netip.AddrPort) netip.AddrPort {
+func (ps *PeerStatusSpec) PickNewEndpoint(endpoints []netip.AddrPort) netip.AddrPort {
 	if len(endpoints) == 0 {
 		return netip.AddrPort{}
 	}
@@ -131,7 +136,7 @@ func (ps *PeerStatus) PickNewEndpoint(endpoints []netip.AddrPort) netip.AddrPort
 
 // UpdateEndpoint records that we're trying a new endpoint.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/peer_status.go (UpdateEndpoint)
-func (ps *PeerStatus) UpdateEndpoint(endpoint netip.AddrPort) {
+func (ps *PeerStatusSpec) UpdateEndpoint(endpoint netip.AddrPort) {
 	ps.Endpoint = endpoint
 	ps.LastUsedEndpoint = endpoint
 	ps.LastEndpointChange = time.Now()

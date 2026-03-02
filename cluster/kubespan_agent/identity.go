@@ -15,18 +15,23 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-// Identity holds the node's KubeSpan identity (WireGuard keypair + derived addresses).
+// IdentitySpec holds the node's KubeSpan identity (WireGuard keypair + derived addresses).
 // Ref: talos/pkg/machinery/resources/kubespan/identity.go (IdentitySpec)
-type Identity struct {
+type IdentitySpec struct {
 	PrivateKey string `json:"private_key"`
 	PublicKey  string `json:"public_key"`
 	Subnet     string `json:"subnet"`  // ULA /64 prefix
 	Address    string `json:"address"` // EUI-64 /128 address
 }
 
+// DeepCopy returns a deep copy of the IdentitySpec.
+func (id IdentitySpec) DeepCopy() IdentitySpec {
+	return id
+}
+
 // LoadOrCreateIdentity loads an existing identity from disk, or generates a new one.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/identity.go (IdentityController)
-func LoadOrCreateIdentity(path string, clusterID string) (*Identity, error) {
+func LoadOrCreateIdentity(path string, clusterID string) (*IdentitySpec, error) {
 	id, err := loadIdentity(path)
 	if err == nil {
 		return id, nil
@@ -42,7 +47,7 @@ func LoadOrCreateIdentity(path string, clusterID string) (*Identity, error) {
 		return nil, fmt.Errorf("generating WireGuard key: %w", err)
 	}
 
-	id = &Identity{
+	id = &IdentitySpec{
 		PrivateKey: key.String(),
 		PublicKey:  key.PublicKey().String(),
 	}
@@ -63,12 +68,12 @@ func LoadOrCreateIdentity(path string, clusterID string) (*Identity, error) {
 	return id, nil
 }
 
-func loadIdentity(path string) (*Identity, error) {
+func loadIdentity(path string) (*IdentitySpec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var id Identity
+	var id IdentitySpec
 	if err := json.Unmarshal(data, &id); err != nil {
 		return nil, fmt.Errorf("parsing identity: %w", err)
 	}
@@ -81,7 +86,7 @@ func loadIdentity(path string) (*Identity, error) {
 // UpdateAddress computes the node's KubeSpan ULA address from the cluster ID and
 // first NIC MAC address.
 // Ref: talos/internal/app/machined/pkg/adapters/kubespan/identity.go (UpdateAddress)
-func (id *Identity) UpdateAddress(clusterID string, mac net.HardwareAddr) error {
+func (id *IdentitySpec) UpdateAddress(clusterID string, mac net.HardwareAddr) error {
 	subnet := network.ULAPrefix(clusterID, network.ULAKubeSpan)
 	id.Subnet = subnet.String()
 
@@ -95,12 +100,12 @@ func (id *Identity) UpdateAddress(clusterID string, mac net.HardwareAddr) error 
 }
 
 // ParsedAddress returns the node's KubeSpan address as a netip.Prefix.
-func (id *Identity) ParsedAddress() (netip.Prefix, error) {
+func (id *IdentitySpec) ParsedAddress() (netip.Prefix, error) {
 	return netip.ParsePrefix(id.Address)
 }
 
 // ParsedSubnet returns the node's KubeSpan subnet as a netip.Prefix.
-func (id *Identity) ParsedSubnet() (netip.Prefix, error) {
+func (id *IdentitySpec) ParsedSubnet() (netip.Prefix, error) {
 	return netip.ParsePrefix(id.Subnet)
 }
 

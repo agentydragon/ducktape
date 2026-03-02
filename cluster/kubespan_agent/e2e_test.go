@@ -235,11 +235,11 @@ func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 	return certFile, keyFile
 }
 
-// writeKubespandConfig writes a kubespand YAML config file using the Config struct.
+// writeKubespandConfig writes a kubespand YAML config file using the ConfigSpec struct.
 func writeKubespandConfig(t *testing.T, path, clusterID, clusterSecret, discoveryEndpoint string) {
 	t.Helper()
 
-	cfg := Config{
+	cfg := ConfigSpec{
 		ClusterID:         clusterID,
 		ClusterSecret:     clusterSecret,
 		DiscoveryEndpoint: discoveryEndpoint,
