@@ -24,8 +24,8 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import AccessToken as MCPAccessToken
 from pydantic import AnyUrl
 
+from approval_gate.auth import PROPOSE_SCOPE, READ_SCOPE
 from approval_gate.conftest import GateClient
-from approval_gate.mcp_auth import PROPOSE_SCOPE, READ_SCOPE
 from approval_gate.models import Action, ActionKey, ActionStatus, ApproveDecision, DenyDecision
 from approval_gate.predicates import Approved, NeedsHumanDecision
 from approval_gate.proxy_server import ApprovalGateServer

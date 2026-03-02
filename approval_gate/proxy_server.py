@@ -36,7 +36,7 @@ from mcp import types as mcp_types
 from mcp.server.session import ServerSession
 from pydantic.networks import AnyUrl
 
-from approval_gate.mcp_auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE
+from approval_gate.auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE
 from approval_gate.models import (
     Action,
     ActionKey,

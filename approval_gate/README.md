@@ -30,9 +30,8 @@ auth-proxy sidecar (openclaw-gateway pod) port 8767
          ▲
          │  MCP over HTTP (unauthenticated, localhost only)
          │
-OpenClaw plugin (openclaw/approval-gate/)
-  ├── re-registers approval gate tools for the OpenClaw agent
-  └── translates ResourceUpdated → chat.inject gateway RPC
+OpenClaw plugin (approval-gate entry in plugins.entries)
+  └── connects to approval gate via auth-proxy sidecar (localhost:8767)
 ```
 
 All tokens are JWTs verified against the same JWKS endpoint (Authentik).
@@ -59,7 +58,7 @@ with the backend spec (see below).
 | `predicates.py`     | Three-way predicate: `Approved \| Denied \| NeedsHumanDecision`        |
 | `config.py`         | `Settings` (Pydantic); backend spec + auth config from YAML            |
 | `proxy_server.py`   | `ApprovalGateServer` — core MCP proxy, tool wrapping, notifications    |
-| `mcp_auth.py`       | JWT auth: Authentik header normalizer + scope constants                |
+| `auth.py`           | JWT auth: Authentik header normalizer + scope constants                |
 | `app.py`            | Starlette app factory (`create_app()`) + uvicorn entry point           |
 | `instructions.mako` | Mako template for MCP `initialize` instructions                        |
 | `auth_proxy/`       | OAuth2 sidecar: FastMCP proxy with client_credentials token injection  |

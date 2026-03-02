@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 
 import pytest
+from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.auth.providers.jwt import RSAKeyPair
+from fastmcp.mcp_config import RemoteMCPServer
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
-from approval_gate.mcp_auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE
+from approval_gate.auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, AuthentikHeaderNormalizer
 from approval_gate.models import Action, ActionKey
+from approval_gate.predicates import NeedsHumanDecision
+from approval_gate.proxy_server import ApprovalGateServer
 from approval_gate.storage import ActionStorage
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_utils.resources import parse_tool_result_as
+
+_TEST_NS = MCPMountPrefix("test")
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -71,3 +80,37 @@ async def storage(tmp_path: Path) -> AsyncGenerator[ActionStorage]:
         yield store
     finally:
         await store.close()
+
+
+def agent_transport(base_url: str, agent_jwt: str):
+    """Create an agent-scoped MCP client transport with Bearer auth."""
+    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {agent_jwt}"}).to_transport()
+
+
+def operator_transport(base_url: str, operator_jwt: str):
+    """Create an operator-scoped MCP client transport with x-authentik-jwt header."""
+    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"x-authentik-jwt": operator_jwt}).to_transport()
+
+
+GateAppFactory = Callable[[FastMCP, Path], tuple[Starlette, ApprovalGateServer]]
+
+
+@pytest.fixture
+def make_gate_app(rsa_key_pair: RSAKeyPair) -> GateAppFactory:
+    """Fixture factory: creates a Starlette app with JWTVerifier-protected ApprovalGateServer."""
+
+    def _factory(backend: FastMCP, db_path: Path) -> tuple[Starlette, ApprovalGateServer]:
+        auth = JWTVerifier(public_key=rsa_key_pair.public_key)
+        gate = ApprovalGateServer(
+            backends={_TEST_NS: backend},
+            db_path=db_path,
+            predicate=lambda ns, tool, args: NeedsHumanDecision(),
+            public_base_url="http://test",
+            auth=auth,
+        )
+        mcp_app = gate.http_app(path="/")
+        mcp_app_with_header_norm = AuthentikHeaderNormalizer(mcp_app)
+        app = Starlette(routes=[Mount("/mcp", app=mcp_app_with_header_norm)], lifespan=mcp_app.lifespan)
+        return app, gate
+
+    return _factory

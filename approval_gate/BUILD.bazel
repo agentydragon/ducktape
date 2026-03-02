@@ -77,7 +77,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":mcp_auth",
+        ":auth",
         ":models",
         ":predicates",
         ":storage",
@@ -94,8 +94,8 @@ py_library(
 )
 
 py_library(
-    name = "mcp_auth",
-    srcs = ["mcp_auth.py"],
+    name = "auth",
+    srcs = ["auth.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -110,8 +110,8 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":auth",
         ":config",
-        ":mcp_auth",
         ":predicates",
         ":proxy_server",
         "@pypi//fastmcp",
@@ -177,13 +177,17 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":mcp_auth",
+        ":auth",
         ":models",
+        ":predicates",
+        ":proxy_server",
         ":storage",
+        "//mcp_infra:prefix",
         "//mcp_utils",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//starlette",
     ],
 )
 
@@ -240,18 +244,11 @@ py_test(
     srcs = ["test_operator_auth.py"],
     deps = [
         ":conftest",
-        ":mcp_auth",
-        ":predicates",
-        ":proxy_server",
-        "//mcp_infra:prefix",
         "//util:net",
-        "@pypi//cryptography",
         "@pypi//fastmcp",
-        "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )
@@ -261,8 +258,8 @@ py_test(
     size = "small",
     srcs = ["test_e2e.py"],
     deps = [
+        ":auth",
         ":conftest",
-        ":mcp_auth",
         ":models",
         ":predicates",
         ":proxy_server",
@@ -283,19 +280,14 @@ py_test(
     srcs = ["test_reconnect.py"],
     deps = [
         ":conftest",
-        ":mcp_auth",
         ":models",
-        ":predicates",
         ":proxy_server",
-        "//mcp_infra:prefix",
         "//mcp_infra:resource_utils",
         "//util:net",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
         "@pypi//uvicorn",

@@ -21,8 +21,8 @@ from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from approval_gate.auth import AuthentikHeaderNormalizer
 from approval_gate.config import Settings
-from approval_gate.mcp_auth import AuthentikHeaderNormalizer
 from approval_gate.predicates import load_predicate
 from approval_gate.proxy_server import ApprovalGateServer
 
