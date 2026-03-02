@@ -54,7 +54,7 @@ workflows:
     secrets: inherit
 
   openclaw-image:
-    trigger: { kind: path, pattern: "^docker/openclaw/" }
+    trigger: { kind: path, pattern: "^(docker/openclaw/|openclaw/approval-gate/)" }
     events: [push]
     secrets: inherit
     rbe: false
