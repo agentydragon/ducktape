@@ -17,12 +17,12 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	docker "github.com/fsouza/go-dockerclient"
 	"gopkg.in/yaml.v3"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/config"
@@ -43,10 +43,15 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	client, err := docker.NewClientFromEnv()
+	if err != nil {
+		t.Fatalf("creating Docker client: %v", err)
+	}
+
 	// Load all container images from Bazel tarballs.
-	loadImage(t, "third_party/siderolabs/discovery_service_load/tarball.tar", discoveryRepoTag)
-	loadImage(t, "third_party/siderolabs/talos_v1_9_5_load/tarball.tar", talosRepoTag)
-	loadImage(t, "cluster/kubespan_agent/kubespand_load/tarball.tar", kubespandRepoTag)
+	loadImage(t, client, "third_party/siderolabs/discovery_service_load/tarball.tar", discoveryRepoTag)
+	loadImage(t, client, "third_party/siderolabs/talos_v1_9_5_load/tarball.tar", talosRepoTag)
+	loadImage(t, client, "cluster/kubespan_agent/kubespand_load/tarball.tar", kubespandRepoTag)
 
 	// Generate unique test ID for resource names.
 	testID := randomHex(8)
@@ -65,29 +70,41 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	certFile, keyFile := generateTLSCert(t, tmpDir)
 
 	// Create Docker network.
-	dockerRun(t, "docker", "network", "create", networkName)
+	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
+		Name:    networkName,
+		Context: ctx,
+	})
+	if err != nil {
+		t.Fatalf("creating Docker network: %v", err)
+	}
 	t.Cleanup(func() {
-		dockerRunIgnoreErr("docker", "network", "rm", networkName)
+		_ = client.RemoveNetwork(network.ID)
 	})
 
 	// Start discovery service.
 	discoveryName := fmt.Sprintf("discovery-%s", testID)
-	dockerRun(t, "docker", "run", "-d",
-		"--name", discoveryName,
-		"--network", networkName,
-		"-v", certFile+":/tls/cert.pem:ro",
-		"-v", keyFile+":/tls/key.pem:ro",
-		discoveryRepoTag,
-		"-certificate-path", "/tls/cert.pem",
-		"-key-path", "/tls/key.pem",
-	)
+	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: discoveryName,
+		Config: &docker.Config{
+			Image: discoveryRepoTag,
+			Cmd:   []string{"-certificate-path", "/tls/cert.pem", "-key-path", "/tls/key.pem"},
+		},
+		HostConfig: &docker.HostConfig{
+			NetworkMode: networkName,
+			Binds: []string{
+				certFile + ":/tls/cert.pem:ro",
+				keyFile + ":/tls/key.pem:ro",
+			},
+		},
+		Context: ctx,
+	})
 	t.Cleanup(func() {
-		dockerRunIgnoreErr("docker", "rm", "-f", discoveryName)
+		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: discoveryContainer.ID, Force: true})
 	})
 	t.Log("discovery service started")
 
 	// Wait for discovery service to be ready.
-	waitForContainer(t, ctx, discoveryName, 30*time.Second)
+	waitForContainer(t, ctx, client, discoveryContainer.ID, 30*time.Second)
 
 	// Write kubespand config.
 	configFile := filepath.Join(tmpDir, "agent.yaml")
@@ -95,9 +112,9 @@ func TestKubeSpanDiscovery(t *testing.T) {
 
 	// Generate Talos machine config and start Talos container.
 	talosName := fmt.Sprintf("talos-%s", testID)
-	startTalosContainer(t, tmpDir, talosName, networkName, clusterID, clusterSecret, discoveryName)
+	talosContainer := startTalosContainer(t, ctx, client, talosName, networkName, clusterID, clusterSecret, discoveryName)
 	t.Cleanup(func() {
-		dockerRunIgnoreErr("docker", "rm", "-f", talosName)
+		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: talosContainer.ID, Force: true})
 	})
 
 	// Give Talos a moment to start KubeSpan and register with discovery.
@@ -107,41 +124,93 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	// Run kubespand in discovery-only mode.
 	kubespandName := fmt.Sprintf("kubespand-%s", testID)
 	t.Log("starting kubespand in discovery-only mode...")
-	out := dockerRunOutput(t, "docker", "run",
-		"--name", kubespandName,
-		"--network", networkName,
-		"-v", configFile+":/etc/kubespan/agent.yaml:ro",
-		kubespandRepoTag,
-		"/kubespand",
-		"-config", "/etc/kubespan/agent.yaml",
-		"-discovery-only",
-		"-timeout", "120s",
-	)
+	kubespandContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: kubespandName,
+		Config: &docker.Config{
+			Image: kubespandRepoTag,
+			Cmd:   []string{"/kubespand", "-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "120s"},
+		},
+		HostConfig: &docker.HostConfig{
+			NetworkMode: networkName,
+			Binds: []string{
+				configFile + ":/etc/kubespan/agent.yaml:ro",
+			},
+		},
+		Context: ctx,
+	})
 	t.Cleanup(func() {
-		dockerRunIgnoreErr("docker", "rm", "-f", kubespandName)
+		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: kubespandContainer.ID, Force: true})
 	})
 
+	// Wait for kubespand to exit and collect logs.
+	exitCode, err := client.WaitContainerWithContext(kubespandContainer.ID, ctx)
+	if err != nil {
+		t.Fatalf("waiting for kubespand container: %v", err)
+	}
+
+	out := containerLogs(t, ctx, client, kubespandContainer.ID)
 	t.Logf("kubespand output:\n%s", out)
 
+	if exitCode != 0 {
+		t.Fatalf("kubespand exited with code %d; output:\n%s", exitCode, out)
+	}
+
 	// The test passes if kubespand exited 0 (peers found).
-	// dockerRunOutput already checks the exit code.
 	if !strings.Contains(out, "peers found") {
 		t.Errorf("kubespand did not find peers; output:\n%s", out)
 	}
 }
 
-// loadImage loads a container image tarball from a Bazel runfiles path.
-func loadImage(t *testing.T, rlocation, repoTag string) {
+// createAndStartContainer creates and starts a Docker container.
+func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.Client, opts docker.CreateContainerOptions) *docker.Container {
 	t.Helper()
 
-	// Resolve the tarball path from runfiles.
-	tarball := resolveRunfile(t, rlocation)
-
-	t.Logf("loading image %s from %s", repoTag, tarball)
-	cmd := exec.Command("docker", "load", "-i", tarball)
-	out, err := cmd.CombinedOutput()
+	container, err := client.CreateContainer(opts)
 	if err != nil {
-		t.Fatalf("docker load %s failed: %v\n%s", tarball, err, out)
+		t.Fatalf("creating container %s: %v", opts.Name, err)
+	}
+
+	if err := client.StartContainerWithContext(container.ID, nil, ctx); err != nil {
+		t.Fatalf("starting container %s: %v", opts.Name, err)
+	}
+
+	return container
+}
+
+// containerLogs returns the combined stdout+stderr logs of a container.
+func containerLogs(t *testing.T, ctx context.Context, client *docker.Client, containerID string) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+	err := client.Logs(docker.LogsOptions{
+		Context:      ctx,
+		Container:    containerID,
+		OutputStream: &buf,
+		ErrorStream:  &buf,
+		Stdout:       true,
+		Stderr:       true,
+	})
+	if err != nil {
+		t.Fatalf("getting container logs: %v", err)
+	}
+	return buf.String()
+}
+
+// loadImage loads a container image tarball from a Bazel runfiles path.
+func loadImage(t *testing.T, client *docker.Client, rlocation, repoTag string) {
+	t.Helper()
+
+	tarball := resolveRunfile(t, rlocation)
+	t.Logf("loading image %s from %s", repoTag, tarball)
+
+	f, err := os.Open(tarball)
+	if err != nil {
+		t.Fatalf("opening tarball %s: %v", tarball, err)
+	}
+	defer f.Close()
+
+	if err := client.LoadImage(docker.LoadImageOptions{InputStream: f}); err != nil {
+		t.Fatalf("docker load %s failed: %v", tarball, err)
 	}
 }
 
@@ -263,7 +332,7 @@ func writeKubespandConfig(t *testing.T, path, clusterID, clusterSecret, discover
 }
 
 // startTalosContainer starts a Talos container with KubeSpan enabled.
-func startTalosContainer(t *testing.T, tmpDir, name, network, clusterID, clusterSecret, discoveryHost string) {
+func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Client, name, network, clusterID, clusterSecret, discoveryHost string) *docker.Container {
 	t.Helper()
 	t.Log("generating Talos machine config...")
 
@@ -307,60 +376,36 @@ func startTalosContainer(t *testing.T, tmpDir, name, network, clusterID, cluster
 	configB64 := base64.StdEncoding.EncodeToString(configJSON)
 
 	t.Log("starting Talos container...")
-	dockerRun(t, "docker", "run", "-d",
-		"--name", name,
-		"--network", network,
-		"--privileged",
-		"-e", "PLATFORM=container",
-		"-e", "USERDATA="+configB64,
-		talosRepoTag,
-	)
+	container := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: name,
+		Config: &docker.Config{
+			Image: talosRepoTag,
+			Env: []string{
+				"PLATFORM=container",
+				"USERDATA=" + configB64,
+			},
+		},
+		HostConfig: &docker.HostConfig{
+			NetworkMode: network,
+			Privileged:  true,
+		},
+		Context: ctx,
+	})
 	t.Log("Talos container started")
+	return container
 }
 
 // waitForContainer waits for a Docker container to be running.
-func waitForContainer(t *testing.T, ctx context.Context, name string, timeout time.Duration) {
+func waitForContainer(t *testing.T, ctx context.Context, client *docker.Client, containerID string, timeout time.Duration) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		cmd := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", name)
-		out, err := cmd.Output()
-		if err == nil && strings.TrimSpace(string(out)) == "true" {
+		container, err := client.InspectContainerWithContext(containerID, ctx)
+		if err == nil && container.State.Running {
 			return
 		}
 		time.Sleep(time.Second)
 	}
-	t.Fatalf("container %s did not start within %v", name, timeout)
-}
-
-// dockerRun runs a docker command and fails the test on error.
-func dockerRun(t *testing.T, args ...string) {
-	t.Helper()
-	cmd := exec.Command(args[0], args[1:]...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("command %v failed: %v\n%s", args, err, out)
-	}
-}
-
-// dockerRunOutput runs a docker command, returning stdout+stderr, and fails on error.
-func dockerRunOutput(t *testing.T, args ...string) string {
-	t.Helper()
-	cmd := exec.Command(args[0], args[1:]...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	combined := stdout.String() + stderr.String()
-	if err != nil {
-		t.Fatalf("command %v failed: %v\n%s", args, err, combined)
-	}
-	return combined
-}
-
-// dockerRunIgnoreErr runs a docker command and ignores errors (for cleanup).
-func dockerRunIgnoreErr(args ...string) {
-	cmd := exec.Command(args[0], args[1:]...)
-	_ = cmd.Run()
+	t.Fatalf("container %s did not start within %v", containerID, timeout)
 }

@@ -54,6 +54,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//cluster/kubespan_agent/config",
+        "@com_github_fsouza_go_dockerclient//:go-dockerclient",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )
