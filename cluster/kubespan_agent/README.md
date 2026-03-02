@@ -119,14 +119,12 @@ Maps to the following Talos source files:
 
 ## Known Gaps
 
-| Gap                           | Talos Reference                                         | Status                                    |
-| ----------------------------- | ------------------------------------------------------- | ----------------------------------------- |
-| COSI network resources        | ManagerCtrl writes `LinkSpec`/`AddressSpec`/`RouteSpec` | We call netlink directly                  |
-| `AdvertiseKubernetesNetworks` | PeerSpecCtrl adds pod/service CIDRs to AllowedIPs       | Implemented (client-go informer)          |
-| `ExcludeAdvertisedNetworks`   | PeerSpecCtrl filters excluded networks                  | Implemented                               |
-| NfTablesChain COSI resources  | Talos models nftables as COSI resources                 | We call nftables directly                 |
-| `AffiliateMergeController`    | Merges raw → cluster namespace affiliates               | Skipped (single source)                   |
-| `MachineResetSignal` cleanup  | DiscoveryServiceCtrl cleans up on reset                 | Not implemented                           |
-| `ConfigController`            | Reads `MachineConfig` → `ConfigSpec`                    | We inject from YAML                       |
-| Multiple identity sources     | Talos uses STATE partition + `HardwareAddr`             | We use flat file + sysfs                  |
-| Single MAC detection          | Uses sysfs probe with fallback                          | Talos uses `FirstHardwareAddr` controller |
+| Gap                          | Talos Reference                                         | Our Approach                              |
+| ---------------------------- | ------------------------------------------------------- | ----------------------------------------- |
+| COSI network resources       | ManagerCtrl writes `LinkSpec`/`AddressSpec`/`RouteSpec` | We call netlink directly                  |
+| NfTablesChain COSI resources | Talos models nftables as COSI resources                 | We call nftables directly                 |
+| `AffiliateMergeController`   | Merges raw → cluster namespace affiliates               | Skipped (single source)                   |
+| `MachineResetSignal` cleanup | DiscoveryServiceCtrl cleans up on reset                 | Not implemented                           |
+| `ConfigController`           | Reads `MachineConfig` → `ConfigSpec`                    | We inject from YAML                       |
+| Multiple identity sources    | Talos uses STATE partition + `HardwareAddr`             | We use flat file + sysfs                  |
+| Single MAC detection         | Uses sysfs probe with fallback                          | Talos uses `FirstHardwareAddr` controller |
