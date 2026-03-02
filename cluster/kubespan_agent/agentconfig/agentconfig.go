@@ -47,6 +47,19 @@ type AgentConfig struct {
 
 	// InsecureDiscovery disables TLS certificate verification for the discovery service.
 	InsecureDiscovery bool `yaml:"insecure_discovery"`
+
+	// KubeconfigPath is the path to a kubeconfig file for K8s API access.
+	// Required when advertise_kubernetes_networks is true (unless running in-cluster).
+	KubeconfigPath string `yaml:"kubeconfig_path"`
+
+	// NodeName is the Kubernetes node name for this machine.
+	// Required when advertise_kubernetes_networks is true.
+	NodeName string `yaml:"node_name"`
+
+	// ServiceCIDRs are Kubernetes service network ranges to advertise.
+	// Static equivalent of PodCIDRs (which come from K8s API dynamically).
+	// Only used when advertise_kubernetes_networks is true.
+	ServiceCIDRs []netip.Prefix `yaml:"service_cidrs"`
 }
 
 // Load reads and validates a YAML config file.
@@ -76,6 +89,9 @@ func Load(path string) (*AgentConfig, error) {
 	}
 	if cfg.MTU < constants.KubeSpanLinkMinimumMTU {
 		return nil, fmt.Errorf("mtu must be at least %d", constants.KubeSpanLinkMinimumMTU)
+	}
+	if cfg.AdvertiseKubernetesNetworks && cfg.NodeName == "" {
+		return nil, fmt.Errorf("node_name is required when advertise_kubernetes_networks is true")
 	}
 
 	return cfg, nil

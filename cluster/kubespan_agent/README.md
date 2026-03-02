@@ -35,6 +35,10 @@ automatically when their inputs change.
 5. **EndpointController**: watches `Config` + `PeerStatus` + `cluster.Affiliate` →
    produces `Endpoint` resources for connected peers with valid endpoints. Enables
    endpoint harvesting for re-announcement via the discovery service.
+6. **KubernetesNodeController** (optional): watches `Config` + K8s Node via client-go
+   informer → produces `KubernetesNetworks` resource with PodCIDRs + ServiceCIDRs.
+   Enabled when `advertise_kubernetes_networks: true`. The DiscoveryController reads
+   this resource and includes the prefixes in `AdditionalAddresses` when publishing.
 
 ## Prerequisites
 
@@ -110,13 +114,15 @@ Maps to the following Talos source files:
 | `routing/routing.go`         | `internal/.../controllers/kubespan/manager.go` (nftables), `.../kubespan/routing_rules.go` (ip rules)              |
 | `peerstate/peerstate.go`     | `pkg/machinery/resources/kubespan/peer_status.go`, `internal/.../adapters/kubespan/peer_status.go` (state machine) |
 | `agentconfig/agentconfig.go` | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                                      |
+| `controller_k8s_node.go`     | `internal/.../controllers/k8s/node_status.go` + `cluster/local_affiliate.go` (K8s → AdditionalAddresses)           |
+| `k8snet/k8snet.go`           | `pkg/machinery/resources/k8s/node_status.go` (PodCIDRs COSI resource)                                              |
 
 ## Known Gaps
 
 | Gap                           | Talos Reference                                         | Status                                    |
 | ----------------------------- | ------------------------------------------------------- | ----------------------------------------- |
 | COSI network resources        | ManagerCtrl writes `LinkSpec`/`AddressSpec`/`RouteSpec` | We call netlink directly                  |
-| `AdvertiseKubernetesNetworks` | PeerSpecCtrl adds pod/service CIDRs to AllowedIPs       | Not implemented                           |
+| `AdvertiseKubernetesNetworks` | PeerSpecCtrl adds pod/service CIDRs to AllowedIPs       | Implemented (client-go informer)          |
 | `ExcludeAdvertisedNetworks`   | PeerSpecCtrl filters excluded networks                  | Implemented                               |
 | NfTablesChain COSI resources  | Talos models nftables as COSI resources                 | We call nftables directly                 |
 | `AffiliateMergeController`    | Merges raw → cluster namespace affiliates               | Skipped (single source)                   |

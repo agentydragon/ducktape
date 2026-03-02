@@ -87,8 +87,9 @@ func (dm *Manager) Run(ctx context.Context) error {
 
 // PublishLocal announces this node's affiliate data to the discovery service.
 // otherEndpoints are harvested endpoints from EndpointController for re-announcement.
+// additionalAddresses are Kubernetes network prefixes (PodCIDRs + ServiceCIDRs) to advertise.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints, pbOtherEndpoints)
-func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.IdentitySpec, listenPort int, otherEndpoints []discoveryclient.Endpoint) error {
+func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.IdentitySpec, listenPort int, otherEndpoints []discoveryclient.Endpoint, additionalAddresses []netip.Prefix) error {
 	addrBytes, _ := id.Address.Addr().MarshalBinary()
 
 	hostname, _ := os.Hostname()
@@ -131,8 +132,9 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 			MachineType:     cfg.MachineType,
 			OperatingSystem: runtime.GOOS + "/" + runtime.GOARCH + " (kubespand)",
 			Kubespan: &clientpb.KubeSpan{
-				PublicKey: id.PublicKey,
-				Address:   addrBytes,
+				PublicKey:           id.PublicKey,
+				Address:             addrBytes,
+				AdditionalAddresses: prefixesToPBAddresses(additionalAddresses),
 			},
 		},
 		Endpoints: endpoints,
@@ -212,5 +214,25 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 		result[ks.PublicKey] = spec
 	}
 
+	return result
+}
+
+// prefixesToPBAddresses converts netip.Prefix slices to protobuf IPPrefix messages
+// for the discovery service. Matches the format parsed in GetAffiliates().
+func prefixesToPBAddresses(prefixes []netip.Prefix) []*clientpb.IPPrefix {
+	if len(prefixes) == 0 {
+		return nil
+	}
+	result := make([]*clientpb.IPPrefix, 0, len(prefixes))
+	for _, p := range prefixes {
+		ipBytes, err := p.Addr().MarshalBinary()
+		if err != nil {
+			continue
+		}
+		result = append(result, &clientpb.IPPrefix{
+			Ip:   ipBytes,
+			Bits: uint32(p.Bits()),
+		})
+	}
 	return result
 }

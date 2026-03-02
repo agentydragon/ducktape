@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/discovery"
+	"github.com/agentydragon/ducktape/cluster/kubespan_agent/k8snet"
 )
 
 // DiscoveryController watches Config + Identity and produces cluster.Affiliate
@@ -42,6 +43,7 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 		safe.Input[*kubespan.Config](controller.InputWeak),
 		safe.Input[*kubespan.Identity](controller.InputWeak),
 		safe.Input[*kubespan.Endpoint](controller.InputWeak),
+		safe.Input[*k8snet.KubernetesNetworks](controller.InputWeak),
 	}
 }
 
@@ -88,6 +90,12 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		// Build otherEndpoints from harvested Endpoint resources for re-announcement.
 		otherEndpoints := ctrl.buildOtherEndpoints(ctx, r)
 
+		// Read KubernetesNetworks resource for local AdditionalAddresses (PodCIDRs + ServiceCIDRs).
+		var additionalAddresses []netip.Prefix
+		if nets, netErr := safe.ReaderGetByID[*k8snet.KubernetesNetworks](ctx, r, k8snet.ID); netErr == nil {
+			additionalAddresses = nets.TypedSpec().Prefixes
+		}
+
 		// Create discovery manager if not yet running.
 		if ctrl.dm == nil {
 			dm, createErr := discovery.NewManager(agentCfg, idSpec.PublicKey, logger)
@@ -117,15 +125,15 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 				}
 			}()
 
-			if pubErr := dm.PublishLocal(agentCfg, idSpec, agentCfg.ListenPort, otherEndpoints); pubErr != nil {
+			if pubErr := dm.PublishLocal(agentCfg, idSpec, agentCfg.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
 				logger.Error("publishing local affiliate", zap.Error(pubErr))
 			}
 
 			logger.Info("discovery client started")
 		}
 
-		// Re-publish to keep TTL fresh and update harvested endpoints.
-		if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.ListenPort, otherEndpoints); pubErr != nil {
+		// Re-publish to keep TTL fresh and update harvested endpoints + additional addresses.
+		if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
 			logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
 		}
 

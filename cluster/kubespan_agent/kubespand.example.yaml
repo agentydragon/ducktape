@@ -50,6 +50,25 @@ shared_secret: "CHANGE_ME"
 #   - "0.0.0.0/0"
 #   - "::/0"
 
+# Advertise Kubernetes pod CIDRs via the discovery service.
+# When enabled, this node's PodCIDRs (from the K8s Node object) are included
+# in AdditionalAddresses, so remote peers route pod traffic here via KubeSpan.
+# Requires kubeconfig_path and node_name to be set.
+# advertise_kubernetes_networks: false
+
+# Path to kubeconfig for K8s API access. Required when advertise_kubernetes_networks
+# is true (unless running as a pod with in-cluster config).
+# kubeconfig_path: "/etc/kubernetes/kubelet.conf"
+
+# Kubernetes node name. Required when advertise_kubernetes_networks is true.
+# node_name: "worker-1"
+
+# Kubernetes service CIDRs to advertise alongside PodCIDRs.
+# These are static (from your cluster config), unlike PodCIDRs which are read
+# from the K8s API dynamically. Only used when advertise_kubernetes_networks is true.
+# service_cidrs:
+#   - "10.96.0.0/12"
+
 # Skip TLS certificate verification for the discovery service.
 # Only for testing with self-hosted services using self-signed certs.
 # insecure_discovery: false

@@ -114,6 +114,11 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	if err := rt.RegisterController(&PeerSpecController{}); err != nil {
 		return fmt.Errorf("registering peerspec controller: %w", err)
 	}
+	if agentCfg.AdvertiseKubernetesNetworks && !discoveryOnly {
+		if err := rt.RegisterController(&KubernetesNodeController{}); err != nil {
+			return fmt.Errorf("registering k8s node controller: %w", err)
+		}
+	}
 	if !discoveryOnly {
 		if err := rt.RegisterController(&ManagerController{}); err != nil {
 			return fmt.Errorf("registering manager controller: %w", err)

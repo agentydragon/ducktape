@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "k8snet",
+    srcs = ["k8snet.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/k8snet",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+    ],
+)
