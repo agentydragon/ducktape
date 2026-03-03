@@ -75,28 +75,22 @@ async def serve_app(app: Starlette, *, port: int):
             thread.join(timeout=3.0)
 
 
-class _ResourceEventHandler(MessageHandler):
-    """Receives resource-updated notifications and signals waiters."""
+class GateClient(Client, MessageHandler):
+    """MCP Client subclass with typed methods for approval gate tools.
 
-    def __init__(self) -> None:
+    Also acts as its own MessageHandler to receive resource-updated notifications
+    for ``wait_for``.
+    """
+
+    def __init__(self, transport: object, **kwargs: object) -> None:
         self._events: dict[str, anyio.Event] = {}
+        super().__init__(transport, message_handler=self, **kwargs)
 
     async def on_resource_updated(self, notification: mcp_types.ResourceUpdatedNotification) -> None:
         uri = str(notification.params.uri)
         evt = self._events.get(uri)
         if evt is not None:
             evt.set()
-
-
-class GateClient(Client):
-    """MCP Client subclass with typed methods for approval gate tools.
-
-    Automatically handles resource-updated notifications for ``wait_for``.
-    """
-
-    def __init__(self, transport: object, **kwargs: object) -> None:
-        self._handler = _ResourceEventHandler()
-        super().__init__(transport, message_handler=self._handler, **kwargs)
 
     async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
         """Call a gate-wrapped tool and parse the ActionKey from the result."""
@@ -123,12 +117,12 @@ class GateClient(Client):
         await self.session.subscribe_resource(AnyUrl(hwm_uri))
         while True:
             event = anyio.Event()
-            self._handler._events[hwm_uri] = event
-            self._handler._events[action_uri] = event
+            self._events[hwm_uri] = event
+            self._events[action_uri] = event
             action: Action = await read_text_json_typed(self, action_uri, Action)
             if action.state.status == status:
-                self._handler._events.pop(hwm_uri, None)
-                self._handler._events.pop(action_uri, None)
+                self._events.pop(hwm_uri, None)
+                self._events.pop(action_uri, None)
                 return action
             await event.wait()
 
