@@ -476,34 +476,21 @@ http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_
 # MPL-2.0 licensed (compatible with AGPL-3.0).
 _TALOS_TAG = "v1.12.4"
 
-_TALOS_RAW = "https://raw.githubusercontent.com/siderolabs/talos/" + _TALOS_TAG
+http_archive(
+    name = "talos_internal",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
 
-http_file(
-    name = "talos_nftables_rule_compiler",
-    downloaded_file_path = "nftables_rule.go",
-    sha256 = "14e77aa5589ad9ca716c7eb8b50b5f66bfb76de6ddea551ba3b0cc490ebe3b74",
-    urls = [_TALOS_RAW + "/internal/app/machined/pkg/adapters/network/nftables_rule.go"],
-)
-
-http_file(
-    name = "talos_nftables_chain_controller",
-    downloaded_file_path = "nftables_chain.go",
-    sha256 = "9a13c214560859b6556640978247e08219eae425aae79d370491bc1c918fe1d3",
-    urls = [_TALOS_RAW + "/internal/app/machined/pkg/controllers/network/nftables_chain.go"],
-)
-
-http_file(
-    name = "talos_network_ipset",
-    downloaded_file_path = "ipset.go",
-    sha256 = "00f661fa9bb02f2f427100c7ac46af3fefcb73a55ff2b3f532b93e5e6f5b884f",
-    urls = [_TALOS_RAW + "/internal/app/machined/pkg/adapters/network/ipset.go"],
-)
-
-http_file(
-    name = "talos_network_constants",
-    downloaded_file_path = "network.go",
-    sha256 = "65025df7ac8268df829d62b8499cc356ad747b1f28865d42196553d44a40039f",
-    urls = [_TALOS_RAW + "/internal/app/machined/pkg/adapters/network/network.go"],
+exports_files([
+    "internal/app/machined/pkg/adapters/network/nftables_rule.go",
+    "internal/app/machined/pkg/adapters/network/ipset.go",
+    "internal/app/machined/pkg/adapters/network/network.go",
+    "internal/app/machined/pkg/controllers/network/nftables_chain.go",
+])
+""",
+    sha256 = "2ed9dc0d227ebd3f473f6c8d23702bce977ce4a7d63556437218bdc2ef37cac4",
+    strip_prefix = "talos-1.12.4",
+    urls = ["https://github.com/siderolabs/talos/archive/refs/tags/" + _TALOS_TAG + ".tar.gz"],
 )
 
 # ─ QEMU nftables smoke test dependencies ──────────────────────────────────────
