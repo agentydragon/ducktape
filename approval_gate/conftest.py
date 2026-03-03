@@ -31,7 +31,7 @@ from mcp_infra.resource_utils import read_text_json_typed
 from mcp_utils.resources import parse_tool_result_as
 from util.net import pick_free_port
 
-_TEST_NS = MCPMountPrefix("test")
+TEST_NS = MCPMountPrefix("test")
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -75,7 +75,7 @@ async def serve_app(app: Starlette, *, port: int):
             thread.join(timeout=3.0)
 
 
-class ResourceWaiter(MessageHandler):
+class _ResourceEventHandler(MessageHandler):
     """Receives resource-updated notifications and signals waiters."""
 
     def __init__(self) -> None:
@@ -87,26 +87,16 @@ class ResourceWaiter(MessageHandler):
         if evt is not None:
             evt.set()
 
-    async def wait_for(self, client: GateClient, key: ActionKey, status: ActionStatus) -> Action:
-        """Wait until the action reaches `status` via resource-updated notifications."""
-        action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
-        hwm_uri = f"resource://sessions/{key.session_key}/log_hwm"
-        await client.session.subscribe_resource(AnyUrl(action_uri))
-        await client.session.subscribe_resource(AnyUrl(hwm_uri))
-        while True:
-            event = anyio.Event()
-            self._events[hwm_uri] = event
-            self._events[action_uri] = event
-            action: Action = await read_text_json_typed(client, action_uri, Action)
-            if action.state.status == status:
-                self._events.pop(hwm_uri, None)
-                self._events.pop(action_uri, None)
-                return action
-            await event.wait()
-
 
 class GateClient(Client):
-    """MCP Client subclass with typed methods for approval gate tools."""
+    """MCP Client subclass with typed methods for approval gate tools.
+
+    Automatically handles resource-updated notifications for ``wait_for``.
+    """
+
+    def __init__(self, transport: object, **kwargs: object) -> None:
+        self._handler = _ResourceEventHandler()
+        super().__init__(transport, message_handler=self._handler, **kwargs)
 
     async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
         """Call a gate-wrapped tool and parse the ActionKey from the result."""
@@ -124,6 +114,23 @@ class GateClient(Client):
         return parse_tool_result_as(
             await self.call_tool_mcp("reject_action", {"key": key.model_dump(), "reason": reason}), Action
         )
+
+    async def wait_for(self, key: ActionKey, status: ActionStatus) -> Action:
+        """Wait until the action reaches ``status`` via resource-updated notifications."""
+        action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
+        hwm_uri = f"resource://sessions/{key.session_key}/log_hwm"
+        await self.session.subscribe_resource(AnyUrl(action_uri))
+        await self.session.subscribe_resource(AnyUrl(hwm_uri))
+        while True:
+            event = anyio.Event()
+            self._handler._events[hwm_uri] = event
+            self._handler._events[action_uri] = event
+            action: Action = await read_text_json_typed(self, action_uri, Action)
+            if action.state.status == status:
+                self._handler._events.pop(hwm_uri, None)
+                self._handler._events.pop(action_uri, None)
+                return action
+            await event.wait()
 
 
 def agent_transport(base_url: str, agent_jwt: str):
@@ -176,20 +183,14 @@ GateServerFactory = Callable[..., ApprovalGateServer]
 def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFactory:
     """Fixture factory: creates a JWTVerifier-protected ApprovalGateServer.
 
-    Accepts a single FastMCP backend (mounted under ``test`` namespace) or a
-    backends dict keyed by MCPMountPrefix. ``predicate`` defaults to
-    NeedsHumanDecision for all tools.
+    ``predicate`` defaults to NeedsHumanDecision for all tools.
     """
 
     def _factory(
-        backend: FastMCP | Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], *, predicate: PredicateFn | None = None
+        backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], *, predicate: PredicateFn | None = None
     ) -> ApprovalGateServer:
-        if isinstance(backend, FastMCP):
-            backends: dict[MCPMountPrefix, MCPServerTypes | FastMCP] = {_TEST_NS: backend}
-        else:
-            backends = dict(backend)
         return ApprovalGateServer(
-            backends=backends,
+            backends=dict(backends),
             db_path=tmp_path / "gate.db",
             predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
             public_base_url="http://test",
@@ -212,7 +213,7 @@ GateAppFactory = Callable[..., Starlette]
 def make_gate_app(make_gate_server: GateServerFactory) -> GateAppFactory:
     """Convenience fixture: creates a gate server and wraps it in a Starlette app."""
 
-    def _factory(backend: FastMCP | Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], **kwargs: object) -> Starlette:
-        return gate_http_app(make_gate_server(backend, **kwargs))
+    def _factory(backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], **kwargs: object) -> Starlette:
+        return gate_http_app(make_gate_server(backends, **kwargs))
 
     return _factory

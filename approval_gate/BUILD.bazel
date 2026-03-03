@@ -271,7 +271,6 @@ py_test(
         "//mcp_infra:resource_utils",
         "@pypi//anyio",
         "@pypi//fastmcp",
-        "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
 )

@@ -17,16 +17,8 @@ from __future__ import annotations
 import anyio
 import pytest_bazel
 from fastmcp import FastMCP
-from pydantic import AnyUrl
 
-from approval_gate.conftest import (
-    GateAppFactory,
-    GateClient,
-    ResourceWaiter,
-    agent_transport,
-    operator_transport,
-    serve_app,
-)
+from approval_gate.conftest import TEST_NS, GateAppFactory, GateClient, agent_transport, operator_transport, serve_app
 from approval_gate.models import Action, ActionStatus
 from mcp_infra.resource_utils import read_text_json_typed
 
@@ -34,13 +26,12 @@ _SESSION = "reconnect-session"
 
 
 def _make_backend():
-    """Create a simple FastMCP backend with an echo tool."""
-    calls: list[dict] = []
-    backend = FastMCP("test-backend")
+    calls: list[str] = []
+    backend = FastMCP()
 
     @backend.tool()
     async def echo(text: str) -> str:
-        calls.append({"text": text})
+        calls.append(text)
         return f"echoed: {text}"
 
     return backend, calls
@@ -54,7 +45,7 @@ async def test_client_reconnects_after_server_restart(
     base_url = f"http://127.0.0.1:{free_port}"
 
     # ── Phase 1: start server, call tool ─────────────────────────────────
-    app1 = make_gate_app(backend)
+    app1 = make_gate_app({TEST_NS: backend})
     async with serve_app(app1, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         tools = await agent.list_tools()
         assert any(t.name == "test_echo" for t in tools)
@@ -65,7 +56,7 @@ async def test_client_reconnects_after_server_restart(
     # Server is now down — old client is disconnected
 
     # ── Phase 2: restart server on same port, same db ────────────────────
-    app2 = make_gate_app(backend)
+    app2 = make_gate_app({TEST_NS: backend})
     async with serve_app(app2, port=free_port):
         # New client connects successfully
         async with GateClient(agent_transport(base_url, agent_jwt)) as agent:
@@ -80,7 +71,7 @@ async def test_client_reconnects_after_server_restart(
         async with GateClient(operator_transport(base_url, operator_jwt)) as operator:
             await operator.approve(key_2)
 
-        assert {"text": "after-restart"} in calls
+        assert "after-restart" in calls
 
 
 async def test_pending_action_survives_server_restart(
@@ -91,26 +82,25 @@ async def test_pending_action_survives_server_restart(
     base_url = f"http://127.0.0.1:{free_port}"
 
     # ── Phase 1: create action ───────────────────────────────────────────
-    app1 = make_gate_app(backend)
+    app1 = make_gate_app({TEST_NS: backend})
     async with serve_app(app1, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         key = await agent.call_echo("survive", session_key=_SESSION)
 
     # Server down — action is persisted in SQLite
 
     # ── Phase 2: restart, approve, verify catch-up ───────────────────────
-    app2 = make_gate_app(backend)
-    async with serve_app(app2, port=free_port):
-        # Operator approves the action from before restart
-        async with GateClient(operator_transport(base_url, operator_jwt)) as operator:
-            await operator.approve(key)
+    app2 = make_gate_app({TEST_NS: backend})
+    async with (
+        serve_app(app2, port=free_port),
+        GateClient(operator_transport(base_url, operator_jwt)) as operator,
+        GateClient(agent_transport(base_url, agent_jwt)) as agent,
+    ):
+        await operator.approve(key)
+        action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
+        action: Action = await read_text_json_typed(agent, action_uri, Action)
+        assert action.state.status == ActionStatus.DONE
 
-        # New agent client reads the action resource — should be done
-        async with GateClient(agent_transport(base_url, agent_jwt)) as agent:
-            action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
-            action: Action = await read_text_json_typed(agent, action_uri, Action)
-            assert action.state.status == ActionStatus.DONE
-
-        assert {"text": "survive"} in calls
+    assert "survive" in calls
 
 
 async def test_resubscribe_receives_notifications_after_restart(
@@ -121,32 +111,27 @@ async def test_resubscribe_receives_notifications_after_restart(
     base_url = f"http://127.0.0.1:{free_port}"
 
     # ── Phase 1: create action ───────────────────────────────────────────
-    app1 = make_gate_app(backend)
+    app1 = make_gate_app({TEST_NS: backend})
     async with serve_app(app1, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         key = await agent.call_echo("resub", session_key=_SESSION)
 
     # Server down
 
     # ── Phase 2: restart, re-subscribe, approve, wait for notification ───
-    app2 = make_gate_app(backend)
+    app2 = make_gate_app({TEST_NS: backend})
     async with serve_app(app2, port=free_port):
-        waiter = ResourceWaiter()
-        async with GateClient(agent_transport(base_url, agent_jwt), message_handler=waiter) as agent:
-            # Re-subscribe to the session's log HWM from phase 1
-            hwm_uri = AnyUrl(f"resource://sessions/{key.session_key}/log_hwm")
-            await agent.session.subscribe_resource(hwm_uri)
-
+        async with GateClient(agent_transport(base_url, agent_jwt)) as agent:
             # Approve via operator
             async with GateClient(operator_transport(base_url, operator_jwt)) as operator:
                 await operator.approve(key)
 
             # Wait for the ResourceUpdated notification on the new connection
             with anyio.fail_after(10.0):
-                action = await waiter.wait_for(agent, key, ActionStatus.DONE)
+                action = await agent.wait_for(key, ActionStatus.DONE)
 
             assert action.state.status == ActionStatus.DONE
 
-        assert {"text": "resub"} in calls
+        assert "resub" in calls
 
 
 if __name__ == "__main__":

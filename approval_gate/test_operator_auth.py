@@ -15,19 +15,19 @@ import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 
-from approval_gate.conftest import GateAppFactory, agent_transport, operator_transport, serve_app
+from approval_gate.conftest import TEST_NS, GateAppFactory, agent_transport, operator_transport, serve_app
 
 
 @pytest.fixture
 async def gate_http(make_gate_app: GateAppFactory, free_port: int):
     """HTTP gate with an in-process FastMCP backend; yields base URL."""
-    backend = FastMCP("test-backend")
+    backend = FastMCP()
 
     @backend.tool()
     async def echo(text: str) -> str:
         return f"echoed: {text}"
 
-    app = make_gate_app(backend)
+    app = make_gate_app({TEST_NS: backend})
     async with serve_app(app, port=free_port):
         yield f"http://127.0.0.1:{free_port}"
 
