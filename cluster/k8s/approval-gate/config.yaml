@@ -4,4 +4,5 @@ backends:
 
 public_base_url: "https://approval-gate.allegedly.works"
 jwks_url: "https://auth.allegedly.works/application/o/approval-gate/jwks/"
+oidc_client_id: "approval-gate-operator"
 db_path: "/data/approval_gate.db"

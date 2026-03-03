@@ -13,7 +13,7 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from approval_gate.auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, AuthentikHeaderNormalizer
+from approval_gate.auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE
 from approval_gate.models import Action, ActionKey
 from approval_gate.predicates import NeedsHumanDecision
 from approval_gate.proxy_server import ApprovalGateServer
@@ -88,8 +88,8 @@ def agent_transport(base_url: str, agent_jwt: str):
 
 
 def operator_transport(base_url: str, operator_jwt: str):
-    """Create an operator-scoped MCP client transport with x-authentik-jwt header."""
-    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"x-authentik-jwt": operator_jwt}).to_transport()
+    """Create an operator-scoped MCP client transport with Bearer auth."""
+    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {operator_jwt}"}).to_transport()
 
 
 GateAppFactory = Callable[[FastMCP, Path], tuple[Starlette, ApprovalGateServer]]
@@ -109,8 +109,7 @@ def make_gate_app(rsa_key_pair: RSAKeyPair) -> GateAppFactory:
             auth=auth,
         )
         mcp_app = gate.http_app(path="/")
-        mcp_app_with_header_norm = AuthentikHeaderNormalizer(mcp_app)
-        app = Starlette(routes=[Mount("/mcp", app=mcp_app_with_header_norm)], lifespan=mcp_app.lifespan)
+        app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
         return app, gate
 
     return _factory

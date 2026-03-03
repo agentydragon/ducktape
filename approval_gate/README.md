@@ -16,10 +16,9 @@ Backend MCP servers (streamable-http or stdio)
   ...  ──┘
          ▼
 ApprovalGateServer (FastMCP proxy)        port 8765
-  ├── /mcp  — unified MCP endpoint (all callers present JWT)
-  │     ├── x-authentik-jwt → operator browser
-  │     └── Authorization: Bearer <JWT> → agent (via auth-proxy)
-  └── /     — operator Svelte SPA (Authentik SSO)
+  ├── /mcp          — unified MCP endpoint (Authorization: Bearer <JWT>)
+  ├── /auth/config  — OIDC discovery for SPA (authority + client_id)
+  └── /             — operator Svelte SPA (OAuth2 PKCE flow)
          ▲
          │  MCP over HTTP (JWT-authenticated)
          │
@@ -35,10 +34,11 @@ OpenClaw plugin (approval-gate entry in plugins.entries)
 ```
 
 All tokens are JWTs verified against the same JWKS endpoint (Authentik).
-Operator tokens arrive via `x-authentik-jwt` (Authentik proxy outpost);
+Operator tokens are obtained by the SPA via OAuth2 Authorization Code + PKCE;
 agent tokens arrive via `Authorization: Bearer` (client_credentials flow
-through the auth-proxy sidecar). JWT scopes determine capabilities:
-`propose` (agent), `decide` (operator), `read` (both).
+through the auth-proxy sidecar). Both use `Authorization: Bearer` headers.
+JWT scopes determine capabilities: `propose` (agent), `decide` (operator),
+`read` (both).
 
 ## Running
 
@@ -58,7 +58,7 @@ with the backend spec (see below).
 | `predicates.py`     | Three-way predicate: `Approved \| Denied \| NeedsHumanDecision`        |
 | `config.py`         | `Settings` (Pydantic); backend spec + auth config from YAML            |
 | `proxy_server.py`   | `ApprovalGateServer` — core MCP proxy, tool wrapping, notifications    |
-| `auth.py`           | JWT auth: Authentik header normalizer + scope constants                |
+| `auth.py`           | JWT auth scope constants (`propose`, `decide`, `read`)                 |
 | `app.py`            | Starlette app factory (`create_app()`) + uvicorn entry point           |
 | `instructions.mako` | Mako template for MCP `initialize` instructions                        |
 | `auth_proxy/`       | OAuth2 sidecar: FastMCP proxy with client_credentials token injection  |

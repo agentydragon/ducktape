@@ -8,9 +8,16 @@ npm_link_all_packages(name = "node_modules")
 # ── Per-file source libraries ──────────────────────────────────────────────────
 
 js_library(
+    name = "auth",
+    srcs = ["auth.ts"],
+    deps = [":node_modules"],
+)
+
+js_library(
     name = "mcp",
     srcs = ["mcp.ts"],
     deps = [
+        ":auth",
         ":node_modules",
         ":types",
     ],
@@ -55,7 +62,10 @@ js_library(
         "app.css",
         "main.ts",
     ],
-    deps = [":App"],
+    deps = [
+        ":App",
+        ":auth",
+    ],
 )
 
 # ── Production bundle ──────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 """Approval Gate Starlette application.
 
 /healthz          — liveness probe (no auth)
+/auth/config      — OIDC configuration for the SPA (no auth)
 /mcp              — MCP endpoint (JWTVerifier handles auth via JWKS)
 /static/frontend  — bundled Svelte SPA assets
 /                 — SPA shell
@@ -21,7 +22,6 @@ from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from approval_gate.auth import AuthentikHeaderNormalizer
 from approval_gate.config import Settings
 from approval_gate.predicates import load_predicate
 from approval_gate.proxy_server import ApprovalGateServer
@@ -43,15 +43,22 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
         auth=auth,
     )
     mcp_app = gate.http_app(path="/")
-    # Wrap the MCP app with AuthentikHeaderNormalizer so operator JWTs
-    # arriving via x-authentik-jwt are visible to JWTVerifier's standard
-    # Bearer auth middleware.
-    mcp_app_with_header_norm = AuthentikHeaderNormalizer(mcp_app)
+
+    # Derive OIDC authority from JWKS URL (strip trailing /jwks/ path).
+    oidc_authority = settings.jwks_url.removesuffix("jwks/").removesuffix("jwks")
+    auth_config_response = JSONResponse({"authority": oidc_authority, "client_id": settings.oidc_client_id})
 
     async def healthz(request: Request) -> JSONResponse:
         return JSONResponse({"ok": True})
 
-    routes: list = [Route("/healthz", endpoint=healthz), Mount("/mcp", app=mcp_app_with_header_norm)]
+    async def auth_config(request: Request) -> JSONResponse:
+        return auth_config_response
+
+    routes: list = [
+        Route("/healthz", endpoint=healthz),
+        Route("/auth/config", endpoint=auth_config),
+        Mount("/mcp", app=mcp_app),
+    ]
 
     if include_static:
         _html = (_FRONTEND_DIST_DIR / "index.html").read_text()

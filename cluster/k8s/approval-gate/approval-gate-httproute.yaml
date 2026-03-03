@@ -1,13 +1,12 @@
-# HTTPRoute for the approval gate operator UI via Authentik proxy outpost.
-# The operator UI is protected by Authentik authentication.
-# Agent MCP traffic uses OAuth2 JWTs (client_credentials grant) and does NOT
-# go through the proxy outpost — agent JWTs are verified by JWTVerifier at /mcp.
+# HTTPRoute for the approval gate. Traffic flows directly: Gateway → backend.
+# Auth is handled by the SPA's native OIDC integration (no proxy outpost).
+# Agent MCP traffic uses OAuth2 JWTs (client_credentials grant) with JWTVerifier.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: approval-gate
-  namespace: authentik
+  namespace: approval-gate
 spec:
   parentRefs:
     - name: cluster-gateway
@@ -16,8 +15,8 @@ spec:
     - "approval-gate.allegedly.works"
   rules:
     - backendRefs:
-        - name: ak-outpost-shared-proxy-outpost
-          port: 9000
+        - name: approval-gate
+          port: 8765
       timeouts:
         request: "120s"
         backendRequest: "120s"

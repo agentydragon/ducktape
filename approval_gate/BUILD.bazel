@@ -98,9 +98,6 @@ py_library(
     srcs = ["auth.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//starlette",
-    ],
 )
 
 py_library(
@@ -110,7 +107,6 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":auth",
         ":config",
         ":predicates",
         ":proxy_server",

@@ -46,6 +46,7 @@ class Settings(BaseModel):
         ),
     )
     jwks_url: str
+    oidc_client_id: str
     host: str = "0.0.0.0"
     port: int = 8765
 

@@ -2,10 +2,11 @@
  * MCP client for the approval gate operator frontend.
  *
  * Connects to the operator-facing MCP endpoint at /mcp (port 8765).
- * Auth is handled by the Authentik session cookie — no bearer token needed.
+ * Auth is handled by an OAuth2 JWT (Authorization Code + PKCE flow).
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { getAccessToken } from "./auth.ts";
 import {
   ResourceListChangedNotificationSchema,
   ResourceUpdatedNotificationSchema,
@@ -35,7 +36,10 @@ export class ApprovalGateMcpClient {
   }
 
   static async connect(): Promise<ApprovalGateMcpClient> {
-    const transport = new StreamableHTTPClientTransport(new URL("/mcp", window.location.origin));
+    const token = await getAccessToken();
+    const transport = new StreamableHTTPClientTransport(new URL("/mcp", window.location.origin), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    });
     const client = new Client({ name: "approval-gate-ui", version: "1.0.0" }, { capabilities: {} });
     await client.connect(transport);
     return new ApprovalGateMcpClient(client);

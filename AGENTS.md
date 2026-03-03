@@ -151,6 +151,15 @@ live_openai_py_test(
 
 Frontend sub-projects use `@aspect_rules_js` with `js_library` targets. ESLint linting is handled by the workspace lint aspect (runs by default). Declare precise deps — each `js_library` lists only the files it directly imports; transitive deps propagate automatically via `JsInfo`.
 
+**Adding JS dependencies:**
+
+1. Add the dependency to the relevant `package.json` (workspace member under `pnpm-workspace.yaml`)
+2. Run any Bazel build touching JS — the first build will fail with "pnpm-lock.yaml file updated. Please run your build again." This is expected: Bazel's `update_pnpm_lock = True` auto-regenerates the lockfile using the pinned pnpm (v9)
+3. Run the build again — it succeeds with the updated lockfile
+4. Commit the updated `pnpm-lock.yaml`
+
+**Do NOT run raw `pnpm install`** — Bazel manages the pnpm version (pinned in `MODULE.bazel`) and lockfile format. Using a system pnpm may produce an incompatible lockfile.
+
 See <props/frontend/AGENTS.md> for frontend-specific conventions.
 
 ### Deployment

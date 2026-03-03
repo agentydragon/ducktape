@@ -1,9 +1,8 @@
 # CiliumNetworkPolicy for the approval-gate namespace pods.
 #
 # approval-gate server (component: server, port 8765):
-#   Authentik outpost (authentik namespace) — proxies operator UI, sets X-Authentik-Jwt header
-#   OpenClaw pods (openclaw-gateway namespace) — auth-proxy sidecar obtains OAuth2 JWT
-#     via client_credentials grant and forwards as Authorization: Bearer to /mcp
+#   Cilium gateway (gateway-system) — operator SPA with OAuth2 JWT (PKCE)
+#   OpenClaw pods (openclaw-gateway) — auth-proxy sidecar with OAuth2 JWT (client_credentials)
 #   Both present JWTs verified by JWTVerifier against the Authentik JWKS endpoint.
 #
 # kubeapi-admin-exec-mcp (component: kubeapi-admin-exec-mcp, port 8766):
@@ -28,10 +27,10 @@ spec:
         - ports:
             - port: "8765"
               protocol: TCP
-    # Operator UI + /mcp: Authentik (operator JWT) and OpenClaw (agent JWT).
+    # Operator SPA (via gateway) and OpenClaw agent (auth proxy sidecar).
     - fromEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: authentik
+            k8s:io.kubernetes.pod.namespace: gateway-system
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: openclaw-gateway
       toPorts:
