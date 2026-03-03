@@ -92,24 +92,40 @@ def operator_transport(base_url: str, operator_jwt: str):
     return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {operator_jwt}"}).to_transport()
 
 
-GateAppFactory = Callable[[FastMCP, Path], tuple[Starlette, ApprovalGateServer]]
+GateServerFactory = Callable[[FastMCP, Path], ApprovalGateServer]
 
 
 @pytest.fixture
-def make_gate_app(rsa_key_pair: RSAKeyPair) -> GateAppFactory:
-    """Fixture factory: creates a Starlette app with JWTVerifier-protected ApprovalGateServer."""
+def make_gate_server(rsa_key_pair: RSAKeyPair) -> GateServerFactory:
+    """Fixture factory: creates a JWTVerifier-protected ApprovalGateServer."""
 
-    def _factory(backend: FastMCP, db_path: Path) -> tuple[Starlette, ApprovalGateServer]:
+    def _factory(backend: FastMCP, db_path: Path) -> ApprovalGateServer:
         auth = JWTVerifier(public_key=rsa_key_pair.public_key)
-        gate = ApprovalGateServer(
+        return ApprovalGateServer(
             backends={_TEST_NS: backend},
             db_path=db_path,
             predicate=lambda ns, tool, args: NeedsHumanDecision(),
             public_base_url="http://test",
             auth=auth,
         )
-        mcp_app = gate.http_app(path="/")
-        app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
-        return app, gate
+
+    return _factory
+
+
+def gate_http_app(gate: ApprovalGateServer) -> Starlette:
+    """Wrap an ApprovalGateServer in a Starlette app with /mcp mount."""
+    mcp_app = gate.http_app(path="/")
+    return Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
+
+
+GateAppFactory = Callable[[FastMCP, Path], Starlette]
+
+
+@pytest.fixture
+def make_gate_app(make_gate_server: GateServerFactory) -> GateAppFactory:
+    """Convenience fixture: creates a gate server and wraps it in a Starlette app."""
+
+    def _factory(backend: FastMCP, db_path: Path) -> Starlette:
+        return gate_http_app(make_gate_server(backend, db_path))
 
     return _factory

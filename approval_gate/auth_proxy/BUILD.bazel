@@ -11,6 +11,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//util:env",
+        "@pypi//authlib",
         "@pypi//fastmcp",
         "@pypi//uvicorn",
     ],
@@ -87,6 +88,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//respx",
         "@pypi//starlette",
     ],
 )

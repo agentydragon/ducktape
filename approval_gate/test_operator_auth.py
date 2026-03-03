@@ -60,7 +60,7 @@ async def gate_http(tmp_path, make_gate_app: GateAppFactory):
     async def echo(text: str) -> str:
         return f"echoed: {text}"
 
-    app, _gate = make_gate_app(backend, tmp_path / "gate.db")
+    app = make_gate_app(backend, tmp_path / "gate.db")
     gate_port = pick_free_port()
     async with _serve_app(app, port=gate_port):
         yield f"http://127.0.0.1:{gate_port}"

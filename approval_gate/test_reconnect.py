@@ -116,7 +116,7 @@ async def test_client_reconnects_after_server_restart(
     base_url = f"http://127.0.0.1:{port}"
 
     # ── Phase 1: start server, call tool ─────────────────────────────────
-    app1, _gate1 = make_gate_app(backend, db_path)
+    app1 = make_gate_app(backend, db_path)
     async with _serve_app(app1, port=port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         tools = await agent.list_tools()
         assert any(t.name == "test_echo" for t in tools)
@@ -127,7 +127,7 @@ async def test_client_reconnects_after_server_restart(
     # Server is now down — old client is disconnected
 
     # ── Phase 2: restart server on same port, same db ────────────────────
-    app2, _gate2 = make_gate_app(backend, db_path)
+    app2 = make_gate_app(backend, db_path)
     async with _serve_app(app2, port=port):
         # New client connects successfully
         async with GateClient(agent_transport(base_url, agent_jwt)) as agent:
@@ -155,14 +155,14 @@ async def test_pending_action_survives_server_restart(
     base_url = f"http://127.0.0.1:{port}"
 
     # ── Phase 1: create action ───────────────────────────────────────────
-    app1, _gate1 = make_gate_app(backend, db_path)
+    app1 = make_gate_app(backend, db_path)
     async with _serve_app(app1, port=port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         key = await agent.call_echo("survive", session_key=_SESSION)
 
     # Server down — action is persisted in SQLite
 
     # ── Phase 2: restart, approve, verify catch-up ───────────────────────
-    app2, _gate2 = make_gate_app(backend, db_path)
+    app2 = make_gate_app(backend, db_path)
     async with _serve_app(app2, port=port):
         # Operator approves the action from before restart
         async with GateClient(operator_transport(base_url, operator_jwt)) as operator:
@@ -187,14 +187,14 @@ async def test_resubscribe_receives_notifications_after_restart(
     base_url = f"http://127.0.0.1:{port}"
 
     # ── Phase 1: create action ───────────────────────────────────────────
-    app1, _gate1 = make_gate_app(backend, db_path)
+    app1 = make_gate_app(backend, db_path)
     async with _serve_app(app1, port=port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         key = await agent.call_echo("resub", session_key=_SESSION)
 
     # Server down
 
     # ── Phase 2: restart, re-subscribe, approve, wait for notification ───
-    app2, _gate2 = make_gate_app(backend, db_path)
+    app2 = make_gate_app(backend, db_path)
     async with _serve_app(app2, port=port):
         waiter = _ResourceWaiter()
         async with GateClient(agent_transport(base_url, agent_jwt), message_handler=waiter) as agent:
