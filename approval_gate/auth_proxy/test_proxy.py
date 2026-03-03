@@ -1,83 +1,94 @@
 """Tests for the auth proxy sidecar.
 
-Tests the ClientCredentialsAuth httpx.Auth subclass which delegates OAuth2
-client_credentials token management to authlib's AsyncOAuth2Client. Uses
-respx to intercept token endpoint requests.
+Tests the AutoFetchOAuth2Client (authlib subclass that auto-fetches tokens on
+first request) and oauth2_client_factory. Uses respx to intercept token
+endpoint requests.
 """
 
 from __future__ import annotations
 
-import httpx
 import pytest_bazel
 import respx
 from httpx import Response
 from starlette.applications import Starlette
 
-from approval_gate.auth_proxy.proxy import ClientCredentialsAuth, create_app
+from approval_gate.auth_proxy.proxy import AutoFetchOAuth2Client, create_app, oauth2_client_factory
 
 TOKEN_URL = "https://auth.example.com/token"
+UPSTREAM_URL = "https://upstream.example.com/mcp"
 
 _TOKEN_RESPONSE = {"token_type": "bearer", "expires_in": 3600}
 
 
-def _make_auth() -> ClientCredentialsAuth:
-    return ClientCredentialsAuth(token_url=TOKEN_URL, client_id="cid", client_secret="csecret", scope="read propose")
+def _make_client(**kwargs) -> AutoFetchOAuth2Client:
+    """Create a test OAuth2 client via the factory."""
+    factory = oauth2_client_factory(token_url=TOKEN_URL, client_id="cid", client_secret="csecret", scope="read propose")
+    return factory(**kwargs)
 
 
 @respx.mock
-async def test_client_credentials_auth_fetches_token():
-    """First request triggers a token fetch and sets Authorization header."""
+async def test_auto_fetch_gets_token_on_first_request():
+    """First request triggers a token fetch transparently."""
     respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "fresh-token", **_TOKEN_RESPONSE}))
-    auth = _make_auth()
-    request = httpx.Request("GET", "https://upstream/mcp")
+    respx.get(UPSTREAM_URL).mock(return_value=Response(200))
 
-    flow = auth.async_auth_flow(request)
-    yielded_request = await flow.__anext__()
+    client = _make_client()
+    resp = await client.get(UPSTREAM_URL)
 
-    assert yielded_request.headers["Authorization"] == "Bearer fresh-token"
+    assert resp.status_code == 200
+    assert client.token["access_token"] == "fresh-token"
+    # Upstream request should have the Bearer header
+    upstream_req = respx.calls[1].request
+    assert upstream_req.headers["Authorization"] == "Bearer fresh-token"
 
 
 @respx.mock
-async def test_client_credentials_auth_caches_token():
+async def test_token_is_cached_across_requests():
     """Second request reuses cached token without re-fetching."""
-    route = respx.post(TOKEN_URL).mock(
+    token_route = respx.post(TOKEN_URL).mock(
         return_value=Response(200, json={"access_token": "cached-token", **_TOKEN_RESPONSE})
     )
-    auth = _make_auth()
+    respx.get(UPSTREAM_URL).mock(return_value=Response(200))
 
-    # First request — triggers fetch
-    req1 = httpx.Request("GET", "https://upstream/mcp")
-    flow1 = auth.async_auth_flow(req1)
-    await flow1.__anext__()
+    client = _make_client()
+    await client.get(UPSTREAM_URL)
+    await client.get(UPSTREAM_URL)
 
-    # Second request — should reuse token
-    req2 = httpx.Request("POST", "https://upstream/mcp")
-    flow2 = auth.async_auth_flow(req2)
-    yielded = await flow2.__anext__()
-
-    assert yielded.headers["Authorization"] == "Bearer cached-token"
-    assert route.call_count == 1
+    assert token_route.call_count == 1
 
 
 @respx.mock
-async def test_client_credentials_auth_refreshes_expired_token():
-    """Expired token triggers a new fetch."""
+async def test_expired_token_triggers_refresh():
+    """Expired token triggers a new fetch on next request."""
     respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "new-token", **_TOKEN_RESPONSE}))
-    auth = _make_auth()
+    respx.get(UPSTREAM_URL).mock(return_value=Response(200))
+
+    client = _make_client()
     # Pre-set an expired token (expires_at in the distant past)
-    auth._oauth.token = {"access_token": "old-token", "token_type": "bearer", "expires_at": 1}
+    client.token = {"access_token": "old-token", "token_type": "bearer", "expires_at": 1}
 
-    req = httpx.Request("GET", "https://upstream/mcp")
-    flow = auth.async_auth_flow(req)
-    yielded = await flow.__anext__()
+    await client.get(UPSTREAM_URL)
 
-    assert yielded.headers["Authorization"] == "Bearer new-token"
+    assert client.token["access_token"] == "new-token"
+
+
+@respx.mock
+async def test_factory_forwards_transport_kwargs():
+    """Factory passes headers/follow_redirects from the transport through."""
+    respx.post(TOKEN_URL).mock(return_value=Response(200, json={"access_token": "tok", **_TOKEN_RESPONSE}))
+    respx.get(UPSTREAM_URL).mock(return_value=Response(200))
+
+    client = _make_client(headers={"X-Custom": "val"}, follow_redirects=True)
+    await client.get(UPSTREAM_URL)
+
+    upstream_req = respx.calls[1].request
+    assert upstream_req.headers["X-Custom"] == "val"
 
 
 async def test_create_app_returns_starlette():
     """create_app() returns a Starlette ASGI application."""
-    auth = _make_auth()
-    app = create_app("https://upstream.example.com/mcp", auth)
+    factory = oauth2_client_factory(token_url=TOKEN_URL, client_id="cid", client_secret="csecret", scope="read")
+    app = create_app(UPSTREAM_URL, factory)
     assert isinstance(app, Starlette)
 
 
