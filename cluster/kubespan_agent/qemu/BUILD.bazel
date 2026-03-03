@@ -1,0 +1,144 @@
+# QEMU-based nftables smoke tests.
+#
+# Boots a minimal Linux VM (Alpine linux-virt kernel) in QEMU with the testprobe
+# binary and nftables kernel modules. Runs graduated nft-smoke levels (1-6) to
+# verify nftables operations work correctly with a real kernel.
+#
+# This is the hermetic alternative to the Docker-based e2e_test which requires
+# --privileged and a host kernel with nf_tables support.
+
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# ─ Extract vmlinuz from Alpine linux-virt .apk ────────────────────────────────
+genrule(
+    name = "vmlinuz",
+    srcs = ["@alpine_linux_virt//file"],
+    outs = ["vmlinuz-virt"],
+    cmd = "tar -xzf $< -O boot/vmlinuz-virt > $@",
+)
+
+# ─ Extract nftables kernel modules from Alpine linux-virt .apk ────────────────
+# Modules are .ko.gz in the package; we decompress them for use with insmod.
+_KERNEL_VER = "6.12.74-0-virt"
+
+# Modules in load order:
+#   crc32c_generic → libcrc32c → nfnetlink → nf_tables
+# crc32c_generic provides the crypto CRC32C algorithm that libcrc32c wraps.
+_MODULES = {
+    "crc32c_generic": "kernel/crypto/crc32c_generic",
+    "nfnetlink": "kernel/net/netfilter/nfnetlink",
+    "libcrc32c": "kernel/lib/libcrc32c",
+    "nf_tables": "kernel/net/netfilter/nf_tables",
+}
+
+[
+    genrule(
+        name = "module_" + mod,
+        srcs = ["@alpine_linux_virt//file"],
+        outs = [mod + ".ko"],
+        cmd = "tar -xzf $< -O lib/modules/" + _KERNEL_VER + "/" + path + ".ko.gz | gunzip > $@",
+    )
+    for mod, path in _MODULES.items()
+]
+
+# ─ Extract QEMU binary from Ubuntu .deb ───────────────────────────────────────
+genrule(
+    name = "qemu_binary",
+    srcs = ["@qemu_system_x86_deb//file"],
+    outs = ["qemu-system-x86_64"],
+    cmd = """
+        set -e
+        DEB=$$(realpath $(location @qemu_system_x86_deb//file))
+        OUT=$$(realpath $@)
+        TMPDIR=$$(mktemp -d)
+        cd $$TMPDIR
+        ar x "$$DEB"
+        # Ubuntu 24.04 uses zstd for data compression.
+        if [ -f data.tar.zst ]; then
+            zstd -d data.tar.zst -o data.tar
+        elif [ -f data.tar.xz ]; then
+            xz -d data.tar.xz
+        elif [ -f data.tar.gz ]; then
+            gunzip data.tar.gz
+        fi
+        tar -xf data.tar ./usr/bin/qemu-system-x86_64
+        cp usr/bin/qemu-system-x86_64 "$$OUT"
+        chmod +x "$$OUT"
+        cd /
+        rm -rf "$$TMPDIR"
+    """,
+    # .deb is an ar archive; data is in data.tar.zst (Ubuntu 24.04).
+    # Runs locally because ar/zstd may not be on RBE workers.
+    local = True,
+)
+
+# ─ Build initramfs (cpio.gz) ──────────────────────────────────────────────────
+# Contains: /init (init.sh), /bin/busybox, /testprobe, /modules/*.ko
+genrule(
+    name = "initramfs",
+    testonly = True,
+    srcs = [
+        "init.sh",
+        "@busybox_static_x86_64//file",
+        "//cluster/kubespan_agent/testprobe",
+    ] + [":module_" + mod for mod in _MODULES],
+    outs = ["initramfs.cpio.gz"],
+    cmd = """
+        set -e
+        INITRAMFS_DIR=$$(mktemp -d)
+
+        # Create directory structure.
+        mkdir -p $$INITRAMFS_DIR/bin $$INITRAMFS_DIR/modules $$INITRAMFS_DIR/dev \
+                 $$INITRAMFS_DIR/proc $$INITRAMFS_DIR/sys
+
+        # Install init script.
+        cp $(location init.sh) $$INITRAMFS_DIR/init
+        chmod +x $$INITRAMFS_DIR/init
+
+        # Install busybox.
+        cp $(location @busybox_static_x86_64//file) $$INITRAMFS_DIR/bin/busybox
+        chmod +x $$INITRAMFS_DIR/bin/busybox
+
+        # Install testprobe.
+        cp $(location //cluster/kubespan_agent/testprobe) $$INITRAMFS_DIR/testprobe
+        chmod +x $$INITRAMFS_DIR/testprobe
+
+        # Install kernel modules.
+        for mod in $(locations :module_crc32c_generic) $(locations :module_nfnetlink) \
+                   $(locations :module_libcrc32c) $(locations :module_nf_tables); do
+            cp $$mod $$INITRAMFS_DIR/modules/
+        done
+
+        # Build cpio archive.
+        (cd $$INITRAMFS_DIR && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
+        rm -rf $$INITRAMFS_DIR
+    """,
+    # Runs locally because cpio is not available on RBE workers.
+    local = True,
+)
+
+# ─ Test: nft-smoke levels 1-6 in QEMU ────────────────────────────────────────
+sh_test(
+    name = "nft_smoke_qemu",
+    timeout = "long",
+    srcs = ["run_qemu_test.sh"],
+    args = [
+        "$(location :vmlinuz)",
+        "$(location :initramfs)",
+        "$(location :qemu_binary)",
+        "1,2,3,4,5,6",
+    ],
+    data = [
+        ":initramfs",
+        ":qemu_binary",
+        ":vmlinuz",
+    ],
+    # QEMU is dynamically linked and needs host shared libraries.
+    # Run locally where qemu-system-data is installed.
+    local = True,
+    tags = [
+        "manual",
+        "no-remote",
+        "requires_qemu",
+    ],
+)

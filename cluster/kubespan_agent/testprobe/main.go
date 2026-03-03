@@ -5,10 +5,13 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/google/nftables"
@@ -18,9 +21,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var ebusyRetry bool
+
 func main() {
 	timeout := flag.Duration("timeout", 30*time.Second, "overall timeout for probe")
 	nftSmoke := flag.Int("nft-smoke", 0, "nftables smoke test level (1-6, 0=disabled)")
+	flag.BoolVar(&ebusyRetry, "ebusy-retry", false, "retry on EBUSY (for QEMU TCG where kernel is slow)")
 	flag.Parse()
 
 	if *nftSmoke > 0 {
@@ -106,6 +112,10 @@ func runNftSmoke(level int) int {
 		err = smokeTwoChainsTwoRules()
 	case 20:
 		err = smokeLevel3MinusOneRule()
+	case 21:
+		err = smokeFiveSimpleRules()
+	case 22:
+		err = smokeTwoLookupsSameSet()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown level %d\n", level)
 		return 2
@@ -156,6 +166,35 @@ func cleanup() {
 	}
 }
 
+// flushRetry wraps conn.Flush() with EBUSY retry when -ebusy-retry is set.
+// In QEMU TCG emulation, the kernel runs slowly enough that the nf_tables
+// commit mutex is often still held by RCU cleanup from the previous Flush.
+func flushRetry(conn *nftables.Conn) error {
+	if !ebusyRetry {
+		return conn.Flush()
+	}
+	const maxRetries = 10
+	for i := 0; i < maxRetries; i++ {
+		err := conn.Flush()
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, syscall.EBUSY) {
+			return err
+		}
+		// Exponential backoff with jitter: 50-100ms, 100-200ms, ...
+		base := time.Duration(50<<i) * time.Millisecond
+		jitter := time.Duration(rand.Intn(int(base)))
+		delay := base + jitter
+		if delay > 5*time.Second {
+			delay = 5 * time.Second
+		}
+		fmt.Printf("  EBUSY retry %d/%d (waiting %v)\n", i+1, maxRetries, delay)
+		time.Sleep(delay)
+	}
+	return conn.Flush()
+}
+
 // smokeLevel1: table + chains with hooks in separate batches.
 // This is what the original nft-smoke test did. Baseline.
 func smokeLevel1() error {
@@ -167,7 +206,7 @@ func smokeLevel1() error {
 		Family: nftables.TableFamilyINet,
 		Name:   smokeTableName,
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (AddTable): %w", err)
 	}
 	fmt.Println("  AddTable OK")
@@ -187,7 +226,7 @@ func smokeLevel1() error {
 		Type: nftables.ChainTypeRoute, Hooknum: nftables.ChainHookOutput,
 		Priority: nftables.ChainPriorityRaw, Policy: &policy,
 	})
-	if err := conn2.Flush(); err != nil {
+	if err := flushRetry(conn2); err != nil {
 		return fmt.Errorf("Flush (AddChains): %w", err)
 	}
 	fmt.Println("  AddChains OK")
@@ -232,7 +271,7 @@ func smokeLevel2() error {
 			&expr.Verdict{Kind: expr.VerdictAccept},
 		},
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (set+rule): %w", err)
 	}
 	fmt.Println("  AddSet + AddRule (anonymous interval set + lookup) OK")
@@ -293,7 +332,7 @@ func smokeLevel3() error {
 		Exprs: lookupAndMarkExprs(set, fwMark, fwMask),
 	})
 
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (set+rules): %w", err)
 	}
 	fmt.Println("  AddSet + multiple rules (skip-mark, lookup, mark write) OK")
@@ -345,7 +384,7 @@ func smokeLevel4() error {
 	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipLoopbackExprs()})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: lookupAndMarkExprs(set, fwMark, fwMask)})
 
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (single batch): %w", err)
 	}
 	fmt.Println("  Single batch (table + chains + set + rules) OK")
@@ -406,7 +445,7 @@ func smokeLevel5() error {
 	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipLoopbackExprs()})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: lookupAndMarkExprs(set, fwMark, fwMask)})
 
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (re-install with FlushChain): %w", err)
 	}
 	fmt.Println("  Re-install (FlushChain + table + chains + set + rules) OK")
@@ -491,7 +530,7 @@ func smokeLevel6() error {
 	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv6Exprs(v6Set, 1360)})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: lookupAndMarkIPv6Exprs(v6Set, fwMark, fwMask)})
 
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (full kubespand pattern): %w", err)
 	}
 	fmt.Println("  Full kubespand pattern (dual-stack sets, mark, MSS clamp) OK")
@@ -519,7 +558,7 @@ func smokeMarkRead() error {
 			&expr.Verdict{Kind: expr.VerdictAccept},
 		},
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (mark read only): %w", err)
 	}
 	fmt.Println("  mark read only: OK")
@@ -543,7 +582,7 @@ func smokeMarkReadBitwise() error {
 		Table: table, Chain: chain,
 		Exprs: skipMarkExprs(fwMark, fwMask),
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (mark read+bitwise): %w", err)
 	}
 	fmt.Println("  mark read+bitwise+cmp: OK")
@@ -570,7 +609,7 @@ func smokeMarkWrite() error {
 			&expr.Verdict{Kind: expr.VerdictAccept},
 		},
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (mark write): %w", err)
 	}
 	fmt.Println("  mark write (immediate + meta set): OK")
@@ -602,7 +641,7 @@ func smokeMarkReadWrite() error {
 			&expr.Verdict{Kind: expr.VerdictAccept},
 		},
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (mark read+write): %w", err)
 	}
 	fmt.Println("  mark read+bitwise+write: OK")
@@ -641,7 +680,7 @@ func smokeSetLookupOnly() error {
 			&expr.Verdict{Kind: expr.VerdictAccept},
 		},
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (set lookup only): %w", err)
 	}
 	fmt.Println("  set lookup only (no mark): OK")
@@ -692,7 +731,7 @@ func smokeLookupThenMark() error {
 			&expr.Verdict{Kind: expr.VerdictAccept},
 		},
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (lookup rule + mark rule): %w", err)
 	}
 	fmt.Println("  set lookup rule + mark write rule (separate): OK")
@@ -740,7 +779,7 @@ func smokeTwoRulesSetAndMark() error {
 			&expr.Verdict{Kind: expr.VerdictAccept},
 		},
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (skip-mark + lookup): %w", err)
 	}
 	fmt.Println("  skip-mark rule + set lookup rule: OK")
@@ -777,7 +816,7 @@ func smokeSetLookupMarkInOneRule() error {
 		Table: table, Chain: chain,
 		Exprs: lookupAndMarkIPv4Exprs(set, fwMark, 0x000000e0),
 	})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (lookup+mark in one rule): %w", err)
 	}
 	fmt.Println("  set lookup + mark write (single rule): OK")
@@ -815,7 +854,7 @@ func smokeFiveRulesOneChain() error {
 	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: skipMarkExprs(fwMark, fwMask)})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: skipLoopbackExprs()})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: lookupAndMarkExprs(set, fwMark, fwMask)})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (5 rules, 1 chain): %w", err)
 	}
 	fmt.Println("  5 rules on single chain: OK")
@@ -839,7 +878,7 @@ func smokeTwoChainsTwoRules() error {
 	fwMask := uint32(0x000000e0)
 	conn.AddRule(&nftables.Rule{Table: table, Chain: preroute, Exprs: skipMarkExprs(fwMark, fwMask)})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: skipMarkExprs(fwMark, fwMask)})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (2 rules, 2 chains): %w", err)
 	}
 	fmt.Println("  1 rule per chain (2 chains): OK")
@@ -877,10 +916,78 @@ func smokeLevel3MinusOneRule() error {
 	conn.AddRule(&nftables.Rule{Table: table, Chain: preroute, Exprs: lookupAndMarkExprs(set, fwMark, fwMask)})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: skipMarkExprs(fwMark, fwMask)})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: skipLoopbackExprs()})
-	if err := conn.Flush(); err != nil {
+	if err := flushRetry(conn); err != nil {
 		return fmt.Errorf("Flush (4 rules, 2 chains): %w", err)
 	}
 	fmt.Println("  level 3 minus last rule (4 rules, 2 chains): OK")
+	return nil
+}
+
+// smokeFiveSimpleRules: 5 rules with NO sets or mark writes. Pure rule count test.
+func smokeFiveSimpleRules() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+	// 5 simple accept rules (no sets, no marks).
+	for i := 0; i < 5; i++ {
+		conn.AddRule(&nftables.Rule{
+			Table: table, Chain: chain,
+			Exprs: []expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}},
+		})
+	}
+	if err := flushRetry(conn); err != nil {
+		return fmt.Errorf("Flush (5 simple rules): %w", err)
+	}
+	fmt.Println("  5 simple accept rules: OK")
+	return nil
+}
+
+// smokeTwoLookupsSameSet: two rules both doing Lookup on the same anonymous set.
+func smokeTwoLookupsSameSet() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+
+	set := &nftables.Set{
+		Table: table, Anonymous: true, Constant: true, Interval: true,
+		KeyType: nftables.TypeIPAddr,
+	}
+	if err := conn.AddSet(set, []nftables.SetElement{
+		{Key: []byte{10, 244, 0, 0}, IntervalEnd: false},
+		{Key: []byte{10, 245, 0, 0}, IntervalEnd: true},
+	}); err != nil {
+		return fmt.Errorf("AddSet: %w", err)
+	}
+
+	// Two rules both referencing the same anonymous set.
+	for i := 0; i < 2; i++ {
+		conn.AddRule(&nftables.Rule{
+			Table: table, Chain: chain,
+			Exprs: []expr.Any{
+				&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.NFPROTO_IPV4}},
+				&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+				&expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID},
+				&expr.Verdict{Kind: expr.VerdictAccept},
+			},
+		})
+	}
+	if err := flushRetry(conn); err != nil {
+		return fmt.Errorf("Flush (2 lookups same set): %w", err)
+	}
+	fmt.Println("  2 rules referencing same anonymous set: OK")
 	return nil
 }
 

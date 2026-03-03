@@ -21,5 +21,5 @@ go_binary(
     goarch = "amd64",
     goos = "linux",
     static = "on",
-    visibility = ["//cluster/kubespan_agent:__pkg__"],
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
 )
