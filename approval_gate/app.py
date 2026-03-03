@@ -13,7 +13,9 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
+import httpx
 import uvicorn
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from starlette.applications import Starlette
@@ -31,22 +33,35 @@ logger = logging.getLogger(__name__)
 _FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
 
 
+def _fetch_oidc_discovery(issuer: str) -> dict[str, Any]:
+    """Fetch the OpenID Connect discovery document from the issuer."""
+    url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
+    resp = httpx.get(url, timeout=10.0)
+    resp.raise_for_status()
+    result: dict[str, Any] = resp.json()
+    return result
+
+
 def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
     """Build the Starlette app serving UI and MCP on a single port."""
+    discovery = _fetch_oidc_discovery(settings.oidc_issuer)
     predicate = load_predicate(settings.predicate_path)
-    auth = JWTVerifier(jwks_uri=settings.jwks_url)
     gate = ApprovalGateServer(
         backends=settings.backends,
         db_path=settings.db_path,
         predicate=predicate,
         public_base_url=settings.public_base_url,
-        auth=auth,
+        auth=JWTVerifier(jwks_uri=discovery["jwks_uri"]),
     )
     mcp_app = gate.http_app(path="/")
 
-    # Derive OIDC authority from JWKS URL (strip trailing /jwks/ path).
-    oidc_authority = settings.jwks_url.removesuffix("jwks/").removesuffix("jwks")
-    auth_config_response = JSONResponse({"authority": oidc_authority, "client_id": settings.oidc_client_id})
+    auth_config_response = JSONResponse(
+        {
+            "authority": settings.oidc_issuer,
+            "client_id": settings.oidc_client_id,
+            "redirect_uri": f"{settings.public_base_url}/auth/callback",
+        }
+    )
 
     async def healthz(request: Request) -> JSONResponse:
         return JSONResponse({"ok": True})

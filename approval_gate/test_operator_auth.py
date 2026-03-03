@@ -10,49 +10,16 @@ the same JWKS endpoint by ``JWTVerifier``.
 
 from __future__ import annotations
 
-import asyncio
-import time
-from contextlib import asynccontextmanager, suppress
-
 import pytest
 import pytest_bazel
-import uvicorn
 from fastmcp import FastMCP
 from fastmcp.client import Client
 
-from approval_gate.conftest import GateAppFactory, agent_transport, operator_transport
-from util.net import pick_free_port
-
-
-@asynccontextmanager
-async def _serve_app(app, *, port: int):
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    task = asyncio.create_task(server.serve())
-    deadline = time.monotonic() + 10.0
-    while not server.started:
-        if task.done():
-            try:
-                task.result()
-            except Exception as exc:
-                raise RuntimeError(f"uvicorn exited: {exc}") from exc
-            raise RuntimeError("uvicorn exited before starting")
-        if time.monotonic() > deadline:
-            server.should_exit = True
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
-            raise TimeoutError(f"server did not start on port {port}")
-        await asyncio.sleep(0.02)
-    try:
-        yield
-    finally:
-        server.should_exit = True
-        await task
+from approval_gate.conftest import GateAppFactory, agent_transport, operator_transport, serve_app
 
 
 @pytest.fixture
-async def gate_http(tmp_path, make_gate_app: GateAppFactory):
+async def gate_http(make_gate_app: GateAppFactory, free_port: int):
     """HTTP gate with an in-process FastMCP backend; yields base URL."""
     backend = FastMCP("test-backend")
 
@@ -60,10 +27,9 @@ async def gate_http(tmp_path, make_gate_app: GateAppFactory):
     async def echo(text: str) -> str:
         return f"echoed: {text}"
 
-    app = make_gate_app(backend, tmp_path / "gate.db")
-    gate_port = pick_free_port()
-    async with _serve_app(app, port=gate_port):
-        yield f"http://127.0.0.1:{gate_port}"
+    app = make_gate_app(backend)
+    async with serve_app(app, port=free_port):
+        yield f"http://127.0.0.1:{free_port}"
 
 
 async def test_agent_cannot_see_operator_tools(gate_http, agent_jwt):

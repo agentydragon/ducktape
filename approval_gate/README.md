@@ -17,7 +17,7 @@ Backend MCP servers (streamable-http or stdio)
          ▼
 ApprovalGateServer (FastMCP proxy)        port 8765
   ├── /mcp          — unified MCP endpoint (Authorization: Bearer <JWT>)
-  ├── /auth/config  — OIDC discovery for SPA (authority + client_id)
+  ├── /auth/config  — OIDC config for SPA (authority, client_id, redirect_uri)
   └── /             — operator Svelte SPA (OAuth2 PKCE flow)
          ▲
          │  MCP over HTTP (JWT-authenticated)
@@ -33,7 +33,8 @@ OpenClaw plugin (approval-gate entry in plugins.entries)
   └── connects to approval gate via auth-proxy sidecar (localhost:8767)
 ```
 
-All tokens are JWTs verified against the same JWKS endpoint (Authentik).
+All tokens are JWTs verified against the JWKS endpoint discovered from the
+OIDC issuer's `.well-known/openid-configuration` (Authentik).
 Operator tokens are obtained by the SPA via OAuth2 Authorization Code + PKCE;
 agent tokens arrive via `Authorization: Bearer` (client_credentials flow
 through the auth-proxy sidecar). Both use `Authorization: Bearer` headers.
@@ -57,8 +58,7 @@ with the backend spec (see below).
 | `storage.py`        | aiosqlite CRUD; indexed `status` column                                |
 | `predicates.py`     | Three-way predicate: `Approved \| Denied \| NeedsHumanDecision`        |
 | `config.py`         | `Settings` (Pydantic); backend spec + auth config from YAML            |
-| `proxy_server.py`   | `ApprovalGateServer` — core MCP proxy, tool wrapping, notifications    |
-| `auth.py`           | JWT auth scope constants (`propose`, `decide`, `read`)                 |
+| `proxy_server.py`   | `ApprovalGateServer` — core MCP proxy, tool wrapping, scope constants  |
 | `app.py`            | Starlette app factory (`create_app()`) + uvicorn entry point           |
 | `instructions.mako` | Mako template for MCP `initialize` instructions                        |
 | `auth_proxy/`       | OAuth2 sidecar: FastMCP proxy with client_credentials token injection  |
@@ -91,8 +91,8 @@ streamable-http, command + args + env for stdio).
 | ------------- | -------- | ------------------------------------------------------------------- |
 | `CONFIG_PATH` | no       | Path to YAML config file (default `/etc/approval-gate/config.yaml`) |
 
-All other settings (`public_base_url`, `jwks_url`, `backends`, `db_path`,
-`predicate_path`, `host`, `port`) are loaded from the YAML config file.
+All other settings (`public_base_url`, `oidc_issuer`, `oidc_client_id`, `backends`,
+`db_path`, `predicate_path`, `host`, `port`) are loaded from the YAML config file.
 
 ## Predicate file format
 

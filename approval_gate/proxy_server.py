@@ -36,7 +36,6 @@ from mcp import types as mcp_types
 from mcp.server.session import ServerSession
 from pydantic.networks import AnyUrl
 
-from approval_gate.auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE
 from approval_gate.models import (
     Action,
     ActionKey,
@@ -66,6 +65,10 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.urls import parse_any_url
 
 logger = logging.getLogger(__name__)
+
+PROPOSE_SCOPE = "propose"
+DECIDE_SCOPE = "decide"
+READ_SCOPE = "read"
 
 _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 

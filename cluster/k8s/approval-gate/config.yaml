@@ -3,6 +3,6 @@ backends:
     url: http://kubeapi-admin-exec-mcp.approval-gate.svc.cluster.local:8766/mcp
 
 public_base_url: "https://approval-gate.allegedly.works"
-jwks_url: "https://auth.allegedly.works/application/o/approval-gate/jwks/"
+oidc_issuer: "https://auth.allegedly.works/application/o/approval-gate/"
 oidc_client_id: "approval-gate-operator"
 db_path: "/data/approval_gate.db"

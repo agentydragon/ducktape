@@ -13,7 +13,7 @@ Config file format (YAML):
       args: [--mcp]
 
   public_base_url: "https://approval-gate.example.com"
-  jwks_url: "https://auth.example.com/application/o/approval-gate/jwks/"
+  oidc_issuer: "https://auth.example.com/application/o/approval-gate/"
   db_path: "/data/approval_gate.db"      # optional, defaults to /data/approval_gate.db
 
 Each backend entry matches fastmcp's MCPConfig mcpServers entry format.
@@ -45,7 +45,7 @@ class Settings(BaseModel):
             "decide(server_namespace, tool_name, arguments) → Approved|Denied|NeedsHumanDecision."
         ),
     )
-    jwks_url: str
+    oidc_issuer: str
     oidc_client_id: str
     host: str = "0.0.0.0"
     port: int = 8765

@@ -1,25 +1,35 @@
-"""pytest configuration for approval_gate tests."""
+"""pytest configuration and shared test infrastructure for approval_gate tests."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable
+import asyncio
+import threading
+import time
+from collections.abc import AsyncGenerator, Callable, Mapping
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anyio
 import pytest
+import uvicorn
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.mcp_config import RemoteMCPServer
+from fastmcp.client.messages import MessageHandler
+from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from mcp import types as mcp_types
+from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from approval_gate.auth import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE
-from approval_gate.models import Action, ActionKey
-from approval_gate.predicates import NeedsHumanDecision
-from approval_gate.proxy_server import ApprovalGateServer
+from approval_gate.models import Action, ActionKey, ActionStatus
+from approval_gate.predicates import NeedsHumanDecision, PredicateFn
+from approval_gate.proxy_server import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, ApprovalGateServer
 from approval_gate.storage import ActionStorage
 from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.resource_utils import read_text_json_typed
 from mcp_utils.resources import parse_tool_result_as
+from util.net import pick_free_port
 
 _TEST_NS = MCPMountPrefix("test")
 
@@ -34,6 +44,65 @@ def pytest_configure(config: pytest.Config) -> None:
     # config.override_ini is only available from pytest 9.1+; for 9.0.x we write
     # directly to _inicache, which getini() consults on every subsequent call.
     config._inicache["asyncio_default_fixture_loop_scope"] = "function"
+
+
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+
+@asynccontextmanager
+async def serve_app(app: Starlette, *, port: int):
+    """Start a uvicorn server in a dedicated thread; yield when ready; shut down on exit."""
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10.0
+    while not server.started:
+        if not thread.is_alive():
+            raise RuntimeError("uvicorn thread exited before starting")
+        if time.monotonic() > deadline:
+            server.should_exit = True
+            thread.join(timeout=3.0)
+            raise TimeoutError(f"server did not start on port {port}")
+        await asyncio.sleep(0.02)
+    try:
+        yield
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5.0)
+        if thread.is_alive():
+            server.force_exit = True
+            thread.join(timeout=3.0)
+
+
+class ResourceWaiter(MessageHandler):
+    """Receives resource-updated notifications and signals waiters."""
+
+    def __init__(self) -> None:
+        self._events: dict[str, anyio.Event] = {}
+
+    async def on_resource_updated(self, notification: mcp_types.ResourceUpdatedNotification) -> None:
+        uri = str(notification.params.uri)
+        evt = self._events.get(uri)
+        if evt is not None:
+            evt.set()
+
+    async def wait_for(self, client: GateClient, key: ActionKey, status: ActionStatus) -> Action:
+        """Wait until the action reaches `status` via resource-updated notifications."""
+        action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
+        hwm_uri = f"resource://sessions/{key.session_key}/log_hwm"
+        await client.session.subscribe_resource(AnyUrl(action_uri))
+        await client.session.subscribe_resource(AnyUrl(hwm_uri))
+        while True:
+            event = anyio.Event()
+            self._events[hwm_uri] = event
+            self._events[action_uri] = event
+            action: Action = await read_text_json_typed(client, action_uri, Action)
+            if action.state.status == status:
+                self._events.pop(hwm_uri, None)
+                self._events.pop(action_uri, None)
+                return action
+            await event.wait()
 
 
 class GateClient(Client):
@@ -55,6 +124,24 @@ class GateClient(Client):
         return parse_tool_result_as(
             await self.call_tool_mcp("reject_action", {"key": key.model_dump(), "reason": reason}), Action
         )
+
+
+def agent_transport(base_url: str, agent_jwt: str):
+    """Create an agent-scoped MCP client transport with Bearer auth."""
+    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {agent_jwt}"}).to_transport()
+
+
+def operator_transport(base_url: str, operator_jwt: str):
+    """Create an operator-scoped MCP client transport with Bearer auth."""
+    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {operator_jwt}"}).to_transport()
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def free_port() -> int:
+    return pick_free_port()
 
 
 @pytest.fixture
@@ -82,31 +169,31 @@ async def storage(tmp_path: Path) -> AsyncGenerator[ActionStorage]:
         await store.close()
 
 
-def agent_transport(base_url: str, agent_jwt: str):
-    """Create an agent-scoped MCP client transport with Bearer auth."""
-    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {agent_jwt}"}).to_transport()
-
-
-def operator_transport(base_url: str, operator_jwt: str):
-    """Create an operator-scoped MCP client transport with Bearer auth."""
-    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {operator_jwt}"}).to_transport()
-
-
-GateServerFactory = Callable[[FastMCP, Path], ApprovalGateServer]
+GateServerFactory = Callable[..., ApprovalGateServer]
 
 
 @pytest.fixture
-def make_gate_server(rsa_key_pair: RSAKeyPair) -> GateServerFactory:
-    """Fixture factory: creates a JWTVerifier-protected ApprovalGateServer."""
+def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFactory:
+    """Fixture factory: creates a JWTVerifier-protected ApprovalGateServer.
 
-    def _factory(backend: FastMCP, db_path: Path) -> ApprovalGateServer:
-        auth = JWTVerifier(public_key=rsa_key_pair.public_key)
+    Accepts a single FastMCP backend (mounted under ``test`` namespace) or a
+    backends dict keyed by MCPMountPrefix. ``predicate`` defaults to
+    NeedsHumanDecision for all tools.
+    """
+
+    def _factory(
+        backend: FastMCP | Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], *, predicate: PredicateFn | None = None
+    ) -> ApprovalGateServer:
+        if isinstance(backend, FastMCP):
+            backends: dict[MCPMountPrefix, MCPServerTypes | FastMCP] = {_TEST_NS: backend}
+        else:
+            backends = dict(backend)
         return ApprovalGateServer(
-            backends={_TEST_NS: backend},
-            db_path=db_path,
-            predicate=lambda ns, tool, args: NeedsHumanDecision(),
+            backends=backends,
+            db_path=tmp_path / "gate.db",
+            predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
             public_base_url="http://test",
-            auth=auth,
+            auth=JWTVerifier(public_key=rsa_key_pair.public_key),
         )
 
     return _factory
@@ -118,14 +205,14 @@ def gate_http_app(gate: ApprovalGateServer) -> Starlette:
     return Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
 
 
-GateAppFactory = Callable[[FastMCP, Path], Starlette]
+GateAppFactory = Callable[..., Starlette]
 
 
 @pytest.fixture
 def make_gate_app(make_gate_server: GateServerFactory) -> GateAppFactory:
     """Convenience fixture: creates a gate server and wraps it in a Starlette app."""
 
-    def _factory(backend: FastMCP, db_path: Path) -> Starlette:
-        return gate_http_app(make_gate_server(backend, db_path))
+    def _factory(backend: FastMCP | Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], **kwargs: object) -> Starlette:
+        return gate_http_app(make_gate_server(backend, **kwargs))
 
     return _factory

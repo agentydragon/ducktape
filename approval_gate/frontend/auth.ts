@@ -14,12 +14,16 @@ async function getUserManager(): Promise<UserManager> {
 
   const resp = await fetch("/auth/config");
   if (!resp.ok) throw new Error(`Failed to fetch /auth/config: ${resp.status}`);
-  const config: { authority: string; client_id: string } = await resp.json();
+  const config: {
+    authority: string;
+    client_id: string;
+    redirect_uri: string;
+  } = await resp.json();
 
   _userManager = new UserManager({
     authority: config.authority,
     client_id: config.client_id,
-    redirect_uri: `${window.location.origin}/auth/callback`,
+    redirect_uri: config.redirect_uri,
     response_type: "code",
     scope: "openid decide read",
     userStore: new WebStorageStateStore({ store: sessionStorage }),
