@@ -6,14 +6,9 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/routing",
     visibility = ["//cluster/kubespan_agent:__subpackages__"],
     deps = [
-        "@com_github_google_nftables//:nftables",
-        "@com_github_google_nftables//binaryutil",
-        "@com_github_google_nftables//expr",
         "@com_github_jsimonetti_rtnetlink_v2//:rtnetlink",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_vishvananda_netlink//:netlink",
-        "@org_go4_netipx//:netipx",
         "@org_golang_x_sys//unix",
-        "@org_uber_go_zap//:zap",
     ],
 )

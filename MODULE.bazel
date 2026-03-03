@@ -470,6 +470,71 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# ─ Talos internal sources (cannot import, pulled from upstream at pinned tag) ──
+# NfTablesChainController and rule compiler from Talos internal/.
+# Used by kubespand to apply NfTablesChain COSI resources to the kernel.
+# MPL-2.0 licensed (compatible with AGPL-3.0).
+_TALOS_TAG = "v1.12.4"
+
+_TALOS_RAW = "https://raw.githubusercontent.com/siderolabs/talos/" + _TALOS_TAG
+
+http_file(
+    name = "talos_nftables_rule_compiler",
+    downloaded_file_path = "nftables_rule.go",
+    sha256 = "14e77aa5589ad9ca716c7eb8b50b5f66bfb76de6ddea551ba3b0cc490ebe3b74",
+    urls = [_TALOS_RAW + "/internal/app/machined/pkg/adapters/network/nftables_rule.go"],
+)
+
+http_file(
+    name = "talos_nftables_chain_controller",
+    downloaded_file_path = "nftables_chain.go",
+    sha256 = "9a13c214560859b6556640978247e08219eae425aae79d370491bc1c918fe1d3",
+    urls = [_TALOS_RAW + "/internal/app/machined/pkg/controllers/network/nftables_chain.go"],
+)
+
+http_file(
+    name = "talos_network_ipset",
+    downloaded_file_path = "ipset.go",
+    sha256 = "00f661fa9bb02f2f427100c7ac46af3fefcb73a55ff2b3f532b93e5e6f5b884f",
+    urls = [_TALOS_RAW + "/internal/app/machined/pkg/adapters/network/ipset.go"],
+)
+
+http_file(
+    name = "talos_network_constants",
+    downloaded_file_path = "network.go",
+    sha256 = "65025df7ac8268df829d62b8499cc356ad747b1f28865d42196553d44a40039f",
+    urls = [_TALOS_RAW + "/internal/app/machined/pkg/adapters/network/network.go"],
+)
+
+# ─ QEMU nftables smoke test dependencies ──────────────────────────────────────
+# Alpine linux-virt kernel with nftables modules for QEMU-based testing.
+# Smaller than Ubuntu (~38MB vs ~181MB) and purpose-built for VMs.
+http_file(
+    name = "alpine_linux_virt",
+    downloaded_file_path = "linux-virt.apk",
+    sha256 = "ec7a28f3a7fb8c1d08bdfb0459aa845e551ff14a2d88b7e446e33a901f996653",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/linux-virt-6.12.74-r0.apk"],
+)
+
+# Busybox static binary for initramfs (musl-linked, self-contained).
+http_file(
+    name = "busybox_static_x86_64",
+    downloaded_file_path = "busybox",
+    sha256 = "6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348",
+    urls = ["https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox"],
+)
+
+# QEMU system emulator for x86_64 (Ubuntu Noble 24.04).
+# Used for nftables smoke tests that need a real kernel with nf_tables support.
+# The binary is dynamically linked; the RBE worker image (Ubuntu 24.04) provides
+# the required shared libraries. Requires qemu-system-data on the host.
+http_file(
+    name = "qemu_system_x86_deb",
+    downloaded_file_path = "qemu-system-x86.deb",
+    sha256 = "7970b1f08112a0fee2d156eacd36b6272f2c732c568e889b3f2bf99d1576e901",
+    urls = ["https://archive.ubuntu.com/ubuntu/pool/main/q/qemu/qemu-system-x86_8.2.2+ds-0ubuntu1.12_amd64.deb"],
+)
+
 # tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
 # Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
 http_file(

@@ -1,0 +1,70 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+# Upstream Talos source files pulled at a pinned tag and transformed into our package.
+# See MODULE.bazel for http_file declarations.
+
+genrule(
+    name = "upstream_compiler",
+    srcs = ["@talos_nftables_rule_compiler//file"],
+    outs = ["compiler_upstream.go"],
+    cmd = "sed 's/^package network$$/package nftables/' $< > $@",
+)
+
+genrule(
+    name = "upstream_ipset",
+    srcs = ["@talos_network_ipset//file"],
+    outs = ["ipset_upstream.go"],
+    cmd = "sed 's/^package network$$/package nftables/' $< > $@",
+)
+
+genrule(
+    name = "upstream_constants",
+    srcs = ["@talos_network_constants//file"],
+    outs = ["constants_upstream.go"],
+    cmd = "sed 's/^package network$$/package nftables/' $< > $@",
+)
+
+# The upstream controller (nftables_chain.go) needs too many transformations for
+# sed (go-pointer import, preCreateIptablesNFTable removal, EBUSY retry), so
+# controller_kubespand.go is a manual adaptation with DIVERGENCE comments.
+# The http_file for the controller source is kept in MODULE.bazel for reference
+# when bumping the Talos version.
+
+go_library(
+    name = "nftables",
+    srcs = [
+        "controller_kubespand.go",
+        "ebusy.go",
+        # Generated from upstream Talos sources (compiler + helpers):
+        ":upstream_compiler",
+        ":upstream_constants",
+        ":upstream_ipset",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/nftables",
+    visibility = ["//cluster/kubespan_agent:__subpackages__"],
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_google_nftables//:nftables",
+        "@com_github_google_nftables//binaryutil",
+        "@com_github_google_nftables//expr",
+        "@com_github_siderolabs_gen//xslices",
+        "@com_github_siderolabs_go_pointer//:go-pointer",
+        "@com_github_siderolabs_talos_pkg_machinery//nethelpers",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
+        "@org_go4_netipx//:netipx",
+        "@org_golang_x_sys//unix",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "nftables_test",
+    srcs = ["compiler_test.go"],
+    embed = [":nftables"],
+    deps = [
+        "@com_github_google_nftables//expr",
+        "@com_github_siderolabs_talos_pkg_machinery//nethelpers",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
+    ],
+)

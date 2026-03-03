@@ -12,7 +12,9 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/siderolabs/go-pointer"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
+	"github.com/siderolabs/talos/pkg/machinery/nethelpers"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"go.uber.org/zap"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
@@ -38,9 +40,9 @@ const PeerReconcileInterval = 30 * time.Second
 //
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 type ManagerController struct {
-	wg      *wireguard.Manager
-	routing *routing.Manager
-	ticker  *time.Ticker
+	wg     *wireguard.Manager
+	rules  routing.RulesManager
+	ticker *time.Ticker
 }
 
 // Name implements controller.Controller.
@@ -62,6 +64,10 @@ func (ctrl *ManagerController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
 			Type: kubespan.PeerStatusType,
+			Kind: controller.OutputExclusive,
+		},
+		{
+			Type: network.NfTablesChainType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -127,7 +133,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 	cfgSpec := cfg.TypedSpec()
 	idSpec := id.TypedSpec()
 
-	// Initialize WireGuard and routing managers if needed.
+	// Initialize WireGuard and routing rules if needed.
 	if ctrl.wg == nil {
 		wg, wgErr := wireguard.NewManager(idSpec.PrivateKey, cfgSpec.SharedSecret, agentCfg.ListenPort, int(cfgSpec.MTU))
 		if wgErr != nil {
@@ -142,9 +148,21 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 
 		ctrl.wg = wg
 
-		ctrl.routing = routing.NewManager(int(cfgSpec.MTU), logger)
-		if err := ctrl.routing.Install(nil); err != nil {
-			return fmt.Errorf("routing: %w", err)
+		// IP policy rules (fwmark → routing table). Nftables are now
+		// managed by NfTablesChainController via COSI resources.
+		ctrl.rules = routing.NewRulesManager(
+			uint8(constants.KubeSpanDefaultRoutingTable),
+			constants.KubeSpanDefaultForceFirewallMark,
+			constants.KubeSpanDefaultFirewallMask,
+		)
+		if err := ctrl.rules.Cleanup(); err != nil {
+			logger.Warn("ip rules cleanup failed (may be first run)", zap.Error(err))
+		}
+		if err := ctrl.rules.Install(); err != nil {
+			return fmt.Errorf("ip rules: %w", err)
+		}
+		if err := routing.InstallRoutes(int(cfgSpec.MTU)); err != nil {
+			return fmt.Errorf("routes: %w", err)
 		}
 		logger.Info("routing rules installed",
 			zap.Int("table", constants.KubeSpanDefaultRoutingTable),
@@ -271,22 +289,159 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		return fmt.Errorf("configuring WireGuard peers: %w", err)
 	}
 
-	if err := ctrl.routing.Update(routedPrefixes); err != nil {
-		return fmt.Errorf("updating nftables: %w", err)
+	if err := ctrl.writeNfTablesChains(ctx, r, routedPrefixes, cfgSpec.MTU); err != nil {
+		return fmt.Errorf("writing nftables chains: %w", err)
 	}
 
 	r.ResetRestartBackoff()
 	return nil
 }
 
+// writeNfTablesChains writes NfTablesChain COSI resources for the prerouting
+// and output chains. The NfTablesChainController watches these and applies
+// them to the kernel nftables subsystem.
+//
+// This is the COSI equivalent of the old routing.Manager.Update() which built
+// nftables expressions directly. The rule semantics are identical.
+func (ctrl *ManagerController) writeNfTablesChains(
+	ctx context.Context,
+	r controller.Runtime,
+	routedPrefixes []netip.Prefix,
+	mtu uint32,
+) error {
+	// Prerouting chain: mark incoming packets for routed prefixes.
+	if err := safe.WriterModify(ctx, r,
+		network.NewNfTablesChain(network.NamespaceName, "kubespan_prerouting"),
+		func(chain *network.NfTablesChain) error {
+			spec := chain.TypedSpec()
+			spec.Type = nethelpers.ChainTypeFilter
+			spec.Hook = nethelpers.ChainHookPrerouting
+			spec.Priority = nethelpers.ChainPriorityRaw
+			spec.Policy = nethelpers.VerdictAccept
+			spec.Rules = buildPreroutingRules(routedPrefixes)
+			return nil
+		},
+	); err != nil {
+		return fmt.Errorf("prerouting chain: %w", err)
+	}
+
+	// Output chain: mark outgoing packets, clamp MSS.
+	if err := safe.WriterModify(ctx, r,
+		network.NewNfTablesChain(network.NamespaceName, "kubespan_outgoing"),
+		func(chain *network.NfTablesChain) error {
+			spec := chain.TypedSpec()
+			spec.Type = nethelpers.ChainTypeRoute
+			spec.Hook = nethelpers.ChainHookOutput
+			spec.Priority = nethelpers.ChainPriorityRaw
+			spec.Policy = nethelpers.VerdictAccept
+			spec.Rules = buildOutputRules(routedPrefixes, uint16(mtu))
+			return nil
+		},
+	); err != nil {
+		return fmt.Errorf("output chain: %w", err)
+	}
+
+	return nil
+}
+
+// buildPreroutingRules produces NfTablesRule specs for the prerouting chain.
+// Transliteration of routing.go:tryInstallNftables prerouting section.
+func buildPreroutingRules(routedPrefixes []netip.Prefix) []network.NfTablesRule {
+	acceptVerdict := nethelpers.VerdictAccept
+
+	rules := []network.NfTablesRule{
+		// Skip packets already marked by WireGuard (mark & 0x60 == 0x20 → accept).
+		{
+			MatchMark: &network.NfTablesMark{
+				Mask:  constants.KubeSpanDefaultFirewallMask,
+				Xor:   0,
+				Value: constants.KubeSpanDefaultFirewallMark,
+			},
+			Verdict: &acceptVerdict,
+		},
+	}
+
+	if len(routedPrefixes) > 0 {
+		// Mark destination-matched packets with force mark (0x40).
+		rules = append(rules, network.NfTablesRule{
+			MatchDestinationAddress: &network.NfTablesAddressMatch{
+				IncludeSubnets: routedPrefixes,
+			},
+			SetMark: &network.NfTablesMark{
+				Mask: ^uint32(constants.KubeSpanDefaultForceFirewallMark),
+				Xor:  constants.KubeSpanDefaultForceFirewallMark,
+			},
+			Verdict: &acceptVerdict,
+		})
+	}
+
+	return rules
+}
+
+// buildOutputRules produces NfTablesRule specs for the output chain.
+// Transliteration of routing.go:tryInstallNftables output section.
+func buildOutputRules(routedPrefixes []netip.Prefix, mtu uint16) []network.NfTablesRule {
+	acceptVerdict := nethelpers.VerdictAccept
+
+	rules := []network.NfTablesRule{
+		// Skip packets already marked by WireGuard.
+		{
+			MatchMark: &network.NfTablesMark{
+				Mask:  constants.KubeSpanDefaultFirewallMask,
+				Xor:   0,
+				Value: constants.KubeSpanDefaultFirewallMark,
+			},
+			Verdict: &acceptVerdict,
+		},
+		// Skip loopback traffic.
+		{
+			MatchOIfName: &network.NfTablesIfNameMatch{
+				InterfaceNames: []string{"lo"},
+				Operator:       nethelpers.OperatorEqual,
+			},
+			Verdict: &acceptVerdict,
+		},
+	}
+
+	if len(routedPrefixes) > 0 {
+		// MSS clamp for routed destinations.
+		if mtu > 0 {
+			rules = append(rules, network.NfTablesRule{
+				MatchDestinationAddress: &network.NfTablesAddressMatch{
+					IncludeSubnets: routedPrefixes,
+				},
+				ClampMSS: &network.NfTablesClampMSS{
+					MTU: mtu,
+				},
+			})
+		}
+
+		// Mark destination-matched packets with force mark.
+		rules = append(rules, network.NfTablesRule{
+			MatchDestinationAddress: &network.NfTablesAddressMatch{
+				IncludeSubnets: routedPrefixes,
+			},
+			SetMark: &network.NfTablesMark{
+				Mask: ^uint32(constants.KubeSpanDefaultForceFirewallMark),
+				Xor:  constants.KubeSpanDefaultForceFirewallMark,
+			},
+			Verdict: &acceptVerdict,
+		})
+	}
+
+	return rules
+}
+
 // cleanup tears down the WireGuard interface and routing rules.
 // TODO: align cleanup with COSI resource teardown (Talos writes LinkSpec/AddressSpec/RouteSpec)
 func (ctrl *ManagerController) cleanup(logger *zap.Logger) {
-	if ctrl.routing != nil {
-		if err := ctrl.routing.Cleanup(); err != nil {
-			logger.Error("routing cleanup failed", zap.Error(err))
+	// IP policy rules cleanup. Nftables cleanup is handled by the
+	// NfTablesChainController when its COSI resources are torn down.
+	if ctrl.rules != nil {
+		if err := ctrl.rules.Cleanup(); err != nil {
+			logger.Error("ip rules cleanup failed", zap.Error(err))
 		}
-		ctrl.routing = nil
+		ctrl.rules = nil
 	}
 	if ctrl.wg != nil {
 		if err := ctrl.wg.Cleanup(); err != nil {
