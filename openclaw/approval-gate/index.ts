@@ -56,8 +56,8 @@ function formatNotificationMessage(keyStr: string, detail: LogEventDetail): stri
     }
   }
   if (detail.kind === "execution_running") {
-    const elapsed = (detail as { elapsed_seconds?: number }).elapsed_seconds;
-    const suffix = typeof elapsed === "number" ? ` (${elapsed}s elapsed)` : "";
+    const startedAt = (detail as { started_at?: string }).started_at;
+    const suffix = startedAt ? ` (started at ${startedAt})` : "";
     return `Action ${keyStr} is still executing${suffix}`;
   }
   if (detail.kind === "denied") {

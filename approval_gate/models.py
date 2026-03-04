@@ -155,7 +155,7 @@ class ExecutionRunningDetail(BaseModel):
     """Emitted when a backend call has been running longer than the configured notice threshold."""
 
     kind: Literal[LogEventKind.EXECUTION_RUNNING] = LogEventKind.EXECUTION_RUNNING
-    elapsed_seconds: float
+    started_at: datetime
     model_config = ConfigDict(extra="forbid")
 
 

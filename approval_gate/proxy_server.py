@@ -22,6 +22,7 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -435,14 +436,14 @@ class ApprovalGateServer(EnhancedFastMCP):
 
         notice_delay = self._execution_running_notice_seconds
         finished = False
-        start_time = asyncio.get_event_loop().time()
+        started_at = datetime.now(tz=UTC)
 
         async def _running_notice() -> None:
             await asyncio.sleep(notice_delay)
             if finished:
                 return
-            elapsed = asyncio.get_event_loop().time() - start_time
-            await self._append_log_and_notify(key, ExecutionRunningDetail(elapsed_seconds=round(elapsed, 1)))
+            await self._append_log_and_notify(key, ExecutionRunningDetail(started_at=started_at))
+            elapsed = (datetime.now(tz=UTC) - started_at).total_seconds()
             logger.info("action %s/%d still executing after %.1fs", key.session_key, key.action_seq, elapsed)
 
         notice_task: asyncio.Task[None] | None = None

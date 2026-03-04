@@ -363,7 +363,7 @@ async def test_execution_running_notice_emitted(make_gate_server: GateServerFact
             entry = json.loads(entry_json)
             if entry["detail"]["kind"] == "execution_running":
                 found_running = True
-                assert "elapsed_seconds" in entry["detail"]
+                assert "started_at" in entry["detail"]
                 break
 
         assert found_running, f"expected execution_running in {hwm} log entries"
