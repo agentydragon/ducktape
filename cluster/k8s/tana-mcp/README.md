@@ -1,14 +1,15 @@
 # Tana MCP Server
 
 Runs the [Tana](https://tana.inc) desktop app in a Kubernetes container with an
-nginx bearer-token auth proxy in front of its built-in MCP server.
+nginx proxy that rewrites `Host`/`Origin` headers to `localhost` so Tana's MCP
+server accepts requests from cluster clients.
 
 ## Architecture
 
 - **tana-desktop container**: Ubuntu + Xvfb + noVNC + Tana Desktop. Tana's MCP
   server listens on `localhost:8262` inside the pod.
-- **auth-proxy sidecar**: `nginx:alpine` checking `Authorization: Bearer <token>`
-  before proxying to port 8262. Exposed on port 8263.
+- **proxy sidecar**: `nginx:alpine` rewrites `Host`/`Origin` to localhost before
+  proxying to port 8262. Exposed on port 8263 (cluster-internal only).
 - **PVC**: Persists `~/.config/Tana` (login session, MCP client approvals).
 
 ## Initial Setup (Graphical Login)
@@ -52,36 +53,23 @@ noVNC again if the session expires or for troubleshooting.
 
 ## Connecting MCP Clients
 
-- **Endpoint**: `https://tana-mcp.allegedly.works/mcp`
-- **Auth**: `Authorization: Bearer <token>` (token stored in k8s secret
-  `tana-mcp-bearer-token` in namespace `tana-mcp`)
+The MCP endpoint is cluster-internal only (no public ingress).
 
-Retrieve the token:
-
-```bash
-kubectl get secret tana-mcp-bearer-token -n tana-mcp \
-  -o jsonpath='{.data.token}' | base64 -d
-```
-
-### Claude Code (`~/.claude/settings.json`)
-
-```json
-{
-  "mcpServers": {
-    "tana": {
-      "url": "https://tana-mcp.allegedly.works/mcp",
-      "headers": {
-        "Authorization": "Bearer <token>"
-      }
-    }
-  }
-}
-```
+- **Endpoint**: `http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp`
+- **No auth required** (cluster-internal access only)
 
 ### Health Check
 
 ```bash
-curl https://tana-mcp.allegedly.works/health
+kubectl exec -n tana-mcp deploy/tana-mcp -c proxy -- \
+  curl -s http://localhost:8263/health
+```
+
+### Port Forward for Local Testing
+
+```bash
+kubectl port-forward -n tana-mcp svc/tana-mcp 8263:8263
+curl http://localhost:8263/health
 ```
 
 ## Troubleshooting
@@ -99,7 +87,6 @@ curl https://tana-mcp.allegedly.works/health
 
 ## Secrets
 
-| Secret                  | Key                 | Source                           |
-| ----------------------- | ------------------- | -------------------------------- |
-| `tana-mcp-bearer-token` | `token`             | Vault `kv/tana-mcp/bearer-token` |
-| `harbor-ci-robot`       | `.dockerconfigjson` | Vault `kv/harbor/ci-robot`       |
+| Secret            | Key                 | Source                     |
+| ----------------- | ------------------- | -------------------------- |
+| `harbor-ci-robot` | `.dockerconfigjson` | Vault `kv/harbor/ci-robot` |

@@ -66,25 +66,17 @@ spec:
               port: 8262
             periodSeconds: 15
 
-        # nginx sidecar: bearer token auth in front of Tana's MCP endpoint
-        - name: auth-proxy
+        # nginx sidecar: rewrites Host/Origin to localhost so Tana's MCP server
+        # accepts requests from cluster clients
+        - name: proxy
           image: nginx:alpine
-          command: ["/bin/sh", "-c"]
-          args:
-            - envsubst '${TANA_MCP_BEARER_TOKEN}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'
-          env:
-            - name: TANA_MCP_BEARER_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: tana-mcp-bearer-token
-                  key: token
           ports:
-            - name: mcp-auth
+            - name: mcp-proxy
               containerPort: 8263
               protocol: TCP
           volumeMounts:
             - name: nginx-config
-              mountPath: /etc/nginx/templates
+              mountPath: /etc/nginx/conf.d
               readOnly: true
           resources:
             requests:

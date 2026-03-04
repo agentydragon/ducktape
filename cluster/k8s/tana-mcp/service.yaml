@@ -8,9 +8,9 @@ spec:
   selector:
     app: tana-mcp
   ports:
-    - name: mcp-auth
+    - name: mcp-proxy
       port: 8263
-      targetPort: mcp-auth
+      targetPort: mcp-proxy
       protocol: TCP
     - name: novnc
       port: 6080
