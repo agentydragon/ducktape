@@ -18,8 +18,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/agentconfig"
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/endpoint"
+	endpoint "github.com/agentydragon/ducktape/cluster/kubespan_agent/endpoint"
 	networkadapter "github.com/agentydragon/ducktape/cluster/kubespan_agent/nftables"
+	peerspec "github.com/agentydragon/ducktape/cluster/kubespan_agent/peerspec"
 )
 
 // agentCfg is the parsed agent configuration, accessible to controllers
@@ -112,7 +113,7 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	if err := rt.RegisterController(&DiscoveryController{}); err != nil {
 		return fmt.Errorf("registering discovery controller: %w", err)
 	}
-	if err := rt.RegisterController(&PeerSpecController{}); err != nil {
+	if err := rt.RegisterController(&peerspec.PeerSpecController{}); err != nil {
 		return fmt.Errorf("registering peerspec controller: %w", err)
 	}
 	if agentCfg.AdvertiseKubernetesNetworks && !discoveryOnly {
@@ -127,7 +128,7 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		if err := rt.RegisterController(&networkadapter.NfTablesChainController{}); err != nil {
 			return fmt.Errorf("registering nftables chain controller: %w", err)
 		}
-		if err := rt.RegisterController(&endpoint.Controller{}); err != nil {
+		if err := rt.RegisterController(&endpoint.EndpointController{}); err != nil {
 			return fmt.Errorf("registering endpoint controller: %w", err)
 		}
 	}

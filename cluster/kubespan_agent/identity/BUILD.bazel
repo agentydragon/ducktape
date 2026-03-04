@@ -6,12 +6,8 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/identity",
     visibility = ["//cluster/kubespan_agent:__subpackages__"],
     deps = [
-        "@com_github_mdlayher_netx//eui64",
-        "@com_github_siderolabs_gen//value",
+        "//cluster/kubespan_agent/peerstate",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
-        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
-        "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
         "@in_gopkg_yaml_v3//:yaml_v3",
-        "@org_go4_netipx//:netipx",
     ],
 )

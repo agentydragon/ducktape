@@ -1,12 +1,29 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+# Upstream Talos routing rules controller pulled at a pinned tag.
+# See MODULE.bazel http_archive "talos_internal" for the pinned version.
+
+_TALOS_CONTROLLERS = "@talos_internal//:internal/app/machined/pkg/controllers/kubespan/"
+
+genrule(
+    name = "upstream_routing_rules",
+    srcs = [_TALOS_CONTROLLERS + "routing_rules.go"],
+    outs = ["routing_rules_upstream.go"],
+    cmd = "cp $< $@",
+)
+
 go_library(
     name = "routing",
-    srcs = ["routing.go"],
+    srcs = [
+        "routes.go",
+        ":upstream_routing_rules",
+    ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/routing",
     visibility = ["//cluster/kubespan_agent:__subpackages__"],
     deps = [
+        "@com_github_hashicorp_go_multierror//:go-multierror",
         "@com_github_jsimonetti_rtnetlink_v2//:rtnetlink",
+        "@com_github_siderolabs_go_pointer//:go-pointer",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_x_sys//unix",

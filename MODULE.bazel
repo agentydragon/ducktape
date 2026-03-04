@@ -486,7 +486,11 @@ exports_files([
     "internal/app/machined/pkg/adapters/network/ipset.go",
     "internal/app/machined/pkg/adapters/network/network.go",
     "internal/app/machined/pkg/controllers/network/nftables_chain.go",
+    "internal/app/machined/pkg/adapters/kubespan/identity.go",
     "internal/app/machined/pkg/adapters/kubespan/peer_status.go",
+    "internal/app/machined/pkg/controllers/kubespan/endpoint.go",
+    "internal/app/machined/pkg/controllers/kubespan/peer_spec.go",
+    "internal/app/machined/pkg/controllers/kubespan/routing_rules.go",
 ])
 """,
     sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",

@@ -19,7 +19,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	kubespanadapter "github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate"
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/routing"
+	routing "github.com/agentydragon/ducktape/cluster/kubespan_agent/routing"
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/wireguard"
 )
 
@@ -37,6 +37,11 @@ const PeerReconcileInterval = 30 * time.Second
 //   - nftables and ip rule setup for policy routing
 //   - Peer endpoint cycling based on handshake state
 //   - Periodic WireGuard handshake polling
+//
+// TODO: consider pulling from upstream Talos manager.go. Key differences:
+//   - Talos writes COSI network.LinkSpec/AddressSpec/RouteSpec; kubespand calls wgctrl/netlink directly
+//   - Talos uses WireguardClientFactory/RulesManagerFactory for testability
+//   - Same peer state machine and nftables chain writing pattern
 //
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 type ManagerController struct {

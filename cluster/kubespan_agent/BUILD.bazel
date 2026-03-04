@@ -8,7 +8,6 @@ go_library(
         "controller_identity.go",
         "controller_k8s_node.go",
         "controller_manager.go",
-        "controller_peerspec.go",
         "main.go",
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent",
@@ -20,6 +19,7 @@ go_library(
         "//cluster/kubespan_agent/identity",
         "//cluster/kubespan_agent/k8snet",
         "//cluster/kubespan_agent/nftables",
+        "//cluster/kubespan_agent/peerspec",
         "//cluster/kubespan_agent/peerstate",
         "//cluster/kubespan_agent/routing",
         "//cluster/kubespan_agent/wireguard",
@@ -48,7 +48,6 @@ go_library(
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/cache",
         "@io_k8s_client_go//tools/clientcmd",
-        "@org_go4_netipx//:netipx",
         "@org_uber_go_zap//:zap",
     ],
 )

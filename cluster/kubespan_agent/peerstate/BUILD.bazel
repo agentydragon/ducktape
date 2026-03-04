@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-# Upstream Talos peer status adapter pulled at a pinned tag and transformed.
+# Upstream Talos kubespan adapters pulled at a pinned tag.
 # See MODULE.bazel http_archive "talos_internal" for the pinned version.
 
 _TALOS_KUBESPAN = "@talos_internal//:internal/app/machined/pkg/adapters/kubespan/"
@@ -13,14 +13,26 @@ genrule(
     tools = [":transform_peer_status.awk"],
 )
 
+genrule(
+    name = "upstream_identity",
+    srcs = [_TALOS_KUBESPAN + "identity.go"],
+    outs = ["identity_upstream.go"],
+    cmd = "cp $< $@",
+)
+
 go_library(
     name = "peerstate",
-    srcs = [":upstream_peer_status"],
+    srcs = [
+        ":upstream_identity",
+        ":upstream_peer_status",
+    ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate",
     visibility = ["//cluster/kubespan_agent:__subpackages__"],
     deps = [
+        "@com_github_mdlayher_netx//eui64",
         "@com_github_siderolabs_gen//value",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
         "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
         "@org_go4_netipx//:netipx",
     ],

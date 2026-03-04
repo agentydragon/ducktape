@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/identity"
+	kubespanadapter "github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate"
 )
 
 // IdentityController watches Config and produces the node's KubeSpan Identity.
@@ -75,7 +76,7 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 				return fmt.Errorf("loading identity: %w", err)
 			}
 
-			if err := identity.UpdateAddress(id, cfgSpec.ClusterID, mac); err != nil {
+			if err := kubespanadapter.IdentitySpec(id).UpdateAddress(cfgSpec.ClusterID, mac); err != nil {
 				return fmt.Errorf("computing address: %w", err)
 			}
 
