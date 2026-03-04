@@ -24,12 +24,9 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         dbus-daemon \
         # cpio: needed to build initramfs for QEMU-based tests
         cpio \
-        # zstd: needed to extract Ubuntu .deb packages (data.tar.zst)
-        zstd \
-        # qemu-system-data: firmware/BIOS files needed by QEMU at runtime
-        # (the QEMU binary is extracted from a pinned .deb for version hermeticity,
-        # but it still needs /usr/share/qemu/ for pc-bios, keymaps, etc.)
-        qemu-system-data \
+        # qemu-system-x86: QEMU emulator + firmware/BIOS for nftables and
+        # KubeSpan integration tests (TCG software emulation, no KVM needed)
+        qemu-system-x86 \
         # Chromium headless shell shared library dependencies
         libasound2t64 \
         libatk-bridge2.0-0t64 \

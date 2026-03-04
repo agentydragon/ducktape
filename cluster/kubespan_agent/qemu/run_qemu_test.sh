@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # QEMU-based nftables smoke test runner.
-# Usage: run_qemu_test.sh <vmlinuz> <initramfs> <qemu-binary> [levels]
+# Usage: run_qemu_test.sh <vmlinuz> <initramfs> [levels]
 #
 # Boots a minimal Linux VM in QEMU (TCG, no KVM required), runs the testprobe
 # nft-smoke at the given levels, and checks the output for PASS/FAIL markers.
+# Requires qemu-system-x86_64 on PATH (apt install qemu-system-x86).
 #
 # Exit codes:
 #   0 = all levels passed
@@ -12,8 +13,8 @@ set -euo pipefail
 
 VMLINUZ="$1"
 INITRAMFS="$2"
-QEMU="$3"
-LEVELS="${4:-1,2,3,4,5,6}"
+LEVELS="${3:-1,2,3,4,5,6}"
+QEMU="qemu-system-x86_64"
 
 if [ ! -f "$VMLINUZ" ]; then
   echo "ERROR: vmlinuz not found: $VMLINUZ" >&2
@@ -23,8 +24,8 @@ if [ ! -f "$INITRAMFS" ]; then
   echo "ERROR: initramfs not found: $INITRAMFS" >&2
   exit 1
 fi
-if [ ! -x "$QEMU" ]; then
-  echo "ERROR: qemu binary not found or not executable: $QEMU" >&2
+if ! command -v "$QEMU" &>/dev/null; then
+  echo "ERROR: $QEMU not found on PATH (apt install qemu-system-x86)" >&2
   exit 1
 fi
 

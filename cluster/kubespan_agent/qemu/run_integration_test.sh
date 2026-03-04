@@ -3,7 +3,9 @@
 # Boots two QEMU VMs running kubespand, connected via a virtual L2 network,
 # with a discovery service on the host. Verifies WireGuard tunnel connectivity.
 #
-# Usage: run_integration_test.sh <vmlinuz> <initramfs> <qemu-binary> <discovery-tarball>
+# Usage: run_integration_test.sh <vmlinuz> <initramfs> <discovery-tarball>
+#
+# Requires qemu-system-x86_64 on PATH (apt install qemu-system-x86).
 #
 # Architecture:
 #   VM-A (192.168.50.1) ──── socket mcast ──── VM-B (192.168.50.2)
@@ -19,8 +21,8 @@ set -euo pipefail
 
 VMLINUZ="$1"
 INITRAMFS="$2"
-QEMU="$3"
-DISCOVERY_TARBALL="$4"
+DISCOVERY_TARBALL="$3"
+QEMU="qemu-system-x86_64"
 
 for f in "$VMLINUZ" "$INITRAMFS"; do
   if [ ! -f "$f" ]; then
@@ -28,8 +30,8 @@ for f in "$VMLINUZ" "$INITRAMFS"; do
     exit 1
   fi
 done
-if [ ! -x "$QEMU" ]; then
-  echo "ERROR: qemu binary not found or not executable: $QEMU" >&2
+if ! command -v "$QEMU" &>/dev/null; then
+  echo "ERROR: $QEMU not found on PATH (apt install qemu-system-x86)" >&2
   exit 1
 fi
 if [ ! -f "$DISCOVERY_TARBALL" ]; then

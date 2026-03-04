@@ -43,34 +43,6 @@ _MODULES = {
     for mod, path in _MODULES.items()
 ]
 
-# ─ Extract QEMU binary from Ubuntu .deb ───────────────────────────────────────
-genrule(
-    name = "qemu_binary",
-    srcs = ["@qemu_system_x86_deb//file"],
-    outs = ["qemu-system-x86_64"],
-    cmd = """
-        set -e
-        DEB=$$(realpath $(location @qemu_system_x86_deb//file))
-        OUT=$$(realpath $@)
-        TMPDIR=$$(mktemp -d)
-        cd $$TMPDIR
-        ar x "$$DEB"
-        # Ubuntu 24.04 uses zstd for data compression.
-        if [ -f data.tar.zst ]; then
-            zstd -d data.tar.zst -o data.tar
-        elif [ -f data.tar.xz ]; then
-            xz -d data.tar.xz
-        elif [ -f data.tar.gz ]; then
-            gunzip data.tar.gz
-        fi
-        tar -xf data.tar ./usr/bin/qemu-system-x86_64
-        cp usr/bin/qemu-system-x86_64 "$$OUT"
-        chmod +x "$$OUT"
-        cd /
-        rm -rf "$$TMPDIR"
-    """,
-)
-
 # ─ Build initramfs (cpio.gz) ──────────────────────────────────────────────────
 # Contains: /init (init.sh), /bin/busybox, /testprobe, /modules/*.ko
 genrule(
@@ -122,12 +94,10 @@ sh_test(
     args = [
         "$(location :vmlinuz)",
         "$(location :initramfs)",
-        "$(location :qemu_binary)",
         "1,2,3,4,5,6",
     ],
     data = [
         ":initramfs",
-        ":qemu_binary",
         ":vmlinuz",
     ],
     tags = [
@@ -143,7 +113,7 @@ sh_test(
 # service and establish a WireGuard tunnel. VM-A sends ICMPv6 probes to VM-B's
 # KubeSpan address to verify end-to-end connectivity.
 #
-# Requires: Docker (for discovery service), QEMU shared libraries + qemu-system-data.
+# Requires: Docker (for discovery service), qemu-system-x86 (apt-installed on RBE workers).
 
 # ─ Extract full kernel modules tree for modprobe ─────────────────────────────
 # The integration test needs WireGuard, nftables, virtio_net, and all their
@@ -231,12 +201,10 @@ sh_test(
     args = [
         "$(location :vmlinuz)",
         "$(location :integration_initramfs)",
-        "$(location :qemu_binary)",
         "$(location //third_party/siderolabs:discovery_service_tarball)",
     ],
     data = [
         ":integration_initramfs",
-        ":qemu_binary",
         ":vmlinuz",
         "//third_party/siderolabs:discovery_service_tarball",
     ],

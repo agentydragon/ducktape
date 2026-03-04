@@ -508,17 +508,6 @@ http_file(
     urls = ["https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox"],
 )
 
-# QEMU system emulator for x86_64 (Ubuntu Noble 24.04).
-# Used for nftables smoke tests that need a real kernel with nf_tables support.
-# The binary is dynamically linked; the RBE worker image (Ubuntu 24.04) provides
-# the required shared libraries and qemu-system-data (firmware/BIOS files).
-http_file(
-    name = "qemu_system_x86_deb",
-    downloaded_file_path = "qemu-system-x86.deb",
-    sha256 = "7970b1f08112a0fee2d156eacd36b6272f2c732c568e889b3f2bf99d1576e901",
-    urls = ["https://archive.ubuntu.com/ubuntu/pool/main/q/qemu/qemu-system-x86_8.2.2+ds-0ubuntu1.12_amd64.deb"],
-)
-
 # tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
 # Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
 http_file(
