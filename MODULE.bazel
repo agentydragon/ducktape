@@ -511,7 +511,7 @@ http_file(
 # QEMU system emulator for x86_64 (Ubuntu Noble 24.04).
 # Used for nftables smoke tests that need a real kernel with nf_tables support.
 # The binary is dynamically linked; the RBE worker image (Ubuntu 24.04) provides
-# the required shared libraries. Requires qemu-system-data on the host.
+# the required shared libraries and qemu-system-data (firmware/BIOS files).
 http_file(
     name = "qemu_system_x86_deb",
     downloaded_file_path = "qemu-system-x86.deb",

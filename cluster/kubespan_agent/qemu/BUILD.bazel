@@ -69,9 +69,6 @@ genrule(
         cd /
         rm -rf "$$TMPDIR"
     """,
-    # .deb is an ar archive; data is in data.tar.zst (Ubuntu 24.04).
-    # Runs locally because ar/zstd may not be on RBE workers.
-    local = True,
 )
 
 # ─ Build initramfs (cpio.gz) ──────────────────────────────────────────────────
@@ -115,8 +112,6 @@ genrule(
         (cd $$INITRAMFS_DIR && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
         rm -rf $$INITRAMFS_DIR
     """,
-    # Runs locally because cpio is not available on RBE workers.
-    local = True,
 )
 
 # ─ Test: nft-smoke levels 1-6 in QEMU ────────────────────────────────────────
@@ -135,12 +130,8 @@ sh_test(
         ":qemu_binary",
         ":vmlinuz",
     ],
-    # QEMU is dynamically linked and needs host shared libraries.
-    # Run locally where qemu-system-data is installed.
-    local = True,
     tags = [
         "manual",
-        "no-remote",
         "requires_qemu",
     ],
 )
@@ -152,7 +143,7 @@ sh_test(
 # service and establish a WireGuard tunnel. VM-A sends ICMPv6 probes to VM-B's
 # KubeSpan address to verify end-to-end connectivity.
 #
-# Requires: Docker (for discovery service), QEMU shared libraries on host.
+# Requires: Docker (for discovery service), QEMU shared libraries + qemu-system-data.
 
 # ─ Extract full kernel modules tree for modprobe ─────────────────────────────
 # The integration test needs WireGuard, nftables, virtio_net, and all their
@@ -181,7 +172,6 @@ genrule(
         tar -cf $@ -C $$TMPDIR lib/modules/
         rm -rf $$TMPDIR
     """,
-    local = True,
 )
 
 # ─ Build integration initramfs ───────────────────────────────────────────────
@@ -231,7 +221,6 @@ genrule(
         (cd $$INITRAMFS_DIR && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
         rm -rf $$INITRAMFS_DIR
     """,
-    local = True,
 )
 
 # ─ Test: KubeSpan integration in QEMU ────────────────────────────────────────
@@ -251,10 +240,8 @@ sh_test(
         ":vmlinuz",
         "//third_party/siderolabs:discovery_service_tarball",
     ],
-    local = True,
     tags = [
         "manual",
-        "no-remote",
         "requires_docker",
         "requires_qemu",
     ],

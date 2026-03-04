@@ -22,6 +22,14 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         # dbus-daemon: needed by tests that spawn a private D-Bus session
         # (e.g. experimental/dbus_fast_example)
         dbus-daemon \
+        # cpio: needed to build initramfs for QEMU-based tests
+        cpio \
+        # zstd: needed to extract Ubuntu .deb packages (data.tar.zst)
+        zstd \
+        # qemu-system-data: firmware/BIOS files needed by QEMU at runtime
+        # (the QEMU binary is extracted from a pinned .deb for version hermeticity,
+        # but it still needs /usr/share/qemu/ for pc-bios, keymaps, etc.)
+        qemu-system-data \
         # Chromium headless shell shared library dependencies
         libasound2t64 \
         libatk-bridge2.0-0t64 \
