@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//cluster/kubespan_agent:upstream.bzl", "TALOS_CONTROLLERS_KUBESPAN", "talos_copy")
 
 # Upstream Talos peer spec controller pulled at a pinned tag and patched.
@@ -33,4 +33,10 @@ go_library(
         "@org_go4_netipx//:netipx",
         "@org_uber_go_zap//:zap",
     ],
+)
+
+go_test(
+    name = "peerspec_test",
+    srcs = ["peer_spec_filters_test.go"],
+    embed = [":peerspec"],
 )

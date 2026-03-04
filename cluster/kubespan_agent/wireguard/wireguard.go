@@ -131,7 +131,6 @@ func (wm *Manager) GetPeers() ([]wgtypes.Peer, error) {
 }
 
 // Cleanup removes the kubespan WireGuard interface.
-// TODO: align cleanup with COSI resource teardown (Talos writes LinkSpec/AddressSpec/RouteSpec)
 func (wm *Manager) Cleanup() error {
 	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
 	if err != nil {
