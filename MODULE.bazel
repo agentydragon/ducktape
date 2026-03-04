@@ -471,8 +471,8 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 # ─ Talos internal sources (cannot import, pulled from upstream at pinned tag) ──
-# NfTablesChainController and rule compiler from Talos internal/.
-# Used by kubespand to apply NfTablesChain COSI resources to the kernel.
+# Internal adapter/controller code from Talos internal/.
+# Used by kubespand for nftables chain management and peer state machine.
 # MPL-2.0 licensed (compatible with AGPL-3.0).
 _TALOS_TAG = "v1.13.0-alpha.2"
 
@@ -486,6 +486,7 @@ exports_files([
     "internal/app/machined/pkg/adapters/network/ipset.go",
     "internal/app/machined/pkg/adapters/network/network.go",
     "internal/app/machined/pkg/controllers/network/nftables_chain.go",
+    "internal/app/machined/pkg/adapters/kubespan/peer_status.go",
 ])
 """,
     sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",

@@ -224,21 +224,21 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 
 		// Update from WireGuard peer data.
 		if idx, found := wgPeerMap[pubKey]; found {
-			peerstate.UpdateFromWireguard(ps, wgPeerList[idx])
+			peerstate.PeerStatusSpec(ps).UpdateFromWireguard(wgPeerList[idx])
 		}
 
 		// Calculate peer state and cycle endpoint if needed.
-		peerstate.CalculateState(ps)
+		peerstate.PeerStatusSpec(ps).CalculateState()
 
-		if peerstate.ShouldChangeEndpoint(ps) {
-			newEP := peerstate.PickNewEndpoint(ps, peerSpec.Endpoints)
+		if peerstate.PeerStatusSpec(ps).ShouldChangeEndpoint() {
+			newEP := peerstate.PeerStatusSpec(ps).PickNewEndpoint(peerSpec.Endpoints)
 			if newEP.IsValid() {
 				logger.Info("cycling endpoint",
 					zap.String("peer", ps.Label),
 					zap.Stringer("old", ps.LastUsedEndpoint),
 					zap.Stringer("new", newEP),
 				)
-				peerstate.UpdateEndpoint(ps, newEP)
+				peerstate.PeerStatusSpec(ps).UpdateEndpoint(newEP)
 			}
 		}
 
@@ -259,7 +259,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 			peerCfg.Endpoint = wireguard.AddrPortToUDPAddr(ps.LastUsedEndpoint)
 		} else if len(peerSpec.Endpoints) > 0 {
 			peerCfg.Endpoint = wireguard.AddrPortToUDPAddr(peerSpec.Endpoints[0])
-			peerstate.UpdateEndpoint(ps, peerSpec.Endpoints[0])
+			peerstate.PeerStatusSpec(ps).UpdateEndpoint(peerSpec.Endpoints[0])
 		}
 		wgPeers = append(wgPeers, peerCfg)
 
