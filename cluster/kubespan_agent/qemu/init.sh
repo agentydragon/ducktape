@@ -6,7 +6,6 @@
 #
 # Common kernel cmdline parameters:
 #   mode=nft_smoke|kubespan  - Test mode (required)
-#   quiet                    - Suppress kernel messages on console
 #
 # nft_smoke parameters:
 #   levels=1,2,3,...  - Comma-separated list of nft-smoke levels to run
@@ -66,8 +65,7 @@ echo "QEMU_TEST: kernel modules version=$KVER"
 # The dependency isn't always in modules.dep, so load explicitly.
 echo "QEMU_TEST: loading nftables modules..."
 /bin/busybox modprobe crc32c_generic 2>/dev/null || true
-/bin/busybox modprobe nf_tables
-if [ $? -ne 0 ]; then
+if ! /bin/busybox modprobe nf_tables; then
   echo "QEMU_TEST: WARN modprobe nf_tables failed"
 fi
 
@@ -139,8 +137,7 @@ case "$MODE" in
 
     # Load additional modules for kubespan (wireguard, virtio_net).
     echo "QEMU_TEST: loading wireguard..."
-    /bin/busybox modprobe wireguard
-    if [ $? -ne 0 ]; then
+    if ! /bin/busybox modprobe wireguard; then
       echo "QEMU_TEST: WARN modprobe wireguard failed"
     fi
     /bin/busybox modprobe virtio_net 2>/dev/null || true
