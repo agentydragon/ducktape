@@ -40,16 +40,16 @@ echo "Running nft-smoke levels=$LEVELS in QEMU..."
 #   -append:   kernel cmdline (serial console, levels to test)
 #   -nographic: no GUI, serial on stdout
 #   -no-reboot: exit on kernel panic/poweroff instead of rebooting
-#   -m 256:    256MB RAM (plenty for nftables tests)
+#   -m 512:    512MB RAM (unified initramfs includes kubespand + full modules tree)
 #   -machine accel=tcg: software emulation (no KVM required)
 #   -cpu max:  expose all CPU features (useful for some nftables features)
 timeout 120 "$QEMU" \
   -kernel "$VMLINUZ" \
   -initrd "$INITRAMFS" \
-  -append "console=ttyS0 panic=-1 quiet levels=$LEVELS" \
+  -append "console=ttyS0 panic=-1 quiet mode=nft_smoke levels=$LEVELS" \
   -nographic \
   -no-reboot \
-  -m 256 \
+  -m 512 \
   -machine "accel=tcg" \
   -cpu max \
   -display none \

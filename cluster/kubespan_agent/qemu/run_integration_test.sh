@@ -116,7 +116,7 @@ qemu_cmd() {
   "$QEMU" \
     -kernel "$VMLINUZ" \
     -initrd "$INITRAMFS" \
-    -append "console=ttyS0 panic=-1 quiet role=$role cluster_id=$CLUSTER_ID shared_secret=$SHARED_SECRET discovery=10.0.2.2:$DISC_PORT" \
+    -append "console=ttyS0 panic=-1 quiet mode=kubespan role=$role cluster_id=$CLUSTER_ID shared_secret=$SHARED_SECRET discovery=10.0.2.2:$DISC_PORT" \
     -nographic \
     -no-reboot \
     -m 512 \

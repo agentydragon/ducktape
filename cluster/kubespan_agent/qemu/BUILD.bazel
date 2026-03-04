@@ -7,7 +7,9 @@
 #   L2 network with a discovery service on the host (Docker). Verifies WireGuard
 #   tunnel connectivity through ICMPv6 probes.
 #
-# Both tests use an Alpine linux-virt kernel in QEMU TCG (software emulation).
+# Both tests share a single initramfs with the full Alpine linux-virt kernel
+# modules tree, busybox, testprobe, and kubespand. The init script dispatches
+# on a mode= kernel cmdline parameter. QEMU TCG (software emulation) is used.
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
@@ -19,48 +21,58 @@ genrule(
     cmd = "tar -xzf $< -O boot/vmlinuz-virt > $@",
 )
 
-# ─ Extract nftables kernel modules from Alpine linux-virt .apk ────────────────
-# Modules are .ko.gz in the package; we decompress them for use with insmod.
-_KERNEL_VER = "6.12.74-0-virt"
+# ─ Extract full kernel modules tree for modprobe ─────────────────────────────
+# Extracts the entire /lib/modules/<version>/ tree with modules.dep so busybox
+# modprobe can resolve dependencies automatically. Used by both nft-smoke
+# (nftables modules) and kubespan (wireguard, nftables, virtio_net).
+genrule(
+    name = "modules_tree",
+    srcs = ["@alpine_linux_virt//file"],
+    outs = ["modules_tree.tar"],
+    cmd = """
+        set -e
+        TMPDIR=$$(mktemp -d)
+        # Extract kernel modules from Alpine .apk.
+        tar -xzf $< -C $$TMPDIR lib/modules/
+        # Decompress all .ko.gz files for use with insmod/modprobe.
+        find $$TMPDIR/lib/modules/ -name '*.ko.gz' -exec gunzip {} \\;
+        # Update modules.dep and modules.dep.bin to reference .ko instead of .ko.gz.
+        # busybox modprobe reads modules.dep to resolve dependencies.
+        find $$TMPDIR/lib/modules/ -name 'modules.dep' -exec sed -i 's/\\.ko\\.gz/.ko/g' {} \\;
+        find $$TMPDIR/lib/modules/ -name 'modules.alias' -exec sed -i 's/\\.ko\\.gz/.ko/g' {} \\;
+        # Regenerate binary index files from the text files.
+        # modules.dep.bin is a binary format; remove it so modprobe falls back to text.
+        find $$TMPDIR/lib/modules/ -name '*.bin' -delete
+        # Create a tarball of the modules tree (preserving directory structure).
+        tar -cf $@ -C $$TMPDIR lib/modules/
+        rm -rf $$TMPDIR
+    """,
+)
 
-# Modules in load order:
-#   crc32c_generic → libcrc32c → nfnetlink → nf_tables
-# crc32c_generic provides the crypto CRC32C algorithm that libcrc32c wraps.
-_MODULES = {
-    "crc32c_generic": "kernel/crypto/crc32c_generic",
-    "nfnetlink": "kernel/net/netfilter/nfnetlink",
-    "libcrc32c": "kernel/lib/libcrc32c",
-    "nf_tables": "kernel/net/netfilter/nf_tables",
-}
-
-[
-    genrule(
-        name = "module_" + mod,
-        srcs = ["@alpine_linux_virt//file"],
-        outs = [mod + ".ko"],
-        cmd = "tar -xzf $< -O lib/modules/" + _KERNEL_VER + "/" + path + ".ko.gz | gunzip > $@",
-    )
-    for mod, path in _MODULES.items()
-]
-
-# ─ Build initramfs (cpio.gz) ──────────────────────────────────────────────────
-# Contains: /init (init.sh), /bin/busybox, /testprobe, /modules/*.ko
+# ─ Build initramfs (cpio.gz) ────────────────────────────────────────────────
+# Unified initramfs for both tests. Contains: /init (init.sh), /bin/busybox,
+# /kubespand, /testprobe, /lib/modules/<version>/ (full tree with modules.dep).
+# The init script dispatches on mode= kernel cmdline parameter.
 genrule(
     name = "initramfs",
     testonly = True,
     srcs = [
         "init.sh",
         "@busybox_static_x86_64//file",
+        "//cluster/kubespan_agent:kubespand",
         "//cluster/kubespan_agent/testprobe",
-    ] + [":module_" + mod for mod in _MODULES],
+        ":modules_tree",
+    ],
     outs = ["initramfs.cpio.gz"],
     cmd = """
         set -e
         INITRAMFS_DIR=$$(mktemp -d)
 
         # Create directory structure.
-        mkdir -p $$INITRAMFS_DIR/bin $$INITRAMFS_DIR/modules $$INITRAMFS_DIR/dev \
-                 $$INITRAMFS_DIR/proc $$INITRAMFS_DIR/sys
+        mkdir -p $$INITRAMFS_DIR/bin $$INITRAMFS_DIR/dev \
+                 $$INITRAMFS_DIR/proc $$INITRAMFS_DIR/sys \
+                 $$INITRAMFS_DIR/tmp $$INITRAMFS_DIR/var/lib/kubespan \
+                 $$INITRAMFS_DIR/etc/kubespan $$INITRAMFS_DIR/run
 
         # Install init script.
         cp $(location init.sh) $$INITRAMFS_DIR/init
@@ -70,15 +82,16 @@ genrule(
         cp $(location @busybox_static_x86_64//file) $$INITRAMFS_DIR/bin/busybox
         chmod +x $$INITRAMFS_DIR/bin/busybox
 
+        # Install kubespand.
+        cp $(location //cluster/kubespan_agent:kubespand) $$INITRAMFS_DIR/kubespand
+        chmod +x $$INITRAMFS_DIR/kubespand
+
         # Install testprobe.
         cp $(location //cluster/kubespan_agent/testprobe) $$INITRAMFS_DIR/testprobe
         chmod +x $$INITRAMFS_DIR/testprobe
 
-        # Install kernel modules.
-        for mod in $(locations :module_crc32c_generic) $(locations :module_nfnetlink) \
-                   $(locations :module_libcrc32c) $(locations :module_nf_tables); do
-            cp $$mod $$INITRAMFS_DIR/modules/
-        done
+        # Install full kernel modules tree (for modprobe dependency resolution).
+        tar -xf $(location :modules_tree) -C $$INITRAMFS_DIR
 
         # Build cpio archive.
         (cd $$INITRAMFS_DIR && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
@@ -106,105 +119,23 @@ sh_test(
     ],
 )
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# KubeSpan QEMU integration test
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─ Test: KubeSpan integration in QEMU ────────────────────────────────────────
 # Two QEMU VMs running kubespand discover each other via a local discovery
 # service and establish a WireGuard tunnel. VM-A sends ICMPv6 probes to VM-B's
 # KubeSpan address to verify end-to-end connectivity.
 #
 # Requires: Docker (for discovery service), qemu-system-x86 (apt-installed on RBE workers).
-
-# ─ Extract full kernel modules tree for modprobe ─────────────────────────────
-# The integration test needs WireGuard, nftables, virtio_net, and all their
-# transitive dependencies. Instead of listing each module individually, extract
-# the entire /lib/modules/<version>/ tree with modules.dep so busybox modprobe
-# can resolve dependencies automatically.
-genrule(
-    name = "modules_tree",
-    srcs = ["@alpine_linux_virt//file"],
-    outs = ["modules_tree.tar"],
-    cmd = """
-        set -e
-        TMPDIR=$$(mktemp -d)
-        # Extract kernel modules from Alpine .apk.
-        tar -xzf $< -C $$TMPDIR lib/modules/
-        # Decompress all .ko.gz files for use with insmod/modprobe.
-        find $$TMPDIR/lib/modules/ -name '*.ko.gz' -exec gunzip {} \\;
-        # Update modules.dep and modules.dep.bin to reference .ko instead of .ko.gz.
-        # busybox modprobe reads modules.dep to resolve dependencies.
-        find $$TMPDIR/lib/modules/ -name 'modules.dep' -exec sed -i 's/\\.ko\\.gz/.ko/g' {} \\;
-        find $$TMPDIR/lib/modules/ -name 'modules.alias' -exec sed -i 's/\\.ko\\.gz/.ko/g' {} \\;
-        # Regenerate binary index files from the text files.
-        # modules.dep.bin is a binary format; remove it so modprobe falls back to text.
-        find $$TMPDIR/lib/modules/ -name '*.bin' -delete
-        # Create a tarball of the modules tree (preserving directory structure).
-        tar -cf $@ -C $$TMPDIR lib/modules/
-        rm -rf $$TMPDIR
-    """,
-)
-
-# ─ Build integration initramfs ───────────────────────────────────────────────
-# Contains: /init (init_kubespand.sh), /bin/busybox, /kubespand, /testprobe,
-# /lib/modules/<version>/ (full tree with modules.dep)
-genrule(
-    name = "integration_initramfs",
-    testonly = True,
-    srcs = [
-        "init_kubespand.sh",
-        "@busybox_static_x86_64//file",
-        "//cluster/kubespan_agent:kubespand",
-        "//cluster/kubespan_agent/testprobe",
-        ":modules_tree",
-    ],
-    outs = ["integration_initramfs.cpio.gz"],
-    cmd = """
-        set -e
-        INITRAMFS_DIR=$$(mktemp -d)
-
-        # Create directory structure.
-        mkdir -p $$INITRAMFS_DIR/bin $$INITRAMFS_DIR/dev \
-                 $$INITRAMFS_DIR/proc $$INITRAMFS_DIR/sys \
-                 $$INITRAMFS_DIR/tmp $$INITRAMFS_DIR/var/lib/kubespan \
-                 $$INITRAMFS_DIR/etc/kubespan $$INITRAMFS_DIR/run
-
-        # Install init script.
-        cp $(location init_kubespand.sh) $$INITRAMFS_DIR/init
-        chmod +x $$INITRAMFS_DIR/init
-
-        # Install busybox.
-        cp $(location @busybox_static_x86_64//file) $$INITRAMFS_DIR/bin/busybox
-        chmod +x $$INITRAMFS_DIR/bin/busybox
-
-        # Install kubespand.
-        cp $(location //cluster/kubespan_agent:kubespand) $$INITRAMFS_DIR/kubespand
-        chmod +x $$INITRAMFS_DIR/kubespand
-
-        # Install testprobe.
-        cp $(location //cluster/kubespan_agent/testprobe) $$INITRAMFS_DIR/testprobe
-        chmod +x $$INITRAMFS_DIR/testprobe
-
-        # Install full kernel modules tree (for modprobe dependency resolution).
-        tar -xf $(location :modules_tree) -C $$INITRAMFS_DIR
-
-        # Build cpio archive.
-        (cd $$INITRAMFS_DIR && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
-        rm -rf $$INITRAMFS_DIR
-    """,
-)
-
-# ─ Test: KubeSpan integration in QEMU ────────────────────────────────────────
 sh_test(
     name = "kubespan_qemu",
     timeout = "eternal",
     srcs = ["run_integration_test.sh"],
     args = [
         "$(location :vmlinuz)",
-        "$(location :integration_initramfs)",
+        "$(location :initramfs)",
         "$(location //third_party/siderolabs:discovery_service_tarball)",
     ],
     data = [
-        ":integration_initramfs",
+        ":initramfs",
         ":vmlinuz",
         "//third_party/siderolabs:discovery_service_tarball",
     ],
