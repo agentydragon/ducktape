@@ -135,14 +135,13 @@ func TestCompileMSSClamp(t *testing.T) {
 		t.Fatalf("Compile() error: %v", err)
 	}
 
-	// ClampMSS always generates rules for both IPv4 and IPv6, even when
-	// MatchDestinationAddress only has IPv4 prefixes. The IPv6 rule applies
-	// MSS clamping to any IPv6 packet (no address filter).
-	if len(compiled.Rules) != 2 {
-		t.Fatalf("expected 2 rules (ClampMSS generates both IPv4 and IPv6), got %d", len(compiled.Rules))
+	// ClampMSS only generates rules for address families with matching prefixes.
+	// IPv4-only address match → single IPv4 rule with MSS clamp.
+	if len(compiled.Rules) != 1 {
+		t.Fatalf("expected 1 rule (IPv4-only ClampMSS), got %d", len(compiled.Rules))
 	}
 
-	// Both rules should contain Exthdr expressions (MSS clamp).
+	// The rule should contain Exthdr expressions (MSS clamp).
 	for i, exprs := range compiled.Rules {
 		hasExthdr := false
 		for _, e := range exprs {

@@ -57,7 +57,6 @@ go_library(
         "@com_github_google_nftables//binaryutil",
         "@com_github_google_nftables//expr",
         "@com_github_siderolabs_gen//xslices",
-        "@com_github_siderolabs_go_pointer//:go-pointer",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_siderolabs_talos_pkg_machinery//nethelpers",
         "@com_github_siderolabs_talos_pkg_machinery//resources/network",

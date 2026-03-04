@@ -474,7 +474,7 @@ http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_
 # NfTablesChainController and rule compiler from Talos internal/.
 # Used by kubespand to apply NfTablesChain COSI resources to the kernel.
 # MPL-2.0 licensed (compatible with AGPL-3.0).
-_TALOS_TAG = "v1.12.4"
+_TALOS_TAG = "v1.13.0-alpha.2"
 
 http_archive(
     name = "talos_internal",
@@ -488,8 +488,8 @@ exports_files([
     "internal/app/machined/pkg/controllers/network/nftables_chain.go",
 ])
 """,
-    sha256 = "2ed9dc0d227ebd3f473f6c8d23702bce977ce4a7d63556437218bdc2ef37cac4",
-    strip_prefix = "talos-1.12.4",
+    sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",
+    strip_prefix = "talos-1.13.0-alpha.2",
     urls = ["https://github.com/siderolabs/talos/archive/refs/tags/" + _TALOS_TAG + ".tar.gz"],
 )
 
@@ -586,7 +586,7 @@ http_archive(
 
 # ─ Go toolchain (environment-manager RE) ──────────────────────────────────
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.25.6")
+go_sdk.download(version = "1.26.0")
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//claude_web_env/re/environment_manager/6b49f1ca/src:go.mod")
@@ -976,8 +976,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/siderolabs/talos/pkg/machinery",
-    sum = "h1:4Zh47gUnK8y155dUWJKpSRnFgAozvFjs7XlGMaKGhM0=",
-    version = "v1.12.4",
+    sum = "h1:cU2m/BNoxhH51e1Kzkf23/LNvFmbSl8OZcoqc7aKOOA=",
+    version = "v1.13.0-alpha.2",
 )
 go_deps.module(
     path = "github.com/spf13/pflag",
@@ -1016,8 +1016,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "go.yaml.in/yaml/v4",
-    sum = "h1:3h1fjsh1CTAPjW7q/EMe+C8shx5d8ctzZTrLcs/j8Go=",
-    version = "v4.0.0-rc.3",
+    sum = "h1:UP4+v6fFrBIb1l934bDl//mmnoIZEDK0idg1+AIvX5U=",
+    version = "v4.0.0-rc.4",
 )
 go_deps.module(
     path = "go4.org/netipx",
