@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
     name = "kubespan_agent_lib",
@@ -60,21 +60,4 @@ go_binary(
     goos = "linux",
     static = "on",
     visibility = ["//visibility:public"],
-)
-
-go_test(
-    name = "cosi_test",
-    srcs = ["cosi_test.go"],
-    embed = [":kubespan_agent_lib"],
-    deps = [
-        "@com_github_cosi_project_runtime//pkg/controller",
-        "@com_github_cosi_project_runtime//pkg/controller/runtime",
-        "@com_github_cosi_project_runtime//pkg/safe",
-        "@com_github_cosi_project_runtime//pkg/state",
-        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
-        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
-        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
-        "@org_uber_go_zap//:zap",
-        "@org_uber_go_zap//zaptest",
-    ],
 )

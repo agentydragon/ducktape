@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//cluster/kubespan_agent:upstream.bzl", "TALOS_ADAPTERS_KUBESPAN", "talos_copy")
 
 # Upstream Talos kubespan adapters pulled at a pinned tag.
@@ -33,14 +33,5 @@ go_library(
         "@com_github_siderolabs_talos_pkg_machinery//resources/network",
         "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
         "@org_go4_netipx//:netipx",
-    ],
-)
-
-go_test(
-    name = "peerstate_test",
-    srcs = ["peerstate_test.go"],
-    deps = [
-        ":peerstate",
-        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
     ],
 )

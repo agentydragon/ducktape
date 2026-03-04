@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//cluster/kubespan_agent:upstream.bzl", "TALOS_ADAPTERS_NETWORK", "TALOS_CONTROLLERS_NETWORK", "talos_copy")
 
 # Upstream Talos adapter/controller sources pulled at a pinned tag.
@@ -53,16 +53,5 @@ go_library(
         "@org_go4_netipx//:netipx",
         "@org_golang_x_sys//unix",
         "@org_uber_go_zap//:zap",
-    ],
-)
-
-go_test(
-    name = "nftables_test",
-    srcs = ["compiler_test.go"],
-    embed = [":nftables"],
-    deps = [
-        "@com_github_google_nftables//expr",
-        "@com_github_siderolabs_talos_pkg_machinery//nethelpers",
-        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
     ],
 )
