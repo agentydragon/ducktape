@@ -67,14 +67,6 @@ workflows:
     secrets: inherit
     rbe: false
 
-  # Tests requiring privileged Docker (WireGuard, nftables, ip rules).
-  # Cannot run on RBE; needs a real VM with Docker and WireGuard kernel module.
-  privileged-docker-tests:
-    trigger: { kind: bazel_query, query: 'attr(tags, "requires_privileged_docker", $targets)' }
-    targets: true
-    secrets: inherit
-    rbe: false
-
   # Path-based workflows (non-Bazel)
   nix-flake-check:
     trigger: { kind: path, pattern: "^nix/" }

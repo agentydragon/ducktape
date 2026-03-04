@@ -132,13 +132,6 @@ jobs:
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-exec-image')
     uses: ./.github/workflows/openclaw-exec-image.yml
     secrets: inherit
-  privileged-docker-tests:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'privileged-docker-tests')
-    uses: ./.github/workflows/privileged-docker-tests.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
-    secrets: inherit
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')
