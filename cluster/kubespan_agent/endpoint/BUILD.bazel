@@ -1,15 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//cluster/kubespan_agent:upstream.bzl", "TALOS_CONTROLLERS_KUBESPAN", "talos_copy")
 
 # Upstream Talos endpoint controller pulled at a pinned tag.
 # See MODULE.bazel http_archive "talos_internal" for the pinned version.
 
-_TALOS_CONTROLLERS = "@talos_internal//:internal/app/machined/pkg/controllers/kubespan/"
-
-genrule(
+talos_copy(
     name = "upstream_endpoint",
-    srcs = [_TALOS_CONTROLLERS + "endpoint.go"],
-    outs = ["endpoint_upstream.go"],
-    cmd = "cp $< $@",
+    src = TALOS_CONTROLLERS_KUBESPAN + "endpoint.go",
+    out = "endpoint.go",
 )
 
 go_library(

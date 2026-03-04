@@ -1,0 +1,4 @@
+# This package provides the build file overlay and patches for @talos_internal.
+# See MODULE.bazel http_archive "talos_internal".
+
+exports_files(["BUILD.overlay.bazel"])

@@ -1,0 +1,87 @@
+--- internal/app/machined/pkg/controllers/kubespan/peer_spec.go.orig	2026-03-04 05:49:49.157666239 +0000
++++ internal/app/machined/pkg/controllers/kubespan/peer_spec.go	2026-03-04 05:51:30.189667017 +0000
+@@ -7,14 +7,12 @@
+ import (
+ 	"context"
+ 	"fmt"
+-	"slices"
+
+ 	"github.com/cosi-project/runtime/pkg/controller"
+ 	"github.com/cosi-project/runtime/pkg/resource"
+ 	"github.com/cosi-project/runtime/pkg/safe"
+ 	"github.com/cosi-project/runtime/pkg/state"
+ 	"github.com/siderolabs/gen/optional"
+-	"github.com/siderolabs/gen/xslices"
+ 	"go.uber.org/zap"
+ 	"go4.org/netipx"
+
+@@ -46,9 +44,9 @@
+ 			Kind:      controller.InputWeak,
+ 		},
+ 		{
+-			Namespace: cluster.NamespaceName,
+-			Type:      cluster.IdentityType,
+-			ID:        optional.Some(cluster.LocalIdentity),
++			Namespace: kubespan.NamespaceName,
++			Type:      kubespan.IdentityType,
++			ID:        optional.Some(kubespan.LocalIdentity),
+ 			Kind:      controller.InputWeak,
+ 		},
+ 	}
+@@ -80,7 +78,7 @@
+ 			return fmt.Errorf("error getting kubespan configuration: %w", err)
+ 		}
+
+-		localIdentity, err := safe.ReaderGetByID[*cluster.Identity](ctx, r, cluster.LocalIdentity)
++		localIdentity, err := safe.ReaderGetByID[*kubespan.Identity](ctx, r, kubespan.LocalIdentity)
+ 		if err != nil && !state.IsNotFoundError(err) {
+ 			return fmt.Errorf("error getting first MAC address: %w", err)
+ 		}
+@@ -93,21 +91,19 @@
+ 		touchedIDs := map[resource.ID]struct{}{}
+
+ 		if cfg != nil && localIdentity != nil && cfg.TypedSpec().Enabled {
+-			localAffiliateID := localIdentity.TypedSpec().NodeID
++			localPublicKey := localIdentity.TypedSpec().PublicKey
++
++			filters := parseEndpointFilters(cfg.TypedSpec().EndpointFilters)
+
+ 			peerIPSets := make(map[string]*netipx.IPSet, affiliates.Len())
+
+ 		affiliateLoop:
+ 			for affiliate := range affiliates.All() {
+-				if affiliate.Metadata().ID() == localAffiliateID {
+-					// skip local affiliate, it's not a peer
+-					continue
+-				}
+
+ 				spec := affiliate.TypedSpec()
+
+-				if spec.KubeSpan.PublicKey == "" {
+-					// no kubespan information, skip it
++				if spec.KubeSpan.PublicKey == "" || spec.KubeSpan.PublicKey == localPublicKey {
++					// no kubespan information or self, skip it
+ 					continue
+ 				}
+
+@@ -168,7 +164,7 @@
+ 					*res.TypedSpec() = kubespan.PeerSpecSpec{
+ 						Address:    spec.KubeSpan.Address,
+ 						AllowedIPs: ipSet.Prefixes(),
+-						Endpoints:  slices.Clone(spec.KubeSpan.Endpoints),
++						Endpoints:  filterEndpoints(spec.KubeSpan.Endpoints, filters),
+ 						Label:      spec.Nodename,
+ 					}
+
+@@ -205,5 +201,10 @@
+
+ // dumpSet converts IPSet to a form suitable for logging.
+ func dumpSet(set *netipx.IPSet) []string {
+-	return xslices.Map(set.Ranges(), netipx.IPRange.String)
++	ranges := set.Ranges()
++	result := make([]string, len(ranges))
++	for i, r := range ranges {
++		result[i] = r.String()
++	}
++	return result
+ }

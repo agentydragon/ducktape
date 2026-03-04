@@ -1,16 +1,16 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//cluster/kubespan_agent:upstream.bzl", "TALOS_CONTROLLERS_KUBESPAN", "talos_copy")
 
-# Upstream Talos peer spec controller pulled at a pinned tag and transformed.
+# Upstream Talos peer spec controller pulled at a pinned tag and patched.
 # See MODULE.bazel http_archive "talos_internal" for the pinned version.
+# Patches in third_party/siderolabs/talos_internal/patches/ are applied at
+# fetch time (adapts cluster.Identity → kubespan.Identity, injects endpoint
+# filtering, replaces affiliate self-check with PublicKey self-check).
 
-_TALOS_CONTROLLERS = "@talos_internal//:internal/app/machined/pkg/controllers/kubespan/"
-
-genrule(
+talos_copy(
     name = "upstream_peer_spec",
-    srcs = [_TALOS_CONTROLLERS + "peer_spec.go"],
-    outs = ["peer_spec_upstream.go"],
-    cmd = "awk -f $(location :transform_peer_spec.awk) $< > $@",
-    tools = [":transform_peer_spec.awk"],
+    src = TALOS_CONTROLLERS_KUBESPAN + "peer_spec.go",
+    out = "peer_spec.go",
 )
 
 go_library(

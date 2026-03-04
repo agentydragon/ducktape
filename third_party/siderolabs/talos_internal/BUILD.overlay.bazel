@@ -1,0 +1,23 @@
+# Build file overlay for @talos_internal http_archive.
+#
+# Talos internal/ files cannot be imported as Go modules. This overlay exposes
+# individual source files for consumption by kubespand packages. Patches in
+# patches/ are applied at archive fetch time (see MODULE.bazel).
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    # Adapters — kubespan
+    "internal/app/machined/pkg/adapters/kubespan/identity.go",
+    "internal/app/machined/pkg/adapters/kubespan/peer_status.go",
+    # Adapters — network
+    "internal/app/machined/pkg/adapters/network/nftables_rule.go",
+    "internal/app/machined/pkg/adapters/network/ipset.go",
+    "internal/app/machined/pkg/adapters/network/network.go",
+    # Controllers — kubespan
+    "internal/app/machined/pkg/controllers/kubespan/endpoint.go",
+    "internal/app/machined/pkg/controllers/kubespan/peer_spec.go",
+    "internal/app/machined/pkg/controllers/kubespan/routing_rules.go",
+    # Controllers — network
+    "internal/app/machined/pkg/controllers/network/nftables_chain.go",
+])

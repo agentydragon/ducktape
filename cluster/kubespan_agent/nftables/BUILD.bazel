@@ -1,46 +1,33 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//cluster/kubespan_agent:upstream.bzl", "TALOS_ADAPTERS_NETWORK", "TALOS_CONTROLLERS_NETWORK", "talos_copy")
 
 # Upstream Talos adapter/controller sources pulled at a pinned tag.
 # See MODULE.bazel http_archive "talos_internal" for the pinned version.
-#
-# Adapter files (nftables_rule.go, ipset.go, network.go) are used unmodified.
-# The controller (nftables_chain.go) needs minimal awk to remove internal Talos
-# imports and the preCreateIptablesNFTable method (Talos-specific iptables compat).
+# Patches in third_party/siderolabs/talos_internal/patches/ are applied at
+# fetch time (removes internal adapter import and preCreateIptablesNFTable).
 
-_TALOS_ADAPTERS = "@talos_internal//:internal/app/machined/pkg/adapters/network/"
-
-_TALOS_CONTROLLERS = "@talos_internal//:internal/app/machined/pkg/controllers/network/"
-
-# Adapter files used as-is (no transformation needed).
-genrule(
+talos_copy(
     name = "upstream_compiler",
-    srcs = [_TALOS_ADAPTERS + "nftables_rule.go"],
-    outs = ["compiler_upstream.go"],
-    cmd = "cp $< $@",
+    src = TALOS_ADAPTERS_NETWORK + "nftables_rule.go",
+    out = "nftables_rule.go",
 )
 
-genrule(
+talos_copy(
     name = "upstream_ipset",
-    srcs = [_TALOS_ADAPTERS + "ipset.go"],
-    outs = ["ipset_upstream.go"],
-    cmd = "cp $< $@",
+    src = TALOS_ADAPTERS_NETWORK + "ipset.go",
+    out = "ipset.go",
 )
 
-genrule(
+talos_copy(
     name = "upstream_constants",
-    srcs = [_TALOS_ADAPTERS + "network.go"],
-    outs = ["constants_upstream.go"],
-    cmd = "cp $< $@",
+    src = TALOS_ADAPTERS_NETWORK + "network.go",
+    out = "network.go",
 )
 
-# The controller needs awk to remove Talos-internal adapter import and
-# preCreateIptablesNFTable (Talos-specific iptables-nft compat path).
-genrule(
+talos_copy(
     name = "upstream_controller",
-    srcs = [_TALOS_CONTROLLERS + "nftables_chain.go"],
-    outs = ["controller_upstream.go"],
-    cmd = "awk -f $(location :transform_controller.awk) $< > $@",
-    tools = [":transform_controller.awk"],
+    src = TALOS_CONTROLLERS_NETWORK + "nftables_chain.go",
+    out = "nftables_chain.go",
 )
 
 go_library(

@@ -478,21 +478,13 @@ _TALOS_TAG = "v1.13.0-alpha.2"
 
 http_archive(
     name = "talos_internal",
-    build_file_content = """
-package(default_visibility = ["//visibility:public"])
-
-exports_files([
-    "internal/app/machined/pkg/adapters/network/nftables_rule.go",
-    "internal/app/machined/pkg/adapters/network/ipset.go",
-    "internal/app/machined/pkg/adapters/network/network.go",
-    "internal/app/machined/pkg/controllers/network/nftables_chain.go",
-    "internal/app/machined/pkg/adapters/kubespan/identity.go",
-    "internal/app/machined/pkg/adapters/kubespan/peer_status.go",
-    "internal/app/machined/pkg/controllers/kubespan/endpoint.go",
-    "internal/app/machined/pkg/controllers/kubespan/peer_spec.go",
-    "internal/app/machined/pkg/controllers/kubespan/routing_rules.go",
-])
-""",
+    build_file = "//third_party/siderolabs/talos_internal:BUILD.overlay.bazel",
+    patch_args = ["-p0"],
+    patches = [
+        "//third_party/siderolabs/talos_internal/patches:peer_status.patch",
+        "//third_party/siderolabs/talos_internal/patches:peer_spec.patch",
+        "//third_party/siderolabs/talos_internal/patches:nftables_chain.patch",
+    ],
     sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",
     strip_prefix = "talos-1.13.0-alpha.2",
     urls = ["https://github.com/siderolabs/talos/archive/refs/tags/" + _TALOS_TAG + ".tar.gz"],
