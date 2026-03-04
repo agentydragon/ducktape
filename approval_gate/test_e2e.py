@@ -7,6 +7,9 @@ and transport stack end-to-end.
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 import anyio
 import pytest_bazel
 from fastmcp import FastMCP
@@ -282,6 +285,93 @@ async def test_timeout_expires_returns_pending(make_gate_server: GateServerFacto
         action = await agent.call_echo_full("slow", session_key=_SESSION)
 
     assert action.state.status == ActionStatus.PENDING
+
+
+# ── background / yield_ms tests ────────────────────────────────────────────
+
+
+async def test_background_returns_immediately(make_gate_server: GateServerFactory, free_port: int, agent_jwt: str):
+    """background=True returns without blocking even with a large server default timeout."""
+    backend, _ = _make_backend()
+    gate = make_gate_server(
+        {TEST_NS: backend}, predicate=lambda ns, tool, args: Approved(), approval_timeout_seconds=30.0
+    )
+    app = gate_http_app(gate)
+    base_url = f"http://127.0.0.1:{free_port}"
+
+    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        # Should return near-instantly despite 30s server default
+        with anyio.fail_after(5.0):
+            action = await agent.call_echo_full("bg", session_key=_SESSION, background=True)
+
+    # With auto-approve + instant backend, may already be done
+    assert action.state.status in (ActionStatus.PENDING, ActionStatus.EXECUTING, ActionStatus.DONE)
+
+
+async def test_yield_ms_waits_then_returns(make_gate_server: GateServerFactory, free_port: int, agent_jwt: str):
+    """yield_ms provides enough time for auto-approve to resolve."""
+    backend, calls = _make_backend()
+    gate = make_gate_server({TEST_NS: backend}, predicate=lambda ns, tool, args: Approved())
+    app = gate_http_app(gate)
+    base_url = f"http://127.0.0.1:{free_port}"
+
+    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        action = await agent.call_echo_full("yield", session_key=_SESSION, yield_ms=5000)
+
+    assert action.state.status == ActionStatus.DONE
+    assert calls == ["yield"]
+
+
+# ── execution_running notice tests ──────────────────────────────────────────
+
+
+async def test_execution_running_notice_emitted(make_gate_server: GateServerFactory, free_port: int, agent_jwt: str):
+    """Backend execution exceeding the notice threshold emits an execution_running log entry."""
+    slow_release = asyncio.Event()
+
+    srv = FastMCP()
+
+    @srv.tool()
+    async def echo(text: str) -> str:
+        # Block until released by the test
+        for _ in range(100):
+            if slow_release.is_set():
+                break
+            await asyncio.sleep(0.05)
+        return f"slow: {text}"
+
+    gate = make_gate_server(
+        {TEST_NS: srv},
+        predicate=lambda ns, tool, args: Approved(),
+        approval_timeout_seconds=10.0,
+        execution_running_notice_seconds=0.1,
+    )
+    app = gate_http_app(gate)
+    base_url = f"http://127.0.0.1:{free_port}"
+
+    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        # Submit with background=True so we can inspect logs while it runs
+        action = await agent.call_echo_full("slow", session_key=_SESSION, background=True)
+
+        # Wait for the running notice (delay is 0.1s, give it 0.5s)
+        await asyncio.sleep(0.5)
+
+        hwm = int(await read_text(agent, f"resource://sessions/{_SESSION}/log_hwm"))
+        found_running = False
+        for eid in range(1, hwm + 1):
+            entry_json = await read_text(agent, f"resource://sessions/{_SESSION}/log/{eid}")
+            entry = json.loads(entry_json)
+            if entry["detail"]["kind"] == "execution_running":
+                found_running = True
+                assert "elapsed_seconds" in entry["detail"]
+                break
+
+        assert found_running, f"expected execution_running in {hwm} log entries"
+
+        # Release the slow backend and wait for completion
+        slow_release.set()
+        with anyio.fail_after(5.0):
+            await agent.wait_for(action.key, ActionStatus.DONE)
 
 
 if __name__ == "__main__":

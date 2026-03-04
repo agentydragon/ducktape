@@ -48,6 +48,7 @@ from approval_gate.models import (
     DoneState,
     ExecutingState,
     ExecutionFinishedDetail,
+    ExecutionRunningDetail,
     ExecutionStartedDetail,
     LogEventDetail,
     OperatorDecision,
@@ -101,9 +102,43 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
                     "Overrides server default. Omit to use server default."
                 ),
             },
+            "background": {
+                "type": "boolean",
+                "description": (
+                    "If true, return immediately without waiting for resolution "
+                    "(equivalent to approval_timeout_seconds=0)."
+                ),
+            },
+            "yield_ms": {
+                "type": "number",
+                "description": (
+                    "Milliseconds to wait for resolution before returning. "
+                    "Converted to seconds internally. Overrides approval_timeout_seconds."
+                ),
+            },
         },
         "required": ["input", "justification", "session_key"],
     }
+
+
+def _resolve_effective_timeout(
+    *, background: bool, yield_ms: float | None, approval_timeout_seconds: float | None, server_default: float | None
+) -> float | None:
+    """Resolve the effective wait timeout from the priority chain.
+
+    Priority (highest first):
+      1. background=True → 0 (return immediately)
+      2. yield_ms → converted to seconds
+      3. approval_timeout_seconds (per-call override)
+      4. server_default
+    """
+    if background:
+        return 0
+    if yield_ms is not None:
+        return max(0, yield_ms / 1000)
+    if approval_timeout_seconds is not None:
+        return approval_timeout_seconds
+    return server_default
 
 
 class ApprovalGateServer(EnhancedFastMCP):
@@ -117,6 +152,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         predicate: PredicateFn,
         public_base_url: str,
         approval_timeout_seconds: float | None = None,
+        execution_running_notice_seconds: float = 10.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -128,6 +164,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._predicate = predicate
         self._public_base_url = public_base_url
         self._approval_timeout_seconds = approval_timeout_seconds
+        self._execution_running_notice_seconds = execution_running_notice_seconds
         self._backend_clients: dict[MCPMountPrefix, Client] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
@@ -262,6 +299,8 @@ class ApprovalGateServer(EnhancedFastMCP):
             session_key: str,
             input: dict[str, object] = {},  # noqa: B006
             approval_timeout_seconds: float | None = None,
+            background: bool = False,
+            yield_ms: float | None = None,
         ) -> Action:
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
             action = await self._req_storage.create_action(
@@ -271,8 +310,11 @@ class ApprovalGateServer(EnhancedFastMCP):
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
 
-            effective_timeout = (
-                approval_timeout_seconds if approval_timeout_seconds is not None else self._approval_timeout_seconds
+            effective_timeout = _resolve_effective_timeout(
+                background=background,
+                yield_ms=yield_ms,
+                approval_timeout_seconds=approval_timeout_seconds,
+                server_default=self._approval_timeout_seconds,
             )
 
             if effective_timeout is not None and effective_timeout > 0:
@@ -380,12 +422,40 @@ class ApprovalGateServer(EnhancedFastMCP):
         return await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
 
     async def _execute_and_finish(self, key: ActionKey, action: Action) -> None:
-        """Execute the backend call and update state to done."""
+        """Execute the backend call and update state to done.
+
+        If the call takes longer than ``_execution_running_notice_seconds``,
+        emits an ``execution_running`` log event so subscribers know the action
+        is still in flight.
+        """
         namespace = MCPMountPrefix(action.call.server_namespace)
         client = self._backend_clients.get(namespace)
         if client is None:
             raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
-        outcome = await client.call_tool_mcp(action.call.tool_name, action.call.arguments)
+
+        notice_delay = self._execution_running_notice_seconds
+        finished = False
+        start_time = asyncio.get_event_loop().time()
+
+        async def _running_notice() -> None:
+            await asyncio.sleep(notice_delay)
+            if finished:
+                return
+            elapsed = asyncio.get_event_loop().time() - start_time
+            await self._append_log_and_notify(key, ExecutionRunningDetail(elapsed_seconds=round(elapsed, 1)))
+            logger.info("action %s/%d still executing after %.1fs", key.session_key, key.action_seq, elapsed)
+
+        notice_task: asyncio.Task[None] | None = None
+        if notice_delay > 0:
+            notice_task = asyncio.create_task(_running_notice())
+
+        try:
+            outcome = await client.call_tool_mcp(action.call.tool_name, action.call.arguments)
+        finally:
+            finished = True
+            if notice_task is not None:
+                notice_task.cancel()
+
         await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
 
     def _spawn(self, coro: Coroutine[Any, Any, Any]) -> None:

@@ -38,13 +38,14 @@ const DEFAULT_EXEC_SERVER_URL = "http://127.0.0.1:8766/mcp";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TERMINAL_LOG_KINDS = new Set(["execution_finished", "denied", "withdrawn"]);
+const NOTIFY_LOG_KINDS = new Set([...TERMINAL_LOG_KINDS, "execution_running"]);
 
-function isTerminalLogKind(kind: string): boolean {
-  return TERMINAL_LOG_KINDS.has(kind);
+function shouldNotifyLogKind(kind: string): boolean {
+  return NOTIFY_LOG_KINDS.has(kind);
 }
 
-/** Format a human-readable message from a terminal log entry detail. */
-function formatTerminalMessage(keyStr: string, detail: LogEventDetail): string {
+/** Format a human-readable message from a notifiable log entry detail. */
+function formatNotificationMessage(keyStr: string, detail: LogEventDetail): string {
   if (detail.kind === "execution_finished") {
     const parts = detail.outcome.content.filter((c) => c.type === "text" && c.text).map((c) => c.text as string);
     const body = parts.join("\n") || JSON.stringify(detail.outcome.content, null, 2);
@@ -53,6 +54,11 @@ function formatTerminalMessage(keyStr: string, detail: LogEventDetail): string {
     } else {
       return `Action ${keyStr} was approved but execution returned an error:\n\n${body}`;
     }
+  }
+  if (detail.kind === "execution_running") {
+    const elapsed = (detail as { elapsed_seconds?: number }).elapsed_seconds;
+    const suffix = typeof elapsed === "number" ? ` (${elapsed}s elapsed)` : "";
+    return `Action ${keyStr} is still executing${suffix}`;
   }
   if (detail.kind === "denied") {
     return `Action ${keyStr} was rejected by the user. Reason: ${detail.reason ?? "none given"}`;
@@ -195,14 +201,21 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     );
 
     for (const entry of entries) {
-      if (!entry || !isTerminalLogKind(entry.detail.kind)) continue;
+      if (!entry || !shouldNotifyLogKind(entry.detail.kind)) continue;
 
       const keyStr = `${sessionKey}/${entry.action_seq}`;
 
-      // Skip notification for actions that were resolved inline within the tool call
-      if (inlineResolvedActions.delete(keyStr)) continue;
+      // Skip notification for actions that were resolved inline within the tool call.
+      // Only consume the suppression on terminal events — running notices should not
+      // eat the suppression token meant for the subsequent terminal event.
+      if (inlineResolvedActions.has(keyStr)) {
+        if (TERMINAL_LOG_KINDS.has(entry.detail.kind)) {
+          inlineResolvedActions.delete(keyStr);
+        }
+        continue;
+      }
 
-      const message = formatTerminalMessage(keyStr, entry.detail);
+      const message = formatNotificationMessage(keyStr, entry.detail);
       enqueueSystemEvent(message, { sessionKey });
       log.info(`enqueued system event for action ${keyStr}`);
     }
@@ -288,7 +301,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
               // Resolved inline — return result directly, suppress duplicate notification
               inlineResolvedActions.add(keyStr);
               await connection.trackSession(action.key.session_key);
-              const outcome = formatTerminalMessage(keyStr, {
+              const outcome = formatNotificationMessage(keyStr, {
                 kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
                 ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
                 ...(status === "rejected" ? { reason: (action.state as RejectedState).reason } : {}),
@@ -315,7 +328,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
             const action = JSON.parse(text) as Action;
             const { status } = action.state;
             if (status === "done" || status === "rejected" || status === "withdrawn") {
-              const outcome = formatTerminalMessage(keyStr, {
+              const outcome = formatNotificationMessage(keyStr, {
                 kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
                 ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
                 ...(status === "rejected" ? { reason: (action.state as RejectedState).reason } : {}),

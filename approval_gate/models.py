@@ -126,6 +126,7 @@ class LogEventKind(StrEnum):
     DENIED = "denied"
     WITHDRAWN = "withdrawn"
     EXECUTION_STARTED = "execution_started"
+    EXECUTION_RUNNING = "execution_running"
     EXECUTION_FINISHED = "execution_finished"
 
 
@@ -150,6 +151,14 @@ class ExecutionStartedDetail(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ExecutionRunningDetail(BaseModel):
+    """Emitted when a backend call has been running longer than the configured notice threshold."""
+
+    kind: Literal[LogEventKind.EXECUTION_RUNNING] = LogEventKind.EXECUTION_RUNNING
+    elapsed_seconds: float
+    model_config = ConfigDict(extra="forbid")
+
+
 class ExecutionFinishedDetail(BaseModel):
     kind: Literal[LogEventKind.EXECUTION_FINISHED] = LogEventKind.EXECUTION_FINISHED
     outcome: mcp_types.CallToolResult
@@ -157,7 +166,12 @@ class ExecutionFinishedDetail(BaseModel):
 
 
 LogEventDetail = Annotated[
-    ActionReceivedDetail | DeniedDetail | WithdrawnDetail | ExecutionStartedDetail | ExecutionFinishedDetail,
+    ActionReceivedDetail
+    | DeniedDetail
+    | WithdrawnDetail
+    | ExecutionStartedDetail
+    | ExecutionRunningDetail
+    | ExecutionFinishedDetail,
     Field(discriminator="kind"),
 ]
 

@@ -107,12 +107,23 @@ class GateClient(Client, MessageHandler):
         )
 
     async def call_echo_full(
-        self, text: str, *, justification: str = "test", session_key: str, approval_timeout_seconds: float | None = None
+        self,
+        text: str,
+        *,
+        justification: str = "test",
+        session_key: str,
+        approval_timeout_seconds: float | None = None,
+        background: bool | None = None,
+        yield_ms: float | None = None,
     ) -> Action:
         """Call test_echo and return the full Action (with state)."""
         args: dict[str, object] = {"input": {"text": text}, "justification": justification, "session_key": session_key}
         if approval_timeout_seconds is not None:
             args["approval_timeout_seconds"] = approval_timeout_seconds
+        if background is not None:
+            args["background"] = background
+        if yield_ms is not None:
+            args["yield_ms"] = yield_ms
         return await self.call_gate_tool_full("test_echo", args)
 
     async def approve(self, key: ActionKey) -> Action:
@@ -199,6 +210,7 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
         *,
         predicate: PredicateFn | None = None,
         approval_timeout_seconds: float | None = None,
+        execution_running_notice_seconds: float = 10.0,
     ) -> ApprovalGateServer:
         return ApprovalGateServer(
             backends=dict(backends),
@@ -206,6 +218,7 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
             predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
             public_base_url="http://test",
             approval_timeout_seconds=approval_timeout_seconds,
+            execution_running_notice_seconds=execution_running_notice_seconds,
             auth=JWTVerifier(public_key=rsa_key_pair.public_key),
         )
 
