@@ -68,6 +68,8 @@ spec:
 
         # nginx sidecar: rewrites Host/Origin to localhost so Tana's MCP server
         # accepts requests from cluster clients
+        # TODO: Add oauth2-proxy or SA-token auth sidecar so agent pods
+        # (openclaw / claude-sandbox SAs) can authenticate automatically
         - name: proxy
           image: nginx:alpine
           ports:

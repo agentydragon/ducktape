@@ -58,6 +58,15 @@ The MCP endpoint is cluster-internal only (no public ingress).
 - **Endpoint**: `http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp`
 - **No auth required** (cluster-internal access only)
 
+<!-- TODO: Make accessible to agent pods (openclaw / Claude sandbox SAs):
+  - Add OAuth2 proxy or k8s-native auth (e.g. oauth2-proxy with SA token auth)
+  - Autoregistration: agents should be able to discover and register with the
+    MCP server without manual configuration — consider a k8s ServiceAccount
+    token-based flow where allowed SAs (openclaw, claude-sandbox) can
+    authenticate automatically
+  - NetworkPolicy to restrict access to only authorized namespaces/SAs
+-->
+
 ### Health Check
 
 ```bash
