@@ -1,36 +1,40 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-# Upstream Talos source files pulled at a pinned tag and transformed into our package.
+# Upstream Talos adapter/controller sources pulled at a pinned tag.
 # See MODULE.bazel http_archive "talos_internal" for the pinned version.
+#
+# Adapter files (nftables_rule.go, ipset.go, network.go) are used unmodified.
+# The controller (nftables_chain.go) needs minimal awk to remove internal Talos
+# imports and the preCreateIptablesNFTable method (Talos-specific iptables compat).
 
 _TALOS_ADAPTERS = "@talos_internal//:internal/app/machined/pkg/adapters/network/"
 
 _TALOS_CONTROLLERS = "@talos_internal//:internal/app/machined/pkg/controllers/network/"
 
+# Adapter files used as-is (no transformation needed).
 genrule(
     name = "upstream_compiler",
     srcs = [_TALOS_ADAPTERS + "nftables_rule.go"],
     outs = ["compiler_upstream.go"],
-    cmd = "sed 's/^package network$$/package nftables/' $< > $@",
+    cmd = "cp $< $@",
 )
 
 genrule(
     name = "upstream_ipset",
     srcs = [_TALOS_ADAPTERS + "ipset.go"],
     outs = ["ipset_upstream.go"],
-    cmd = "sed 's/^package network$$/package nftables/' $< > $@",
+    cmd = "cp $< $@",
 )
 
 genrule(
     name = "upstream_constants",
     srcs = [_TALOS_ADAPTERS + "network.go"],
     outs = ["constants_upstream.go"],
-    cmd = "sed 's/^package network$$/package nftables/' $< > $@",
+    cmd = "cp $< $@",
 )
 
-# The controller needs more transformations than a simple sed (remove Talos-internal
-# adapter import, remove preCreateIptablesNFTable, rename controller type), so we
-# use an awk script for the transformation.
+# The controller needs awk to remove Talos-internal adapter import and
+# preCreateIptablesNFTable (Talos-specific iptables-nft compat path).
 genrule(
     name = "upstream_controller",
     srcs = [_TALOS_CONTROLLERS + "nftables_chain.go"],
@@ -42,7 +46,6 @@ genrule(
 go_library(
     name = "nftables",
     srcs = [
-        # All generated from upstream Talos sources:
         ":upstream_compiler",
         ":upstream_constants",
         ":upstream_controller",

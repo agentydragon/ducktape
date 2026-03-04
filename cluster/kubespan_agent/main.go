@@ -19,7 +19,7 @@ import (
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/agentconfig"
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/endpoint"
-	kubespannftables "github.com/agentydragon/ducktape/cluster/kubespan_agent/nftables"
+	networkadapter "github.com/agentydragon/ducktape/cluster/kubespan_agent/nftables"
 )
 
 // agentCfg is the parsed agent configuration, accessible to controllers
@@ -124,7 +124,7 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		if err := rt.RegisterController(&ManagerController{}); err != nil {
 			return fmt.Errorf("registering manager controller: %w", err)
 		}
-		if err := rt.RegisterController(&kubespannftables.KubespandNfTablesChainController{}); err != nil {
+		if err := rt.RegisterController(&networkadapter.NfTablesChainController{}); err != nil {
 			return fmt.Errorf("registering nftables chain controller: %w", err)
 		}
 		if err := rt.RegisterController(&endpoint.Controller{}); err != nil {

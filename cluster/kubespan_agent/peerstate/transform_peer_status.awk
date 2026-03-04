@@ -1,21 +1,14 @@
 # Transform Talos peer_status.go (kubespan adapter) for kubespand.
 #
-# Applied by genrule at build time to the upstream Talos source. Transformations:
-#   - Remove MPL license header
-#   - Rename package kubespan -> peerstate
+# Applied by genrule at build time to the upstream Talos source.
+# Only functionally necessary changes — no cosmetic renames or license stripping.
+#
+# Transformations:
 #   - Remove internal wireguard adapter import and its group separator
 #   - Add local PeerDownInterval constant (from wireguard adapter)
 #   - Replace wireguard.PeerDownInterval -> PeerDownInterval
 
 BEGIN { prev_blank = 0 }
-
-# Skip MPL license header (3 comment lines).
-/^\/\/ This Source Code Form/ { next }
-/^\/\/ License, v\. 2\.0/ { next }
-/^\/\/ file, You can obtain one at/ { next }
-
-# Package rename.
-/^package kubespan$/ { print "package peerstate"; prev_blank = 0; next }
 
 # Remove internal wireguard adapter import (discards any buffered blank line before it).
 /talos\/internal\/app\/machined\/pkg\/adapters\/wireguard/ { prev_blank = 0; next }

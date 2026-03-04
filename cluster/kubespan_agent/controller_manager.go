@@ -18,7 +18,7 @@ import (
 	"go.uber.org/zap"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate"
+	kubespanadapter "github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate"
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/routing"
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/wireguard"
 )
@@ -224,21 +224,21 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 
 		// Update from WireGuard peer data.
 		if idx, found := wgPeerMap[pubKey]; found {
-			peerstate.PeerStatusSpec(ps).UpdateFromWireguard(wgPeerList[idx])
+			kubespanadapter.PeerStatusSpec(ps).UpdateFromWireguard(wgPeerList[idx])
 		}
 
 		// Calculate peer state and cycle endpoint if needed.
-		peerstate.PeerStatusSpec(ps).CalculateState()
+		kubespanadapter.PeerStatusSpec(ps).CalculateState()
 
-		if peerstate.PeerStatusSpec(ps).ShouldChangeEndpoint() {
-			newEP := peerstate.PeerStatusSpec(ps).PickNewEndpoint(peerSpec.Endpoints)
+		if kubespanadapter.PeerStatusSpec(ps).ShouldChangeEndpoint() {
+			newEP := kubespanadapter.PeerStatusSpec(ps).PickNewEndpoint(peerSpec.Endpoints)
 			if newEP.IsValid() {
 				logger.Info("cycling endpoint",
 					zap.String("peer", ps.Label),
 					zap.Stringer("old", ps.LastUsedEndpoint),
 					zap.Stringer("new", newEP),
 				)
-				peerstate.PeerStatusSpec(ps).UpdateEndpoint(newEP)
+				kubespanadapter.PeerStatusSpec(ps).UpdateEndpoint(newEP)
 			}
 		}
 
@@ -259,7 +259,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 			peerCfg.Endpoint = wireguard.AddrPortToUDPAddr(ps.LastUsedEndpoint)
 		} else if len(peerSpec.Endpoints) > 0 {
 			peerCfg.Endpoint = wireguard.AddrPortToUDPAddr(peerSpec.Endpoints[0])
-			peerstate.PeerStatusSpec(ps).UpdateEndpoint(peerSpec.Endpoints[0])
+			kubespanadapter.PeerStatusSpec(ps).UpdateEndpoint(peerSpec.Endpoints[0])
 		}
 		wgPeers = append(wgPeers, peerCfg)
 

@@ -1,4 +1,4 @@
-package nftables
+package network
 
 import (
 	"net/netip"
