@@ -1,0 +1,100 @@
+"""Tana MCP OAuth token broker — obtains tokens from Tana's MCP server, stores as K8s secret."""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+load("//tools/testing:defs.bzl", "py_test")
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "broker",
+    srcs = ["broker.py"],
+    imports = ["../.."],
+    deps = [
+        "@pypi//aiohttp",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    deps = [":broker"],
+)
+
+# =============================================================================
+# Binary target
+# =============================================================================
+
+py_binary(
+    name = "token_broker",
+    imports = ["../.."],
+    main_module = "tana.token_broker.cli",
+    deps = [":cli"],
+)
+
+# =============================================================================
+# OCI Image
+# =============================================================================
+
+aspect_py_binary(
+    name = "token_broker_bin",
+    imports = ["../.."],
+    main = "cli.py",
+    deps = [":cli"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":token_broker_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("token_broker_bin"),
+    env = py_image_env(binary_name = "token_broker_bin"),
+    tars = [":layers"],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["tana-token-broker:latest"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "test_broker",
+    srcs = ["test_broker.py"],
+    imports = ["../.."],
+    deps = [
+        ":broker",
+        ":conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)

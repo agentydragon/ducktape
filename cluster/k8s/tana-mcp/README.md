@@ -10,6 +10,9 @@ server accepts requests from cluster clients.
   server listens on `localhost:8262` inside the pod.
 - **proxy sidecar**: `nginx:alpine` rewrites `Host`/`Origin` to localhost before
   proxying to port 8262. Exposed on port 8263 (cluster-internal only).
+- **token-broker sidecar**: Performs OAuth 2.1 + PKCE flow against Tana's MCP
+  server, obtains access/refresh tokens, and writes them to the
+  `tana-mcp-oauth-tokens` K8s secret. Refreshes automatically before expiry.
 - **PVC**: Persists `~/.config/Tana` (login session, MCP client approvals).
 
 ## Initial Setup (Graphical Login)
@@ -56,16 +59,9 @@ noVNC again if the session expires or for troubleshooting.
 The MCP endpoint is cluster-internal only (no public ingress).
 
 - **Endpoint**: `http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp`
-- **No auth required** (cluster-internal access only)
-
-<!-- TODO: Make accessible to agent pods (openclaw / Claude sandbox SAs):
-  - Add OAuth2 proxy or k8s-native auth (e.g. oauth2-proxy with SA token auth)
-  - Autoregistration: agents should be able to discover and register with the
-    MCP server without manual configuration — consider a k8s ServiceAccount
-    token-based flow where allowed SAs (openclaw, claude-sandbox) can
-    authenticate automatically
-  - NetworkPolicy to restrict access to only authorized namespaces/SAs
--->
+- **Auth**: The token-broker sidecar obtains OAuth tokens automatically. Clients
+  can read the `tana-mcp-oauth-tokens` secret for the access token and include
+  `Authorization: Bearer <token>` in requests.
 
 ### Health Check
 
@@ -96,6 +92,8 @@ curl http://localhost:8263/health
 
 ## Secrets
 
-| Secret            | Key                 | Source                     |
-| ----------------- | ------------------- | -------------------------- |
-| `harbor-ci-robot` | `.dockerconfigjson` | Vault `kv/harbor/ci-robot` |
+| Secret                  | Key                 | Source                               |
+| ----------------------- | ------------------- | ------------------------------------ |
+| `harbor-ci-robot`       | `.dockerconfigjson` | Vault `kv/harbor/ci-robot`           |
+| `tana-mcp-oauth-tokens` | `access_token`      | Auto-managed by token-broker sidecar |
+| `tana-mcp-oauth-tokens` | `refresh_token`     | Auto-managed by token-broker sidecar |

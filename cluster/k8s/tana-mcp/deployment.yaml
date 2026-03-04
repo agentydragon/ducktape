@@ -19,6 +19,7 @@ spec:
       labels:
         app: tana-mcp
     spec:
+      serviceAccountName: tana-token-broker
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       imagePullSecrets:
@@ -68,8 +69,6 @@ spec:
 
         # nginx sidecar: rewrites Host/Origin to localhost so Tana's MCP server
         # accepts requests from cluster clients
-        # TODO: Add oauth2-proxy or SA-token auth sidecar so agent pods
-        # (openclaw / claude-sandbox SAs) can authenticate automatically
         - name: proxy
           image: nginx:alpine
           ports:
@@ -94,6 +93,17 @@ spec:
             tcpSocket:
               port: 8263
             periodSeconds: 10
+
+        # OAuth token broker: performs OAuth 2.1 + PKCE flow against Tana's
+        # MCP server and writes tokens to a K8s secret
+        - name: token-broker
+          image: registry.allegedly.works/tana-mcp/tana-token-broker:latest # {"$imagepolicy": "flux-system:tana-token-broker"}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
 
       volumes:
         - name: tana-config
