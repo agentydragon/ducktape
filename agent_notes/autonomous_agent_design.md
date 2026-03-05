@@ -92,6 +92,27 @@ Not expecting any single solution to have all of these. The subset that's availa
 
 ## Candidates to Evaluate
 
-- OpenClaw (current — see pros/cons above)
-- ZeroClaw
-- (others TBD)
+### Tier 1: "Claw" Family (personal AI agent platforms)
+
+These are all in the same direct lineage / competitive space as OpenClaw — self-hosted personal AI agents with messenger integrations and tool use.
+
+- **OpenClaw** (current — see pros/cons above). TypeScript, 247k stars. The 800-pound gorilla. Telegram, Matrix, WhatsApp, Slack, Discord, Signal, iMessage, etc. 700+ community skills via ClawHub. No native MCP (uses `mcporter` workaround). Had a critical RCE (CVE-2026-25253). Creator joining OpenAI, project moving to foundation.
+- **ZeroClaw** — Rust, single 3.4MB binary, sub-10ms cold start, <5MB RAM. Telegram, Discord, Slack, WhatsApp, iMessage, Matrix, webhooks. Deny-by-default channel policies. Optional Docker sandboxing for shell. 22+ AI providers.
+- **NanoClaw** — ~500 lines TypeScript. Built on Anthropic Agent SDK. Runs agents in Linux containers (Apple Container / Docker). Telegram, WhatsApp, Slack, Discord, Gmail. Agent swarms. "Fork and customize" philosophy — not a framework, more a template.
+- **IronClaw** — Rust, by NEAR AI (Llion Jones, Transformer co-author). Capability-based security (seL4-inspired). Every skill runs in WASM sandbox. MCP support. Dynamic tool building. Encrypted credential vault. Traffic inspection on outbound. 890 skills. TEE deployment on NEAR AI Cloud. 11.8k stars.
+- **PicoClaw** — Go, single binary, runs on $10 RISC-V boards. Telegram, Discord, QQ, DingTalk. Cron scheduling. MCP support (v0.1.4+). Multi-agent. 12k stars. Ultra-lightweight but limited channel support (no Matrix).
+- **Nanobot** (HKUDS) — ~4k lines Python. Telegram (recommended), Discord, WhatsApp, Slack, Matrix (added 2026-02-25), Email, etc. MCP support (v0.1.4+). Cron via natural language. 17.8k stars. Memory via MEMORY.md files. Very lightweight (45MB, 0.8s startup).
+
+### Tier 2: Workflow/orchestration platforms (not agent-first, but capable)
+
+- **n8n** — Visual workflow automation, 177k stars. AI Agent nodes + Telegram/Slack/Discord triggers. MCP client support. Human-in-the-loop approval for tool calls (new in 2026). Not an "agent" per se but can build agent-like flows. Self-hosted. Has a "Manager-Executor" pattern community template ("Agent One") for autonomous agents via Telegram.
+- **Kagent** — Kubernetes-native agent framework by Solo.io (CNCF sandbox). Built on AutoGen. MCP support + A2A. Focused on DevOps/cloud-native tasks (Argo, Helm, Istio, k8s, Prometheus). Not a personal assistant — more an infra agent. Already partially deployed in our cluster.
+
+### Tier 3: Memory / complementary (not standalone agents)
+
+- **memU** — Not an agent itself, but a memory framework for always-on agents. Knowledge graph from conversations. Could complement any of the above.
+
+### Not considered (too low-level)
+
+- OpenAI Agents SDK, Anthropic Agent SDK, LangGraph, CrewAI, AutoGen, Google ADK — these are SDKs/frameworks for building agents from scratch, not batteries-included platforms.
+- Botpress, LangBot, Flowise, Dify — more chatbot/flow builders than autonomous agent platforms.
