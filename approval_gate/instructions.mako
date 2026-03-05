@@ -39,12 +39,14 @@ Every wrapped tool accepts:
   This is shown to the operator to help them decide. Be specific.
 - `session_key` (required `string`): Your session key for result notifications.
   This is injected automatically by the OpenClaw plugin — do not set it manually.
-- `approval_timeout_seconds` (optional `number`): Seconds to wait for the action to
-  resolve before returning. If the action completes within this time (via auto-approval
-  policy or fast operator decision), you get the result immediately. Omit to use the
-  server default (which may be no wait).
+- `wait_mode` (optional `object`): How long to wait for action resolution before
+  returning. Two variants:
+  - `{ "mode": "blocking" }` — wait indefinitely until terminal resolution.
+  - `{ "mode": "yield_after_ms", "timeout_ms": 5000 }` — wait up to N ms then return
+    current state.
+  Omit to use the server default (which may be no wait).
 
-Example call shape: `{ "input": { ...backend args... }, "justification": "...", "session_key": "...", "approval_timeout_seconds": 30 }`
+Example call shape: `{ "input": { ...backend args... }, "justification": "...", "session_key": "...", "wait_mode": { "mode": "yield_after_ms", "timeout_ms": 5000 } }`
 
 ## Response format
 
@@ -58,8 +60,8 @@ Check `state.status` to determine the outcome:
 - `pending`: Awaiting operator decision. The outcome will arrive via notification.
 - `executing`: Approved; backend call in flight. The outcome will arrive via notification.
 
-Actions may be auto-decided by a server-side policy. With `approval_timeout_seconds`,
-auto-decided actions resolve within the tool call itself.
+Actions may be auto-decided by a server-side policy. With `wait_mode`, auto-decided
+actions resolve within the tool call itself.
 
 ## Withdrawing an action
 

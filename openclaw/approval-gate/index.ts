@@ -31,7 +31,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ApprovalGateConnection, parseSessionKeyFromHwmUri } from "./approval-gate-connection.js";
 import { ReconnectingMcpClient } from "./reconnecting-mcp-client.js";
 import { scopedLogger } from "./util.js";
-import type { Action, ActionKey, Detail as LogEventDetail, DoneState, RejectedState } from "./types.js";
+import type { Action, Detail as LogEventDetail, DoneState, RejectedState } from "./types.js";
 
 const DEFAULT_EXEC_SERVER_URL = "http://127.0.0.1:8766/mcp";
 
@@ -94,6 +94,8 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         approvalGate?: { url?: string; token?: string };
         execServer?: { url?: string };
         registerTools?: boolean;
+        approvalMode?: "immediate" | "bounded" | "blocking";
+        approvalTimeoutSeconds?: number;
       }
     | undefined;
 
@@ -264,7 +266,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     for (const tool of toolList.tools) {
       const toolName = tool.name;
       const toolDescription = tool.description ?? "";
-      const schema = stripSchemaKeys((tool.inputSchema ?? {}) as Record<string, unknown>, ["session_key"]);
+      const schema = stripSchemaKeys((tool.inputSchema ?? {}) as Record<string, unknown>, ["session_key", "wait_mode"]);
 
       api.registerTool((ctx: OpenClawPluginToolContext) => ({
         name: toolName,
@@ -272,7 +274,24 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         description: toolDescription,
         parameters: schema,
         async execute(_id: string, params: Record<string, unknown>) {
-          const callArgs = { ...params, session_key: ctx.sessionKey };
+          // Derive wait_mode from plugin config when not explicitly provided per-call.
+          // 3 modes: immediate (yield 0ms), bounded (yield Nms), blocking (wait forever).
+          let waitMode: Record<string, unknown> | undefined;
+          if (!("wait_mode" in params)) {
+            const mode = cfg?.approvalMode ?? "bounded";
+            if (mode === "immediate") {
+              waitMode = { mode: "yield_after_ms", timeout_ms: 0 };
+            } else if (mode === "blocking") {
+              waitMode = { mode: "blocking" };
+            } else {
+              waitMode = { mode: "yield_after_ms", timeout_ms: (cfg?.approvalTimeoutSeconds ?? 30) * 1000 };
+            }
+          }
+          const callArgs = {
+            ...params,
+            session_key: ctx.sessionKey,
+            ...(waitMode ? { wait_mode: waitMode } : {}),
+          };
 
           let result: Awaited<ReturnType<Client["callTool"]>>;
           try {
@@ -289,63 +308,26 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
           }
 
           const firstContent = result.content?.[0] as { text: string };
-          const parsed = JSON.parse(firstContent.text) as Action | ActionKey;
+          const action = JSON.parse(firstContent.text) as Action;
+          const keyStr = `${action.key.session_key}/${action.key.action_seq}`;
+          const { status } = action.state;
 
-          // New server returns full Action; old server returns bare ActionKey
-          if ("state" in parsed) {
-            const action = parsed as Action;
-            const keyStr = `${action.key.session_key}/${action.key.action_seq}`;
-            const { status } = action.state;
-
-            if (status === "done" || status === "rejected" || status === "withdrawn") {
-              // Resolved inline — return result directly, suppress duplicate notification
-              inlineResolvedActions.add(keyStr);
-              await connection.trackSession(action.key.session_key);
-              const outcome = formatNotificationMessage(keyStr, {
-                kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
-                ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
-                ...(status === "rejected" ? { reason: (action.state as RejectedState).reason } : {}),
-              } as LogEventDetail);
-              return { content: [{ type: "text" as const, text: outcome }] };
-            }
-
-            // Still pending or executing — set up notifications for later delivery
+          if (status === "done" || status === "rejected" || status === "withdrawn") {
+            // Resolved inline — return result directly, suppress duplicate notification
+            inlineResolvedActions.add(keyStr);
             await connection.trackSession(action.key.session_key);
-            return {
-              content: [{ type: "text" as const, text: `Action ${keyStr} is ${status}` }],
-            };
+            const outcome = formatNotificationMessage(keyStr, {
+              kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
+              ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
+              ...(status === "rejected" ? { reason: (action.state as RejectedState).reason } : {}),
+            } as LogEventDetail);
+            return { content: [{ type: "text" as const, text: outcome }] };
           }
 
-          // Old server format: bare ActionKey — existing behavior
-          const actionKey = parsed as ActionKey;
-          const keyStr = `${actionKey.session_key}/${actionKey.action_seq}`;
-
-          await connection.trackSession(actionKey.session_key);
-
-          const actionUri = `resource://sessions/${actionKey.session_key}/actions/${actionKey.action_seq}`;
-          try {
-            const text = await connection.readResourceText(actionUri);
-            const action = JSON.parse(text) as Action;
-            const { status } = action.state;
-            if (status === "done" || status === "rejected" || status === "withdrawn") {
-              const outcome = formatNotificationMessage(keyStr, {
-                kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
-                ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
-                ...(status === "rejected" ? { reason: (action.state as RejectedState).reason } : {}),
-              } as LogEventDetail);
-              return { content: [{ type: "text" as const, text: outcome }] };
-            }
-          } catch (err) {
-            log.warn(`could not read initial state for ${actionUri}: ${String(err)}`);
-          }
-
+          // Still pending or executing — set up notifications for later delivery
+          await connection.trackSession(action.key.session_key);
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Action ${keyStr} queued for user approval`,
-              },
-            ],
+            content: [{ type: "text" as const, text: `Action ${keyStr} is ${status}` }],
           };
         },
       }));

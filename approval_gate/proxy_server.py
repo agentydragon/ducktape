@@ -35,6 +35,7 @@ from fastmcp.tools.tool import FunctionTool
 from mako.template import Template
 from mcp import types as mcp_types
 from mcp.server.session import ServerSession
+from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
 from approval_gate.models import (
@@ -44,6 +45,7 @@ from approval_gate.models import (
     ActionState,
     ActionStatus,
     ApproveDecision,
+    BlockingWait,
     DeniedDetail,
     DenyDecision,
     DoneState,
@@ -55,8 +57,10 @@ from approval_gate.models import (
     PendingState,
     RejectedState,
     ToolCall,
+    WaitMode,
     WithdrawnDetail,
     WithdrawnState,
+    YieldAfterMs,
 )
 from approval_gate.predicates import Approved, Denied, NeedsHumanDecision, PredicateFn, call_predicate
 from approval_gate.storage import ActionStorage
@@ -74,11 +78,22 @@ READ_SCOPE = "read"
 _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 
+_WAIT_MODE_SCHEMA: dict[str, Any] = {
+    "description": (
+        "How long to wait for action resolution before returning. "
+        "Omit to use server default. "
+        "blocking: wait indefinitely. "
+        "yield_after_ms: wait up to timeout_ms then return current state."
+    ),
+    **TypeAdapter(WaitMode).json_schema(),
+}
+
+
 def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     """Wrap a backend tool's input schema in an approval envelope.
 
     Produces:
-      { input: <original_schema>, justification: str, session_key: str }
+      { input: <original_schema>, justification: str, session_key: str, wait_mode?: WaitMode }
 
     The nested `input` property holds the backend's original schema unchanged,
     avoiding any risk of name collisions with the approval fields.
@@ -95,49 +110,23 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
                 "type": "string",
                 "description": "Session key for result notifications. Injected by plugin.",
             },
-            "approval_timeout_seconds": {
-                "type": "number",
-                "description": (
-                    "Seconds to wait for action resolution before returning. "
-                    "Overrides server default. Omit to use server default."
-                ),
-            },
-            "background": {
-                "type": "boolean",
-                "description": (
-                    "If true, return immediately without waiting for resolution "
-                    "(equivalent to approval_timeout_seconds=0)."
-                ),
-            },
-            "yield_ms": {
-                "type": "number",
-                "description": (
-                    "Milliseconds to wait for resolution before returning. "
-                    "Converted to seconds internally. Overrides approval_timeout_seconds."
-                ),
-            },
+            "wait_mode": _WAIT_MODE_SCHEMA,
         },
         "required": ["input", "justification", "session_key"],
     }
 
 
-def _resolve_effective_timeout(
-    *, background: bool, yield_ms: float | None, approval_timeout_seconds: float | None, server_default: float | None
-) -> float | None:
-    """Resolve the effective wait timeout from the priority chain.
+def _resolve_effective_timeout(wait_mode: WaitMode | None, server_default: float | None) -> float | None:
+    """Resolve effective wait timeout from per-call wait_mode or server default.
 
-    Priority (highest first):
-      1. background=True → 0 (return immediately)
-      2. yield_ms → converted to seconds
-      3. approval_timeout_seconds (per-call override)
-      4. server_default
+    Returns seconds to wait: None = no wait, float('inf') = wait forever, N = bounded.
     """
-    if background:
-        return 0
-    if yield_ms is not None:
-        return max(0, yield_ms / 1000)
-    if approval_timeout_seconds is not None:
-        return approval_timeout_seconds
+    if wait_mode is not None:
+        match wait_mode:
+            case BlockingWait():
+                return float("inf")
+            case YieldAfterMs(timeout_ms=ms):
+                return max(0, ms / 1000)
     return server_default
 
 
@@ -296,9 +285,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             justification: str,
             session_key: str,
             input: dict[str, object] = {},  # noqa: B006
-            approval_timeout_seconds: float | None = None,
-            background: bool = False,
-            yield_ms: float | None = None,
+            wait_mode: WaitMode | None = None,
         ) -> Action:
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
             action = await self._req_storage.create_action(
@@ -308,12 +295,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
 
-            effective_timeout = _resolve_effective_timeout(
-                background=background,
-                yield_ms=yield_ms,
-                approval_timeout_seconds=approval_timeout_seconds,
-                server_default=self._approval_timeout_seconds,
-            )
+            effective_timeout = _resolve_effective_timeout(wait_mode, self._approval_timeout_seconds)
 
             if effective_timeout is not None and effective_timeout > 0:
                 event = asyncio.Event()

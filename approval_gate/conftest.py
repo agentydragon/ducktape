@@ -107,23 +107,12 @@ class GateClient(Client, MessageHandler):
         )
 
     async def call_echo_full(
-        self,
-        text: str,
-        *,
-        justification: str = "test",
-        session_key: str,
-        approval_timeout_seconds: float | None = None,
-        background: bool | None = None,
-        yield_ms: float | None = None,
+        self, text: str, *, justification: str = "test", session_key: str, wait_mode: dict[str, object] | None = None
     ) -> Action:
         """Call test_echo and return the full Action (with state)."""
         args: dict[str, object] = {"input": {"text": text}, "justification": justification, "session_key": session_key}
-        if approval_timeout_seconds is not None:
-            args["approval_timeout_seconds"] = approval_timeout_seconds
-        if background is not None:
-            args["background"] = background
-        if yield_ms is not None:
-            args["yield_ms"] = yield_ms
+        if wait_mode is not None:
+            args["wait_mode"] = wait_mode
         return await self.call_gate_tool_full("test_echo", args)
 
     async def approve(self, key: ActionKey) -> Action:
