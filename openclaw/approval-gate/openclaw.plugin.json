@@ -37,17 +37,6 @@
         "type": "boolean",
         "default": false,
         "description": "Whether to discover and register approval-gate-wrapped tools with OpenClaw. When false (default), the plugin only listens for action notifications and delivers results via system events."
-      },
-      "approvalMode": {
-        "type": "string",
-        "enum": ["immediate", "bounded", "blocking"],
-        "default": "bounded",
-        "description": "Default wait_mode for tool calls. 'immediate': return current action state without waiting. 'bounded': wait up to approvalTimeoutSeconds for terminal resolution. 'blocking': wait indefinitely for terminal resolution."
-      },
-      "approvalTimeoutSeconds": {
-        "type": "number",
-        "default": 30,
-        "description": "Seconds to wait in 'bounded' mode before returning. Ignored in 'immediate' and 'blocking' modes."
       }
     }
   }

@@ -96,23 +96,12 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         approvalGate?: { url?: string; token?: string };
         execServer?: { url?: string };
         registerTools?: boolean;
-        approvalMode?: "immediate" | "bounded" | "blocking";
-        approvalTimeoutSeconds?: number;
       }
     | undefined;
 
   const approvalGateUrl = cfg?.approvalGate?.url?.trim();
   const approvalGateToken = cfg?.approvalGate?.token?.trim();
   const execServerUrl = cfg?.execServer?.url?.trim() ?? DEFAULT_EXEC_SERVER_URL;
-
-  const approvalMode = cfg?.approvalMode ?? "bounded";
-  const approvalTimeoutSeconds = cfg?.approvalTimeoutSeconds ?? 30;
-  const defaultWaitMode =
-    approvalMode === "blocking"
-      ? { mode: "blocking" }
-      : approvalMode === "immediate"
-        ? { mode: "yield_after_ms", timeout_ms: 0 }
-        : { mode: "yield_after_ms", timeout_ms: approvalTimeoutSeconds * 1000 };
 
   if (!approvalGateUrl || !approvalGateToken) {
     log.warn("approvalGate.url and approvalGate.token are required in plugin config; plugin disabled");
@@ -286,7 +275,6 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         parameters: schema,
         async execute(_id: string, params: Record<string, unknown>) {
           const callArgs = {
-            wait_mode: defaultWaitMode,
             ...params,
             session_key: ctx.sessionKey,
           };
