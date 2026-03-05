@@ -1,5 +1,47 @@
 # Airlock TODOs
 
+## MCP OAuth spec compliance + Dynamic Client Registration
+
+Make Airlock a compliant MCP resource server per the MCP authorization spec and RFC 9728.
+
+### Why deferred
+
+Authentik does not support RFC 7591 Dynamic Client Registration — no `registration_endpoint`
+is advertised in its OIDC discovery document. Without DCR, interactive MCP clients like
+Claude Code on the web cannot self-register and must use pre-provisioned `client_id` values.
+
+### What full implementation would require
+
+1. **`/.well-known/oauth-protected-resource`** (RFC 9728): add a new `Route` in `app.py`
+   returning JSON with `resource`, `authorization_servers` (pointing at the Authentik
+   provider's issuer URL), `bearer_methods_supported`, and `scopes_supported`.
+
+2. **`WWW-Authenticate` on 401**: add a Starlette middleware that adds
+   `WWW-Authenticate: Bearer realm="airlock", resource_metadata="<base_url>/.well-known/oauth-protected-resource"`
+   to all 401 responses, enabling clients to auto-discover the auth server.
+
+3. **DCR proxy endpoint** (the hard part): implement `POST /oauth/register` in Airlock
+   that calls the Authentik admin API (`/api/v3/providers/oauth2/` + `/api/v3/core/applications/`)
+   to dynamically create an OAuth2 provider+application, then returns a standard RFC 7591
+   registration response (`client_id`, `redirect_uris`, etc.). Requires Airlock to hold an
+   Authentik API token (Vault → ESO → env var). Optionally implement cleanup of
+   stale registrations via background task or TTL-based GC.
+
+4. **`authorization_servers` update**: once the DCR proxy is live, the
+   `authorization_servers` field in the resource metadata should list Airlock's own
+   DCR endpoint (or a dedicated sub-issuer), not just Authentik directly.
+
+5. **JWTVerifier multi-issuer support**: if the DCR proxy creates providers under
+   different Authentik issuers, `JWTVerifier` may need to accept tokens from multiple
+   issuers (or rely on JWKS key matching alone).
+
+### Pre-provisioned fallback (simpler, no DCR)
+
+If DCR is not needed (e.g. Claude Code is always configured with a fixed `client_id`),
+items 1 and 2 above alone provide MCP spec compliance for discovery. Add an Authentik
+OAuth2 provider (`airlock-human`, public, PKCE, `propose read` or `propose read decide`
+scopes) via a new blueprint in `cluster/k8s/authentik/blueprints/`.
+
 ## Capability token grant system
 
 Allow agents to request temporary or permanent capability grants, which are approved
