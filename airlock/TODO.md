@@ -10,37 +10,64 @@ Authentik does not support RFC 7591 Dynamic Client Registration — no `registra
 is advertised in its OIDC discovery document. Without DCR, interactive MCP clients like
 Claude Code on the web cannot self-register and must use pre-provisioned `client_id` values.
 
+### FastMCP already has the building blocks
+
+FastMCP 3.0.2 ships `OIDCProxy` (`fastmcp.server.auth.oidc_proxy.OIDCProxy`) which is
+purpose-built for this exact situation: it acts as a local OAuth authorization server that
+accepts DCR from clients and proxies the actual auth flow to an upstream OIDC provider
+(Authentik). It also auto-provides `/.well-known/oauth-authorization-server` and
+`/.well-known/oauth-protected-resource` endpoints (RFC 8414 / RFC 9728).
+
+The implementation is therefore much simpler than building a DCR proxy from scratch.
+
 ### What full implementation would require
 
-1. **`/.well-known/oauth-protected-resource`** (RFC 9728): add a new `Route` in `app.py`
-   returning JSON with `resource`, `authorization_servers` (pointing at the Authentik
-   provider's issuer URL), `bearer_methods_supported`, and `scopes_supported`.
+1. **Replace `JWTVerifier` with `OIDCProxy`** in `app.py`:
 
-2. **`WWW-Authenticate` on 401**: add a Starlette middleware that adds
-   `WWW-Authenticate: Bearer realm="airlock", resource_metadata="<base_url>/.well-known/oauth-protected-resource"`
-   to all 401 responses, enabling clients to auto-discover the auth server.
+   ```python
+   from fastmcp.server.auth.oidc_proxy import OIDCProxy
 
-3. **DCR proxy endpoint** (the hard part): implement `POST /oauth/register` in Airlock
-   that calls the Authentik admin API (`/api/v3/providers/oauth2/` + `/api/v3/core/applications/`)
-   to dynamically create an OAuth2 provider+application, then returns a standard RFC 7591
-   registration response (`client_id`, `redirect_uris`, etc.). Requires Airlock to hold an
-   Authentik API token (Vault → ESO → env var). Optionally implement cleanup of
-   stale registrations via background task or TTL-based GC.
+   # Instead of:
+   auth = JWTVerifier(jwks_uri=discovery["jwks_uri"])
 
-4. **`authorization_servers` update**: once the DCR proxy is live, the
-   `authorization_servers` field in the resource metadata should list Airlock's own
-   DCR endpoint (or a dedicated sub-issuer), not just Authentik directly.
+   # Use:
+   auth = OIDCProxy(
+       upstream=settings.oidc_issuer,   # Authentik provider URL
+       issuer=settings.public_base_url, # Airlock itself becomes the OAuth AS
+       # ... scope mappings, client storage, etc.
+   )
+   ```
 
-5. **JWTVerifier multi-issuer support**: if the DCR proxy creates providers under
-   different Authentik issuers, `JWTVerifier` may need to accept tokens from multiple
-   issuers (or rely on JWKS key matching alone).
+   `OIDCProxy` accepts DCR from clients (e.g. Claude Code), bridges the auth code + PKCE
+   flow to Authentik, issues its own short-lived JWTs, and handles token refresh. The
+   `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
+   endpoints are exposed automatically.
+
+2. **Remove the manual OIDC discovery fetch** from `app.py` (`_fetch_oidc_discovery`) —
+   `OIDCProxy` handles upstream discovery internally.
+
+3. **Client storage**: `OIDCProxy` needs a store for dynamically registered clients. Use
+   an in-memory store for simplicity or a SQLite-backed store (reuse `airlock.db` or a
+   separate file) for persistence across restarts.
+
+4. **Scope mapping**: configure `OIDCProxy` to map Authentik's upstream scopes
+   (`propose`, `decide`, `read`) through to the tokens it issues, so `require_scopes()`
+   in `proxy_server.py` continues to work unchanged.
+
+5. **OpenClaw auth proxy**: the `auth_proxy/` sidecar currently fetches tokens directly
+   from Authentik via `client_credentials`. If Airlock's issuer changes to itself, the
+   sidecar's `TOKEN_URL` must point at Airlock's token endpoint instead. Alternatively,
+   keep `JWTVerifier` as a second verifier (FastMCP supports `MultiAuth`) so both
+   Authentik-issued and OIDCProxy-issued tokens are accepted during transition.
 
 ### Pre-provisioned fallback (simpler, no DCR)
 
 If DCR is not needed (e.g. Claude Code is always configured with a fixed `client_id`),
-items 1 and 2 above alone provide MCP spec compliance for discovery. Add an Authentik
-OAuth2 provider (`airlock-human`, public, PKCE, `propose read` or `propose read decide`
-scopes) via a new blueprint in `cluster/k8s/authentik/blueprints/`.
+skip `OIDCProxy` and just add:
+
+- An Authentik OAuth2 provider (`airlock-human`, public, PKCE, `propose read` scopes)
+  via a new blueprint in `cluster/k8s/authentik/blueprints/`.
+- A `/.well-known/oauth-protected-resource` `Route` in `app.py` pointing at Authentik.
 
 ## Capability token grant system
 
