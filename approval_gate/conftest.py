@@ -210,7 +210,6 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
         *,
         predicate: PredicateFn | None = None,
         approval_timeout_seconds: float | None = None,
-        execution_running_notice_seconds: float = 10.0,
     ) -> ApprovalGateServer:
         return ApprovalGateServer(
             backends=dict(backends),
@@ -218,7 +217,6 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
             predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
             public_base_url="http://test",
             approval_timeout_seconds=approval_timeout_seconds,
-            execution_running_notice_seconds=execution_running_notice_seconds,
             auth=JWTVerifier(public_key=rsa_key_pair.public_key),
         )
 

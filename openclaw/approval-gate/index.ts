@@ -38,7 +38,7 @@ const DEFAULT_EXEC_SERVER_URL = "http://127.0.0.1:8766/mcp";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TERMINAL_LOG_KINDS = new Set(["execution_finished", "denied", "withdrawn"]);
-const NOTIFY_LOG_KINDS = new Set([...TERMINAL_LOG_KINDS, "execution_running"]);
+const NOTIFY_LOG_KINDS = new Set([...TERMINAL_LOG_KINDS, "execution_started"]);
 
 function shouldNotifyLogKind(kind: string): boolean {
   return NOTIFY_LOG_KINDS.has(kind);
@@ -55,10 +55,10 @@ function formatNotificationMessage(keyStr: string, detail: LogEventDetail): stri
       return `Action ${keyStr} was approved but execution returned an error:\n\n${body}`;
     }
   }
-  if (detail.kind === "execution_running") {
+  if (detail.kind === "execution_started") {
     const startedAt = (detail as { started_at?: string }).started_at;
     const suffix = startedAt ? ` (started at ${startedAt})` : "";
-    return `Action ${keyStr} is still executing${suffix}`;
+    return `Action ${keyStr} execution started${suffix}`;
   }
   if (detail.kind === "denied") {
     return `Action ${keyStr} was rejected by the user. Reason: ${detail.reason ?? "none given"}`;
@@ -206,8 +206,8 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
       const keyStr = `${sessionKey}/${entry.action_seq}`;
 
       // Skip notification for actions that were resolved inline within the tool call.
-      // Only consume the suppression on terminal events — running notices should not
-      // eat the suppression token meant for the subsequent terminal event.
+      // Only consume the suppression on terminal events — non-terminal events
+      // (execution_started) should not eat the suppression token.
       if (inlineResolvedActions.has(keyStr)) {
         if (TERMINAL_LOG_KINDS.has(entry.detail.kind)) {
           inlineResolvedActions.delete(keyStr);

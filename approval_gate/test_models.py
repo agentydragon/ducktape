@@ -131,7 +131,7 @@ def test_log_entry_roundtrip():
         entry_id=3,
         session_key="sess-1",
         action_seq=2,
-        detail=ExecutionStartedDetail(),
+        detail=ExecutionStartedDetail(started_at=datetime(2026, 1, 1, tzinfo=UTC)),
         timestamp=datetime(2026, 1, 15, 10, 30, 0, tzinfo=UTC),
     )
     parsed = LogEntry.model_validate_json(entry.model_dump_json())
@@ -177,7 +177,7 @@ def test_log_entry_with_execution_finished_detail():
         ActionReceivedDetail(),
         DeniedDetail(reason="x"),
         WithdrawnDetail(),
-        ExecutionStartedDetail(),
+        ExecutionStartedDetail(started_at=datetime(2026, 1, 1, tzinfo=UTC)),
         ExecutionFinishedDetail(outcome=CallToolResult(content=[])),
     ],
 )

@@ -126,7 +126,6 @@ class LogEventKind(StrEnum):
     DENIED = "denied"
     WITHDRAWN = "withdrawn"
     EXECUTION_STARTED = "execution_started"
-    EXECUTION_RUNNING = "execution_running"
     EXECUTION_FINISHED = "execution_finished"
 
 
@@ -148,13 +147,6 @@ class WithdrawnDetail(BaseModel):
 
 class ExecutionStartedDetail(BaseModel):
     kind: Literal[LogEventKind.EXECUTION_STARTED] = LogEventKind.EXECUTION_STARTED
-    model_config = ConfigDict(extra="forbid")
-
-
-class ExecutionRunningDetail(BaseModel):
-    """Emitted when a backend call has been running longer than the configured notice threshold."""
-
-    kind: Literal[LogEventKind.EXECUTION_RUNNING] = LogEventKind.EXECUTION_RUNNING
     started_at: datetime
     model_config = ConfigDict(extra="forbid")
 
@@ -166,12 +158,7 @@ class ExecutionFinishedDetail(BaseModel):
 
 
 LogEventDetail = Annotated[
-    ActionReceivedDetail
-    | DeniedDetail
-    | WithdrawnDetail
-    | ExecutionStartedDetail
-    | ExecutionRunningDetail
-    | ExecutionFinishedDetail,
+    ActionReceivedDetail | DeniedDetail | WithdrawnDetail | ExecutionStartedDetail | ExecutionFinishedDetail,
     Field(discriminator="kind"),
 ]
 

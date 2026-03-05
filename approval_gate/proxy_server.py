@@ -49,7 +49,6 @@ from approval_gate.models import (
     DoneState,
     ExecutingState,
     ExecutionFinishedDetail,
-    ExecutionRunningDetail,
     ExecutionStartedDetail,
     LogEventDetail,
     OperatorDecision,
@@ -153,7 +152,6 @@ class ApprovalGateServer(EnhancedFastMCP):
         predicate: PredicateFn,
         public_base_url: str,
         approval_timeout_seconds: float | None = None,
-        execution_running_notice_seconds: float = 10.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -165,7 +163,6 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._predicate = predicate
         self._public_base_url = public_base_url
         self._approval_timeout_seconds = approval_timeout_seconds
-        self._execution_running_notice_seconds = execution_running_notice_seconds
         self._backend_clients: dict[MCPMountPrefix, Client] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
@@ -404,7 +401,10 @@ class ApprovalGateServer(EnhancedFastMCP):
             raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
         match decision:
             case ApproveDecision():
-                action = await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail())
+                started_at = datetime.now(tz=UTC)
+                action = await self._update_and_notify(
+                    key, ExecutingState(), ExecutionStartedDetail(started_at=started_at)
+                )
                 self._spawn(self._execute_and_finish(key, action))
                 return action
             case DenyDecision(reason=reason):
@@ -423,40 +423,13 @@ class ApprovalGateServer(EnhancedFastMCP):
         return await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
 
     async def _execute_and_finish(self, key: ActionKey, action: Action) -> None:
-        """Execute the backend call and update state to done.
-
-        If the call takes longer than ``_execution_running_notice_seconds``,
-        emits an ``execution_running`` log event so subscribers know the action
-        is still in flight.
-        """
+        """Execute the backend call and update state to done."""
         namespace = MCPMountPrefix(action.call.server_namespace)
         client = self._backend_clients.get(namespace)
         if client is None:
             raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
 
-        notice_delay = self._execution_running_notice_seconds
-        finished = False
-        started_at = datetime.now(tz=UTC)
-
-        async def _running_notice() -> None:
-            await asyncio.sleep(notice_delay)
-            if finished:
-                return
-            await self._append_log_and_notify(key, ExecutionRunningDetail(started_at=started_at))
-            elapsed = (datetime.now(tz=UTC) - started_at).total_seconds()
-            logger.info("action %s/%d still executing after %.1fs", key.session_key, key.action_seq, elapsed)
-
-        notice_task: asyncio.Task[None] | None = None
-        if notice_delay > 0:
-            notice_task = asyncio.create_task(_running_notice())
-
-        try:
-            outcome = await client.call_tool_mcp(action.call.tool_name, action.call.arguments)
-        finally:
-            finished = True
-            if notice_task is not None:
-                notice_task.cancel()
-
+        outcome = await client.call_tool_mcp(action.call.tool_name, action.call.arguments)
         await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
 
     def _spawn(self, coro: Coroutine[Any, Any, Any]) -> None:

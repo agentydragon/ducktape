@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest_bazel
 from mcp.types import CallToolResult, TextContent
 
@@ -15,6 +17,8 @@ from approval_gate.models import (
     ToolCall,
 )
 from approval_gate.storage import ActionStorage
+
+_NOW = datetime.now(tz=UTC)
 
 
 async def test_create_and_get(storage: ActionStorage):
@@ -113,13 +117,15 @@ async def test_get_log_hwm(storage: ActionStorage):
     await storage.append_log_entry(session_key="hwm-sess", action_seq=1, detail=ActionReceivedDetail())
     assert await storage.get_log_hwm("hwm-sess") == 1
 
-    await storage.append_log_entry(session_key="hwm-sess", action_seq=1, detail=ExecutionStartedDetail())
+    await storage.append_log_entry(session_key="hwm-sess", action_seq=1, detail=ExecutionStartedDetail(started_at=_NOW))
     assert await storage.get_log_hwm("hwm-sess") == 2
 
 
 async def test_get_log_entry(storage: ActionStorage):
     await storage.append_log_entry(session_key="entry-sess", action_seq=1, detail=ActionReceivedDetail())
-    await storage.append_log_entry(session_key="entry-sess", action_seq=1, detail=ExecutionStartedDetail())
+    await storage.append_log_entry(
+        session_key="entry-sess", action_seq=1, detail=ExecutionStartedDetail(started_at=_NOW)
+    )
 
     entry = await storage.get_log_entry("entry-sess", 2)
     assert entry is not None
