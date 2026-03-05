@@ -92,19 +92,13 @@ class GateClient(Client, MessageHandler):
         if evt is not None:
             evt.set()
 
-    async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
-        """Call a gate-wrapped tool and parse the ActionKey from the result."""
-        action = parse_tool_result_as(await self.call_tool_mcp(tool_name, args), Action)
-        return action.key
-
     async def call_gate_tool_full(self, tool_name: str, args: dict[str, object]) -> Action:
         """Call a gate-wrapped tool and return the full Action."""
         return parse_tool_result_as(await self.call_tool_mcp(tool_name, args), Action)
 
-    async def call_echo(self, text: str, *, justification: str = "test", session_key: str) -> ActionKey:
-        return await self.call_gate_tool(
-            "test_echo", {"input": {"text": text}, "justification": justification, "session_key": session_key}
-        )
+    async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
+        """Call a gate-wrapped tool and parse the ActionKey from the result."""
+        return (await self.call_gate_tool_full(tool_name, args)).key
 
     async def call_echo_full(
         self, text: str, *, justification: str = "test", session_key: str, wait_mode: dict[str, object] | None = None
@@ -114,6 +108,9 @@ class GateClient(Client, MessageHandler):
         if wait_mode is not None:
             args["wait_mode"] = wait_mode
         return await self.call_gate_tool_full("test_echo", args)
+
+    async def call_echo(self, text: str, *, justification: str = "test", session_key: str) -> ActionKey:
+        return (await self.call_echo_full(text, justification=justification, session_key=session_key)).key
 
     async def approve(self, key: ActionKey) -> Action:
         return parse_tool_result_as(await self.call_tool_mcp("approve_action", {"key": key.model_dump()}), Action)
@@ -198,14 +195,14 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
         backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
         *,
         predicate: PredicateFn | None = None,
-        approval_timeout_seconds: float | None = None,
+        default_approval_timeout_seconds: float | None = None,
     ) -> ApprovalGateServer:
         return ApprovalGateServer(
             backends=dict(backends),
             db_path=tmp_path / "gate.db",
             predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
             public_base_url="http://test",
-            approval_timeout_seconds=approval_timeout_seconds,
+            default_approval_timeout_seconds=default_approval_timeout_seconds,
             auth=JWTVerifier(public_key=rsa_key_pair.public_key),
         )
 

@@ -121,13 +121,13 @@ def _resolve_effective_timeout(wait_mode: WaitMode | None, server_default: float
 
     Returns seconds to wait: None = no wait, float('inf') = wait forever, N = bounded.
     """
-    if wait_mode is not None:
-        match wait_mode:
-            case BlockingWait():
-                return float("inf")
-            case YieldAfterMs(timeout_ms=ms):
-                return max(0, ms / 1000)
-    return server_default
+    if wait_mode is None:
+        return server_default
+    match wait_mode:
+        case BlockingWait():
+            return float("inf")
+        case YieldAfterMs(timeout_ms=ms):
+            return max(0, ms / 1000)
 
 
 class ApprovalGateServer(EnhancedFastMCP):
@@ -140,7 +140,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
-        approval_timeout_seconds: float | None = None,
+        default_approval_timeout_seconds: float | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -151,7 +151,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._storage: ActionStorage | None = None
         self._predicate = predicate
         self._public_base_url = public_base_url
-        self._approval_timeout_seconds = approval_timeout_seconds
+        self._default_approval_timeout_seconds = default_approval_timeout_seconds
         self._backend_clients: dict[MCPMountPrefix, Client] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
@@ -295,7 +295,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
 
-            effective_timeout = _resolve_effective_timeout(wait_mode, self._approval_timeout_seconds)
+            effective_timeout = _resolve_effective_timeout(wait_mode, self._default_approval_timeout_seconds)
 
             if effective_timeout is not None and effective_timeout > 0:
                 event = asyncio.Event()

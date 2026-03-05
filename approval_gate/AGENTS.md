@@ -10,4 +10,4 @@
 - The `resource://actions/{id}` MCP resource is the source of truth for action state.
 - Tool call results return a full `Action` object with `state.status` indicating whether
   the action resolved (`done`, `rejected`) or is still in flight (`pending`, `executing`).
-  With `approval_timeout_seconds`, resolved actions include the result directly.
+  With `default_approval_timeout_seconds`, resolved actions include the result directly.

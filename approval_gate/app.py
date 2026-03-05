@@ -51,7 +51,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
         db_path=settings.db_path,
         predicate=predicate,
         public_base_url=settings.public_base_url,
-        approval_timeout_seconds=settings.approval_timeout_seconds,
+        default_approval_timeout_seconds=settings.default_approval_timeout_seconds,
         auth=JWTVerifier(jwks_uri=discovery["jwks_uri"]),
     )
     mcp_app = gate.http_app(path="/")

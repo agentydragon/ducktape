@@ -213,7 +213,7 @@ def _auto_approve(ns: str, tool: str, args: dict) -> Approved:
     ("server_kwargs", "call_kwargs", "expected_status"),
     [
         pytest.param(
-            {"predicate": _auto_approve, "approval_timeout_seconds": 5.0},
+            {"predicate": _auto_approve, "default_approval_timeout_seconds": 5.0},
             {},
             ActionStatus.DONE,
             id="server-default-timeout-done",
@@ -263,7 +263,7 @@ async def test_auto_deny_with_timeout_returns_rejected(
     """Auto-deny predicate + server timeout → rejected with reason."""
     backend, calls = _make_backend()
     gate = make_gate_server(
-        {TEST_NS: backend}, predicate=lambda ns, tool, args: Denied(reason="nope"), approval_timeout_seconds=5.0
+        {TEST_NS: backend}, predicate=lambda ns, tool, args: Denied(reason="nope"), default_approval_timeout_seconds=5.0
     )
     app = gate_http_app(gate)
     base_url = f"http://127.0.0.1:{free_port}"
@@ -285,7 +285,7 @@ async def test_yield_zero_overrides_large_server_default(
 ):
     """yield_after_ms=0 returns immediately despite a 30s server default."""
     backend, _ = _make_backend()
-    gate = make_gate_server({TEST_NS: backend}, predicate=_auto_approve, approval_timeout_seconds=30.0)
+    gate = make_gate_server({TEST_NS: backend}, predicate=_auto_approve, default_approval_timeout_seconds=30.0)
     app = gate_http_app(gate)
     base_url = f"http://127.0.0.1:{free_port}"
 
@@ -304,7 +304,7 @@ async def test_blocking_overrides_tiny_server_default(
 ):
     """blocking wait_mode overrides a 10ms server default — waits for completion."""
     backend, calls = _make_backend()
-    gate = make_gate_server({TEST_NS: backend}, predicate=_auto_approve, approval_timeout_seconds=0.01)
+    gate = make_gate_server({TEST_NS: backend}, predicate=_auto_approve, default_approval_timeout_seconds=0.01)
     app = gate_http_app(gate)
     base_url = f"http://127.0.0.1:{free_port}"
 
