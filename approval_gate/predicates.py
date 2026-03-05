@@ -57,10 +57,6 @@ class PredicateFn(Protocol):
 # ── Loader ────────────────────────────────────────────────────────────────────
 
 
-def _always_needs_human(server_namespace: str, tool_name: str, arguments: dict) -> PredicateDecision:
-    return NeedsHumanDecision()
-
-
 def load_predicate(path: Path) -> PredicateFn:
     """Load a predicate function from a Python file.
 

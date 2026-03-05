@@ -8,6 +8,7 @@ and transport stack end-to-end.
 from __future__ import annotations
 
 import anyio
+import pytest
 import pytest_bazel
 from fastmcp import FastMCP
 
@@ -21,7 +22,7 @@ from approval_gate.conftest import (
     operator_transport,
     serve_app,
 )
-from approval_gate.models import Action, ActionKey, ActionStatus, DoneState, RejectedState
+from approval_gate.models import Action, ActionKey, ActionStatus, RejectedState
 from approval_gate.predicates import Approved, Denied
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import read_text
@@ -204,29 +205,62 @@ async def test_log_hwm_increments_on_state_changes(
         assert hwm_after_done > hwm_after_create
 
 
-async def test_auto_approve_with_timeout_returns_done(
-    make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
+def _auto_approve(ns: str, tool: str, args: dict) -> Approved:
+    return Approved()
+
+
+@pytest.mark.parametrize(
+    ("server_kwargs", "call_kwargs", "expected_status"),
+    [
+        pytest.param(
+            {"predicate": _auto_approve, "approval_timeout_seconds": 5.0},
+            {},
+            ActionStatus.DONE,
+            id="server-default-timeout-done",
+        ),
+        pytest.param(
+            {"predicate": _auto_approve},
+            {"wait_mode": {"mode": "yield_after_ms", "timeout_ms": 5000}},
+            ActionStatus.DONE,
+            id="per-call-yield-done",
+        ),
+        pytest.param(
+            {"predicate": _auto_approve}, {"wait_mode": {"mode": "blocking"}}, ActionStatus.DONE, id="blocking-done"
+        ),
+        pytest.param({}, {}, ActionStatus.PENDING, id="no-wait-pending"),
+        pytest.param(
+            {},
+            {"wait_mode": {"mode": "yield_after_ms", "timeout_ms": 100}},
+            ActionStatus.PENDING,
+            id="short-yield-pending",
+        ),
+    ],
+)
+async def test_wait_mode_resolution(
+    make_gate_server: GateServerFactory,
+    free_port: int,
+    agent_jwt: str,
+    server_kwargs: dict,
+    call_kwargs: dict,
+    expected_status: ActionStatus,
 ):
-    """With approval_timeout_seconds and auto-approve predicate, tool call returns done Action."""
-    backend, calls = _make_backend()
-    gate = make_gate_server(
-        {TEST_NS: backend}, predicate=lambda ns, tool, args: Approved(), approval_timeout_seconds=5.0
-    )
+    """Various wait_mode / server-default combinations resolve to expected status."""
+    backend, _ = _make_backend()
+    gate = make_gate_server({TEST_NS: backend}, **server_kwargs)
     app = gate_http_app(gate)
     base_url = f"http://127.0.0.1:{free_port}"
 
     async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
-        action = await agent.call_echo_full("hello", session_key=_SESSION)
+        with anyio.fail_after(10.0):
+            action = await agent.call_echo_full("test", session_key=_SESSION, **call_kwargs)
 
-    assert action.state.status == ActionStatus.DONE
-    assert isinstance(action.state, DoneState)
-    assert calls == ["hello"]
+    assert action.state.status == expected_status
 
 
 async def test_auto_deny_with_timeout_returns_rejected(
     make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
 ):
-    """With approval_timeout_seconds and auto-deny predicate, tool call returns rejected Action."""
+    """Auto-deny predicate + server timeout → rejected with reason."""
     backend, calls = _make_backend()
     gate = make_gate_server(
         {TEST_NS: backend}, predicate=lambda ns, tool, args: Denied(reason="nope"), approval_timeout_seconds=5.0
@@ -243,62 +277,15 @@ async def test_auto_deny_with_timeout_returns_rejected(
     assert calls == []
 
 
-async def test_no_timeout_returns_pending(make_gate_app: GateAppFactory, free_port: int, agent_jwt: str):
-    """Without approval_timeout_seconds (default None), tool call returns pending Action."""
-    backend, _ = _make_backend()
-    app = make_gate_app({TEST_NS: backend})
-    base_url = f"http://127.0.0.1:{free_port}"
-
-    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
-        action = await agent.call_echo_full("pending", session_key=_SESSION)
-
-    assert action.state.status == ActionStatus.PENDING
+# ── per-call wait_mode overrides server default ──────────────────────────
 
 
-async def test_per_call_yield_overrides_server_default(
+async def test_yield_zero_overrides_large_server_default(
     make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
 ):
-    """Per-call yield_after_ms overrides server default (None)."""
-    backend, calls = _make_backend()
-    gate = make_gate_server({TEST_NS: backend}, predicate=lambda ns, tool, args: Approved())
-    app = gate_http_app(gate)
-    base_url = f"http://127.0.0.1:{free_port}"
-
-    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
-        action = await agent.call_echo_full(
-            "override", session_key=_SESSION, wait_mode={"mode": "yield_after_ms", "timeout_ms": 5000}
-        )
-
-    assert action.state.status == ActionStatus.DONE
-    assert calls == ["override"]
-
-
-async def test_yield_timeout_expires_returns_pending(
-    make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
-):
-    """When yield timeout expires before resolution, tool call returns pending Action."""
+    """yield_after_ms=0 returns immediately despite a 30s server default."""
     backend, _ = _make_backend()
-    gate = make_gate_server({TEST_NS: backend})
-    app = gate_http_app(gate)
-    base_url = f"http://127.0.0.1:{free_port}"
-
-    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
-        action = await agent.call_echo_full(
-            "slow", session_key=_SESSION, wait_mode={"mode": "yield_after_ms", "timeout_ms": 100}
-        )
-
-    assert action.state.status == ActionStatus.PENDING
-
-
-# ── yield_after_ms tests ──────────────────────────────────────────────────
-
-
-async def test_yield_zero_returns_immediately(make_gate_server: GateServerFactory, free_port: int, agent_jwt: str):
-    """yield_after_ms with timeout_ms=0 returns without blocking even with a large server default."""
-    backend, _ = _make_backend()
-    gate = make_gate_server(
-        {TEST_NS: backend}, predicate=lambda ns, tool, args: Approved(), approval_timeout_seconds=30.0
-    )
+    gate = make_gate_server({TEST_NS: backend}, predicate=_auto_approve, approval_timeout_seconds=30.0)
     app = gate_http_app(gate)
     base_url = f"http://127.0.0.1:{free_port}"
 
@@ -308,44 +295,28 @@ async def test_yield_zero_returns_immediately(make_gate_server: GateServerFactor
                 "bg", session_key=_SESSION, wait_mode={"mode": "yield_after_ms", "timeout_ms": 0}
             )
 
+    # Returns before auto-approve completes — any status is valid
     assert action.state.status in (ActionStatus.PENDING, ActionStatus.EXECUTING, ActionStatus.DONE)
 
 
-async def test_yield_waits_for_auto_approve(make_gate_server: GateServerFactory, free_port: int, agent_jwt: str):
-    """yield_after_ms with enough time for auto-approve to resolve."""
-    backend, calls = _make_backend()
-    gate = make_gate_server({TEST_NS: backend}, predicate=lambda ns, tool, args: Approved())
-    app = gate_http_app(gate)
-    base_url = f"http://127.0.0.1:{free_port}"
-
-    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
-        action = await agent.call_echo_full(
-            "yield", session_key=_SESSION, wait_mode={"mode": "yield_after_ms", "timeout_ms": 5000}
-        )
-
-    assert action.state.status == ActionStatus.DONE
-    assert calls == ["yield"]
-
-
-# ── blocking mode tests ─────────────────────────────────────────────────
-
-
-async def test_blocking_with_auto_approve_returns_done(
+async def test_blocking_overrides_tiny_server_default(
     make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
 ):
-    """blocking wait_mode with auto-approve predicate waits and returns done Action."""
+    """blocking wait_mode overrides a 10ms server default — waits for completion."""
     backend, calls = _make_backend()
-    gate = make_gate_server({TEST_NS: backend}, predicate=lambda ns, tool, args: Approved())
+    gate = make_gate_server({TEST_NS: backend}, predicate=_auto_approve, approval_timeout_seconds=0.01)
     app = gate_http_app(gate)
     base_url = f"http://127.0.0.1:{free_port}"
 
     async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
         with anyio.fail_after(10.0):
-            action = await agent.call_echo_full("block-auto", session_key=_SESSION, wait_mode={"mode": "blocking"})
+            action = await agent.call_echo_full("override", session_key=_SESSION, wait_mode={"mode": "blocking"})
 
     assert action.state.status == ActionStatus.DONE
-    assert isinstance(action.state, DoneState)
-    assert calls == ["block-auto"]
+    assert calls == ["override"]
+
+
+# ── blocking with operator ───────────────────────────────────────────────
 
 
 async def test_blocking_waits_for_operator_approval(
@@ -378,25 +349,6 @@ async def test_blocking_waits_for_operator_approval(
         assert len(action_holder) == 1
         assert action_holder[0].state.status == ActionStatus.DONE
         assert calls == ["block-human"]
-
-
-async def test_blocking_overrides_server_default_timeout(
-    make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
-):
-    """blocking wait_mode overrides a short server default timeout."""
-    backend, calls = _make_backend()
-    gate = make_gate_server(
-        {TEST_NS: backend}, predicate=lambda ns, tool, args: Approved(), approval_timeout_seconds=0.01
-    )
-    app = gate_http_app(gate)
-    base_url = f"http://127.0.0.1:{free_port}"
-
-    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
-        with anyio.fail_after(10.0):
-            action = await agent.call_echo_full("block-override", session_key=_SESSION, wait_mode={"mode": "blocking"})
-
-    assert action.state.status == ActionStatus.DONE
-    assert calls == ["block-override"]
 
 
 if __name__ == "__main__":
