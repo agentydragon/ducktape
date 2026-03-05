@@ -2,7 +2,7 @@ import pytest
 import pytest_bazel
 
 from approval_gate.models import BlockingWait, YieldAfterMs
-from approval_gate.proxy_server import _resolve_effective_wait, _wait_mode_to_timeout, _wrap_tool_schema
+from approval_gate.proxy_server import _wait_mode_to_timeout, _wrap_tool_schema
 
 
 def test_wraps_original_schema_under_input():
@@ -37,24 +37,6 @@ def test_schema_includes_wait_mode():
     assert "wait_mode" not in result["required"]
 
 
-# ── _resolve_effective_wait ─────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    ("per_call", "server_default", "expected"),
-    [
-        pytest.param(BlockingWait(), YieldAfterMs(timeout_ms=5000), BlockingWait(), id="per-call-overrides-default"),
-        pytest.param(None, BlockingWait(), BlockingWait(), id="falls-back-to-default"),
-        pytest.param(None, None, None, id="none-with-none"),
-        pytest.param(
-            YieldAfterMs(timeout_ms=0), BlockingWait(), YieldAfterMs(timeout_ms=0), id="yield-overrides-blocking"
-        ),
-    ],
-)
-def test_resolve_effective_wait(per_call, server_default, expected):
-    assert _resolve_effective_wait(per_call, server_default) == expected
-
-
 # ── _wait_mode_to_timeout ──────────────────────────────────────────────────
 
 
@@ -65,7 +47,6 @@ def test_resolve_effective_wait(per_call, server_default, expected):
         pytest.param(YieldAfterMs(timeout_ms=5000), 5.0, id="yield-converts-to-seconds"),
         pytest.param(YieldAfterMs(timeout_ms=0), 0, id="yield-zero"),
         pytest.param(YieldAfterMs(timeout_ms=-100), 0, id="yield-negative-clamps-to-zero"),
-        pytest.param(None, None, id="none-returns-none"),
     ],
 )
 def test_wait_mode_to_timeout(wait_mode, expected):

@@ -24,7 +24,7 @@ from starlette.routing import Mount
 
 from approval_gate.models import Action, ActionKey, ActionStatus, WaitMode
 from approval_gate.predicates import NeedsHumanDecision, PredicateFn
-from approval_gate.proxy_server import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, ApprovalGateServer
+from approval_gate.proxy_server import _DEFAULT_WAIT_MODE, DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, ApprovalGateServer
 from approval_gate.storage import ActionStorage
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import read_text_json_typed
@@ -221,7 +221,7 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
         backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
         *,
         predicate: PredicateFn | None = None,
-        default_wait_mode: WaitMode | None = None,
+        default_wait_mode: WaitMode = _DEFAULT_WAIT_MODE,
     ) -> ApprovalGateServer:
         return ApprovalGateServer(
             backends=dict(backends),

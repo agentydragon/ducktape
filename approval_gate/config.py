@@ -29,7 +29,7 @@ import yaml
 from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from approval_gate.models import WaitMode
+from approval_gate.models import WaitMode, YieldAfterMs
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -47,9 +47,9 @@ class Settings(BaseModel):
     )
     oidc_issuer: str
     oidc_client_id: str
-    default_wait_mode: WaitMode | None = None
+    default_wait_mode: WaitMode = YieldAfterMs(timeout_ms=0)
     host: str = "0.0.0.0"
-    port: int = 8765
+    port: int
 
     @field_validator("public_base_url", mode="after")
     @classmethod

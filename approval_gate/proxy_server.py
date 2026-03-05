@@ -79,6 +79,7 @@ _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 
 _WAIT_MODE_SCHEMA: dict[str, Any] = TypeAdapter(WaitMode).json_schema()
+_DEFAULT_WAIT_MODE = YieldAfterMs(timeout_ms=0)
 
 
 def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -108,18 +109,11 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _resolve_effective_wait(wait_mode: WaitMode | None, server_default: WaitMode | None) -> WaitMode | None:
-    """Resolve effective wait mode from per-call override or server default."""
-    return wait_mode if wait_mode is not None else server_default
-
-
-def _wait_mode_to_timeout(wait_mode: WaitMode | None) -> float | None:
+def _wait_mode_to_timeout(wait_mode: WaitMode) -> float:
     """Convert a WaitMode to a timeout in seconds.
 
-    Returns None = no wait, float('inf') = wait forever, N = bounded.
+    Returns float('inf') = wait forever, N = bounded (0 = immediate).
     """
-    if wait_mode is None:
-        return None
     match wait_mode:
         case BlockingWait():
             return float("inf")
@@ -137,7 +131,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
-        default_wait_mode: WaitMode | None = None,
+        default_wait_mode: WaitMode = _DEFAULT_WAIT_MODE,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -292,9 +286,10 @@ class ApprovalGateServer(EnhancedFastMCP):
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
 
-            effective_timeout = _wait_mode_to_timeout(_resolve_effective_wait(wait_mode, self._default_wait_mode))
+            effective = wait_mode if wait_mode is not None else self._default_wait_mode
+            effective_timeout = _wait_mode_to_timeout(effective)
 
-            if effective_timeout is not None and effective_timeout > 0:
+            if effective_timeout > 0:
                 event = asyncio.Event()
                 self._action_resolved_events[key] = event
             else:
