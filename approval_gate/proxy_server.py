@@ -22,7 +22,6 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -122,16 +121,6 @@ def _wait_mode_to_timeout(wait_mode: WaitMode) -> float:
             return max(0, ms / 1000)
 
 
-@dataclass
-class _DecisionRequest:
-    """Carries an operator decision into the action pipeline, with an ack channel back."""
-
-    decision: OperatorDecision
-    # Pipeline sets this after applying the immediate state transition (EXECUTING or REJECTED),
-    # unblocking decide() so it can return the updated action to the MCP caller.
-    acknowledged: asyncio.Future[Action]
-
-
 class ApprovalGateServer(EnhancedFastMCP):
     """MCP server that wraps multiple backend MCP servers with an approval layer."""
 
@@ -158,7 +147,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
         # Keyed by ActionKey while action is parked awaiting a human decision.
-        self._pending_decisions: dict[ActionKey, asyncio.Future[_DecisionRequest]] = {}
+        self._pending_decisions: dict[ActionKey, asyncio.Future[OperatorDecision]] = {}
 
     # ── Lifespan ──────────────────────────────────────────────────────────────
 
@@ -197,25 +186,8 @@ class ApprovalGateServer(EnhancedFastMCP):
         """
         pending = await self._req_storage.list_actions(ActionStatus.PENDING)
         for action in pending:
-            key = action.key
-            fut: asyncio.Future[_DecisionRequest] = asyncio.get_running_loop().create_future()
-            self._pending_decisions[key] = fut
-            self._spawn(self._resume_pending_action(key, action, fut))
-
-    async def _resume_pending_action(
-        self, key: ActionKey, action: Action, fut: asyncio.Future[_DecisionRequest]
-    ) -> None:
-        """Resume a PENDING action from a prior server run, parking until a human decides."""
-        try:
-            req = await fut
-        except asyncio.CancelledError:
-            return  # withdrawn externally
-        finally:
-            self._pending_decisions.pop(key, None)
-        namespace = MCPMountPrefix(action.call.server_namespace)
-        await self._apply_decision(
-            key, namespace, action.call.tool_name, action.call.arguments, req.decision, acknowledged=req.acknowledged
-        )
+            namespace = MCPMountPrefix(action.call.server_namespace)
+            self._spawn(self._await_human_decision(action.key, namespace, action.call.tool_name, action.call.arguments))
 
     async def _connect_backends(self, stack: AsyncExitStack) -> None:
         """Connect to all backend servers, register wrapped tools, and render instructions."""
@@ -282,14 +254,14 @@ class ApprovalGateServer(EnhancedFastMCP):
             return await self._req_storage.list_actions(status, limit=limit, offset=offset)
 
         @self.tool(auth=require_scopes(DECIDE_SCOPE))
-        async def approve_action(key: ActionKey) -> Action:
+        async def approve_action(key: ActionKey) -> None:
             """Approve a pending action, executing it against the backend."""
-            return await self.decide(key, ApproveDecision())
+            await self.decide(key, ApproveDecision())
 
         @self.tool(auth=require_scopes(DECIDE_SCOPE))
-        async def reject_action(key: ActionKey, reason: str | None = None) -> Action:
+        async def reject_action(key: ActionKey, reason: str | None = None) -> None:
             """Reject a pending action without executing it."""
-            return await self.decide(key, DenyDecision(reason=reason))
+            await self.decide(key, DenyDecision(reason=reason))
 
         @self.tool(auth=require_scopes(PROPOSE_SCOPE))
         async def withdraw_action(key: ActionKey) -> Action:
@@ -366,17 +338,21 @@ class ApprovalGateServer(EnhancedFastMCP):
                 logger.info(
                     "queued action %s/%d server=%s tool=%s", key.session_key, key.action_seq, namespace, tool_name
                 )
-                fut: asyncio.Future[_DecisionRequest] = asyncio.get_running_loop().create_future()
-                self._pending_decisions[key] = fut
-                try:
-                    req = await fut
-                except asyncio.CancelledError:
-                    return  # withdrawn externally; state already updated by withdraw()
-                finally:
-                    self._pending_decisions.pop(key, None)
-                await self._apply_decision(
-                    key, namespace, tool_name, input, req.decision, acknowledged=req.acknowledged
-                )
+                await self._await_human_decision(key, namespace, tool_name, input)
+
+    async def _await_human_decision(
+        self, key: ActionKey, namespace: MCPMountPrefix, tool_name: str, input: dict[str, object]
+    ) -> None:
+        """Park until a human decision arrives via decide(), then apply it."""
+        fut: asyncio.Future[OperatorDecision] = asyncio.get_running_loop().create_future()
+        self._pending_decisions[key] = fut
+        try:
+            decision = await fut
+        except asyncio.CancelledError:
+            return  # withdrawn externally; state already updated by withdraw()
+        finally:
+            self._pending_decisions.pop(key, None)
+        await self._apply_decision(key, namespace, tool_name, input, decision)
 
     async def _apply_decision(
         self,
@@ -385,27 +361,19 @@ class ApprovalGateServer(EnhancedFastMCP):
         tool_name: str,
         input: dict[str, object],
         decision: OperatorDecision,
-        *,
-        acknowledged: asyncio.Future[Action] | None = None,
     ) -> None:
-        """Apply a decision: transition state, ack the caller if present, execute backend if approved."""
+        """Apply a decision: transition state and execute backend if approved."""
         match decision:
             case ApproveDecision():
                 started_at = datetime.now(tz=UTC)
-                action = await self._update_and_notify(
-                    key, ExecutingState(), ExecutionStartedDetail(started_at=started_at)
-                )
-                if acknowledged is not None:
-                    acknowledged.set_result(action)
+                await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail(started_at=started_at))
                 client = self._backend_clients.get(namespace)
                 if client is None:
                     raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
                 outcome = await client.call_tool_mcp(tool_name, input)
                 await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
             case DenyDecision(reason=reason):
-                action = await self._update_and_notify(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
-                if acknowledged is not None:
-                    acknowledged.set_result(action)
+                await self._update_and_notify(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
 
     # ── Event log + notification helpers ──────────────────────────────────────
 
@@ -431,7 +399,7 @@ class ApprovalGateServer(EnhancedFastMCP):
 
     # ── Operator / agent decisions ────────────────────────────────────────────
 
-    async def decide(self, key: ActionKey, decision: OperatorDecision) -> Action:
+    async def decide(self, key: ActionKey, decision: OperatorDecision) -> None:
         """Inject an operator decision for an action awaiting human input.
 
         Raises ValueError if the action does not exist, is not pending, or is not
@@ -445,9 +413,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         fut = self._pending_decisions.get(key)
         if fut is None or fut.done():
             raise ValueError(f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision")
-        ack: asyncio.Future[Action] = asyncio.get_running_loop().create_future()
-        fut.set_result(_DecisionRequest(decision=decision, acknowledged=ack))
-        return await ack
+        fut.set_result(decision)
 
     async def withdraw(self, key: ActionKey) -> Action:
         """Agent-initiated withdrawal of a pending action.

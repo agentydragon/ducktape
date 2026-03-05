@@ -105,13 +105,11 @@ class GateClient(Client, MessageHandler):
             args["wait_mode"] = wait_mode
         return await self.call_gate_tool("test_echo", args)
 
-    async def approve(self, key: ActionKey) -> Action:
-        return parse_tool_result_as(await self.call_tool_mcp("approve_action", {"key": key.model_dump()}), Action)
+    async def approve(self, key: ActionKey) -> None:
+        await self.call_tool_mcp("approve_action", {"key": key.model_dump()})
 
-    async def reject(self, key: ActionKey, reason: str | None = None) -> Action:
-        return parse_tool_result_as(
-            await self.call_tool_mcp("reject_action", {"key": key.model_dump(), "reason": reason}), Action
-        )
+    async def reject(self, key: ActionKey, reason: str | None = None) -> None:
+        await self.call_tool_mcp("reject_action", {"key": key.model_dump(), "reason": reason})
 
     async def wait_for(self, key: ActionKey, status: ActionStatus) -> Action:
         """Wait until the action reaches ``status`` via resource-updated notifications."""
