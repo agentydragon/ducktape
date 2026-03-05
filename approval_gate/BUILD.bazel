@@ -63,6 +63,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":models",
         "//mcp_infra:prefix",
         "@pypi//fastmcp",
         "@pypi//pydantic",

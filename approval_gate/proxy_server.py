@@ -78,15 +78,7 @@ READ_SCOPE = "read"
 _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 
-_WAIT_MODE_SCHEMA: dict[str, Any] = {
-    "description": (
-        "How long to wait for action resolution before returning. "
-        "Omit to use server default. "
-        "blocking: wait indefinitely. "
-        "yield_after_ms: wait up to timeout_ms then return current state."
-    ),
-    **TypeAdapter(WaitMode).json_schema(),
-}
+_WAIT_MODE_SCHEMA: dict[str, Any] = TypeAdapter(WaitMode).json_schema()
 
 
 def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -116,13 +108,18 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _resolve_effective_timeout(wait_mode: WaitMode | None, server_default: float | None) -> float | None:
-    """Resolve effective wait timeout from per-call wait_mode or server default.
+def _resolve_effective_wait(wait_mode: WaitMode | None, server_default: WaitMode | None) -> WaitMode | None:
+    """Resolve effective wait mode from per-call override or server default."""
+    return wait_mode if wait_mode is not None else server_default
 
-    Returns seconds to wait: None = no wait, float('inf') = wait forever, N = bounded.
+
+def _wait_mode_to_timeout(wait_mode: WaitMode | None) -> float | None:
+    """Convert a WaitMode to a timeout in seconds.
+
+    Returns None = no wait, float('inf') = wait forever, N = bounded.
     """
     if wait_mode is None:
-        return server_default
+        return None
     match wait_mode:
         case BlockingWait():
             return float("inf")
@@ -140,7 +137,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
-        default_approval_timeout_seconds: float | None = None,
+        default_wait_mode: WaitMode | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -151,7 +148,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._storage: ActionStorage | None = None
         self._predicate = predicate
         self._public_base_url = public_base_url
-        self._default_approval_timeout_seconds = default_approval_timeout_seconds
+        self._default_wait_mode = default_wait_mode
         self._backend_clients: dict[MCPMountPrefix, Client] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
@@ -295,7 +292,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
 
-            effective_timeout = _resolve_effective_timeout(wait_mode, self._default_approval_timeout_seconds)
+            effective_timeout = _wait_mode_to_timeout(_resolve_effective_wait(wait_mode, self._default_wait_mode))
 
             if effective_timeout is not None and effective_timeout > 0:
                 event = asyncio.Event()

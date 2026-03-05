@@ -22,7 +22,7 @@ from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from approval_gate.models import Action, ActionKey, ActionStatus
+from approval_gate.models import Action, ActionKey, ActionStatus, WaitMode
 from approval_gate.predicates import NeedsHumanDecision, PredicateFn
 from approval_gate.proxy_server import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, ApprovalGateServer
 from approval_gate.storage import ActionStorage
@@ -92,25 +92,18 @@ class GateClient(Client, MessageHandler):
         if evt is not None:
             evt.set()
 
-    async def call_gate_tool_full(self, tool_name: str, args: dict[str, object]) -> Action:
-        """Call a gate-wrapped tool and return the full Action."""
+    async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> Action:
+        """Call a gate-wrapped tool and return the Action."""
         return parse_tool_result_as(await self.call_tool_mcp(tool_name, args), Action)
 
-    async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
-        """Call a gate-wrapped tool and parse the ActionKey from the result."""
-        return (await self.call_gate_tool_full(tool_name, args)).key
-
-    async def call_echo_full(
+    async def call_echo(
         self, text: str, *, justification: str = "test", session_key: str, wait_mode: dict[str, object] | None = None
     ) -> Action:
-        """Call test_echo and return the full Action (with state)."""
+        """Call test_echo and return the Action."""
         args: dict[str, object] = {"input": {"text": text}, "justification": justification, "session_key": session_key}
         if wait_mode is not None:
             args["wait_mode"] = wait_mode
-        return await self.call_gate_tool_full("test_echo", args)
-
-    async def call_echo(self, text: str, *, justification: str = "test", session_key: str) -> ActionKey:
-        return (await self.call_echo_full(text, justification=justification, session_key=session_key)).key
+        return await self.call_gate_tool("test_echo", args)
 
     async def approve(self, key: ActionKey) -> Action:
         return parse_tool_result_as(await self.call_tool_mcp("approve_action", {"key": key.model_dump()}), Action)
@@ -157,6 +150,21 @@ def free_port() -> int:
 
 
 @pytest.fixture
+def base_url(free_port: int) -> str:
+    return f"http://127.0.0.1:{free_port}"
+
+
+@pytest.fixture
+def agent_client_transport(base_url: str, agent_jwt: str):
+    return agent_transport(base_url, agent_jwt)
+
+
+@pytest.fixture
+def operator_client_transport(base_url: str, operator_jwt: str):
+    return operator_transport(base_url, operator_jwt)
+
+
+@pytest.fixture
 def rsa_key_pair():
     return RSAKeyPair.generate()
 
@@ -181,6 +189,24 @@ async def storage(tmp_path: Path) -> AsyncGenerator[ActionStorage]:
         await store.close()
 
 
+class EchoBackend:
+    """A simple echo backend for testing, tracking calls."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.server = FastMCP()
+
+        @self.server.tool()
+        async def echo(text: str) -> str:
+            self.calls.append(text)
+            return f"echoed: {text}"
+
+
+@pytest.fixture
+def echo_backend() -> EchoBackend:
+    return EchoBackend()
+
+
 GateServerFactory = Callable[..., ApprovalGateServer]
 
 
@@ -195,14 +221,14 @@ def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFact
         backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
         *,
         predicate: PredicateFn | None = None,
-        default_approval_timeout_seconds: float | None = None,
+        default_wait_mode: WaitMode | None = None,
     ) -> ApprovalGateServer:
         return ApprovalGateServer(
             backends=dict(backends),
             db_path=tmp_path / "gate.db",
             predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
             public_base_url="http://test",
-            default_approval_timeout_seconds=default_approval_timeout_seconds,
+            default_wait_mode=default_wait_mode,
             auth=JWTVerifier(public_key=rsa_key_pair.public_key),
         )
 
@@ -226,3 +252,14 @@ def make_gate_app(make_gate_server: GateServerFactory) -> GateAppFactory:
         return gate_http_app(make_gate_server(backends, **kwargs))
 
     return _factory
+
+
+@pytest.fixture
+def echo_gate_app(make_gate_app: GateAppFactory, echo_backend: EchoBackend) -> Starlette:
+    """Gate app with a single echo backend under TEST_NS."""
+    return make_gate_app({TEST_NS: echo_backend.server})
+
+
+@pytest.fixture
+def session_key() -> str:
+    return "test-session"

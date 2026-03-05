@@ -31,13 +31,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ApprovalGateConnection, parseSessionKeyFromHwmUri } from "./approval-gate-connection.js";
 import { ReconnectingMcpClient } from "./reconnecting-mcp-client.js";
 import { scopedLogger } from "./util.js";
-import type { Action, Detail as LogEventDetail, DoneState, RejectedState } from "./types.js";
+import type { Action, Detail as LogEventDetail, DoneState, ExecutionStartedDetail, RejectedState } from "./types.js";
 
 const DEFAULT_EXEC_SERVER_URL = "http://127.0.0.1:8766/mcp";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TERMINAL_LOG_KINDS = new Set(["execution_finished", "denied", "withdrawn"]);
+const TERMINAL_STATUSES = new Set(["done", "rejected", "withdrawn"]);
 const NOTIFY_LOG_KINDS = new Set([...TERMINAL_LOG_KINDS, "execution_started"]);
 
 function shouldNotifyLogKind(kind: string): boolean {
@@ -56,8 +57,9 @@ function formatNotificationMessage(keyStr: string, detail: LogEventDetail): stri
     }
   }
   if (detail.kind === "execution_started") {
-    const startedAt = (detail as { started_at?: string }).started_at;
-    const suffix = startedAt ? ` (started at ${startedAt})` : "";
+    const suffix = (detail as ExecutionStartedDetail).started_at
+      ? ` (started at ${(detail as ExecutionStartedDetail).started_at})`
+      : "";
     return `Action ${keyStr} execution started${suffix}`;
   }
   if (detail.kind === "denied") {
@@ -94,8 +96,6 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         approvalGate?: { url?: string; token?: string };
         execServer?: { url?: string };
         registerTools?: boolean;
-        approvalMode?: "immediate" | "bounded" | "blocking";
-        approvalTimeoutSeconds?: number;
       }
     | undefined;
 
@@ -266,7 +266,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     for (const tool of toolList.tools) {
       const toolName = tool.name;
       const toolDescription = tool.description ?? "";
-      const schema = stripSchemaKeys((tool.inputSchema ?? {}) as Record<string, unknown>, ["session_key", "wait_mode"]);
+      const schema = stripSchemaKeys((tool.inputSchema ?? {}) as Record<string, unknown>, ["session_key"]);
 
       api.registerTool((ctx: OpenClawPluginToolContext) => ({
         name: toolName,
@@ -274,23 +274,9 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         description: toolDescription,
         parameters: schema,
         async execute(_id: string, params: Record<string, unknown>) {
-          // Derive wait_mode from plugin config when not explicitly provided per-call.
-          // 3 modes: immediate (yield 0ms), bounded (yield Nms), blocking (wait forever).
-          let waitMode: Record<string, unknown> | undefined;
-          if (!("wait_mode" in params)) {
-            const mode = cfg?.approvalMode ?? "bounded";
-            if (mode === "immediate") {
-              waitMode = { mode: "yield_after_ms", timeout_ms: 0 };
-            } else if (mode === "blocking") {
-              waitMode = { mode: "blocking" };
-            } else {
-              waitMode = { mode: "yield_after_ms", timeout_ms: (cfg?.approvalTimeoutSeconds ?? 30) * 1000 };
-            }
-          }
           const callArgs = {
             ...params,
             session_key: ctx.sessionKey,
-            ...(waitMode ? { wait_mode: waitMode } : {}),
           };
 
           let result: Awaited<ReturnType<Client["callTool"]>>;
@@ -312,7 +298,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
           const keyStr = `${action.key.session_key}/${action.key.action_seq}`;
           const { status } = action.state;
 
-          if (status === "done" || status === "rejected" || status === "withdrawn") {
+          if (TERMINAL_STATUSES.has(status)) {
             // Resolved inline — return result directly, suppress duplicate notification
             inlineResolvedActions.add(keyStr);
             await connection.trackSession(action.key.session_key);
