@@ -4,21 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from approval_gate.predicates import Approved, Denied, NeedsHumanDecision, call_predicate, load_predicate
 
 
-def test_load_predicate_none_returns_failsafe():
-    fn = load_predicate(None)
-    result = fn("test", "any_tool", {})
-    assert isinstance(result, NeedsHumanDecision)
-
-
-def test_load_predicate_missing_file_returns_failsafe(tmp_path: Path):
-    fn = load_predicate(tmp_path / "nonexistent.py")
-    result = fn("test", "any_tool", {})
-    assert isinstance(result, NeedsHumanDecision)
+def test_load_predicate_missing_file_raises(tmp_path: Path):
+    with pytest.raises(FileNotFoundError):
+        load_predicate(tmp_path / "nonexistent.py")
 
 
 def test_load_predicate_approved(tmp_path: Path):
@@ -57,13 +51,11 @@ def test_load_predicate_conditional(tmp_path: Path):
     assert isinstance(fn("dangerous", "any_tool", {}), NeedsHumanDecision)
 
 
-def test_load_predicate_syntax_error_returns_failsafe(tmp_path: Path):
+def test_load_predicate_syntax_error_raises(tmp_path: Path):
     predicate_file = tmp_path / "predicate.py"
     predicate_file.write_text("this is not valid python !!!")
-    fn = load_predicate(predicate_file)
-    # Should fall back to NeedsHumanDecision, not raise
-    result = fn("test", "any", {})
-    assert isinstance(result, NeedsHumanDecision)
+    with pytest.raises(SyntaxError):
+        load_predicate(predicate_file)
 
 
 def test_call_predicate_catches_runtime_exception():

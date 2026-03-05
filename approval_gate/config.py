@@ -38,12 +38,11 @@ class Settings(BaseModel):
     backends: dict[MCPMountPrefix, MCPServerTypes]
     public_base_url: str
     db_path: Path = Path("/data/approval_gate.db")
-    predicate_path: Path | None = Field(
-        default=None,
+    predicate_path: Path = Field(
         description=(
             "Path to a Python module exporting "
             "decide(server_namespace, tool_name, arguments) → Approved|Denied|NeedsHumanDecision."
-        ),
+        )
     )
     oidc_issuer: str
     oidc_client_id: str

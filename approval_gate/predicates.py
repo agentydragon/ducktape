@@ -61,26 +61,19 @@ def _always_needs_human(server_namespace: str, tool_name: str, arguments: dict) 
     return NeedsHumanDecision()
 
 
-def load_predicate(path: Path | None) -> PredicateFn:
+def load_predicate(path: Path) -> PredicateFn:
     """Load a predicate function from a Python file.
 
-    Returns the fail-safe (always NeedsHumanDecision) if path is None or loading fails.
+    The file must export a `decide` function matching PredicateFn.
     """
-    if path is None:
-        return _always_needs_human
-
-    try:
-        spec = importlib.util.spec_from_file_location("_approval_predicate", path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"cannot load spec from {path}")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        fn: PredicateFn = module.decide
-        logger.info("loaded predicate from %s", path)
-        return fn
-    except Exception:
-        logger.exception("failed to load predicate from %s; defaulting to NeedsHumanDecision", path)
-        return _always_needs_human
+    spec = importlib.util.spec_from_file_location("_approval_predicate", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load module spec from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    fn: PredicateFn = module.decide
+    logger.info("loaded predicate from %s", path)
+    return fn
 
 
 def call_predicate(fn: PredicateFn, server_namespace: str, tool_name: str, arguments: dict) -> PredicateDecision:
