@@ -116,3 +116,111 @@ These are all in the same direct lineage / competitive space as OpenClaw — sel
 
 - OpenAI Agents SDK, Anthropic Agent SDK, LangGraph, CrewAI, AutoGen, Google ADK — these are SDKs/frameworks for building agents from scratch, not batteries-included platforms.
 - Botpress, LangBot, Flowise, Dify — more chatbot/flow builders than autonomous agent platforms.
+
+## Detailed Evaluation by Dimension
+
+### Message Channels
+
+| Framework | Telegram                                                     | Matrix                                            | Other notable                                                           |
+| --------- | ------------------------------------------------------------ | ------------------------------------------------- | ----------------------------------------------------------------------- |
+| OpenClaw  | Yes (full, including groups)                                 | Yes                                               | WhatsApp, Signal, Slack, Discord, iMessage, Teams, IRC, LINE, 20+ total |
+| ZeroClaw  | Yes (allowlisted users, group reply modes, deny-by-default)  | Yes (sync-based, E2EE, no public endpoint needed) | WhatsApp, Slack, Discord, iMessage, webhooks                            |
+| NanoClaw  | Via `/add-telegram` skill (not built-in, must be added)      | No (MicroClaw fork has it)                        | WhatsApp (native), Slack, Discord, Gmail                                |
+| IronClaw  | Yes                                                          | Not confirmed                                     | Slack, HTTP webhooks, REPL, web gateway                                 |
+| PicoClaw  | Yes (long-polling, voice transcription via Groq Whisper)     | No                                                | Discord, QQ, DingTalk, LINE, WeCom                                      |
+| Nanobot   | Yes (recommended channel, media groups, voice transcription) | Yes (added 2026-02-25, E2EE, typing indicators)   | Discord, WhatsApp, Slack, Feishu, Email, 8+ total                       |
+| n8n       | Yes (trigger node, but one webhook per bot limit)            | No built-in node (community nodes exist)          | Slack, Discord, email, SMS, 400+ service triggers                       |
+
+### Triggers
+
+| Framework | Cron                                                                                                                                     | Webhooks                                                                         | Other                                               |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------- |
+| OpenClaw  | Yes — persistent jobs in `~/.openclaw/cron/`, at/interval/cron expressions, wakeMode "now" or "next-heartbeat", isolated or main session | Yes — `/hooks/wake` endpoint, Bearer or `x-openclaw-token` auth, SSRF-protected  | Heartbeat (default 30min)                           |
+| ZeroClaw  | Yes — cron expressions, RFC3339 timestamps, fixed intervals, one-shot delays                                                             | Yes — HTTP/WebSocket gateway on `127.0.0.1:42617`, pairing-code auth             | Daemon auto-restart with exponential backoff        |
+| NanoClaw  | Yes — `task-scheduler.ts` for cron, interval, one-shot                                                                                   | Host orchestrator handles IPC                                                    | Container-per-group isolation                       |
+| IronClaw  | Yes — Routines Engine, cron schedules, event triggers, webhook handlers, AI-mediated (agent reasons about trigger)                       | Yes — HTTP webhook channel                                                       | Routines run without active user session            |
+| PicoClaw  | Yes — one-time, recurring, cron expressions, jobs execute in agent's security context                                                    | Single shared gateway HTTP server (`127.0.0.1:18790`) for webhook-based channels | Heartbeat via HEARTBEAT.md                          |
+| Nanobot   | Yes — natural language cron, built-in cron tool                                                                                          | Gateway mode serves channels                                                     | Subagent spawning                                   |
+| n8n       | Yes — Schedule trigger node, cron expressions                                                                                            | Yes — first-class Webhook trigger node                                           | Any of 400+ service triggers (GitHub, Stripe, etc.) |
+
+### MCP Support
+
+| Framework | Native MCP?                      | Details                                                                                                                                                                                             |
+| --------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenClaw  | **No** — workaround only         | Uses `mcporter` utility run inside exec environment. Not a first-class integration.                                                                                                                 |
+| ZeroClaw  | **Unclear**                      | Docs mention trait-based extensibility for tools. MCP not explicitly documented as a supported protocol. Tool system is based on Rust traits, not MCP.                                              |
+| NanoClaw  | **Partial**                      | Docs mention MCP can extend functionality. Built on Anthropic Agent SDK which has MCP helpers. Not a primary integration path — skills are the main extensibility.                                  |
+| IronClaw  | **Yes** — first-class            | `ironclaw tool install` supports both WASM tools (sandboxed) and MCP servers (any language, no sandbox). Both are first-class. Can also dynamically build tools from natural language descriptions. |
+| PicoClaw  | **Planned** — on roadmap         | MCP client implementation, dynamic tool discovery, and secure execution are planned but not yet shipped as of latest search results.                                                                |
+| Nanobot   | **Yes** — since v0.1.4           | Native MCP client. Configure MCP servers in config, tools auto-discovered at runtime.                                                                                                               |
+| n8n       | **Yes** — native MCP client node | MCP Client tool node connects to any MCP server. Can also expose n8n workflows as MCP servers for other clients.                                                                                    |
+
+### Execution Environment
+
+| Framework | Shell model                                                                                 | Env var injection                                                                                             | Where commands run                                                                                                   | File storage                                                                  |
+| --------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| OpenClaw  | `sh -lc` (login shell)                                                                      | `agents.defaults.sandbox.docker.env` (but known bug: not always passed). Sandbox proxy auto-injects API keys. | Same host (unsandboxed) or ephemeral Docker container (sandboxed). No native k8s pod execution.                      | `~/.openclaw/` for config/memory, `~/openclaw/workspace/` for agent workspace |
+| ZeroClaw  | Workspace-scoped, command allowlist (only explicitly allowed commands like git, npm, cargo) | Config-based, encrypted secrets at rest                                                                       | Same process, sandboxed to workspace by default. Optional Docker.                                                    | `~/.zeroclaw/workspace/`, state in `~/.zeroclaw/state/`                       |
+| NanoClaw  | Full shell inside container (Claude Code runs in container)                                 | Via container environment                                                                                     | Isolated Linux container per group (Apple Container on macOS, Docker on Linux). Host orchestrator manages lifecycle. | Each group gets own mounted directory inside container                        |
+| IronClaw  | WASM sandbox for untrusted tools; credential injection at host boundary                     | Credentials injected at execution boundary, never in LLM context                                              | WASM sandbox for tools. MCP servers run as separate processes. PostgreSQL for persistent state.                      | PostgreSQL with AES-256-GCM encrypted secrets                                 |
+| PicoClaw  | Sandboxed to workspace by default, `deny_patterns`/`allow_patterns` for command filtering   | Via config                                                                                                    | Same process, workspace-scoped                                                                                       | `~/.picoclaw/workspace/` (sessions, memory, state, cron, skills)              |
+| Nanobot   | Built-in ExecTool with `restrictToWorkspace` flag, `deny_patterns`/`allow_patterns`         | Via config                                                                                                    | Same process, workspace-scoped. 20-iteration limit on agent loop.                                                    | `~/.nanobot/workspace/`, memory as `MEMORY.md` + daily notes                  |
+| n8n       | Execute Command node, Code node (JS/Python)                                                 | Via workflow variables, environment variables                                                                 | n8n worker process. Queue mode for async workers. Can shell out or call APIs.                                        | n8n database (SQLite/PostgreSQL), binary data in filesystem                   |
+
+### Asynchronous Execution / Tool Use
+
+| Framework | Async/background support                                                                                                                   | Scope                                                                         | Wake-up mechanism                                                                  |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| OpenClaw  | **Limited** — heartbeat-based. System notifications delivered on next heartbeat only. No way for plugins to trigger immediate heartbeat.   | Shell execution only (long commands can time out, no background continuation) | Next heartbeat (30min default). **This is the blocker for our approval workflow.** |
+| ZeroClaw  | Tokio async runtime, each subsystem in own task                                                                                            | All channel/tool operations are async                                         | Subsystem restart with exponential backoff. Event-driven via async channels.       |
+| NanoClaw  | Container-per-group provides isolation. Host orchestrator manages lifecycle.                                                               | Per-container                                                                 | IPC between host and container                                                     |
+| IronClaw  | **Yes** — parallel jobs in isolated contexts, priority-aware scheduler. Self-repair for stuck operations.                                  | General (any tool/routine)                                                    | Automatic detection and recovery of stuck operations                               |
+| PicoClaw  | **Yes** — subagent spawning for long tasks. Heartbeat reads HEARTBEAT.md, spawns subagent that works independently.                        | Subagent has access to all tools, can message user independently              | Subagent communicates back via message tool                                        |
+| Nanobot   | **Yes** — `SpawnTool` creates background `asyncio.Task`. Subagents are fully isolated (own memory, own tool registry minus spawn/message). | General — any background task via subagent                                    | MessageBus announces result to user on completion                                  |
+| n8n       | **Yes** — queue mode with worker nodes. Workflows can wait for external events (webhook callbacks, manual approval).                       | General — any workflow step                                                   | Webhook callback, manual approval node, polling                                    |
+
+### Extensibility
+
+| Framework | Custom tools                                                                                                             | Dynamic registration                                                                                  | System notifications / wake-up                                                                                  |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| OpenClaw  | Yes — Skills (markdown files), 700+ on ClawHub                                                                           | Skills loaded at startup, no hot-reload documented                                                    | System notifications exist but only delivered on next heartbeat. **Cannot trigger heartbeat from plugin code.** |
+| ZeroClaw  | Yes — Skill packs via TOML manifests, tool allowlisting. Security audit on install.                                      | Config-based, hot-reloadable config (zero-downtime updates)                                           | Pushover notifications. Event-driven internal architecture (tokio channels).                                    |
+| NanoClaw  | Yes — Skills as Claude Code commands (e.g., `/add-telegram`). Fork-and-customize model.                                  | Not dynamic — you modify the codebase                                                                 | Host-to-container IPC                                                                                           |
+| IronClaw  | Yes — WASM tools (sandboxed) + MCP servers + dynamic tool building from natural language                                 | Tools installable at runtime via `ironclaw tool install`. Routines Engine for event-driven execution. | Routines Engine handles event triggers. Priority-aware scheduler.                                               |
+| PicoClaw  | Yes — Skills in `skills/` directory, tool descriptions in `TOOLS.md`                                                     | Loaded from workspace                                                                                 | Heartbeat mechanism via HEARTBEAT.md                                                                            |
+| Nanobot   | Yes — Built-in tools, Skills, MCP servers. Plan: core vs `pip install nanobot-xxx` extensions.                           | MCP tools auto-discovered. Skills loaded from workspace.                                              | MessageBus for internal routing. Subagent completion announcements.                                             |
+| n8n       | Yes — any n8n node can be a tool (400+ integrations). Custom code nodes (JS/Python). MCP client. Sub-workflows as tools. | Workflows are the unit of composition — enable/disable at will.                                       | Human-in-the-loop approval node. Webhook callbacks. Chat triggers.                                              |
+
+### Web UI
+
+| Framework | Web UI      | Details                                                                                                                      |
+| --------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| OpenClaw  | **Yes**     | Full web UI showing conversations, agent status, cron jobs. Mobile apps also connect as WebSocket clients.                   |
+| ZeroClaw  | **Minimal** | Gateway serves browser-based chat alongside webhook integrations. Not a full management UI.                                  |
+| NanoClaw  | **No**      | CLI + messenger-based interaction only.                                                                                      |
+| IronClaw  | **Yes**     | Web gateway with SSE/WebSocket streaming. Browser-based chat UI.                                                             |
+| PicoClaw  | **No**      | CLI + messenger-based interaction only.                                                                                      |
+| Nanobot   | **Yes**     | Socket.IO WebSocket web UI with HTTP polling fallback. Gateway mode.                                                         |
+| n8n       | **Yes**     | Full workflow editor, execution history, credential management, AI agent chat interface. Most polished UI of all candidates. |
+
+### OAuth / Authentik
+
+| Framework | OAuth/OIDC support                                                                                                                                               |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenClaw  | Gemini OAuth flow for LLM auth. No OIDC for user authentication to the platform itself.                                                                          |
+| ZeroClaw  | Composio integration for 1000+ OAuth app integrations. Auth profiles stored encrypted. No OIDC for platform auth.                                                |
+| NanoClaw  | No                                                                                                                                                               |
+| IronClaw  | Encrypted credential vault. No documented OIDC/Authentik integration.                                                                                            |
+| PicoClaw  | No                                                                                                                                                               |
+| Nanobot   | No                                                                                                                                                               |
+| n8n       | **Yes** — native OIDC/SAML SSO (but requires Startup license at $400/mo). Free alternative: `n8n-oidc` plugin works with Authentik, Keycloak, etc. via env vars. |
+
+## Summary / Shortlist
+
+**For our use case** (Telegram + Matrix, MCP tools, approval workflow with wake-up, k8s deployment, Authentik):
+
+- **IronClaw** — strongest on MCP (native, first-class), security (WASM sandbox), and async (parallel jobs, self-repair, routines engine with event triggers). Weakest on Matrix (unconfirmed). Routines Engine could solve the approval wake-up problem.
+- **Nanobot** — has both Telegram and Matrix, native MCP, async via subagents, very lightweight. Weakest on security model (workspace sandboxing only). Python codebase easiest to extend for our needs.
+- **ZeroClaw** — has both Telegram and Matrix (with E2EE), hot-reloadable config, event-driven async. MCP support unclear. Rust codebase harder to extend.
+- **n8n** — best UI, native MCP, human-in-the-loop approval (exactly what we need!), Authentik via `n8n-oidc`. But it's a workflow engine, not an autonomous agent — building an agent-like experience requires significant workflow design. No native Matrix.
+- **OpenClaw** — broadest channel support but the heartbeat-only notification delivery is a hard blocker for approval workflows. MCP only via workaround.
