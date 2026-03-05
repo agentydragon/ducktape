@@ -1,7 +1,7 @@
 {
   "id": "approval-gate",
   "name": "Approval Gate",
-  "description": "Provides exec tool (via DirectExecServer sidecar) with session context injection, and bridges the approval gate MCP proxy for privileged action notifications.",
+  "description": "Bridges the approval gate MCP proxy for privileged action notifications. Optionally injects session context into exec tool calls (via sidecar or built-in exec hook).",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -28,10 +28,14 @@
         "properties": {
           "url": {
             "type": "string",
-            "default": "http://127.0.0.1:8766/mcp",
-            "description": "URL of the DirectExecServer sidecar MCP endpoint (pod-local, unauthenticated)"
+            "description": "URL of the DirectExecServer sidecar MCP endpoint (pod-local, unauthenticated). When set, the plugin connects to the sidecar and registers an exec tool that injects OPENCLAW_SESSION_ID and APPROVAL_GATE_URL. Omit to disable sidecar wiring entirely."
           }
         }
+      },
+      "nativeExecInjection": {
+        "type": "boolean",
+        "default": false,
+        "description": "When true, intercepts the built-in exec tool via before_tool_call and injects OPENCLAW_SESSION_ID and APPROVAL_GATE_URL into the env. Use this instead of execServer when the agent uses the built-in exec tool directly (no sidecar required)."
       },
       "registerTools": {
         "type": "boolean",

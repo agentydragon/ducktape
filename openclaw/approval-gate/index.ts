@@ -3,10 +3,15 @@
  *
  * Two responsibilities:
  *
- *   1. **Exec tool**: Registers an `exec` tool that calls the DirectExecServer
- *      sidecar (pod-local, unauthenticated). Injects `OPENCLAW_SESSION_ID` as
- *      an env var so the agent knows its session identity when calling external
- *      services (e.g. the approval gate via mcporter).
+ *   1. **Exec tool** (optional): Two mutually exclusive modes:
+ *      - **Sidecar** (`execServer.url` configured): Registers an `exec` tool
+ *        that proxies calls to the DirectExecServer sidecar (pod-local,
+ *        unauthenticated). Injects `OPENCLAW_SESSION_ID` and `APPROVAL_GATE_URL`
+ *        as env vars.
+ *      - **Native injection** (`nativeExecInjection: true`): Intercepts the
+ *        built-in `exec` tool via `before_tool_call` and injects
+ *        `OPENCLAW_SESSION_ID` and `APPROVAL_GATE_URL` into the env. No sidecar
+ *        required. Use this when the agent uses the built-in exec tool directly.
  *
  *   2. **Approval gate notifications**: Connects to the approval gate MCP server,
  *      subscribes to session log HWM resources, and delivers terminal action
@@ -96,13 +101,15 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     | {
         approvalGate?: { url?: string; token?: string };
         execServer?: { url?: string };
+        nativeExecInjection?: boolean;
         registerTools?: boolean;
       }
     | undefined;
 
   const approvalGateUrl = cfg?.approvalGate?.url?.trim();
   const approvalGateToken = cfg?.approvalGate?.token?.trim();
-  const execServerUrl = cfg?.execServer?.url?.trim() ?? DEFAULT_EXEC_SERVER_URL;
+  const execServerUrl = cfg?.execServer?.url?.trim();
+  const nativeExecInjection = cfg?.nativeExecInjection ?? false;
 
   if (!approvalGateUrl || !approvalGateToken) {
     log.warn("approvalGate.url and approvalGate.token are required in plugin config; plugin disabled");
@@ -111,68 +118,92 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
 
   const { enqueueSystemEvent, requestHeartbeatNow } = api.runtime.system;
 
-  // ── Exec sidecar MCP connection ───────────────────────────────────────────
-  const execConnection = new ReconnectingMcpClient(execServerUrl, "openclaw-exec", execLog);
-  try {
-    await execConnection.connect();
-  } catch (err) {
-    log.error(`exec server initial connection failed: ${String(err)} — will retry in background`);
+  // ── Exec sidecar MCP connection (optional) ────────────────────────────────
+  if (execServerUrl) {
+    const execConnection = new ReconnectingMcpClient(execServerUrl, "openclaw-exec", execLog);
+    try {
+      await execConnection.connect();
+    } catch (err) {
+      log.error(`exec server initial connection failed: ${String(err)} — will retry in background`);
+    }
+
+    // Discover the exec tool schema from the sidecar MCP server, strip env/inherit_env
+    // (we inject OPENCLAW_SESSION_ID ourselves), and re-register with OpenClaw.
+    if (!execConnection.connected) {
+      log.error("exec server not connected on startup; exec tool not registered");
+    } else {
+      let execToolList: Awaited<ReturnType<Client["listTools"]>>;
+      try {
+        execToolList = await execConnection.listTools();
+      } catch (err) {
+        log.error(`failed to list exec server tools: ${String(err)}`);
+        execToolList = { tools: [] };
+      }
+
+      const execTools = execToolList.tools.filter((t) => t.name === "exec");
+      if (execTools.length !== 1) {
+        log.error(`expected exactly 1 exec tool from sidecar, got ${execTools.length}`);
+      } else {
+        const execTool = execTools[0];
+        const execSchema = stripSchemaKeys((execTool.inputSchema ?? {}) as Record<string, unknown>, [
+          "env",
+          "inherit_env",
+        ]);
+
+        api.registerTool((ctx: OpenClawPluginToolContext) => ({
+          name: "exec",
+          label: "exec",
+          description:
+            "Execute a command in the exec container. " +
+            "The workspace directory is shared with the gateway (same path). " +
+            "OPENCLAW_SESSION_ID is automatically set in the environment.",
+          parameters: execSchema,
+          async execute(_id: string, params: Record<string, unknown>) {
+            const env = [`OPENCLAW_SESSION_ID=${ctx.sessionKey ?? ""}`, `APPROVAL_GATE_URL=${approvalGateUrl}`];
+            const cwd = (params.cwd as string | undefined) ?? ctx.workspaceDir;
+            const callArgs = { ...params, env, ...(cwd ? { cwd } : {}) };
+
+            try {
+              return await execConnection.callTool("exec", callArgs);
+            } catch (err) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: `Exec server is currently unavailable. Please retry shortly. (${String(err)})`,
+                  },
+                ],
+              };
+            }
+          },
+        }));
+        log.info("registered exec tool (schema discovered from sidecar)");
+      }
+    }
+  } else {
+    execLog.info("execServer.url not configured; exec sidecar disabled");
   }
 
-  // ── Register exec tool ────────────────────────────────────────────────────
-  // Discover the exec tool schema from the sidecar MCP server, strip env/inherit_env
-  // (we inject OPENCLAW_SESSION_ID ourselves), and re-register with OpenClaw.
-  // TODO: Consider allowing env merging with session ID later.
-  if (!execConnection.connected) {
-    log.error("exec server not connected on startup; exec tool not registered");
-  } else {
-    let execToolList: Awaited<ReturnType<Client["listTools"]>>;
-    try {
-      execToolList = await execConnection.listTools();
-    } catch (err) {
-      log.error(`failed to list exec server tools: ${String(err)}`);
-      execToolList = { tools: [] };
-    }
-
-    const execTools = execToolList.tools.filter((t) => t.name === "exec");
-    if (execTools.length !== 1) {
-      log.error(`expected exactly 1 exec tool from sidecar, got ${execTools.length}`);
-    } else {
-      const execTool = execTools[0];
-      const execSchema = stripSchemaKeys((execTool.inputSchema ?? {}) as Record<string, unknown>, [
-        "env",
-        "inherit_env",
-      ]);
-
-      api.registerTool((ctx: OpenClawPluginToolContext) => ({
-        name: "exec",
-        label: "exec",
-        description:
-          "Execute a command in the exec container. " +
-          "The workspace directory is shared with the gateway (same path). " +
-          "OPENCLAW_SESSION_ID is automatically set in the environment.",
-        parameters: execSchema,
-        async execute(_id: string, params: Record<string, unknown>) {
-          const env = [`OPENCLAW_SESSION_ID=${ctx.sessionKey ?? ""}`, `APPROVAL_GATE_URL=${approvalGateUrl}`];
-          const cwd = (params.cwd as string | undefined) ?? ctx.workspaceDir;
-          const callArgs = { ...params, env, ...(cwd ? { cwd } : {}) };
-
-          try {
-            return await execConnection.callTool("exec", callArgs);
-          } catch (err) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Exec server is currently unavailable. Please retry shortly. (${String(err)})`,
-                },
-              ],
-            };
-          }
+  // ── Native exec injection via before_tool_call (optional) ─────────────────
+  // Intercepts the built-in `exec` tool and injects OPENCLAW_SESSION_ID and
+  // APPROVAL_GATE_URL into the env Record, so the agent knows its session
+  // identity without a sidecar. Mutually exclusive with the sidecar approach.
+  if (nativeExecInjection) {
+    api.on("before_tool_call", (event, ctx) => {
+      if (event.toolName !== "exec") return;
+      const existing = (event.params.env as Record<string, string> | undefined) ?? {};
+      return {
+        params: {
+          ...event.params,
+          env: {
+            ...existing,
+            OPENCLAW_SESSION_ID: ctx.sessionKey ?? "",
+            APPROVAL_GATE_URL: approvalGateUrl,
+          },
         },
-      }));
-      log.info("registered exec tool (schema discovered from sidecar)");
-    }
+      };
+    });
+    log.info("native exec injection enabled (before_tool_call hook registered for exec)");
   }
 
   // ── Resilient MCP connection to approval gate server ──────────────────────
