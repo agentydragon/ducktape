@@ -1,10 +1,5 @@
 common --enable_bzlmod
 
-# Disable host CC auto-detection to prevent Nix store paths leaking into builds.
-# CI overrides this to 0 (in .github/actions/bazel-repo-cache) to use the GHA
-# runner's system GCC. The BuildBuddy GCC toolchain handles RBE independently.
-#build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
 # with many targets this exhausts the default 20 GB BuildBuddy disk.
@@ -35,29 +30,19 @@ build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
 
 # Remote Build Execution (BuildBuddy)
-# Activated by: setup_buildbuddy.sh, buildbuddy.yaml, bazelrc.mako (Claude Code web)
-# Requires authentication via ~/.config/bazel/buildbuddy.bazelrc (API key + BES).
+# Auth: ~/.config/bazel/buildbuddy.bazelrc (setup_buildbuddy.sh or bazelrc.mako)
+# Host platform auto-detected; //:rbe_linux_x64 is the execution platform.
 build:rbe --remote_executor=grpcs://remote.buildbuddy.io
 build:rbe --extra_execution_platforms=//:rbe_linux_x64
-# Point host platform at the RBE platform so toolchain resolution for exec-config
-# tools (e.g. Rust linking needs CC) succeeds even though
-# BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 disables local auto-detection.
-build:rbe --host_platform=//:rbe_linux_x64
-# Spawn strategy: try remote first, fall back to local on failure.
-# BES metrics confirm RBE works correctly: of ~7,500 test actions, ~56% are Bazel-internal
-# bookkeeping (symlinks, file writes, manifests) that always run locally by design, ~43% are
-# remote cache hits, and ~1% are remote executions. Real build/test actions are >99.9% remote.
 build:rbe --spawn_strategy=remote,local
 test:rbe --spawn_strategy=remote,local
 build:rbe --jobs=50
 build:rbe --remote_download_minimal
-# BuildBuddy Build Event Service (BES) and remote cache configuration
 build:rbe --bes_results_url=https://app.buildbuddy.io/invocation/
 build:rbe --bes_backend=grpcs://remote.buildbuddy.io
 common:rbe --remote_cache=grpcs://remote.buildbuddy.io
 common:rbe --remote_timeout=10m
 common:rbe --remote_cache_compression
-# Detailed profiling for BuildBuddy UI
 build:rbe --noslim_profile
 build:rbe --experimental_profile_include_target_label
 build:rbe --experimental_profile_include_primary_output

@@ -29,16 +29,6 @@ runs:
     - name: Setup Bazelisk
       uses: bazelbuild/setup-bazelisk@v3
 
-    - name: Enable host CC toolchain detection
-      shell: bash
-      run: |
-        # The workspace .bazelrc sets BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 to
-        # prevent Nix store paths leaking into builds. GHA runners use standard
-        # Ubuntu with system GCC (13/14), so we override to allow detection.
-        echo "" >> ~/.bazelrc
-        echo "# CI: allow Bazel to detect system GCC on GHA runners" >> ~/.bazelrc
-        echo "build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0" >> ~/.bazelrc
-
     - name: Derive cache key
       id: cache-key
       shell: bash

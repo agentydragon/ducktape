@@ -115,8 +115,8 @@ This fixes issues 1 and 2. Issue 3 requires a separate toolchain patch.
 
 | Issue              | Symptom                           | Fix                                     | Status      |
 | ------------------ | --------------------------------- | --------------------------------------- | ----------- |
-| `/bin/bash`        | Ruff lint fails                   | `--shell_executable` in `~/.bazelrc`    | Not applied |
-| Empty PATH         | Mypy lint fails (`env` not found) | `--action_env=PATH` in `~/.bazelrc`     | Not applied |
+| `/bin/bash`        | Ruff lint fails                   | nixpkgs `bazel_8` already patched       | Resolved    |
+| Empty PATH         | Mypy lint fails (`env` not found) | `--action_env=PATH` in `~/.bazelrc`     | Applied     |
 | `/usr/bin/ld.gold` | BuildBuddy toolchain fetch fails  | Patch `toolchains_buildbuddy` repo rule | Not started |
 
 ## Key files

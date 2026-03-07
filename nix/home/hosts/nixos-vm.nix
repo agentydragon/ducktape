@@ -19,6 +19,7 @@ in
 {
   imports = [
     ../home.nix
+    ../modules/nixos-bazel.nix
   ];
 
   # VM-specific configuration (GUI enabled, no special customizations)

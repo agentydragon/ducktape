@@ -340,12 +340,9 @@ buildbuddy.platform(buildbuddy_container_image = "UBUNTU24_04_IMAGE")
 buildbuddy.gcc_toolchain(gcc_major_version = "13")
 use_repo(buildbuddy, "buildbuddy_toolchain")
 
-# BuildBuddy CC toolchain — uses GCC pre-installed in the RBE container, avoiding the
-# ~500 MB LLVM toolchain download. The toolchain's exec_compatible_with includes
-# @bazel_tools//tools/cpp:gcc, which only //:rbe_linux_x64 satisfies (via parent
-# inheritance), so CC actions targeting RBE use this toolchain.
-# .bazelrc sets BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 to block host auto-detection on
-# Nix; CI overrides this to 0 in bazel-repo-cache to use the GHA runner's system GCC.
+# BuildBuddy CC toolchain — uses GCC pre-installed in the RBE container.
+# exec_compatible_with @bazel_tools//tools/cpp:gcc constrains it to //:rbe_linux_x64.
+# Local actions use the auto-detected system GCC.
 register_toolchains("@buildbuddy_toolchain//:ubuntu_cc_toolchain")
 
 # Rust rules
