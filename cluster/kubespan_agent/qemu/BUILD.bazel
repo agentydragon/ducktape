@@ -50,15 +50,16 @@ genrule(
 )
 
 # ─ Build initramfs (cpio.gz) ────────────────────────────────────────────────
-# Unified initramfs for both tests. Contains: /init (init.sh), /bin/busybox,
-# /kubespand, /testprobe, /lib/modules/<version>/ (full tree with modules.dep).
+# Unified initramfs for both tests. Uses Alpine minirootfs as the base
+# filesystem (provides /bin, /sbin, /etc, busybox + symlinks, musl libc).
+# Overlays: /init (init.sh), /kubespand, /testprobe, kernel modules.
 # The init script dispatches on mode= kernel cmdline parameter.
 genrule(
     name = "initramfs",
     testonly = True,
     srcs = [
         "init.sh",
-        "@busybox_static_x86_64//file",
+        "@alpine_minirootfs_x86_64//file",
         "//cluster/kubespan_agent:kubespand",
         "//cluster/kubespan_agent/testprobe",
         ":modules_tree",
@@ -68,19 +69,16 @@ genrule(
         set -e
         INITRAMFS_DIR=$$(mktemp -d)
 
-        # Create directory structure.
-        mkdir -p $$INITRAMFS_DIR/bin $$INITRAMFS_DIR/dev \
-                 $$INITRAMFS_DIR/proc $$INITRAMFS_DIR/sys \
-                 $$INITRAMFS_DIR/tmp $$INITRAMFS_DIR/var/lib/kubespan \
-                 $$INITRAMFS_DIR/etc/kubespan $$INITRAMFS_DIR/run
+        # Extract Alpine minirootfs as base (provides filesystem layout + busybox symlinks).
+        tar -xzf $(location @alpine_minirootfs_x86_64//file) -C $$INITRAMFS_DIR
+
+        # Create directories not in minirootfs.
+        mkdir -p $$INITRAMFS_DIR/var/lib/kubespan \
+                 $$INITRAMFS_DIR/etc/kubespan
 
         # Install init script.
         cp $(location init.sh) $$INITRAMFS_DIR/init
         chmod +x $$INITRAMFS_DIR/init
-
-        # Install busybox.
-        cp $(location @busybox_static_x86_64//file) $$INITRAMFS_DIR/bin/busybox
-        chmod +x $$INITRAMFS_DIR/bin/busybox
 
         # Install kubespand.
         cp $(location //cluster/kubespan_agent:kubespand) $$INITRAMFS_DIR/kubespand

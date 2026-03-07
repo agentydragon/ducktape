@@ -510,12 +510,13 @@ http_file(
     urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/linux-virt-6.12.74-r0.apk"],
 )
 
-# Busybox static binary for initramfs (musl-linked, self-contained).
+# Alpine minirootfs tarball for QEMU initramfs base filesystem.
+# Provides proper filesystem layout (/bin, /sbin, /etc, busybox symlinks, musl libc).
 http_file(
-    name = "busybox_static_x86_64",
-    downloaded_file_path = "busybox",
-    sha256 = "6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348",
-    urls = ["https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox"],
+    name = "alpine_minirootfs_x86_64",
+    downloaded_file_path = "alpine-minirootfs.tar.gz",
+    sha256 = "460e7ea6d359b7ea6913326639cb88e5eef65292a09b63c89b4aecf048a90959",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.6-x86_64.tar.gz"],
 )
 
 # tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
