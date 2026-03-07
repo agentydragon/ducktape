@@ -648,7 +648,7 @@ def test_subgrid_gap_affects_layout():
 
 def test_param_short_label():
     assert _param_short_label(CutParam.SPEED_MM_S) == "mm/s"  # abbreviable + unit
-    assert _param_short_label(CutParam.POWER_PCT) == "Power %"  # not abbreviable + unit
+    assert _param_short_label(CutParam.POWER_PCT) == "PWR%"  # not abbreviable + unit
     assert _param_short_label(CutParam.NUM_PASSES) == "Passes"  # no unit
 
 
@@ -667,7 +667,7 @@ def test_generate_legend_cell():
     assert len(legend_rects) == 1
     # Two legend text labels
     texts = [s for s in project.shapes if isinstance(s, TextShape)]
-    legend_texts = [t for t in texts if t.text in ("Power %", "mm/s")]
+    legend_texts = [t for t in texts if t.text in ("PWR%", "mm/s")]
     assert len(legend_texts) == 2
 
 

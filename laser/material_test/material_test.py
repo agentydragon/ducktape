@@ -52,9 +52,9 @@ class CutParam(StrEnum):
 _PARAM: dict[CutParam, tuple[str, str, bool]] = {
     # (label, unit, abbreviate_in_subtitle) — when abbreviate_in_subtitle is
     # True, the subtitle omits the label and just prints "value unit".
-    CutParam.POWER_PCT: ("Power", "%", False),
-    CutParam.POWER_MIN_PCT: ("Power min", "%", False),
-    CutParam.POWER_MAX_PCT: ("Power max", "%", False),
+    CutParam.POWER_PCT: ("PWR", "%", False),
+    CutParam.POWER_MIN_PCT: ("PWR min", "%", False),
+    CutParam.POWER_MAX_PCT: ("PWR max", "%", False),
     CutParam.SPEED_MM_S: ("Speed", "mm/s", True),
     CutParam.KERF_MM: ("Kerf", "mm", False),
     CutParam.Z_OFFSET_MM: ("Z", "mm", False),
@@ -83,12 +83,15 @@ def _param_short_label(param: CutParam) -> str:
     """Short label for a parameter, used in the legend cell.
 
     - Abbreviable + has unit → just unit (e.g. "mm/s")
-    - Not abbreviable + has unit → "Label unit" (e.g. "Power %")
+    - Not abbreviable + has unit → "Label unit" (e.g. "PWR%")
     - No unit → just label (e.g. "Passes")
     """
     label, unit, abbrev = _PARAM[param]
     if unit:
-        return unit if abbrev else f"{label} {unit}"
+        if abbrev:
+            return unit
+        sep = "" if unit == "%" else " "
+        return f"{label}{sep}{unit}"
     return label
 
 
@@ -324,10 +327,10 @@ def _auto_subtitle(config: GridConfig) -> str:
             continue
         label, unit, abbrev = _PARAM[param]
         if abbrev and unit:
-            parts.append(f"{fmt_val(v)} {unit}")
+            parts.append(f"{fmt_val(v)}{unit}")
         else:
-            parts.append(f"{label}={fmt_val(v)}{' ' + unit if unit else ''}")
-    return ", ".join(parts)
+            parts.append(f"{label}={fmt_val(v)}{unit}")
+    return " ".join(parts)
 
 
 def _full_subtitle(config: GridConfig) -> str:
@@ -338,7 +341,7 @@ def _full_subtitle(config: GridConfig) -> str:
         auto = _auto_subtitle(config)
         if auto:
             pieces.append(auto)
-    return ", ".join(pieces)
+    return " ".join(pieces)
 
 
 def _auto_label(param: CutParam) -> str:
