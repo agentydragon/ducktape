@@ -227,7 +227,7 @@ def test_grid_config_from_toml():
         title = "Test"
 
         [x]
-        param = "power_max_pct"
+        param = "power_pct"
         values = [10.0, 20.0]
         label = "Power [%]"
 
@@ -587,7 +587,7 @@ def test_generate_3d_from_toml():
         title = "3D Test"
 
         [x]
-        param = "power_max_pct"
+        param = "power_pct"
         values = [10.0, 20.0]
 
         [y]
@@ -667,7 +667,7 @@ def test_generate_legend_cell():
     assert len(legend_rects) == 1
     # Two legend text labels
     texts = [s for s in project.shapes if isinstance(s, TextShape)]
-    legend_texts = [t for t in texts if t.text in ("Power max %", "mm/s")]
+    legend_texts = [t for t in texts if t.text in ("Power %", "mm/s")]
     assert len(legend_texts) == 2
 
 

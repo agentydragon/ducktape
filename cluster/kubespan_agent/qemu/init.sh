@@ -196,19 +196,22 @@ case "$MODE" in
     # the QEMU socket mcast network. Without this, the only endpoint discovered is
     # 127.0.0.1 (from the discovery service's perspective via QEMU slirp NAT).
     /bin/busybox cat >/etc/kubespan/agent.yaml <<YAML
-cluster_id: "$CLUSTER_ID"
-shared_secret: "$SHARED_SECRET"
-discovery_endpoint: "$DISCOVERY"
-insecure_discovery: true
-force_routing: true
-listen_port: $LISTEN_PORT
-mtu: 1420
-identity_file: /var/lib/kubespan/identity.yaml
-machine_type: worker
-extra_endpoints:
-  - "${LINK_IP}:${LISTEN_PORT}"
-endpoint_filters:
-  - "192.168.50.0/24"
+cluster:
+  id: "$CLUSTER_ID"
+  secret: "$SHARED_SECRET"
+discovery:
+  endpoint: "$DISCOVERY"
+  insecure: true
+  machine_type: worker
+kubespan:
+  force_routing: true
+  listen_port: $LISTEN_PORT
+  mtu: 1420
+  identity_file: /var/lib/kubespan/identity.yaml
+  extra_endpoints:
+    - "${LINK_IP}:${LISTEN_PORT}"
+  endpoint_filters:
+    - "192.168.50.0/24"
 YAML
 
     echo "QEMU_TEST: kubespand config written"
