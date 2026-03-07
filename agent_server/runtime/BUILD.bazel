@@ -1,6 +1,7 @@
 """Runtime package - container lifecycle and agent registry."""
 
 load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
 
 # Utility modules with minimal dependencies - can be imported by persist
 py_library(
@@ -87,5 +88,29 @@ py_library(
         "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
+    ],
+)
+
+py_test(
+    name = "test_notifications_handler",
+    size = "medium",
+    srcs = ["test_notifications_handler.py"],
+    data = [
+        "//agent_server:load",
+        "//third_party/debian_slim:load",
+    ],
+    imports = ["../.."],
+    requires_docker = True,
+    deps = [
+        "//agent_core/testing/mcp:responses",
+        "//agent_server:conftest",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/runtime:container",
+        "//mcp_infra:constants",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
