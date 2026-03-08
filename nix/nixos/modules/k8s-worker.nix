@@ -235,7 +235,6 @@ in
             --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf \
             --kubeconfig=/var/lib/kubelet/kubelet.conf \
             --config=/etc/kubernetes/kubelet-config.yaml \
-            --container-runtime-endpoint=unix:///run/containerd/containerd.sock \
             --node-ip="$NODE_IP" \
             ${
               lib.optionalString (cfg.nodeLabels != { })
