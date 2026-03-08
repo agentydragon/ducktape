@@ -119,6 +119,8 @@ This fixes issues 1 and 2. Issue 3 requires a separate toolchain patch.
 | Empty PATH         | Mypy lint fails (`env` not found) | `--action_env=PATH` in `~/.bazelrc`     | Applied     |
 | `/usr/bin/ld.gold` | BuildBuddy toolchain fetch fails  | Patch `toolchains_buildbuddy` repo rule | Not started |
 
+Docker container test setup for reproducing these issues is at `tools/nixos-bazel-test/`.
+
 ## Key files
 
 | File                                                      | Role                                      |

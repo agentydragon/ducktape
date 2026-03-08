@@ -66,13 +66,6 @@ jobs:
           which tofu && echo "OpenTofu version: $(tofu --version | head -1)" || echo "OpenTofu: not installed"
           which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
 
-          # Verify Bazel toolchain auto-detection
-          if grep -q "BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0" ~/.bazelrc 2>/dev/null; then
-            echo "Bazel toolchain: auto-detection enabled"
-          else
-            echo "Bazel toolchain: using default configuration"
-          fi
-
       - name: Set up Props environment variables
         run: |
           # Props E2E test environment variables

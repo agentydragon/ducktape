@@ -248,6 +248,29 @@
           homeManagerHost = "nixos-vm";
           hardwareModule = ./nixos/modules/vm-hardware.nix;
         };
+
+        # Minimal NixOS container for testing Bazel compatibility.
+        # Not a real host — used by tools/nixos-bazel-test/ to build a Docker image.
+        bazel-test = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            ./nixos/modules/bazel-dev.nix
+            (
+              { pkgs, ... }:
+              {
+                boot.isContainer = true;
+                networking.hostName = "bazel-test";
+                networking.firewall.enable = false;
+                users.users.root.shell = pkgs.bash;
+                nix.settings.experimental-features = [
+                  "nix-command"
+                  "flakes"
+                ];
+                system.stateVersion = "25.11";
+              }
+            )
+          ];
+        };
       };
     };
 }

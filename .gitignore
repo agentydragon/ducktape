@@ -65,6 +65,9 @@ k8s_old/helm/*/charts/
 # NixOS build artifacts
 **/nixos-cloud-image
 nix/**/result
+tools/nixos-bazel-test/result
+tools/nixos-bazel-test/nixos-image.tar.gz
+tools/nixos-bazel-test/ca-certificates.crt
 
 # Web and build artifacts
 **/.sass-cache/

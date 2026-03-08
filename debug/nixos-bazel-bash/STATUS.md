@@ -110,13 +110,17 @@ Neither flag can be scoped per-platform. `--action_env` applies to all actions (
 
 ## Files
 
-| File                               | Purpose                                   |
-| ---------------------------------- | ----------------------------------------- |
-| `nix/home/modules/nixos-bazel.nix` | Home-manager module for user `~/.bazelrc` |
-| `nix/nixos/modules/bazel-dev.nix`  | NixOS module: nix-ld + dev packages       |
-| `debug/nixos-bazel-bash/README.md` | Original investigation notes              |
+| File                                        | Purpose                                   |
+| ------------------------------------------- | ----------------------------------------- |
+| `nix/home/modules/nixos-bazel.nix`          | Home-manager module for user `~/.bazelrc` |
+| `nix/nixos/modules/bazel-dev.nix`           | NixOS module: nix-ld + dev packages       |
+| `nix/flake.nix` (bazel-test config)         | NixOS container config in flake           |
+| `tools/nixos-bazel-test/image.nix`          | Docker image from NixOS system config     |
+| `tools/nixos-bazel-test/run.sh`             | Build + run script                        |
+| `investigations/nixos-bazel-bash/README.md` | Original investigation notes              |
 
 ## Remaining Work
 
 1. **Issue 3**: Will need fixing when remote cache is cold or for clean builds.
 2. **Rust**: `finance/worthy` needs `CARGO_BAZEL_REPIN=true` — not NixOS-specific.
+3. **Full `//...` build**: OOM in container when analyzing 2000+ targets. Works in smaller chunks.
