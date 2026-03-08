@@ -35,10 +35,12 @@ runs:
         LATEST_TAG: ${{ inputs.latest_tag }}
         KEEP: ${{ inputs.keep_releases }}
       run: |
-        gh release list --limit 100 --json tagName \
+        # Sort by createdAt (newest first) so alphabetically-low hex SHAs like
+        # "5c64d53b" are not mistakenly treated as older than "eff5227c".
+        gh release list --limit 100 --json tagName,createdAt \
           --jq "[.[] | select(.tagName | startswith(\"${PACKAGE_PREFIX}-\"))
-                     | select(.tagName != \"${LATEST_TAG}\")
-                     | .tagName] | sort | reverse | .[${KEEP}:][]" \
+                     | select(.tagName != \"${LATEST_TAG}\")]
+                | sort_by(.createdAt) | reverse | .[${KEEP}:] | .[].tagName" \
           | xargs -r -I{} gh release delete {} --yes --cleanup-tag
 
     - name: Update latest release
