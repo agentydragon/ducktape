@@ -1,0 +1,23 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "libvirt": "dmacvicar/libvirt:~>0.8.0",
+        "null": "hashicorp/null:~>3.2.0",
+    },
+    tf_version = "1.9.8",
+)
+
+tf_module(
+    name = "k8s-worker-libvirt",
+    providers = [
+        "libvirt",
+        "null",
+    ],
+    providers_versions = ":providers",
+    deps = [
+        "//terraform/modules/libvirt-vm",
+        "//terraform/modules/proxmox-vm",
+    ],
+)
