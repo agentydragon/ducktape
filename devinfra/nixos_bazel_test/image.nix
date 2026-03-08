@@ -25,11 +25,9 @@ let
   gccLib = "${pkgs.stdenv.cc.cc.lib}/lib";
   nixLdPath = "${pkgs.glibc}/lib/ld-linux-x86-64.so.2";
 
-  direnvrc = pkgs.writeText "direnvrc" ''
-    use_nix() {
-      : # no-op in container; all packages pre-installed
-    }
-  '';
+  # Home-manager generated config files for root user
+  hmRoot = nixos.config.home-manager.users.root;
+  hmDirenvrc = pkgs.writeText "direnvrc" hmRoot.xdg.configFile."direnv/direnvrc".text;
 
 in
 pkgs.dockerTools.buildLayeredImage {
@@ -72,7 +70,7 @@ pkgs.dockerTools.buildLayeredImage {
         cp ${userBazelrc} ./root/.bazelrc
         # Append try-import for BuildBuddy credentials
         echo 'try-import /root/.config/bazel/buildbuddy.bazelrc' >> ./root/.bazelrc
-        cp ${direnvrc} ./root/.config/direnv/direnvrc
+        cp ${hmDirenvrc} ./root/.config/direnv/direnvrc
         cat > ./root/.bashrc << 'BASHRC'
     . /etc/profile.d/nix-ld.sh
     BASHRC
