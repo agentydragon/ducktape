@@ -158,10 +158,12 @@
         {
           tana = pkgs.callPackage ./home/packages/tana.nix { };
           gmail-mcp = pkgs.callPackage ./home/packages/gmail-mcp.nix { };
-          bazel-test-docker = import ../devinfra/nixos_bazel_test/image.nix {
-            nixos = self.nixosConfigurations.bazel-test;
-            inherit pkgs;
-          };
+          # NixOS container tarball for docker import.
+          # Build: nix build path:./nix#bazel-test-docker
+          # Load:  docker import result ducktape-nixos-bazel
+          # Run:   docker run --rm -it ducktape-nixos-bazel /init
+          # Exec:  docker exec -it <container> bash -l
+          bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
         };
 
       homeConfigurations = {
@@ -255,17 +257,22 @@
 
         # Minimal NixOS container for testing Bazel compatibility.
         # Not a real host — used by devinfra/nixos_bazel_test/ to build a Docker image.
+        #
+        # Imports docker-image.nix which (together with docker-container.nix) provides
+        # system.build.tarball — a complete NixOS filesystem tarball for docker import.
+        # On container start, /init (systemd) runs NixOS activation: /etc, nix-ld,
+        # home-manager (bazelrc, direnv), etc. No manual wiring needed.
         bazel-test = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [
+            "${nixpkgs}/nixos/modules/virtualisation/docker-image.nix"
             ./nixos/modules/bazel-dev.nix
             home-manager.nixosModules.home-manager
             (
               { pkgs, ... }:
               {
-                boot.isContainer = true;
+                # boot.isContainer is set by docker-container.nix (imported by docker-image.nix)
                 networking.hostName = "bazel-test";
-                networking.firewall.enable = false;
                 users.users.root = {
                   shell = pkgs.bash;
                   isNormalUser = false;
