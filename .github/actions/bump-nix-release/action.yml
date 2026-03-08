@@ -43,12 +43,24 @@ runs:
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+        # Stash any pre-existing working tree changes (e.g. runner-modified files
+        # like .claude/settings.json) so the rebase has a clean slate.
+        STASHED=0
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+          git stash --include-untracked
+          STASHED=1
+        fi
+
         if ! git pull --rebase origin "$BRANCH"; then
           echo "::error::Rebase failed. Git status:"
           git status
           echo "Conflicting files:"
           git diff --name-only --diff-filter=U
           exit 1
+        fi
+
+        if [[ "$STASHED" == "1" ]]; then
+          git stash pop
         fi
 
         # Compute SRI hash from artifact
