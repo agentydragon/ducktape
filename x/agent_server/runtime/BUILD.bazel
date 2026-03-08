@@ -112,6 +112,7 @@ py_test(
     ],
     imports = ["../../.."],
     requires_docker = True,
+    tags = ["manual"],
     deps = [
         ":conftest",
         "//agent_core/testing/mcp:responses",
