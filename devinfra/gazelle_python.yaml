@@ -1,13 +1,14 @@
 # GENERATED FILE - DO NOT EDIT!
 #
 # To update this file, run:
-#   bazel run //tools:gazelle_python_manifest.update
+#   bazel run //devinfra:gazelle_python_manifest.update
 
 ---
 manifest:
   modules_mapping:
     7ae574991b77ef47acad__mypyc: mypy
     7bce59c0a152c0e01f70__mypyc: tomli
+    81d243bd2c585b0f4821__mypyc: charset_normalizer
     Crypto: pycryptodome
     IPython: ipython
     OpenSSL: pyopenssl
@@ -32,6 +33,7 @@ manifest:
     argon2: argon2_cffi
     arrow: arrow
     asgi_lifespan: asgi_lifespan
+    asgiref: asgiref
     asttokens: asttokens
     asyncpg: asyncpg
     attr: attrs
@@ -42,6 +44,7 @@ manifest:
     aw_datastore: aw_core
     aw_query: aw_core
     aw_transform: aw_core
+    backports: backports.tarfile
     bcrypt: bcrypt
     beartype: beartype
     bleach: bleach
@@ -71,8 +74,10 @@ manifest:
     decorator: decorator
     defusedxml: defusedxml
     deprecation: deprecation
+    dev.make-release-notes: vulture
     distlib: distlib
     distro: distro
+    django: django
     dns: dnspython
     docker: docker
     docstring_parser: docstring_parser
@@ -178,7 +183,6 @@ manifest:
     google_auth_oauthlib: google_auth_oauthlib
     googleapiclient: google_api_python_client
     greenlet: greenlet
-    grpc: grpcio
     h11: h11
     h2: h2
     hamcrest: pyhamcrest
@@ -234,7 +238,7 @@ manifest:
     jupyter_server_terminals: jupyter_server_terminals
     jupyter_ydoc: jupyter_ydoc
     jupyterlab_pygments: jupyterlab_pygments
-    jwt: PyJWT
+    jwt: pyjwt
     key_value: py_key_value_aio
     keyring: keyring
     kiwisolver: kiwisolver
@@ -301,6 +305,7 @@ manifest:
     opentelemetry.util.re: opentelemetry_api
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
+    overrides: overrides
     packaging: packaging
     pandas: pandas
     pandocfilters: pandocfilters
@@ -314,7 +319,6 @@ manifest:
     persistqueue: persist_queue
     pexpect: pexpect
     pint: pint
-    pkg_resources: setuptools
     platformdirs: platformdirs
     playhouse: peewee
     playwright: playwright
@@ -363,6 +367,7 @@ manifest:
     pytest_playwright: pytest_playwright
     pytest_postgresql: pytest_postgresql
     pytest_timeout: pytest_timeout
+    python_discovery: python_discovery
     python_multipart: python_multipart
     python_socks: python_socks
     pythonjsonlogger: python_json_logger
@@ -395,6 +400,7 @@ manifest:
     soupsieve: soupsieve
     splitwise: splitwise
     sqlalchemy: sqlalchemy
+    sqlparse: sqlparse
     sse_starlette: sse_starlette
     stack_data: stack_data
     starlette: starlette
@@ -469,11 +475,12 @@ manifest:
     tornado: tornado
     tqdm: tqdm
     traitlets: traitlets
-    typer: typer_slim
+    typer: typer
     typer_di: typer_di
     typing_extensions: typing_extensions
     typing_inspection: typing_inspection
     tzdata: tzdata
+    uncalled_for: uncalled_for
     unidiff: unidiff
     unpaddedbase64: unpaddedbase64
     uri_template: uri_template
@@ -500,4 +507,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: d48c8ec3df218cfb20c8c62ba0ac0d8138cbd5d4218f0881e5f9467fbe3506a8
+integrity: b7b8cad676a9d7eb473a47444a73086ec828a33e89f844fd01c8c9fcb3c5ec19
