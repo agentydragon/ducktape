@@ -2,8 +2,11 @@
 #
 # Uses the NixOS config defined in nix/flake.nix (nixosConfigurations.bazel-test),
 # which includes bazel-dev.nix (system packages, nix-ld) and home-manager with
-# nixos-bazel.nix (~/.bazelrc). Packages the system as a Docker image via
-# dockerTools.buildLayeredImage.
+# nixos-bazel.nix (~/.bazelrc) and direnv. Config content (bazelrc, direnvrc) is
+# read from the evaluated NixOS/home-manager config — not hardcoded here.
+#
+# NixOS activation scripts can't run inside a nix build sandbox, so Docker image
+# plumbing (/run/current-system/sw, /lib64, /etc) is set up manually.
 #
 # Build (from repo root):
 #   nix build path:./nix#bazel-test-docker -o devinfra/nixos_bazel_test/result
@@ -16,31 +19,26 @@ let
   # NixOS system profile — all packages merged into /bin, /lib, etc.
   nixosPath = nixos.config.system.path;
 
-  # Bazelrc content from home-manager config for root user
-  hmBazelrc = nixos.config.home-manager.users.root.home.file.".bazelrc";
-  userBazelrc = pkgs.writeText "bazelrc" hmBazelrc.text;
+  # Home-manager evaluated config for root user
+  hmRoot = nixos.config.home-manager.users.root;
+  userBazelrc = pkgs.writeText "bazelrc" hmRoot.home.file.".bazelrc".text;
+  userDirenvrc = pkgs.writeText "direnvrc" hmRoot.programs.direnv.stdlib;
 
   # nix-ld paths
   glibcLib = "${pkgs.glibc}/lib";
   gccLib = "${pkgs.stdenv.cc.cc.lib}/lib";
   nixLdPath = "${pkgs.glibc}/lib/ld-linux-x86-64.so.2";
 
-  # Home-manager generated config files for root user
-  hmRoot = nixos.config.home-manager.users.root;
-  hmDirenvrc = pkgs.writeText "direnvrc" hmRoot.xdg.configFile."direnv/direnvrc".text;
-
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "ducktape-nixos-bazel";
   tag = "latest";
 
-  # The NixOS system profile (all environment.systemPackages merged)
   contents = [ nixosPath ];
 
   fakeRootCommands = ''
-        # /run/current-system/sw → NixOS system profile (the real thing).
-        # On a running NixOS system, switch-to-configuration creates this symlink.
-        # In a Docker image we create it directly since activation scripts don't run.
+        # /run/current-system/sw → NixOS system profile.
+        # Normally created by switch-to-configuration; manual in Docker images.
         mkdir -p ./run/current-system
         ln -s ${nixosPath} ./run/current-system/sw
 
@@ -65,12 +63,11 @@ pkgs.dockerTools.buildLayeredImage {
     export NIX_LD_LIBRARY_PATH=${glibcLib}:${gccLib}:${nixosPath}/lib
     NIXLD
 
-        # Home directory with configs
+        # Home directory with configs from home-manager evaluated config
         mkdir -p ./root/.config/bazel ./root/.config/direnv
         cp ${userBazelrc} ./root/.bazelrc
-        # Append try-import for BuildBuddy credentials
         echo 'try-import /root/.config/bazel/buildbuddy.bazelrc' >> ./root/.bazelrc
-        cp ${hmDirenvrc} ./root/.config/direnv/direnvrc
+        cp ${userDirenvrc} ./root/.config/direnv/direnvrc
         cat > ./root/.bashrc << 'BASHRC'
     . /etc/profile.d/nix-ld.sh
     BASHRC

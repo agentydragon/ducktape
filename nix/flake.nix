@@ -300,13 +300,13 @@
                   programs.direnv = {
                     enable = true;
                     enableBashIntegration = true;
+                    # no-op use_nix — all packages are pre-installed in the container
+                    stdlib = ''
+                      use_nix() {
+                        : # no-op in container; all packages pre-installed
+                      }
+                    '';
                   };
-                  # no-op use_nix — all packages are pre-installed in the container
-                  xdg.configFile."direnv/direnvrc".text = ''
-                    use_nix() {
-                      : # no-op in container; all packages pre-installed
-                    }
-                  '';
                   home.stateVersion = "25.11";
                 };
 
