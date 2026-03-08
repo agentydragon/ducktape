@@ -6,9 +6,9 @@
 # dockerTools.buildLayeredImage.
 #
 # Build (from repo root):
-#   nix build path:./nix#bazel-test-docker -o tools/nixos-bazel-test/result
+#   nix build path:./nix#bazel-test-docker -o devinfra/nixos-bazel-test/result
 # Load:
-#   docker load < tools/nixos-bazel-test/result
+#   docker load < devinfra/nixos-bazel-test/result
 # Run:
 #   docker run --rm -it --network=host -v $PWD:/repo -w /repo ducktape-nixos-bazel bash
 { nixos, pkgs }:

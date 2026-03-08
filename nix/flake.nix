@@ -158,7 +158,7 @@
         {
           tana = pkgs.callPackage ./home/packages/tana.nix { };
           gmail-mcp = pkgs.callPackage ./home/packages/gmail-mcp.nix { };
-          bazel-test-docker = import ../tools/nixos-bazel-test/image.nix {
+          bazel-test-docker = import ../devinfra/nixos-bazel-test/image.nix {
             nixos = self.nixosConfigurations.bazel-test;
             inherit pkgs;
           };
@@ -254,7 +254,7 @@
         };
 
         # Minimal NixOS container for testing Bazel compatibility.
-        # Not a real host — used by tools/nixos-bazel-test/ to build a Docker image.
+        # Not a real host — used by devinfra/nixos-bazel-test/ to build a Docker image.
         bazel-test = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [
