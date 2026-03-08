@@ -1,5 +1,5 @@
 # Bazel configuration for NixOS hosts (appended to ~/.bazelrc via home-manager).
-# See investigations/nixos-bazel-bash/STATUS.md for full context.
+# See debug/nixos_bazel_bash/STATUS.md for full context.
 {
   config,
   lib,

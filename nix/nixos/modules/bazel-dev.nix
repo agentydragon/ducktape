@@ -5,7 +5,7 @@
 # 2. Empty PATH in sandbox actions — handled by home-manager nixos-bazel.nix
 # 3. Dynamically-linked Bazel-downloaded toolchains — nix-ld provides the linker stub
 #
-# See investigations/nixos-bazel-bash/README.md for details.
+# See debug/nixos_bazel_bash/README.md for details.
 {
   config,
   pkgs,
