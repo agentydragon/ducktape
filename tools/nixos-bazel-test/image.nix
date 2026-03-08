@@ -1,95 +1,29 @@
-# Docker image from a real NixOS system configuration.
+# Docker image from the flake's bazel-test NixOS configuration.
 #
-# Uses NixOS eval-config.nix with boot.isContainer to build a genuine NixOS
-# system, then packages it as a Docker image via dockerTools.buildLayeredImage.
-# The resulting container has real NixOS filesystem layout: no /bin/bash, no FHS
-# /usr/bin/ paths, nix-ld enabled, nixpkgs bazel_8 (already patched for NixOS).
+# Uses the NixOS config defined in nix/flake.nix (nixosConfigurations.bazel-test),
+# which includes bazel-dev.nix (system packages, nix-ld) and home-manager with
+# nixos-bazel.nix (~/.bazelrc). Packages the system as a Docker image via
+# dockerTools.buildLayeredImage.
 #
-# Build:
-#   nix-build image.nix
+# Build (from repo root):
+#   nix build path:./nix#bazel-test-docker -o tools/nixos-bazel-test/result
 # Load:
-#   docker load < result
+#   docker load < tools/nixos-bazel-test/result
 # Run:
 #   docker run --rm -it --network=host -v $PWD:/repo -w /repo ducktape-nixos-bazel bash
+{ nixos, pkgs }:
 let
-  nixpkgsSrc = fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz";
-  pkgs = import nixpkgsSrc { system = "x86_64-linux"; };
-
-  # Evaluate a real NixOS configuration (container mode)
-  nixos = import "${nixpkgsSrc}/nixos/lib/eval-config.nix" {
-    system = "x86_64-linux";
-    modules = [
-      (
-        { config, pkgs, ... }:
-        {
-          boot.isContainer = true;
-
-          # nix-ld: stub dynamic linker for Bazel-downloaded binaries
-          programs.nix-ld.enable = true;
-
-          environment.systemPackages = with pkgs; [
-            bash
-            coreutils
-            findutils
-            gnugrep
-            gnused
-            gawk
-            diffutils
-            gnutar
-            gzip
-            xz
-            which
-            file
-            gcc
-            gnumake
-            binutils
-            patchelf
-            patch
-            git
-            curl
-            cacert
-            openssl
-            python3
-            direnv
-            bazel_8
-          ];
-
-          nix.settings.experimental-features = [
-            "nix-command"
-            "flakes"
-          ];
-
-          networking.hostName = "bazel-test";
-          networking.firewall.enable = false;
-          users.users.root.shell = pkgs.bash;
-          i18n.defaultLocale = "en_US.UTF-8";
-          system.stateVersion = "25.11";
-        }
-      )
-    ];
-  };
-
   # NixOS system profile — all packages merged into /bin, /lib, etc.
   nixosPath = nixos.config.system.path;
+
+  # Bazelrc content from home-manager config for root user
+  hmBazelrc = nixos.config.home-manager.users.root.home.file.".bazelrc";
+  userBazelrc = pkgs.writeText "bazelrc" hmBazelrc.text;
 
   # nix-ld paths
   glibcLib = "${pkgs.glibc}/lib";
   gccLib = "${pkgs.stdenv.cc.cc.lib}/lib";
   nixLdPath = "${pkgs.glibc}/lib/ld-linux-x86-64.so.2";
-
-  userBazelrc = pkgs.writeText "bazelrc" ''
-    build --shell_executable=/bin/bash
-    # PATH only for exec-config (host) tools. Not --action_env, which would
-    # leak NixOS paths to RBE workers.
-    build --host_action_env=PATH=/run/current-system/sw/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    # nix-ld env vars: host_action_env + repo_env only (local actions).
-    build --host_action_env=NIX_LD
-    build --host_action_env=NIX_LD_LIBRARY_PATH
-    common --repo_env=NIX_LD
-    common --repo_env=NIX_LD_LIBRARY_PATH
-
-    try-import /root/.config/bazel/buildbuddy.bazelrc
-  '';
 
   direnvrc = pkgs.writeText "direnvrc" ''
     use_nix() {
@@ -136,6 +70,8 @@ pkgs.dockerTools.buildLayeredImage {
         # Home directory with configs
         mkdir -p ./root/.config/bazel ./root/.config/direnv
         cp ${userBazelrc} ./root/.bazelrc
+        # Append try-import for BuildBuddy credentials
+        echo 'try-import /root/.config/bazel/buildbuddy.bazelrc' >> ./root/.bazelrc
         cp ${direnvrc} ./root/.config/direnv/direnvrc
         cat > ./root/.bashrc << 'BASHRC'
     . /etc/profile.d/nix-ld.sh

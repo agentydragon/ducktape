@@ -17,16 +17,16 @@ IMAGE_NAME="ducktape-nixos-bazel"
 build_image() {
   echo "=== Building NixOS Docker image ==="
 
-  if command -v nix-build &>/dev/null; then
-    echo "Using local nix-build..."
-    nix-build "$SCRIPT_DIR/image.nix" -o "$SCRIPT_DIR/result"
+  if command -v nix &>/dev/null; then
+    echo "Using nix build (flake)..."
+    nix build "path:$REPO_ROOT/nix#bazel-test-docker" -o "$SCRIPT_DIR/result"
   else
     echo "No local nix found, building inside nixos/nix container..."
 
     local -a docker_build_args=(
       --rm
       --network=host
-      -v "$SCRIPT_DIR:/src:ro"
+      -v "$REPO_ROOT:/repo:ro"
       -v "$SCRIPT_DIR:/out"
     )
 
@@ -56,7 +56,7 @@ build_image() {
         export NIX_SSL_CERT_FILE=/tmp/host-ca-bundle.crt
       fi
 
-      nix-build /src/image.nix -o /tmp/result
+      nix build "path:/repo/nix#bazel-test-docker" -o /tmp/result
       # Copy the actual file -- the nix store symlink would not survive container exit
       cp -L /tmp/result /out/nixos-image.tar.gz
     '

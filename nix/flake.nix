@@ -158,6 +158,10 @@
         {
           tana = pkgs.callPackage ./home/packages/tana.nix { };
           gmail-mcp = pkgs.callPackage ./home/packages/gmail-mcp.nix { };
+          bazel-test-docker = import ../tools/nixos-bazel-test/image.nix {
+            nixos = self.nixosConfigurations.bazel-test;
+            inherit pkgs;
+          };
         };
 
       homeConfigurations = {
@@ -255,17 +259,47 @@
           inherit system;
           modules = [
             ./nixos/modules/bazel-dev.nix
+            home-manager.nixosModules.home-manager
             (
               { pkgs, ... }:
               {
                 boot.isContainer = true;
                 networking.hostName = "bazel-test";
                 networking.firewall.enable = false;
-                users.users.root.shell = pkgs.bash;
+                users.users.root = {
+                  shell = pkgs.bash;
+                  isNormalUser = false;
+                };
+                # Container extras (a real NixOS host already has these)
+                environment.systemPackages = with pkgs; [
+                  coreutils
+                  findutils
+                  gnugrep
+                  gnused
+                  gawk
+                  diffutils
+                  gnutar
+                  gzip
+                  xz
+                  which
+                  file
+                  patch
+                  curl
+                  cacert
+                  openssl
+                ];
                 nix.settings.experimental-features = [
                   "nix-command"
                   "flakes"
                 ];
+
+                home-manager.useGlobalPkgs = true;
+                home-manager.useUserPackages = true;
+                home-manager.users.root = {
+                  imports = [ ./home/modules/nixos-bazel.nix ];
+                  home.stateVersion = "25.11";
+                };
+
                 system.stateVersion = "25.11";
               }
             )
