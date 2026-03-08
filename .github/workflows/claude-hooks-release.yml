@@ -227,12 +227,6 @@ jobs:
             Requires Python 3.13+
           files: dist/*.whl
 
-      - name: Sync with remote before modifying files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin "${{ github.ref_name }}"
-
       - name: Update Claude settings wheel URL
         run: |
           sed -i "s|releases/download/claude-hooks-[a-f0-9]*/claude_hooks|releases/download/claude-hooks-${{ env.SHORT_SHA }}/claude_hooks|g" .claude/settings.json
@@ -245,4 +239,3 @@ jobs:
           package_prefix: claude-hooks
           extra_files: .claude/settings.json
           branch: ${{ github.ref_name }}
-          skip_pull: "true"

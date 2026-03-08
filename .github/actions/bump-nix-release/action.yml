@@ -24,13 +24,6 @@ inputs:
   branch:
     description: "Branch to push to (pass github.ref_name)"
     required: true
-  skip_pull:
-    description: |
-      Skip the git pull --rebase step. Set to 'true' when the caller already
-      synced with remote before making file changes (to avoid rebasing over a
-      dirty working tree).
-    required: false
-    default: "false"
 
 runs:
   using: composite
@@ -44,22 +37,11 @@ runs:
         PACKAGE_PREFIX: ${{ inputs.package_prefix }}
         EXTRA_FILES: ${{ inputs.extra_files }}
         BRANCH: ${{ inputs.branch }}
-        SKIP_PULL: ${{ inputs.skip_pull }}
       run: |
         set -x
 
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-        if [[ "$SKIP_PULL" != "true" ]]; then
-          if ! git pull --rebase origin "$BRANCH"; then
-            echo "::error::Rebase failed. Git status:"
-            git status
-            echo "Conflicting files:"
-            git diff --name-only --diff-filter=U
-            exit 1
-          fi
-        fi
 
         # Compute SRI hash from artifact
         SHA256=$(sha256sum "$ARTIFACT_FILE" | cut -d' ' -f1)
@@ -84,6 +66,16 @@ runs:
         # shellcheck disable=SC2086
         git add "$NIX_PKG" $EXTRA_FILES
         git commit -m "chore: bump ${PACKAGE_PREFIX} to ${TAG} [skip ci]"
+
+        # Rebase our commit on top of any concurrent pushes immediately before
+        # pushing, to minimise the race window.
+        if ! git pull --rebase origin "$BRANCH"; then
+          echo "::error::Rebase failed. Git status:"
+          git status
+          echo "Conflicting files:"
+          git diff --name-only --diff-filter=U
+          exit 1
+        fi
 
         if ! git push origin "HEAD:${BRANCH}"; then
           echo "::error::Push failed. Diagnostics:"
