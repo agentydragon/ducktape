@@ -144,14 +144,12 @@ py_package(
     name = "ducktape_pkg",
     packages = [
         "agent_core",
-        "cli_util",
         "devinfra",
         "devinfra.claude_hooks",
         "devinfra.claude_hooks.auth_proxy",
         "devinfra.claude_hooks.claude_api",
         "devinfra.claude_hooks.supervisor",
         "difftree",
-        "fmt_util",
         "git_commit_ai",
         "gmail_archiver",
         "gmail_archiver.cli",
@@ -159,7 +157,6 @@ py_package(
         "mcp_infra",
         "mcp_utils",
         "openai_utils",
-        "tools",
         "util",
         "util.bazel",
     ],
@@ -168,6 +165,9 @@ py_package(
         "//devinfra/claude_hooks:pre_tool_use_lib",
         "//devinfra/claude_hooks:session_start_lib",
         "//devinfra/claude_hooks:statusline_lib",
+        # Auth proxy main module — invoked as subprocess by supervisor
+        # (not transitively reachable from session_start_lib)
+        "//devinfra/claude_hooks/auth_proxy:main",
         # CLI tool entry points
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
