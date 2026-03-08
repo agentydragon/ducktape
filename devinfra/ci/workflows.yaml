@@ -86,16 +86,8 @@ workflows:
 #
 # The entry key is used as package_name and package_prefix.
 # wheel_name and wheel_path are derived from bazel_target.
-# claude-hooks-release.yml is hand-written (has custom test jobs).
+# ducktape-release.yml is hand-written (has custom test jobs for claude_hooks).
 releases:
-  ducktape:
-    bazel_target: //:wheel
-    release_body: |
-      ducktape wheel containing:
-      - `git-commit-ai` - AI-powered commit message generator
-      - `difftree` - Tree-style visualization of diffs
-      - `gmail-archiver` - Gmail email auto-archiving tool
-
   headscale-cleanup:
     bazel_target: //headscale_cleanup:wheel
     release_body: |

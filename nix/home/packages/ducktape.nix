@@ -1,4 +1,4 @@
-# ducktape: CLI tools collection (git-commit-ai, difftree)
+# ducktape: CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline, session-start)
 # Installed from CI-built wheel via GitHub Releases
 #
 # To update: change shortSha to new 8-char commit SHA, set hash to lib.fakeHash,
@@ -56,6 +56,20 @@ let
       click
       unidiff
 
+      # claude_hooks deps
+      cryptography
+      opentelemetry-api
+      opentelemetry-exporter-otlp-proto-http
+      opentelemetry-sdk
+      platformdirs
+      psutil
+      pydantic-settings
+      pyjwt
+      # pyrage not in nixpkgs — lazily imported in secrets_setup.py,
+      # so CLI mode (statusline, session_start) works without it
+      pyyaml
+      supervisor
+
       # Not in nixpkgs - from overlay
       compact-json
     ];
@@ -64,7 +78,7 @@ let
     doCheck = false;
 
     meta = {
-      description = "CLI tools collection: git-commit-ai, difftree";
+      description = "CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline, session-start)";
       homepage = "https://github.com/agentydragon/ducktape";
       license = lib.licenses.agpl3Only;
       mainProgram = "git-commit-ai";

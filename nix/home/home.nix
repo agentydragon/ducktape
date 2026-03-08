@@ -84,14 +84,11 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
-  # ducktape - CLI tools collection (git-commit-ai, difftree)
+  # ducktape - CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline)
   ducktape = pkgs.callPackage ./packages/ducktape.nix { };
 
   # headscale-cleanup - Headscale node management tool
   headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix { };
-
-  # claude-hooks - Claude Code hooks and statusline
-  claude-hooks = pkgs.callPackage ./packages/claude-hooks.nix { };
 in
 {
   imports = [
@@ -412,9 +409,8 @@ in
       stylua # Lua formatter
 
       # Custom packages from ducktape repo
-      ducktape # CLI tools: git-commit-ai, difftree
+      ducktape # CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline)
       headscale-cleanup # Headscale node management
-      claude-hooks # Claude Code hooks and statusline
     ]
     ++ lib.optionals enableKube [
       kubectl

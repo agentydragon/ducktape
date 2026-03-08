@@ -1,5 +1,4 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/testing:defs.bzl", "py_test")
 
 # === Base modules (no internal deps) ===
@@ -236,6 +235,7 @@ py_library(
     name = "bazel_wrapper_lib",
     srcs = ["bazel_wrapper.py"],
     imports = ["../.."],
+    visibility = ["//visibility:public"],
     deps = [
         ":debug",
         ":env_file",
@@ -253,6 +253,7 @@ py_library(
     name = "pre_tool_use_lib",
     srcs = ["pre_tool_use.py"],
     imports = ["../.."],
+    visibility = ["//visibility:public"],
     deps = ["//devinfra/claude_hooks/claude_api:pre_tool_use"],
 )
 
@@ -260,6 +261,7 @@ py_library(
     name = "statusline_lib",
     srcs = ["statusline.py"],
     imports = ["../.."],
+    visibility = ["//visibility:public"],
     deps = [
         ":usage_cache",
         "//devinfra/claude_hooks/claude_api:statusline",
@@ -272,7 +274,7 @@ py_library(
     srcs = ["session_start.py"],
     data = ["templates/session_context.mako"],
     imports = ["../.."],
-    visibility = ["//devinfra/claude_hooks:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":bazel_wrapper_lib",
         ":bazelisk_setup",
@@ -337,91 +339,8 @@ py_binary(
     deps = [":session_start_lib"],
 )
 
-# === Packaging ===
-
-py_package(
-    name = "claude_hooks_pkg",
-    packages = [
-        "devinfra",
-        "devinfra.claude_hooks",
-        "devinfra.claude_hooks.auth_proxy",
-        "devinfra.claude_hooks.claude_api",
-        "devinfra.claude_hooks.supervisor",
-        "tools",
-        "util",
-        "util.bazel",
-    ],
-    deps = [
-        ":bazel_wrapper_lib",
-        ":bazelisk_setup",
-        ":buildbuddy_setup",
-        ":cli_tools_setup",
-        ":container_runtime",
-        ":env_file",
-        ":errors",
-        ":fork_remote_setup",
-        ":kubeconfig_setup",
-        ":managed_files",
-        ":mkcert_setup",
-        ":nix_setup",
-        ":platform_utils",
-        ":pre_tool_use_lib",
-        ":precommit_setup",
-        ":secrets_setup",
-        ":session_start_lib",
-        ":settings",
-        ":statusline_lib",
-        ":streaming",
-        ":tmpfs_setup",
-        ":tracing",
-        ":usage_cache",
-        "//devinfra/claude_hooks/auth_proxy:credentials",
-        "//devinfra/claude_hooks/auth_proxy:main",
-        "//devinfra/claude_hooks/auth_proxy:proxy",
-        "//devinfra/claude_hooks/auth_proxy:setup",
-        "//devinfra/claude_hooks/auth_proxy:vars",
-        "//devinfra/claude_hooks/claude_api:credentials",
-        "//devinfra/claude_hooks/claude_api:hook_input",
-        "//devinfra/claude_hooks/claude_api:pre_tool_use",
-        "//devinfra/claude_hooks/claude_api:statusline",
-        "//devinfra/claude_hooks/claude_api:usage",
-        "//devinfra/claude_hooks/supervisor:client",
-        "//devinfra/claude_hooks/supervisor:setup",
-        "//util:net",
-        "//util/bazel:subprocess",
-    ],
-)
-
-py_wheel(
-    name = "wheel",
-    distribution = "claude_hooks",
-    entry_points = {"console_scripts": [
-        "claude-pre-tool-use = devinfra.claude_hooks.pre_tool_use:main",
-        "claude-session-start = devinfra.claude_hooks.session_start:main",
-        "claude-statusline = devinfra.claude_hooks.statusline:main",
-    ]},
-    python_requires = ">=3.13",
-    requires = [
-        "cryptography",
-        "httpx",
-        "mako",
-        "opentelemetry-api",
-        "opentelemetry-exporter-otlp-proto-http",
-        "opentelemetry-sdk",
-        "platformdirs",
-        "psutil",
-        "pydantic",
-        "pydantic-settings",
-        "pyjwt",
-        "pyrage",
-        "pygit2",
-        "pyyaml",
-        "supervisor",
-        "tenacity",
-    ],
-    version = "0.1.0",
-    deps = [":claude_hooks_pkg"],
-)
+# Packaging targets are in the root //:wheel (merged ducktape wheel).
+# See /BUILD.bazel for ducktape_pkg and wheel targets.
 
 # === Tests ===
 

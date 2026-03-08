@@ -73,7 +73,6 @@ actions:
         build --config=rbe
         //:wheel
         //headscale_cleanup:wheel
-        //devinfra/claude_hooks:wheel
 
   # Build container images (OCI images built with Bazel)
   - name: "Build Container Images"
