@@ -72,29 +72,11 @@ variable "user_comment" {
 }
 
 # =============================================================================
-# NIXOS/HOME-MANAGER FLAKE CONFIGURATION
+# SSH CONFIGURATION
 # =============================================================================
 
 variable "ssh_public_key" {
   description = "SSH public key (auto-detected from ~/.ssh if not specified)"
   type        = string
   default     = ""
-}
-
-variable "nixos_flake_url" {
-  description = "Flake URL for NixOS system configuration"
-  type        = string
-  default     = "github:agentydragon/ducktape?dir=nix&ref=devel"
-}
-
-variable "home_manager_flake_url" {
-  description = "Flake URL for home-manager configuration"
-  type        = string
-  default     = "github:agentydragon/ducktape?dir=nix&ref=devel"
-}
-
-variable "home_manager_host" {
-  description = "Home-manager host config name from ducktape flake"
-  type        = string
-  default     = "nixos-vm"
 }

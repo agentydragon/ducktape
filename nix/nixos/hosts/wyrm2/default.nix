@@ -11,7 +11,6 @@
     ../../modules/gui.nix
     ../../modules/vm-unattended.nix
     ../../modules/dev-workstation.nix
-    ../../modules/hm-bootstrap.nix
   ];
 
   # Timezone

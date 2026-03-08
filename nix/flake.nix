@@ -107,7 +107,45 @@
           homeManagerHost ? hostname,
           hardwareModule ? null,
           extraModules ? [ ],
+          # Inline home-manager config: if set, HM is activated during NixOS
+          # activation (no hm-bootstrap.nix needed). Requires the HM host
+          # config module path (e.g., ./home/hosts/nixos-vm.nix).
+          inlineHomeManager ? null,
         }:
+        let
+          # HM dependencies — only evaluated when inlineHomeManager is used
+          # (Nix is lazy, so these won't be computed if not referenced)
+          pkgsUnstable = import nixpkgs-unstable {
+            inherit system;
+            config.allowUnfree = true;
+          };
+
+          solarizedLight = nix-colors.colorSchemes.solarized-light;
+          solarizedDark = nix-colors.colorSchemes.solarized-dark;
+
+          hmExtraSpecialArgs =
+            if inlineHomeManager != null then
+              {
+                enableGui = inlineHomeManager.enableGui or true;
+                enableKube = inlineHomeManager.enableKube or false;
+                isNixOS = true;
+                isPopOS = false;
+                enableHeavyPackages = inlineHomeManager.enableHeavyPackages or false;
+                inherit
+                  nix-colors
+                  solarizedLight
+                  solarizedDark
+                  pkgsUnstable
+                  ;
+                nixGLPackages = nixGL.packages.${system};
+                terminalFont = {
+                  family = "JetBrainsMono Nerd Font";
+                  size = 11;
+                };
+              }
+            else
+              { };
+        in
         nixpkgs.lib.nixosSystem {
           inherit system;
           specialArgs = {
@@ -122,11 +160,23 @@
             ./nixos/modules/base.nix
             ./nixos/hosts/${hostname}
             home-manager.nixosModules.home-manager
-            {
-              home-manager.useGlobalPkgs = true;
-              home-manager.useUserPackages = true;
-              # Home-manager config is applied separately via home-manager switch
-            }
+            (
+              if inlineHomeManager != null then
+                {
+                  home-manager.useGlobalPkgs = true;
+                  home-manager.useUserPackages = true;
+                  home-manager.extraSpecialArgs = hmExtraSpecialArgs;
+                  home-manager.sharedModules = [
+                    claude-code-router.homeManagerModules.claude-code-router
+                  ];
+                  home-manager.users.${username} = inlineHomeManager.module;
+                }
+              else
+                {
+                  home-manager.useGlobalPkgs = true;
+                  home-manager.useUserPackages = true;
+                }
+            )
           ]
           ++ (
             if hardwareModule != null then
@@ -164,6 +214,12 @@
           # Run:   docker run --rm -it ducktape-nixos-bazel /init
           # Exec:  docker exec -it <container> bash -l
           bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
+          # Pre-built UEFI qcow2 VM images for Proxmox deployment.
+          # Build: nix build ./nix#wyrm2-image
+          # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
+          wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
+          k8s-worker-test-image =
+            self.nixosConfigurations.k8s-worker-test.config.system.build.images.qemu-efi;
         };
 
       homeConfigurations = {
@@ -239,6 +295,19 @@
           username = "user";
           homeManagerHost = "nixos-vm";
           hardwareModule = ./nixos/modules/vm-hardware.nix;
+          inlineHomeManager = {
+            enableGui = true;
+            enableKube = false;
+            enableHeavyPackages = false;
+            module =
+              { lib, ... }:
+              {
+                imports = [ ./home/hosts/nixos-vm.nix ];
+                # Override home.nix defaults (which hardcode "agentydragon")
+                home.username = lib.mkForce "user";
+                home.homeDirectory = lib.mkForce "/home/user";
+              };
+          };
         };
 
         rugged = mkNixos {

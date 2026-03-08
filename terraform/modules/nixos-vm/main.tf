@@ -1,6 +1,7 @@
 # NixOS VM Module
-# Creates a NixOS VM with cloud-init provisioning
-# Configuration is managed via flake after initial bootstrap
+# Creates a NixOS VM from a pre-built qcow2 image.
+# SSH keys are injected via Proxmox cloud-init.
+# K8s secrets are optionally injected via cloud-init userdata.
 
 terraform {
   required_version = ">= 1.0"
@@ -14,20 +15,16 @@ terraform {
 }
 
 locals {
-  cloud_init_user_data = templatefile("${path.module}/cloud-init.yaml.tpl", {
-    username               = var.username
-    ssh_public_key         = var.ssh_public_key
-    hostname               = var.vm_name
-    nixos_flake_url        = var.nixos_flake_url
-    nixos_host             = var.nixos_host
-    home_manager_flake_url = var.home_manager_flake_url
-    home_manager_host      = var.home_manager_host
-    k8s_cluster_join       = var.k8s_cluster_join
-  })
+  # Cloud-init userdata is only needed for k8s secret injection
+  needs_cloud_init_userdata = var.k8s_cluster_join != null
+  cloud_init_user_data = local.needs_cloud_init_userdata ? templatefile("${path.module}/cloud-init.yaml.tpl", {
+    k8s_cluster_join = var.k8s_cluster_join
+  }) : null
 }
 
-# Cloud-init configuration
+# Cloud-init configuration (only for k8s secret injection)
 resource "proxmox_virtual_environment_file" "cloud_init_config" {
+  count        = local.needs_cloud_init_userdata ? 1 : 0
   content_type = "snippets"
   datastore_id = "local"
   node_name    = var.proxmox_node_name
@@ -41,7 +38,7 @@ resource "proxmox_virtual_environment_file" "cloud_init_config" {
 # The VM
 resource "proxmox_virtual_environment_vm" "vm" {
   name        = var.vm_name
-  description = "NixOS VM - managed via flake ${var.nixos_flake_url}#${var.nixos_host}"
+  description = "NixOS VM - ${var.vm_name}"
   node_name   = var.proxmox_node_name
   vm_id       = var.vm_id
   pool_id     = var.pool_id != "" ? var.pool_id : null
@@ -64,7 +61,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
 
   disk {
     datastore_id = var.storage
-    import_from  = "local:import/nixos-cloud.qcow2"
+    import_from  = var.image_import_path
     interface    = "scsi0"
     iothread     = true
     discard      = "on"
@@ -92,7 +89,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
       password = ""
     }
 
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init_config.id
+    user_data_file_id = local.needs_cloud_init_userdata ? proxmox_virtual_environment_file.cloud_init_config[0].id : null
   }
 
   started = var.auto_start

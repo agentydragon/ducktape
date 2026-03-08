@@ -38,34 +38,24 @@ output "instructions" {
     VMs:
     - wyrm2 (ID: ${module.wyrm2.vm_id})
 
-    📋 Next steps:
+    Next steps:
 
-    1. Wait for VMs to boot and cloud-init to complete (~2-3 minutes)
+    1. Wait for VM to boot (~30 seconds, no cloud-init rebuild needed)
 
-    2. Get VM IP addresses:
+    2. Get VM IP address:
        terraform output wyrm2
 
-    3. SSH into a VM (passwordless):
+    3. SSH into the VM:
        ssh ${var.username}@<vm-ip>
 
-    4. Check home-manager status:
-       ssh ${var.username}@<vm-ip> 'home-manager generations'
-
-    5. Access Proxmox web UI as the user:
+    4. Access Proxmox web UI:
        URL: https://${var.proxmox_api_host}
        User: ${local.proxmox_username}
        Password: (set with: ssh root@${var.proxmox_host} "pveum user password ${local.proxmox_username}")
 
-    Configuration:
-    - NixOS flake: ${var.nixos_flake_url}
-    - Home-manager flake: ${var.home_manager_flake_url}#${var.home_manager_host}
-
-    To update VM config after changes:
-    - Push to devel branch, then: terraform apply
-    - Or manually: ssh user@<ip> 'sudo nixos-rebuild switch --flake ${var.nixos_flake_url}#wyrm2'
-
-    🔐 Environment variables baked into VMs:
-    - Proxmox: PROXMOX_VE_ENDPOINT, PROXMOX_VE_USERNAME, PROXMOX_VE_API_TOKEN, PROXMOX_POOL_ID
-    - LLM API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY (if provided via ./apply.sh)
+    To update VM config:
+    - Rebuild image: nix build ./nix#wyrm2-image
+    - Redeploy: terraform apply
+    - Or from inside VM: sudo nixos-rebuild switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#wyrm2
   EOT
 }

@@ -1,0 +1,5 @@
+load("@rules_tf//tf:def.bzl", "tf_module")
+
+tf_module(
+    name = "nixos-image",
+)

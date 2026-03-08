@@ -41,26 +41,36 @@ variable "auto_start" {
   default     = true
 }
 
-# NixOS flake configuration
-variable "nixos_flake_url" {
-  description = "Flake URL for NixOS configuration"
+# Image import path on Proxmox (e.g., "local:import/wyrm2.qcow2")
+variable "image_import_path" {
+  description = "Proxmox storage path for the pre-built qcow2 image to import as the VM disk"
   type        = string
+}
+
+# NixOS flake configuration (only needed when cloud-init bootstrap is used)
+variable "nixos_flake_url" {
+  description = "Flake URL for NixOS configuration (only for cloud-init bootstrap)"
+  type        = string
+  default     = null
 }
 
 variable "nixos_host" {
-  description = "NixOS host config name from flake"
+  description = "NixOS host config name from flake (only for cloud-init bootstrap)"
   type        = string
+  default     = null
 }
 
-# Home-manager flake configuration
+# Home-manager flake configuration (only needed when cloud-init bootstrap is used)
 variable "home_manager_flake_url" {
-  description = "Flake URL for home-manager configuration"
+  description = "Flake URL for home-manager configuration (only for cloud-init bootstrap)"
   type        = string
+  default     = null
 }
 
 variable "home_manager_host" {
-  description = "Home-manager host config name"
+  description = "Home-manager host config name (only for cloud-init bootstrap)"
   type        = string
+  default     = null
 }
 
 # Passed from parent (infrastructure context)

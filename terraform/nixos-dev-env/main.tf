@@ -31,6 +31,9 @@ locals {
     local.ssh_key_path != "" ? trimspace(file(local.ssh_key_path)) : ""
   )
 
+  # NixOS image build inputs
+  nix_dir_hash = sha1(join("", [for f in sort(fileset("${path.module}/../../nix", "**/*.nix")) : filesha1("${path.module}/../../nix/${f}")]))
+  repo_root    = "${path.module}/../.."
 }
 
 # =============================================================================
@@ -51,23 +54,18 @@ check "ssh_key_required" {
   }
 }
 
-# Check if nix/ tree has uncommitted changes or unpushed commits
-# (only nix/ matters — VMs fetch NixOS/home-manager config from GitHub)
+# Check if nix/ tree has uncommitted changes
+# (nix/ config is baked into the qcow2 image built locally)
 data "external" "git_status" {
   program = ["bash", "-c", <<-EOT
     cd "${path.module}/../.."
     dirty="false"
-    unpushed="false"
 
     if ! git diff --quiet HEAD -- nix/ 2>/dev/null || [ -n "$(git status --porcelain -- nix/ 2>/dev/null)" ]; then
       dirty="true"
     fi
 
-    if [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse github/devel 2>/dev/null)" ]; then
-      unpushed="true"
-    fi
-
-    printf '{"dirty":"%s","unpushed":"%s"}' "$dirty" "$unpushed"
+    printf '{"dirty":"%s"}' "$dirty"
   EOT
   ]
 }
@@ -77,19 +75,8 @@ check "git_clean" {
     condition     = data.external.git_status.result.dirty == "false"
     error_message = <<-EOT
       WARNING: nix/ tree has uncommitted changes!
-      The VM will fetch NixOS/home-manager config from GitHub, not your local changes.
-      Commit and push your changes first, or your VM config may be outdated.
-    EOT
-  }
-}
-
-check "git_pushed" {
-  assert {
-    condition     = data.external.git_status.result.unpushed == "false"
-    error_message = <<-EOT
-      WARNING: Ducktape repo has unpushed commits on devel branch!
-      The VM will fetch home-manager config from GitHub, not your local commits.
-      Push your changes first: git push github devel
+      The VM image is built from committed nix/ config. Uncommitted changes
+      will not be included in the image. Commit your changes first.
     EOT
   }
 }
@@ -225,34 +212,14 @@ resource "proxmox_virtual_environment_acl" "sdn_access" {
   propagate = true
 }
 
-# NixOS cloud image (shared definition in terraform/modules/nixos-vm/)
-resource "null_resource" "nixos_cloud_image" {
-  triggers = {
-    cloud_image_config = filemd5("${path.module}/../modules/nixos-vm/cloud-image.nix")
-    proxmox_host       = var.proxmox_host
-    storage            = var.storage
-  }
-
-  provisioner "local-exec" {
-    command     = <<-EOT
-      set -e
-      echo "Building NixOS qcow2 cloud image..."
-
-      nix run github:nix-community/nixos-generators -- \
-        --format qcow-efi \
-        --configuration ${path.module}/../modules/nixos-vm/cloud-image.nix \
-        -o nixos-cloud-image
-
-      QCOW2_PATH=$(readlink -f nixos-cloud-image)/nixos.qcow2
-
-      echo "Uploading qcow2 to Proxmox import directory..."
-      ssh root@${var.proxmox_host} "mkdir -p /var/lib/vz/import"
-      scp "$QCOW2_PATH" "root@${var.proxmox_host}:/var/lib/vz/import/nixos-cloud.qcow2"
-
-      echo "qcow2 image ready for import at local:import/nixos-cloud.qcow2"
-    EOT
-    working_dir = path.module
-  }
+# Per-host NixOS qcow2 images (built via nix, uploaded to Proxmox)
+# Uses system.build.images.qemu-efi (nixos-generators upstreamed in nixpkgs 25.05+)
+module "wyrm2_image" {
+  source       = "../modules/nixos-image"
+  flake_target = "wyrm2"
+  proxmox_host = var.proxmox_host
+  repo_root    = local.repo_root
+  nix_dir_hash = local.nix_dir_hash
 }
 
 # Cleanup on destroy
@@ -286,28 +253,21 @@ resource "null_resource" "cleanup" {
 # VM INSTANCES
 # =============================================================================
 
-# Wyrm2 - NixOS dev workstation
+# Wyrm2 - NixOS dev workstation (pre-built image, no cloud-init bootstrap)
 module "wyrm2" {
   source = "../modules/nixos-vm"
   providers = {
     proxmox = proxmox.user
   }
 
-  vm_name      = "wyrm2"
-  vm_id        = 110
-  username     = var.username
-  vcpus        = 8
-  memory_mb    = 16384
-  disk_size_gb = 100
-  auto_start   = true
-
-  # NixOS config from flake
-  nixos_flake_url = var.nixos_flake_url
-  nixos_host      = "wyrm2"
-
-  # Home-manager config from flake
-  home_manager_flake_url = var.home_manager_flake_url
-  home_manager_host      = var.home_manager_host
+  vm_name          = "wyrm2"
+  vm_id            = 110
+  username         = var.username
+  vcpus            = 8
+  memory_mb        = 16384
+  disk_size_gb     = 100
+  auto_start       = true
+  image_import_path = module.wyrm2_image.import_path
 
   proxmox_node_name = var.proxmox_node_name
   storage           = var.storage
@@ -319,7 +279,7 @@ module "wyrm2" {
     proxmox_virtual_environment_acl.pool_admin,
     proxmox_virtual_environment_acl.storage_access,
     proxmox_virtual_environment_acl.storage_access_local,
-    null_resource.nixos_cloud_image,
+    module.wyrm2_image,
     null_resource.cleanup
   ]
 }
