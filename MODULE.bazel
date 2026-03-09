@@ -224,6 +224,7 @@ npm.npm_translate_lock(
     data = [
         "//:airlock/frontend/package.json",
         "//:airlock/openclaw/package.json",
+        "//:docker/openclaw-exec/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
@@ -548,6 +549,25 @@ exports_files([
     sha256 = "a2650fba422283fbed20d936ce5d2a52906a5414ec17b2f7676dddb87201dbae",
     strip_prefix = "jdk-21.0.6+7",
     urls = ["https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7/OpenJDK21U-jdk_x64_linux_hotspot_21.0.6_7.tar.gz"],
+)
+
+# kubectl v1.32.3 — for openclaw-exec sidecar (sandbox namespace access).
+http_file(
+    name = "kubectl_linux_amd64",
+    downloaded_file_path = "kubectl",
+    executable = True,
+    sha256 = "ab209d0c5134b61486a0486585604a616a5bb2fc07df46d304b3c95817b2d79f",
+    urls = ["https://dl.k8s.io/release/v1.32.3/bin/linux/amd64/kubectl"],
+)
+
+# Node.js v22.11.0 LTS linux-x64 — provides the 'node' binary for the
+# openclaw-exec sidecar (mcporter CLI is bundled using this runtime).
+http_archive(
+    name = "nodejs_linux_amd64",
+    build_file_content = 'exports_files(["bin/node"], visibility = ["//visibility:public"])\n',
+    sha256 = "4f862bab52039835efbe613b532238b6e4dde98d139a34e6923193e073438b13",
+    strip_prefix = "node-v22.11.0-linux-x64",
+    urls = ["https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-x64.tar.gz"],
 )
 
 # Crane binary for OCI image push/pull in agent containers and tests.

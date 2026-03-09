@@ -127,11 +127,6 @@ jobs:
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-image')
     uses: ./.github/workflows/openclaw-image.yml
     secrets: inherit
-  openclaw-exec-image:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-exec-image')
-    uses: ./.github/workflows/openclaw-exec-image.yml
-    secrets: inherit
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')

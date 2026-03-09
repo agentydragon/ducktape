@@ -75,6 +75,12 @@ jobs:
             //mcp_infra/exec:direct_load \
             exec-backend:latest \
             registry.allegedly.works/ducktape/exec-backend
+      - name: Build and push openclaw-exec
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //docker/openclaw-exec:load \
+            openclaw-exec:latest \
+            registry.allegedly.works/ducktape/openclaw-exec
       - name: Build and push homeassistant-proxy
         run: |-
           .github/scripts/harbor_push.sh \

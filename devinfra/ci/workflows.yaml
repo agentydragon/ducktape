@@ -59,14 +59,6 @@ workflows:
     secrets: inherit
     rbe: false
 
-  # TODO: Should also trigger on Python dependency changes (mcp_infra/exec/,
-  # airlock/, etc.) since the base image is built from those sources.
-  openclaw-exec-image:
-    trigger: { kind: path, pattern: "^docker/openclaw-exec/" }
-    events: [push]
-    secrets: inherit
-    rbe: false
-
   # Path-based workflows (non-Bazel)
   nix-flake-check:
     trigger: { kind: path, pattern: "^nix/" }
@@ -130,6 +122,10 @@ harbor_images:
   - bazel_target: //mcp_infra/exec:direct_load
     local_tag: exec-backend:latest
     remote_path: ducktape/exec-backend
+
+  - bazel_target: //docker/openclaw-exec:load
+    local_tag: openclaw-exec:latest
+    remote_path: ducktape/openclaw-exec
 
   - bazel_target: //homeassistant/proxy:load
     local_tag: homeassistant-proxy:latest
