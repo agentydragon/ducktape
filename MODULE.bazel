@@ -155,15 +155,6 @@ oci.pull(
     tag = "latest",
 )
 
-# KubeSpan E2E: Talos Linux container (KubeSpan peer for discovery test)
-oci.pull(
-    name = "talos_v1_9_5",
-    digest = "sha256:6a2a9dd6fca727ef0a920750ef4ef1addfd486198f87cbe9d6679a04ac80e707",
-    image = "ghcr.io/siderolabs/talos",
-    platforms = ["linux/amd64"],
-    tag = "v1.9.5",
-)
-
 # Distroless cc: minimal glibc + libstdc++ + ca-certificates, no shell.
 # Used for statically-linked-except-glibc binaries like aw-server-rust.
 oci.pull(
@@ -183,7 +174,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "stable",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_v1_9_5", "talos_v1_9_5_linux_amd64")
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")

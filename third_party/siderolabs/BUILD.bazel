@@ -14,16 +14,3 @@ filegroup(
     output_group = "tarball",
     visibility = ["//visibility:public"],
 )
-
-oci_load(
-    name = "talos_v1_9_5_load",
-    image = "@talos_v1_9_5_linux_amd64",
-    repo_tags = ["ghcr.io/siderolabs/talos:v1.9.5"],
-)
-
-filegroup(
-    name = "talos_v1_9_5_tarball",
-    srcs = [":talos_v1_9_5_load"],
-    output_group = "tarball",
-    visibility = ["//visibility:public"],
-)
