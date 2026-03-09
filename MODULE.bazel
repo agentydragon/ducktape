@@ -595,9 +595,7 @@ http_archive(
     build_file = "//third_party/siderolabs/talos_internal:BUILD.overlay.bazel",
     patch_args = ["-p0"],
     patches = [
-        "//third_party/siderolabs/talos_internal/patches:peer_status.patch",
         "//third_party/siderolabs/talos_internal/patches:peer_spec.patch",
-        "//third_party/siderolabs/talos_internal/patches:nftables_chain.patch",
     ],
     sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",
     strip_prefix = "talos-1.13.0-alpha.2",

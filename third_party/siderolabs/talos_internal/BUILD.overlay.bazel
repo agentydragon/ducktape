@@ -12,6 +12,13 @@ _P = "internal/app/machined/pkg/"
 # ─ Adapters ───────────────────────────────────────────────────────────────
 
 go_library(
+    name = "adapters_wireguard",
+    srcs = [_P + "adapters/wireguard/wireguard.go"],
+    importpath = "github.com/siderolabs/talos/" + _P + "adapters/wireguard",
+    visibility = ["//visibility:public"],
+)
+
+go_library(
     name = "adapters_kubespan",
     srcs = [
         _P + "adapters/kubespan/identity.go",
@@ -20,6 +27,7 @@ go_library(
     importpath = "github.com/siderolabs/talos/" + _P + "adapters/kubespan",
     visibility = ["//visibility:public"],
     deps = [
+        ":adapters_wireguard",
         "@com_github_mdlayher_netx//eui64",
         "@com_github_siderolabs_gen//value",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
