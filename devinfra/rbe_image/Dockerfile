@@ -51,6 +51,13 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
     && dpkg -i /tmp/libtinfo5.deb \
     && rm /tmp/libtinfo5.deb
 
+# Install Nix package manager using the Determinate Systems installer.
+# --init none skips systemd/launchd integration (not available in RBE containers).
+RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
+    | sh -s -- install linux --no-confirm --init none
+
+ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
+
 # dockerd wrapper: Firecracker's guest kernel lacks CONFIG_IP_NF_RAW, so
 # Docker 28's raw table rules for published ports (-p) fail. The wrapper sets
 # DOCKER_INSECURE_NO_IPTABLES_RAW=1 to skip raw table ops. goinit overwrites
