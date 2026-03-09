@@ -579,6 +579,7 @@ http_archive(
 # Internal adapter/controller code from Talos internal/.
 # Used by kubespand for nftables chain management and peer state machine.
 # MPL-2.0 licensed (compatible with AGPL-3.0).
+# IMPORTANT: keep in sync with talos_pkg_machinery version in third_party/go.MODULE.bazel.
 _TALOS_TAG = "v1.13.0-alpha.2"
 
 http_archive(

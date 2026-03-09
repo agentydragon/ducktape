@@ -406,6 +406,8 @@ go_deps.module(
     sum = "h1:D3Fpn2nQSQOhl8ZlAxijZAf7K6F8CM1uZq0afIGsr8Q=",
     version = "v0.2.4",
 )
+
+# IMPORTANT: keep in sync with _TALOS_TAG in MODULE.bazel.
 go_deps.module(
     path = "github.com/siderolabs/talos/pkg/machinery",
     sum = "h1:cU2m/BNoxhH51e1Kzkf23/LNvFmbSl8OZcoqc7aKOOA=",
