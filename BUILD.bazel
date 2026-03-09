@@ -105,6 +105,7 @@ lock(
 native_test(
     name = "requirements_test",
     src = ":requirements.update",
+    exec_properties = {"dockerNetwork": "bridge"},
     tags = [
         "no-cache",
         "requires-network",
