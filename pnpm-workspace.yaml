@@ -2,7 +2,7 @@ packages:
   - "x/agent_server/web"
   - "airlock/frontend"
   - "airlock/openclaw"
-  - "docker/mcporter"
+  - "third_party/mcporter"
   - "x/rspcache/admin_ui"
   - "props/frontend"
   - "util/frontend_visual_test"
