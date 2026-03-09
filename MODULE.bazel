@@ -588,7 +588,7 @@ http_archive(
 # Internal adapter/controller code from Talos internal/.
 # Used by kubespand for nftables chain management and peer state machine.
 # MPL-2.0 licensed (compatible with AGPL-3.0).
-_TALOS_TAG = "v1.13.0-alpha.2"
+_TALOS_COMMIT = "e6d8669fb7f821cee21f84fb2085fd3cf39ed320"
 
 http_archive(
     name = "talos_internal",
@@ -597,9 +597,9 @@ http_archive(
     patches = [
         "//third_party/siderolabs/talos_internal/patches:peer_spec.patch",
     ],
-    sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",
-    strip_prefix = "talos-1.13.0-alpha.2",
-    urls = ["https://github.com/siderolabs/talos/archive/refs/tags/" + _TALOS_TAG + ".tar.gz"],
+    sha256 = "7bfb34d5dcd43026fe70d4544f6ff23a4e1d9bdcd7d2abbd9eda8b3d1d84b998",
+    strip_prefix = "talos-" + _TALOS_COMMIT,
+    urls = ["https://github.com/siderolabs/talos/archive/" + _TALOS_COMMIT + ".tar.gz"],
 )
 
 # ─ QEMU nftables smoke test dependencies ──────────────────────────────────────
