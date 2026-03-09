@@ -233,7 +233,7 @@ importers:
         specifier: '*'
         version: 2026.2.26(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(@napi-rs/canvas@0.1.95)(@types/express@5.0.6)(hono@4.12.3)(node-llama-cpp@3.15.1(typescript@5.8.3))
 
-  docker/openclaw-exec:
+  docker/mcporter:
     dependencies:
       esbuild:
         specifier: '>=0.21.0'

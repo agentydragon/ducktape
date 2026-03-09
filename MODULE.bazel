@@ -224,7 +224,7 @@ npm.npm_translate_lock(
     data = [
         "//:airlock/frontend/package.json",
         "//:airlock/openclaw/package.json",
-        "//:docker/openclaw-exec/package.json",
+        "//:docker/mcporter/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",

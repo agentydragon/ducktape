@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-exec",
+  "name": "mcporter-bundle",
   "private": true,
   "type": "module",
   "dependencies": {
