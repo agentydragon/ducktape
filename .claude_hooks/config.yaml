@@ -1,0 +1,16 @@
+# TODO: Integrate with settings.py (consolidate env-based and file-based config).
+k8s:
+  server: https://api.allegedly.works:16443
+  service_account: claude-code-web
+  sa_namespace: default
+  namespace: claude-sandbox
+
+k8s_secrets:
+  namespace: claude-sandbox
+  secrets:
+    - name: github-token
+      data:
+        token: GITHUB_TOKEN
+    - name: buildbuddy-api-key
+      data:
+        api-key: BUILDBUDDY_API_KEY

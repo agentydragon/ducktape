@@ -1,51 +1,31 @@
 # Claude Hooks Secrets
 
-This directory contains age-encrypted secrets that are decrypted during Claude Code session startup.
+Secrets are now managed via Kubernetes SealedSecrets in the cluster, replacing
+the previous age-encrypted files.
 
-## Structure
+## Architecture
 
-Each `*.age` file decrypts to one of two JSON formats:
+1. `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` (SA token) is provided via Anthropic's env config
+2. At session start, the hook reads secrets from k8s Secrets in the `claude-sandbox` namespace
+3. Secret-to-env-var mapping is defined in `.claude_hooks/config.yaml`
 
-### Flat env vars (legacy, all other secrets)
+## SealedSecrets
 
-```json
-{ "ENV_VAR_NAME": "value", "ANOTHER_VAR": "another value" }
+Secrets are stored as SealedSecrets in `cluster/k8s/claude-sandbox-secrets/`:
+
+- `github-token-sealed.yaml` → `GITHUB_TOKEN`
+- `buildbuddy-api-key-sealed.yaml` → `BUILDBUDDY_API_KEY`
+
+To re-seal a secret:
+
+```bash
+kubectl create secret generic <name> --namespace=claude-sandbox \
+  --from-literal=<key>=<value> --dry-run=client -o yaml | \
+  ./cluster/scripts/seal-secret.sh /dev/stdin cluster/k8s/claude-sandbox-secrets/<name>-sealed.yaml
 ```
-
-All keys are exported as shell environment variables.
-
-### Typed secrets (new format)
-
-```json
-{"type": "<type>", ...fields}
-```
-
-The `"type"` discriminator triggers type-specific handling. Typed secrets are **not** exported
-to the shell — they are consumed internally by the hook.
-
-#### `kubeconfig`
-
-```json
-{
-  "type": "kubeconfig",
-  "server": "https://api.allegedly.works:16443",
-  "token": "<ServiceAccount token>"
-}
-```
-
-The API endpoint uses a publicly-trusted TLS certificate (via kube-api-proxy), so no
-cluster CA is needed. If behind a TLS-inspecting proxy, the hook injects the proxy CA
-into the kubeconfig so kubectl trusts the proxy's certificate.
-
-## Kubeconfig Setup
-
-The kubeconfig secret is regenerated automatically by `bazel run //cluster:bootstrap` after
-cluster deployment. The bootstrap script uses `KubeconfigSecret` from
-<devinfra/claude_hooks/kubeconfig_setup.py> to build and encrypt the secret.
 
 ## Security
 
-- Secrets are encrypted with age (X25519)
-- Decryption key is provided via `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` env var
 - The `claude-code-web` ServiceAccount has access to the `claude-sandbox` namespace
 - Resource quotas limit what can be created in the sandbox
+- SealedSecrets are encrypted with the cluster's stable RSA keypair

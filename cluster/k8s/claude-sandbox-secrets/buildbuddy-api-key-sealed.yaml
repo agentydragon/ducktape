@@ -1,0 +1,13 @@
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: claude-sandbox
+spec:
+  encryptedData:
+    api-key: AgAGYiGyYmAK6MThMcfhHo6dsklOLg5fbBRaAS+php7CsGDdJtENO8UfYUGDBEwV9n1aUdZl7qUGFA3LiH3ePad649tf+Mx30+4lOZ88+bnvrKGTtkF2WiHPasefMRiyAUssrhAuMzsW9jJFVD7LQHqO9Ug13wR0qAfHn8eKxrnjjWjbTlNwp98SqFlVF3O7v13XtoFuCCdG+k02s5PaIjg0KE/50TAwCh9+YKtnLARahEI6sgh4Q0D0ANtozjrqW7dCrV5gnwWhs3u29zzLF+LwqhzM/HCsg1icuPqbgwTjVSjBgKvT+j06FX5ySC7QfQMKkjEhnhJT/KlzL6/YHyjIQAaHe+CerIuYglBm43nok2nQssDgs7Q1l8589izuoyx8EUwcpL6CazGWwkSruFtQoCiPdXfDDUxcDcDZ95c/r4nXjclE65VwBIiAGmhfgTLHZtSb/9RTyiYY50z4Yatb95Y3tbcXJiB3maAZXMGONBvEpVApLgW8muSteu6VE1qPBZmgfGAqpWLqkTXITMdBSzvz77AuyD3MIJk2uUB1XgNwZWob0oAj3LhUi/Vq0HFcZZkwpbHrl/uqcIdsepwibxkjSwkJxKdaOKuTBfnSVtf+Q0HIRUi46coJ1G5A636OF0poW9seRZDNAw49d24Qx7IkjmStD4JheRpo2HTsYo7GA1iN2stx4mvoEU4d6smskhF6yHsdzY8y2LG/KihafTSdyg==
+  template:
+    metadata:
+      name: buildbuddy-api-key
+      namespace: claude-sandbox
+    type: Opaque

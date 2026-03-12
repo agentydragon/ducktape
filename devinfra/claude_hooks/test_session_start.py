@@ -14,7 +14,6 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.claude_hooks import settings
 from devinfra.claude_hooks.claude_api.hook_input import HookSource
 from devinfra.claude_hooks.testing import shell_helpers
 from devinfra.claude_hooks.testing.fixtures import MockEgressProxyFixture, collect_supervisor_logs
@@ -126,29 +125,6 @@ class TestFullSessionStartHook:
         result = await run_session_start_hook(isolated_dirs.project, source=HookSource.RESUME)
 
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
-
-    async def test_secrets_decrypted_into_env_file(
-        self, monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, hook_env: None
-    ) -> None:
-        """Run hook with age key set, verify decrypted secret is visible in env file."""
-        # Test keypair (committed in testdata — NOT a real secret)
-        test_age_key = "AGE-SECRET-KEY-1DVR9RHP2MVZYD6HE46W4JNWMA673U8FYS00TCLX9VNXCFMQJX5ZQTUEP9E"
-
-        # Symlink .claude_hooks/ from testdata into the test project dir (read-only, no copy needed).
-        # Can't point CLAUDE_PROJECT_DIR at runfiles directly because the hook writes to .git/hooks/.
-        test_secrets_src = Path(__file__).parent / "testdata" / "test_workspace" / ".claude_hooks"
-        (isolated_dirs.project / ".claude_hooks").symlink_to(test_secrets_src)
-
-        monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_AGE_KEY", test_age_key)
-
-        result = await run_session_start_hook(isolated_dirs.project)
-        assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-
-        # Verify the secret is visible when sourcing the env file
-        shell_result = await shell_helpers.run_with_env_file(
-            command="echo $TEST_SECRET_TOKEN", env_file=isolated_dirs.env_file, check=True
-        )
-        assert shell_result.stdout.strip() == "test-value-12345"
 
 
 if __name__ == "__main__":

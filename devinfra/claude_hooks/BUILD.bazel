@@ -137,17 +137,6 @@ py_library(
 )
 
 py_library(
-    name = "kubeconfig_setup",
-    srcs = ["kubeconfig_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
     name = "mkcert_setup",
     srcs = ["mkcert_setup.py"],
     imports = ["../.."],
@@ -207,13 +196,14 @@ py_library(
 )
 
 py_library(
-    name = "secrets_setup",
-    srcs = ["secrets_setup.py"],
+    name = "k8s_secrets_setup",
+    srcs = ["k8s_secrets_setup.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":kubeconfig_setup",
-        "@pypi//pyrage",
+        "@pypi//kubernetes",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -305,12 +295,11 @@ py_library(
         ":env_file",
         ":errors",
         ":fork_remote_setup",
-        ":kubeconfig_setup",
+        ":k8s_secrets_setup",
         ":mkcert_setup",
         ":nix_setup",
         ":otel",
         ":precommit_setup",
-        ":secrets_setup",
         ":settings",
         ":tmpfs_setup",
         ":tracing",
@@ -519,20 +508,6 @@ py_test(
         "//devinfra/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_secrets_setup",
-    srcs = ["test_secrets_setup.py"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        ":kubeconfig_setup",
-        ":secrets_setup",
-        "@pypi//pyrage",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

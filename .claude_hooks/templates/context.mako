@@ -35,7 +35,7 @@ Ollama: OpenAI-compatible LLM inference at `https://ollama.allegedly.works/v1` (
 % if "BUILDBUDDY_API_KEY" in secrets.env_vars:
 `BUILDBUDDY_API_KEY`: BuildBuddy remote cache/execution key (also configured in ~/.config/bazel/buildbuddy.bazelrc).
 % endif
-% if "KUBECONFIG_B64" in secrets.env_vars:
+% if "KUBECONFIG" in secrets.env_vars:
 `KUBECONFIG`: Points to decoded kubeconfig for the `cluster/` Talos k8s cluster. ServiceAccount `claude-code-web` with access to the `claude-sandbox` namespace (pods, services, secrets, exec). Resource limits: 4 CPU, 8Gi memory, 10 pods. Use `kubectl` for `cluster/` operations (deploy, inspect, debug).
 % endif
 % endif

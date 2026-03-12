@@ -10,10 +10,9 @@ py_library(
     imports = ["../.."],
     visibility = ["//cluster:__pkg__"],
     deps = [
-        "//devinfra/claude_hooks:kubeconfig_setup",
         "//util/bazel:workspace",
         "@pypi//kubernetes",
-        "@pypi//pyrage",
+        "@pypi//pyyaml",
     ],
 )
 

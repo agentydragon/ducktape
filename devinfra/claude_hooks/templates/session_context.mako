@@ -43,12 +43,9 @@ Hook environments installing in background (pid ${precommit.pid}). First `git co
 % if secrets:
 
 ## Secrets
-${len(secrets.env_vars)} env var(s) decrypted from age-encrypted component files.
-% if secrets.skipped_files:
-Skipped (key mismatch): ${", ".join(secrets.skipped_files)}.
-% endif
-% if secrets.kubeconfig:
-`kubectl`: configured for `${secrets.kubeconfig.server}`, namespace `claude-sandbox` (full admin), read-only in `props`.
+${len(secrets.env_vars)} env var(s) loaded from k8s cluster secrets.
+% if secrets.kubeconfig_path:
+`kubectl`: configured for `claude-sandbox` namespace (full admin), read-only in `props`.
 % endif
 % endif
 % if buildbuddy_configured:

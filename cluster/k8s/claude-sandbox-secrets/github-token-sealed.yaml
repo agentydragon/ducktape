@@ -1,0 +1,13 @@
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: github-token
+  namespace: claude-sandbox
+spec:
+  encryptedData:
+    token: AgA64NuN0PXEhetedjRE9ni8WOTZTLcH3H6HVqUap9kKVz1DBNjcpCbYB/Fs65MAai8DHwKVzpi60WzbKCglD4MK4Nx4pR9nGBvSv2g1Xh+yAdSk6IOweeHXJE37USnekpGYvUGJ2SuAk5vaYYl68Uq/6Xg8pPUWTZfb83uKXqXPeO86vF1mDlqGD+v3yidbiPA4RDFQMHW8pZQ1DsAUEx+3A7/56i2EJQi6J/43Tgc3zvktPn1evFMofvpEUTnR5kKvMYFteTs2cGSf7vadUB/OK/1jxnXhx/ooZw/kKvBIhBJs7ta7fio+MDcv/9oRDYtb7MthRoLV2y9eD44+NLnVxYgKDAKz2MGK/qXPvY+gTURm2wHdt5HoURHlOqgEP8WRX+AwNsxJT5u9og5GYdwMvIA6Vd/Vysmb0+CCt2olawP6R2FjYwGNXE089UpqYoPEt1sYzaYLvkWFRfGi+GjC15hE9f1gVjKO1PER1SFx2Z/amZbegFn5SFWYpstYlx17vkE8gfDggfl1V1Lx4BxsXil5LEZue9vyHnAQXIS/14SJ2PXf1zElUVQ8dnnZ1uY6DNCs/uKY97HkY+F7BaQQjyIvwKiwD+v5WPV0smH0U1d3hV7yrLoF9Y8UVxcBjyqU8f6mSlxLx67U+xeH6WHaLxCx7QXcrysxRp8q9+bWAKnrtlGIpLC9lNwVZ8AwGBjIsDLBBfa2ZQ7AA5K73lvHR+7r8+lJj14OQj4TVqp+hnxa2al/foHS
+  template:
+    metadata:
+      name: github-token
+      namespace: claude-sandbox
+    type: Opaque
