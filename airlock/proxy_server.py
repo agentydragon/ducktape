@@ -403,9 +403,9 @@ class AirlockServer(EnhancedFastMCP):
         """
         action = await self.coordinator.storage.get_action(key)
         if action is None:
-            raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+            raise ValueError(f"Action not found: {key}")
         if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
+            raise ValueError(f"Action {key} is not pending ({action.state.status=})")
         result = await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
         fut = self.coordinator.remove_pending(key)
         if fut is not None and not fut.done():

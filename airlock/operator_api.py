@@ -79,16 +79,16 @@ def _extract_bearer_token(request: Request) -> str:
 
 def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> FastAPI:
     """Build the FastAPI sub-application for operator REST endpoints."""
-    app = FastAPI(title="Airlock Operator API", version="1.0.0")
     operator_auth = _OperatorAuth(oidc_issuer)
 
     async def require_operator(request: Request) -> dict[str, Any]:
         token = _extract_bearer_token(request)
         return await operator_auth.validate(token)
 
+    app = FastAPI(title="Airlock Operator API", version="1.0.0", dependencies=[Depends(require_operator)])
+
     @app.get("/actions", response_model=list[Action])
     async def list_actions(
-        _claims: dict = Depends(require_operator),
         status: ActionStatus | None = Query(default=None),
         limit: int = Query(default=100, ge=1, le=1000),
         offset: int = Query(default=0, ge=0),
@@ -96,7 +96,7 @@ def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> 
         return await coordinator.storage.list_actions(status, limit=limit, offset=offset)
 
     @app.get("/actions/{session_key}/{action_seq}", response_model=Action)
-    async def get_action(session_key: str, action_seq: int, _claims: dict = Depends(require_operator)) -> Action:
+    async def get_action(session_key: str, action_seq: int) -> Action:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
         action = await coordinator.storage.get_action(key)
         if action is None:
@@ -104,7 +104,7 @@ def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> 
         return action
 
     @app.post("/actions/{session_key}/{action_seq}/approve", status_code=204)
-    async def approve_action(session_key: str, action_seq: int, _claims: dict = Depends(require_operator)) -> None:
+    async def approve_action(session_key: str, action_seq: int) -> None:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
         try:
             await coordinator.decide(key, ApproveDecision())
@@ -114,9 +114,7 @@ def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> 
             raise HTTPException(status_code=409, detail=str(e)) from e
 
     @app.post("/actions/{session_key}/{action_seq}/reject", status_code=204)
-    async def reject_action(
-        session_key: str, action_seq: int, body: RejectBody | None = None, _claims: dict = Depends(require_operator)
-    ) -> None:
+    async def reject_action(session_key: str, action_seq: int, body: RejectBody | None = None) -> None:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
         reason = body.reason if body else None
         try:
@@ -125,7 +123,7 @@ def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> 
             raise HTTPException(status_code=409, detail=str(e)) from e
 
     @app.get("/events")
-    async def sse_events(request: Request, _claims: dict = Depends(require_operator)) -> StreamingResponse:
+    async def sse_events(request: Request) -> StreamingResponse:
         queue = coordinator.subscribe_sse()
 
         async def event_stream():

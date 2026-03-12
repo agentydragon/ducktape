@@ -43,7 +43,7 @@
         loading = false;
       }
       const api = await getApiClient();
-      api.onListChanged(() => {
+      api.onEvent(() => {
         loadList();
       });
     }

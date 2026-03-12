@@ -10,11 +10,22 @@ import type { Action, ActionKey, ActionStatus } from "./types.ts";
 
 type Callback<T> = (data: T) => void;
 
+function actionKeyId(key: ActionKey): string {
+  return `${key.session_key}/${key.action_seq}`;
+}
+
+interface SSEEvent {
+  type: string;
+  action?: Action;
+  session_key?: string;
+  action_seq?: number;
+}
+
 export class AirlockApiClient {
   private token: string;
   private sseAbort: AbortController | null = null;
   private actionCallbacks = new Map<string, Set<Callback<Action>>>();
-  private listChangedCallbacks = new Set<Callback<void>>();
+  private eventCallbacks = new Set<Callback<SSEEvent>>();
 
   private constructor(token: string) {
     this.token = token;
@@ -46,16 +57,18 @@ export class AirlockApiClient {
         buffer = lines.pop()!;
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
+          let data: SSEEvent;
           try {
-            const data = JSON.parse(line.slice(6)) as { action?: Action };
-            for (const cb of this.listChangedCallbacks) cb(undefined as unknown as void);
-            if (data.action) {
-              const key = `${data.action.key.session_key}/${data.action.key.action_seq}`;
-              const cbs = this.actionCallbacks.get(key);
-              if (cbs) for (const cb of cbs) cb(data.action);
-            }
-          } catch {
-            // Ignore keepalive or malformed events
+            data = JSON.parse(line.slice(6)) as SSEEvent;
+          } catch (e) {
+            console.warn("Malformed SSE event:", line, e);
+            continue;
+          }
+          for (const cb of this.eventCallbacks) cb(data);
+          if (data.action) {
+            const id = actionKeyId(data.action.key);
+            const cbs = this.actionCallbacks.get(id);
+            if (cbs) for (const cb of cbs) cb(data.action);
           }
         }
       }
@@ -75,15 +88,15 @@ export class AirlockApiClient {
     });
   }
 
-  /** Subscribe to list change events (new actions arriving). */
-  onListChanged(cb: Callback<void>): () => void {
-    this.listChangedCallbacks.add(cb);
-    return () => this.listChangedCallbacks.delete(cb);
+  /** Subscribe to all SSE events. Returns unsubscribe fn. */
+  onEvent(cb: Callback<SSEEvent>): () => void {
+    this.eventCallbacks.add(cb);
+    return () => this.eventCallbacks.delete(cb);
   }
 
   /** Subscribe to updates for a specific action. Returns unsubscribe fn. */
   subscribeAction(key: ActionKey, cb: Callback<Action>): () => void {
-    const id = `${key.session_key}/${key.action_seq}`;
+    const id = actionKeyId(key);
     if (!this.actionCallbacks.has(id)) {
       this.actionCallbacks.set(id, new Set());
     }

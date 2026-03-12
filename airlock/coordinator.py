@@ -58,12 +58,12 @@ class ActionCoordinator:
         """Resolve a pending decision. Raises ValueError if not decidable."""
         action = await self.storage.get_action(key)
         if action is None:
-            raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+            raise ValueError(f"Action not found: {key}")
         if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
+            raise ValueError(f"Action {key} is not pending ({action.state.status=})")
         fut = self._pending.get(key)
         if fut is None or fut.done():
-            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision")
+            raise ValueError(f"Action {key} is not awaiting a human decision")
         fut.set_result(decision)
 
     # ── SSE events ─────────────────────────────────────────────────────────────

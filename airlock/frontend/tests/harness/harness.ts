@@ -15,6 +15,8 @@ const PENDING_BASH: Action = {
   call: { server_namespace: "runtime", tool_name: "bash", arguments: { argv: ["rm", "-rf", "/tmp/test"] } },
   justification: "Clean up test directory after running integration tests",
   state: { status: "pending" },
+  client_id: null,
+  subject: null,
 };
 
 const PENDING_PYTHON: Action = {
@@ -24,6 +26,8 @@ const PENDING_PYTHON: Action = {
   call: { server_namespace: "runtime", tool_name: "python_exec", arguments: { code: 'print("hello world")' } },
   justification: "Debug output for tracing pipeline state",
   state: { status: "pending" },
+  client_id: null,
+  subject: null,
 };
 
 const DONE_SUCCEEDED: Action = {
@@ -44,6 +48,8 @@ const DONE_SUCCEEDED: Action = {
       isError: false,
     },
   },
+  client_id: null,
+  subject: null,
 };
 
 const REJECTED: Action = {
@@ -57,6 +63,8 @@ const REJECTED: Action = {
   },
   justification: "Fetch external resource for processing",
   state: { status: "rejected", reason: "Suspicious external network request" },
+  client_id: null,
+  subject: null,
 };
 
 const pages: Record<string, { component: unknown; props: Record<string, unknown> }> = {

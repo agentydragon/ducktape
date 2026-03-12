@@ -62,8 +62,8 @@ class _ActionRow(_Base):
     justification: Mapped[str] = mapped_column(Text, nullable=False)
     state_json: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
-    client_id: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
-    subject: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    client_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    subject: Mapped[str | None] = mapped_column(String, nullable=True)
 
     def to_action(self) -> Action:
         return Action(
@@ -121,13 +121,7 @@ class ActionStorage:
     # ── Action CRUD ──────────────────────────────────────────────────────────
 
     async def create_action(
-        self,
-        *,
-        session_key: str,
-        call: ToolCall,
-        justification: str,
-        client_id: str | None = None,
-        subject: str | None = None,
+        self, *, session_key: str, call: ToolCall, justification: str, client_id: str | None, subject: str | None
     ) -> Action:
         """Insert a new pending action, atomically assigning the next action_seq."""
         state = PendingState()
@@ -178,7 +172,7 @@ class ActionStorage:
         async with self._session_factory() as session:
             action_row = await session.get(_ActionRow, (key.session_key, key.action_seq))
             if action_row is None:
-                raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
+                raise ValueError(f"Action not found: {key}")
             action_row.state_json = _ACTION_STATE_TA.dump_json(new_state).decode()
             action_row.status = new_state.status
 

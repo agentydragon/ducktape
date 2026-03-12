@@ -43,6 +43,9 @@ class ActionKey(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    def __str__(self) -> str:
+        return f"{self.session_key}/{self.action_seq}"
+
 
 # ── Action lifecycle states ───────────────────────────────────────────────────
 
@@ -114,8 +117,8 @@ class Action(BaseModel):
     call: ToolCall
     justification: str
     state: ActionState
-    client_id: str | None = None
-    subject: str | None = None
+    client_id: str | None
+    subject: str | None
 
     model_config = ConfigDict(extra="forbid")
 

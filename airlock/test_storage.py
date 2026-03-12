@@ -23,7 +23,9 @@ _NOW = datetime.now(tz=UTC)
 
 async def test_create_and_get(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={"argv": ["echo", "hi"]})
-    action = await storage.create_action(session_key="sess-a", call=call, justification="testing")
+    action = await storage.create_action(
+        session_key="sess-a", call=call, justification="testing", client_id=None, subject=None
+    )
     assert action.key == ActionKey(session_key="sess-a", action_seq=1)
     assert isinstance(action.state, PendingState)
 
@@ -41,7 +43,9 @@ async def test_get_missing_returns_none(storage: ActionStorage):
 
 async def test_update_state(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
-    action = await storage.create_action(session_key="sess-a", call=call, justification="test")
+    action = await storage.create_action(
+        session_key="sess-a", call=call, justification="test", client_id=None, subject=None
+    )
     updated = await storage.update_state(
         action.key, DoneState(outcome=CallToolResult(content=[TextContent(type="text", text="ok")]))
     )
@@ -52,8 +56,8 @@ async def test_update_state(storage: ActionStorage):
 
 async def test_list_actions_filter(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
-    a1 = await storage.create_action(session_key="sess-b", call=call, justification="a")
-    a2 = await storage.create_action(session_key="sess-b", call=call, justification="b")
+    a1 = await storage.create_action(session_key="sess-b", call=call, justification="a", client_id=None, subject=None)
+    a2 = await storage.create_action(session_key="sess-b", call=call, justification="b", client_id=None, subject=None)
     await storage.update_state(a2.key, RejectedState(reason="no"))
 
     pending = await storage.list_actions(ActionStatus.PENDING)
@@ -67,8 +71,8 @@ async def test_list_actions_filter(storage: ActionStorage):
 
 async def test_list_actions_all(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
-    a1 = await storage.create_action(session_key="sess-all", call=call, justification="x")
-    a2 = await storage.create_action(session_key="sess-all", call=call, justification="y")
+    a1 = await storage.create_action(session_key="sess-all", call=call, justification="x", client_id=None, subject=None)
+    a2 = await storage.create_action(session_key="sess-all", call=call, justification="y", client_id=None, subject=None)
 
     all_actions = await storage.list_actions(None)
     keys = {a.key for a in all_actions}
@@ -78,17 +82,25 @@ async def test_list_actions_all(storage: ActionStorage):
 
 async def test_action_seq_auto_assigned(storage: ActionStorage):
     call = ToolCall(server_namespace="test", tool_name="exec", arguments={})
-    a1 = await storage.create_action(session_key="seq-sess", call=call, justification="first")
+    a1 = await storage.create_action(
+        session_key="seq-sess", call=call, justification="first", client_id=None, subject=None
+    )
     assert a1.key.action_seq == 1
 
-    a2 = await storage.create_action(session_key="seq-sess", call=call, justification="second")
+    a2 = await storage.create_action(
+        session_key="seq-sess", call=call, justification="second", client_id=None, subject=None
+    )
     assert a2.key.action_seq == 2
 
-    a3 = await storage.create_action(session_key="seq-sess", call=call, justification="third")
+    a3 = await storage.create_action(
+        session_key="seq-sess", call=call, justification="third", client_id=None, subject=None
+    )
     assert a3.key.action_seq == 3
 
     # Different session starts from 1
-    other = await storage.create_action(session_key="other-sess", call=call, justification="first")
+    other = await storage.create_action(
+        session_key="other-sess", call=call, justification="first", client_id=None, subject=None
+    )
     assert other.key.action_seq == 1
 
 
