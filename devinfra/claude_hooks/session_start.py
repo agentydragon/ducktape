@@ -52,9 +52,6 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-# Re-export for local use. Canonical definition in k8s_secrets_setup.
-_HOOKS_DOTDIR = k8s_secrets_setup.HOOKS_DOTDIR
-
 
 # ============================================================================
 # Platform setup result
@@ -110,7 +107,7 @@ def _render_extra_context(
     fork_result: fork_remote_setup.ForkRemoteSetup | None = None,
 ) -> str:
     """Render repo-specific context from .claude_hooks/templates/context.mako if it exists."""
-    extra_template_path = project_dir / _HOOKS_DOTDIR / "templates" / "context.mako"
+    extra_template_path = project_dir / k8s_secrets_setup.HOOKS_DOTDIR / "templates" / "context.mako"
     if not extra_template_path.exists():
         return ""
     template = Template(extra_template_path.read_text())
@@ -196,8 +193,6 @@ async def _setup_web(
     """
     logger.info("Setting up dev environment...")
 
-    secrets: k8s_secrets_setup.K8sSecretsResult | None = None
-
     async def traced_supervisor_start():
         with tracer.start_as_current_span("supervisor_start", context=root_ctx):
             return await supervisor_setup.start(settings)
@@ -269,17 +264,6 @@ async def _setup_web(
             bazelisk_skipped=skipped,
         )
 
-    # Run BuildBuddy setup first so we know if RBE is available
-    with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
-        buildbuddy_result = await run_in_thread(
-            lambda: buildbuddy_setup.setup_buildbuddy(
-                project_dir, api_key=secrets.env_vars.get("BUILDBUDDY_API_KEY") if secrets else None
-            )
-        )
-    buildbuddy_configured = (
-        isinstance(buildbuddy_result, buildbuddy_setup.BuildbuddySetup) and buildbuddy_result.configured
-    )
-
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
     #   supervisor_task ──┬── proxy_task ──── setup_mkcert_with_proxy
@@ -288,8 +272,9 @@ async def _setup_web(
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
 
-    # Create proxy task with BuildBuddy configuration state
-    proxy_task = asyncio.create_task(setup_proxy_with_supervisor(buildbuddy_configured=buildbuddy_configured))
+    # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
+    # k8s secrets which in turn depend on proxy being up for TLS).
+    proxy_task = asyncio.create_task(setup_proxy_with_supervisor())
 
     async def mkcert_generate_certs() -> mkcert_setup.MkcertSetup:
         """Generate mkcert certs (no proxy dependency — runs immediately in parallel)."""
@@ -344,16 +329,12 @@ async def _setup_web(
     tmpfs_result: tmpfs_setup.TmpfsSetup | BaseException = results[5]
     mkcert_result: mkcert_setup.MkcertSetup | BaseException = results[6]
     cli_tools_result: list[str] | BaseException = results[7]
-    # buildbuddy was set up earlier (before parallel tasks)
-    buildbuddy: buildbuddy_setup.BuildbuddySetup | BaseException = buildbuddy_result
 
     # Log non-critical failures
     if isinstance(precommit_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", precommit_result)
     if isinstance(bazelisk_result, BaseException):
         logger.warning("Failed to install bazelisk: %s", bazelisk_result)
-    if isinstance(buildbuddy, BaseException):
-        logger.warning("Failed to configure BuildBuddy: %s", buildbuddy)
     if isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
     if isinstance(mkcert_result, SkipError):
@@ -389,6 +370,7 @@ async def _setup_web(
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
     # Read k8s secrets now that combined CA is available for TLS.
+    secrets: k8s_secrets_setup.K8sSecretsResult | None = None
     if settings.k8s_token and hook_config:
         with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
             secrets = k8s_secrets_setup.setup_k8s_secrets(
@@ -397,6 +379,18 @@ async def _setup_web(
                 combined_ca_path=combined_ca,
                 config=hook_config,
             )
+
+    # Configure BuildBuddy now that k8s secrets (with API key) are available.
+    buildbuddy_api_key = secrets.env_vars.get("BUILDBUDDY_API_KEY") if secrets else None
+    with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
+        buildbuddy_result = await run_in_thread(
+            lambda: buildbuddy_setup.setup_buildbuddy(project_dir, api_key=buildbuddy_api_key)
+        )
+    buildbuddy_configured = (
+        isinstance(buildbuddy_result, buildbuddy_setup.BuildbuddySetup) and buildbuddy_result.configured
+    )
+    if isinstance(buildbuddy_result, BaseException):
+        logger.warning("Failed to configure BuildBuddy: %s", buildbuddy_result)
 
     # Ensure 'fork' git remote when GITHUB_TOKEN is available.
     fork_result: fork_remote_setup.ForkRemoteSetup | None = None
@@ -485,7 +479,7 @@ async def run_session(hook_input: HookInput, settings: HookSettings, env_file_pa
     logger.info("Session directory: %s", settings.session_dir)
 
     # Load hook config (general config file, not gated on k8s_token).
-    config_path = project_dir / _HOOKS_DOTDIR / "config.yaml"
+    config_path = project_dir / k8s_secrets_setup.HOOKS_DOTDIR / "config.yaml"
     hook_config = k8s_secrets_setup.load_config(config_path) if config_path.exists() else None
 
     # K8s secrets are read after platform setup (proxy must be up for web mode TLS).

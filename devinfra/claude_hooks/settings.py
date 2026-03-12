@@ -84,7 +84,6 @@ class HookSettings(BaseSettings):
         default=None, description="Path to system bazel (used when install_bazelisk=False)"
     )
 
-    # K8s cluster access (SA token for reading secrets from cluster)
     k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
 
     # OpenTelemetry

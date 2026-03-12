@@ -41,7 +41,6 @@ def generate(root: Path) -> None:
     log.info("Loading kubeconfig from %s", kubeconfig_path)
     config.load_kube_config(kubeconfig_path)
 
-    log.info("Reading token from Secret %s/%s", sa_namespace, SA_TOKEN_SECRET_NAME)
     v1 = client.CoreV1Api()
     secret = v1.read_namespaced_secret(SA_TOKEN_SECRET_NAME, sa_namespace)
     # Secret data values are base64-encoded by the K8s API
