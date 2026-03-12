@@ -63,7 +63,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":models",
-        ":storage",
+        "@pypi//aiosqlite",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -79,19 +81,6 @@ py_library(
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "storage",
-    srcs = ["storage.py"],
-    imports = [".."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":models",
-        "@pypi//aiosqlite",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -127,7 +116,6 @@ py_library(
         ":coordinator",
         ":models",
         ":predicates",
-        ":storage",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra:urls",
@@ -232,7 +220,6 @@ py_library(
         ":operator_api",
         ":predicates",
         ":proxy_server",
-        ":storage",
         "//mcp_infra:prefix",
         "//mcp_infra:resource_utils",
         "//mcp_utils",
@@ -264,16 +251,13 @@ py_test(
 )
 
 py_test(
-    name = "test_storage",
-    srcs = ["test_storage.py"],
+    name = "test_coordinator",
+    srcs = ["test_coordinator.py"],
     deps = [
         ":conftest",
+        ":coordinator",
         ":models",
-        ":storage",
-        "@pypi//aiosqlite",
         "@pypi//mcp",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

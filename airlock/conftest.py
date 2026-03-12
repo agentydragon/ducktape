@@ -33,7 +33,6 @@ from airlock.oidc_auth import DualVerifierOIDCProxy
 from airlock.operator_api import DECIDE_SCOPE, create_operator_api
 from airlock.predicates import NeedsHumanDecision, PredicateFn
 from airlock.proxy_server import PROPOSE_SCOPE, READ_SCOPE, AirlockServer
-from airlock.storage import ActionStorage
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import read_text_json_typed
 from mcp_utils.resources import parse_tool_result_as
@@ -204,7 +203,7 @@ class OperatorClient:
             resp = await client.post(
                 f"{self._base_url}/api/actions/{key.session_key}/{key.action_seq}/reject",
                 headers=self._headers,
-                json={"reason": reason} if reason else None,
+                json={"reason": reason},
             )
             resp.raise_for_status()
 
@@ -265,13 +264,14 @@ def operator_jwt(rsa_key_pair, mock_oidc_issuer):
 
 
 @pytest.fixture
-async def storage(tmp_path: Path) -> AsyncGenerator[ActionStorage]:
-    """Temporary in-memory storage for tests."""
-    store = await ActionStorage.initialize(tmp_path / "test.db")
+async def coordinator(tmp_path: Path) -> AsyncGenerator[ActionCoordinator]:
+    """Temporary coordinator with in-memory SQLite for tests."""
+    coord = ActionCoordinator(db_path=tmp_path / "test.db")
+    await coord.initialize()
     try:
-        yield store
+        yield coord
     finally:
-        await store.close()
+        await coord.close()
 
 
 class EchoBackend:
@@ -310,9 +310,8 @@ GateAppFactory = Callable[..., Starlette]
 def make_gate_app(rsa_key_pair: RSAKeyPair, tmp_path: Path, mock_oidc_issuer: str) -> GateAppFactory:
     """Fixture factory: creates a full Starlette app with /mcp and /api mounts.
 
-    Creates coordinator first, then passes it to both AirlockServer (MCP) and
-    the operator REST API. Storage is set on the coordinator during the server's
-    lifespan startup.
+    Creates coordinator first (owns storage), then passes it to both AirlockServer
+    (MCP) and the operator REST API.
     """
 
     _default_wait = YieldAfterMs(timeout_ms=0)
@@ -332,10 +331,9 @@ def make_gate_app(rsa_key_pair: RSAKeyPair, tmp_path: Path, mock_oidc_issuer: st
             issuer_url="http://localhost",
             require_authorization_consent=False,
         )
-        coordinator = ActionCoordinator()
+        coordinator = ActionCoordinator(db_path=tmp_path / "gate.db")
         gate = AirlockServer(
             backends=dict(backends),
-            db_path=tmp_path / "gate.db",
             predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
             public_base_url="http://localhost",
             default_wait_mode=default_wait_mode,
@@ -344,9 +342,19 @@ def make_gate_app(rsa_key_pair: RSAKeyPair, tmp_path: Path, mock_oidc_issuer: st
         )
         mcp_app = gate.http_app(path="/")
         operator_app = create_operator_api(coordinator=coordinator, oidc_issuer=mock_oidc_issuer)
-        return Starlette(
-            routes=[Mount("/mcp", app=mcp_app), Mount("/api", app=operator_app)], lifespan=mcp_app.lifespan
-        )
+
+        mcp_lifespan = mcp_app.router.lifespan_context
+
+        @asynccontextmanager
+        async def _lifespan(app):
+            await coordinator.initialize()
+            try:
+                async with mcp_lifespan(app):
+                    yield
+            finally:
+                await coordinator.close()
+
+        return Starlette(routes=[Mount("/mcp", app=mcp_app), Mount("/api", app=operator_app)], lifespan=_lifespan)
 
     return _factory
 

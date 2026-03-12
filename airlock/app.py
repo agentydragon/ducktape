@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -77,10 +79,9 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Any:
 
     auth = _build_auth(settings)
     predicate = load_predicate(settings.predicate_path)
-    coordinator = ActionCoordinator()
+    coordinator = ActionCoordinator(db_path=settings.db_path)
     gate = AirlockServer(
         backends=settings.backends,
-        db_path=settings.db_path,
         predicate=predicate,
         public_base_url=settings.public_base_url,
         default_wait_mode=settings.default_wait_mode,
@@ -122,9 +123,19 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Any:
             Route("/{rest:path}", endpoint=index),
         ]
 
-    # Delegate lifespan to the FastMCP app — it manages the gate's startup/shutdown.
-    # Wrap with _MCPPathNorm to fix POST/DELETE /mcp routing (see class docstring).
-    return _MCPPathNorm(Starlette(routes=routes, lifespan=mcp_app.lifespan))
+    # Combined lifespan: coordinator storage init/close wraps MCP server lifespan.
+    mcp_lifespan = mcp_app.router.lifespan_context
+
+    @asynccontextmanager
+    async def _lifespan(app: Starlette) -> AsyncGenerator[None]:
+        await coordinator.initialize()
+        try:
+            async with mcp_lifespan(app):
+                yield
+        finally:
+            await coordinator.close()
+
+    return _MCPPathNorm(Starlette(routes=routes, lifespan=_lifespan))
 
 
 async def _serve() -> None:

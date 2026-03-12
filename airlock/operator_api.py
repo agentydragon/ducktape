@@ -13,6 +13,7 @@ SSE endpoint provides live action updates to the frontend.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from typing import Any
@@ -24,7 +25,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from pydantic import BaseModel
 
-from airlock.coordinator import ActionCoordinator
+from airlock.coordinator import ActionCoordinator, ActionCreatedEvent, CoordinatorEvent
 from airlock.models import Action, ActionKey, ActionStatus, ApproveDecision, DenyDecision
 
 logger = logging.getLogger(__name__)
@@ -54,19 +55,15 @@ class _OperatorAuth:
             resp = await client.get(config_url)
             resp.raise_for_status()
             jwks_uri = resp.json()["jwks_uri"]
-        self._verifier = JWTVerifier(jwks_uri=jwks_uri, issuer=self._issuer)
+        self._verifier = JWTVerifier(jwks_uri=jwks_uri, issuer=self._issuer, required_scopes=[DECIDE_SCOPE])
         return self._verifier
 
     async def validate(self, token: str) -> dict[str, Any]:
         """Validate a JWT and return its claims. Raises HTTPException on failure."""
         verifier = await self._ensure_verifier()
-        access_token = await verifier.load_access_token(token)
+        access_token = await verifier.verify_token(token)
         if not isinstance(access_token, AccessToken):
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        scopes = set(access_token.claims.get("scope", "").split())
-        if DECIDE_SCOPE not in scopes:
-            raise HTTPException(status_code=403, detail=f"Missing required scope: {DECIDE_SCOPE}")
+            raise HTTPException(status_code=401, detail="Invalid token or missing required scope")
         return access_token.claims
 
 
@@ -87,18 +84,33 @@ def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> 
 
     app = FastAPI(title="Airlock Operator API", version="1.0.0", dependencies=[Depends(require_operator)])
 
+    # ── SSE event distribution (local to operator API) ────────────────────
+
+    sse_subscribers: set[asyncio.Queue[dict[str, object]]] = set()
+
+    async def _on_coordinator_event(event: CoordinatorEvent) -> None:
+        event_type = "action_created" if isinstance(event, ActionCreatedEvent) else "action_updated"
+        sse_event: dict[str, object] = {"type": event_type, "action": json.loads(event.action.model_dump_json())}
+        for queue in sse_subscribers:
+            with contextlib.suppress(asyncio.QueueFull):
+                queue.put_nowait(sse_event)
+
+    coordinator.add_listener(_on_coordinator_event)
+
+    # ── REST endpoints ───────────────────────────────────────────────────
+
     @app.get("/actions", response_model=list[Action])
     async def list_actions(
         status: ActionStatus | None = Query(default=None),
         limit: int = Query(default=100, ge=1, le=1000),
         offset: int = Query(default=0, ge=0),
     ) -> list[Action]:
-        return await coordinator.storage.list_actions(status, limit=limit, offset=offset)
+        return await coordinator.list_actions(status, limit=limit, offset=offset)
 
     @app.get("/actions/{session_key}/{action_seq}", response_model=Action)
     async def get_action(session_key: str, action_seq: int) -> Action:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
-        action = await coordinator.storage.get_action(key)
+        action = await coordinator.get_action(key)
         if action is None:
             raise HTTPException(status_code=404, detail="Action not found")
         return action
@@ -114,17 +126,17 @@ def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> 
             raise HTTPException(status_code=409, detail=str(e)) from e
 
     @app.post("/actions/{session_key}/{action_seq}/reject", status_code=204)
-    async def reject_action(session_key: str, action_seq: int, body: RejectBody | None = None) -> None:
+    async def reject_action(session_key: str, action_seq: int, body: RejectBody) -> None:
         key = ActionKey(session_key=session_key, action_seq=action_seq)
-        reason = body.reason if body else None
         try:
-            await coordinator.decide(key, DenyDecision(reason=reason))
+            await coordinator.decide(key, DenyDecision(reason=body.reason))
         except ValueError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
 
     @app.get("/events")
     async def sse_events(request: Request) -> StreamingResponse:
-        queue = coordinator.subscribe_sse()
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        sse_subscribers.add(queue)
 
         async def event_stream():
             try:
@@ -137,7 +149,7 @@ def create_operator_api(*, coordinator: ActionCoordinator, oidc_issuer: str) -> 
                     except TimeoutError:
                         yield ": keepalive\n\n"
             finally:
-                coordinator.unsubscribe_sse(queue)
+                sse_subscribers.discard(queue)
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 

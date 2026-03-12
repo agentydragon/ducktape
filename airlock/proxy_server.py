@@ -39,12 +39,10 @@ from mcp.server.session import ServerSession
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
-from airlock.coordinator import ActionCoordinator
+from airlock.coordinator import ActionCoordinator, ActionCreatedEvent, CoordinatorEvent
 from airlock.models import (
     Action,
     ActionKey,
-    ActionReceivedDetail,
-    ActionState,
     ActionStatus,
     ApproveDecision,
     BlockingWait,
@@ -54,18 +52,13 @@ from airlock.models import (
     ExecutingState,
     ExecutionFinishedDetail,
     ExecutionStartedDetail,
-    LogEventDetail,
     OperatorDecision,
-    PendingState,
     RejectedState,
     ToolCall,
     WaitMode,
-    WithdrawnDetail,
-    WithdrawnState,
     YieldAfterMs,
 )
 from airlock.predicates import Approved, Denied, NeedsHumanDecision, PredicateFn, call_predicate
-from airlock.storage import ActionStorage
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
@@ -128,7 +121,6 @@ class AirlockServer(EnhancedFastMCP):
         self,
         *,
         backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
-        db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
         coordinator: ActionCoordinator,
@@ -137,7 +129,6 @@ class AirlockServer(EnhancedFastMCP):
     ) -> None:
         super().__init__("Airlock", lifespan=self._lifespan, instructions="Airlock — initialising…", **kwargs)
         self._backend_specs = backends
-        self._db_path = db_path
         self._predicate = predicate
         self._public_base_url = public_base_url
         self._default_wait_mode = default_wait_mode
@@ -150,8 +141,7 @@ class AirlockServer(EnhancedFastMCP):
 
     @asynccontextmanager
     async def _lifespan(self, app: FastMCP) -> AsyncGenerator[None]:
-        storage = await ActionStorage.initialize(self._db_path)
-        self.coordinator.set_storage(storage)
+        self.coordinator.add_listener(self._on_coordinator_event)
 
         # Manual stack management so cleanup runs inside the shielded scope below.
         stack = AsyncExitStack()
@@ -166,14 +156,21 @@ class AirlockServer(EnhancedFastMCP):
             # Shield cleanup from FastMCP memory transport's cancel scope.
             # FastMCPTransport.connect_session() calls tg.cancel_scope.cancel()
             # on client disconnect, which would cancel our async cleanup
-            # (backend client close, storage dispose), leaving orphaned resources.
+            # (backend client close), leaving orphaned resources.
             with anyio.CancelScope(shield=True):
                 if self._background_tasks:
                     logger.info("[_lifespan] draining %d background task(s)", len(self._background_tasks))
                     await asyncio.gather(*self._background_tasks, return_exceptions=True)
                 await stack.aclose()
                 self._backend_clients.clear()
-                await self.coordinator.close()
+
+    async def _on_coordinator_event(self, event: CoordinatorEvent) -> None:
+        """Translate coordinator events into MCP resource-updated notifications."""
+        key = event.action.key
+        await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
+        await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
+        if isinstance(event, ActionCreatedEvent):
+            await self.broadcast_resource_list_changed()
 
     async def _rehydrate_pending_actions(self) -> None:
         """Recreate in-memory decision futures for PENDING actions that survived a server restart.
@@ -181,7 +178,7 @@ class AirlockServer(EnhancedFastMCP):
         Without this, decide() would fail for any PENDING action from a prior run because
         _pending_decisions only lives in memory and is empty on startup.
         """
-        pending = await self.coordinator.storage.list_actions(ActionStatus.PENDING)
+        pending = await self.coordinator.list_actions(ActionStatus.PENDING)
         for action in pending:
             namespace = MCPMountPrefix(action.call.server_namespace)
             self._spawn(self._await_human_decision(action.key, namespace, action.call.tool_name, action.call.arguments))
@@ -214,20 +211,20 @@ class AirlockServer(EnhancedFastMCP):
         async def action_resource(session_key: str, action_seq: int) -> str:
             """Current state of a deferred action."""
             key = ActionKey(session_key=session_key, action_seq=action_seq)
-            action = await self.coordinator.storage.get_action(key)
+            action = await self.coordinator.get_action(key)
             if action is None:
-                raise ValueError(f"Action not found: {session_key}/{action_seq}")
+                raise ValueError(f"Action not found: {key}")
             return action.model_dump_json()
 
         @self.resource("resource://sessions/{session_key}/log_hwm")
         async def log_hwm_resource(session_key: str) -> str:
             """The entry_id of the last log entry for this session."""
-            return str(await self.coordinator.storage.get_log_hwm(session_key))
+            return str(await self.coordinator.get_log_hwm(session_key))
 
         @self.resource("resource://sessions/{session_key}/log/{entry_id}")
         async def log_entry_resource(session_key: str, entry_id: int) -> str:
             """A specific log entry."""
-            entry = await self.coordinator.storage.get_log_entry(session_key, entry_id)
+            entry = await self.coordinator.get_log_entry(session_key, entry_id)
             if entry is None:
                 raise ValueError(f"Log entry not found: {session_key}/{entry_id}")
             return entry.model_dump_json()
@@ -248,12 +245,12 @@ class AirlockServer(EnhancedFastMCP):
         @self.tool(auth=require_scopes(PROPOSE_SCOPE))
         async def list_actions(status: ActionStatus | None = None, limit: int = 100, offset: int = 0) -> list[Action]:
             """List queued/processed actions, optionally filtered by status."""
-            return await self.coordinator.storage.list_actions(status, limit=limit, offset=offset)
+            return await self.coordinator.list_actions(status, limit=limit, offset=offset)
 
         @self.tool(auth=require_scopes(PROPOSE_SCOPE))
         async def withdraw_action(key: ActionKey) -> Action:
             """Withdraw a pending action before it is decided by an operator."""
-            return await self.withdraw(key)
+            return await self.coordinator.withdraw(key)
 
     # ── Wrapped tool registration ─────────────────────────────────────────────
 
@@ -281,13 +278,10 @@ class AirlockServer(EnhancedFastMCP):
                 subject = token.claims.get("sub")
 
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
-            action = await self.coordinator.storage.create_action(
+            action = await self.coordinator.create_action(
                 session_key=session_key, call=call, justification=justification, client_id=client_id, subject=subject
             )
             key = action.key
-            await self._append_log_and_notify(key, ActionReceivedDetail())
-            await self.broadcast_resource_list_changed()
-            self._push_sse_event({"type": "action_created", "session_key": session_key, "action_seq": key.action_seq})
 
             effective = wait_mode if wait_mode is not None else self._default_wait_mode
             effective_timeout = _wait_mode_to_timeout(effective)
@@ -298,7 +292,7 @@ class AirlockServer(EnhancedFastMCP):
                 with anyio.move_on_after(effective_timeout):
                     await asyncio.shield(pipeline)
 
-            result = await self.coordinator.storage.get_action(key)
+            result = await self.coordinator.get_action(key)
             assert result is not None
             return result
 
@@ -325,9 +319,7 @@ class AirlockServer(EnhancedFastMCP):
                     key, namespace, tool_name, input, DenyDecision(reason=reason or "automatically denied")
                 )
             case NeedsHumanDecision():
-                logger.info(
-                    "queued action %s/%d server=%s tool=%s", key.session_key, key.action_seq, namespace, tool_name
-                )
+                logger.info("queued action %s server=%s tool=%s", key, namespace, tool_name)
                 await self._await_human_decision(key, namespace, tool_name, input)
 
     async def _await_human_decision(
@@ -355,30 +347,20 @@ class AirlockServer(EnhancedFastMCP):
         match decision:
             case ApproveDecision():
                 started_at = datetime.now(tz=UTC)
-                await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail(started_at=started_at))
+                await self.coordinator.update_and_log(
+                    key, ExecutingState(), ExecutionStartedDetail(started_at=started_at)
+                )
                 client = self._backend_clients.get(namespace)
                 if client is None:
                     raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
                 outcome = await client.call_tool_mcp(tool_name, input)
-                await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
+                await self.coordinator.update_and_log(
+                    key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome)
+                )
             case DenyDecision(reason=reason):
-                await self._update_and_notify(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
+                await self.coordinator.update_and_log(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
 
-    # ── SSE event subscriptions (operator REST clients) ─────────────────────
-
-    def _push_sse_event(self, event: dict[str, object]) -> None:
-        self.coordinator.push_sse_event(event)
-
-    # ── Event log + notification helpers ──────────────────────────────────────
-
-    async def _append_log_and_notify(self, key: ActionKey, detail: LogEventDetail) -> None:
-        """Append a log entry and notify subscribed sessions of action + HWM changes."""
-        await self.coordinator.storage.append_log_entry(
-            session_key=key.session_key, action_seq=key.action_seq, detail=detail
-        )
-        await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
-        await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
-        self._push_sse_event({"type": "log", "session_key": key.session_key, "action_seq": key.action_seq})
+    # ── MCP resource notifications ────────────────────────────────────────────
 
     async def _notify_subscribers(self, uri: str) -> None:
         """Send resource-updated notification only to sessions subscribed to the given URI."""
@@ -394,42 +376,9 @@ class AirlockServer(EnhancedFastMCP):
         for session in dead:
             del self._subscriptions[session]
 
-    # ── Operator / agent decisions ────────────────────────────────────────────
-
-    async def withdraw(self, key: ActionKey) -> Action:
-        """Agent-initiated withdrawal of a pending action.
-
-        Raises ValueError if the action does not exist or is not pending.
-        """
-        action = await self.coordinator.storage.get_action(key)
-        if action is None:
-            raise ValueError(f"Action not found: {key}")
-        if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {key} is not pending ({action.state.status=})")
-        result = await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
-        fut = self.coordinator.remove_pending(key)
-        if fut is not None and not fut.done():
-            fut.cancel()
-        return result
-
     def _spawn(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         """Schedule a coroutine as a background task, keeping a reference to prevent GC."""
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
         return task
-
-    async def _update_and_notify(self, key: ActionKey, new_state: ActionState, detail: LogEventDetail) -> Action:
-        """Update action state and append log entry atomically, then notify subscribers."""
-        action, _ = await self.coordinator.storage.update_state_and_log(key, new_state, detail)
-        await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
-        await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
-        self._push_sse_event(
-            {
-                "type": "action_updated",
-                "session_key": key.session_key,
-                "action_seq": key.action_seq,
-                "status": new_state.status,
-            }
-        )
-        return action
